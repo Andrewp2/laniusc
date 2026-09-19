@@ -43,46 +43,20 @@ private theorem parserChartWordCallee_position
     (wellFormed : StateWellFormed state) :
     (parserChartWordCallee state position field).local? 0 =
       some (.signed .i32 position) := by
-  let cleared : State := { state with locals := [] }
-  have clearedWellFormed := clearLocals_preserves_wellFormed wellFormed
-  have entry := bindLocals_finds_cell_after_prefix cleared []
-    [(1, .signed .i32 field)] 0 (.signed .i32 position) clearedWellFormed
-  have cellId : (parserChartWordCallee state position field).cellId? 0 =
-      some state.nextCell := by
-    rfl
-  rw [State.local?, cellId]
-  simp only [Option.bind_some, State.cell?]
-  rw [show (parserChartWordCallee state position field).cellEntry?
-      state.nextCell = some {
-        id := state.nextCell
-        value := some (.signed .i32 position)
-      } by
-    simpa [parserChartWordCallee, parserChartWordBindings, enterCall, cleared]
-      using entry]
-  rfl
+  simpa only [parserChartWordCallee, parserChartWordBindings, List.nil_append] using
+    (enterCall_local_of_binding state []
+      [(1, .signed .i32 field)] 0 (.signed .i32 position)
+      wellFormed (by simp))
 
 private theorem parserChartWordCallee_field
     (wellFormed : StateWellFormed state) :
     (parserChartWordCallee state position field).local? 1 =
       some (.signed .i32 field) := by
-  let cleared : State := { state with locals := [] }
-  have clearedWellFormed := clearLocals_preserves_wellFormed wellFormed
-  have entry := bindLocals_finds_cell_after_prefix cleared
-    [(0, .signed .i32 position)] [] 1 (.signed .i32 field)
-    clearedWellFormed
-  have cellId : (parserChartWordCallee state position field).cellId? 1 =
-      some (state.nextCell + 1) := by
-    rfl
-  rw [State.local?, cellId]
-  simp only [Option.bind_some, State.cell?]
-  rw [show (parserChartWordCallee state position field).cellEntry?
-      (state.nextCell + 1) = some {
-        id := state.nextCell + 1
-        value := some (.signed .i32 field)
-      } by
-    simpa [parserChartWordCallee, parserChartWordBindings, enterCall, cleared]
-      using entry]
-  rfl
+  simpa only [parserChartWordCallee, parserChartWordBindings,
+    List.nil_append, List.cons_append] using
+    (enterCall_local_of_binding state
+      [(0, .signed .i32 position)] [] 1 (.signed .i32 field)
+      wellFormed (by simp))
 
 theorem extractedParserChartWordCall_evaluates
     (before afterArguments : State) (arguments : List Expr)
@@ -141,12 +115,10 @@ theorem parserFindChartHeadExpr_reads_encoded
     (parserChartWordCallee before (Int.ofNat position) 0)
   have positionArgument : Evaluates verifiedParserCore before (.local 2)
       (.signed .i32 (Int.ofNat position)) before :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore before 2
-      (.signed .i32 (Int.ofNat position)) positionLocal⟩
+    Lanius.Semantics.evaluatesLocal positionLocal
   have fieldArgument : Evaluates verifiedParserCore before (.constant 25)
-      (.signed .i32 0) before := by
-    refine ⟨2, ?_⟩
-    simp [evalExpr, verifiedParser_find_constants.1]
+      (.signed .i32 0) before :=
+    Lanius.Semantics.evaluatesConstant verifiedParser_find_constants.1
   have arguments : ArgumentsEvaluateTo verifiedParserCore before
       [.local 2, .constant 25]
       [.signed .i32 (Int.ofNat position), .signed .i32 0] before :=
@@ -168,26 +140,17 @@ theorem parserFindChartHeadExpr_reads_encoded
   have addressBound : chartWord position 0 < values.length := by
     rw [valuesLength]
     exact layout.chart_address_valid positionBound (by decide)
-  have workspaceOld : workspaceCell < before.nextCell :=
-    Lanius.Separation.StateWellFormed.cell_lt_next_of_entry
-      beforeWellFormed backing
   have afterBacking : afterCall.cellEntry? workspaceCell = some {
       id := workspaceCell
       value := some (.array (signedI32Values values))
-    } := by
-    have entered := enterCall_effect before
-      (parserChartWordBindings (Int.ofNat position) 0)
-    have restored := entered.restoreLocals
-    have preserved := restored.oldCells workspaceCell workspaceOld
-      (by simp [CellSet.empty])
-    exact preserved.trans backing
+    } := (parserChartWordCallState_effect (state := before)
+      (position := Int.ofNat position) (field := 0)).empty_preserves_entry
+      beforeWellFormed backing
   have indexed := evaluatesSignedI32SliceIndex verifiedParserCore before before
     afterCall values (.local 0)
     (.call extractedParserChartWordFunction.id [.local 2, .constant 25])
     workspaceCell (chartWord position 0) addressBound
-    ⟨1, evalLocal_of_local 1 verifiedParserCore before 0
-      (.slice parserI32Type workspaceCell [] 0 values.length)
-      workspaceLocal⟩ addressCall afterBacking
+    (Lanius.Semantics.evaluatesLocal workspaceLocal) addressCall afterBacking
   have chartRead : values.get ⟨chartWord position 0, addressBound⟩ =
       chartHeadValue workspace position := by
     have concrete := encoded.chartHead position positionBound
@@ -232,82 +195,31 @@ theorem parserStateWordCallee_base
     (wellFormed : StateWellFormed state) :
     (parserStateWordCallee state base stateId field).local? 0 =
       some (.signed .i32 base) := by
-  let cleared : State := { state with locals := [] }
-  have clearedWellFormed : StateWellFormed cleared :=
-    clearLocals_preserves_wellFormed wellFormed
-  have entry := bindLocals_finds_cell_after_prefix cleared []
-    [(1, .signed .i32 stateId), (2, .signed .i32 field)]
-    0 (.signed .i32 base) clearedWellFormed
-  have cellId :
-      (parserStateWordCallee state base stateId field).cellId? 0 =
-        some state.nextCell := by
-    rfl
-  rw [State.local?, cellId]
-  simp only [Option.bind_some, State.cell?]
-  have entry' :
-      (parserStateWordCallee state base stateId field).cellEntry?
-          state.nextCell =
-        some { id := state.nextCell, value := some (.signed .i32 base) } := by
-    simpa [parserStateWordCallee, parserStateWordBindings, enterCall, cleared]
-      using entry
-  rw [entry']
-  rfl
+  simpa only [parserStateWordCallee, parserStateWordBindings,
+    List.nil_append, List.cons_append] using
+    (enterCall_local_of_binding state []
+      [(1, .signed .i32 stateId), (2, .signed .i32 field)]
+      0 (.signed .i32 base) wellFormed (by simp))
 
 theorem parserStateWordCallee_stateId
     (wellFormed : StateWellFormed state) :
     (parserStateWordCallee state base stateId field).local? 1 =
       some (.signed .i32 stateId) := by
-  let cleared : State := { state with locals := [] }
-  have clearedWellFormed : StateWellFormed cleared :=
-    clearLocals_preserves_wellFormed wellFormed
-  have entry := bindLocals_finds_cell_after_prefix cleared
-    [(0, .signed .i32 base)] [(2, .signed .i32 field)]
-    1 (.signed .i32 stateId) clearedWellFormed
-  have cellId :
-      (parserStateWordCallee state base stateId field).cellId? 1 =
-        some (state.nextCell + 1) := by
-    rfl
-  rw [State.local?, cellId]
-  simp only [Option.bind_some, State.cell?]
-  have entry' :
-      (parserStateWordCallee state base stateId field).cellEntry?
-          (state.nextCell + 1) =
-        some {
-          id := state.nextCell + 1
-          value := some (.signed .i32 stateId)
-        } := by
-    simpa [parserStateWordCallee, parserStateWordBindings, enterCall, cleared]
-      using entry
-  rw [entry']
-  rfl
+  simpa only [parserStateWordCallee, parserStateWordBindings,
+    List.nil_append, List.cons_append] using
+    (enterCall_local_of_binding state
+      [(0, .signed .i32 base)] [(2, .signed .i32 field)]
+      1 (.signed .i32 stateId) wellFormed (by simp))
 
 theorem parserStateWordCallee_field
     (wellFormed : StateWellFormed state) :
     (parserStateWordCallee state base stateId field).local? 2 =
       some (.signed .i32 field) := by
-  let cleared : State := { state with locals := [] }
-  have clearedWellFormed : StateWellFormed cleared :=
-    clearLocals_preserves_wellFormed wellFormed
-  have entry := bindLocals_finds_cell_after_prefix cleared
-    [(0, .signed .i32 base), (1, .signed .i32 stateId)] []
-    2 (.signed .i32 field) clearedWellFormed
-  have cellId :
-      (parserStateWordCallee state base stateId field).cellId? 2 =
-        some (state.nextCell + 2) := by
-    rfl
-  rw [State.local?, cellId]
-  simp only [Option.bind_some, State.cell?]
-  have entry' :
-      (parserStateWordCallee state base stateId field).cellEntry?
-          (state.nextCell + 2) =
-        some {
-          id := state.nextCell + 2
-          value := some (.signed .i32 field)
-        } := by
-    simpa [parserStateWordCallee, parserStateWordBindings, enterCall, cleared]
-      using entry
-  rw [entry']
-  rfl
+  simpa only [parserStateWordCallee, parserStateWordBindings,
+    List.nil_append, List.cons_append] using
+    (enterCall_local_of_binding state
+      [(0, .signed .i32 base), (1, .signed .i32 stateId)] []
+      2 (.signed .i32 field) wellFormed (by simp))
 
 def extractedParserStateValueWire : CoreFunction :=
   artifact_function%
@@ -459,14 +371,11 @@ theorem parserStateValueCallState_effect :
   let callee := parserStateValueCallee state workspaceValue base stateId field
   let afterWord := restoreLocals callee
     (parserStateWordCallee callee base stateId field)
-  have outer := enterCall_effect state
-    (parserStateValueBindings workspaceValue base stateId field)
-  have nested := enterCall_effect callee
-    (parserStateWordBindings base stateId field)
-  have nestedClosed : ModifiesOnly CellSet.empty callee afterWord := by
-    simpa [afterWord, parserStateWordCallee] using nested.restoreLocals
-  have completed : StoreEffect CellSet.empty state afterWord := by
-    exact outer.trans_same nestedClosed.toStoreEffect
+  have completed : StoreEffect CellSet.empty state afterWord :=
+    (enterCall_effect state
+      (parserStateValueBindings workspaceValue base stateId field)).trans_same
+      (parserStateWordCallState_effect (state := callee)
+        (base := base) (stateId := stateId) (field := field)).toStoreEffect
   simpa [parserStateValueCallState, callee, afterWord] using
     completed.restoreLocals
 
@@ -479,122 +388,57 @@ theorem parserStateValueCallState_well_formed
   let afterWord := restoreLocals callee nestedCallee
   have calleeWellFormed : StateWellFormed callee :=
     parserStateValueCallee_well_formed wellFormed
-  have nestedWellFormed : StateWellFormed nestedCallee :=
-    parserStateWordCallee_well_formed calleeWellFormed
-  have nested := enterCall_effect callee
-    (parserStateWordBindings base stateId field)
-  have afterWordWellFormed : StateWellFormed afterWord := by
-    exact nested.restoreLocals_wellFormed calleeWellFormed nestedWellFormed
-  have outer := enterCall_effect state
-    (parserStateValueBindings workspaceValue base stateId field)
-  have nestedClosed : ModifiesOnly CellSet.empty callee afterWord := by
-    simpa [afterWord, nestedCallee, parserStateWordCallee] using
-      nested.restoreLocals
   have completed : StoreEffect CellSet.empty state afterWord :=
-    outer.trans_same nestedClosed.toStoreEffect
+    (enterCall_effect state
+      (parserStateValueBindings workspaceValue base stateId field)).trans_same
+      (parserStateWordCallState_effect (state := callee)
+        (base := base) (stateId := stateId) (field := field)).toStoreEffect
   simpa [parserStateValueCallState, callee, afterWord, nestedCallee] using
-    completed.restoreLocals_wellFormed wellFormed afterWordWellFormed
+    completed.restoreLocals_wellFormed wellFormed
+      (parserStateWordCallState_well_formed calleeWellFormed)
 
 private theorem parserStateValueCallee_local0
     (wellFormed : StateWellFormed state) :
     (parserStateValueCallee state workspaceValue base stateId field).local? 0 =
       some workspaceValue := by
-  let cleared : State := { state with locals := [] }
-  have clearedWellFormed : StateWellFormed cleared :=
-    clearLocals_preserves_wellFormed wellFormed
-  have entry := bindLocals_finds_cell_after_prefix cleared [] [
+  simpa only [parserStateValueCallee, parserStateValueBindings,
+    List.nil_append, List.cons_append] using
+    (enterCall_local_of_binding state [] [
       (1, .signed .i32 base), (2, .signed .i32 stateId),
-      (3, .signed .i32 field)] 0 workspaceValue clearedWellFormed
-  have cellId :
-      (parserStateValueCallee state workspaceValue base stateId field).cellId? 0 =
-        some state.nextCell := by
-    rfl
-  rw [State.local?, cellId]
-  simp only [Option.bind_some, State.cell?]
-  rw [show
-    (parserStateValueCallee state workspaceValue base stateId field).cellEntry?
-        state.nextCell =
-      some { id := state.nextCell, value := some workspaceValue } by
-    simpa [parserStateValueCallee, parserStateValueBindings, enterCall, cleared]
-      using entry]
-  rfl
+      (3, .signed .i32 field)] 0 workspaceValue wellFormed (by simp))
 
 private theorem parserStateValueCallee_local1
     (wellFormed : StateWellFormed state) :
     (parserStateValueCallee state workspaceValue base stateId field).local? 1 =
       some (.signed .i32 base) := by
-  let cleared : State := { state with locals := [] }
-  have clearedWellFormed := clearLocals_preserves_wellFormed wellFormed
-  have entry := bindLocals_finds_cell_after_prefix cleared
+  simpa only [parserStateValueCallee, parserStateValueBindings,
+    List.nil_append, List.cons_append] using
+    (enterCall_local_of_binding state
     [(0, workspaceValue)] [
       (2, .signed .i32 stateId), (3, .signed .i32 field)]
-    1 (.signed .i32 base) clearedWellFormed
-  have cellId :
-      (parserStateValueCallee state workspaceValue base stateId field).cellId? 1 =
-        some (state.nextCell + 1) := by
-    rfl
-  rw [State.local?, cellId]
-  simp only [Option.bind_some, State.cell?]
-  rw [show
-    (parserStateValueCallee state workspaceValue base stateId field).cellEntry?
-        (state.nextCell + 1) = some {
-          id := state.nextCell + 1
-          value := some (.signed .i32 base)
-        } by
-    simpa [parserStateValueCallee, parserStateValueBindings, enterCall, cleared]
-      using entry]
-  rfl
+    1 (.signed .i32 base) wellFormed (by simp))
 
 private theorem parserStateValueCallee_local2
     (wellFormed : StateWellFormed state) :
     (parserStateValueCallee state workspaceValue base stateId field).local? 2 =
       some (.signed .i32 stateId) := by
-  let cleared : State := { state with locals := [] }
-  have clearedWellFormed := clearLocals_preserves_wellFormed wellFormed
-  have entry := bindLocals_finds_cell_after_prefix cleared
-    [(0, workspaceValue), (1, .signed .i32 base)]
-    [(3, .signed .i32 field)] 2 (.signed .i32 stateId) clearedWellFormed
-  have cellId :
-      (parserStateValueCallee state workspaceValue base stateId field).cellId? 2 =
-        some (state.nextCell + 2) := by
-    rfl
-  rw [State.local?, cellId]
-  simp only [Option.bind_some, State.cell?]
-  rw [show
-    (parserStateValueCallee state workspaceValue base stateId field).cellEntry?
-        (state.nextCell + 2) = some {
-          id := state.nextCell + 2
-          value := some (.signed .i32 stateId)
-        } by
-    simpa [parserStateValueCallee, parserStateValueBindings, enterCall, cleared]
-      using entry]
-  rfl
+  simpa only [parserStateValueCallee, parserStateValueBindings,
+    List.nil_append, List.cons_append] using
+    (enterCall_local_of_binding state
+      [(0, workspaceValue), (1, .signed .i32 base)]
+      [(3, .signed .i32 field)] 2 (.signed .i32 stateId)
+      wellFormed (by simp))
 
 private theorem parserStateValueCallee_local3
     (wellFormed : StateWellFormed state) :
     (parserStateValueCallee state workspaceValue base stateId field).local? 3 =
       some (.signed .i32 field) := by
-  let cleared : State := { state with locals := [] }
-  have clearedWellFormed := clearLocals_preserves_wellFormed wellFormed
-  have entry := bindLocals_finds_cell_after_prefix cleared [
+  simpa only [parserStateValueCallee, parserStateValueBindings,
+    List.nil_append, List.cons_append] using
+    (enterCall_local_of_binding state [
       (0, workspaceValue), (1, .signed .i32 base),
       (2, .signed .i32 stateId)] []
-    3 (.signed .i32 field) clearedWellFormed
-  have cellId :
-      (parserStateValueCallee state workspaceValue base stateId field).cellId? 3 =
-        some (state.nextCell + 3) := by
-    rfl
-  rw [State.local?, cellId]
-  simp only [Option.bind_some, State.cell?]
-  rw [show
-    (parserStateValueCallee state workspaceValue base stateId field).cellEntry?
-        (state.nextCell + 3) = some {
-          id := state.nextCell + 3
-          value := some (.signed .i32 field)
-        } by
-    simpa [parserStateValueCallee, parserStateValueBindings, enterCall, cleared]
-      using entry]
-  rfl
+      3 (.signed .i32 field) wellFormed (by simp))
 
 theorem extractedParserStateValueBody_eq :
     extractedParserStateValueBody = parserStateValueBody := by
@@ -660,9 +504,7 @@ theorem extractedParserStateValueBody_executes
     (.call extractedParserStateWordFunction.id
       [.local 1, .local 2, .local 3])
     workspaceCell address addressBound
-  · exact ⟨1, evalLocal_of_local 0 program before 0
-      (.slice parserI32Type workspaceCell [] 0 values.length)
-      workspaceLocal⟩
+  · exact Lanius.Semantics.evaluatesLocal workspaceLocal
   · exact wordCall
   · exact backing
 
@@ -710,25 +552,21 @@ theorem extractedParserStateValueCall_evaluates
       id := workspaceCell
       value := some (.array (signedI32Values values))
     } := by
-    have preserved := (enterCall_effect afterArguments
+    exact (enterCall_effect afterArguments
       (parserStateValueBindings workspaceValue base stateId field)).oldCells
-        workspaceCell workspaceOld (by simp [CellSet.empty])
-    exact preserved.trans backing
+      workspaceCell workspaceOld (by simp [CellSet.empty]) |>.trans backing
   have local1 : Evaluates verifiedParserCore callee (.local 1)
       (.signed .i32 base) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 1
-      (.signed .i32 base)
-      (parserStateValueCallee_local1 afterArgumentsWellFormed)⟩
+    Lanius.Semantics.evaluatesLocal
+      (parserStateValueCallee_local1 afterArgumentsWellFormed)
   have local2 : Evaluates verifiedParserCore callee (.local 2)
       (.signed .i32 stateId) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 2
-      (.signed .i32 stateId)
-      (parserStateValueCallee_local2 afterArgumentsWellFormed)⟩
+    Lanius.Semantics.evaluatesLocal
+      (parserStateValueCallee_local2 afterArgumentsWellFormed)
   have local3 : Evaluates verifiedParserCore callee (.local 3)
       (.signed .i32 field) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore callee 3
-      (.signed .i32 field)
-      (parserStateValueCallee_local3 afterArgumentsWellFormed)⟩
+    Lanius.Semantics.evaluatesLocal
+      (parserStateValueCallee_local3 afterArgumentsWellFormed)
   have wordArguments : ArgumentsEvaluateTo verifiedParserCore callee
       [.local 1, .local 2, .local 3]
       [.signed .i32 base, .signed .i32 stateId, .signed .i32 field]
@@ -749,19 +587,12 @@ theorem extractedParserStateValueCall_evaluates
       (.slice parserI32Type workspaceCell [] 0 values.length) := by
     rw [← workspaceShape]
     exact parserStateValueCallee_local0 afterArgumentsWellFormed
-  have calleeWorkspaceOld : workspaceCell < callee.nextCell :=
-    Lanius.Separation.StateWellFormed.cell_lt_next_of_entry
-      calleeWellFormed calleeBacking
   have afterWordBacking : afterWord.cellEntry? workspaceCell = some {
       id := workspaceCell
       value := some (.array (signedI32Values values))
-    } := by
-    have nestedEffect := enterCall_effect callee
-      (parserStateWordBindings base stateId field)
-    have restored := nestedEffect.restoreLocals
-    have preserved := restored.oldCells workspaceCell calleeWorkspaceOld
-      (by simp [CellSet.empty])
-    exact preserved.trans calleeBacking
+    } := (parserStateWordCallState_effect (state := callee)
+      (base := base) (stateId := stateId) (field := field)).empty_preserves_entry
+      calleeWellFormed calleeBacking
   have bodyResult : Executes verifiedParserCore callee parserStateValueBody
       (.returned (some (.signed .i32
         (values.get ⟨address, addressBound⟩)))) afterWord := by

@@ -34,22 +34,10 @@ def semanticKindsValid
   (tokens.zip semanticKinds).all fun pair =>
     semanticKindMatchesToken grammar pair.1 pair.2
 
-/-- Consume one grammar terminal at a token-lattice position. -/
-def advanceTerminal
-    (semanticKinds : List Nat) (position expected : Nat) : Option Nat := do
-  let code ← semanticKinds[position / 2]?
-  if isPackedSemanticKind code then
-    let actual := if position % 2 = 0 then packedInnerKind code else packedOuterKind code
-    if actual = expected then some (position + 1) else none
-  else if position % 2 = 0 && code = expected then
-    some (position + 2)
-  else
-    none
-
-def checkChildren
+def checkChildrenCore
     (grammar : Grammar)
-    (semanticKinds : List Nat)
-    (nodes : List ParseNode)
+    (terminalAdvance : Nat → Nat → Option Nat)
+    (nodeLookup : Nat → Option ParseNode)
     (currentNode : Nat) : List Nat → List ParseChild → Nat → Option Nat
   | [], [], position => some position
   | symbol :: symbols, child :: children, position =>
@@ -57,76 +45,8 @@ def checkChildren
         match child with
         | .token tokenId => do
             if tokenId != position / 2 then none else
-            let next ← advanceTerminal semanticKinds position symbol
-            checkChildren grammar semanticKinds nodes currentNode symbols children next
-        | .node _ => none
-      else
-        let nonterminal := symbol - grammar.n_kinds
-        if nonterminal >= grammar.n_nonterminals then none else
-        match child with
-        | .token _ => none
-        | .node childId => do
-            if childId >= currentNode then none else
-            let childNode ← nodes[childId]?
-            if childNode.nonterminal != nonterminal ||
-                childNode.position_start != position then none else
-            checkChildren grammar semanticKinds nodes currentNode
-              symbols children childNode.position_end
-  | _, _, _ => none
-
-def checkNode
-    (grammar : Grammar)
-    (semanticKinds : List Nat)
-    (nodes : List ParseNode)
-    (id : Nat)
-    (node : ParseNode) : Bool :=
-  match grammar.production? node.production with
-  | none => false
-  | some production =>
-      node.nonterminal = production.lhs &&
-      node.position_start ≤ node.position_end &&
-      node.position_end ≤ semanticKinds.length * 2 &&
-      checkChildren grammar semanticKinds nodes id production.rhs
-        node.children node.position_start = some node.position_end
-
-def checkNodesFrom
-    (grammar : Grammar)
-    (semanticKinds : List Nat)
-    (allNodes : List ParseNode) : Nat → List ParseNode → Bool
-  | _, [] => true
-  | id, node :: rest =>
-      checkNode grammar semanticKinds allNodes id node &&
-      checkNodesFrom grammar semanticKinds allNodes (id + 1) rest
-
-/-! ## Array-backed kernel reduction path
-
-These functions compute the same Boolean as the public list checker.  They
-hold the two random-access tables as arrays so validating thousands of child
-edges does not repeatedly traverse a list prefix. -/
-
-def advanceTerminalArray
-    (semanticKinds : Array Nat) (position expected : Nat) : Option Nat := do
-  let code ← semanticKinds[position / 2]?
-  if isPackedSemanticKind code then
-    let actual := if position % 2 = 0 then packedInnerKind code else packedOuterKind code
-    if actual = expected then some (position + 1) else none
-  else if position % 2 = 0 && code = expected then
-    some (position + 2)
-  else none
-
-def checkChildrenArray
-    (grammar : Grammar)
-    (semanticKinds : Array Nat)
-    (nodes : Array ParseNode)
-    (currentNode : Nat) : List Nat → List ParseChild → Nat → Option Nat
-  | [], [], position => some position
-  | symbol :: symbols, child :: children, position =>
-      if symbol < grammar.n_kinds then
-        match child with
-        | .token tokenId => do
-            if tokenId != position / 2 then none else
-            let next ← advanceTerminalArray semanticKinds position symbol
-            checkChildrenArray grammar semanticKinds nodes currentNode
+            let next ← terminalAdvance position symbol
+            checkChildrenCore grammar terminalAdvance nodeLookup currentNode
               symbols children next
         | .node _ => none
       else
@@ -136,17 +56,17 @@ def checkChildrenArray
         | .token _ => none
         | .node childId => do
             if childId >= currentNode then none else
-            let childNode ← nodes[childId]?
+            let childNode ← nodeLookup childId
             if childNode.nonterminal != nonterminal ||
                 childNode.position_start != position then none else
-            checkChildrenArray grammar semanticKinds nodes currentNode
+            checkChildrenCore grammar terminalAdvance nodeLookup currentNode
               symbols children childNode.position_end
   | _, _, _ => none
 
-def checkNodeArray
+def checkNodeCore
     (grammar : Grammar)
-    (semanticKinds : Array Nat)
-    (nodes : Array ParseNode)
+    (semanticKindsLength : Nat)
+    (checkChildren : Nat → List Nat → List ParseChild → Nat → Option Nat)
     (id : Nat)
     (node : ParseNode) : Bool :=
   match grammar.production? node.production with
@@ -154,18 +74,116 @@ def checkNodeArray
   | some production =>
       node.nonterminal = production.lhs &&
       node.position_start ≤ node.position_end &&
-      node.position_end ≤ semanticKinds.size * 2 &&
-      checkChildrenArray grammar semanticKinds nodes id production.rhs
+      node.position_end ≤ semanticKindsLength * 2 &&
+      checkChildren id production.rhs
         node.children node.position_start = some node.position_end
+
+def checkNodesFromCore
+    (checkOne : Nat → ParseNode → Bool) : Nat → List ParseNode → Bool
+  | _, [] => true
+  | id, node :: rest =>
+      checkOne id node && checkNodesFromCore checkOne (id + 1) rest
+
+theorem checkNodesFromCore_append
+    (checkOne : Nat → ParseNode → Bool) (id : Nat)
+    (left right : List ParseNode) :
+    checkNodesFromCore checkOne id (left ++ right) =
+      (checkNodesFromCore checkOne id left &&
+        checkNodesFromCore checkOne (id + left.length) right) := by
+  induction left generalizing id with
+  | nil => simp [checkNodesFromCore]
+  | cons node left inductionHypothesis =>
+      simp only [List.cons_append, checkNodesFromCore, List.length_cons]
+      rw [inductionHypothesis]
+      cases checkOne id node <;>
+        simp [Nat.add_comm, Nat.add_left_comm]
+
+theorem checkNodesFromCore_congr
+    (checkOne other : Nat → ParseNode → Bool)
+    (same : ∀ id node, checkOne id node = other id node)
+    (id : Nat) (remaining : List ParseNode) :
+    checkNodesFromCore checkOne id remaining =
+      checkNodesFromCore other id remaining := by
+  induction remaining generalizing id with
+  | nil => rfl
+  | cons node rest inductionHypothesis =>
+      simp only [checkNodesFromCore]
+      rw [same, inductionHypothesis]
+
+def advanceTerminalCore
+    (semanticKindLookup : Nat → Option Nat)
+    (position expected : Nat) : Option Nat := do
+  let code ← semanticKindLookup (position / 2)
+  if isPackedSemanticKind code then
+    let actual := if position % 2 = 0 then packedInnerKind code else packedOuterKind code
+    if actual = expected then some (position + 1) else none
+  else if position % 2 = 0 && code = expected then
+    some (position + 2)
+  else
+    none
+
+/-- Consume one grammar terminal at a token-lattice position. -/
+def advanceTerminal
+    (semanticKinds : List Nat) (position expected : Nat) : Option Nat := do
+  advanceTerminalCore (fun index => semanticKinds[index]?) position expected
+
+def checkChildren
+    (grammar : Grammar)
+    (semanticKinds : List Nat)
+    (nodes : List ParseNode)
+    (currentNode : Nat) : List Nat → List ParseChild → Nat → Option Nat :=
+  checkChildrenCore grammar
+    (fun position expected => advanceTerminal semanticKinds position expected)
+    (fun index => nodes[index]?) currentNode
+
+def checkNode
+    (grammar : Grammar)
+    (semanticKinds : List Nat)
+    (nodes : List ParseNode)
+    (id : Nat)
+    (node : ParseNode) : Bool :=
+  checkNodeCore grammar semanticKinds.length
+    (checkChildren grammar semanticKinds nodes) id node
+
+def checkNodesFrom
+    (grammar : Grammar)
+    (semanticKinds : List Nat)
+    (allNodes : List ParseNode) : Nat → List ParseNode → Bool
+  := checkNodesFromCore (checkNode grammar semanticKinds allNodes)
+
+/-! ## Array-backed kernel reduction path
+
+These functions compute the same Boolean as the public list checker.  They
+hold the two random-access tables as arrays so validating thousands of child
+edges does not repeatedly traverse a list prefix. -/
+
+def advanceTerminalArray
+    (semanticKinds : Array Nat) (position expected : Nat) : Option Nat := do
+  advanceTerminalCore (fun index => semanticKinds[index]?) position expected
+
+def checkChildrenArray
+    (grammar : Grammar)
+    (semanticKinds : Array Nat)
+    (nodes : Array ParseNode)
+    (currentNode : Nat) : List Nat → List ParseChild → Nat → Option Nat
+  := checkChildrenCore grammar
+    (fun position expected => advanceTerminalArray semanticKinds position expected)
+    (fun index => nodes[index]?) currentNode
+
+def checkNodeArray
+    (grammar : Grammar)
+    (semanticKinds : Array Nat)
+    (nodes : Array ParseNode)
+    (id : Nat)
+    (node : ParseNode) : Bool :=
+  checkNodeCore grammar semanticKinds.size
+    (checkChildrenArray grammar semanticKinds nodes) id node
 
 def checkNodesFromArray
     (grammar : Grammar)
     (semanticKinds : Array Nat)
     (allNodes : Array ParseNode) : Nat → List ParseNode → Bool
-  | _, [] => true
-  | id, node :: rest =>
-      checkNodeArray grammar semanticKinds allNodes id node &&
-      checkNodesFromArray grammar semanticKinds allNodes (id + 1) rest
+  := checkNodesFromCore (checkNodeArray grammar semanticKinds allNodes)
 
 theorem checkNodesFromArray_append
     (grammar : Grammar) (semanticKinds : Array Nat)
@@ -175,13 +193,8 @@ theorem checkNodesFromArray_append
       (checkNodesFromArray grammar semanticKinds allNodes id left &&
         checkNodesFromArray grammar semanticKinds allNodes
           (id + left.length) right) := by
-  induction left generalizing id with
-  | nil => simp [checkNodesFromArray]
-  | cons node left inductionHypothesis =>
-      simp only [List.cons_append, checkNodesFromArray, List.length_cons]
-      rw [inductionHypothesis]
-      cases checkNodeArray grammar semanticKinds allNodes id node <;>
-        simp [Nat.add_comm, Nat.add_left_comm]
+  exact checkNodesFromCore_append (checkNodeArray grammar semanticKinds allNodes)
+    id left right
 
 def checkNodesFromFast
     (grammar : Grammar) (semanticKinds : List Nat)
@@ -196,8 +209,8 @@ theorem checkNodesFromFast_append
       (checkNodesFromFast grammar semanticKinds allNodes id left &&
         checkNodesFromFast grammar semanticKinds allNodes
           (id + left.length) right) := by
-  exact checkNodesFromArray_append grammar semanticKinds.toArray
-    allNodes.toArray id left right
+  exact checkNodesFromCore_append
+    (checkNodeArray grammar semanticKinds.toArray allNodes.toArray) id left right
 
 theorem advanceTerminalArray_eq
     (semanticKinds : List Nat) (position expected : Nat) :
@@ -228,19 +241,16 @@ theorem checkNodeArray_eq
     (id : Nat) (node : ParseNode) :
     checkNodeArray grammar semanticKinds.toArray nodes.toArray id node =
       checkNode grammar semanticKinds nodes id node := by
-  simp [checkNodeArray, checkNode, checkChildrenArray_eq]
+  simp [checkNodeArray, checkNode, checkNodeCore, checkChildrenArray_eq]
 
 theorem checkNodesFromFast_eq
     (grammar : Grammar) (semanticKinds : List Nat) (nodes : List ParseNode)
     (id : Nat) (remaining : List ParseNode) :
     checkNodesFromFast grammar semanticKinds nodes id remaining =
       checkNodesFrom grammar semanticKinds nodes id remaining := by
-  unfold checkNodesFromFast
-  induction remaining generalizing id with
-  | nil => rfl
-  | cons node rest inductionHypothesis =>
-      simp [checkNodesFromArray, checkNodesFrom, checkNodeArray_eq,
-        inductionHypothesis]
+  unfold checkNodesFromFast checkNodesFromArray checkNodesFrom
+  exact checkNodesFromCore_congr _ _
+    (fun id node => checkNodeArray_eq grammar semanticKinds nodes id node) id remaining
 
 /-! ## Checked-view parse checking
 
@@ -253,28 +263,9 @@ def checkChildrenView
     (artifact : Artifact)
     (view : ArtifactView artifact)
     (currentNode : Nat) : List Nat → List ParseChild → Nat → Option Nat
-  | [], [], position => some position
-  | symbol :: symbols, child :: children, position =>
-      if symbol < grammar.n_kinds then
-        match child with
-        | .token tokenId => do
-            if tokenId != position / 2 then none else
-            let next ← advanceTerminal artifact.semantic_token_kinds position symbol
-            checkChildrenView grammar artifact view currentNode symbols children next
-        | .node _ => none
-      else
-        let nonterminal := symbol - grammar.n_kinds
-        if nonterminal >= grammar.n_nonterminals then none else
-        match child with
-        | .token _ => none
-        | .node childId => do
-            if childId >= currentNode then none else
-            let childNode ← view.node? childId
-            if childNode.nonterminal != nonterminal ||
-                childNode.position_start != position then none else
-            checkChildrenView grammar artifact view currentNode
-              symbols children childNode.position_end
-  | _, _, _ => none
+  := checkChildrenCore grammar
+    (fun position expected => advanceTerminal artifact.semantic_token_kinds position expected)
+    view.node? currentNode
 
 def checkNodeView
     (grammar : Grammar)
@@ -282,23 +273,14 @@ def checkNodeView
     (view : ArtifactView artifact)
     (id : Nat)
     (node : ParseNode) : Bool :=
-  match grammar.production? node.production with
-  | none => false
-  | some production =>
-      node.nonterminal = production.lhs &&
-      node.position_start ≤ node.position_end &&
-      node.position_end ≤ artifact.semantic_token_kinds.length * 2 &&
-      checkChildrenView grammar artifact view id production.rhs
-        node.children node.position_start = some node.position_end
+  checkNodeCore grammar artifact.semantic_token_kinds.length
+    (checkChildrenView grammar artifact view) id node
 
 def checkNodesFromView
     (grammar : Grammar)
     (artifact : Artifact)
     (view : ArtifactView artifact) : Nat → List ParseNode → Bool
-  | _, [] => true
-  | id, node :: rest =>
-      checkNodeView grammar artifact view id node &&
-      checkNodesFromView grammar artifact view (id + 1) rest
+  := checkNodesFromCore (checkNodeView grammar artifact view)
 
 theorem checkNodesFromView_append
     (grammar : Grammar) (artifact : Artifact) (view : ArtifactView artifact)
@@ -306,13 +288,7 @@ theorem checkNodesFromView_append
     checkNodesFromView grammar artifact view id (left ++ right) =
       (checkNodesFromView grammar artifact view id left &&
         checkNodesFromView grammar artifact view (id + left.length) right) := by
-  induction left generalizing id with
-  | nil => simp [checkNodesFromView]
-  | cons node left inductionHypothesis =>
-      simp only [List.cons_append, checkNodesFromView, List.length_cons]
-      rw [inductionHypothesis]
-      cases checkNodeView grammar artifact view id node <;>
-        simp [Nat.add_comm, Nat.add_left_comm]
+  exact checkNodesFromCore_append (checkNodeView grammar artifact view) id left right
 
 theorem checkChildrenView_eq
     (grammar : Grammar) (artifact : Artifact) (view : ArtifactView artifact)
@@ -321,15 +297,11 @@ theorem checkChildrenView_eq
     checkChildrenView grammar artifact view currentNode symbols children position =
       checkChildren grammar artifact.semantic_token_kinds artifact.parse_nodes
         currentNode symbols children position := by
-  induction symbols generalizing children position with
-  | nil => cases children <;> rfl
-  | cons symbol symbols inductionHypothesis =>
-      cases children with
-      | nil => rfl
-      | cons child children =>
-          cases child <;>
-            simp [checkChildrenView, checkChildren, view.node?_eq,
-              inductionHypothesis]
+  unfold checkChildrenView checkChildren
+  have nodeLookup : view.node? = (fun index => artifact.parse_nodes[index]?) := by
+    funext index
+    exact view.node?_eq index
+  rw [nodeLookup]
 
 theorem checkNodeView_eq
     (grammar : Grammar) (artifact : Artifact) (view : ArtifactView artifact)
@@ -337,7 +309,12 @@ theorem checkNodeView_eq
     checkNodeView grammar artifact view id node =
       checkNode grammar artifact.semantic_token_kinds artifact.parse_nodes
         id node := by
-  simp [checkNodeView, checkNode, checkChildrenView_eq]
+  unfold checkNodeView checkNode
+  have childrenEq : checkChildrenView grammar artifact view =
+      checkChildren grammar artifact.semantic_token_kinds artifact.parse_nodes := by
+    funext currentNode symbols children position
+    exact checkChildrenView_eq grammar artifact view currentNode symbols children position
+  rw [childrenEq]
 
 theorem checkNodesFromView_eq
     (grammar : Grammar) (artifact : Artifact) (view : ArtifactView artifact)
@@ -345,11 +322,9 @@ theorem checkNodesFromView_eq
     checkNodesFromView grammar artifact view id remaining =
       checkNodesFrom grammar artifact.semantic_token_kinds artifact.parse_nodes
         id remaining := by
-  induction remaining generalizing id with
-  | nil => rfl
-  | cons node rest inductionHypothesis =>
-      simp [checkNodesFromView, checkNodesFrom, checkNodeView_eq,
-      inductionHypothesis]
+  unfold checkNodesFromView checkNodesFrom
+  exact checkNodesFromCore_congr _ _
+    (fun id node => checkNodeView_eq grammar artifact view id node) id remaining
 
 /-! ## Parse views with cached semantic-token lookup
 
@@ -384,59 +359,23 @@ theorem ParseArtifactView.semanticKindsSize_eq
 
 def advanceTerminalParseView (view : ParseArtifactView artifact)
     (position expected : Nat) : Option Nat := do
-  let code ← view.semanticKind? (position / 2)
-  if isPackedSemanticKind code then
-    let actual := if position % 2 = 0 then packedInnerKind code else packedOuterKind code
-    if actual = expected then some (position + 1) else none
-  else if position % 2 = 0 && code = expected then
-    some (position + 2)
-  else none
+  advanceTerminalCore view.semanticKind? position expected
 
 def checkChildrenParseView
     (grammar : Grammar) (artifact : Artifact)
     (view : ParseArtifactView artifact)
     (currentNode : Nat) : List Nat → List ParseChild → Nat → Option Nat
-  | [], [], position => some position
-  | symbol :: symbols, child :: children, position =>
-      if symbol < grammar.n_kinds then
-        match child with
-        | .token tokenId => do
-            if tokenId != position / 2 then none else
-            let next ← advanceTerminalParseView view position symbol
-            checkChildrenParseView grammar artifact view currentNode
-              symbols children next
-        | .node _ => none
-      else
-        let nonterminal := symbol - grammar.n_kinds
-        if nonterminal >= grammar.n_nonterminals then none else
-        match child with
-        | .token _ => none
-        | .node childId => do
-            if childId >= currentNode then none else
-            let childNode ← view.artifactView.node? childId
-            if childNode.nonterminal != nonterminal ||
-                childNode.position_start != position then none else
-            checkChildrenParseView grammar artifact view currentNode
-              symbols children childNode.position_end
-  | _, _, _ => none
+  := checkChildrenCore grammar (advanceTerminalParseView view)
+    view.artifactView.node? currentNode
 
 def checkNodeParseView (grammar : Grammar) (artifact : Artifact)
     (view : ParseArtifactView artifact) (id : Nat) (node : ParseNode) : Bool :=
-  match grammar.production? node.production with
-  | none => false
-  | some production =>
-      node.nonterminal = production.lhs &&
-      node.position_start ≤ node.position_end &&
-      node.position_end ≤ view.semanticKinds.size * 2 &&
-      checkChildrenParseView grammar artifact view id production.rhs
-        node.children node.position_start = some node.position_end
+  checkNodeCore grammar view.semanticKinds.size
+    (checkChildrenParseView grammar artifact view) id node
 
 def checkNodesFromParseView (grammar : Grammar) (artifact : Artifact)
     (view : ParseArtifactView artifact) : Nat → List ParseNode → Bool
-  | _, [] => true
-  | id, node :: rest =>
-      checkNodeParseView grammar artifact view id node &&
-      checkNodesFromParseView grammar artifact view (id + 1) rest
+  := checkNodesFromCore (checkNodeParseView grammar artifact view)
 
 theorem checkNodesFromParseView_append
     (grammar : Grammar) (artifact : Artifact) (view : ParseArtifactView artifact)
@@ -444,19 +383,14 @@ theorem checkNodesFromParseView_append
     checkNodesFromParseView grammar artifact view id (left ++ right) =
       (checkNodesFromParseView grammar artifact view id left &&
         checkNodesFromParseView grammar artifact view (id + left.length) right) := by
-  induction left generalizing id with
-  | nil => simp [checkNodesFromParseView]
-  | cons node left inductionHypothesis =>
-      simp only [List.cons_append, checkNodesFromParseView, List.length_cons]
-      rw [inductionHypothesis]
-      cases checkNodeParseView grammar artifact view id node <;>
-        simp [Nat.add_comm, Nat.add_left_comm]
+  exact checkNodesFromCore_append (checkNodeParseView grammar artifact view) id left right
 
 theorem advanceTerminalParseView_eq (view : ParseArtifactView artifact)
     (position expected : Nat) :
     advanceTerminalParseView view position expected =
       advanceTerminal artifact.semantic_token_kinds position expected := by
-  simp [advanceTerminalParseView, advanceTerminal, view.semanticKind?_eq]
+  simp [advanceTerminalParseView, advanceTerminal, advanceTerminalCore,
+    view.semanticKind?_eq]
 
 theorem checkChildrenParseView_eq
     (grammar : Grammar) (artifact : Artifact) (view : ParseArtifactView artifact)
@@ -465,32 +399,32 @@ theorem checkChildrenParseView_eq
     checkChildrenParseView grammar artifact view currentNode symbols children position =
       checkChildrenView grammar artifact view.artifactView currentNode
         symbols children position := by
-  induction symbols generalizing children position with
-  | nil => cases children <;> rfl
-  | cons symbol symbols inductionHypothesis =>
-      cases children with
-      | nil => rfl
-      | cons child children =>
-          cases child <;>
-            simp [checkChildrenParseView, checkChildrenView,
-              advanceTerminalParseView_eq, inductionHypothesis]
+  unfold checkChildrenParseView checkChildrenView
+  have terminalAdvance : advanceTerminalParseView view =
+      (fun position expected => advanceTerminal artifact.semantic_token_kinds position expected) := by
+    funext position expected
+    exact advanceTerminalParseView_eq view position expected
+  rw [terminalAdvance]
 
 theorem checkNodeParseView_eq (grammar : Grammar) (artifact : Artifact)
     (view : ParseArtifactView artifact) (id : Nat) (node : ParseNode) :
     checkNodeParseView grammar artifact view id node =
       checkNodeView grammar artifact view.artifactView id node := by
-  simp [checkNodeParseView, checkNodeView, view.semanticKindsSize_eq,
-    checkChildrenParseView_eq]
+  unfold checkNodeParseView checkNodeView
+  rw [view.semanticKindsSize_eq]
+  have childrenEq : checkChildrenParseView grammar artifact view =
+      checkChildrenView grammar artifact view.artifactView := by
+    funext currentNode symbols children position
+    exact checkChildrenParseView_eq grammar artifact view currentNode symbols children position
+  rw [childrenEq]
 
 theorem checkNodesFromParseView_eq (grammar : Grammar) (artifact : Artifact)
     (view : ParseArtifactView artifact) (id : Nat) (remaining : List ParseNode) :
     checkNodesFromParseView grammar artifact view id remaining =
       checkNodesFromView grammar artifact view.artifactView id remaining := by
-  induction remaining generalizing id with
-  | nil => rfl
-  | cons node rest inductionHypothesis =>
-      simp [checkNodesFromParseView, checkNodesFromView,
-        checkNodeParseView_eq, inductionHypothesis]
+  unfold checkNodesFromParseView checkNodesFromView
+  exact checkNodesFromCore_congr _ _
+    (fun id node => checkNodeParseView_eq grammar artifact view id node) id remaining
 
 def rootShapeValid
     (grammar : Grammar)
@@ -610,48 +544,48 @@ theorem checkChildren_sound
   | nil =>
       cases children with
       | nil =>
-          simp [checkChildren] at accepted
+          simp [checkChildren, checkChildrenCore] at accepted
           subst finish
           exact .empty start
-      | cons child rest => simp [checkChildren] at accepted
+      | cons child rest => simp [checkChildren, checkChildrenCore] at accepted
   | cons symbol symbols inductionHypothesis =>
       cases children with
-      | nil => simp [checkChildren] at accepted
+      | nil => simp [checkChildren, checkChildrenCore] at accepted
       | cons child children =>
           by_cases terminal : symbol < grammar.n_kinds
           · cases child with
-            | node childId => simp [checkChildren, terminal] at accepted
+            | node childId => simp [checkChildren, checkChildrenCore, terminal] at accepted
             | token tokenId =>
                 by_cases tokenPosition : tokenId = start / 2
                 · cases advanced : advanceTerminal semanticKinds start symbol with
-                  | none => simp [checkChildren, terminal, tokenPosition, advanced] at accepted
+                  | none => simp [checkChildren, checkChildrenCore, terminal, tokenPosition, advanced] at accepted
                   | some next =>
-                      simp [checkChildren, terminal, tokenPosition, advanced] at accepted
+                      simp [checkChildren, checkChildrenCore, terminal, tokenPosition, advanced] at accepted
                       exact .terminal terminal tokenPosition advanced
                         (inductionHypothesis accepted)
-                · simp [checkChildren, terminal, tokenPosition] at accepted
+                · simp [checkChildren, checkChildrenCore, terminal, tokenPosition] at accepted
           · have nonterminal : grammar.n_kinds ≤ symbol := Nat.le_of_not_gt terminal
             by_cases inRange : symbol - grammar.n_kinds < grammar.n_nonterminals
             · cases child with
-              | token tokenId => simp [checkChildren, terminal] at accepted
+              | token tokenId => simp [checkChildren, checkChildrenCore, terminal] at accepted
               | node childId =>
                   by_cases earlier : childId < currentNode
                   · cases lookup : nodes[childId]? with
-                    | none => simp [checkChildren, terminal, lookup] at accepted
+                    | none => simp [checkChildren, checkChildrenCore, terminal, lookup] at accepted
                     | some childNode =>
                         by_cases childKind :
                             childNode.nonterminal = symbol - grammar.n_kinds
                         · by_cases childStart : childNode.position_start = start
-                          · simp [checkChildren, terminal, inRange, earlier, lookup,
+                          · simp [checkChildren, checkChildrenCore, terminal, inRange, earlier, lookup,
                               childKind, childStart] at accepted
                             exact .nonterminal nonterminal inRange earlier lookup
                               childKind childStart (inductionHypothesis accepted)
-                          · simp [checkChildren, terminal, lookup,
+                          · simp [checkChildren, checkChildrenCore, terminal, lookup,
                               childKind, childStart] at accepted
-                        · simp [checkChildren, terminal, lookup,
+                        · simp [checkChildren, checkChildrenCore, terminal, lookup,
                             childKind] at accepted
-                  · simp [checkChildren, terminal, inRange, earlier] at accepted
-            · simp [checkChildren, terminal, inRange] at accepted
+                  · simp [checkChildren, checkChildrenCore, terminal, inRange, earlier] at accepted
+            · simp [checkChildren, checkChildrenCore, terminal, inRange] at accepted
 
 theorem checkNode_sound
     {grammar : Grammar}
@@ -661,7 +595,7 @@ theorem checkNode_sound
     {node : ParseNode}
     (accepted : checkNode grammar semanticKinds nodes id node = true) :
     NodeMatches grammar semanticKinds nodes id node := by
-  unfold checkNode at accepted
+  unfold checkNode checkNodeCore at accepted
   cases lookup : grammar.production? node.production with
   | none => simp [lookup] at accepted
   | some production =>
@@ -680,7 +614,7 @@ theorem checkNodesFrom_sound
   induction remaining generalizing id with
   | nil => exact .empty id
   | cons node rest inductionHypothesis =>
-      simp [checkNodesFrom] at accepted
+      simp [checkNodesFrom, checkNodesFromCore] at accepted
       exact .cons (checkNode_sound accepted.1) (inductionHypothesis accepted.2)
 
 theorem rootShapeValid_sound

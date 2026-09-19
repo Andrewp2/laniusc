@@ -37,13 +37,13 @@ theorem hexByte_body (byte : CheckedByte program) (digit : CheckedDigit program)
     omega
   have tooLarge : Evaluates program.core before (binary .greaterEqual (read 3) (number 256)) (.boolean false) before := by
     apply evaluatesEagerBinary (by decide) (by decide) (local_evaluates program.core valueRead)
-      (show Evaluates program.core before (number 256) (.signed .i32 256) before from ⟨1, rfl⟩)
+      (show Evaluates program.core before (number 256) (.signed .i32 256) before from evaluatesValue)
     simp [evalBinaryValue, evalSignedBinary]
     omega
   have high : Evaluates program.core before (digitArgument (read 3) (number 4))
       (.signed .i32 (value / 16 : Nat)) before := by
     have read := nibble_evaluates value 4 (by omega) (by decide) (local_evaluates program.core valueRead)
-      (show Evaluates program.core before (number 4) (.signed .i32 4) before from ⟨1, rfl⟩)
+      (show Evaluates program.core before (number 4) (.signed .i32 4) before from evaluatesValue)
     simpa only [digitArgument, Nat.reducePow, Nat.mod_eq_of_lt (show value / 16 < 16 by omega)] using read
   obtain ⟨first, firstRun, firstContents, firstEffect, firstHeap⟩ := append_digit byte digit position capacity (value / 16)
     (by omega) wellFormed capacityBound capacityFit backing (local_evaluates program.core sliceRead)
@@ -68,7 +68,7 @@ theorem hexByte_body (byte : CheckedByte program) (digit : CheckedDigit program)
   have low : Evaluates program.core scope (binary .bitAnd (read 3) (number 15))
       (.signed .i32 (value % 16 : Nat)) scope :=
     evaluatesEagerBinary (by decide) (by decide) (local_evaluates program.core valueAfter)
-      (show Evaluates program.core scope (number 15) (.signed .i32 15) scope from ⟨1, rfl⟩)
+      (show Evaluates program.core scope (number 15) (.signed .i32 15) scope from evaluatesValue)
       (mask_nibble program.core.target value (by omega))
   obtain ⟨completed, secondRun, contents, effect, heapFrame⟩ := append_digit byte digit (nextPosition capacity position)
     capacity (value % 16) (by omega) scopeWF (by simpa only [firstOutput, appended_length] using capacityBound)

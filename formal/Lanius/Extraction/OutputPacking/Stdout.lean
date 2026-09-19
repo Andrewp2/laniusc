@@ -127,18 +127,18 @@ theorem stdout_check_returns_zero
   rw [result] at called
   have comparison : Evaluates program before (.binary .notEqual call (.local length)) (.boolean false) after :=
     evaluatesEagerBinary (by decide) (by decide) called
-      ⟨1, evalLocal_of_local 0 program after length (.signed .i32 count) lengthRead⟩
+      (Lanius.Semantics.evaluatesLocal lengthRead)
       (by simp [evalBinaryValue, scalarEqual])
   exact executesSequence (executesIfFalse comparison (executesSkip program after))
     (executesSequenceReturned (executesReturnValue
-      (show Evaluates program after (.value (.signed .i32 0)) (.signed .i32 0) after from ⟨1, rfl⟩)))
+      (show Evaluates program after (.value (.signed .i32 0)) (.signed .i32 0) after from evaluatesValue)))
 
 theorem evaluates_output_size (program : Program) (state : State) (length : VarId) (count : Nat)
     (fits : count < unsignedModulus program.target .usize)
     (read : state.local? length = some (.signed .i32 count)) :
     Evaluates program state (.cast (.unsigned .usize) (.local length))
       (.unsigned .usize count) state := by
-  apply evaluatesCast ⟨1, evalLocal_of_local 0 program state length (.signed .i32 count) read⟩
+  apply evaluatesCast (Lanius.Semantics.evaluatesLocal read)
   have upper : (count : Int) < Int.ofNat (unsignedModulus program.target .usize) := Int.ofNat_lt.mpr fits
   simp only [evalScalarCast, wrapUnsignedInt,
     Int.emod_eq_of_lt (Int.natCast_nonneg count) upper, Int.toNat_natCast]
@@ -212,9 +212,9 @@ theorem stdout_arguments (program : Program) (state : State)
     Lanius.CallContracts.ArgumentsEvaluateTo program state [.local pointer, .local size]
       [.pointer address, .unsigned .usize count] state :=
   Lanius.CallContracts.ArgumentsEvaluateTo.cons
-    ⟨1, evalLocal_of_local 0 program state pointer (.pointer address) pointerRead⟩
+    (Lanius.Semantics.evaluatesLocal pointerRead)
     (Lanius.CallContracts.ArgumentsEvaluateTo.singleton
-      ⟨1, evalLocal_of_local 0 program state size (.unsigned .usize count) sizeRead⟩)
+      (Lanius.Semantics.evaluatesLocal sizeRead))
 
 theorem preserved_local {before after : State} {writes : CellSet} {localId : VarId} {value : Value}
     (wellFormed : StateWellFormed before) (effect : StoreEffect writes before after)

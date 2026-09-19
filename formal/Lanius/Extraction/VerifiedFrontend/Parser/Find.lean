@@ -1,5 +1,6 @@
 import Lanius.Extraction.VerifiedFrontend.Parser.Reads
 import Lanius.Extraction.VerifiedFrontend.Parser.Symbolic
+import Lanius.FunctionalViewCoreSimulation
 
 namespace Lanius.Extraction.ParserFind
 
@@ -9,6 +10,7 @@ open Lanius.Properties
 open Lanius.Separation
 open Lanius.CallContracts
 open Lanius.Compiler.Parser
+open Lanius.FunctionalView.Core
 
 def stateSeedValue (seed : StateSeed) : Value :=
   .structure 1 [
@@ -338,6 +340,39 @@ structure PreservedEvaluation
   invariant : RuntimeInvariant layout workspace values workspaceCell position
     seed after current remaining
 
+private def PreservedEvaluation.map_value
+    (result : PreservedEvaluation layout workspace values workspaceCell
+      position seed before current remaining expression value)
+    (valueEq : value = expected) :
+    PreservedEvaluation layout workspace values workspaceCell position seed
+      before current remaining expression expected := by
+  cases valueEq
+  exact result
+
+private def PreservedEvaluation.logicalAnd_continue
+    (left : PreservedEvaluation layout workspace values workspaceCell
+      position seed before current remaining leftExpression (.boolean true))
+    (right : PreservedEvaluation layout workspace values workspaceCell
+      position seed left.after current remaining rightExpression rightValue) :
+    PreservedEvaluation layout workspace values workspaceCell position seed
+      before current remaining
+      (.binary .logicalAnd leftExpression rightExpression) rightValue := by
+  exact ⟨right.after,
+    evaluatesLogicalAndTrue left.evaluation right.evaluation,
+    left.effect.trans_same right.effect,
+    right.invariant⟩
+
+private def PreservedEvaluation.logicalAnd_shortCircuit
+    (left : PreservedEvaluation layout workspace values workspaceCell
+      position seed before current remaining leftExpression (.boolean false))
+    (rightExpression : Expr) :
+    PreservedEvaluation layout workspace values workspaceCell position seed
+      before current remaining
+      (.binary .logicalAnd leftExpression rightExpression) (.boolean false) := by
+  exact ⟨left.after,
+    evaluatesLogicalAndFalse (right := rightExpression) left.evaluation,
+    left.effect, left.invariant⟩
+
 theorem PreservedEvaluation.currentCell_eq
     (result : PreservedEvaluation layout workspace values workspaceCell
       position seed before current remaining expression value)
@@ -391,10 +426,9 @@ theorem evaluatesParserFindLoopCondition_nonnegative
       (.boolean true) runtime := by
   have leftResult : Evaluates verifiedParserCore runtime (.local 4)
       (.signed .i32 (Int.ofNat current)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 4
-      (.signed .i32 (Int.ofNat current)) currentLocal⟩
+    Lanius.Semantics.evaluatesLocal currentLocal
   have rightResult : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 0)) (.signed .i32 0) runtime := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) runtime := Lanius.Semantics.evaluatesValue
   apply evaluatesEagerBinary (by decide) (by decide) leftResult rightResult
   simp [evalBinaryValue, evalSignedBinary]
 
@@ -405,10 +439,9 @@ theorem evaluatesParserFindLoopCondition_missing
       (.boolean false) runtime := by
   have leftResult : Evaluates verifiedParserCore runtime (.local 4)
       (.signed .i32 (-1)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 4
-      (.signed .i32 (-1)) currentLocal⟩
+    Lanius.Semantics.evaluatesLocal currentLocal
   have rightResult : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 0)) (.signed .i32 0) runtime := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) runtime := Lanius.Semantics.evaluatesValue
   apply evaluatesEagerBinary (by decide) (by decide) leftResult rightResult
   simp [evalBinaryValue, evalSignedBinary]
 
@@ -420,7 +453,7 @@ theorem executesParserFindReturnMissing (runtime : State) :
     Executes verifiedParserCore runtime parserFindReturnMissing
       (.returned (some (.signed .i32 (-1)))) runtime := by
   have one : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 1)) (.signed .i32 1) runtime := ⟨1, rfl⟩
+      (.value (.signed .i32 1)) (.signed .i32 1) runtime := Lanius.Semantics.evaluatesValue
   have negateResult : evalUnaryValue verifiedParserCore.target .negate
       (.signed .i32 1) = .ok (.signed .i32 (-1)) := by
     simp [evalUnaryValue, wrapSigned_i32_neg_one]
@@ -485,17 +518,14 @@ noncomputable def RuntimeInvariant.read_state_field
     (Int.ofNat field)
   have workspaceArgument : Evaluates verifiedParserCore runtime (.local 0)
       value runtime := by
-    refine ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 0 value ?_⟩
+    refine Lanius.Semantics.evaluatesLocal ?_
     simpa [value] using invariant.workspaceLocal
   have baseArgument : Evaluates verifiedParserCore runtime (.local 1)
       (.signed .i32 (Int.ofNat (stateBase layout.tokenCount))) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 1
-      (.signed .i32 (Int.ofNat (stateBase layout.tokenCount)))
-      invariant.baseLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.baseLocal
   have currentArgument : Evaluates verifiedParserCore runtime (.local 4)
       (.signed .i32 (Int.ofNat current)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 4
-      (.signed .i32 (Int.ofNat current)) invariant.currentLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.currentLocal
   have fieldArgument : Evaluates verifiedParserCore runtime
       (.constant constantId) (.signed .i32 (Int.ofNat field)) runtime := by
     refine ⟨2, ?_⟩
@@ -550,8 +580,7 @@ noncomputable def RuntimeInvariant.read_seed_key_field
       (.signed .i32 (stateKeyFieldValue seed.key field)) := by
   have localResult : Evaluates verifiedParserCore runtime (.local 3)
       (stateSeedValue seed) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 3
-      (stateSeedValue seed) invariant.seedLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.seedLocal
   have fieldResult : Evaluates verifiedParserCore runtime
       (.field (.local 3) field)
       (.signed .i32 (stateKeyFieldValue seed.key field)) runtime := by
@@ -616,31 +645,20 @@ noncomputable def RuntimeInvariant.read_key_match_of_equal
     (same : state.key = seed.key) :
     PreservedEvaluation layout workspace values workspaceCell position seed
       runtime current remaining parserFindKeyMatchExpr (.boolean true) := by
-  let productionRead := invariant.read_field_match state found 0 28
-    (by decide) verifiedParser_find_constants.2.1
-  have productionTrue : Evaluates verifiedParserCore runtime
-      (parserFindFieldMatch 28 0) (.boolean true) productionRead.after := by
-    simpa [same] using productionRead.evaluation
-  let dotRead := productionRead.invariant.read_field_match state found 1 29
-    (by decide) verifiedParser_find_constants.2.2.1
-  have dotTrue : Evaluates verifiedParserCore productionRead.after
-      (parserFindFieldMatch 29 1) (.boolean true) dotRead.after := by
-    simpa [same] using dotRead.evaluation
-  have firstTwo : Evaluates verifiedParserCore runtime
-      (.binary .logicalAnd (parserFindFieldMatch 28 0)
-        (parserFindFieldMatch 29 1)) (.boolean true) dotRead.after :=
-    evaluatesLogicalAndTrue productionTrue dotTrue
-  let originRead := dotRead.invariant.read_field_match state found 2 30
-    (by decide) verifiedParser_find_constants.2.2.2.1
-  have originTrue : Evaluates verifiedParserCore dotRead.after
-      (parserFindFieldMatch 30 2) (.boolean true) originRead.after := by
-    simpa [same] using originRead.evaluation
-  have complete := evaluatesLogicalAndTrue firstTwo originTrue
-  exact ⟨originRead.after, by
-    simpa [parserFindKeyMatchExpr] using complete,
-    (productionRead.effect.trans_same dotRead.effect).trans_same
-      originRead.effect,
-    originRead.invariant⟩
+  let productionRead := (invariant.read_field_match state found 0 28
+    (by decide) verifiedParser_find_constants.2.1).map_value
+      (expected := .boolean true) (by simp [same])
+  let dotRead := (productionRead.invariant.read_field_match state found 1 29
+    (by decide) verifiedParser_find_constants.2.2.1).map_value
+      (expected := .boolean true) (by simp [same])
+  let firstTwo := productionRead.logicalAnd_continue dotRead
+  let originRead := (dotRead.invariant.read_field_match state found 2 30
+    (by decide) verifiedParser_find_constants.2.2.2.1).map_value
+      (expected := .boolean true) (by simp [same])
+  let complete := firstTwo.logicalAnd_continue originRead
+  exact ⟨complete.after, by
+    simpa [parserFindKeyMatchExpr] using complete.evaluation,
+    complete.effect, complete.invariant⟩
 
 noncomputable def RuntimeInvariant.read_key_match_of_not_equal
     (invariant : RuntimeInvariant layout workspace values workspaceCell
@@ -656,97 +674,59 @@ noncomputable def RuntimeInvariant.read_key_match_of_not_equal
         intro originSame
         exact different (stateKey_eq_of_fields state.key seed.key
           productionSame dotSame originSame)
-      obtain ⟨productionAfter, productionEvaluation, productionEffect,
-          productionInvariant⟩ :=
-        invariant.read_field_match state found 0 28
-          (by decide) verifiedParser_find_constants.2.1
-      have productionTrue : Evaluates verifiedParserCore runtime
-          (parserFindFieldMatch 28 0) (.boolean true)
-          productionAfter := by
-        simpa [stateKeyFieldValue, EarleyState.key, StateSeed.key,
-          productionSame] using productionEvaluation
-      obtain ⟨dotAfter, dotEvaluation, dotEffect, dotInvariant⟩ :=
-        productionInvariant.read_field_match state found 1 29
-          (by decide) verifiedParser_find_constants.2.2.1
-      have dotTrue : Evaluates verifiedParserCore productionAfter
-          (parserFindFieldMatch 29 1) (.boolean true) dotAfter := by
-        simpa [stateKeyFieldValue, EarleyState.key, StateSeed.key, dotSame]
-          using dotEvaluation
-      have firstTwo : Evaluates verifiedParserCore runtime
-          (.binary .logicalAnd (parserFindFieldMatch 28 0)
-            (parserFindFieldMatch 29 1)) (.boolean true) dotAfter :=
-        evaluatesLogicalAndTrue productionTrue dotTrue
-      obtain ⟨originAfter, originEvaluation, originEffect,
-          originInvariant⟩ :=
-        dotInvariant.read_field_match state found 2 30
-          (by decide) verifiedParser_find_constants.2.2.2.1
-      have originComparison :
-          (stateKeyFieldValue state.key 2 ==
-            stateKeyFieldValue seed.key 2) = false := by
-        simp [stateKeyFieldValue, EarleyState.key, StateSeed.key,
-          Int.ofNat_inj, originDifferent]
-      have originFalse : Evaluates verifiedParserCore dotAfter
-          (parserFindFieldMatch 30 2) (.boolean false) originAfter := by
-        simpa only [originComparison] using originEvaluation
-      have complete := evaluatesLogicalAndTrue firstTwo originFalse
-      exact ⟨originAfter, by
-        simpa [parserFindKeyMatchExpr] using complete,
-        (productionEffect.trans_same dotEffect).trans_same originEffect,
-        originInvariant⟩
-    · obtain ⟨productionAfter, productionEvaluation, productionEffect,
-          productionInvariant⟩ := invariant.read_field_match state found 0 28
-          (by decide) verifiedParser_find_constants.2.1
-      have productionTrue : Evaluates verifiedParserCore runtime
-          (parserFindFieldMatch 28 0) (.boolean true)
-          productionAfter := by
-        simpa [stateKeyFieldValue, EarleyState.key, StateSeed.key,
-          productionSame] using productionEvaluation
-      obtain ⟨dotAfter, dotEvaluation, dotEffect, dotInvariant⟩ :=
-        productionInvariant.read_field_match state found 1 29
-          (by decide) verifiedParser_find_constants.2.2.1
-      have dotComparison :
-          (stateKeyFieldValue state.key 1 ==
-            stateKeyFieldValue seed.key 1) = false := by
-        simp [stateKeyFieldValue, EarleyState.key, StateSeed.key,
-          Int.ofNat_inj, dotSame]
-      have dotFalse : Evaluates verifiedParserCore productionAfter
-          (parserFindFieldMatch 29 1) (.boolean false) dotAfter := by
-        simpa only [dotComparison] using dotEvaluation
-      have firstTwo : Evaluates verifiedParserCore runtime
-          (.binary .logicalAnd (parserFindFieldMatch 28 0)
-            (parserFindFieldMatch 29 1)) (.boolean false) dotAfter :=
-        evaluatesLogicalAndTrue productionTrue dotFalse
-      have complete : Evaluates verifiedParserCore runtime
-          parserFindKeyMatchExpr (.boolean false) dotAfter := by
-        simpa [parserFindKeyMatchExpr] using
-          (evaluatesLogicalAndFalse
-            (right := parserFindFieldMatch 30 2) firstTwo)
-      exact ⟨dotAfter, complete, productionEffect.trans_same dotEffect,
-        dotInvariant⟩
-  · obtain ⟨productionAfter, productionEvaluation, productionEffect,
-        productionInvariant⟩ := invariant.read_field_match state found 0 28
-        (by decide) verifiedParser_find_constants.2.1
-    have productionComparison :
-        (stateKeyFieldValue state.key 0 ==
-          stateKeyFieldValue seed.key 0) = false := by
-      simp [stateKeyFieldValue, EarleyState.key, StateSeed.key,
-        Int.ofNat_inj, productionSame]
-    have productionFalse : Evaluates verifiedParserCore runtime
-        (parserFindFieldMatch 28 0) (.boolean false)
-        productionAfter := by
-      simpa only [productionComparison] using productionEvaluation
-    have firstTwo : Evaluates verifiedParserCore runtime
-        (.binary .logicalAnd (parserFindFieldMatch 28 0)
-          (parserFindFieldMatch 29 1)) (.boolean false)
-        productionAfter :=
-      evaluatesLogicalAndFalse productionFalse
-    have complete : Evaluates verifiedParserCore runtime
-        parserFindKeyMatchExpr (.boolean false) productionAfter := by
-      simpa [parserFindKeyMatchExpr] using
-        (evaluatesLogicalAndFalse
-          (right := parserFindFieldMatch 30 2) firstTwo)
-    exact ⟨productionAfter, complete, productionEffect,
-      productionInvariant⟩
+      let productionRead :=
+        (invariant.read_field_match state found 0 28
+          (by decide) verifiedParser_find_constants.2.1).map_value
+          (expected := .boolean true) (by
+            simp [stateKeyFieldValue, EarleyState.key, StateSeed.key,
+              productionSame])
+      let dotRead :=
+        (productionRead.invariant.read_field_match state found 1 29
+          (by decide) verifiedParser_find_constants.2.2.1).map_value
+          (expected := .boolean true) (by
+            simp [stateKeyFieldValue, EarleyState.key, StateSeed.key, dotSame])
+      let firstTwo := productionRead.logicalAnd_continue dotRead
+      let originRead :=
+        (dotRead.invariant.read_field_match state found 2 30
+          (by decide) verifiedParser_find_constants.2.2.2.1).map_value
+          (expected := .boolean false) (by
+            simp [stateKeyFieldValue, EarleyState.key, StateSeed.key,
+              Int.ofNat_inj, originDifferent])
+      let complete := firstTwo.logicalAnd_continue originRead
+      exact ⟨complete.after, by
+        simpa [parserFindKeyMatchExpr] using complete.evaluation,
+        complete.effect, complete.invariant⟩
+    · let productionRead :=
+          (invariant.read_field_match state found 0 28
+            (by decide) verifiedParser_find_constants.2.1).map_value
+            (expected := .boolean true) (by
+              simp [stateKeyFieldValue, EarleyState.key, StateSeed.key,
+                productionSame])
+      let dotRead :=
+          (productionRead.invariant.read_field_match state found 1 29
+            (by decide) verifiedParser_find_constants.2.2.1).map_value
+            (expected := .boolean false) (by
+              simp [stateKeyFieldValue, EarleyState.key, StateSeed.key,
+                Int.ofNat_inj, dotSame])
+      let firstTwo := productionRead.logicalAnd_continue dotRead
+      let complete := firstTwo.logicalAnd_shortCircuit
+        (parserFindFieldMatch 30 2)
+      exact ⟨complete.after, by
+        simpa [parserFindKeyMatchExpr] using complete.evaluation,
+        complete.effect, complete.invariant⟩
+  · let productionRead :=
+        (invariant.read_field_match state found 0 28
+          (by decide) verifiedParser_find_constants.2.1).map_value
+          (expected := .boolean false) (by
+            simp [stateKeyFieldValue, EarleyState.key, StateSeed.key,
+              Int.ofNat_inj, productionSame])
+    let firstTwo := productionRead.logicalAnd_shortCircuit
+      (parserFindFieldMatch 29 1)
+    let complete := firstTwo.logicalAnd_shortCircuit
+      (parserFindFieldMatch 30 2)
+    exact ⟨complete.after, by
+      simpa [parserFindKeyMatchExpr] using complete.evaluation,
+      complete.effect, complete.invariant⟩
 
 noncomputable def RuntimeInvariant.advance_to_next
     (invariant : RuntimeInvariant layout workspace values workspaceCell
@@ -863,8 +843,7 @@ noncomputable def RuntimeInvariant.execute_find_loop
   · let keyRead := invariant.read_key_match_of_equal state found same
     have currentResult : Evaluates verifiedParserCore keyRead.after (.local 4)
         (.signed .i32 (Int.ofNat current)) keyRead.after :=
-      ⟨1, evalLocal_of_local 1 verifiedParserCore keyRead.after 4
-        (.signed .i32 (Int.ofNat current)) keyRead.invariant.currentLocal⟩
+      Lanius.Semantics.evaluatesLocal keyRead.invariant.currentLocal
     have returnExecution : Executes verifiedParserCore keyRead.after
         parserFindReturnCurrent
         (.returned (some (.signed .i32 (Int.ofNat current))))
@@ -1169,14 +1148,13 @@ theorem parserFindStateCallee_entry
     }) :
     EntryInvariant layout workspace values workspaceCell position seed
       (parserFindStateCallee caller values workspaceCell layout position seed) := by
-  let value := workspaceValue values workspaceCell
-  let base := Int.ofNat (stateBase layout.tokenCount)
-  let sourcePosition := Int.ofNat position
-  let seedValue := stateSeedValue seed
-  let bindings : List (VarId × Value) := [
-    (0, value), (1, .signed .i32 base),
-    (2, .signed .i32 sourcePosition), (3, seedValue)]
-  let callee := enterCall caller bindings
+  let environment : Lanius.FunctionalView.Env 4
+    | ⟨0, _⟩ => workspaceValue values workspaceCell
+    | ⟨1, _⟩ => .signed .i32 (Int.ofNat (stateBase layout.tokenCount))
+    | ⟨2, _⟩ => .signed .i32 (Int.ofNat position)
+    | ⟨3, _⟩ => stateSeedValue seed
+  let callee := enterCall caller
+    (parserFindStateBindings values workspaceCell layout position seed)
   have calleeWellFormed : StateWellFormed callee :=
     enterCall_preserves_wellFormed wellFormed
   have workspaceOld : workspaceCell < caller.nextCell :=
@@ -1186,43 +1164,34 @@ theorem parserFindStateCallee_entry
       id := workspaceCell
       value := some (.array (signedI32Values values))
     } := by
-    have preserved := (enterCall_effect caller bindings).oldCells
+    have preserved := (enterCall_effect caller
+      (parserFindStateBindings values workspaceCell layout position seed)).oldCells
       workspaceCell workspaceOld (by simp [CellSet.empty])
     exact preserved.trans backing
-  have local0 : callee.local? 0 = some value := by
-    simpa [callee, bindings] using
-      (enterCall_local_of_binding caller [] [
-          (1, .signed .i32 base), (2, .signed .i32 sourcePosition),
-          (3, seedValue)] 0 value wellFormed (by simp))
-  have local1 : callee.local? 1 = some (.signed .i32 base) := by
-    simpa [callee, bindings] using
-      (enterCall_local_of_binding caller [(0, value)] [
-          (2, .signed .i32 sourcePosition), (3, seedValue)]
-        1 (.signed .i32 base) wellFormed (by simp))
-  have local2 : callee.local? 2 =
-      some (.signed .i32 sourcePosition) := by
-    simpa [callee, bindings] using
-      (enterCall_local_of_binding caller [
-          (0, value), (1, .signed .i32 base)] [(3, seedValue)]
-        2 (.signed .i32 sourcePosition) wellFormed (by simp))
-  have local3 : callee.local? 3 = some seedValue := by
-    simpa [callee, bindings] using
-      (enterCall_local_of_binding caller [
-          (0, value), (1, .signed .i32 base),
-          (2, .signed .i32 sourcePosition)] []
-        3 seedValue wellFormed (by simp))
-  simpa [parserFindStateCallee, parserFindStateBindings, value, base,
-      sourcePosition, seedValue, bindings, callee] using
+  have locals := enterCall_parameterBindings_matches
+    (environment := environment) wellFormed
+  have bindingsEq : parserFindStateBindings values workspaceCell layout position seed =
+      parameterBindings environment := by
+    rfl
+  have localAt : ∀ index : Fin 4,
+      callee.local? index.val = some (environment index) := by
+    intro index
+    change (enterCall caller
+      (parserFindStateBindings values workspaceCell layout position seed)).local?
+      index.val = some (environment index)
+    rw [bindingsEq]
+    simpa [identityLayout] using locals index
+  simpa [parserFindStateCallee, parserFindStateBindings, environment, callee] using
     (show EntryInvariant layout workspace values workspaceCell position seed
         callee from {
       valuesLength := valuesLength
       encoded := encoded
       positionBound := positionBound
       wellFormed := calleeWellFormed
-      workspaceLocal := local0
-      baseLocal := local1
-      positionLocal := local2
-      seedLocal := local3
+      workspaceLocal := by simpa [environment] using localAt ⟨0, by decide⟩
+      baseLocal := by simpa [environment] using localAt ⟨1, by decide⟩
+      positionLocal := by simpa [environment] using localAt ⟨2, by decide⟩
+      seedLocal := by simpa [environment] using localAt ⟨3, by decide⟩
       backing := calleeBacking
     })
 

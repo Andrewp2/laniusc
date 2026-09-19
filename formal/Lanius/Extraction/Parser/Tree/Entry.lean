@@ -7,7 +7,7 @@ open Lanius.Compiler.Parser Lanius.Extraction.ParserTreeLayout
 
 private theorem local_read {id : Lanius.VarId} (found : before.local? id = some value) :
     Evaluates program before (.local id) value before :=
-  ⟨1, evalLocal_of_local 0 program before id value found⟩
+  Lanius.Semantics.evaluatesLocal found
 
 /-- Cursor identities come from actual allocation, never from a caller-owned
     private-local premise. All source and output coordinates stay unchanged. -/
@@ -144,8 +144,8 @@ theorem TreeRuntime.Entry.with_cursors {runtime : TreeRuntime}
       (.binary .add (.binary .add (.local 10) (.value (.signed .i32 4)))
         (.binary .multiply (.local 12) (.value (.signed .i32 3)))) wordsValue before := by
     apply evaluatesNatI32Add
-    · exact evaluatesNatI32Add (local_read entry.parentLocal) ⟨1, rfl⟩ (by omega)
-    · exact evaluatesNatI32Multiply (local_read entry.countLocal) ⟨1, rfl⟩ (by omega)
+    · exact evaluatesNatI32Add (local_read entry.parentLocal) Lanius.Semantics.evaluatesValue (by omega)
+    · exact evaluatesNatI32Multiply (local_read entry.countLocal) Lanius.Semantics.evaluatesValue (by omega)
     · omega
   have nodeLocal : wordState.local? 9 = some nodesValue :=
     (bindLocal_preserves_other_local (boundId := 13) (queriedId := 9) entry.wellFormed (by decide)).trans entry.nodeLocal
@@ -164,7 +164,7 @@ theorem TreeRuntime.Entry.with_cursors {runtime : TreeRuntime}
   refine ⟨restoreLocals before completed, ?_, satisfied, closed.narrow visible⟩
   have cursorScope := executesLetLocal (id := 15) (type := .scalar (.signed .i32))
     (afterInitializer := nodeState) (completed := completed) (show
-      Evaluates program.core nodeState (.value (.signed .i32 0)) (.signed .i32 0) nodeState from ⟨1, rfl⟩) executed
+      Evaluates program.core nodeState (.value (.signed .i32 0)) (.signed .i32 0) nodeState from Lanius.Semantics.evaluatesValue) executed
   have nodeScope := executesLetLocal (id := 14) (type := .scalar (.signed .i32))
     (afterInitializer := wordState) (completed := restoreLocals nodeState completed) (local_read nodeLocal) cursorScope
   have wordScope := executesLetLocal (id := 13) (type := .scalar (.signed .i32))

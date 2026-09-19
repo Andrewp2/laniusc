@@ -1,4 +1,5 @@
 import Lanius.Extraction.VerifiedFrontend.Parser.Reads
+import Lanius.FunctionalViewCoreCallFrame
 import Lanius.FunctionalViewCoreEffectfulStateful
 import Lanius.FunctionalViewCoreStatefulReification
 
@@ -112,27 +113,11 @@ theorem call_soundness :
         extractedParserChartWordCall_evaluates before afterArguments
           (toCoreExprs commandLayout callArguments) position field
           afterArgumentsWellFormed argumentsExecution
-    have callEffect : ModifiesOnly CellSet.empty afterArguments after := by
-      simpa [after] using
-        (parserChartWordCallState_effect
-          (state := afterArguments) (position := position) (field := field))
-    have afterWellFormed : StateWellFormed after := by
-      simpa [after] using
-        (parserChartWordCallState_well_formed
-          (state := afterArguments) (position := position) (field := field)
-          afterArgumentsWellFormed)
-    have afterRepresented : Representation commandLayout localCell beforeWorld
-        environment after := {
-      worldOwned := callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed (World.owns beforeWorld)
-        represented.worldOwned
-      localOwned := fun index => callEffect.empty_preserves_assertion
+    obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
+      represented.restoreCallLocals (calleeArity := 2)
         afterArgumentsWellFormed
-        (Assertion.localPointsTo (commandLayout index) (localCell index)
-          (some (environment index))) (represented.localOwned index)
-      localCellsInjective := represented.localCellsInjective
-      worldLocalsDisjoint := represented.worldLocalsDisjoint
-    }
+        (parserChartWordCallee_well_formed afterArgumentsWellFormed)
+        (by exact (ModifiesOnly.refl _).weaken CellSet.empty_subset)
     exact ⟨after, CellSet.union argumentWrites CellSet.empty, callExecution,
       afterWellFormed, afterRepresented, argumentsEffect.trans callEffect⟩
   · intro beforeWorld afterWorld function values value evaluated cell
@@ -231,28 +216,11 @@ theorem call_soundness :
         extractedParserStateWordCall_evaluates before afterArguments
           (toCoreExprs commandLayout callArguments) base stateId field
           afterArgumentsWellFormed argumentsExecution
-    have callEffect : ModifiesOnly CellSet.empty afterArguments after := by
-      simpa [after] using
-        (parserStateWordCallState_effect
-          (state := afterArguments) (base := base) (stateId := stateId)
-          (field := field))
-    have afterWellFormed : StateWellFormed after := by
-      simpa [after] using
-        (parserStateWordCallState_well_formed
-          (state := afterArguments) (base := base) (stateId := stateId)
-          (field := field) afterArgumentsWellFormed)
-    have afterRepresented : Representation commandLayout localCell beforeWorld
-        environment after := {
-      worldOwned := callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed (World.owns beforeWorld)
-        represented.worldOwned
-      localOwned := fun index => callEffect.empty_preserves_assertion
+    obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
+      represented.restoreCallLocals (calleeArity := 3)
         afterArgumentsWellFormed
-        (Assertion.localPointsTo (commandLayout index) (localCell index)
-          (some (environment index))) (represented.localOwned index)
-      localCellsInjective := represented.localCellsInjective
-      worldLocalsDisjoint := represented.worldLocalsDisjoint
-    }
+        (parserStateWordCallee_well_formed afterArgumentsWellFormed)
+        (by exact (ModifiesOnly.refl _).weaken CellSet.empty_subset)
     exact ⟨after, CellSet.union argumentWrites CellSet.empty, callExecution,
       afterWellFormed, afterRepresented, argumentsEffect.trans callEffect⟩
   · intro beforeWorld afterWorld function values value evaluated cell
@@ -343,72 +311,6 @@ theorem calls_success
       next => contradiction
     next => contradiction
   next => contradiction
-
-theorem call_soundness
-    (addressValue :
-      parserStateWordValue verifiedParserCore.target base stateId field =
-        Int.ofNat address) :
-    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
-      verifiedParserCore
-      (calls values workspaceCell base stateId field address addressBound) := by
-  constructor
-  · intro arity commandLayout localCell beforeWorld afterWorld environment
-      before afterArguments function callArguments values' value argumentWrites
-      afterArgumentsWellFormed represented argumentsExecution argumentsEffect
-      evaluated
-    obtain ⟨functionEq, argumentsEq, found, valueEq, worldEq⟩ :=
-      calls_success evaluated
-    subst function
-    subst values'
-    subst value
-    subst afterWorld
-    have backing := represented.worldOwned workspaceCell values found
-    let after := parserStateValueCallState afterArguments
-      (.slice parserI32Type workspaceCell [] 0 values.length)
-      base stateId field
-    have callExecution : Evaluates verifiedParserCore before
-        (.call extractedParserStateValueFunction.id
-          (toCoreExprs commandLayout callArguments))
-        (result values address addressBound) after := by
-      simpa [after, parserStateValueCallState, arguments, result] using
-        extractedParserStateValueCall_evaluates before afterArguments
-          (toCoreExprs commandLayout callArguments)
-          (.slice parserI32Type workspaceCell [] 0 values.length)
-          base stateId field values workspaceCell address addressBound
-          addressValue afterArgumentsWellFormed argumentsExecution rfl backing
-    have callEffect : ModifiesOnly CellSet.empty afterArguments after := by
-      simpa [after] using
-        (parserStateValueCallState_effect
-          (state := afterArguments)
-          (workspaceValue :=
-            .slice parserI32Type workspaceCell [] 0 values.length)
-          (base := base) (stateId := stateId) (field := field))
-    have afterWellFormed : StateWellFormed after := by
-      simpa [after] using
-        (parserStateValueCallState_well_formed
-          (state := afterArguments)
-          (workspaceValue :=
-            .slice parserI32Type workspaceCell [] 0 values.length)
-          (base := base) (stateId := stateId) (field := field)
-          afterArgumentsWellFormed)
-    have afterRepresented : Representation commandLayout localCell beforeWorld
-        environment after := {
-      worldOwned := callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed (World.owns beforeWorld)
-        represented.worldOwned
-      localOwned := fun index => callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed
-        (Assertion.localPointsTo (commandLayout index) (localCell index)
-          (some (environment index))) (represented.localOwned index)
-      localCellsInjective := represented.localCellsInjective
-      worldLocalsDisjoint := represented.worldLocalsDisjoint
-    }
-    exact ⟨after, CellSet.union argumentWrites CellSet.empty, callExecution,
-      afterWellFormed, afterRepresented, argumentsEffect.trans callEffect⟩
-  · intro beforeWorld afterWorld function callArguments value evaluated cell
-    exact congrArg (fun currentWorld =>
-      (currentWorld.i32Slice? cell).map List.length)
-      (calls_success evaluated).2.2.2.2
 
 private theorem evaluatesSignedI32SubsliceIndex
     (program : Program) (before afterBase afterIndex : State)
@@ -598,44 +500,41 @@ theorem genericCall_soundness :
       base stateId field
     have calleeWellFormed : StateWellFormed callee :=
       parserStateValueCallee_well_formed afterArgumentsWellFormed
-    have workspaceLocal : callee.local? 0 = some workspaceValue := by
-      simpa [callee, workspaceValue, parserStateValueCallee,
-        parserStateValueBindings] using
-        enterCall_local_of_binding afterArguments [] [
-          (1, .signed .i32 base), (2, .signed .i32 stateId),
-          (3, .signed .i32 field)] 0 workspaceValue
-          afterArgumentsWellFormed (by simp)
-    have baseLocal : callee.local? 1 = some (.signed .i32 base) := by
-      simpa [callee, workspaceValue, parserStateValueCallee,
-        parserStateValueBindings] using
-        enterCall_local_of_binding afterArguments [(0, workspaceValue)] [
-          (2, .signed .i32 stateId), (3, .signed .i32 field)]
-          1 (.signed .i32 base) afterArgumentsWellFormed (by simp)
-    have stateLocal : callee.local? 2 = some (.signed .i32 stateId) := by
-      simpa [callee, workspaceValue, parserStateValueCallee,
-        parserStateValueBindings] using
-        enterCall_local_of_binding afterArguments [
-          (0, workspaceValue), (1, .signed .i32 base)]
-          [(3, .signed .i32 field)] 2 (.signed .i32 stateId)
-          afterArgumentsWellFormed (by simp)
-    have fieldLocal : callee.local? 3 = some (.signed .i32 field) := by
-      simpa [callee, workspaceValue, parserStateValueCallee,
-        parserStateValueBindings] using
-        enterCall_local_of_binding afterArguments [
-          (0, workspaceValue), (1, .signed .i32 base),
-          (2, .signed .i32 stateId)] [] 3 (.signed .i32 field)
-          afterArgumentsWellFormed (by simp)
+    let calleeEnvironment : Lanius.FunctionalView.Env 4 := fun index =>
+      match index with
+      | ⟨0, _⟩ => workspaceValue
+      | ⟨1, _⟩ => .signed .i32 base
+      | ⟨2, _⟩ => .signed .i32 stateId
+      | ⟨3, _⟩ => .signed .i32 field
+    have bindingsEq : parserStateValueBindings workspaceValue base stateId field =
+        parameterBindings calleeEnvironment := by
+      simp [parserStateValueBindings, parameterBindings, calleeEnvironment,
+        List.finRange]
+      rfl
+    have calleeRepresented :
+        Representation identityLayout (callLocalCells afterArguments)
+          beforeWorld calleeEnvironment callee := by
+      change Representation identityLayout (callLocalCells afterArguments)
+        beforeWorld calleeEnvironment
+        (enterCall afterArguments
+          (parserStateValueBindings workspaceValue base stateId field))
+      rw [bindingsEq]
+      exact represented.enterCallParameters afterArgumentsWellFormed
+    have calleeMatches : EnvironmentMatches identityLayout calleeEnvironment
+        callee := calleeRepresented.environmentMatches
     have wordArguments : ArgumentsEvaluateTo verifiedParserCore callee
         [.local 1, .local 2, .local 3]
         [.signed .i32 base, .signed .i32 stateId, .signed .i32 field]
         callee :=
       ArgumentsEvaluateTo.cons
-        ⟨1, evalLocal_of_local 1 verifiedParserCore callee 1 _ baseLocal⟩
+        ⟨1, evalLocal_of_local 1 verifiedParserCore callee 1 _
+          (calleeMatches ⟨1, by decide⟩)⟩
         (ArgumentsEvaluateTo.cons
-          ⟨1, evalLocal_of_local 1 verifiedParserCore callee 2 _ stateLocal⟩
+          ⟨1, evalLocal_of_local 1 verifiedParserCore callee 2 _
+            (calleeMatches ⟨2, by decide⟩)⟩
           (ArgumentsEvaluateTo.singleton
             ⟨1, evalLocal_of_local 1 verifiedParserCore callee 3 _
-              fieldLocal⟩))
+              (calleeMatches ⟨3, by decide⟩)⟩))
     have wordCall : Evaluates verifiedParserCore callee
         (.call extractedParserStateWordFunction.id
           [.local 1, .local 2, .local 3])
@@ -645,18 +544,7 @@ theorem genericCall_soundness :
         wordArguments
       rw [addressValue] at result
       simpa [afterWord] using result
-    have argumentBacking := represented.worldOwned workspaceCell values found
-    have workspaceOld : workspaceCell < afterArguments.nextCell :=
-      StateWellFormed.cell_lt_next_of_entry afterArgumentsWellFormed
-        argumentBacking
-    have calleeBacking : callee.cellEntry? workspaceCell = some {
-        id := workspaceCell
-        value := some (.array (signedI32Values values))
-      } := by
-      have preserved := (enterCall_effect afterArguments
-        (parserStateValueBindings workspaceValue base stateId field)).oldCells
-          workspaceCell workspaceOld (by simp [CellSet.empty])
-      exact preserved.trans argumentBacking
+    have calleeBacking := calleeRepresented.worldOwned workspaceCell values found
     have calleeWorkspaceOld : workspaceCell < callee.nextCell :=
       StateWellFormed.cell_lt_next_of_entry calleeWellFormed calleeBacking
     have afterWordBacking : afterWord.cellEntry? workspaceCell = some {
@@ -681,48 +569,35 @@ theorem genericCall_soundness :
         workspaceCell start length address element addressBound backingBound
         valueFound
       · exact ⟨1, evalLocal_of_local 1 verifiedParserCore callee 0
-          workspaceValue workspaceLocal⟩
+          workspaceValue (calleeMatches ⟨0, by decide⟩)⟩
       · exact wordCall
       · exact afterWordBacking
     have callExecution : Evaluates verifiedParserCore before
         (.call extractedParserStateValueFunction.id
           (toCoreExprs commandLayout callArguments))
         (.signed .i32 element) after := by
-      have afterEq : after = restoreLocals afterArguments afterWord := by
-        rfl
       rw [extractedParserStateValueBody_eq] at bodyExecution
-      rw [afterEq]
-      apply evaluatesCallReturned argumentsExecution
-        verifiedParserCore_finds_stateValue
-      · rw [extractedParserStateValue_function_shape.2.1]
-        rfl
-      · exact extractedParserStateValue_function_shape.2.2.2.1
-      · simpa [callee, afterWord, workspaceValue,
-          parserStateValueCallee,
-          parserStateValueBindings] using bodyExecution
-    have callEffect : ModifiesOnly CellSet.empty afterArguments after := by
-      simpa [after] using
-        (parserStateValueCallState_effect
-          (state := afterArguments) (workspaceValue := workspaceValue)
-          (base := base) (stateId := stateId) (field := field))
-    have afterWellFormed : StateWellFormed after := by
-      simpa [after] using
-        (parserStateValueCallState_well_formed
-          (state := afterArguments) (workspaceValue := workspaceValue)
-          (base := base) (stateId := stateId) (field := field)
-          afterArgumentsWellFormed)
-    have afterRepresented : Representation commandLayout localCell beforeWorld
-        environment after := {
-      worldOwned := callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed (World.owns beforeWorld)
-        represented.worldOwned
-      localOwned := fun index => callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed
-        (Assertion.localPointsTo (commandLayout index) (localCell index)
-          (some (environment index))) (represented.localOwned index)
-      localCellsInjective := represented.localCellsInjective
-      worldLocalsDisjoint := represented.worldLocalsDisjoint
-    }
+      simpa [after, parserStateValueCallState, callee, afterWord,
+        workspaceValue, parserStateValueCallee, parserStateValueBindings] using
+        (evaluatesCallReturned argumentsExecution
+          verifiedParserCore_finds_stateValue
+          (by rw [extractedParserStateValue_function_shape.2.1]; rfl)
+          extractedParserStateValue_function_shape.2.2.2.1 bodyExecution)
+    have afterWordWellFormed : StateWellFormed afterWord := by
+      simpa [afterWord, parserStateWordCallState, parserStateWordCallee] using
+        parserStateWordCallState_well_formed
+          (state := callee) (base := base) (stateId := stateId)
+          (field := field) calleeWellFormed
+    obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
+      represented.restoreCallLocals (calleeArity := 4)
+        afterArgumentsWellFormed afterWordWellFormed (by
+          have nested := parserStateWordCallState_effect
+            (state := callee) (base := base) (stateId := stateId)
+            (field := field)
+          simpa [callee, workspaceValue, parserStateValueCallee,
+            parserStateValueBindings, afterWord, parserStateWordCallState,
+            parserStateWordCallee]
+            using nested.weaken CellSet.empty_subset)
     exact ⟨after, CellSet.union argumentWrites CellSet.empty, callExecution,
       afterWellFormed, afterRepresented, argumentsEffect.trans callEffect⟩
   · intro beforeWorld afterWorld function callArguments value evaluated cell
@@ -732,6 +607,42 @@ theorem genericCall_soundness :
       genericCalls_success evaluated
     exact congrArg (fun currentWorld : World =>
       (currentWorld.i32Slice? cell).map List.length) worldEq
+
+theorem call_soundness
+    (addressValue :
+      parserStateWordValue verifiedParserCore.target base stateId field =
+        Int.ofNat address) :
+    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
+      verifiedParserCore
+      (calls values workspaceCell base stateId field address addressBound) := by
+  constructor
+  · intro arity commandLayout localCell beforeWorld afterWorld environment
+      before afterArguments function callArguments values' value argumentWrites
+      afterArgumentsWellFormed represented argumentsExecution argumentsEffect
+      evaluated
+    obtain ⟨functionEq, argumentsEq, found, valueEq, worldEq⟩ :=
+      calls_success evaluated
+    subst function
+    subst values'
+    subst value
+    subst afterWorld
+    have valueFound :
+        ((values.drop 0).take values.length)[address]? =
+          some (values.get ⟨address, addressBound⟩) := by
+      simp [addressBound]
+    have genericEvaluated := genericCalls_at_valid
+      (world := beforeWorld) (cell := workspaceCell) (start := 0)
+      (length := values.length) (values := values) (base := base)
+      (stateId := stateId) (field := field) (address := address)
+      (value := values.get ⟨address, addressBound⟩)
+      addressValue addressBound found (by simp) valueFound
+    simpa [result] using
+      genericCall_soundness.call afterArgumentsWellFormed represented
+        argumentsExecution argumentsEffect genericEvaluated
+  · intro beforeWorld afterWorld function callArguments value evaluated cell
+    exact congrArg (fun currentWorld : World =>
+      (currentWorld.i32Slice? cell).map List.length)
+      (calls_success evaluated).2.2.2.2
 
 end StateValue
 

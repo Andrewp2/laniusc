@@ -19,12 +19,12 @@ theorem base_expression
   have bound : tokenCount ≤ 536870911 := tokenBound
   have tokenRead : Evaluates verifiedParserCore before (.local tokenCountId)
       (.signed .i32 (Int.ofNat tokenCount)) before :=
-    ⟨1, evalLocal_of_local 0 verifiedParserCore before tokenCountId _ tokenLocal⟩
+    Lanius.Semantics.evaluatesLocal tokenLocal
   have doubled : Evaluates verifiedParserCore before
       (.binary .multiply (.local tokenCountId) (.value (.signed .i32 2)))
       (.signed .i32 ((tokenCount : Int) * 2)) before := by
     apply evaluatesEagerBinary (by decide) (by decide) tokenRead
-      (show Evaluates verifiedParserCore before (.value (.signed .i32 2)) (.signed .i32 2) before from ⟨1, rfl⟩)
+      (show Evaluates verifiedParserCore before (.value (.signed .i32 2)) (.signed .i32 2) before from Lanius.Semantics.evaluatesValue)
     simp only [evalBinaryValue, evalSignedBinary]
     rw [wrapSigned_i32_of_nonnegative verifiedParserCore.target _
       (by change 0 ≤ (tokenCount : Int) * 2; omega)
@@ -34,7 +34,7 @@ theorem base_expression
       (.binary .add (.binary .multiply (.local tokenCountId) (.value (.signed .i32 2)))
         (.value (.signed .i32 1))) (.signed .i32 ((tokenCount : Int) * 2 + 1)) before := by
     apply evaluatesEagerBinary (by decide) (by decide) doubled
-      (show Evaluates verifiedParserCore before (.value (.signed .i32 1)) (.signed .i32 1) before from ⟨1, rfl⟩)
+      (show Evaluates verifiedParserCore before (.value (.signed .i32 1)) (.signed .i32 1) before from Lanius.Semantics.evaluatesValue)
     simp only [evalBinaryValue, evalSignedBinary]
     rw [wrapSigned_i32_of_nonnegative verifiedParserCore.target _ (by omega) (by omega)]
     rfl
@@ -93,7 +93,7 @@ theorem workspace_guard_false
       (.boolean false) before := by
   have localRead {localId : VarId} {value : Value} (found : before.local? localId = some value) :
       Evaluates verifiedParserCore before (.local localId) value before :=
-    ⟨1, evalLocal_of_local 0 verifiedParserCore before localId value found⟩
+    Lanius.Semantics.evaluatesLocal found
   have baseAccepted : Evaluates verifiedParserCore before
       (.binary .lessEqual (.local baseId) (.local capacityId)) (.boolean true) before := by
     apply evaluatesEagerBinary (by decide) (by decide) (localRead baseLocal) (localRead capacityLocal)

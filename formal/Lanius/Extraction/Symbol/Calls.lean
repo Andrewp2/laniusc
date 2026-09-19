@@ -1,6 +1,7 @@
 import Lanius.Extraction.Symbol.Functions
 import Lanius.Extraction.Symbol.Value
 import Lanius.FunctionalViewCoreFreshSimulation
+import Lanius.FunctionalViewCoreCallFrame
 
 namespace Lanius.Extraction.Symbol.Calls
 
@@ -88,39 +89,21 @@ private theorem accessorFramePreservingSoundness
         (.structure 3 fields) afterArgumentsWellFormed (by simp)
   have localEvaluation : Evaluates verifiedFrontendCore callee (.local 0)
       (.structure 3 fields) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedFrontendCore callee 0 _ localFound⟩
+    Lanius.Semantics.evaluatesLocal localFound
   have fieldEvaluation : Evaluates verifiedFrontendCore callee
       (.field (.local 0) field) result callee :=
     evaluatesStructureField localEvaluation fieldFound
   have bodyExecution : Executes verifiedFrontendCore callee
       (accessorBody field) (.returned (some result)) callee :=
     executesSequenceReturned (executesReturnValue fieldEvaluation)
-  have callExecution : Evaluates verifiedFrontendCore before
-      (.call function.id (toCoreExprs layout arguments)) result after := by
-    apply evaluatesCallReturned argumentsExecution functionFound
-    · rw [parameters]
-      rfl
-    · exact body
-    · simpa [callee, after, accessorBindings] using bodyExecution
-  have entered : StoreEffect CellSet.empty afterArguments callee := by
-    simpa [callee] using enterCall_effect afterArguments
-      (accessorBindings fields)
-  have callEffect : ModifiesOnly CellSet.empty afterArguments after := by
-    simpa [after] using entered.restoreLocals
-  have afterWellFormed : StateWellFormed after :=
-    entered.restoreLocals_wellFormed afterArgumentsWellFormed calleeWellFormed
-  have afterRepresented : Representation layout localCell beforeWorld
-      callerEnvironment after := {
-    worldOwned := callEffect.empty_preserves_assertion
-      afterArgumentsWellFormed (World.owns beforeWorld) represented.worldOwned
-    localOwned := fun index => callEffect.empty_preserves_assertion
-      afterArgumentsWellFormed
-      (Assertion.localPointsTo (layout index) (localCell index)
-        (some (callerEnvironment index))) (represented.localOwned index)
-    localCellsInjective := represented.localCellsInjective
-    worldLocalsDisjoint := represented.worldLocalsDisjoint }
-  exact ⟨after, callExecution, afterWellFormed, afterRepresented,
-    argumentsEffect.trans_same (callEffect.weaken CellSet.empty_subset)⟩
+  obtain ⟨after, callExecution, afterWellFormed, afterRepresented, callEffect⟩ :=
+    Representation.callReturned (represented := represented)
+    argumentsExecution argumentsEffect functionFound
+    (by rw [parameters]; rfl) body
+    (by simpa [callee, accessorBindings] using bodyExecution)
+    afterArgumentsWellFormed calleeWellFormed (ModifiesOnly.refl callee)
+    (by intro cell member; exact False.elim member)
+  exact ⟨after, callExecution, afterWellFormed, afterRepresented, callEffect⟩
 
 theorem tokenMatchKindFramePreservingCallSoundness :
     FramePreservingCallSoundness verifiedFrontendCore tokenMatchKindCalls := by
@@ -163,10 +146,10 @@ private theorem tokenMatchBody_executes (state : State)
         (.signed .i32 length) wellFormed (by simp)
   have kindEvaluation : Evaluates verifiedFrontendCore callee (.local 0)
       (.signed .i32 kind) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedFrontendCore callee 0 _ kindFound⟩
+    Lanius.Semantics.evaluatesLocal kindFound
   have lengthEvaluation : Evaluates verifiedFrontendCore callee (.local 1)
       (.signed .i32 length) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedFrontendCore callee 1 _ lengthFound⟩
+    Lanius.Semantics.evaluatesLocal lengthFound
   have fieldsEvaluation : ArgumentsEvaluateTo verifiedFrontendCore callee
       [.local 0, .local 1]
       [.signed .i32 kind, .signed .i32 length] callee :=
@@ -174,20 +157,6 @@ private theorem tokenMatchBody_executes (state : State)
       (ArgumentsEvaluateTo.singleton lengthEvaluation)
   exact executesSequenceReturned
     (executesReturnValue (evaluatesStructValue fieldsEvaluation))
-
-private theorem preserveRepresentation
-    (wellFormed : StateWellFormed before)
-    (represented : Representation layout localCell world environment before)
-    (effect : ModifiesOnly CellSet.empty before after) :
-    Representation layout localCell world environment after := {
-  worldOwned := effect.empty_preserves_assertion wellFormed
-    (World.owns world) represented.worldOwned
-  localOwned := fun index => effect.empty_preserves_assertion wellFormed
-    (Assertion.localPointsTo (layout index) (localCell index)
-      (some (environment index))) (represented.localOwned index)
-  localCellsInjective := represented.localCellsInjective
-  worldLocalsDisjoint := represented.worldLocalsDisjoint
-}
 
 theorem tokenMatchFramePreservingCallSoundness :
     FramePreservingCallSoundness verifiedFrontendCore tokenMatchCalls := by
@@ -205,7 +174,6 @@ theorem tokenMatchFramePreservingCallSoundness :
       subst function
       let callee := enterCall afterArguments
         (tokenMatchBindings kind length)
-      let after := restoreLocals afterArguments callee
       have calleeWellFormed : StateWellFormed callee := by
         simpa [callee] using enterCall_preserves_wellFormed
           (bindings := tokenMatchBindings kind length)
@@ -215,26 +183,15 @@ theorem tokenMatchFramePreservingCallSoundness :
         simpa [callee] using tokenMatchBody_executes
           afterArguments afterArgumentsWellFormed kind length
       dsimp [callee] at bodyExecution
-      have callExecution : Evaluates verifiedFrontendCore before
-          (.call tokenMatchFunction.id (toCoreExprs layout arguments))
-          (value kind length) after := by
-        apply evaluatesCallReturned argumentsExecution
-          verifiedFrontendCore_finds_tokenMatch
-        · rw [tokenMatch_shape.2.1]
-          rfl
-        · exact tokenMatch_shape.2.2.2
-        · exact bodyExecution
-      have entered : StoreEffect CellSet.empty afterArguments callee := by
-        simpa [callee] using enterCall_effect afterArguments
-          (tokenMatchBindings kind length)
-      have callEffect : ModifiesOnly CellSet.empty afterArguments after := by
-        simpa [after] using entered.restoreLocals
-      exact ⟨after, callExecution,
-        entered.restoreLocals_wellFormed afterArgumentsWellFormed
-          calleeWellFormed,
-        preserveRepresentation afterArgumentsWellFormed represented callEffect,
-        argumentsEffect.trans_same
-          (callEffect.weaken CellSet.empty_subset)⟩
+      obtain ⟨after, callExecution, afterWellFormed, afterRepresented,
+          callEffect⟩ :=
+        Representation.callReturned (represented := represented)
+          argumentsExecution argumentsEffect verifiedFrontendCore_finds_tokenMatch
+          (by rw [tokenMatch_shape.2.1]; rfl) tokenMatch_shape.2.2.2
+          bodyExecution afterArgumentsWellFormed calleeWellFormed
+          (ModifiesOnly.refl callee)
+          (by intro cell member; exact False.elim member)
+      exact ⟨after, callExecution, afterWellFormed, afterRepresented, callEffect⟩
     next => contradiction
   next => contradiction
 

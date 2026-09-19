@@ -77,10 +77,10 @@ theorem executes_kept_body (checked : Kind.Checked program kindId keywordId matc
   have outputReady := bindLocal_preserves_localPointsTo_of_ne withEnd 9 4
     (.signed .i32 (3 * output)) outputCell _ endStorage.wellFormed (by decide) outputAtEnd
   have outputResult : Evaluates program withEnd (.local 4) (.signed .i32 output) withEnd :=
-    ⟨1, evalLocal_of_local 0 program withEnd 4 _ (Assertion.localPointsTo_local _ _ _ _ outputAtEnd)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ outputAtEnd)
   have rowRead : Evaluates program withEnd (row (.local 4)) (.signed .i32 (3 * output)) withEnd := by
     have multiplied := evaluatesNatI32Multiply (rightValue := 3) outputResult
-      (show Evaluates program withEnd (literal 3) (.signed .i32 3) withEnd from ⟨1, rfl⟩)
+      (show Evaluates program withEnd (literal 3) (.signed .i32 3) withEnd from evaluatesValue)
       (by have := storage.recordsFit; omega)
     simpa [row, Int.ofNat_eq_natCast, Int.natCast_mul, Int.mul_comm] using multiplied
   have kindAtStart : withStart.local? 6 = some (.signed .i32 rawKind) :=

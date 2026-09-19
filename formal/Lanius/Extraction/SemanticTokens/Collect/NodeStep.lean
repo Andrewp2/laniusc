@@ -57,7 +57,7 @@ theorem node_step {memory : NodeMemory} {record : RecordVisit}
   obtain ⟨completed, childrenRun, nodeAfter, contents, childrenEffect⟩ := record_children_execute program symbols tokenTag stateTag
     found children fourthHeld.node (by have := memory.nodesFit; omega)
   have childScope := executesLetLocal (id := 17) (type := i32)
-    (show Evaluates program third (number 0) (.signed .i32 0) third from ⟨1, rfl⟩) childrenRun
+    (show Evaluates program third (number 0) (.signed .i32 0) third from evaluatesValue) childrenRun
   have guardedChildren := executesSequence (executesIfFalse (thenBranch := returned (negative 1)) countGuard (executesSkip _ _)) childScope
   have startScope := executesLetLocal (id := 16) (type := i32) startResult guardedChildren
   have countScope := executesLetLocal (id := 15) (type := i32) countResult startScope

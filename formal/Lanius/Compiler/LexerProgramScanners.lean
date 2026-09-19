@@ -1,8 +1,10 @@
 import Lanius.Compiler.LexerProgram
+import Lanius.CallContracts
 import Lanius.ExecutionRules
 import Lanius.Fuel
 import Lanius.FunctionalViewCoreStatefulSimulation
 import Lanius.Properties
+import Lanius.Separation
 
 namespace Lanius.Compiler.Lexer.Program
 
@@ -11,268 +13,18 @@ open Lanius.Core
 open Lanius.Semantics
 open Lanius.Fuel
 open Lanius.Properties
+open Lanius.Separation
+open Lanius.CallContracts
 
-structure FrameExtension (before after : State) : Prop where
-  locals : after.locals = before.locals
-  oldCells : ∀ cell, cell < before.nextCell →
-    after.cellEntry? cell = before.cellEntry? cell
-  nextCell : before.nextCell ≤ after.nextCell
-  heap : after.heap = before.heap
-  world : after.world = before.world
-  views : after.i32ArrayViews = before.i32ArrayViews
-
-structure StoreExtension (before after : State) : Prop where
-  oldCells : ∀ cell, cell < before.nextCell →
-    after.cellEntry? cell = before.cellEntry? cell
-  nextCell : before.nextCell ≤ after.nextCell
-  heap : after.heap = before.heap
-  world : after.world = before.world
-  views : after.i32ArrayViews = before.i32ArrayViews
-
-/-- Store identities survive, while their contents may change. This is the
-right contract for restoring caller locals after a callee mutates variables
-that were already allocated in the caller's frame. -/
-structure CellDomainExtension (before after : State) : Prop where
-  cells : ∀ entry, entry ∈ before.cells →
-    ∃ nextEntry, nextEntry ∈ after.cells ∧ nextEntry.id = entry.id
-
-theorem CellDomainExtension.refl (state : State) :
-    CellDomainExtension state state := by
-  exact ⟨fun entry member => ⟨entry, member, rfl⟩⟩
-
-theorem CellDomainExtension.trans
-    (first : CellDomainExtension before middle)
-    (second : CellDomainExtension middle after) :
-    CellDomainExtension before after := by
-  constructor
-  intro entry member
-  obtain ⟨middleEntry, middleMember, middleId⟩ := first.cells entry member
-  obtain ⟨afterEntry, afterMember, afterId⟩ :=
-    second.cells middleEntry middleMember
-  exact ⟨afterEntry, afterMember, afterId.trans middleId⟩
-
-theorem CellDomainExtension.restoreLocals
-    (extension : CellDomainExtension before completed) :
-    CellDomainExtension before (Lanius.Semantics.restoreLocals caller completed) := by
-  constructor
-  intro entry member
-  simpa [Lanius.Semantics.restoreLocals] using extension.cells entry member
-
-theorem bindLocal_domain_extends (state : State) (id : VarId) (value : Value) :
-    CellDomainExtension state (state.bindLocal id value) := by
-  constructor
-  intro entry member
-  exact ⟨entry, List.mem_append_left _ member, rfl⟩
-
-theorem bindLocals_preserves_well_formed
-    (state : State) (bindings : List (VarId × Value))
-    (wellFormed : StateWellFormed state) :
-    StateWellFormed (state.bindLocals bindings) := by
-  induction bindings generalizing state with
-  | nil => simpa [State.bindLocals]
-  | cons binding rest inductionHypothesis =>
-      simp only [State.bindLocals, List.foldl_cons]
-      exact inductionHypothesis (state := state.bindLocal binding.1 binding.2)
-        (bindLocal_preserves_well_formed state binding.1 binding.2 wellFormed)
-
-theorem bindLocals_nextCell
-    (state : State) (bindings : List (VarId × Value)) :
-    (state.bindLocals bindings).nextCell = state.nextCell + bindings.length := by
-  induction bindings generalizing state with
-  | nil => simp [State.bindLocals]
-  | cons binding rest inductionHypothesis =>
-      simp only [State.bindLocals, List.foldl_cons]
-      change ((state.bindLocal binding.1 binding.2).bindLocals rest).nextCell = _
-      rw [inductionHypothesis]
-      simp only [State.bindLocal, State.bindCell, List.length_cons]
-      rw [Nat.add_assoc]
-      exact congrArg (state.nextCell + ·) (Nat.add_comm 1 rest.length)
-
-theorem bindLocals_preserves_old_cell
-    (state : State) (bindings : List (VarId × Value)) (cell : CellId)
-    (old : cell < state.nextCell) :
-    (state.bindLocals bindings).cellEntry? cell = state.cellEntry? cell := by
-  induction bindings generalizing state with
-  | nil => simp [State.bindLocals]
-  | cons binding rest inductionHypothesis =>
-      simp only [State.bindLocals, List.foldl_cons]
-      change ((state.bindLocal binding.1 binding.2).bindLocals rest).cellEntry?
-        cell = _
-      rw [inductionHypothesis (state := state.bindLocal binding.1 binding.2)
-        (by simpa [State.bindLocal, State.bindCell] using Nat.lt_succ_of_lt old)]
-      exact bindCell_preserves_old_cell state binding.1 (some binding.2) cell old
-
-theorem bindLocals_append
-    (state : State) (first second : List (VarId × Value)) :
-    state.bindLocals (first ++ second) =
-      (state.bindLocals first).bindLocals second := by
-  simp [State.bindLocals, List.foldl_append]
-
-theorem bindLocals_finds_cell_after_prefix
-    (state : State) (preceding following : List (VarId × Value))
-    (id : VarId) (value : Value) (wellFormed : StateWellFormed state) :
-    (state.bindLocals (preceding ++ (id, value) :: following)).cellEntry?
-        (state.nextCell + preceding.length) =
-      some { id := state.nextCell + preceding.length, value := some value } := by
-  let before := state.bindLocals preceding
-  have beforeWellFormed := bindLocals_preserves_well_formed state preceding wellFormed
-  have beforeNext : before.nextCell = state.nextCell + preceding.length := by
-    exact bindLocals_nextCell state preceding
-  have fresh := bindCell_finds_fresh_cell before id (some value) beforeWellFormed
-  have old : before.nextCell < (before.bindLocal id value).nextCell := by
-    simp [State.bindLocal, State.bindCell]
-  have preserved := bindLocals_preserves_old_cell
-    (before.bindLocal id value) following before.nextCell old
-  rw [bindLocals_append]
-  change ((before.bindLocal id value).bindLocals following).cellEntry?
-      (state.nextCell + preceding.length) = _
-  rw [← beforeNext]
-  exact preserved.trans (by simpa [State.bindLocal] using fresh)
-
-theorem assignCell_domain_extends
-    (assigned : state.assignCell cell value = some next) :
-    CellDomainExtension state next := by
-  rw [assignCell_state assigned, replaceCell_eq_map]
-  constructor
-  intro entry member
-  let updated :=
-    if entry.id == cell then { entry with value := some value } else entry
-  refine ⟨updated, List.mem_map.2 ⟨entry, member, rfl⟩, ?_⟩
-  exact updatedCell_id entry cell value
-
-theorem CellDomainExtension.restoreLocals_well_formed
-    (extension : CellDomainExtension before completed)
-    (beforeWellFormed : StateWellFormed before)
-    (completedWellFormed : StateWellFormed completed) :
-    StateWellFormed (Lanius.Semantics.restoreLocals before completed) := by
-  constructor
-  · exact completedWellFormed.heapWellFormed
-  · exact completedWellFormed.cellIdsUnique
-  · exact completedWellFormed.cellIdsBelowNext
-  · intro binding member
-    obtain ⟨entry, entryMember, entryId⟩ :=
-      beforeWellFormed.localsReferenceCells binding member
-    obtain ⟨completedEntry, completedMember, completedId⟩ :=
-      extension.cells entry entryMember
-    exact ⟨completedEntry, completedMember, completedId.trans entryId⟩
-
-theorem FrameExtension.store
-    (extension : FrameExtension before after) : StoreExtension before after :=
-  ⟨extension.oldCells, extension.nextCell, extension.heap,
-    extension.world, extension.views⟩
-
-theorem StoreExtension.trans
-    (first : StoreExtension before middle)
-    (second : StoreExtension middle after) : StoreExtension before after := by
-  constructor
-  · intro cell old
-    rw [second.oldCells cell (Nat.lt_of_lt_of_le old first.nextCell),
-      first.oldCells cell old]
-  · exact Nat.le_trans first.nextCell second.nextCell
-  · exact second.heap.trans first.heap
-  · exact second.world.trans first.world
-  · exact second.views.trans first.views
-
-theorem StoreExtension.restoreLocals
-    (extension : StoreExtension before completed) :
-    FrameExtension before (restoreLocals before completed) := by
-  exact ⟨rfl, extension.oldCells, extension.nextCell, extension.heap,
-    extension.world, extension.views⟩
-
-theorem FrameExtension.refl (state : State) : FrameExtension state state := by
-  exact ⟨rfl, fun _ _ => rfl, Nat.le_refl _, rfl, rfl, rfl⟩
-
-theorem FrameExtension.trans
-    (first : FrameExtension before middle)
-    (second : FrameExtension middle after) :
-    FrameExtension before after := by
-  constructor
-  · exact second.locals.trans first.locals
-  · intro cell old
-    rw [second.oldCells cell (Nat.lt_of_lt_of_le old first.nextCell),
-      first.oldCells cell old]
-  · exact Nat.le_trans first.nextCell second.nextCell
-  · exact second.heap.trans first.heap
-  · exact second.world.trans first.world
-  · exact second.views.trans first.views
-
-theorem FrameExtension.preserves_local
-    {id : VarId} {value : Value}
-    (extension : FrameExtension before after)
-    (wellFormed : StateWellFormed before)
-    (found : before.local? id = some value) :
-    after.local? id = some value := by
-  rw [State.local?, Option.bind_eq_some_iff] at found
-  obtain ⟨cell, cellId, cellValue⟩ := found
-  rw [State.cell?, Option.bind_eq_some_iff] at cellValue
-  obtain ⟨entry, cellEntry, initialized⟩ := cellValue
-  have member : entry ∈ before.cells := List.mem_of_find?_eq_some cellEntry
-  have entryId : entry.id = cell := by
-    simpa using List.find?_some cellEntry
-  have old : cell < before.nextCell := by
-    rw [← entryId]
-    exact wellFormed.cellIdsBelowNext entry member
-  have afterCellId : after.cellId? id = some cell := by
-    unfold State.cellId?
-    rw [extension.locals]
-    exact cellId
-  rw [State.local?, afterCellId]
-  simp only [Option.bind_some, State.cell?]
-  rw [extension.oldCells cell old, cellEntry]
-  simp [initialized]
-
-theorem findCell_of_unique
-    (cells : List Cell)
-    (unique : ∀ left, left ∈ cells → ∀ right, right ∈ cells →
-      left.id = right.id → left = right)
-    (member : entry ∈ cells) :
-    cells.find? (fun cell => cell.id == entry.id) = some entry := by
-  induction cells with
-  | nil => simp at member
-  | cons head tail inductionHypothesis =>
-      by_cases sameId : head.id = entry.id
-      · have sameEntry := unique head (by simp) entry member sameId
-        subst head
-        simp
-      · have different : head ≠ entry := by
-          intro sameEntry
-          exact sameId (congrArg Cell.id sameEntry)
-        have differentRev : entry ≠ head := Ne.symm different
-        have tailMember : entry ∈ tail := by
-          simpa [differentRev] using member
-        have tailUnique : ∀ left, left ∈ tail → ∀ right, right ∈ tail →
-            left.id = right.id → left = right := by
-          intro left leftMember right rightMember
-          exact unique left (by simp [leftMember]) right (by simp [rightMember])
-        simp [sameId, inductionHypothesis tailUnique tailMember]
-
-theorem stateWellFormed_cellEntry_of_mem
-    (wellFormed : StateWellFormed state)
-    (member : entry ∈ state.cells) :
-    state.cellEntry? entry.id = some entry := by
-  exact findCell_of_unique state.cells wellFormed.cellIdsUnique member
-
-theorem StoreExtension.restoreLocals_well_formed
-    (extension : StoreExtension before completed)
-    (beforeWellFormed : StateWellFormed before)
-    (completedWellFormed : StateWellFormed completed) :
-    StateWellFormed (Lanius.Semantics.restoreLocals before completed) := by
-  constructor
-  · exact completedWellFormed.heapWellFormed
-  · exact completedWellFormed.cellIdsUnique
-  · exact completedWellFormed.cellIdsBelowNext
-  · intro binding member
-    obtain ⟨entry, entryMember, entryId⟩ :=
-      beforeWellFormed.localsReferenceCells binding member
-    have old : entry.id < before.nextCell :=
-      beforeWellFormed.cellIdsBelowNext entry entryMember
-    have beforeFound := stateWellFormed_cellEntry_of_mem
-      beforeWellFormed entryMember
-    have completedFound : completed.cellEntry? entry.id = some entry := by
-      rw [extension.oldCells entry.id old, beforeFound]
-    exact ⟨entry, List.mem_of_find?_eq_some completedFound, entryId⟩
+abbrev FrameExtension := ModifiesOnly CellSet.empty
+abbrev StoreExtension := StoreEffect CellSet.empty
 
 def clearLocals (state : State) : State := { state with locals := [] }
+
+theorem clearLocals_store_extends (state : State) :
+    StoreExtension state (clearLocals state) := by
+  exact ⟨fun _ _ _ => rfl, Nat.le_refl _, rfl, rfl, rfl,
+    ⟨fun entry member => ⟨entry, member, rfl⟩⟩⟩
 
 theorem clearLocals_well_formed (state : State) (wellFormed : StateWellFormed state) :
     StateWellFormed (clearLocals state) := by
@@ -289,16 +41,9 @@ def singleArgumentCallState (state : State) (value : Value) : State :=
 theorem singleArgumentCalleeState_store_extends
     (state : State) (value : Value) :
     StoreExtension state (singleArgumentCalleeState state value) := by
-  constructor
-  · intro cell old
-    simpa [singleArgumentCalleeState, clearLocals, State.bindLocal,
-      State.cellEntry?] using
-      bindCell_preserves_old_cell (clearLocals state) 0 (some value) cell old
-  · simp [singleArgumentCalleeState, clearLocals, State.bindLocal,
-      State.bindCell]
-  · rfl
-  · rfl
-  · rfl
+  exact (clearLocals_store_extends state).trans_same
+    (by simpa [singleArgumentCalleeState] using
+      bindLocal_effect (clearLocals state) 0 value)
 
 theorem singleArgumentCallState_extends
     (state : State) (value : Value) :
@@ -315,7 +60,7 @@ theorem singleArgumentCallState_well_formed
     (state : State) (wellFormed : StateWellFormed state) (value : Value) :
     StateWellFormed (singleArgumentCallState state value) :=
   (singleArgumentCalleeState_store_extends state value)
-    |>.restoreLocals_well_formed wellFormed
+    |>.restoreLocals_wellFormed wellFormed
       (singleArgumentCalleeState_well_formed state wellFormed value)
 
 theorem singleArgumentCalleeState_local
@@ -428,15 +173,9 @@ def unaryCalleeState (state : State) (byte : Byte) : State :=
 
 theorem unaryCalleeState_store_extends (state : State) (byte : Byte) :
     StoreExtension state (unaryCalleeState state byte) := by
-  constructor
-  · intro cell old
-    simpa [unaryCalleeState, clearLocals, State.bindLocal, State.cellEntry?]
-      using bindCell_preserves_old_cell (clearLocals state) 0
-        (some (.signed .i32 byte.val)) cell old
-  · simp [unaryCalleeState, clearLocals, State.bindLocal, State.bindCell]
-  · rfl
-  · rfl
-  · rfl
+  exact (clearLocals_store_extends state).trans_same
+    (by simpa [unaryCalleeState] using
+      (bindLocal_effect (clearLocals state) 0 (.signed .i32 byte.val)))
 
 theorem unaryCalleeState_local
     (state : State) (wellFormed : StateWellFormed state) (byte : Byte) :
@@ -513,19 +252,8 @@ def unaryCallState (state : State) (byte : Byte) : State :=
 theorem unaryCallState_extends
     (state : State) (byte : Byte) :
     FrameExtension state (unaryCallState state byte) := by
-  constructor
-  · rfl
-  · intro cell old
-    change (unaryCalleeState state byte).cellEntry? cell =
-      state.cellEntry? cell
-    simpa [unaryCalleeState, clearLocals, State.bindLocal, State.cellEntry?] using
-      bindCell_preserves_old_cell (clearLocals state) 0
-        (some (.signed .i32 byte.val)) cell old
-  · simp [unaryCallState, restoreLocals, unaryCalleeState, clearLocals,
-      State.bindLocal, State.bindCell]
-  · rfl
-  · rfl
-  · rfl
+  simpa [unaryCallState] using
+    (unaryCalleeState_store_extends state byte).restoreLocals
 
 theorem unaryCallState_well_formed
     (state : State) (wellFormed : StateWellFormed state) (byte : Byte) :
@@ -1150,7 +878,7 @@ theorem identifierContinueExpr_executes
   have afterStartWellFormed : StateWellFormed afterStart := by
     exact unaryCallState_well_formed outer outerWellFormed byte
   have afterStartLocal : afterStart.local? 0 = some (.signed .i32 byte.val) := by
-    exact (unaryCallState_extends outer byte).preserves_local
+    exact (unaryCallState_extends outer byte).empty_preserves_local
       outerWellFormed outerLocal
   have afterStartArgument := evalLocal_of_local 9 lexerProgram afterStart 0
     (.signed .i32 byte.val) afterStartLocal
@@ -1187,13 +915,14 @@ theorem identifierContinueBodyState_store_extends
   let afterStart := identifierContinueAfterStartState state byte
   have throughOuter := unaryCalleeState_store_extends state byte
   have throughStart : StoreExtension state afterStart := by
-    exact throughOuter.trans (unaryCallState_extends outer byte).store
+    exact throughOuter.trans_same
+      (unaryCallState_extends outer byte).toStoreEffect
   by_cases starts : isIdentifierStart byte = true
   · simpa [identifierContinueBodyState, starts, afterStart] using throughStart
   · have doesNotStart : isIdentifierStart byte = false :=
       Bool.eq_false_iff.mpr starts
-    have throughDigit := throughStart.trans
-      (unaryCallState_extends afterStart byte).store
+    have throughDigit := throughStart.trans_same
+      (unaryCallState_extends afterStart byte).toStoreEffect
     simpa [identifierContinueBodyState, doesNotStart, afterStart] using throughDigit
 
 theorem identifierContinueBodyState_well_formed
@@ -1228,7 +957,7 @@ theorem identifierContinueCallState_well_formed
     (state : State) (wellFormed : StateWellFormed state) (byte : Byte) :
     StateWellFormed (identifierContinueCallState state byte) := by
   exact (identifierContinueBodyState_store_extends state byte)
-    |>.restoreLocals_well_formed wellFormed
+    |>.restoreLocals_wellFormed wellFormed
       (identifierContinueBodyState_well_formed state wellFormed byte)
 
 theorem unaryBooleanFunctionCallWithBodyState_executes
@@ -1823,23 +1552,28 @@ theorem ScannerState.afterPredicateCall
   constructor
   · exact afterWellFormed
   · exact Nat.le_trans invariant.nextCell extension.nextCell
-  · exact extension.oldCells 0 cell0Old |>.trans invariant.sourceCell
+  · exact (extension.oldCells 0 cell0Old (by simp [CellSet.empty])).trans
+      invariant.sourceCell
   · unfold State.cellId?
     rw [extension.locals]
     exact invariant.sourceLocalId
-  · exact extension.oldCells 1 cell1Old |>.trans invariant.sourceLocalCell
+  · exact (extension.oldCells 1 cell1Old (by simp [CellSet.empty])).trans
+      invariant.sourceLocalCell
   · unfold State.cellId?
     rw [extension.locals]
     exact invariant.limitLocalId
-  · exact extension.oldCells 2 cell2Old |>.trans invariant.limitLocalCell
+  · exact (extension.oldCells 2 cell2Old (by simp [CellSet.empty])).trans
+      invariant.limitLocalCell
   · unfold State.cellId?
     rw [extension.locals]
     exact invariant.startLocalId
-  · exact extension.oldCells 3 cell3Old |>.trans invariant.startLocalCell
+  · exact (extension.oldCells 3 cell3Old (by simp [CellSet.empty])).trans
+      invariant.startLocalCell
   · unfold State.cellId?
     rw [extension.locals]
     exact invariant.cursorLocalId
-  · exact extension.oldCells 4 cell4Old |>.trans invariant.cursorLocalCell
+  · exact (extension.oldCells 4 cell4Old (by simp [CellSet.empty])).trans
+      invariant.cursorLocalCell
 
 def incrementedCursorState (state : State) (cursor : Nat) : State :=
   { state with
@@ -2842,20 +2576,12 @@ theorem scannerCall_executesBody
       Evaluates program (sourceState source)
         (scannerCall function source start) result finalState := by
   obtain ⟨bodyFinal, bodyExec⟩ := bodyExec
-  obtain ⟨bodyFuel, bodyResult⟩ := bodyExec
-  have argumentsBase :
-      evalExprs 4 program (sourceState source)
-        [sourceSlice source, i32Literal source.length, i32Literal start] =
-        .done
-          [.slice i32Type 0 [] 0 source.length,
-            .signed .i32 source.length, .signed .i32 start]
-          (sourceState source) := by
-    rfl
-  let fuel := max 4 bodyFuel
-  have argumentsAtFuel := evalExprs_done_at_larger_fuel
-    (Nat.le_max_left 4 bodyFuel) argumentsBase
-  have bodyAtFuel := execStmt_done_at_larger_fuel
-    (Nat.le_max_right 4 bodyFuel) bodyResult
+  have argumentsResult :
+      ArgumentsEvaluateTo program (sourceState source)
+        [sourceSlice source, i32Literal source.length, i32Literal start]
+        [.slice i32Type 0 [] 0 source.length,
+          .signed .i32 source.length, .signed .i32 start]
+        (sourceState source) := ⟨4, by rfl⟩
   have boundParameters :
       bindParameters function.parameters
         [.slice i32Type 0 [] 0 source.length,
@@ -2865,22 +2591,9 @@ theorem scannerCall_executesBody
             (1, .signed .i32 source.length), (2, .signed .i32 start)] := by
     rw [parameters]
     rfl
-  have callee :
-      ({ sourceState source with locals := [] }).bindLocals
-        [(0, .slice i32Type 0 [] 0 source.length),
-          (1, .signed .i32 source.length), (2, .signed .i32 start)] =
-        scannerParameterState source start := by
-    rfl
-  let finalState := restoreLocals (sourceState source) bodyFinal
-  refine ⟨finalState, fuel + 1, ?_⟩
-  unfold scannerCall
-  rw [evalExpr, argumentsAtFuel]
-  simp only
-  rw [functionFound]
-  simp only
-  rw [boundParameters, body]
-  simp only
-  rw [callee, bodyAtFuel]
+  have execution := evaluatesCallReturned argumentsResult functionFound
+    boundParameters body bodyExec
+  exact ⟨restoreLocals (sourceState source) bodyFinal, execution⟩
 
 theorem scannerFunction_executes
     (function : Function)
@@ -3560,7 +3273,7 @@ theorem quotedInitialStateFrom_invariant
       clearedWellFormed
   rw [initialEq]
   constructor
-  · exact bindLocals_preserves_well_formed cleared bindings clearedWellFormed
+  · exact bindLocals_preserves_wellFormed cleared bindings clearedWellFormed
   · rw [bindLocals_nextCell]
     simp [bindings, cleared, clearLocals]
   · omega
@@ -3834,7 +3547,7 @@ theorem QuotedStateAt.restoreLocals
     QuotedStateAt base (Lanius.Semantics.restoreLocals before completed)
       source start offset escaping delimiter := by
   constructor
-  · exact domain.restoreLocals_well_formed beforeInvariant.wellFormed
+  · exact domain.restoreLocals_wellFormed beforeInvariant.wellFormed
       completedInvariant.wellFormed
   · exact completedInvariant.nextCell
   · exact completedInvariant.offsetBound
@@ -3911,17 +3624,17 @@ theorem QuotedStateAt.execEscapedLoopBody
     simpa [quotedLoopBody, withByte, completed, next] using
       executesLetLocal (id := 6) (type := i32Type) initializerExec ifExec
   have byteDomain : CellDomainExtension state withByte := by
-    exact bindLocal_domain_extends state 6 (.signed .i32 byte.val)
+    exact bindLocal_domainExtension state 6 (.signed .i32 byte.val)
   have escapingAssigned :
       withByte.assignCell (base + 5) (.boolean false) = some withoutEscaping :=
     byteInvariant.assignEscaping false
   have escapingDomain : CellDomainExtension withByte withoutEscaping :=
-    assignCell_domain_extends escapingAssigned
+    assignCell_domainExtension escapingAssigned
   have offsetAssigned :
       withoutEscaping.assignCell (base + 4) (.signed .i32 (offset + 1)) = some completed :=
     withoutEscapingInvariant.assignOffset (offset + 1)
   have offsetDomain : CellDomainExtension withoutEscaping completed :=
-    assignCell_domain_extends offsetAssigned
+    assignCell_domainExtension offsetAssigned
   have completedDomain : CellDomainExtension state completed :=
     byteDomain.trans (escapingDomain.trans offsetDomain)
   have nextDomain : CellDomainExtension state next := by
@@ -4228,17 +3941,17 @@ theorem QuotedStateAt.execBeginEscapeLoopBody
     simpa [quotedLoopBody, withByte, completed, next] using
       executesLetLocal (id := 6) (type := i32Type) initializerExec branchExec
   have byteDomain : CellDomainExtension state withByte :=
-    bindLocal_domain_extends state 6 (.signed .i32 byte.val)
+    bindLocal_domainExtension state 6 (.signed .i32 byte.val)
   have escapingAssigned :
       withByte.assignCell (base + 5) (.boolean true) = some withEscaping :=
     byteInvariant.assignEscaping true
   have escapingDomain : CellDomainExtension withByte withEscaping :=
-    assignCell_domain_extends escapingAssigned
+    assignCell_domainExtension escapingAssigned
   have offsetAssigned :
       withEscaping.assignCell (base + 4) (.signed .i32 (offset + 1)) = some completed :=
     withEscapingInvariant.assignOffset (offset + 1)
   have offsetDomain : CellDomainExtension withEscaping completed :=
-    assignCell_domain_extends offsetAssigned
+    assignCell_domainExtension offsetAssigned
   have completedDomain : CellDomainExtension state completed :=
     byteDomain.trans (escapingDomain.trans offsetDomain)
   have nextDomain : CellDomainExtension state next :=
@@ -4344,12 +4057,12 @@ theorem QuotedStateAt.execOrdinaryLoopBody
     simpa [quotedLoopBody, withByte, completed, next] using
       executesLetLocal (id := 6) (type := i32Type) initializerExec branchExec
   have byteDomain : CellDomainExtension state withByte :=
-    bindLocal_domain_extends state 6 (.signed .i32 byte.val)
+    bindLocal_domainExtension state 6 (.signed .i32 byte.val)
   have offsetAssigned :
       withByte.assignCell (base + 4) (.signed .i32 (offset + 1)) = some completed :=
     byteInvariant.assignOffset (offset + 1)
   have offsetDomain : CellDomainExtension withByte completed :=
-    assignCell_domain_extends offsetAssigned
+    assignCell_domainExtension offsetAssigned
   have completedDomain : CellDomainExtension state completed :=
     byteDomain.trans offsetDomain
   have nextDomain : CellDomainExtension state next :=
@@ -4603,20 +4316,12 @@ theorem quotedCallFromScannerParameters_executes
   obtain ⟨bodyFinal, bodyExec⟩ := quotedScannerBody_executesFrom
     caller source start delimiter callerWellFormed callerSourceCell sourceBound
     startInBounds
-  obtain ⟨bodyFuel, bodyResult⟩ := bodyExec
-  have argumentsBase :
-      evalExprs 5 lexerProgram caller
-        [.local 0, .local 1, .local 2, i32Literal delimiter.val] =
-        .done
-          [.slice i32Type 0 [] 0 source.length,
-            .signed .i32 source.length, .signed .i32 start,
-            .signed .i32 delimiter.val] caller := by
-    rfl
-  let fuel := max 5 bodyFuel
-  have argumentsAtFuel := evalExprs_done_at_larger_fuel
-    (Nat.le_max_left 5 bodyFuel) argumentsBase
-  have bodyAtFuel := execStmt_done_at_larger_fuel
-    (Nat.le_max_right 5 bodyFuel) bodyResult
+  have argumentsResult :
+      ArgumentsEvaluateTo lexerProgram caller
+        [.local 0, .local 1, .local 2, i32Literal delimiter.val]
+        [.slice i32Type 0 [] 0 source.length,
+          .signed .i32 source.length, .signed .i32 start,
+          .signed .i32 delimiter.val] caller := ⟨5, by rfl⟩
   have boundParameters :
       bindParameters scanQuotedEndFunction.parameters
         [.slice i32Type 0 [] 0 source.length,
@@ -4626,21 +4331,9 @@ theorem quotedCallFromScannerParameters_executes
           [(0, .slice i32Type 0 [] 0 source.length),
             (1, .signed .i32 source.length), (2, .signed .i32 start),
             (3, .signed .i32 delimiter.val)] := by rfl
-  have callee :
-      ({ caller with locals := [] }).bindLocals
-        [(0, .slice i32Type 0 [] 0 source.length),
-          (1, .signed .i32 source.length), (2, .signed .i32 start),
-          (3, .signed .i32 delimiter.val)] =
-        quotedParameterStateFrom caller source start delimiter := by rfl
-  let finalState := restoreLocals caller bodyFinal
-  refine ⟨finalState, fuel + 1, ?_⟩
-  rw [evalExpr, argumentsAtFuel]
-  simp only
-  rw [lexerProgram_finds_scanQuotedEndFunction]
-  simp only
-  rw [boundParameters]
-  simp only [scanQuotedEndFunction]
-  rw [callee, bodyAtFuel]
+  have execution := evaluatesCallReturned argumentsResult
+    lexerProgram_finds_scanQuotedEndFunction boundParameters rfl bodyExec
+  exact ⟨restoreLocals caller bodyFinal, execution⟩
 
 theorem quotedWrapperBody_executes
     (source : List Byte) (start : Nat) (delimiter : Byte)
@@ -4671,19 +4364,12 @@ theorem quotedWrapperFunction_executes
         (scanEndValue (scanQuotedEnd source start delimiter)) finalState := by
   obtain ⟨bodyFinal, bodyExec⟩ :=
     quotedWrapperBody_executes source start delimiter sourceBound startInBounds
-  obtain ⟨bodyFuel, bodyResult⟩ := bodyExec
-  have argumentsBase :
-      evalExprs 4 lexerProgram (sourceState source)
-        [sourceSlice source, i32Literal source.length, i32Literal start] =
-        .done
-          [.slice i32Type 0 [] 0 source.length,
-            .signed .i32 source.length, .signed .i32 start]
-          (sourceState source) := by rfl
-  let fuel := max 4 bodyFuel
-  have argumentsAtFuel := evalExprs_done_at_larger_fuel
-    (Nat.le_max_left 4 bodyFuel) argumentsBase
-  have bodyAtFuel := execStmt_done_at_larger_fuel
-    (Nat.le_max_right 4 bodyFuel) bodyResult
+  have argumentsResult :
+      ArgumentsEvaluateTo lexerProgram (sourceState source)
+        [sourceSlice source, i32Literal source.length, i32Literal start]
+        [.slice i32Type 0 [] 0 source.length,
+          .signed .i32 source.length, .signed .i32 start]
+        (sourceState source) := ⟨4, by rfl⟩
   have boundParameters :
       bindParameters function.parameters
         [.slice i32Type 0 [] 0 source.length,
@@ -4693,21 +4379,10 @@ theorem quotedWrapperFunction_executes
             (1, .signed .i32 source.length), (2, .signed .i32 start)] := by
     rw [parameters]
     rfl
-  have callee :
-      ({ sourceState source with locals := [] }).bindLocals
-        [(0, .slice i32Type 0 [] 0 source.length),
-          (1, .signed .i32 source.length), (2, .signed .i32 start)] =
-        scannerParameterState source start := by rfl
-  let finalState := restoreLocals (sourceState source) bodyFinal
-  refine ⟨finalState, fuel + 1, ?_⟩
-  unfold scannerCall
-  rw [evalExpr, argumentsAtFuel]
-  simp only
-  rw [functionFound]
-  simp only
-  rw [boundParameters, body]
-  simp only
-  rw [callee, bodyAtFuel]
+  have execution := evaluatesCallReturned argumentsResult functionFound
+    boundParameters body bodyExec
+  exact ⟨restoreLocals (sourceState source) bodyFinal, by
+    simpa [scannerCall] using execution⟩
 
 def doubleQuoteByte : Byte := ⟨34, by decide⟩
 
@@ -4788,21 +4463,14 @@ theorem scanQuotedEndFunction_executes
         (scanEndValue (scanQuotedEnd source start delimiter)) finalState := by
   obtain ⟨bodyFinal, bodyExec⟩ :=
     quotedScannerBody_executes source start delimiter sourceBound startInBounds
-  obtain ⟨bodyFuel, bodyResult⟩ := bodyExec
-  have argumentsBase :
-      evalExprs 5 lexerProgram (sourceState source)
+  have argumentsResult :
+      ArgumentsEvaluateTo lexerProgram (sourceState source)
         [sourceSlice source, i32Literal source.length, i32Literal start,
-          i32Literal delimiter.val] =
-        .done
-          [.slice i32Type 0 [] 0 source.length,
-            .signed .i32 source.length, .signed .i32 start,
-            .signed .i32 delimiter.val]
-          (sourceState source) := by rfl
-  let fuel := max 5 bodyFuel
-  have argumentsAtFuel := evalExprs_done_at_larger_fuel
-    (Nat.le_max_left 5 bodyFuel) argumentsBase
-  have bodyAtFuel := execStmt_done_at_larger_fuel
-    (Nat.le_max_right 5 bodyFuel) bodyResult
+          i32Literal delimiter.val]
+        [.slice i32Type 0 [] 0 source.length,
+          .signed .i32 source.length, .signed .i32 start,
+          .signed .i32 delimiter.val]
+        (sourceState source) := ⟨5, by rfl⟩
   have boundParameters :
       bindParameters scanQuotedEndFunction.parameters
         [.slice i32Type 0 [] 0 source.length,
@@ -4812,22 +4480,10 @@ theorem scanQuotedEndFunction_executes
           [(0, .slice i32Type 0 [] 0 source.length),
             (1, .signed .i32 source.length), (2, .signed .i32 start),
             (3, .signed .i32 delimiter.val)] := by rfl
-  have callee :
-      ({ sourceState source with locals := [] }).bindLocals
-        [(0, .slice i32Type 0 [] 0 source.length),
-          (1, .signed .i32 source.length), (2, .signed .i32 start),
-          (3, .signed .i32 delimiter.val)] =
-        quotedParameterState source start delimiter := by rfl
-  let finalState := restoreLocals (sourceState source) bodyFinal
-  refine ⟨finalState, fuel + 1, ?_⟩
-  unfold quotedScannerCall
-  rw [evalExpr, argumentsAtFuel]
-  simp only
-  rw [lexerProgram_finds_scanQuotedEndFunction]
-  simp only
-  rw [boundParameters]
-  simp only [scanQuotedEndFunction]
-  rw [callee, bodyAtFuel]
+  have execution := evaluatesCallReturned argumentsResult
+    lexerProgram_finds_scanQuotedEndFunction boundParameters rfl bodyExec
+  exact ⟨restoreLocals (sourceState source) bodyFinal, by
+    simpa [quotedScannerCall] using execution⟩
 
 /-- Relational form of the represented scanner contract. This is the bridge
 from the independently stated first-error relation to execution of the actual

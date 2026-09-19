@@ -70,6 +70,36 @@ def StatementDerivation.append
   statements := left.statements ++ right.statements
 }
 
+def prependStatement (sourceNode : SurfaceNodeId) (scope : ScopeId)
+    (coreStatement coreContinuation : CoreStmt) (tail : StatementDerivation) :
+    StatementDerivation := {
+  tail with
+  statements := {
+    sourceNode
+    lexicalScope := scope
+    coreStatement := CoreDecode.statement coreStatement
+    coreContinuation := CoreDecode.statement coreContinuation
+  } :: tail.statements
+}
+
+def prependLocalStatement (unit functionDeclaration declaration : SurfaceNodeId)
+    (name : SpelledName) (scope : ScopeId) (bindingScope : List ScopeId)
+    (coreId : Nat) (coreType : CoreTy) (coreContinuation : CoreStmt)
+    (tail : StatementDerivation) : StatementDerivation := {
+  bindings := {
+    identity := localIdentity unit functionDeclaration declaration bindingScope name
+    coreId
+    type := CoreDecode.ty coreType
+    kind := .local
+  } :: tail.bindings
+  statements := {
+    sourceNode := declaration
+    lexicalScope := scope
+    coreStatement := CoreDecode.statement coreContinuation
+    coreContinuation := CoreDecode.statement coreContinuation
+  } :: tail.statements
+}
+
 mutual
   /-- Traverse the checked source statements and accepted Core body together.
       This is the single derivation point for both local bindings and the
@@ -83,15 +113,7 @@ mutual
           coreStatement@(⟨_, .expression _⟩) coreTail⟩) => do
         let tail ← deriveStatements? unit functionDeclaration graph scope
           sourceTail coreTail
-        pure {
-          tail with
-          statements := {
-            sourceNode
-            lexicalScope := scope
-            coreStatement := CoreDecode.statement coreStatement
-            coreContinuation := CoreDecode.statement coreContinuation
-          } :: tail.statements
-        }
+        pure (prependStatement sourceNode scope coreStatement coreContinuation tail)
     | ⟨declaration, _, .let_local name _ (some _)⟩ :: sourceTail,
         coreContinuation@(⟨_, .let_local coreId coreType _ coreBody⟩) => do
         let child := ScopeId.afterLocal declaration
@@ -99,21 +121,8 @@ mutual
         let bindingScope ← checkedScopePath? graph child
         let tail ← deriveStatements? unit functionDeclaration graph child
           sourceTail coreBody
-        pure ({
-          bindings := {
-            identity := localIdentity unit functionDeclaration declaration
-              bindingScope name
-            coreId
-            type := CoreDecode.ty coreType
-            kind := .local
-          } :: tail.bindings
-          statements := {
-            sourceNode := declaration
-            lexicalScope := scope
-            coreStatement := CoreDecode.statement coreContinuation
-            coreContinuation := CoreDecode.statement coreContinuation
-          } :: tail.statements
-        })
+        pure (prependLocalStatement unit functionDeclaration declaration name scope
+          bindingScope coreId coreType coreContinuation tail)
     | ⟨declaration, _, .let_local name _ none⟩ :: sourceTail,
         coreContinuation@(⟨_, .let_uninitialized coreId coreType coreBody⟩) => do
         let child := ScopeId.afterLocal declaration
@@ -121,35 +130,14 @@ mutual
         let bindingScope ← checkedScopePath? graph child
         let tail ← deriveStatements? unit functionDeclaration graph child
           sourceTail coreBody
-        pure ({
-          bindings := {
-            identity := localIdentity unit functionDeclaration declaration
-              bindingScope name
-            coreId
-            type := CoreDecode.ty coreType
-            kind := .local
-          } :: tail.bindings
-          statements := {
-            sourceNode := declaration
-            lexicalScope := scope
-            coreStatement := CoreDecode.statement coreContinuation
-            coreContinuation := CoreDecode.statement coreContinuation
-          } :: tail.statements
-        })
+        pure (prependLocalStatement unit functionDeclaration declaration name scope
+          bindingScope coreId coreType coreContinuation tail)
     | ⟨sourceNode, _, .return_value _⟩ :: sourceTail,
         coreContinuation@(⟨_, .sequence
           coreStatement@(⟨_, .return_value _⟩) coreTail⟩) => do
         let tail ← deriveStatements? unit functionDeclaration graph scope
           sourceTail coreTail
-        pure {
-          tail with
-          statements := {
-            sourceNode
-            lexicalScope := scope
-            coreStatement := CoreDecode.statement coreStatement
-            coreContinuation := CoreDecode.statement coreContinuation
-          } :: tail.statements
-        }
+        pure (prependStatement sourceNode scope coreStatement coreContinuation tail)
     | ⟨declaration, _, .if_then_else _ sourceThen sourceElse⟩ :: sourceTail,
         coreContinuation@(⟨_, .sequence
           coreStatement@(⟨_, .if_then_else _ coreThen coreElse⟩) coreTail⟩) => do
@@ -215,29 +203,13 @@ mutual
           coreStatement@(⟨_, .break_loop⟩) coreTail⟩) => do
         let tail ← deriveStatements? unit functionDeclaration graph scope
           sourceTail coreTail
-        pure {
-          tail with
-          statements := {
-            sourceNode
-            lexicalScope := scope
-            coreStatement := CoreDecode.statement coreStatement
-            coreContinuation := CoreDecode.statement coreContinuation
-          } :: tail.statements
-        }
+        pure (prependStatement sourceNode scope coreStatement coreContinuation tail)
     | ⟨sourceNode, _, .continue_loop⟩ :: sourceTail,
         coreContinuation@(⟨_, .sequence
           coreStatement@(⟨_, .continue_loop⟩) coreTail⟩) => do
         let tail ← deriveStatements? unit functionDeclaration graph scope
           sourceTail coreTail
-        pure {
-          tail with
-          statements := {
-            sourceNode
-            lexicalScope := scope
-            coreStatement := CoreDecode.statement coreStatement
-            coreContinuation := CoreDecode.statement coreContinuation
-          } :: tail.statements
-        }
+        pure (prependStatement sourceNode scope coreStatement coreContinuation tail)
     | _, _ => none
 end
 

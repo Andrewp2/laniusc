@@ -30,8 +30,8 @@ private theorem Step.guardTest (step : Step) (program : Program)
       (.binary .equal (.local step.pointer) (.value (.pointer null)))
       (.boolean (address == null)) before := by
   apply evaluatesEagerBinary (by decide) (by decide)
-    ⟨1, evalLocal_of_local 0 program _ _ _ read⟩
-    (show Evaluates program before (.value (.pointer null)) (.pointer null) before from ⟨1, rfl⟩)
+    (Lanius.Semantics.evaluatesLocal read)
+    (show Evaluates program before (.value (.pointer null)) (.pointer null) before from Lanius.Semantics.evaluatesValue)
   rfl
 
 theorem Step.initializes (step : Step)
@@ -74,9 +74,9 @@ theorem Step.initializes (step : Step)
       simpa only [State.bindLocal, State.bindCell, ← views] using member))
   have rightRun := evaluatesI32SliceFromRawParts
     (show Evaluates program bound (.local step.pointer) (.pointer address) bound from
-      ⟨1, evalLocal_of_local 0 program _ _ _ read⟩)
+      Lanius.Semantics.evaluatesLocal read)
     (show Evaluates program bound (.value (.signed .i32 step.buffer.count))
-      (.signed .i32 step.buffer.count) bound from ⟨1, rfl⟩) mappedRun
+      (.signed .i32 step.buffer.count) bound from Lanius.Semantics.evaluatesValue) mappedRun
   obtain ⟨assigned, assignedRun, ownedResult, effect, assignedEffect, heapFrame, assignedNext⟩ :=
     evaluatesOwnedLocalSet owned rightRun mapEffect
       (mapEffect.preserves_localPointsTo boundValid.wellFormed owned (by simp [CellSet.empty]))
@@ -174,7 +174,7 @@ theorem Step.rejectsExhaustion (step : Step)
   have guarded : Executes program bound step.guard (.returned (some (.signed .i32 3))) bound :=
     executesIfTrue test (executesSequenceReturned
       (executesReturnValue (show Evaluates program bound (.value (.signed .i32 3))
-        (.signed .i32 3) bound from ⟨1, rfl⟩)))
+        (.signed .i32 3) bound from Lanius.Semantics.evaluatesValue)))
   have executed : Executes program before (step.statement function.id continuation)
       (.returned (some (.signed .i32 3))) (restoreLocals before bound) := by
     simpa only [restoreLocals, Step.statement] using

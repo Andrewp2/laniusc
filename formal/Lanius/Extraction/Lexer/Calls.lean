@@ -633,26 +633,6 @@ def callModel (source : List Byte) : CallModel :=
         function = failedScanFunction.id)
       ScanEndCalls.calls (scannerCallModel source))
 
-private theorem frameExtension_modifiesEmpty
-    (extension : Program.FrameExtension before after)
-    (wellFormed : StateWellFormed before) :
-    ModifiesOnly CellSet.empty before after := {
-  oldCells := fun cell old _ => extension.oldCells cell old
-  nextCell := extension.nextCell
-  heap := extension.heap
-  world := extension.world
-  views := extension.views
-  domain := by
-    constructor
-    intro entry member
-    have old := wellFormed.cellIdsBelowNext entry member
-    have foundBefore := Program.stateWellFormed_cellEntry_of_mem
-      wellFormed member
-    have foundAfter : after.cellEntry? entry.id = some entry := by
-      rw [extension.oldCells entry.id old, foundBefore]
-    exact ⟨entry, List.mem_of_find?_eq_some foundAfter, rfl⟩
-  locals := extension.locals }
-
 private theorem preserveRepresentation
     (wellFormed : StateWellFormed before)
     (represented : Representation layout localCell world environment before)
@@ -745,8 +725,7 @@ private theorem predicateFramePreservingSoundness
       closedWellFormed afterArguments afterArgumentsWellFormed byte
   have closed : Program.FrameExtension afterArguments after := by
     simpa [after, completed] using closedExtends afterArguments byte
-  have callEffect : ModifiesOnly CellSet.empty afterArguments after :=
-    frameExtension_modifiesEmpty closed afterArgumentsWellFormed
+  have callEffect : ModifiesOnly CellSet.empty afterArguments after := closed
   have afterRepresented : Representation layout localCell afterWorld
       environment after :=
     preserveRepresentation afterArgumentsWellFormed represented callEffect

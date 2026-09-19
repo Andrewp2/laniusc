@@ -84,7 +84,7 @@ theorem TreeRuntime.At.loop_outcome {runtime : TreeRuntime} (checked : CheckedVi
       CellEffect runtime.writes before after := by
   have localRead {id : Lanius.VarId} {value : Value} (found : before.local? id = some value) :
       Evaluates program.core before (.local id) value before :=
-    ⟨1, evalLocal_of_local 0 program.core before id value found⟩
+    Lanius.Semantics.evaluatesLocal found
   cases matched with
   | nil =>
     have equal : processed.length = runtime.parent.dot := by simpa using held.count

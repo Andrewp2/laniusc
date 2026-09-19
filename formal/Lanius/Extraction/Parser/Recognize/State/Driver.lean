@@ -749,7 +749,6 @@ private theorem
       (.signed .i32 (chartHeadValue workspace candidate.origin))
   change Lanius.FunctionalView.Env.Extends parentIntoStateEmbedding
     entry.functionalConfig.functionalRuntime.environment extended
-  intro index
   rw [smallEnvironment]
   have oldSlot (sourceIndex : Fin 17) :
       extended (Fin.castSucc (Fin.castSucc sourceIndex)) =
@@ -760,76 +759,46 @@ private theorem
       (Fin.castSucc sourceIndex)).trans
         (Lanius.FunctionalView.Env.push_before environment
           (.signed .i32 (Int.ofNat completedLhs)) sourceIndex)
-  have lhsSlot :
-      extended (Fin.castSucc (Fin.last 17)) =
-        .signed .i32 (Int.ofNat completedLhs) := by
-    exact (Lanius.FunctionalView.Env.push_before
-      (environment.push (.signed .i32 (Int.ofNat completedLhs)))
-      (.signed .i32 (chartHeadValue workspace candidate.origin))
-      (Fin.last 17)).trans
+  apply Lanius.FunctionalView.Env.Extends.ofFn
+  simp only [List.ofFn_succ, List.ofFn_zero]
+  change [extended ⟨0, by omega⟩, extended ⟨3, by omega⟩,
+    extended ⟨4, by omega⟩, extended ⟨5, by omega⟩,
+    extended ⟨10, by omega⟩, extended ⟨6, by omega⟩,
+    extended ⟨11, by omega⟩, extended ⟨12, by omega⟩,
+    extended ⟨17, by omega⟩, extended ⟨18, by omega⟩] = _
+  rw [show extended ⟨0, by omega⟩ = parserGrammarValue words grammarCell from
+      (oldSlot (⟨0, by omega⟩ : Fin 17)).trans meaning.grammarEq]
+  rw [show extended ⟨3, by omega⟩ = workspaceValue workspaceValues workspaceCell from
+      (oldSlot (⟨3, by omega⟩ : Fin 17)).trans meaning.workspaceEq]
+  rw [show extended ⟨4, by omega⟩ = .signed .i32
+      (Int.ofNat (stateBase workspaceLayout.tokenCount)) from
+      (oldSlot (⟨4, by omega⟩ : Fin 17)).trans meaning.stateBaseEq]
+  rw [show extended ⟨5, by omega⟩ = .signed .i32
+      (Int.ofNat workspaceLayout.capacity) from
+      (oldSlot (⟨5, by omega⟩ : Fin 17)).trans meaning.capacityEq]
+  rw [show extended ⟨10, by omega⟩ = .signed .i32
+      (Int.ofNat workspace.states.length) from
+      (oldSlot (⟨10, by omega⟩ : Fin 17)).trans meaning.stateCountEq]
+  rw [show extended ⟨6, by omega⟩ = .signed .i32
+      (Int.ofNat grammar.grammar.n_kinds) from
+      (oldSlot (⟨6, by omega⟩ : Fin 17)).trans meaning.kindCountEq]
+  rw [show extended ⟨11, by omega⟩ = .signed .i32 (Int.ofNat position) from
+      (oldSlot (⟨11, by omega⟩ : Fin 17)).trans meaning.positionEq]
+  rw [show extended ⟨12, by omega⟩ = .signed .i32 (Int.ofNat current) from
+      (oldSlot (⟨12, by omega⟩ : Fin 17)).trans meaning.currentEq]
+  rw [show extended ⟨17, by omega⟩ = .signed .i32 (Int.ofNat completedLhs) from
+      (Lanius.FunctionalView.Env.push_before
+        (environment.push (.signed .i32 (Int.ofNat completedLhs)))
+        (.signed .i32 (chartHeadValue workspace candidate.origin))
+        (Fin.last 17)).trans
         (Lanius.FunctionalView.Env.push_last environment
-          (.signed .i32 (Int.ofNat completedLhs)))
-  have headSlot :
-      extended (Fin.last 18) =
-        .signed .i32 (chartHeadValue workspace candidate.origin) := by
-    exact Lanius.FunctionalView.Env.push_last
-      (environment.push (.signed .i32 (Int.ofNat completedLhs)))
-      (.signed .i32 (chartHeadValue workspace candidate.origin))
-  have indexCases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-      index.val = 3 ∨ index.val = 4 ∨ index.val = 5 ∨
-      index.val = 6 ∨ index.val = 7 ∨ index.val = 8 ∨
-      index.val = 9 := by omega
-  rcases indexCases with zero | one | two | three | four | five | six |
-      seven | eight | nine
-  · have same : index = ⟨0, by omega⟩ := Fin.ext zero
-    rw [same]
-    change extended ⟨0, by omega⟩ = parserGrammarValue words grammarCell
-    exact (oldSlot (⟨0, by omega⟩ : Fin 17)).trans meaning.grammarEq
-  · have same : index = ⟨1, by omega⟩ := Fin.ext one
-    rw [same]
-    change extended ⟨3, by omega⟩ =
-      workspaceValue workspaceValues workspaceCell
-    exact (oldSlot (⟨3, by omega⟩ : Fin 17)).trans meaning.workspaceEq
-  · have same : index = ⟨2, by omega⟩ := Fin.ext two
-    rw [same]
-    change extended ⟨4, by omega⟩ =
-      .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount))
-    exact (oldSlot (⟨4, by omega⟩ : Fin 17)).trans meaning.stateBaseEq
-  · have same : index = ⟨3, by omega⟩ := Fin.ext three
-    rw [same]
-    change extended ⟨5, by omega⟩ =
-      .signed .i32 (Int.ofNat workspaceLayout.capacity)
-    exact (oldSlot (⟨5, by omega⟩ : Fin 17)).trans meaning.capacityEq
-  · have same : index = ⟨4, by omega⟩ := Fin.ext four
-    rw [same]
-    change extended ⟨10, by omega⟩ =
-      .signed .i32 (Int.ofNat workspace.states.length)
-    exact (oldSlot (⟨10, by omega⟩ : Fin 17)).trans meaning.stateCountEq
-  · have same : index = ⟨5, by omega⟩ := Fin.ext five
-    rw [same]
-    change extended ⟨6, by omega⟩ =
-      .signed .i32 (Int.ofNat grammar.grammar.n_kinds)
-    exact (oldSlot (⟨6, by omega⟩ : Fin 17)).trans meaning.kindCountEq
-  · have same : index = ⟨6, by omega⟩ := Fin.ext six
-    rw [same]
-    change extended ⟨11, by omega⟩ =
-      Value.signed .i32 (Int.ofNat position)
-    exact (oldSlot (⟨11, by omega⟩ : Fin 17)).trans meaning.positionEq
-  · have same : index = ⟨7, by omega⟩ := Fin.ext seven
-    rw [same]
-    change extended ⟨12, by omega⟩ =
-      Value.signed .i32 (Int.ofNat current)
-    exact (oldSlot (⟨12, by omega⟩ : Fin 17)).trans meaning.currentEq
-  · have same : index = ⟨8, by omega⟩ := Fin.ext eight
-    rw [same]
-    change extended ⟨17, by omega⟩ =
-      Value.signed .i32 (Int.ofNat completedLhs)
-    exact lhsSlot
-  · have same : index = ⟨9, by omega⟩ := Fin.ext nine
-    rw [same]
-    change extended ⟨18, by omega⟩ =
-      Value.signed .i32 (chartHeadValue workspace candidate.origin)
-    exact headSlot
+          (.signed .i32 (Int.ofNat completedLhs)))]
+  rw [show extended ⟨18, by omega⟩ =
+      .signed .i32 (chartHeadValue workspace candidate.origin) from
+      Lanius.FunctionalView.Env.push_last
+        (environment.push (.signed .i32 (Int.ofNat completedLhs)))
+        (.signed .i32 (chartHeadValue workspace candidate.origin))]
+  rfl
 
 /-- The completed-state branch extracted from `parser.lani::recognize`
     evaluates through the same FunctionalView parent-loop trace as its compact
@@ -1408,7 +1377,6 @@ private theorem
       entry.functionalConfig.functionalRuntime.environment
       (statePredictionEnvironmentOf environment symbol
         nonterminalBinding.nonterminal entry.first entry.count) := by
-  dsimp only
   let symbol := (grammar.productionAt
     ⟨candidate.production, productionBound⟩).rhs.get
       ⟨candidate.dot, dotBeforeEnd⟩
@@ -1422,7 +1390,6 @@ private theorem
     rfl
   change Lanius.FunctionalView.Env.Extends predictionIntoStateEmbedding
     entry.functionalConfig.functionalRuntime.environment extended
-  intro index
   rw [smallEnvironment]
   have oldSlot (sourceIndex : Fin 17) :
       extended
@@ -1449,57 +1416,37 @@ private theorem
   have indexSlot : extended ⟨21, by omega⟩ = .signed .i32 0 := by
     unfold extended statePredictionEnvironmentOf
     exact Lanius.FunctionalView.Env.push_last _ _
-  have indexCases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-      index.val = 3 ∨ index.val = 4 ∨ index.val = 5 ∨
-      index.val = 6 ∨ index.val = 7 ∨ index.val = 8 ∨
-      index.val = 9 := by omega
-  rcases indexCases with zero | one | two | three | four | five | six |
-      seven | eight | nine
-  · have same : index = ⟨0, by omega⟩ := Fin.ext zero
-    rw [same]
-    change extended ⟨0, by omega⟩ = parserGrammarValue words grammarCell
-    exact (oldSlot (⟨0, by omega⟩ : Fin 17)).trans meaning.grammarEq
-  · have same : index = ⟨1, by omega⟩ := Fin.ext one
-    rw [same]
-    change extended ⟨3, by omega⟩ =
-      workspaceValue workspaceValues workspaceCell
-    exact (oldSlot (⟨3, by omega⟩ : Fin 17)).trans meaning.workspaceEq
-  · have same : index = ⟨2, by omega⟩ := Fin.ext two
-    rw [same]
-    change extended ⟨4, by omega⟩ =
-      .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount))
-    exact (oldSlot (⟨4, by omega⟩ : Fin 17)).trans meaning.stateBaseEq
-  · have same : index = ⟨3, by omega⟩ := Fin.ext three
-    rw [same]
-    change extended ⟨5, by omega⟩ =
-      .signed .i32 (Int.ofNat workspaceLayout.capacity)
-    exact (oldSlot (⟨5, by omega⟩ : Fin 17)).trans meaning.capacityEq
-  · have same : index = ⟨4, by omega⟩ := Fin.ext four
-    rw [same]
-    change extended ⟨9, by omega⟩ =
-      .signed .i32 (Int.ofNat grammarLayout.lhsProductionsOffset)
-    exact (oldSlot (⟨9, by omega⟩ : Fin 17)).trans meaning.lhsProductionsEq
-  · have same : index = ⟨5, by omega⟩ := Fin.ext five
-    rw [same]
-    change extended ⟨10, by omega⟩ =
-      .signed .i32 (Int.ofNat workspace.states.length)
-    exact (oldSlot (⟨10, by omega⟩ : Fin 17)).trans meaning.stateCountEq
-  · have same : index = ⟨6, by omega⟩ := Fin.ext six
-    rw [same]
-    change extended ⟨11, by omega⟩ = .signed .i32 (Int.ofNat position)
-    exact (oldSlot (⟨11, by omega⟩ : Fin 17)).trans meaning.positionEq
-  · have same : index = ⟨7, by omega⟩ := Fin.ext seven
-    rw [same]
-    change extended ⟨19, by omega⟩ = .signed .i32 (Int.ofNat entry.first)
-    exact firstSlot
-  · have same : index = ⟨8, by omega⟩ := Fin.ext eight
-    rw [same]
-    change extended ⟨20, by omega⟩ = .signed .i32 (Int.ofNat entry.count)
-    exact countSlot
-  · have same : index = ⟨9, by omega⟩ := Fin.ext nine
-    rw [same]
-    change extended ⟨21, by omega⟩ = .signed .i32 0
-    exact indexSlot
+  apply Lanius.FunctionalView.Env.Extends.ofFn
+  simp only [List.ofFn_succ, List.ofFn_zero]
+  change [extended ⟨0, by omega⟩, extended ⟨3, by omega⟩,
+    extended ⟨4, by omega⟩, extended ⟨5, by omega⟩,
+    extended ⟨9, by omega⟩, extended ⟨10, by omega⟩,
+    extended ⟨11, by omega⟩, extended ⟨19, by omega⟩,
+    extended ⟨20, by omega⟩, extended ⟨21, by omega⟩] = _
+  rw [show extended ⟨0, by omega⟩ = parserGrammarValue words grammarCell from
+      (oldSlot (⟨0, by omega⟩ : Fin 17)).trans meaning.grammarEq]
+  rw [show extended ⟨3, by omega⟩ = workspaceValue workspaceValues workspaceCell from
+      (oldSlot (⟨3, by omega⟩ : Fin 17)).trans meaning.workspaceEq]
+  rw [show extended ⟨4, by omega⟩ = .signed .i32
+      (Int.ofNat (stateBase workspaceLayout.tokenCount)) from
+      (oldSlot (⟨4, by omega⟩ : Fin 17)).trans meaning.stateBaseEq]
+  rw [show extended ⟨5, by omega⟩ = .signed .i32
+      (Int.ofNat workspaceLayout.capacity) from
+      (oldSlot (⟨5, by omega⟩ : Fin 17)).trans meaning.capacityEq]
+  rw [show extended ⟨9, by omega⟩ = .signed .i32
+      (Int.ofNat grammarLayout.lhsProductionsOffset) from
+      (oldSlot (⟨9, by omega⟩ : Fin 17)).trans meaning.lhsProductionsEq]
+  rw [show extended ⟨10, by omega⟩ = .signed .i32
+      (Int.ofNat workspace.states.length) from
+      (oldSlot (⟨10, by omega⟩ : Fin 17)).trans meaning.stateCountEq]
+  rw [show extended ⟨11, by omega⟩ = .signed .i32 (Int.ofNat position) from
+      (oldSlot (⟨11, by omega⟩ : Fin 17)).trans meaning.positionEq]
+  rw [show extended ⟨19, by omega⟩ = .signed .i32 (Int.ofNat entry.first) from
+      firstSlot]
+  rw [show extended ⟨20, by omega⟩ = .signed .i32 (Int.ofNat entry.count) from
+      countSlot]
+  rw [show extended ⟨21, by omega⟩ = .signed .i32 0 from indexSlot]
+  rfl
 
 /-- Functional evaluation of the nonterminal-index subtraction in the exact
     source frame preceding prediction. -/
@@ -1726,6 +1673,56 @@ private theorem RecognizerStatePredictionEntry.functional_count
   rw [physical] at evaluated
   simpa [world, countEnvironment, symbol, entry.count_eq] using evaluated
 
+private noncomputable def
+    RecognizerStatePredictionEntry.functional_prediction_run
+    (entry : RecognizerStatePredictionEntry grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell cursorCell before position current remaining
+      beforeInvariant candidate found productionBound dotBeforeEnd bindings
+      symbolBinding isNonterminal nonterminalBinding)
+    (environment : Lanius.FunctionalView.Env 17)
+    (meaning : StateAfterBindingsEnvironment (tokenCapacity := tokens.length + bindings.invariant.chartCursor.recognizer.tokenStorage.unused.length) grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell position current candidate.production candidate.dot
+      candidate.origin
+      (grammar.productionAt ⟨candidate.production, productionBound⟩).rhs.length
+      environment) := by
+  let symbol := (grammar.productionAt
+    ⟨candidate.production, productionBound⟩).rhs.get
+      ⟨candidate.dot, dotBeforeEnd⟩
+  let world := stateWorld words tokens (unused := bindings.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
+    workspaceCell
+  let beforePrediction := statePredictionEnvironmentOf environment symbol
+    nonterminalBinding.nonterminal entry.first entry.count
+  have related : Lanius.FunctionalView.Env.Extends predictionIntoStateEmbedding
+      entry.functionalConfig.functionalRuntime.environment beforePrediction := by
+    simpa [beforePrediction, symbol] using
+      entry.functionalConfig_environment_extends environment meaning
+  let result := entry.functionalConfig.evaluates_in_state_machine beforePrediction
+    related
+  have predictionWorldEq :
+      entry.functionalConfig.functionalRuntime.world = world := by
+    change recognizerWorld words tokens
+      (unused := entry.functionalConfig.invariant.frame.recognizer.tokenStorage.unused)
+      entry.functionalConfig.workspaceValues grammarCell tokensCell
+      workspaceCell = _
+    rw [entry.functionalConfig_suffix, entry.functionalConfig_workspaceValues]
+    rfl
+  exact Lanius.FunctionalView.Stateful.Command.RenameResult.mk
+    (machine := stateStatefulMachine workspaceLayout grammar words tokens grammarCell
+      tokensCell)
+    (renamer := Lanius.FunctionalView.Core.Stateful.actionRenamer)
+    (embedding := predictionIntoStateEmbedding)
+    (beforeWorld := world) (beforeLarge := beforePrediction)
+    (command := predictionLoopCommand)
+    (completion := entry.functionalConfig.functional_run.completion)
+    (afterWorld := entry.functionalConfig.functional_run.after.world)
+    (afterSmall := entry.functionalConfig.functional_run.after.environment)
+    result.afterLarge (by
+      simpa [world, symbol, beforePrediction,
+        statePredictionEnvironmentOf, predictionWorldEq] using result.evaluated)
+    result.related result.preserved
+
 /-- If prediction exhausts capacity, the real extracted nonterminal command
     returns immediately with the prediction loop's completion. -/
 private theorem RecognizerStatePredictionEntry.functional_prediction_stop
@@ -1774,21 +1771,8 @@ private theorem RecognizerStatePredictionEntry.functional_prediction_stop
   have nonterminalResult := entry.functional_nonterminal environment meaning
   have firstResult := entry.functional_first environment meaning
   have countResult := entry.functional_count environment meaning
-  have related : Lanius.FunctionalView.Env.Extends predictionIntoStateEmbedding
-      entry.functionalConfig.functionalRuntime.environment beforePrediction := by
-    simpa [beforePrediction, symbol] using
-      entry.functionalConfig_environment_extends environment meaning
-  obtain ⟨afterPrediction, predictionResult, _, _⟩ :=
-    entry.functionalConfig.evaluates_in_state_machine beforePrediction related
-  have predictionWorldEq :
-      entry.functionalConfig.functionalRuntime.world = world := by
-    change recognizerWorld words tokens
-      (unused := entry.functionalConfig.invariant.frame.recognizer.tokenStorage.unused)
-      entry.functionalConfig.workspaceValues grammarCell tokensCell
-      workspaceCell = _
-    rw [entry.functionalConfig_suffix, entry.functionalConfig_workspaceValues]
-    rfl
-  rw [predictionWorldEq] at predictionResult
+  let prediction := entry.functional_prediction_run environment meaning
+  let afterPrediction := prediction.afterLarge
   have predictionResult' :
       Lanius.FunctionalView.Stateful.Command.Evaluates
         (stateTermMachine workspaceLayout grammar words tokens grammarCell
@@ -1803,8 +1787,8 @@ private theorem RecognizerStatePredictionEntry.functional_prediction_stop
         statePredictionLoopCommand
         entry.functionalConfig.functional_run.completion
         entry.functionalConfig.functional_run.after.world afterPrediction := by
-    simpa [beforePrediction, symbolEnvironment,
-      statePredictionEnvironmentOf] using predictionResult
+    simpa [world, symbol, beforePrediction, symbolEnvironment,
+      statePredictionEnvironmentOf] using prediction.evaluated
   refine ⟨afterPrediction, ?_⟩
   apply stateNonterminalCommand_evaluates_of_prediction_stop world
     entry.functionalConfig.functional_run.after.world symbolEnvironment
@@ -1866,6 +1850,13 @@ private theorem RecognizerStateNullableEntry.functionalConfig_suffix
     (.signed .i32 (chartHeadValue completed.workspace position))
   rw [← entry.boundEq, ← entry.functionalConfig_runtime] at boundBacking
   exact entry.functionalConfig.tokenStorage.unused_eq_of_backing boundBacking
+
+private theorem predictionIntoStateEmbedding_slotOutside :
+    ∀ target : Fin 22,
+      target.val ∉ [0, 3, 4, 5, 9, 10, 11, 19, 20, 21] →
+      ∀ sourceIndex : Fin 10,
+        predictionIntoStateEmbedding.slot sourceIndex ≠ target := by
+  decide +kernel
 
 /-- After prediction, the compact nullable environment is exactly the
     projection of the real source frame with its chart-head local appended.
@@ -1980,129 +1971,37 @@ private theorem
   let source14 : Fin 22 := ⟨14, by omega⟩
   let source15 : Fin 22 := ⟨15, by omega⟩
   let source18 : Fin 22 := ⟨18, by omega⟩
-  have outsideOf (target : Fin 22)
-      (targetOutside : target.val ≠ 0 ∧ target.val ≠ 3 ∧
-        target.val ≠ 4 ∧ target.val ≠ 5 ∧ target.val ≠ 9 ∧
-        target.val ≠ 10 ∧ target.val ≠ 11 ∧ target.val ≠ 19 ∧
-        target.val ≠ 20 ∧ target.val ≠ 21) :
-      ∀ sourceIndex, predictionIntoStateEmbedding.slot sourceIndex ≠
-        target := by
-    intro sourceIndex same
-    have sourceCases : sourceIndex.val = 0 ∨ sourceIndex.val = 1 ∨
-        sourceIndex.val = 2 ∨ sourceIndex.val = 3 ∨ sourceIndex.val = 4 ∨
-        sourceIndex.val = 5 ∨ sourceIndex.val = 6 ∨ sourceIndex.val = 7 ∨
-        sourceIndex.val = 8 ∨ sourceIndex.val = 9 := by omega
-    have sameVal := congrArg Fin.val same
-    rcases sourceCases with zero | one | two | three | four | five | six |
-        seven | eight | nine
-    · have sourceEq : sourceIndex = ⟨0, by omega⟩ := Fin.ext zero
-      rw [sourceEq] at sameVal
-      simp [predictionIntoStateEmbedding] at sameVal
-      exact targetOutside.1 sameVal.symm
-    · have sourceEq : sourceIndex = ⟨1, by omega⟩ := Fin.ext one
-      rw [sourceEq] at sameVal
-      simp [predictionIntoStateEmbedding] at sameVal
-      exact targetOutside.2.1 sameVal.symm
-    · have sourceEq : sourceIndex = ⟨2, by omega⟩ := Fin.ext two
-      rw [sourceEq] at sameVal
-      simp [predictionIntoStateEmbedding] at sameVal
-      exact targetOutside.2.2.1 sameVal.symm
-    · have sourceEq : sourceIndex = ⟨3, by omega⟩ := Fin.ext three
-      rw [sourceEq] at sameVal
-      change 5 = target.val at sameVal
-      exact targetOutside.2.2.2.1 sameVal.symm
-    · have sourceEq : sourceIndex = ⟨4, by omega⟩ := Fin.ext four
-      rw [sourceEq] at sameVal
-      change 9 = target.val at sameVal
-      exact targetOutside.2.2.2.2.1 sameVal.symm
-    · have sourceEq : sourceIndex = ⟨5, by omega⟩ := Fin.ext five
-      rw [sourceEq] at sameVal
-      change 10 = target.val at sameVal
-      exact targetOutside.2.2.2.2.2.1 sameVal.symm
-    · have sourceEq : sourceIndex = ⟨6, by omega⟩ := Fin.ext six
-      rw [sourceEq] at sameVal
-      change 11 = target.val at sameVal
-      exact targetOutside.2.2.2.2.2.2.1 sameVal.symm
-    · have sourceEq : sourceIndex = ⟨7, by omega⟩ := Fin.ext seven
-      rw [sourceEq] at sameVal
-      change 19 = target.val at sameVal
-      exact targetOutside.2.2.2.2.2.2.2.1 sameVal.symm
-    · have sourceEq : sourceIndex = ⟨8, by omega⟩ := Fin.ext eight
-      rw [sourceEq] at sameVal
-      change 20 = target.val at sameVal
-      exact targetOutside.2.2.2.2.2.2.2.2.1 sameVal.symm
-    · have sourceEq : sourceIndex = ⟨9, by omega⟩ := Fin.ext nine
-      rw [sourceEq] at sameVal
-      change 21 = target.val at sameVal
-      exact targetOutside.2.2.2.2.2.2.2.2.2 sameVal.symm
-  have outside12 : ∀ sourceIndex,
-      predictionIntoStateEmbedding.slot sourceIndex ≠ source12 := by
-    apply outsideOf
-    simp [source12]
-  have outside13 : ∀ sourceIndex,
-      predictionIntoStateEmbedding.slot sourceIndex ≠ source13 := by
-    apply outsideOf
-    simp [source13]
-  have outside14 : ∀ sourceIndex,
-      predictionIntoStateEmbedding.slot sourceIndex ≠ source14 := by
-    apply outsideOf
-    simp [source14]
-  have outside15 : ∀ sourceIndex,
-      predictionIntoStateEmbedding.slot sourceIndex ≠ source15 := by
-    apply outsideOf
-    simp [source15]
-  have outside18 : ∀ sourceIndex,
-      predictionIntoStateEmbedding.slot sourceIndex ≠ source18 := by
-    apply outsideOf
-    simp [source18]
+  have preservedSlot (target : Fin 22)
+      (outside : ∀ sourceIndex, predictionIntoStateEmbedding.slot sourceIndex ≠ target)
+      (expected : Value) (beforeExpected : beforePrediction target = expected) :
+      afterNullable ⟨target.val, by omega⟩ = expected := by
+    calc
+      afterNullable ⟨target.val, by omega⟩ = afterPrediction target := by
+        have old := oldAfter target
+        change afterNullable ⟨target.val, by omega⟩ = afterPrediction target at old
+        exact old
+      _ = beforePrediction target := predictionPreserved target outside
+      _ = expected := beforeExpected
   have preservedCurrent : afterNullable ⟨12, by omega⟩ =
-      .signed .i32 (Int.ofNat current) := by
-    calc
-      afterNullable ⟨12, by omega⟩ = afterPrediction ⟨12, by omega⟩ :=
-        oldAfter ⟨12, by omega⟩
-      _ = beforePrediction ⟨12, by omega⟩ :=
-        by
-          have preserved := predictionPreserved source12 outside12
-          change afterPrediction ⟨12, by omega⟩ =
-            beforePrediction ⟨12, by omega⟩ at preserved
-          exact preserved
-      _ = _ := (beforeOld ⟨12, by omega⟩).trans meaning.currentEq
+      .signed .i32 (Int.ofNat current) :=
+    preservedSlot source12
+      (predictionIntoStateEmbedding_slotOutside _ (by simp [source12])) _
+      ((beforeOld ⟨12, by omega⟩).trans meaning.currentEq)
   have preservedProduction : afterNullable ⟨13, by omega⟩ =
-      .signed .i32 (Int.ofNat candidate.production) := by
-    calc
-      afterNullable ⟨13, by omega⟩ = afterPrediction ⟨13, by omega⟩ :=
-        oldAfter ⟨13, by omega⟩
-      _ = beforePrediction ⟨13, by omega⟩ :=
-        by
-          have preserved := predictionPreserved source13 outside13
-          change afterPrediction ⟨13, by omega⟩ =
-            beforePrediction ⟨13, by omega⟩ at preserved
-          exact preserved
-      _ = _ := (beforeOld ⟨13, by omega⟩).trans meaning.productionEq
+      .signed .i32 (Int.ofNat candidate.production) :=
+    preservedSlot source13
+      (predictionIntoStateEmbedding_slotOutside _ (by simp [source13])) _
+      ((beforeOld ⟨13, by omega⟩).trans meaning.productionEq)
   have preservedDot : afterNullable ⟨14, by omega⟩ =
-      .signed .i32 (Int.ofNat candidate.dot) := by
-    calc
-      afterNullable ⟨14, by omega⟩ = afterPrediction ⟨14, by omega⟩ :=
-        oldAfter ⟨14, by omega⟩
-      _ = beforePrediction ⟨14, by omega⟩ :=
-        by
-          have preserved := predictionPreserved source14 outside14
-          change afterPrediction ⟨14, by omega⟩ =
-            beforePrediction ⟨14, by omega⟩ at preserved
-          exact preserved
-      _ = _ := (beforeOld ⟨14, by omega⟩).trans meaning.dotEq
+      .signed .i32 (Int.ofNat candidate.dot) :=
+    preservedSlot source14
+      (predictionIntoStateEmbedding_slotOutside _ (by simp [source14])) _
+      ((beforeOld ⟨14, by omega⟩).trans meaning.dotEq)
   have preservedOrigin : afterNullable ⟨15, by omega⟩ =
-      .signed .i32 (Int.ofNat candidate.origin) := by
-    calc
-      afterNullable ⟨15, by omega⟩ = afterPrediction ⟨15, by omega⟩ :=
-        oldAfter ⟨15, by omega⟩
-      _ = beforePrediction ⟨15, by omega⟩ :=
-        by
-          have preserved := predictionPreserved source15 outside15
-          change afterPrediction ⟨15, by omega⟩ =
-            beforePrediction ⟨15, by omega⟩ at preserved
-          exact preserved
-      _ = _ := (beforeOld ⟨15, by omega⟩).trans meaning.originEq
+      .signed .i32 (Int.ofNat candidate.origin) :=
+    preservedSlot source15
+      (predictionIntoStateEmbedding_slotOutside _ (by simp [source15])) _
+      ((beforeOld ⟨15, by omega⟩).trans meaning.originEq)
   have beforeExpected : beforePrediction ⟨18, by omega⟩ =
       .signed .i32 (Int.ofNat nonterminalBinding.nonterminal) := by
     unfold beforePrediction statePredictionEnvironmentOf
@@ -2111,78 +2010,37 @@ private theorem
         ((Lanius.FunctionalView.Env.push_before _ _ _).trans
           (Lanius.FunctionalView.Env.push_last _ _)))
   have preservedExpected : afterNullable ⟨18, by omega⟩ =
-      .signed .i32 (Int.ofNat nonterminalBinding.nonterminal) := by
-    calc
-      afterNullable ⟨18, by omega⟩ = afterPrediction ⟨18, by omega⟩ :=
-        oldAfter ⟨18, by omega⟩
-      _ = beforePrediction ⟨18, by omega⟩ :=
-        by
-          have preserved := predictionPreserved source18 outside18
-          change afterPrediction ⟨18, by omega⟩ =
-            beforePrediction ⟨18, by omega⟩ at preserved
-          exact preserved
-      _ = _ := beforeExpected
+      .signed .i32 (Int.ofNat nonterminalBinding.nonterminal) :=
+    preservedSlot source18
+      (predictionIntoStateEmbedding_slotOutside _ (by simp [source18])) _
+      (by simpa [source18] using beforeExpected)
   have chartHeadSlot : afterNullable ⟨22, by omega⟩ =
       .signed .i32 (chartHeadValue completed.workspace position) := by
     exact Lanius.FunctionalView.Env.push_last _ _
   change Lanius.FunctionalView.Env.Extends nullableIntoStateEmbedding
     entry.functionalConfig.functionalRuntime.environment afterNullable
   rw [compactEnvironment]
-  intro index
-  have indexCases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-      index.val = 3 ∨ index.val = 4 ∨ index.val = 5 ∨
-      index.val = 6 ∨ index.val = 7 ∨ index.val = 8 ∨
-      index.val = 9 ∨ index.val = 10 ∨ index.val = 11 := by omega
-  rcases indexCases with zero | one | two | three | four | five | six |
-      seven | eight | nine | ten | eleven
-  · have same : index = ⟨0, by omega⟩ := Fin.ext zero
-    rw [same]
-    change afterNullable ⟨0, by omega⟩ = _
-    exact mappedGrammar
-  · have same : index = ⟨1, by omega⟩ := Fin.ext one
-    rw [same]
-    change afterNullable ⟨3, by omega⟩ = _
-    exact mappedWorkspace
-  · have same : index = ⟨2, by omega⟩ := Fin.ext two
-    rw [same]
-    change afterNullable ⟨4, by omega⟩ = _
-    exact mappedStateBase
-  · have same : index = ⟨3, by omega⟩ := Fin.ext three
-    rw [same]
-    change afterNullable ⟨5, by omega⟩ = _
-    exact mappedCapacity
-  · have same : index = ⟨4, by omega⟩ := Fin.ext four
-    rw [same]
-    change afterNullable ⟨10, by omega⟩ = _
-    exact mappedStateCount
-  · have same : index = ⟨5, by omega⟩ := Fin.ext five
-    rw [same]
-    change afterNullable ⟨11, by omega⟩ = _
-    exact mappedPosition
-  · have same : index = ⟨6, by omega⟩ := Fin.ext six
-    rw [same]
-    change afterNullable ⟨12, by omega⟩ = _
-    exact preservedCurrent
-  · have same : index = ⟨7, by omega⟩ := Fin.ext seven
-    rw [same]
-    change afterNullable ⟨13, by omega⟩ = _
-    exact preservedProduction
-  · have same : index = ⟨8, by omega⟩ := Fin.ext eight
-    rw [same]
-    change afterNullable ⟨14, by omega⟩ = _
-    exact preservedDot
-  · have same : index = ⟨9, by omega⟩ := Fin.ext nine
-    rw [same]
-    change afterNullable ⟨15, by omega⟩ = _
-    exact preservedOrigin
-  · have same : index = ⟨10, by omega⟩ := Fin.ext ten
-    rw [same]
-    change afterNullable ⟨18, by omega⟩ = _
-    exact preservedExpected
-  · have same : index = ⟨11, by omega⟩ := Fin.ext eleven
-    rw [same]
-    change afterNullable ⟨22, by omega⟩ = _
-    exact chartHeadSlot
+  apply Lanius.FunctionalView.Env.Extends.ofFn
+  simp only [List.ofFn_succ, List.ofFn_zero]
+  change [afterNullable ⟨0, by omega⟩, afterNullable ⟨3, by omega⟩,
+    afterNullable ⟨4, by omega⟩, afterNullable ⟨5, by omega⟩,
+    afterNullable ⟨10, by omega⟩, afterNullable ⟨11, by omega⟩,
+    afterNullable ⟨12, by omega⟩, afterNullable ⟨13, by omega⟩,
+    afterNullable ⟨14, by omega⟩, afterNullable ⟨15, by omega⟩,
+    afterNullable ⟨18, by omega⟩, afterNullable ⟨22, by omega⟩] = _
+  rw [show afterNullable ⟨0, by omega⟩ = _ from mappedGrammar]
+  rw [show afterNullable ⟨3, by omega⟩ = _ from mappedWorkspace]
+  rw [show afterNullable ⟨4, by omega⟩ = _ from mappedStateBase]
+  rw [show afterNullable ⟨5, by omega⟩ = _ from mappedCapacity]
+  rw [show afterNullable ⟨10, by omega⟩ = _ from mappedStateCount]
+  rw [show afterNullable ⟨11, by omega⟩ = _ from mappedPosition]
+  rw [show afterNullable ⟨12, by omega⟩ = _ from preservedCurrent]
+  rw [show afterNullable ⟨13, by omega⟩ = _ from preservedProduction]
+  rw [show afterNullable ⟨14, by omega⟩ = _ from preservedDot]
+  rw [show afterNullable ⟨15, by omega⟩ = _ from preservedOrigin]
+  rw [show afterNullable ⟨18, by omega⟩ = _ from preservedExpected]
+  rw [show afterNullable ⟨22, by omega⟩ = _ from chartHeadSlot]
+  rfl
 
 /-- Project the two embedded nonterminal loops back to the decoded-state
     source frame.  Nullable-owned slots come from its compact postcondition;
@@ -2448,21 +2306,10 @@ private noncomputable def
   have nonterminalResult := entry.functional_nonterminal environment meaning
   have firstResult := entry.functional_first environment meaning
   have countResult := entry.functional_count environment meaning
-  have related : Lanius.FunctionalView.Env.Extends predictionIntoStateEmbedding
-      entry.functionalConfig.functionalRuntime.environment beforePrediction := by
-    simpa [beforePrediction, symbol] using
-      entry.functionalConfig_environment_extends environment meaning
-  obtain ⟨afterPrediction, predictionResult, relatedAfter, preservedAfter⟩ :=
-    entry.functionalConfig.evaluates_in_state_machine beforePrediction related
-  have predictionWorldEq :
-      entry.functionalConfig.functionalRuntime.world = world := by
-    change recognizerWorld words tokens
-      (unused := entry.functionalConfig.invariant.frame.recognizer.tokenStorage.unused)
-      entry.functionalConfig.workspaceValues grammarCell tokensCell
-      workspaceCell = _
-    rw [entry.functionalConfig_suffix, entry.functionalConfig_workspaceValues]
-    rfl
-  rw [predictionWorldEq] at predictionResult
+  let prediction := entry.functional_prediction_run environment meaning
+  let afterPrediction := prediction.afterLarge
+  have relatedAfter := prediction.related
+  have preservedAfter := prediction.preserved
   have predictionResult' :
       Lanius.FunctionalView.Stateful.Command.Evaluates
         (stateTermMachine workspaceLayout grammar words tokens grammarCell
@@ -2477,8 +2324,19 @@ private noncomputable def
         statePredictionLoopCommand
         entry.functionalConfig.functional_run.completion
         entry.functionalConfig.functional_run.after.world afterPrediction := by
-    simpa [beforePrediction, symbolEnvironment,
-      statePredictionEnvironmentOf] using predictionResult
+    simpa [world, symbol, beforePrediction, symbolEnvironment,
+      statePredictionEnvironmentOf] using prediction.evaluated
+  let popPredictionEnvironment (after : Lanius.FunctionalView.Env 22) :=
+    Lanius.FunctionalView.Stateful.Env.pop
+      (Lanius.FunctionalView.Stateful.Env.pop
+        (Lanius.FunctionalView.Stateful.Env.pop
+          (Lanius.FunctionalView.Stateful.Env.pop after)))
+  let popNullableEnvironment (after : Lanius.FunctionalView.Env 23) :=
+    Lanius.FunctionalView.Stateful.Env.pop
+      (Lanius.FunctionalView.Stateful.Env.pop
+        (Lanius.FunctionalView.Stateful.Env.pop
+          (Lanius.FunctionalView.Stateful.Env.pop
+            (Lanius.FunctionalView.Stateful.Env.pop after))))
   cases sourceOutcome with
   | completed predictionFrame predictionCompletionEq predictionAfterWorldEq
       predictionAfterEnvironmentEq nullableEntry nullableCompletionEq
@@ -2553,11 +2411,7 @@ private noncomputable def
         predictionAfterWorldEq, nullableEntry.functionalConfig_suffix]
       rfl
     rw [nullableWorldEq] at nullableResult
-    let afterEnvironment := Lanius.FunctionalView.Stateful.Env.pop
-      (Lanius.FunctionalView.Stateful.Env.pop
-        (Lanius.FunctionalView.Stateful.Env.pop
-          (Lanius.FunctionalView.Stateful.Env.pop
-            (Lanius.FunctionalView.Stateful.Env.pop afterNullable))))
+    let afterEnvironment := popNullableEnvironment afterNullable
     have functionalExecution := stateNonterminalCommand_evaluates_of_nullable world
       entry.functionalConfig.functional_run.after.world
       nullableEntry.functionalConfig.functional_run.after.world
@@ -2661,11 +2515,7 @@ private noncomputable def
         predictionAfterWorldEq, nullableEntry.functionalConfig_suffix]
       rfl
     rw [nullableWorldEq] at nullableResult
-    let afterEnvironment := Lanius.FunctionalView.Stateful.Env.pop
-      (Lanius.FunctionalView.Stateful.Env.pop
-        (Lanius.FunctionalView.Stateful.Env.pop
-          (Lanius.FunctionalView.Stateful.Env.pop
-            (Lanius.FunctionalView.Stateful.Env.pop afterNullable))))
+    let afterEnvironment := popNullableEnvironment afterNullable
     have functionalExecution := stateNonterminalCommand_evaluates_of_nullable
       world entry.functionalConfig.functional_run.after.world
       nullableEntry.functionalConfig.functional_run.after.world
@@ -2684,10 +2534,7 @@ private noncomputable def
       trivial
   | predictionFull finalWorkspace finalValues innerAfter growth terminal
       stateCount wellFormed predictionCompletionEq predictionStops =>
-    let afterEnvironment := Lanius.FunctionalView.Stateful.Env.pop
-      (Lanius.FunctionalView.Stateful.Env.pop
-        (Lanius.FunctionalView.Stateful.Env.pop
-          (Lanius.FunctionalView.Stateful.Env.pop afterPrediction)))
+    let afterEnvironment := popPredictionEnvironment afterPrediction
     have functionalExecution := stateNonterminalCommand_evaluates_of_prediction_stop
       world entry.functionalConfig.functional_run.after.world symbolEnvironment
       nonterminalBinding.nonterminal entry.first entry.count afterPrediction
@@ -3083,54 +2930,18 @@ private theorem StateAfterBindingsEnvironment.advance_pop_eq
     apply Lanius.FunctionalView.Stateful.Env.set_other
     intro same
     exact different (congrArg Fin.val same)
-  funext index
-  have indexCases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-      index.val = 3 ∨ index.val = 4 ∨ index.val = 5 ∨
-      index.val = 6 ∨ index.val = 7 ∨ index.val = 8 ∨
-      index.val = 9 ∨ index.val = 10 ∨ index.val = 11 ∨
-      index.val = 12 := by omega
-  rcases indexCases with zero | one | two | three | four | five | six |
-      seven | eight | nine | ten | eleven | twelve
-  · have same : index = ⟨0, by omega⟩ := Fin.ext zero
-    rw [same]
-    exact (unchanged 0 (by decide)).trans meaning.grammarEq
-  · have same : index = ⟨1, by omega⟩ := Fin.ext one
-    rw [same]
-    exact (unchanged 1 (by decide)).trans meaning.tokensEq
-  · have same : index = ⟨2, by omega⟩ := Fin.ext two
-    rw [same]
-    exact (unchanged 2 (by decide)).trans meaning.tokenCountEq
-  · have same : index = ⟨3, by omega⟩ := Fin.ext three
-    rw [same]
-    exact (unchanged 3 (by decide)).trans meaning.workspaceEq
-  · have same : index = ⟨4, by omega⟩ := Fin.ext four
-    rw [same]
-    exact (unchanged 4 (by decide)).trans meaning.stateBaseEq
-  · have same : index = ⟨5, by omega⟩ := Fin.ext five
-    rw [same]
-    exact (unchanged 5 (by decide)).trans meaning.capacityEq
-  · have same : index = ⟨6, by omega⟩ := Fin.ext six
-    rw [same]
-    exact (unchanged 6 (by decide)).trans meaning.kindCountEq
-  · have same : index = ⟨7, by omega⟩ := Fin.ext seven
-    rw [same]
-    exact (unchanged 7 (by decide)).trans meaning.lhsOffsetsEq
-  · have same : index = ⟨8, by omega⟩ := Fin.ext eight
-    rw [same]
-    exact (unchanged 8 (by decide)).trans meaning.lhsCountsEq
-  · have same : index = ⟨9, by omega⟩ := Fin.ext nine
-    rw [same]
-    exact (unchanged 9 (by decide)).trans meaning.lhsProductionsEq
-  · have same : index = ⟨10, by omega⟩ := Fin.ext ten
-    rw [same]
-    exact (unchanged 10 (by decide)).trans meaning.stateCountEq
-  · have same : index = ⟨11, by omega⟩ := Fin.ext eleven
-    rw [same]
-    exact (unchanged 11 (by decide)).trans meaning.positionEq
-  · have same : index = ⟨12, by omega⟩ := Fin.ext twelve
-    rw [same]
-    exact Lanius.FunctionalView.Stateful.Env.set_same environment
-      (⟨12, by omega⟩ : Fin 17) (.signed .i32 nextCurrent)
+  apply Lanius.FunctionalView.Env.eq_ofFn
+  simp only [List.ofFn_succ, List.ofFn_zero]
+  change [updated ⟨0, by omega⟩, updated ⟨1, by omega⟩,
+    updated ⟨2, by omega⟩, updated ⟨3, by omega⟩,
+    updated ⟨4, by omega⟩, updated ⟨5, by omega⟩,
+    updated ⟨6, by omega⟩, updated ⟨7, by omega⟩,
+    updated ⟨8, by omega⟩, updated ⟨9, by omega⟩,
+    updated ⟨10, by omega⟩, updated ⟨11, by omega⟩,
+    updated ⟨12, by omega⟩] = _
+  cases meaning
+  simp_all [updated, stateEnvironment,
+    Lanius.FunctionalView.Stateful.Env.set, Fin.ext_iff] <;> omega
 
 /-- One complete state-body iteration synchronized after all decoded-item
     locals have closed. -/

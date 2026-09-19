@@ -147,19 +147,19 @@ theorem LoopEntry.execute {data : TraversalData} (entry : LoopEntry data before)
     ⟨collectedOwned.wellFormed, collectedOwned.grammar, collectedOwned.kinds, collectedOwned.assignments,
       cursorCollected, collectedOwned.count, collectedOwned.canonicalOffset, stable⟩
   obtain ⟨ready, reset, zeroCursor, resetEffect, resetHeap⟩ := evaluatesOwnedLocalUpdate validationOwned.wellFormed validationOwned.cursor
-    (show Evaluates program collected (number 0) (.signed .i32 0) collected from ⟨1, rfl⟩)
+    (show Evaluates program collected (number 0) (.signed .i32 0) collected from evaluatesValue)
     (show evalAssignValue program.target .set (some (.signed .i32 (Int.ofNat (data.tokens.length * 2)))) (.signed .i32 0) =
       .ok (.signed .i32 0) from rfl)
   have readyOwned : ValidationOwned memory 0 ready := validationOwned.advance resetEffect zeroCursor
   obtain ⟨completed, validation, final, validationEffect⟩ := validation_loop program readyOwned (by omega)
   have finish : Executes program completed (returned (number 0)) (.returned (some (.signed .i32 0))) completed :=
-    executesSequenceReturned (executesReturnValue (show Evaluates program completed (number 0) (.signed .i32 0) completed from ⟨1, rfl⟩))
+    executesSequenceReturned (executesReturnValue (show Evaluates program completed (number 0) (.signed .i32 0) completed from evaluatesValue))
   have lastRun := executesSequence traversal
     (executesSequence (executesExpression reset) (executesSequence validation finish))
   have nodeScope := executesLetLocal (id := 13) (type := i32)
-    (show Evaluates program initializedState (number 0) (.signed .i32 0) initializedState from ⟨1, rfl⟩) lastRun
+    (show Evaluates program initializedState (number 0) (.signed .i32 0) initializedState from evaluatesValue) lastRun
   have indexScope := executesLetLocal (id := 12) (type := i32)
-    (show Evaluates program before (number 0) (.signed .i32 0) before from ⟨1, rfl⟩)
+    (show Evaluates program before (number 0) (.signed .i32 0) before from evaluatesValue)
     (executesSequence initialization nodeScope)
   let writes := CellSet.union nodeEntry.memory.writes (CellSet.singleton before.nextCell)
   have restEffect := resetEffect.trans validationEffect

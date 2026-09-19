@@ -10,9 +10,9 @@ private theorem condition_result (program : Program) (request : Request) (proces
     Evaluates program before (.binary .less (.local 3) (.local 2))
       (.boolean (decide (processed.length < request.raw.length))) before := by
   have inputResult : Evaluates program before (.local 3) (.signed .i32 processed.length) before :=
-    ⟨1, evalLocal_of_local 0 program before 3 _ (Assertion.localPointsTo_local _ _ _ _ invariant.input)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ invariant.input)
   have countResult : Evaluates program before (.local 2) (.signed .i32 request.raw.length) before :=
-    ⟨1, evalLocal_of_local 0 program before 2 _ invariant.count⟩
+    Lanius.Semantics.evaluatesLocal invariant.count
   apply evaluatesEagerBinary (by decide) (by decide) inputResult countResult
   simp [evalBinaryValue, evalSignedBinary]
 

@@ -143,13 +143,13 @@ noncomputable def RecognizerStateSymbolBinding.bind_nonterminal_index
     omega
   have symbolResult : Evaluates verifiedParserCore source (.local 29)
       (.signed .i32 (Int.ofNat symbol)) source :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore source 29 _
-      (by simpa [source, symbol] using symbolBinding.symbolLocal)⟩
+    Lanius.Semantics.evaluatesLocal
+      (by simpa [source, symbol] using symbolBinding.symbolLocal)
   have kindCountResult : Evaluates verifiedParserCore source (.local 11)
       (.signed .i32 (Int.ofNat grammar.grammar.n_kinds)) source :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore source 11 _
+    Lanius.Semantics.evaluatesLocal
       (by simpa [source, symbol] using
-        symbolBinding.invariant.kindCountLocal)⟩
+        symbolBinding.invariant.kindCountLocal)
   have differenceEq : Int.ofNat symbol -
       Int.ofNat grammar.grammar.n_kinds = Int.ofNat nonterminal := by
     simp [nonterminal, Int.ofNat_sub kindCountLe]
@@ -171,6 +171,13 @@ noncomputable def RecognizerStateSymbolBinding.bind_nonterminal_index
   let bound := source.bindLocal 30
     (.signed .i32 (Int.ofNat nonterminal))
   let expectedCell := source.nextCell
+  have preserveOwned (id : VarId) (cell : CellId) (value : Value)
+      (different : 30 ≠ id)
+      (owned : (Assertion.localPointsTo id cell (some value)).holds source) :
+      (Assertion.localPointsTo id cell (some value)).holds bound := by
+    simpa [bound] using bindLocal_preserves_localPointsTo_of_ne source 30 id
+      (.signed .i32 (Int.ofNat nonterminal)) cell (some value)
+      symbolBinding.invariant.chartCursor.recognizer.wellFormed different owned
   exact {
     nonterminal := nonterminal
     nonterminalEq := rfl
@@ -182,26 +189,15 @@ noncomputable def RecognizerStateSymbolBinding.bind_nonterminal_index
       simpa [bound, source, symbol] using
         symbolBinding.invariant.after_bind_local 30
           (.signed .i32 (Int.ofNat nonterminal)) (by decide)
-    productionOwned := by
-      simpa [bound, source] using bindLocal_preserves_localPointsTo_of_ne
-        source 30 25 (.signed .i32 (Int.ofNat nonterminal))
-        bindings.productionCell
-        (some (.signed .i32 (Int.ofNat candidate.production)))
-        symbolBinding.invariant.chartCursor.recognizer.wellFormed (by decide)
-        symbolBinding.productionOwned
-    dotOwned := by
-      simpa [bound, source] using bindLocal_preserves_localPointsTo_of_ne
-        source 30 26 (.signed .i32 (Int.ofNat nonterminal)) bindings.dotCell
-        (some (.signed .i32 (Int.ofNat candidate.dot)))
-        symbolBinding.invariant.chartCursor.recognizer.wellFormed (by decide)
-        symbolBinding.dotOwned
-    originOwned := by
-      simpa [bound, source] using bindLocal_preserves_localPointsTo_of_ne
-        source 30 27 (.signed .i32 (Int.ofNat nonterminal))
-        bindings.originCell
-        (some (.signed .i32 (Int.ofNat candidate.origin)))
-        symbolBinding.invariant.chartCursor.recognizer.wellFormed (by decide)
-        symbolBinding.originOwned
+    productionOwned := preserveOwned 25 bindings.productionCell
+      (.signed .i32 (Int.ofNat candidate.production)) (by decide)
+      symbolBinding.productionOwned
+    dotOwned := preserveOwned 26 bindings.dotCell
+      (.signed .i32 (Int.ofNat candidate.dot)) (by decide)
+      symbolBinding.dotOwned
+    originOwned := preserveOwned 27 bindings.originCell
+      (.signed .i32 (Int.ofNat candidate.origin)) (by decide)
+      symbolBinding.originOwned
     expectedCell := expectedCell
     nonterminalLocal := by
       simpa [bound] using bindLocal_finds_local source 30
@@ -408,38 +404,20 @@ noncomputable def RecognizerStateNonterminalIndexBinding.enter_prediction
   have expectedOwned := preserveOwned 30 nonterminalBinding.expectedCell
     (.signed .i32 (Int.ofNat nonterminalBinding.nonterminal))
     (by decide) (by decide) (by decide) nonterminalBinding.expectedOwned
-  have firstOwnedAtFirst := bindLocal_owns_fresh nonterminalBinding.bound 31
-    (.signed .i32 (Int.ofNat first))
-    nonterminalBinding.invariant.chartCursor.recognizer.wellFormed
-  have firstOwnedAtCount : (Assertion.localPointsTo 31
-      nonterminalBinding.bound.nextCell
-      (some (.signed .i32 (Int.ofNat first)))).holds countState := by
-    simpa [firstState, countState] using
-      bindLocal_preserves_localPointsTo_of_ne firstState 32 31
-        (.signed .i32 (Int.ofNat count)) nonterminalBinding.bound.nextCell
-        (some (.signed .i32 (Int.ofNat first)))
-        firstInvariant.chartCursor.recognizer.wellFormed (by decide)
-        firstOwnedAtFirst
   have firstOwned : (Assertion.localPointsTo 31
       nonterminalBinding.bound.nextCell
       (some (.signed .i32 (Int.ofNat first)))).holds predictionState := by
-    simpa [predictionState] using
-      bindLocal_preserves_localPointsTo_of_ne countState 33 31
-        (.signed .i32 0) nonterminalBinding.bound.nextCell
-        (some (.signed .i32 (Int.ofNat first)))
-        countInvariant.chartCursor.recognizer.wellFormed (by decide)
-        firstOwnedAtCount
-  have countOwnedAtCount := bindLocal_owns_fresh firstState 32
-    (.signed .i32 (Int.ofNat count))
-    firstInvariant.chartCursor.recognizer.wellFormed
+    simpa [firstState, countState, predictionState, State.bindLocals] using
+      bindLocals_owns_binding nonterminalBinding.bound
+        [] [(32, .signed .i32 (Int.ofNat count)), (33, .signed .i32 0)]
+        31 (.signed .i32 (Int.ofNat first))
+        nonterminalBinding.invariant.chartCursor.recognizer.wellFormed (by simp)
   have countOwned : (Assertion.localPointsTo 32 firstState.nextCell
       (some (.signed .i32 (Int.ofNat count)))).holds predictionState := by
-    simpa [countState, predictionState] using
-      bindLocal_preserves_localPointsTo_of_ne countState 33 32
-        (.signed .i32 0) firstState.nextCell
-        (some (.signed .i32 (Int.ofNat count)))
-        countInvariant.chartCursor.recognizer.wellFormed (by decide)
-        countOwnedAtCount
+    simpa [countState, predictionState, State.bindLocals] using
+      bindLocals_owns_binding firstState []
+        [(33, .signed .i32 0)] 32 (.signed .i32 (Int.ofNat count))
+        firstInvariant.chartCursor.recognizer.wellFormed (by simp)
   have firstWorkspaceDistinct :
       nonterminalBinding.bound.nextCell ≠ workspaceCell :=
     Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
@@ -463,40 +441,24 @@ noncomputable def RecognizerStateNonterminalIndexBinding.enter_prediction
     simpa [predictionState, indexCell] using
       bindLocal_other_cellId_ne_fresh countState 33 id (.signed .i32 0)
         countInvariant.chartCursor.recognizer.wellFormed different
+  have persistentSeparate (id : VarId)
+      (persistent : StateLoopPersistentLocal id) :
+      predictionState.cellId? id ≠ some workspaceCell ∧
+        (id ≠ 18 → predictionState.cellId? id ≠ some stateCountCell) := by
+    have separated := predictionStateInvariant.persistentLocalsSeparate id persistent
+    exact ⟨separated.1, fun notCount => separated.2.1 notCount⟩
   have persistentExternal (id : VarId)
       (persistent : PredictionPersistentLocal id) :
       predictionState.cellId? id ≠ some workspaceCell ∧
         (id ≠ 18 → predictionState.cellId? id ≠ some stateCountCell) := by
     rw [PredictionPersistentLocal_iff] at persistent
     rcases persistent with parameter | rfl | rfl | rfl | rfl | rfl | rfl | rfl
-    · have idLe :=
-        (mem_verifiedParserRecognizerParameterIds_iff id).mp parameter
-      have base := predictionStateInvariant.persistentLocalsSeparate id
-        (Or.inl parameter)
-      exact ⟨base.1, fun notCount => base.2.1 notCount⟩
-    · exact ⟨predictionStateInvariant.persistentLocalsSeparate 8
-        (by simp [StateLoopPersistentLocal]) |>.1, fun notCount =>
-          predictionStateInvariant.persistentLocalsSeparate 8 (by
-            simp [StateLoopPersistentLocal])
-            |>.2.1 notCount⟩
-    · exact ⟨predictionStateInvariant.persistentLocalsSeparate 9
-        (by simp [StateLoopPersistentLocal]) |>.1, fun notCount =>
-          predictionStateInvariant.persistentLocalsSeparate 9 (by
-            simp [StateLoopPersistentLocal])
-            |>.2.1 notCount⟩
-    · exact ⟨predictionStateInvariant.persistentLocalsSeparate 15
-        (by simp [StateLoopPersistentLocal]) |>.1, fun notCount =>
-          predictionStateInvariant.persistentLocalsSeparate 15 (by
-            simp [StateLoopPersistentLocal])
-            |>.2.1 notCount⟩
-    · exact ⟨predictionStateInvariant.persistentLocalsSeparate 18
-        (by simp [StateLoopPersistentLocal]) |>.1,
-          fun impossible => False.elim (impossible rfl)⟩
-    · exact ⟨predictionStateInvariant.persistentLocalsSeparate 23
-        (by simp [StateLoopPersistentLocal]) |>.1, fun notCount =>
-          predictionStateInvariant.persistentLocalsSeparate 23 (by
-            simp [StateLoopPersistentLocal])
-            |>.2.1 notCount⟩
+    · exact persistentSeparate id (Or.inl parameter)
+    · exact persistentSeparate 8 (by simp [StateLoopPersistentLocal])
+    · exact persistentSeparate 9 (by simp [StateLoopPersistentLocal])
+    · exact persistentSeparate 15 (by simp [StateLoopPersistentLocal])
+    · exact persistentSeparate 18 (by simp [StateLoopPersistentLocal])
+    · exact persistentSeparate 23 (by simp [StateLoopPersistentLocal])
     · exact ⟨fun same => firstWorkspaceDistinct
           (Option.some.inj (firstOwned.1.symm.trans same)),
         fun _ same => firstStateCountDistinct
@@ -1001,43 +963,32 @@ noncomputable def RecognizerStatePredictionCompletedFrame.enter_nullable
       Lanius.Separation.StateWellFormed.nextCell_ne_of_entry
         headRead.invariant.wellFormed
         afterReadInvariant.appendFrame.stateCountOwned.2
+  have persistentSeparate (id : VarId)
+      (persistent : StateLoopPersistentLocal id) (idNotCount : id ≠ 18) :
+      bound.cellId? id ≠ some workspaceCell ∧
+        bound.cellId? id ≠ some stateCountCell := by
+    have separated := boundStateInvariant.persistentLocalsSeparate id persistent
+    exact ⟨separated.1, separated.2.1 idNotCount⟩
   have nullableExternal (id : VarId) (preserved : NullablePreservedLocal id) :
       bound.cellId? id ≠ some workspaceCell ∧
         bound.cellId? id ≠ some stateCountCell := by
     rcases preserved with parameter | framed
-    · have separated := boundStateInvariant.persistentLocalsSeparate id
-        (Or.inl parameter)
-      exact ⟨separated.1, separated.2.1 (by
-        have boundId := (mem_verifiedParserRecognizerParameterIds_iff id).mp
+    · have boundId := (mem_verifiedParserRecognizerParameterIds_iff id).mp
           parameter
-        exact Nat.ne_of_lt (Nat.lt_of_le_of_lt boundId (by decide)))⟩
+      exact persistentSeparate id (Or.inl parameter)
+        (Nat.ne_of_lt (Nat.lt_of_le_of_lt boundId (by decide)))
     · rw [mem_verifiedParserNullableLoopPreservedFrameIds_iff] at framed
       rcases framed with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
           rfl | rfl
-      · exact ⟨boundStateInvariant.persistentLocalsSeparate 4 (by
-          simp [StateLoopPersistentLocal]) |>.1,
-          boundStateInvariant.persistentLocalsSeparate 4 (by
-            simp [StateLoopPersistentLocal]) |>.2.1 (by decide)⟩
-      · exact ⟨boundStateInvariant.persistentLocalsSeparate 8 (by
-          simp [StateLoopPersistentLocal]) |>.1,
-          boundStateInvariant.persistentLocalsSeparate 8 (by
-            simp [StateLoopPersistentLocal]) |>.2.1 (by decide)⟩
-      · exact ⟨boundStateInvariant.persistentLocalsSeparate 23 (by
-          simp [StateLoopPersistentLocal]) |>.1,
-          boundStateInvariant.persistentLocalsSeparate 23 (by
-            simp [StateLoopPersistentLocal]) |>.2.1 (by decide)⟩
-      · exact ⟨boundStateInvariant.persistentLocalsSeparate 0 (by
-          simp [StateLoopPersistentLocal]) |>.1,
-          boundStateInvariant.persistentLocalsSeparate 0 (by
-            simp [StateLoopPersistentLocal]) |>.2.1 (by decide)⟩
+      · exact persistentSeparate 4 (by simp [StateLoopPersistentLocal]) (by decide)
+      · exact persistentSeparate 8 (by simp [StateLoopPersistentLocal]) (by decide)
+      · exact persistentSeparate 23 (by simp [StateLoopPersistentLocal]) (by decide)
+      · exact persistentSeparate 0 (by simp [StateLoopPersistentLocal]) (by decide)
       · exact ⟨fun same => nonterminalBinding.expectedCellDistinct.1
             (Option.some.inj (expectedOwned.1.symm.trans same)),
           fun same => nonterminalBinding.expectedCellDistinct.2.1
             (Option.some.inj (expectedOwned.1.symm.trans same))⟩
-      · exact ⟨boundStateInvariant.persistentLocalsSeparate 9 (by
-          simp [StateLoopPersistentLocal]) |>.1,
-          boundStateInvariant.persistentLocalsSeparate 9 (by
-            simp [StateLoopPersistentLocal]) |>.2.1 (by decide)⟩
+      · exact persistentSeparate 9 (by simp [StateLoopPersistentLocal]) (by decide)
       · exact ⟨fun same => bindings.productionCellDistinct.1
             (Option.some.inj (productionOwned.1.symm.trans same)),
           fun same => bindings.productionCellDistinct.2.1
@@ -2559,6 +2510,7 @@ private structure RecognizerStateClosedNonterminalExecution
     candidate found productionBound dotBeforeEnd bindings
   afterEq : physical.after = restoreLocals symbolBinding.afterRead inner.after
   completionEq : physical.completion = inner.completion
+  restored : inner.outcome.flatten.Restored physical.after
 
 /-- Close locals 29--33 around one already-selected prediction/nullable run.
     Both the physical projection and the FunctionalView synchronization consume
@@ -2594,6 +2546,10 @@ private noncomputable def RecognizerStatePredictionExecution.close_nonterminal
     effect := innerEffect
     outcome := innerSynchronized
   }
+  let physicalType := RecognizerStateNonterminalExecution grammarLayout grammar
+    words tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
+    workspaceCell stateCountCell cursorCell runtime position current remaining
+    beforeInvariant candidate found productionBound dotBeforeEnd bindings
   have innerOutcome : RecognizerStateOperationOutcome grammarLayout grammar
       words tokens workspaceLayout workspace grammarCell tokensCell
       workspaceCell stateCountCell cursorCell position current remaining
@@ -2606,33 +2562,26 @@ private noncomputable def RecognizerStatePredictionExecution.close_nonterminal
   let after := restoreLocals symbolBinding.afterRead innerAfter
   let writes := CellSet.union (CellSet.singleton workspaceCell)
     (CellSet.singleton stateCountCell)
-  have enteredSymbol : StoreEffect CellSet.empty symbolBinding.afterRead
-      symbolBound := by
-    exact bindLocal_effect symbolBinding.afterRead 29
-      (.signed .i32 (Int.ofNat symbol))
-  have enteredNonterminal : StoreEffect CellSet.empty symbolBound
-      nonterminalBinding.bound := by
-    rw [nonterminalBinding.boundEq]
-    simpa [symbolBound, symbol] using bindLocal_effect symbolBound 30
-      (.signed .i32 (Int.ofNat nonterminalBinding.nonterminal))
-  have enteredFirst : StoreEffect CellSet.empty nonterminalBinding.bound
-      firstState := by
-    exact bindLocal_effect nonterminalBinding.bound 31
-      (.signed .i32 (Int.ofNat predictionEntry.first))
-  have enteredCount : StoreEffect CellSet.empty firstState countState := by
-    exact bindLocal_effect firstState 32
-      (.signed .i32 (Int.ofNat predictionEntry.count))
-  have enteredIndex : StoreEffect CellSet.empty countState
+  have enteredBeforeIndex : StoreEffect CellSet.empty symbolBinding.afterRead
+      countState := by
+    simpa [symbolBound, firstState, countState, State.bindLocals,
+      nonterminalBinding.boundEq, symbol] using
+      bindLocals_effect symbolBinding.afterRead
+        [(29, .signed .i32 (Int.ofNat symbol)),
+          (30, .signed .i32 (Int.ofNat nonterminalBinding.nonterminal)),
+          (31, .signed .i32 (Int.ofNat predictionEntry.first)),
+          (32, .signed .i32 (Int.ofNat predictionEntry.count))]
+  have entered : StoreEffect CellSet.empty symbolBinding.afterRead
       predictionEntry.predictionState := by
     rw [predictionEntry.predictionStateEq]
-    simpa [firstState, countState] using bindLocal_effect countState 33
-      (.signed .i32 0)
-  have enteredBeforeIndex : StoreEffect CellSet.empty symbolBinding.afterRead
-      countState :=
-    enteredSymbol.trans_same <| enteredNonterminal.trans_same <|
-      enteredFirst.trans_same enteredCount
-  have entered : StoreEffect CellSet.empty symbolBinding.afterRead
-      predictionEntry.predictionState := enteredBeforeIndex.trans_same enteredIndex
+    simpa [symbolBound, firstState, countState, State.bindLocals,
+      nonterminalBinding.boundEq, symbol] using
+      bindLocals_effect symbolBinding.afterRead
+        [(29, .signed .i32 (Int.ofNat symbol)),
+          (30, .signed .i32 (Int.ofNat nonterminalBinding.nonterminal)),
+          (31, .signed .i32 (Int.ofNat predictionEntry.first)),
+          (32, .signed .i32 (Int.ofNat predictionEntry.count)),
+          (33, .signed .i32 0)]
   let innerWrites := recognizerPredictionWrites workspaceCell stateCountCell
     predictionEntry.indexCell
   have scopedStoreAll : StoreEffect innerWrites symbolBinding.afterRead
@@ -2654,7 +2603,7 @@ private noncomputable def RecognizerStatePredictionExecution.close_nonterminal
   have effect : ModifiesOnly writes rhsScope after :=
     (symbolBinding.effect.weaken CellSet.empty_subset).trans_same closed
   have indexEvaluation : Evaluates verifiedParserCore countState
-      (.value (.signed .i32 0)) (.signed .i32 0) countState := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) countState := Lanius.Semantics.evaluatesValue
   have nestedExecution : Executes verifiedParserCore symbolBound
       parserRecognizeStateNonterminalBranch innerCompletion nestedAfter := by
     rw [extractedParserRecognize_state_nonterminal_shape]
@@ -2692,12 +2641,13 @@ private noncomputable def RecognizerStatePredictionExecution.close_nonterminal
       parserRecognizeChartHeadExpr] using atNonterminal
   have symbolResult : Evaluates verifiedParserCore symbolBound (.local 29)
       (.signed .i32 (Int.ofNat symbol)) symbolBound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore symbolBound 29 _
-      (by simpa [symbolBound, symbol] using symbolBinding.symbolLocal)⟩
+    Lanius.Semantics.evaluatesLocal
+      (by simpa [symbolBound, symbol] using symbolBinding.symbolLocal)
   have kindCountResult : Evaluates verifiedParserCore symbolBound (.local 11)
       (.signed .i32 (Int.ofNat grammar.grammar.n_kinds)) symbolBound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore symbolBound 11 _
-      (by simpa [symbolBound, symbol] using symbolBinding.invariant.kindCountLocal)⟩
+    Lanius.Semantics.evaluatesLocal
+      (by simpa [symbolBound, symbol] using
+        symbolBinding.invariant.kindCountLocal)
   have terminalTest : Evaluates verifiedParserCore symbolBound
       (.binary .less (.local 29) (.local 11)) (.boolean false) symbolBound := by
     have compared := evaluatesNatLessThreaded symbolBound symbolBound symbolBound
@@ -2740,6 +2690,18 @@ private noncomputable def RecognizerStatePredictionExecution.close_nonterminal
     have idBound := (mem_verifiedParserRecognizerParameterIds_iff id).mp member
     exact temporaryCellId id
       (Nat.lt_of_le_of_lt idBound (by decide : 5 < 29))
+  have restoreRecognizer (restoredWorkspace : LogicalWorkspace)
+      (restoredValues : List Int)
+      (restoredInvariant : RecognizerInvariant grammarLayout grammar words tokens
+        workspaceLayout restoredWorkspace restoredValues grammarCell tokensCell
+        workspaceCell innerAfter) :
+      RecognizerInvariant grammarLayout grammar words tokens workspaceLayout
+        restoredWorkspace restoredValues grammarCell tokensCell workspaceCell
+        after :=
+    RecognizerInvariant.restore_temporary
+      symbolBinding.afterRead predictionEntry.predictionState innerAfter
+      symbolBinding.afterReadWellFormed entered innerEffect
+      parameterCellId restoredInvariant
   have finishFull (finalWorkspace : LogicalWorkspace) (finalValues : List Int)
       (growth : WorkspaceAppendClosure workspaceLayout.capacity workspace
         finalWorkspace)
@@ -2754,11 +2716,9 @@ private noncomputable def RecognizerStatePredictionExecution.close_nonterminal
         (.ifThenElse (.binary .less (.local 29) (.local 11))
           parserRecognizeTerminalStatement parserRecognizeStateNonterminalBranch)
         (parserCapacityCompletion position stateCount) nestedAfter) :
-      RecognizerStateClosedNonterminalExecution grammarLayout grammar words tokens
-        workspaceLayout workspace workspaceValues grammarCell tokensCell workspaceCell
-        stateCountCell cursorCell runtime position current remaining beforeInvariant
-        candidate found productionBound dotBeforeEnd bindings symbolBinding
-        isNonterminal nonterminalBinding predictionEntry synchronizedInner := by
+      { physical : physicalType //
+        physical.after = after ∧
+          physical.completion = parserCapacityCompletion position stateCount } := by
         have sequenced : Executes verifiedParserCore symbolBound
             (.sequence
               (.ifThenElse (.binary .less (.local 29) (.local 11))
@@ -2767,36 +2727,23 @@ private noncomputable def RecognizerStatePredictionExecution.close_nonterminal
               .skip)
             (parserCapacityCompletion position stateCount) nestedAfter :=
           executesSequenceReturned selectedFull
-        have execution : Executes verifiedParserCore rhsScope
-            parserRecognizeStateIncompleteBranch
-            (parserCapacityCompletion position stateCount) after := by
-          rw [extractedParserRecognize_state_incomplete_shape]
-          simpa [rhsScope, symbolBound, symbol, after, nestedAfter,
-            restoreLocals] using
-            executesLetLocal (id := 29) (type := parserI32Type)
-              symbolBinding.evaluation sequenced
-        have recognizer : RecognizerInvariant grammarLayout grammar words tokens
-            workspaceLayout finalWorkspace finalValues grammarCell tokensCell
-            workspaceCell after := by
-          simpa [after] using RecognizerInvariant.restore_temporary
-            symbolBinding.afterRead predictionEntry.predictionState innerAfter
-            symbolBinding.afterReadWellFormed entered innerEffect
-            parameterCellId terminal
+        have recognizer := restoreRecognizer finalWorkspace finalValues terminal
         have afterWellFormed : StateWellFormed after :=
           scopedStoreAll.restoreLocals_wellFormed
             symbolBinding.afterReadWellFormed wellFormed
-        exact {
-          physical := {
+        exact ⟨{
             after := after
             completion := parserCapacityCompletion position stateCount
-            execution := execution
+            execution := by
+              rw [extractedParserRecognize_state_incomplete_shape]
+              simpa [rhsScope, symbolBound, symbol, after, nestedAfter,
+                restoreLocals] using
+                executesLetLocal (id := 29) (type := parserI32Type)
+                  symbolBinding.evaluation sequenced
             effect := by simpa [rhsScope, writes] using effect
             outcome := .full finalWorkspace finalValues after growth recognizer
               stateCount afterWellFormed full
-          }
-          afterEq := rfl
-          completionEq := completionEq.symm
-        }
+        }, rfl, rfl⟩
   have finishCompleted (nextWorkspace : LogicalWorkspace)
       (nextValues : List Int)
       (growth : WorkspaceAppendClosure workspaceLayout.capacity workspace
@@ -2809,11 +2756,8 @@ private noncomputable def RecognizerStatePredictionExecution.close_nonterminal
         (.ifThenElse (.binary .less (.local 29) (.local 11))
           parserRecognizeTerminalStatement parserRecognizeStateNonterminalBranch)
         .next nestedAfter) :
-      RecognizerStateClosedNonterminalExecution grammarLayout grammar words tokens
-        workspaceLayout workspace workspaceValues grammarCell tokensCell workspaceCell
-        stateCountCell cursorCell runtime position current remaining beforeInvariant
-        candidate found productionBound dotBeforeEnd bindings symbolBinding
-        isNonterminal nonterminalBinding predictionEntry synchronizedInner := by
+      { physical : physicalType //
+        physical.after = after ∧ physical.completion = .next } := by
         have sequenced : Executes verifiedParserCore symbolBound
             (.sequence
               (.ifThenElse (.binary .less (.local 29) (.local 11))
@@ -2822,20 +2766,8 @@ private noncomputable def RecognizerStatePredictionExecution.close_nonterminal
               .skip) .next nestedAfter :=
           executesSequence selectedNext
             (executesSkip verifiedParserCore nestedAfter)
-        have execution : Executes verifiedParserCore rhsScope
-            parserRecognizeStateIncompleteBranch .next after := by
-          rw [extractedParserRecognize_state_incomplete_shape]
-          simpa [rhsScope, symbolBound, symbol, after, nestedAfter,
-            restoreLocals] using
-            executesLetLocal (id := 29) (type := parserI32Type)
-              symbolBinding.evaluation sequenced
-        have recognizer : RecognizerInvariant grammarLayout grammar words tokens
-            workspaceLayout nextWorkspace nextValues grammarCell tokensCell
-            workspaceCell after := by
-          simpa [after] using RecognizerInvariant.restore_temporary
-            symbolBinding.afterRead predictionEntry.predictionState innerAfter
-            symbolBinding.afterReadWellFormed entered innerEffect
-            parameterCellId frame.invariant.chartCursor.recognizer
+        have recognizer := restoreRecognizer nextWorkspace nextValues
+          frame.invariant.chartCursor.recognizer
         have countCellId : predictionEntry.predictionState.cellId? 18 =
             symbolBinding.afterRead.cellId? 18 :=
           temporaryCellId 18 (by decide)
@@ -2864,33 +2796,109 @@ private noncomputable def RecognizerStatePredictionExecution.close_nonterminal
           frame.invariant.chartCursor.workspaceWithinGrammar stateCountOwned
           writes (by simpa [rhsScope] using effect) frameDisjoint
           cursorNotWritten
-        exact {
-          physical := {
+        exact ⟨{
             after := after
             completion := .next
-            execution := execution
+            execution := by
+              rw [extractedParserRecognize_state_incomplete_shape]
+              simpa [rhsScope, symbolBound, symbol, after, nestedAfter,
+                restoreLocals] using
+                executesLetLocal (id := 29) (type := parserI32Type)
+                  symbolBinding.evaluation sequenced
             effect := by simpa [rhsScope, writes] using effect
             outcome := .completed nextWorkspace nextValues after growth nextFrame
-          }
-          afterEq := rfl
-          completionEq := completionEq.symm
-        }
+        }, rfl, rfl⟩
   let sourceOutcome := innerSynchronized.flatten
+  generalize outcomeEq : innerSynchronized.flatten = sourceOutcome
+  have restoreFull (finalWorkspace : LogicalWorkspace) (finalValues : List Int)
+      (terminal : RecognizerInvariant grammarLayout grammar words tokens
+        workspaceLayout finalWorkspace finalValues grammarCell tokensCell
+        workspaceCell innerAfter)
+      (wellFormed : StateWellFormed innerAfter) :
+      RecognizerStateRestoredTerminal grammarLayout grammar words tokens
+        workspaceLayout finalWorkspace finalValues grammarCell tokensCell
+        workspaceCell after := by
+    have recognizer := restoreRecognizer finalWorkspace finalValues terminal
+    have afterWellFormed : StateWellFormed after :=
+      scopedStoreAll.restoreLocals_wellFormed
+        symbolBinding.afterReadWellFormed wellFormed
+    exact { invariant := recognizer, wellFormed := afterWellFormed }
   cases sourceOutcome with
   | completed predictionFrame predictionCompletionEq predictionWorldEq
       predictionEnvironmentEq nullableEntry nullableCompletionEq finalWorkspace
       finalValues sourceAfter growth frame nullableWorldEq nullableEnvironmentEq =>
-      exact finishCompleted finalWorkspace finalValues growth frame rfl (by
-        simpa using selected)
+      let ⟨physical, physicalAfter, physicalCompletion⟩ :=
+        finishCompleted finalWorkspace finalValues growth frame rfl (by
+          simpa using selected)
+      have recognizer := restoreRecognizer finalWorkspace finalValues
+        frame.invariant.chartCursor.recognizer
+      have countCellId : predictionEntry.predictionState.cellId? 18 =
+          symbolBinding.afterRead.cellId? 18 := temporaryCellId 18 (by decide)
+      have stateCountOwned : (Assertion.localPointsTo 18 stateCountCell
+          (some (.signed .i32 (Int.ofNat finalWorkspace.states.length)))).holds
+          after := by
+        simpa [after] using localPointsTo_restore_temporary
+          symbolBinding.afterRead predictionEntry.predictionState innerAfter
+          18 stateCountCell
+          (some (.signed .i32 (Int.ofNat finalWorkspace.states.length)))
+          innerEffect countCellId frame.invariant.appendFrame.stateCountOwned
+      have frameDisjoint : CellSet.Disjoint
+          (localBindingFrameFootprint
+            (bindings.afterRhsLengthRead.bindLocal 28 (.signed .i32 (Int.ofNat
+              (grammar.productionAt ⟨candidate.production,
+                productionBound⟩).rhs.length)))
+            verifiedParserStateLoopPreservedBindings) writes := by
+        intro cell framed written
+        exact bindings.invariant.persistentSeparate cell framed <| by
+          rcases written with workspaceWritten | countWritten
+          · exact .inl workspaceWritten
+          · exact .inr (.inl countWritten)
+      have cursorNotWritten : ¬ writes cursorCell := by
+        simpa [writes, CellSet.union, CellSet.singleton, not_or] using
+          ⟨bindings.invariant.chartCursor.cursorBackingDistinct.2.2,
+            bindings.invariant.cursorStateCountDistinct⟩
+      have restored := bindings.invariant.reframe_growth finalWorkspace finalValues after
+        growth recognizer frame.invariant.chartCursor.workspaceWithinGrammar
+        stateCountOwned writes
+        (by
+          simpa [writes] using
+            (symbolBinding.effect.weaken CellSet.empty_subset).trans_same closed)
+        frameDisjoint cursorNotWritten
+      exact {
+        physical := physical
+        afterEq := physicalAfter
+        completionEq := physicalCompletion
+        restored := by
+          rw [outcomeEq, physicalAfter]
+          exact restored
+      }
   | nullableFull predictionFrame predictionCompletionEq predictionWorldEq
       predictionEnvironmentEq nullableEntry finalWorkspace finalValues sourceAfter
       growth terminal stateCount wellFormed nullableCompletionEq nullableStops seeded full =>
-      exact finishFull finalWorkspace finalValues growth terminal stateCount
-        wellFormed full rfl (by simpa using selected)
+      let ⟨physical, physicalAfter, physicalCompletion⟩ :=
+        finishFull finalWorkspace finalValues growth terminal stateCount
+          wellFormed full rfl (by simpa using selected)
+      exact {
+        physical := physical
+        afterEq := physicalAfter
+        completionEq := physicalCompletion
+        restored := by
+          rw [outcomeEq, physicalAfter]
+          exact restoreFull finalWorkspace finalValues terminal wellFormed
+      }
   | predictionFull finalWorkspace finalValues sourceAfter growth terminal
       stateCount wellFormed predictionCompletionEq predictionStops full =>
-      exact finishFull finalWorkspace finalValues growth terminal stateCount
-        wellFormed full rfl (by simpa using selected)
+      let ⟨physical, physicalAfter, physicalCompletion⟩ :=
+        finishFull finalWorkspace finalValues growth terminal stateCount
+          wellFormed full rfl (by simpa using selected)
+      exact {
+        physical := physical
+        afterEq := physicalAfter
+        completionEq := physicalCompletion
+        restored := by
+          rw [outcomeEq, physicalAfter]
+          exact restoreFull finalWorkspace finalValues terminal wellFormed
+      }
 
 /-- Compatibility projection of the shared nonterminal execution. -/
 noncomputable def RecognizerStateSymbolBinding.execute_nonterminal
@@ -3005,185 +3013,6 @@ theorem RecognizerStateNonterminalSynchronizedExecution.nullables
         ⟨candidate.production, candidate.dot + 1, candidate.origin⟩ :=
   run.sourceOutcome.nullables run.restored (run.completionEq.symm.trans normal)
 
-/-- Closing locals 29--33 preserves exactly the logical result selected by the
-    synchronized prediction/nullable run.  This is the store-framing argument
-    formerly implicit in the compatibility executor. -/
-private noncomputable def RecognizerStatePredictionExecution.restored_nonterminal
-    (inner : RecognizerStatePredictionExecution grammarLayout grammar words
-      tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
-      workspaceCell stateCountCell cursorCell runtime position current remaining
-      beforeInvariant candidate found productionBound dotBeforeEnd bindings
-      symbolBinding isNonterminal nonterminalBinding predictionEntry) :
-    let sourceOutcome := inner.outcome.flatten
-    sourceOutcome.Restored
-      (restoreLocals symbolBinding.afterRead inner.after) := by
-  obtain ⟨innerAfter, innerCompletion, innerExecution, innerEffect,
-    innerOutcome⟩ := inner
-  let symbol := (grammar.productionAt ⟨candidate.production,
-    productionBound⟩).rhs.get ⟨candidate.dot, dotBeforeEnd⟩
-  let symbolBound := symbolBinding.afterRead.bindLocal 29
-    (.signed .i32 (Int.ofNat symbol))
-  let firstState := nonterminalBinding.bound.bindLocal 31
-    (.signed .i32 (Int.ofNat predictionEntry.first))
-  let countState := firstState.bindLocal 32
-    (.signed .i32 (Int.ofNat predictionEntry.count))
-  let after := restoreLocals symbolBinding.afterRead innerAfter
-  let writes := CellSet.union (CellSet.singleton workspaceCell)
-    (CellSet.singleton stateCountCell)
-  have enteredSymbol : StoreEffect CellSet.empty symbolBinding.afterRead
-      symbolBound := by
-    exact bindLocal_effect symbolBinding.afterRead 29
-      (.signed .i32 (Int.ofNat symbol))
-  have enteredNonterminal : StoreEffect CellSet.empty symbolBound
-      nonterminalBinding.bound := by
-    rw [nonterminalBinding.boundEq]
-    simpa [symbolBound, symbol] using bindLocal_effect symbolBound 30
-      (.signed .i32 (Int.ofNat nonterminalBinding.nonterminal))
-  have enteredFirst : StoreEffect CellSet.empty nonterminalBinding.bound
-      firstState := by
-    exact bindLocal_effect nonterminalBinding.bound 31
-      (.signed .i32 (Int.ofNat predictionEntry.first))
-  have enteredCount : StoreEffect CellSet.empty firstState countState := by
-    exact bindLocal_effect firstState 32
-      (.signed .i32 (Int.ofNat predictionEntry.count))
-  have enteredIndex : StoreEffect CellSet.empty countState
-      predictionEntry.predictionState := by
-    rw [predictionEntry.predictionStateEq]
-    simpa [firstState, countState] using bindLocal_effect countState 33
-      (.signed .i32 0)
-  have enteredBeforeIndex : StoreEffect CellSet.empty symbolBinding.afterRead
-      countState :=
-    enteredSymbol.trans_same <| enteredNonterminal.trans_same <|
-      enteredFirst.trans_same enteredCount
-  have entered : StoreEffect CellSet.empty symbolBinding.afterRead
-      predictionEntry.predictionState := enteredBeforeIndex.trans_same enteredIndex
-  let innerWrites := recognizerPredictionWrites workspaceCell stateCountCell
-    predictionEntry.indexCell
-  have scopedStoreAll : StoreEffect innerWrites symbolBinding.afterRead
-      innerAfter := (entered.weaken CellSet.empty_subset).trans_same
-        (by simpa [innerWrites] using innerEffect.toStoreEffect)
-  have closedAll : ModifiesOnly innerWrites symbolBinding.afterRead after := by
-    simpa [after] using scopedStoreAll.restoreLocals
-  have closed : ModifiesOnly writes symbolBinding.afterRead after := by
-    apply closedAll.hideFreshWritesExcept
-    intro cell written
-    change cell = workspaceCell ∨ cell = stateCountCell ∨
-      cell = predictionEntry.indexCell at written
-    rcases written with rfl | rfl | rfl
-    · exact .inl (.inl rfl)
-    · exact .inl (.inr rfl)
-    · exact .inr (by
-        rw [predictionEntry.indexCellEq]
-        exact enteredBeforeIndex.nextCell)
-  have temporaryCellId (id : VarId) (idLt : id < 29) :
-      predictionEntry.predictionState.cellId? id =
-        symbolBinding.afterRead.cellId? id := by
-    have ne29 : 29 ≠ id := Nat.ne_of_gt idLt
-    have ne30 : 30 ≠ id := Nat.ne_of_gt
-      (Nat.lt_trans idLt (by decide : 29 < 30))
-    have ne31 : 31 ≠ id := Nat.ne_of_gt
-      (Nat.lt_trans idLt (by decide : 29 < 31))
-    have ne32 : 32 ≠ id := Nat.ne_of_gt
-      (Nat.lt_trans idLt (by decide : 29 < 32))
-    have ne33 : 33 ≠ id := Nat.ne_of_gt
-      (Nat.lt_trans idLt (by decide : 29 < 33))
-    rw [predictionEntry.predictionStateEq]
-    rw [bindLocal_preserves_other_cellId countState 33 id _ ne33]
-    rw [bindLocal_preserves_other_cellId firstState 32 id _ ne32]
-    rw [bindLocal_preserves_other_cellId nonterminalBinding.bound 31 id _ ne31]
-    rw [nonterminalBinding.boundEq]
-    rw [bindLocal_preserves_other_cellId symbolBound 30 id _ ne30]
-    rw [show symbolBound = symbolBinding.afterRead.bindLocal 29
-      (.signed .i32 (Int.ofNat symbol)) by rfl]
-    exact bindLocal_preserves_other_cellId symbolBinding.afterRead 29 id _ ne29
-  have parameterCellId : ∀ id,
-      id ∈ verifiedParserRecognizerParameterIds →
-      predictionEntry.predictionState.cellId? id =
-        symbolBinding.afterRead.cellId? id := by
-    intro id member
-    have idBound := (mem_verifiedParserRecognizerParameterIds_iff id).mp member
-    exact temporaryCellId id
-      (Nat.lt_of_le_of_lt idBound (by decide : 5 < 29))
-  change innerOutcome.flatten.Restored after
-  generalize outcomeEq : innerOutcome.flatten = sourceOutcome
-  cases sourceOutcome with
-  | completed predictionFrame predictionCompletionEq predictionWorldEq
-      predictionEnvironmentEq nullableEntry nullableCompletionEq finalWorkspace
-      finalValues innerAfter growth frame nullableWorldEq nullableEnvironmentEq =>
-      have recognizer : RecognizerInvariant grammarLayout grammar words tokens
-          workspaceLayout finalWorkspace finalValues grammarCell tokensCell
-          workspaceCell after := by
-        simpa [after] using RecognizerInvariant.restore_temporary
-          symbolBinding.afterRead predictionEntry.predictionState innerAfter
-          symbolBinding.afterReadWellFormed entered innerEffect parameterCellId
-          frame.invariant.chartCursor.recognizer
-      have countCellId : predictionEntry.predictionState.cellId? 18 =
-          symbolBinding.afterRead.cellId? 18 := temporaryCellId 18 (by decide)
-      have stateCountOwned : (Assertion.localPointsTo 18 stateCountCell
-          (some (.signed .i32 (Int.ofNat finalWorkspace.states.length)))).holds
-          after := by
-        simpa [after] using localPointsTo_restore_temporary
-          symbolBinding.afterRead predictionEntry.predictionState innerAfter
-          18 stateCountCell
-          (some (.signed .i32 (Int.ofNat finalWorkspace.states.length)))
-          innerEffect countCellId frame.invariant.appendFrame.stateCountOwned
-      have frameDisjoint : CellSet.Disjoint
-          (localBindingFrameFootprint
-            (bindings.afterRhsLengthRead.bindLocal 28 (.signed .i32 (Int.ofNat
-              (grammar.productionAt ⟨candidate.production,
-                productionBound⟩).rhs.length)))
-            verifiedParserStateLoopPreservedBindings) writes := by
-        intro cell framed written
-        exact bindings.invariant.persistentSeparate cell framed <| by
-          rcases written with workspaceWritten | countWritten
-          · exact .inl workspaceWritten
-          · exact .inr (.inl countWritten)
-      have cursorNotWritten : ¬ writes cursorCell := by
-        simpa [writes, CellSet.union, CellSet.singleton, not_or] using
-          ⟨bindings.invariant.chartCursor.cursorBackingDistinct.2.2,
-            bindings.invariant.cursorStateCountDistinct⟩
-      exact bindings.invariant.reframe_growth finalWorkspace finalValues after
-        growth recognizer frame.invariant.chartCursor.workspaceWithinGrammar
-        stateCountOwned writes
-        (by
-          simpa [writes] using
-            (symbolBinding.effect.weaken CellSet.empty_subset).trans_same closed)
-        frameDisjoint cursorNotWritten
-  | nullableFull predictionFrame predictionCompletionEq predictionWorldEq
-      predictionEnvironmentEq nullableEntry finalWorkspace finalValues
-      innerAfter growth terminal stateCount wellFormed nullableCompletionEq
-      nullableStops =>
-      have recognizer : RecognizerInvariant grammarLayout grammar words tokens
-          workspaceLayout finalWorkspace finalValues grammarCell tokensCell
-          workspaceCell after := by
-        simpa [after] using RecognizerInvariant.restore_temporary
-          symbolBinding.afterRead predictionEntry.predictionState innerAfter
-          symbolBinding.afterReadWellFormed entered innerEffect parameterCellId
-          terminal
-      have afterWellFormed : StateWellFormed after :=
-        scopedStoreAll.restoreLocals_wellFormed
-          symbolBinding.afterReadWellFormed wellFormed
-      exact {
-        invariant := recognizer
-        wellFormed := afterWellFormed
-      }
-  | predictionFull finalWorkspace finalValues innerAfter growth terminal
-      stateCount wellFormed predictionCompletionEq predictionStops =>
-      have recognizer : RecognizerInvariant grammarLayout grammar words tokens
-          workspaceLayout finalWorkspace finalValues grammarCell tokensCell
-          workspaceCell after := by
-        simpa [after] using RecognizerInvariant.restore_temporary
-          symbolBinding.afterRead predictionEntry.predictionState innerAfter
-          symbolBinding.afterReadWellFormed entered innerEffect parameterCellId
-          terminal
-      have afterWellFormed : StateWellFormed after :=
-        scopedStoreAll.restoreLocals_wellFormed
-          symbolBinding.afterReadWellFormed wellFormed
-      exact {
-        invariant := recognizer
-        wellFormed := afterWellFormed
-      }
-
 /-- Execute the nonterminal branch once and retain its synchronized source
     witness alongside the compatibility-oriented physical result. -/
 noncomputable def
@@ -3217,8 +3046,7 @@ noncomputable def
     completionEq := closed.completionEq
     sourceCompletionEq := rfl
     restored := by
-      rw [closed.afterEq]
-      exact inner.restored_nonterminal
+      exact closed.restored
   }
 
 /-- Compatibility projection from the synchronized nonterminal execution. -/

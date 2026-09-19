@@ -59,9 +59,9 @@ private theorem condition (program : Program) (invariant : Invariant buffers loc
     Evaluates program before (.binary .notEqual (.local locals.cursor) (.local locals.length))
       (.boolean (!(Int.ofNat index == Int.ofNat buffers.spelling.length))) before := by
   have cursorResult : Evaluates program before (.local locals.cursor) (.signed .i32 index) before :=
-    ⟨1, evalLocal_of_local 0 program before _ _ (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)
   have lengthResult : Evaluates program before (.local locals.length) (.signed .i32 buffers.spelling.length) before :=
-    ⟨1, evalLocal_of_local 0 program before _ _ invariant.limit⟩
+    Lanius.Semantics.evaluatesLocal invariant.limit
   exact evaluatesEagerBinary (by decide) (by decide) cursorResult lengthResult (by rfl)
 
 /-- The actual Core loop terminates and rejects exactly the first unequal
@@ -103,9 +103,9 @@ theorem executes_loop (program : Program) (buffers : Buffers) (locals : Locals)
         simpa [List.getElem?_take, bound, spelling] using selected
       have packedResult : Evaluates program before (.local locals.packed)
           (.slice (.scalar (.signed .i32)) buffers.packedCell [] 0 buffers.packed.length) before :=
-        ⟨1, evalLocal_of_local 0 program before _ _ invariant.packedLocal⟩
+        Lanius.Semantics.evaluatesLocal invariant.packedLocal
       have cursorResult : Evaluates program before (.local locals.cursor) (.signed .i32 processed.length) before :=
-        ⟨1, evalLocal_of_local 0 program before _ _ (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)⟩
+        Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)
       have expectedByte := Input.evaluates_encoded_byte program before (.local locals.packed)
         (.local locals.cursor) buffers.packedCell buffers.packed buffers.storage processed.length byte
         (by have := buffers.bounded; omega) packedResult cursorResult invariant.packedContents buffers.encoded selected
@@ -162,7 +162,7 @@ theorem executes_finish (program : Program) (buffers : Buffers) (locals : Locals
   | true =>
       simp only [matched, ↓reduceIte] at run ⊢
       exact executesSequence run (executesSequenceReturned
-        (executesReturnValue (show Evaluates program after (.value (.boolean true)) (.boolean true) after from ⟨1, rfl⟩)))
+        (executesReturnValue (show Evaluates program after (.value (.boolean true)) (.boolean true) after from evaluatesValue)))
 
 /-- Any successful evaluation of this source loop agrees with the byte-span
 specification; the witness execution above is not a separate interpreter. -/

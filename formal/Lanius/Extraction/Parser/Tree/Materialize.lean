@@ -10,7 +10,7 @@ open Lanius.Extraction.ParserTreeLayout Lanius.FunctionalView.Core
 
 private theorem local_read {id : Lanius.VarId} (found : before.local? id = some value) :
     Evaluates program before (.local id) value before :=
-  ⟨1, evalLocal_of_local 0 program before id value found⟩
+  Lanius.Semantics.evaluatesLocal found
 
 /-- Recover the exact selected tree from the successful recognizer result.
     No independent materialization computation is supplied by its consumer. -/
@@ -132,7 +132,7 @@ private theorem CheckedMaterialize.with_visit {visit : CheckedVisit program}
     refine .cons (local_read (rootParameters ⟨5, by decide⟩)) ?_
     refine .cons (local_read (rootParameters ⟨6, by decide⟩)) ?_
     refine .cons (local_read (rootParameters ⟨7, by decide⟩)) ?_
-    exact .cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩ (.cons (local_read (rootParameters ⟨8, by decide⟩)) (.nil _ _)))
+    exact .cons Lanius.Semantics.evaluatesValue (.cons Lanius.Semantics.evaluatesValue (.cons (local_read (rootParameters ⟨8, by decide⟩)) (.nil _ _)))
   have currentArtifact : RecognizerWorkspaceArtifact layout workspace workspaceValues workspaceCell afterRoot :=
     ⟨artifact.workspaceLength, artifact.workspaceEncoded,
       callsEffect.empty_preserves_entry calleeWF (preserve artifact.workspaceBacking)⟩
@@ -298,7 +298,7 @@ theorem CheckedMaterialize.reject {visit : CheckedVisit program}
   have negativeOne : Evaluates program.core afterStatus (.unary .negate (.value (.signed .i32 1)))
       (.signed .i32 (-1)) afterStatus := by
     apply evaluatesUnary
-      (show Evaluates program.core afterStatus (.value (.signed .i32 1)) (.signed .i32 1) afterStatus from ⟨1, rfl⟩)
+      (show Evaluates program.core afterStatus (.value (.signed .i32 1)) (.signed .i32 1) afterStatus from Lanius.Semantics.evaluatesValue)
     simp [evalUnaryValue, wrapSigned, signedModulus, signedSignBit, Core.SignedIntTy.bits]
   have negativeCheck {id : Lanius.VarId} {value : Int}
       (found : afterStatus.local? id = some (.signed .i32 value)) (negative : value < 0) :
@@ -330,7 +330,7 @@ theorem CheckedMaterialize.reject {visit : CheckedVisit program}
       · exact evaluatesLogicalOrFalse (evaluatesLogicalOrFalse statusFalse
           (nonnegative_check_false (afterParameters ⟨5, by decide⟩) (by omega)))
           (negativeCheck (afterParameters ⟨7, by decide⟩) (by omega))
-  have zero : Evaluates program.core afterStatus (.value (.signed .i32 0)) (.signed .i32 0) afterStatus := ⟨1, rfl⟩
+  have zero : Evaluates program.core afterStatus (.value (.signed .i32 0)) (.signed .i32 0) afterStatus := Lanius.Semantics.evaluatesValue
   obtain ⟨completed, returned, constructorEffect, completedWF⟩ := visit.constructor_call statusEffect.wellFormed
     (.cons (evaluatesConstant visit.statuses.2.1) (.cons zero (.cons zero (.nil _ _))))
   have body : Executes program.core callee

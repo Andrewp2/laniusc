@@ -104,7 +104,7 @@ theorem copy_kinds (program : Program) (before : State)
     (Host.MemoryFrame.bindLocal before cursorId (.signed .i32 0)).trans native⟩
   · intro rest completion final tailRun
     exact executesLetLocal
-      (show Evaluates program before (.value (.signed .i32 0)) (.signed .i32 0) before from ⟨1, rfl⟩)
+      (show Evaluates program before (.value (.signed .i32 0)) (.signed .i32 0) before from evaluatesValue)
       (executesSequence loop tailRun)
   · simpa only [memory, buffer, tokenKinds, List.length_map] using complete.destinationContents
 

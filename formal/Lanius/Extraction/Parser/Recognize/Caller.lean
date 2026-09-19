@@ -35,7 +35,7 @@ theorem recognition_arguments
   have localRead {id : Lanius.VarId} {value : Value}
       (found : caller.local? id = some value) :
       Evaluates program caller (.local id) value caller := by
-    exact ⟨1, evalLocal_of_local 0 program caller id value found⟩
+    exact Lanius.Semantics.evaluatesLocal found
   exact .cons (localRead grammarLocal) (.cons (localRead grammarLengthLocal)
     (.cons (localRead tokensLocal) (.cons (localRead tokenCountLocal)
       (.cons (localRead workspaceLocal) (.cons (localRead workspaceLengthLocal)

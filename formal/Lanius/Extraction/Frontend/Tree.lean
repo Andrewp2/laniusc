@@ -49,7 +49,7 @@ def checkAfterParse? (materializer : CheckedMaterialize visit) (statement : Stmt
   pure ⟨checked, exactBody⟩
 
 private theorem local_read {id : VarId} (found : before.local? id = some value) :
-    Evaluates program.core before (.local id) value before := ⟨1, evalLocal_of_local 0 _ _ _ _ found⟩
+    Evaluates program.core before (.local id) value before := Lanius.Semantics.evaluatesLocal found
 
 /-- Feed the actual retained parser outcome into materialization and return
 the extractor's seven fields. The selected root and all call arguments are
@@ -190,7 +190,7 @@ theorem CheckedAfterParse.reject (checked : CheckedAfterParse materializer)
     refine .cons (evaluatesConstant checked.failure) (.cons detailCall ?_)
     refine .cons (local_read (prefixEffect.empty_preserves_local wellFormed rawLocal)) ?_
     refine .cons (local_read (prefixEffect.empty_preserves_local wellFormed tokenLocal)) ?_
-    exact .cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩ (.singleton positionCall))
+    exact .cons evaluatesValue (.cons evaluatesValue (.singleton positionCall))
   obtain ⟨after, returned, returnEffect, _⟩ := checked.finish.constructor.call positionEffect.wellFormed arguments
   exact ⟨after, executesSequenceReturned (executesIfTrue guardRun
       (executesSequenceReturned (executesReturnValue returned))),

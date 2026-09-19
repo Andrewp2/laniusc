@@ -396,6 +396,61 @@ theorem Representation.worldCell_ne_localCell
   exact represented.worldLocalsDisjoint worldCell ⟨values, found⟩
     ⟨index, same.symm⟩
 
+private theorem Representation.finishAssignment
+    {arity : Nat} {layout : Layout arity}
+    {localCell : Fin arity → CellId}
+    {afterWorld : ReadOnly.World}
+    {environment : Env arity} {before : State}
+    {program : Program} {statement : Expr} {target : Fin arity}
+    {result : Value} {rightWrites : CellSet} {afterRight : State}
+    (afterRightRepresented :
+      Representation layout localCell afterWorld environment afterRight)
+    (rightWellFormed : StateWellFormed afterRight)
+    (assignment : ∃ after,
+      Evaluates program before statement .unit after ∧
+      StateWellFormed after ∧
+      (Assertion.localPointsTo (layout target) (localCell target)
+        (some result)).holds after ∧
+      ModifiesOnly (CellSet.union rightWrites
+        (CellSet.singleton (localCell target))) before after ∧
+      ModifiesOnly (CellSet.singleton (localCell target)) afterRight after) :
+    ∃ after,
+      Evaluates program before statement .unit after ∧
+      StateWellFormed after ∧
+      Representation layout localCell afterWorld
+        (Env.set environment target result) after ∧
+      ModifiesOnly (CellSet.union rightWrites
+        (CellSet.singleton (localCell target))) before after := by
+  obtain ⟨after, execution, afterWellFormed, targetOwned, effect,
+      assignmentEffect⟩ := assignment
+  have worldOwned : (ReadOnly.World.owns afterWorld).holds after :=
+    assignmentEffect.preserve rightWellFormed (ReadOnly.World.owns afterWorld)
+      afterRightRepresented.worldOwned (by
+        intro cell worldMember written
+        exact afterRightRepresented.worldLocalsDisjoint cell worldMember
+          ⟨target, written.symm⟩)
+  have localOwned : ∀ index,
+      (Assertion.localPointsTo (layout index) (localCell index)
+        (some (Env.set environment target result index))).holds after := by
+    intro index
+    by_cases same : index = target
+    · subst index
+      simpa using targetOwned
+    · rw [Env.set_other environment target index result same]
+      exact assignmentEffect.preserve rightWellFormed
+        (Assertion.localPointsTo (layout index)
+          (localCell index) (some (environment index)))
+        (afterRightRepresented.localOwned index) (by
+          intro cell member written
+          exact same (afterRightRepresented.localCellsInjective
+            (member.symm.trans written)))
+  exact ⟨after, execution, afterWellFormed, {
+    worldOwned := worldOwned
+    localOwned := localOwned
+    localCellsInjective := afterRightRepresented.localCellsInjective
+    worldLocalsDisjoint := afterRightRepresented.worldLocalsDisjoint
+  }, effect⟩
+
 theorem Representation.bindLocal
     {arity : Nat} {layout : Layout arity}
     {localCell : Fin arity → CellId} {world : ReadOnly.World}
@@ -500,39 +555,11 @@ theorem Representation.setLocalAfterTerm
         (Env.set environment target result) after ∧
       ModifiesOnly (CellSet.union rightWrites
         (CellSet.singleton (localCell target))) before after := by
-  obtain ⟨after, execution, afterWellFormed, targetOwned, effect,
-      assignmentEffect⟩ :=
-    evaluatesSetOwnedLocal (program := program) (layout target)
+  exact Representation.finishAssignment afterRightRepresented rightWellFormed
+    (evaluatesSetOwnedLocal (program := program) (layout target)
       (localCell target) (beforeRepresented.localOwned target)
       rightResult rightWellFormed (afterRightRepresented.localOwned target)
-      rightEffect
-  have worldOwned : (ReadOnly.World.owns afterWorld).holds after :=
-    assignmentEffect.preserve rightWellFormed (ReadOnly.World.owns afterWorld)
-      afterRightRepresented.worldOwned (by
-        intro cell worldMember written
-        obtain ⟨values, found⟩ := worldMember
-        exact afterRightRepresented.worldCell_ne_localCell found target written)
-  have localOwned : ∀ index,
-      (Assertion.localPointsTo (layout index) (localCell index)
-        (some (Env.set environment target result index))).holds after := by
-    intro index
-    by_cases same : index = target
-    · subst index
-      simpa using targetOwned
-    · rw [Env.set_other environment target index result same]
-      exact assignmentEffect.preserve rightWellFormed
-        (Assertion.localPointsTo (layout index)
-          (localCell index) (some (environment index)))
-        (afterRightRepresented.localOwned index) (by
-          intro cell member written
-          exact same (afterRightRepresented.localCellsInjective
-            (member.symm.trans written)))
-  exact ⟨after, execution, afterWellFormed, {
-    worldOwned := worldOwned
-    localOwned := localOwned
-    localCellsInjective := afterRightRepresented.localCellsInjective
-    worldLocalsDisjoint := afterRightRepresented.worldLocalsDisjoint
-  }, effect⟩
+      rightEffect)
 
 theorem Representation.setLocal
     {arity : Nat} {layout : Layout arity}
@@ -556,38 +583,11 @@ theorem Representation.setLocal
   have termSound := Core.term_evaluates (ReadOnly.bridge program)
     (represented.worldRepresents wellFormed)
     represented.environmentMatches valueResult
-  obtain ⟨after, execution, afterWellFormed, targetOwned, effect⟩ :=
-    evaluatesSetOwnedLocalFromEmpty (program := program) (layout target)
-      (localCell target) wellFormed (represented.localOwned target)
-      termSound.1 wellFormed (ModifiesOnly.refl state)
-  have worldOwned : (ReadOnly.World.owns world).holds after :=
-    effect.preserve wellFormed (ReadOnly.World.owns world)
-      represented.worldOwned (by
-        intro cell worldMember written
-        obtain ⟨values, found⟩ := worldMember
-        exact represented.worldCell_ne_localCell found target
-          written)
-  have localOwned : ∀ index,
-      (Assertion.localPointsTo (layout index) (localCell index)
-        (some (Env.set environment target result index))).holds after := by
-    intro index
-    by_cases same : index = target
-    · subst index
-      simpa using targetOwned
-    · rw [Env.set_other environment target index result same]
-      exact effect.preserve wellFormed
-        (Assertion.localPointsTo (layout index)
-          (localCell index) (some (environment index)))
-        (represented.localOwned index) (by
-          intro cell member written
-          exact same (represented.localCellsInjective
-            (member.symm.trans written)))
-  exact ⟨after, execution, afterWellFormed, {
-    worldOwned := worldOwned
-    localOwned := localOwned
-    localCellsInjective := represented.localCellsInjective
-    worldLocalsDisjoint := represented.worldLocalsDisjoint
-  }, effect⟩
+  obtain ⟨after, execution, afterWellFormed, afterRepresented, effect⟩ :=
+    represented.setLocalAfterTerm represented termSound.1 wellFormed
+      (ModifiesOnly.refl state)
+  exact ⟨after, execution, afterWellFormed, afterRepresented,
+    by simpa only [CellSet.empty_union] using effect⟩
 
 /-- Compound local assignment has the same ownership rule as plain
     assignment; only the pure value transformer differs. -/
@@ -618,39 +618,11 @@ theorem Representation.updateLocalAfterTerm
         (Env.set environment target result) after ∧
       ModifiesOnly (CellSet.union rightWrites
         (CellSet.singleton (localCell target))) before after := by
-  obtain ⟨after, execution, afterWellFormed, targetOwned, effect,
-      assignmentEffect⟩ :=
-    evaluatesUpdateOwnedLocal (program := program) (layout target)
+  exact Representation.finishAssignment afterRightRepresented rightWellFormed
+    (evaluatesUpdateOwnedLocal (program := program) (layout target)
       (localCell target) operation (beforeRepresented.localOwned target)
       rightResult rightWellFormed (afterRightRepresented.localOwned target)
-      rightEffect updated
-  have worldOwned : (ReadOnly.World.owns afterWorld).holds after :=
-    assignmentEffect.preserve rightWellFormed (ReadOnly.World.owns afterWorld)
-      afterRightRepresented.worldOwned (by
-        intro cell worldMember written
-        obtain ⟨values, found⟩ := worldMember
-        exact afterRightRepresented.worldCell_ne_localCell found target written)
-  have localOwned : ∀ index,
-      (Assertion.localPointsTo (layout index) (localCell index)
-        (some (Env.set environment target result index))).holds after := by
-    intro index
-    by_cases same : index = target
-    · subst index
-      simpa using targetOwned
-    · rw [Env.set_other environment target index result same]
-      exact assignmentEffect.preserve rightWellFormed
-        (Assertion.localPointsTo (layout index)
-          (localCell index) (some (environment index)))
-        (afterRightRepresented.localOwned index) (by
-          intro cell member written
-          exact same (afterRightRepresented.localCellsInjective
-            (member.symm.trans written)))
-  exact ⟨after, execution, afterWellFormed, {
-    worldOwned := worldOwned
-    localOwned := localOwned
-    localCellsInjective := afterRightRepresented.localCellsInjective
-    worldLocalsDisjoint := afterRightRepresented.worldLocalsDisjoint
-  }, effect⟩
+      rightEffect updated)
 
 theorem Representation.updateLocal
     {arity : Nat} {layout : Layout arity}
@@ -675,38 +647,11 @@ theorem Representation.updateLocal
   have termSound := Core.term_evaluates (ReadOnly.bridge program)
     (represented.worldRepresents wellFormed)
     represented.environmentMatches valueResult
-  obtain ⟨after, execution, afterWellFormed, targetOwned, effect⟩ :=
-    evaluatesUpdateOwnedLocalFromEmpty (program := program)
-      (layout target) (localCell target) operation wellFormed
-      (represented.localOwned target) termSound.1 wellFormed
+  obtain ⟨after, execution, afterWellFormed, afterRepresented, effect⟩ :=
+    represented.updateLocalAfterTerm represented termSound.1 wellFormed
       (ModifiesOnly.refl state) updated
-  have worldOwned : (ReadOnly.World.owns world).holds after :=
-    effect.preserve wellFormed (ReadOnly.World.owns world)
-      represented.worldOwned (by
-        intro cell worldMember written
-        obtain ⟨values, found⟩ := worldMember
-        exact represented.worldCell_ne_localCell found target written)
-  have localOwned : ∀ index,
-      (Assertion.localPointsTo (layout index) (localCell index)
-        (some (Env.set environment target result index))).holds after := by
-    intro index
-    by_cases same : index = target
-    · subst index
-      simpa using targetOwned
-    · rw [Env.set_other environment target index result same]
-      exact effect.preserve wellFormed
-        (Assertion.localPointsTo (layout index)
-          (localCell index) (some (environment index)))
-        (represented.localOwned index) (by
-          intro cell member written
-          exact same (represented.localCellsInjective
-            (member.symm.trans written)))
-  exact ⟨after, execution, afterWellFormed, {
-    worldOwned := worldOwned
-    localOwned := localOwned
-    localCellsInjective := represented.localCellsInjective
-    worldLocalsDisjoint := represented.worldLocalsDisjoint
-  }, effect⟩
+  exact ⟨after, execution, afterWellFormed, afterRepresented,
+    by simpa only [CellSet.empty_union] using effect⟩
 
 theorem ReadOnly.World.setI32Slice_footprint
     (found : world.i32Slice? cell = some values) :
@@ -863,6 +808,24 @@ theorem Representation.setI32Index
     rw [represented.environmentMatches base, baseValue]
   exact represented.setI32IndexCore wellFormed baseLocal indexSound.1
     valueSound.1 found inBounds
+
+private theorem composeFramed
+    {arity : Nat} {layout : Layout arity} {localCell : Fin arity → CellId}
+    {middleWorld afterWorld : ReadOnly.World} {middleEnvironment afterEnvironment : Env arity}
+    {before : State} {firstResult : State → Prop}
+    {secondResult : State → State → Prop} {combinedResult : State → Prop}
+    (first : ∃ middle firstWrites, firstResult middle ∧ StateWellFormed middle ∧
+      Representation layout localCell middleWorld middleEnvironment middle ∧ ModifiesOnly firstWrites before middle)
+    (second : ∀ {middle}, Representation layout localCell middleWorld middleEnvironment middle →
+      StateWellFormed middle → ∃ after secondWrites, secondResult middle after ∧ StateWellFormed after ∧
+        Representation layout localCell afterWorld afterEnvironment after ∧ ModifiesOnly secondWrites middle after)
+    (combine : ∀ {middle after}, firstResult middle →
+      secondResult middle after → combinedResult after) :
+    ∃ final writes, combinedResult final ∧ StateWellFormed final ∧
+      Representation layout localCell afterWorld afterEnvironment final ∧ ModifiesOnly writes before final := by
+  obtain ⟨middle, firstWrites, firstExecution, middleWellFormed, middleRepresented, firstEffect⟩ := first
+  obtain ⟨after, secondWrites, secondExecution, afterWellFormed, afterRepresented, secondEffect⟩ := second middleRepresented middleWellFormed
+  exact ⟨after, CellSet.union firstWrites secondWrites, combine firstExecution secondExecution, afterWellFormed, afterRepresented, firstEffect.trans secondEffect⟩
 
 /-- The common mutable-loop step: update one owned `i32` slice element and
     then advance an owned scalar local.  Keeping this rule at the FunctionalView
@@ -1153,120 +1116,6 @@ def BodySoundWithin
       before body completion afterWorld afterEnvironment adapter nextLocal
       writes
 
-/-- Lift a total FunctionalView loop trace to structural Core.  Condition
-    evaluation is read-only and therefore discharged generically; body
-    mutation is supplied once through `BodySoundWithin`. -/
-theorem Lanius.FunctionalView.Stateful.Loop.Trace.simulatesWithin
-    {arity : Nat} {program : Program}
-    {condition : Term Core.signature arity}
-    {body : Command Core.signature actions arity}
-    {before after : Lanius.FunctionalView.Stateful.Loop.Runtime
-      (ReadOnly.machine program) arity}
-    {completion : Lanius.FunctionalView.Stateful.Completion}
-    {layout : Layout arity} {localCell : Fin arity → CellId}
-    {state : State} {adapter : ActionAdapter actions}
-    {nextLocal : VarId} {writes : CellSet}
-    {Valid : Lanius.FunctionalView.Stateful.Loop.Runtime
-      (ReadOnly.machine program) arity → Prop}
-    (trace : Lanius.FunctionalView.Stateful.Loop.Trace
-      (ReadOnly.machine program) (machine program) condition body before
-      completion after)
-    (bodySound : BodySoundWithin program layout localCell body adapter
-      nextLocal writes Valid)
-    (validBefore : Valid before)
-    (validIteration : ∀ {iterationBefore iterationAfter},
-      Lanius.FunctionalView.Stateful.Loop.Iteration
-        (ReadOnly.machine program) (machine program) condition body
-        iterationBefore iterationAfter →
-      Valid iterationBefore → Valid iterationAfter)
-    (represented : Representation layout localCell before.world
-      before.environment state)
-    (wellFormed : StateWellFormed state) :
-    SimulatesWithin program layout localCell before.world before.environment
-      state (.whileLoop condition body) completion after.world
-      after.environment adapter nextLocal writes := by
-  induction trace generalizing state with
-  | exit edge =>
-      cases edge with
-      | conditionFalse conditionResult environmentEq =>
-          have worldEq := ReadOnly.Term.evaluate_world_eq conditionResult
-          have conditionSound := Core.term_evaluates (ReadOnly.bridge program)
-            (represented.worldRepresents wellFormed)
-            represented.environmentMatches conditionResult
-          rw [worldEq, environmentEq]
-          exact ⟨state, by
-            simpa only [toCoreStmt, Stateful.toCoreCompletion] using
-              executesWhileFalse conditionSound.1,
-            wellFormed, represented, ModifiesOnly.reflAny writes state⟩
-      | breakLoop conditionResult bodyResult =>
-          have worldEq := ReadOnly.Term.evaluate_world_eq conditionResult
-          have conditionSound := Core.term_evaluates (ReadOnly.bridge program)
-            (represented.worldRepresents wellFormed)
-            represented.environmentMatches conditionResult
-          subst worldEq
-          obtain ⟨final, bodyExecution, finalWellFormed, finalRepresented,
-              bodyEffect⟩ :=
-            bodySound validBefore bodyResult represented wellFormed
-          exact ⟨final, by
-            simpa only [toCoreStmt, Stateful.toCoreCompletion] using
-              executesWhileBreak conditionSound.1 bodyExecution,
-            finalWellFormed, finalRepresented, bodyEffect⟩
-      | returned conditionResult bodyResult =>
-          have worldEq := ReadOnly.Term.evaluate_world_eq conditionResult
-          have conditionSound := Core.term_evaluates (ReadOnly.bridge program)
-            (represented.worldRepresents wellFormed)
-            represented.environmentMatches conditionResult
-          subst worldEq
-          obtain ⟨final, bodyExecution, finalWellFormed, finalRepresented,
-              bodyEffect⟩ :=
-            bodySound validBefore bodyResult represented wellFormed
-          exact ⟨final, by
-            simpa only [toCoreStmt, Stateful.toCoreCompletion] using
-              executesWhileReturned conditionSound.1 bodyExecution,
-            finalWellFormed, finalRepresented, bodyEffect⟩
-  | step edge rest induction =>
-      cases edge with
-      | next conditionResult bodyResult =>
-          have worldEq := ReadOnly.Term.evaluate_world_eq conditionResult
-          have conditionSound := Core.term_evaluates (ReadOnly.bridge program)
-            (represented.worldRepresents wellFormed)
-            represented.environmentMatches conditionResult
-          subst worldEq
-          obtain ⟨middle, bodyExecution, middleWellFormed,
-              middleRepresented, bodyEffect⟩ :=
-            bodySound validBefore bodyResult represented wellFormed
-          have validMiddle := validIteration
-            (.next conditionResult bodyResult) validBefore
-          obtain ⟨final, restExecution, finalWellFormed, finalRepresented,
-              restEffect⟩ := induction validMiddle middleRepresented
-            middleWellFormed
-          exact ⟨final, by
-            simpa only [toCoreStmt, Stateful.toCoreCompletion] using
-              executesWhileTrueThen conditionSound.1 bodyExecution
-                restExecution,
-            finalWellFormed, finalRepresented,
-            bodyEffect.trans_same restEffect⟩
-      | continueLoop conditionResult bodyResult =>
-          have worldEq := ReadOnly.Term.evaluate_world_eq conditionResult
-          have conditionSound := Core.term_evaluates (ReadOnly.bridge program)
-            (represented.worldRepresents wellFormed)
-            represented.environmentMatches conditionResult
-          subst worldEq
-          obtain ⟨middle, bodyExecution, middleWellFormed,
-              middleRepresented, bodyEffect⟩ :=
-            bodySound validBefore bodyResult represented wellFormed
-          have validMiddle := validIteration
-            (.continueLoop conditionResult bodyResult) validBefore
-          obtain ⟨final, restExecution, finalWellFormed, finalRepresented,
-              restEffect⟩ := induction validMiddle middleRepresented
-            middleWellFormed
-          exact ⟨final, by
-            simpa only [toCoreStmt, Stateful.toCoreCompletion] using
-              executesWhileContinueThen conditionSound.1 bodyExecution
-                restExecution,
-            finalWellFormed, finalRepresented,
-            bodyEffect.trans_same restEffect⟩
-
 /-- Configuration-indexed body soundness.  Unlike `BodySoundWithin`, this
     exposes the algorithmic configuration for the current edge, so bounds and
     logical resource identities need not be reconstructed from raw values. -/
@@ -1389,10 +1238,10 @@ theorem Lanius.FunctionalView.Stateful.Loop.ConfigTrace.simulatesWithin
             wellFormed, represented, ModifiesOnly.reflAny writes state⟩
       | breakLoop conditionResult bodyResult =>
           have worldEq := ReadOnly.Term.evaluate_world_eq conditionResult
+          subst worldEq
           have conditionSound := Core.term_evaluates (ReadOnly.bridge program)
             (represented.worldRepresents wellFormed)
             represented.environmentMatches conditionResult
-          subst worldEq
           obtain ⟨final, bodyExecution, finalWellFormed, finalRepresented,
               bodyEffect⟩ :=
             bodySound _ conditionResult bodyResult represented wellFormed
@@ -1402,10 +1251,10 @@ theorem Lanius.FunctionalView.Stateful.Loop.ConfigTrace.simulatesWithin
             finalWellFormed, finalRepresented, bodyEffect⟩
       | returned conditionResult bodyResult =>
           have worldEq := ReadOnly.Term.evaluate_world_eq conditionResult
+          subst worldEq
           have conditionSound := Core.term_evaluates (ReadOnly.bridge program)
             (represented.worldRepresents wellFormed)
             represented.environmentMatches conditionResult
-          subst worldEq
           obtain ⟨final, bodyExecution, finalWellFormed, finalRepresented,
               bodyEffect⟩ :=
             bodySound _ conditionResult bodyResult represented wellFormed
@@ -1417,10 +1266,10 @@ theorem Lanius.FunctionalView.Stateful.Loop.ConfigTrace.simulatesWithin
       cases edge with
       | next conditionResult bodyResult =>
           have worldEq := ReadOnly.Term.evaluate_world_eq conditionResult
+          subst worldEq
           have conditionSound := Core.term_evaluates (ReadOnly.bridge program)
             (represented.worldRepresents wellFormed)
             represented.environmentMatches conditionResult
-          subst worldEq
           obtain ⟨middle, bodyExecution, middleWellFormed,
               middleRepresented, bodyEffect⟩ :=
             bodySound _ conditionResult bodyResult represented wellFormed
@@ -1434,10 +1283,10 @@ theorem Lanius.FunctionalView.Stateful.Loop.ConfigTrace.simulatesWithin
             bodyEffect.trans_same restEffect⟩
       | continueLoop conditionResult bodyResult =>
           have worldEq := ReadOnly.Term.evaluate_world_eq conditionResult
+          subst worldEq
           have conditionSound := Core.term_evaluates (ReadOnly.bridge program)
             (represented.worldRepresents wellFormed)
             represented.environmentMatches conditionResult
-          subst worldEq
           obtain ⟨middle, bodyExecution, middleWellFormed,
               middleRepresented, bodyEffect⟩ :=
             bodySound _ conditionResult bodyResult represented wellFormed
@@ -1449,6 +1298,76 @@ theorem Lanius.FunctionalView.Stateful.Loop.ConfigTrace.simulatesWithin
                 restExecution,
             finalWellFormed, finalRepresented,
             bodyEffect.trans_same restEffect⟩
+
+private noncomputable def traceToConfig
+    {arity : Nat} {program : Program}
+    {condition : Term Core.signature arity}
+    {body : Command Core.signature actions arity}
+    {before : Lanius.FunctionalView.Stateful.Loop.Runtime
+      (ReadOnly.machine program) arity}
+    {completion : Lanius.FunctionalView.Stateful.Completion}
+    {after : Lanius.FunctionalView.Stateful.Loop.Runtime
+      (ReadOnly.machine program) arity}
+    {Valid : Lanius.FunctionalView.Stateful.Loop.Runtime
+      (ReadOnly.machine program) arity → Prop}
+    (validBefore : Valid before)
+    (validIteration : ∀ {iterationBefore iterationAfter},
+      Lanius.FunctionalView.Stateful.Loop.Iteration
+        (ReadOnly.machine program) (machine program) condition body
+        iterationBefore iterationAfter →
+      Valid iterationBefore → Valid iterationAfter)
+    (trace : Lanius.FunctionalView.Stateful.Loop.Trace
+      (ReadOnly.machine program) (machine program) condition body before
+      completion after) :
+    Lanius.FunctionalView.Stateful.Loop.ConfigTrace
+      (ReadOnly.machine program) (machine program) condition body
+      { runtime : Lanius.FunctionalView.Stateful.Loop.Runtime
+          (ReadOnly.machine program) arity // Valid runtime }
+      (fun runtime => runtime.1) ⟨before, validBefore⟩ completion after := by
+  match trace with
+  | .exit edge => exact .exit edge
+  | .step edge rest =>
+      let validMiddle := validIteration edge validBefore
+      exact .step ⟨_, validMiddle⟩ edge
+        (traceToConfig validMiddle validIteration rest)
+
+/-- Lift the unindexed loop trace through the configuration-indexed bridge.
+    The identity runtime retains every intermediate world and environment. -/
+theorem Lanius.FunctionalView.Stateful.Loop.Trace.simulatesWithin
+    {arity : Nat} {program : Program}
+    {condition : Term Core.signature arity}
+    {body : Command Core.signature actions arity}
+    {before after : Lanius.FunctionalView.Stateful.Loop.Runtime
+      (ReadOnly.machine program) arity}
+    {completion : Lanius.FunctionalView.Stateful.Completion}
+    {layout : Layout arity} {localCell : Fin arity → CellId}
+    {state : State} {adapter : ActionAdapter actions}
+    {nextLocal : VarId} {writes : CellSet}
+    {Valid : Lanius.FunctionalView.Stateful.Loop.Runtime
+      (ReadOnly.machine program) arity → Prop}
+    (trace : Lanius.FunctionalView.Stateful.Loop.Trace
+      (ReadOnly.machine program) (machine program) condition body before
+      completion after)
+    (bodySound : BodySoundWithin program layout localCell body adapter
+      nextLocal writes Valid)
+    (validBefore : Valid before)
+    (validIteration : ∀ {iterationBefore iterationAfter},
+      Lanius.FunctionalView.Stateful.Loop.Iteration
+        (ReadOnly.machine program) (machine program) condition body
+        iterationBefore iterationAfter →
+      Valid iterationBefore → Valid iterationAfter)
+    (represented : Representation layout localCell before.world
+      before.environment state)
+    (wellFormed : StateWellFormed state) :
+    SimulatesWithin program layout localCell before.world before.environment
+      state (.whileLoop condition body) completion after.world
+      after.environment adapter nextLocal writes := by
+  exact Lanius.FunctionalView.Stateful.Loop.ConfigTrace.simulatesWithin
+    (traceToConfig validBefore validIteration trace) (by
+      intro config afterWorld afterEnvironment before completion conditionTrue bodyResult
+        represented wellFormed
+      exact bodySound config.property bodyResult represented wellFormed)
+    represented wellFormed
 
 /-! ## Whole-command simulation -/
 
@@ -1589,14 +1508,10 @@ mutual
                       evaluatesLogicalAndFalse leftExecution,
                       leftWellFormed, leftRepresented, leftEffect⟩
                 | true =>
-                    obtain ⟨after, rightWrites, rightExecution,
-                        afterWellFormed, afterRepresented, rightEffect⟩ :=
-                      termSoundnessOfOperations operations leftWellFormed
-                        leftRepresented evaluated
-                    exact ⟨after, CellSet.union leftWrites rightWrites,
-                      evaluatesLogicalAndTrue leftExecution rightExecution,
-                      afterWellFormed, afterRepresented,
-                      leftEffect.trans rightEffect⟩
+                    simpa only [Core.toCoreExpr] using composeFramed
+                      (termSoundnessOfOperations operations wellFormed represented leftResult)
+                      (fun middleRepresented middleWellFormed => termSoundnessOfOperations operations middleWellFormed middleRepresented evaluated)
+                      evaluatesLogicalAndTrue
             | _ => contradiction
     | logicalOr left right =>
         simp only [Term.evaluate] at evaluated
@@ -1616,14 +1531,10 @@ mutual
             | boolean leftBoolean =>
                 cases leftBoolean with
                 | false =>
-                    obtain ⟨after, rightWrites, rightExecution,
-                        afterWellFormed, afterRepresented, rightEffect⟩ :=
-                      termSoundnessOfOperations operations leftWellFormed
-                        leftRepresented evaluated
-                    exact ⟨after, CellSet.union leftWrites rightWrites,
-                      evaluatesLogicalOrFalse leftExecution rightExecution,
-                      afterWellFormed, afterRepresented,
-                      leftEffect.trans rightEffect⟩
+                    simpa only [Core.toCoreExpr] using composeFramed
+                      (termSoundnessOfOperations operations wellFormed represented leftResult)
+                      (fun middleRepresented middleWellFormed => termSoundnessOfOperations operations middleWellFormed middleRepresented evaluated)
+                      evaluatesLogicalOrFalse
                 | true =>
                     obtain ⟨rfl, rfl⟩ := evaluated
                     exact ⟨afterLeft, leftWrites,
@@ -1669,18 +1580,11 @@ mutual
                 obtain ⟨tailValues, tailWorld⟩ := result
                 rw [tailResult] at evaluated
                 obtain ⟨rfl, rfl⟩ := evaluated
-                obtain ⟨afterHead, headWrites, headExecution,
-                    headWellFormed, headRepresented, headEffect⟩ :=
-                  termSoundnessOfOperations operations wellFormed represented
-                    headResult
-                obtain ⟨after, tailWrites, tailExecution,
-                    afterWellFormed, afterRepresented, tailEffect⟩ :=
-                  termsSoundnessOfOperations operations headWellFormed
-                    headRepresented tailResult
-                exact ⟨after, CellSet.union headWrites tailWrites,
-                  ArgumentsEvaluateTo.cons headExecution tailExecution,
-                  afterWellFormed, afterRepresented,
-                  headEffect.trans tailEffect⟩
+                simpa only [Core.toCoreExprs] using composeFramed
+                  (termSoundnessOfOperations operations wellFormed represented headResult)
+                  (fun middleRepresented middleWellFormed =>
+                    termsSoundnessOfOperations operations middleWellFormed middleRepresented tailResult)
+                  ArgumentsEvaluateTo.cons
 
 end
 
@@ -1846,17 +1750,13 @@ theorem command_executes
         _middleEnvironment _secondCommand _completion _afterWorld
         _afterEnvironment _firstResult _secondResult firstInduction
         secondInduction layout state localCell nextLocal represented below wellFormed
-      obtain ⟨middle, firstWrites, firstExecution, middleWellFormed,
-        middleRepresented, firstEffect⟩ :=
-        firstInduction represented below wellFormed
       have secondBelow := below.mono
         (Nat.le_add_right nextLocal (localCapacity actionAdapter firstCommand))
-      obtain ⟨after, secondWrites, secondExecution, afterWellFormed,
-        afterRepresented, secondEffect⟩ :=
-        secondInduction middleRepresented secondBelow middleWellFormed
-      exact ⟨after, CellSet.union firstWrites secondWrites,
-        executesSequence firstExecution secondExecution, afterWellFormed,
-        afterRepresented, firstEffect.trans secondEffect⟩
+      simpa only [Simulates, toCoreStmt, Stateful.toCoreCompletion] using composeFramed
+        (firstInduction represented below wellFormed)
+        (fun middleRepresented middleWellFormed =>
+          secondInduction middleRepresented secondBelow middleWellFormed)
+        executesSequence
   case sequenceStop =>
       intro _beforeWorld _arity _beforeEnvironment _firstCommand completion
         _afterWorld _afterEnvironment _secondCommand _firstResult stops
@@ -1960,31 +1860,21 @@ theorem command_executes
         _thenBranch _completion _afterWorld _afterEnvironment _elseBranch
         conditionResult _branchResult induction layout state localCell nextLocal
         represented below wellFormed
-      obtain ⟨conditionState, conditionWrites, conditionExecution,
-          conditionWellFormed, conditionRepresented, conditionEffect⟩ :=
-        expressionSoundness.term wellFormed represented conditionResult
-      obtain ⟨after, branchWrites, branchExecution, afterWellFormed,
-          afterRepresented, branchEffect⟩ :=
-        induction conditionRepresented below conditionWellFormed
-      exact ⟨after, CellSet.union conditionWrites branchWrites,
-        executesIfTrue conditionExecution branchExecution,
-        afterWellFormed, afterRepresented,
-        conditionEffect.trans branchEffect⟩
+      simpa only [Simulates, toCoreStmt, Stateful.toCoreCompletion] using composeFramed
+        (expressionSoundness.term wellFormed represented conditionResult)
+        (fun conditionRepresented conditionWellFormed =>
+          induction conditionRepresented below conditionWellFormed)
+        executesIfTrue
   case ifFalse =>
       intro _beforeWorld _arity _beforeEnvironment _condition _conditionWorld
         _elseBranch _completion _afterWorld _afterEnvironment _thenBranch
         conditionResult _branchResult induction layout state localCell nextLocal
         represented below wellFormed
-      obtain ⟨conditionState, conditionWrites, conditionExecution,
-          conditionWellFormed, conditionRepresented, conditionEffect⟩ :=
-        expressionSoundness.term wellFormed represented conditionResult
-      obtain ⟨after, branchWrites, branchExecution, afterWellFormed,
-          afterRepresented, branchEffect⟩ :=
-        induction conditionRepresented below conditionWellFormed
-      exact ⟨after, CellSet.union conditionWrites branchWrites,
-        executesIfFalse conditionExecution branchExecution,
-        afterWellFormed, afterRepresented,
-        conditionEffect.trans branchEffect⟩
+      simpa only [Simulates, toCoreStmt, Stateful.toCoreCompletion] using composeFramed
+        (expressionSoundness.term wellFormed represented conditionResult)
+        (fun conditionRepresented conditionWellFormed =>
+          induction conditionRepresented below conditionWellFormed)
+        executesIfFalse
   case whileFalse =>
       intro _beforeWorld _arity _beforeEnvironment _condition _afterWorld _body
         conditionResult layout state localCell nextLocal represented below wellFormed
@@ -2035,30 +1925,20 @@ theorem command_executes
       intro _beforeWorld _arity _beforeEnvironment _condition _conditionWorld
         _body _afterWorld _afterEnvironment conditionResult _bodyResult induction
         layout state localCell nextLocal represented below wellFormed
-      obtain ⟨conditionState, conditionWrites, conditionExecution,
-          conditionWellFormed, conditionRepresented, conditionEffect⟩ :=
-        expressionSoundness.term wellFormed represented conditionResult
-      obtain ⟨after, bodyWrites, bodyExecution, afterWellFormed,
-          afterRepresented, bodyEffect⟩ :=
-        induction conditionRepresented below conditionWellFormed
-      exact ⟨after, CellSet.union conditionWrites bodyWrites,
-        executesWhileBreak conditionExecution bodyExecution,
-        afterWellFormed, afterRepresented,
-        conditionEffect.trans bodyEffect⟩
+      simpa only [Simulates, toCoreStmt, Stateful.toCoreCompletion] using composeFramed
+        (expressionSoundness.term wellFormed represented conditionResult)
+        (fun conditionRepresented conditionWellFormed =>
+          induction conditionRepresented below conditionWellFormed)
+        executesWhileBreak
   case whileReturn =>
       intro _beforeWorld _arity _beforeEnvironment _condition _conditionWorld
         _body _value _afterWorld _afterEnvironment conditionResult _bodyResult
         induction layout state localCell nextLocal represented below wellFormed
-      obtain ⟨conditionState, conditionWrites, conditionExecution,
-          conditionWellFormed, conditionRepresented, conditionEffect⟩ :=
-        expressionSoundness.term wellFormed represented conditionResult
-      obtain ⟨after, bodyWrites, bodyExecution, afterWellFormed,
-          afterRepresented, bodyEffect⟩ :=
-        induction conditionRepresented below conditionWellFormed
-      exact ⟨after, CellSet.union conditionWrites bodyWrites,
-        executesWhileReturned conditionExecution bodyExecution,
-        afterWellFormed, afterRepresented,
-        conditionEffect.trans bodyEffect⟩
+      simpa only [Simulates, toCoreStmt, Stateful.toCoreCompletion] using composeFramed
+        (expressionSoundness.term wellFormed represented conditionResult)
+        (fun conditionRepresented conditionWellFormed =>
+          induction conditionRepresented below conditionWellFormed)
+        executesWhileReturned
   case returnNone =>
       intro _world _arity _environment layout state localCell nextLocal represented
         below wellFormed

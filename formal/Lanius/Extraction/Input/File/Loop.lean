@@ -38,7 +38,7 @@ theorem completesLoop (reader : Host.CheckedExternal program .read 3)
     · have empty : memory.chunk processed = [] := by simp only [chunk, ended, List.take_nil]
       have complete : memory.bytes = processed := by simpa only [ended, List.append_nil] using source
       refine ⟨middle, reads + 1, ?_, ?_, Nat.lt_succ_self _, effect⟩
-      · apply executesWhileReturned (show Evaluates program before (.value (.boolean true)) (.boolean true) before from ⟨1, rfl⟩)
+      · apply executesWhileReturned (show Evaluates program before (.value (.boolean true)) (.boolean true) before from Lanius.Semantics.evaluatesValue)
         simpa only [Memory.completion, empty, if_pos, complete] using iteration
       · simpa only [empty, List.append_nil, complete] using afterIteration
     · have positive := requestSize_bounds (memory.capacity - processed.length)
@@ -56,7 +56,7 @@ theorem completesLoop (reader : Host.CheckedExternal program .read 3)
         omega
       obtain ⟨after, finalReads, rest, done, moreReads, finalEffect⟩ := ih _ decreased afterIteration nextSource rfl
       refine ⟨after, finalReads, ?_, done, Nat.lt_trans (Nat.lt_succ_self _) moreReads, effect.trans finalEffect⟩
-      apply executesWhileTrueThen (show Evaluates program before (.value (.boolean true)) (.boolean true) before from ⟨1, rfl⟩)
+      apply executesWhileTrueThen (show Evaluates program before (.value (.boolean true)) (.boolean true) before from Lanius.Semantics.evaluatesValue)
         (by simpa [Memory.completion, nonempty] using iteration) rest
 
 end Lanius.Extraction.Input.File

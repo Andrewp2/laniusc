@@ -101,7 +101,7 @@ theorem Entry.execute (entry : Entry before) (byte : CheckedByte program) (digit
   have run := executesSequence (executesIfFalse (thenBranch := returned negativeOne) passed (executesSkip _ _))
     (executesLetLocal (id := 4) (type := i32) (local_evaluates program.core entry.positionRead)
       (executesLetLocal (id := 5) (type := i32)
-        (show Evaluates program.core first (number 28) (.signed .i32 28) first from ⟨1, rfl⟩) tailRun))
+        (show Evaluates program.core first (number 28) (.signed .i32 28) first from evaluatesValue) tailRun))
   have closed := CellEffect.closeLocal before 4 (.signed .i32 entry.position) entry.wellFormed
     (CellEffect.closeLocal first 5 (.signed .i32 28) firstWF effect)
   refine ⟨restoreLocals before completed, run, finalOwned.backing, closed.narrow ?_,

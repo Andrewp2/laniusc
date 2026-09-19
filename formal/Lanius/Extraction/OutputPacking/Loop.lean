@@ -69,12 +69,10 @@ private theorem body_step (program : Program) (memory : LoopMemory) (locals : Lo
     simpa [signedI32Values] using lengths
   have cursorResult : Evaluates program before (.local locals.cursor)
       (.signed .i32 processed.length) before :=
-    ⟨1, evalLocal_of_local 0 program before locals.cursor _
-      (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)
   have inputResult : Evaluates program before (.local locals.input)
       (.slice (.scalar (.signed .i32)) memory.inputCell [] 0 memory.inputValues.length) before := by
-    refine ⟨1, evalLocal_of_local 0 program before locals.input _ ?_⟩
-    simpa [LoopMemory.inputValues] using invariant.inputLocal
+    exact Lanius.Semantics.evaluatesLocal (by simpa [LoopMemory.inputValues] using invariant.inputLocal)
   have selected : memory.inputValues.get ⟨processed.length, byteBound⟩ = byte.toNat := by
     simp [LoopMemory.inputValues, source]
   have byteResult := evaluatesSignedI32SliceIndex program before before before
@@ -112,11 +110,10 @@ private theorem condition_result (program : Program) (memory : LoopMemory)
       (.boolean (!(Int.ofNat processed.length == Int.ofNat memory.bytes.length))) state := by
   have cursorResult : Evaluates program state (.local locals.cursor)
       (.signed .i32 processed.length) state :=
-    ⟨1, evalLocal_of_local 0 program state locals.cursor _
-      (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)
   have lengthResult : Evaluates program state (.local locals.length)
       (.signed .i32 memory.bytes.length) state :=
-    ⟨1, evalLocal_of_local 0 program state locals.length _ invariant.limit⟩
+    Lanius.Semantics.evaluatesLocal invariant.limit
   apply evaluatesEagerBinary (by decide) (by decide) cursorResult lengthResult
   simp [evalBinaryValue, scalarEqual]
 

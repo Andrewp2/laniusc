@@ -250,28 +250,10 @@ private def buildNodesDirectTrace
   return mkAppN (mkConst ``NodesMatchFromView.sound)
     #[grammar, artifact, view, id, remaining, viewTrace]
 
-private partial def buildNodesTrace
-    (grammar artifact view semanticKinds allNodes id remaining : Expr) :
-    MetaM Expr := do
-  let remainingWhnf <- withTransparency .all <| whnf remaining
-  if remainingWhnf.isAppOfArity ``List.nil 1 then
-    return mkAppN (mkConst ``NodesMatchFrom.empty)
-      #[grammar, semanticKinds, allNodes, id]
-  unless remainingWhnf.isAppOfArity ``List.cons 3 do
-    throwError "parse_nodes_trace: node table did not reduce to a list"
-  let args := remainingWhnf.getAppArgs
-  let node := args[1]!
-  let rest := args[2]!
-  let some idValue <- getNatValue? id
-    | throwError "parse_nodes_trace: node id did not reduce to a numeral"
-  let nextId := mkNatLit (idValue + 1)
-  let accepted <- mkEqRefl (mkConst ``true)
-  let headProof := mkAppN (mkConst ``checkNodeView_sound_direct)
-    #[grammar, artifact, view, id, node, accepted]
-  let tailProof <- buildNodesTrace grammar artifact view semanticKinds allNodes
-    nextId rest
-  return mkAppN (mkConst ``NodesMatchFrom.cons)
-    #[grammar, semanticKinds, allNodes, id, node, rest, headProof, tailProof]
+private def buildNodesTrace
+    (grammar artifact view id remaining : Expr) :
+    MetaM Expr :=
+  buildNodesDirectTrace grammar artifact view id remaining
 
 /-- Emit a structural parse-node proof for a closed artifact.  The tactic is
 an untrusted proof producer: it proposes constructor and reflexivity terms,
@@ -288,8 +270,6 @@ syntax (name := parseNodesTrace) "parse_nodes_trace " term ", " term : tactic
       throwError "parse_nodes_trace: expected a NodesMatchFrom goal"
     let goalArgs := goalType.getAppArgs
     let grammar := goalArgs[0]!
-    let semanticKinds := goalArgs[1]!
-    let allNodes := goalArgs[2]!
     let id := goalArgs[3]!
     let remaining := goalArgs[4]!
     let artifact <- elabTermEnsuringType artifactStx (mkConst ``Artifact)
@@ -299,7 +279,7 @@ syntax (name := parseNodesTrace) "parse_nodes_trace " term ", " term : tactic
     let view <- elabTermEnsuringType viewStx viewType
     Term.synthesizeSyntheticMVarsNoPostponing
     let view <- instantiateMVars view
-    let proof <- buildNodesTrace grammar artifact view semanticKinds allNodes id
+    let proof <- buildNodesTrace grammar artifact view id
       remaining
     withTransparency .all <| goal.assign proof
     replaceMainGoal []
@@ -325,9 +305,8 @@ syntax (name := parseArtifactTrace) "parse_artifact_trace " term ", " term : tac
     Term.synthesizeSyntheticMVarsNoPostponing
     let view <- instantiateMVars view
     let grammar := mkConst ``laniusGrammar
-    let semanticKinds := mkApp (mkConst ``Artifact.semantic_token_kinds) artifact
     let allNodes := mkApp (mkConst ``Artifact.parse_nodes) artifact
-    let nodes <- buildNodesTrace grammar artifact view semanticKinds allNodes
+    let nodes <- buildNodesTrace grammar artifact view
       (mkNatLit 0) allNodes
     let parseRoot := mkApp (mkConst ``Artifact.parse_root) artifact
     let rootWhnf <- withTransparency .all <| whnf parseRoot

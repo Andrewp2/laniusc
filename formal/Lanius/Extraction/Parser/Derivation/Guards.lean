@@ -66,7 +66,7 @@ theorem field_guard_false
     workspaceLocal baseLocal currentLocal selector
   have expectedStill := effect.empty_preserves_local wellFormed expectedLocal
   have expectedRead : Evaluates verifiedParserCore after (.local expectedId) (.signed .i32 expected) after :=
-    ⟨1, evalLocal_of_local 0 verifiedParserCore after expectedId _ expectedStill⟩
+    Lanius.Semantics.evaluatesLocal expectedStill
   rw [same] at read
   exact ⟨after, evaluates_i32_mismatch_false read expectedRead, preserved, effect⟩
 
@@ -130,11 +130,11 @@ theorem predecessor_guard_executes
   have localRead {localId : Lanius.VarId} {value : Lanius.Core.Value}
       (found : before.local? localId = some value) :
       Evaluates program before (.local localId) value before :=
-    ⟨1, evalLocal_of_local 0 program before localId value found⟩
+    Lanius.Semantics.evaluatesLocal found
   have negativeOne : Evaluates program before (.unary .negate (.value (.signed .i32 1)))
       (.signed .i32 (-1)) before := by
     apply evaluatesUnary
-      (show Evaluates program before (.value (.signed .i32 1)) (.signed .i32 1) before from ⟨1, rfl⟩)
+      (show Evaluates program before (.value (.signed .i32 1)) (.signed .i32 1) before from Lanius.Semantics.evaluatesValue)
     simp [evalUnaryValue, wrapSigned, signedModulus, signedSignBit, Lanius.Core.SignedIntTy.bits]
   have previousCheck : Evaluates program before
       (.binary .lessEqual (.local previousId) (.unary .negate (.value (.signed .i32 1))))
@@ -172,7 +172,7 @@ theorem child_branch_executes
   have localRead {localId : Lanius.VarId} {value : Lanius.Core.Value}
       (found : before.local? localId = some value) :
       Evaluates verifiedParserCore before (.local localId) value before :=
-    ⟨1, evalLocal_of_local 0 verifiedParserCore before localId value found⟩
+    Lanius.Semantics.evaluatesLocal found
   have tokenRead : Evaluates verifiedParserCore before (.constant 38) (.signed .i32 1) before :=
     evaluatesConstant (show verifiedParserCore.constant? 38 = some {
       id := 38, type := parserI32Type, value := .signed .i32 1 } from rfl)

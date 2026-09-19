@@ -147,16 +147,16 @@ theorem evaluates_wordView (program : Program) (before : State) (text : String) 
       contents, afterWF, afterLocals, preserved, nextCell, world, domain, localValues, resources⟩ :=
     string_words before text ((length + 3) / 4) wellFormed padded
   have textResult : Evaluates program before (.local textId) (.string text) before :=
-    ⟨1, evalLocal_of_local 0 program before _ _ textLocal⟩
+    Lanius.Semantics.evaluatesLocal textLocal
   have pointedLength : pointed.local? lengthId = some (.signed .i32 length) := by
     have sameCells : pointed.cell? = before.cell? := by
       funext cell
       simp only [State.cell?, State.cellEntry?, cells]
     simpa only [State.local?, State.cellId?, locals, sameCells] using lengthLocal
   have lengthResult : Evaluates program pointed (.local lengthId) (.signed .i32 length) pointed :=
-    ⟨1, evalLocal_of_local 0 program pointed _ _ pointedLength⟩
-  have three : Evaluates program pointed (.value (.signed .i32 3)) (.signed .i32 3) pointed := ⟨1, rfl⟩
-  have four : Evaluates program pointed (.value (.signed .i32 4)) (.signed .i32 4) pointed := ⟨1, rfl⟩
+    Lanius.Semantics.evaluatesLocal pointedLength
+  have three : Evaluates program pointed (.value (.signed .i32 3)) (.signed .i32 3) pointed := evaluatesValue
+  have four : Evaluates program pointed (.value (.signed .i32 4)) (.signed .i32 4) pointed := evaluatesValue
   have sum := evaluatesNatI32Add lengthResult three bounded
   have division := evaluatesNatI32Divide (leftValue := length + 3) (rightValue := 4)
     sum four (by decide) (by omega)

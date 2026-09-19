@@ -78,7 +78,7 @@ theorem InitializeEntry.continue (entry : InitializeEntry before) (program : Pro
   obtain ⟨completed, continuationRun, continuationEffect⟩ := continuation initializedState invariant
   have combined := initializationEffect.trans continuationEffect
   have scopedRun := executesLetLocal (type := i32)
-    (show Evaluates program before (number 0) (.signed .i32 0) before from ⟨1, rfl⟩)
+    (show Evaluates program before (number 0) (.signed .i32 0) before from evaluatesValue)
     (executesSequence initializedRun continuationRun)
   refine ⟨restoreLocals before completed, scopedRun, ?_⟩
   apply (CellEffect.closeLocal before 12 (.signed .i32 0) entry.wellFormed combined).narrow

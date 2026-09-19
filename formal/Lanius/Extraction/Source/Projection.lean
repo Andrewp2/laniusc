@@ -49,7 +49,7 @@ theorem CheckedProjection.call (checked : CheckedProjection program modulePath n
     enterCall_local_of_binding afterArguments [] [] 0 (.structure typeId fields) wellFormed (by simp)
   have projected := evaluatesStructureField
     (show Evaluates program.core callee (.local 0) (.structure typeId fields) callee from
-      ⟨1, evalLocal_of_local 0 program.core callee 0 _ argument⟩) selected
+      evaluatesLocal argument) selected
   have body : Executes program.core callee (projectionBody field) (.returned (some value)) callee :=
     executesSequenceReturned (executesReturnValue projected)
   have identity : checked.source.function.id = checked.source.source.id := by

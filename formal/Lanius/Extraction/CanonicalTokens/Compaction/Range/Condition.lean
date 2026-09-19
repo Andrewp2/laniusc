@@ -34,9 +34,9 @@ theorem evaluates_condition (table : Table program tokens)
     (currentEndSelected : records[currentRow + 2]? = some currentEnd) :
     Evaluates program before (rangeCondition tokens) (.boolean (isPair currentKind nextKind nextStart currentEnd)) before := by
   have currentIndex : Evaluates program before (.local 11) (.signed .i32 currentRow) before :=
-    ⟨1, evalLocal_of_local 0 program before 11 _ currentLocal⟩
+    Lanius.Semantics.evaluatesLocal currentLocal
   have nextIndex : Evaluates program before (.local 12) (.signed .i32 nextRow) before :=
-    ⟨1, evalLocal_of_local 0 program before 12 _ nextLocal⟩
+    Lanius.Semantics.evaluatesLocal nextLocal
   have currentRead := storage.readIndex (.local 11) currentRow currentKind currentIndex (by omega) currentSelected
   have nextRead := storage.readIndex (.local 12) nextRow nextKind nextIndex (by omega) nextSelected
   have nextStartRead := storage.readLocal (program := program) 12 nextRow 1 nextStart nextLocal nextBound nextStartSelected

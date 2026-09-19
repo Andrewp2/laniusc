@@ -128,8 +128,8 @@ theorem evaluates_encoded_byte (program : Program) (before : State)
   have laneBound : index % 4 < 4 := Nat.mod_lt _ (by decide)
   have byteValue := unpacked_value_of_encoded_byte values (index / 4) (index % 4) word byte
     encoded wordSelected laneBound (by simpa [Nat.mul_comm, Nat.div_add_mod] using selected)
-  have four : Evaluates program before (.value (.signed .i32 4)) (.signed .i32 4) before := ⟨1, rfl⟩
-  have eight : Evaluates program before (.value (.signed .i32 8)) (.signed .i32 8) before := ⟨1, rfl⟩
+  have four : Evaluates program before (.value (.signed .i32 4)) (.signed .i32 4) before := Lanius.Semantics.evaluatesValue
+  have eight : Evaluates program before (.value (.signed .i32 8)) (.signed .i32 8) before := Lanius.Semantics.evaluatesValue
   have quotient := evaluatesNatI32Divide (leftValue := index) (rightValue := 4)
     indexResult four (by decide) (by omega)
   have remainder := evaluatesNatI32Remainder (leftValue := index) (rightValue := 4)

@@ -30,20 +30,8 @@ theorem actionRenamer_sound (program : Program)
   | setI32Index base index value =>
       simp only [actionRenamer, machineWith, evaluateActionWith]
       rw [Term.evaluate_rename related index]
-      cases indexResult : Term.evaluate (termMachine evaluateOperation) world
-          small index with
-      | error => rfl
-      | ok result =>
-          rcases result with ⟨indexValue, afterIndex⟩
-          simp only [bind, Except.bind]
-          rw [Term.evaluate_rename related value]
-          cases valueResult : Term.evaluate (termMachine evaluateOperation)
-              afterIndex small value with
-          | error => rfl
-          | ok result =>
-              rcases result with ⟨replacement, afterValue⟩
-              simp only [bind, Except.bind]
-              rw [related base]
+      simp only [Term.evaluate_rename related]
+      rw [related base]
 
 /-! ## Exact structural-Core preservation -/
 
@@ -64,16 +52,7 @@ theorem Layout.Extends.ofFn
     Layout.Extends embedding small large := by
   intro index
   have selected := congrArg (fun values => values[index.val]?) same
-  have projectedBound : index.val <
-      (List.ofFn (fun index => large (embedding.slot index))).length := by
-    simpa using index.isLt
-  have smallBound : index.val < (List.ofFn small).length := by
-    simpa using index.isLt
-  rw [List.getElem?_eq_getElem projectedBound,
-    List.getElem?_eq_getElem smallBound] at selected
-  simp only [Option.some.injEq] at selected
-  rw [List.getElem_ofFn, List.getElem_ofFn] at selected
-  simpa using selected
+  simpa [List.getElem?_eq_getElem, List.getElem_ofFn] using selected
 
 theorem Layout.Extends.push (related : Layout.Extends embedding small large)
     (id : VarId) :

@@ -76,16 +76,13 @@ theorem RecognizerInvariant.read_packed_nat_table
   have physicalBound := encoded.row_in_bounds indexBound
   have grammarResult : Evaluates verifiedParserCore runtime (.local 0)
       (parserGrammarValue words grammarCell) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 0 _
-      invariant.grammarLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.grammarLocal
   have offsetResult : Evaluates verifiedParserCore runtime (.local offsetLocal)
       (.signed .i32 (Int.ofNat offset)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime offsetLocal _
-      offsetFound⟩
+    Lanius.Semantics.evaluatesLocal offsetFound
   have indexResult : Evaluates verifiedParserCore runtime (.local indexLocal)
       (.signed .i32 (Int.ofNat index)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime indexLocal _
-      indexFound⟩
+    Lanius.Semantics.evaluatesLocal indexFound
   have addressBound : offset + index ≤ 2147483647 :=
     Nat.le_trans (Nat.le_of_lt physicalBound) invariant.wordsI32
   have addressResult : Evaluates verifiedParserCore runtime
@@ -277,6 +274,37 @@ theorem RecognizerInvariant.physicalWorld_set_workspace
     beforeInvariant.wellFormed effect tokensUntouched
   rw [recognizerWorld_set_workspace beforeInvariant.grammarWorkspaceDistinct.symm
     beforeInvariant.tokensWorkspaceDistinct.symm, sameSuffix]
+
+/-! Scoped recognizer restoration is shared by the parser's candidate
+    executors.  The caller owns the frame-specific obligations; this seam
+    only reconstructs the generic recognizer resource after the inner state
+    has supplied its new workspace representation. -/
+theorem RecognizerInvariant.after_scoped_effect
+    (invariant : RecognizerInvariant grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell before)
+    (writes : CellSet)
+    (effect : ModifiesOnly writes before after)
+    (afterWellFormed : StateWellFormed after)
+    (grammarNotWritten : ¬ writes grammarCell)
+    (tokensNotWritten : ¬ writes tokensCell)
+    (parameterFrameDisjoint : CellSet.Disjoint
+      (localBindingFrameFootprint before
+        verifiedParserRecognizerParameterFrame) writes)
+    (innerInvariant : RecognizerInvariant grammarLayout grammar words tokens
+      workspaceLayout nextWorkspace nextWorkspaceValues grammarCell tokensCell
+      workspaceCell innerAfter)
+    (sameLength : nextWorkspaceValues.length = workspaceValues.length)
+    (cells : after.cells = innerAfter.cells) :
+    RecognizerInvariant grammarLayout grammar words tokens workspaceLayout
+      nextWorkspace nextWorkspaceValues grammarCell tokensCell workspaceCell after := by
+  apply invariant.after_workspace_and_scalar_effect writes effect afterWellFormed
+    grammarNotWritten tokensNotWritten parameterFrameDisjoint nextWorkspace
+    nextWorkspaceValues sameLength innerInvariant.workspaceEncoded
+    innerInvariant.derivations
+  unfold State.cellEntry?
+  rw [cells]
+  exact innerInvariant.workspaceBacking
 
 theorem evaluatesLogicalAnd
     {arity : Nat}

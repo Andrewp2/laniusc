@@ -80,20 +80,6 @@ private def generateModules : TermElabM Unit := do
     levelParams := [], type := goal, value := completedProof })
   mark "composed function list checked"
 
-private def proposedSurfaces : (units : List Artifact) →
-    Option (ArtifactPackChecker.CheckedUnitSurfaces units)
-  | [] => some .nil
-  | unit :: units => do
-    let bytes ← decodeSingleSource unit.sources
-    let cache : ArtifactCache := {
-      leafCapacity := 16
-      parseNodes := proposeSeqTree 16 unit.parse_nodes
-      tokens := proposeSeqTree 16 unit.tokens
-      primarySourceBytes := proposeSeqTree 16 bytes }
-    let view ← cache.checked? unit
-    let checked ← checkSurfaceArtifactView? unit view
-    return .cons checked (← proposedSurfaces units)
-
 elab "lowering_input%" : term => do
   IO.FS.writeFile "target/verified-compiler/self-lowering-phases.log" ""
   mark "reading self-extraction and source bytes"
@@ -105,10 +91,10 @@ elab "lowering_input%" : term => do
   let sources ← paths.toList.mapM fun (path : String) => do
     let bytes ← IO.FS.readBinFile path
     return ({path, bytes := bytes.toList.map UInt8.toNat} : SourceFile)
-  let some pack := decodeCompactArtifactPack? encoded | throwError "compact proposal failed"
-  unless compactPackSources pack == sources do throwError "source bytes differ"
+  let some checked := checkCompactSurfaceArtifactPackSources? encoded sources
+    | throwError "Surface proposal failed"
   mark "source bytes checked; proposing indexed Surface data"
-  let some data := proposedSurfaces pack.units | throwError "Surface proposal failed"
+  let data := checked.surfaceData
   let some units := CoreSynthesis.Program.decodeUnitsFrom 0 data | throwError "unit proposal failed"
   mark "quoting proposed Surface units"
   quoteBounded units (compile := false)

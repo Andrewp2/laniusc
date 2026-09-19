@@ -89,9 +89,9 @@ theorem Arguments.executes
       (.binary .lessEqual (.local entry.count) (.value (.signed .i32 1)))
       (.boolean false) (entry.ready before) := by
     apply evaluatesEagerBinary (by decide) (by decide)
-      ⟨1, evalLocal_of_local 0 program _ _ _ read⟩
+      (evaluatesLocal read)
       (show Evaluates program (entry.ready before) (.value (.signed .i32 1)) (.signed .i32 1)
-        (entry.ready before) from ⟨1, rfl⟩)
+        (entry.ready before) from evaluatesValue)
     have greater : ¬ (before.world.arguments.length : Int) ≤ 1 := by omega
     simp [evalBinaryValue, evalSignedBinary, greater]
   have registry : Allocation.Registry (entry.ready before) :=
@@ -197,9 +197,9 @@ theorem CheckedArguments.rejectsNoInputs (checked : CheckedArguments program sou
       (.binary .lessEqual (.local checked.entry.count) (.value (.signed .i32 1)))
       (.boolean true) (checked.entry.ready before) := by
     apply evaluatesEagerBinary (by decide) (by decide)
-      ⟨1, evalLocal_of_local 0 program _ _ _ (checked.entry.readyCount before wellFormed)⟩
+      (evaluatesLocal (checked.entry.readyCount before wellFormed))
       (show Evaluates program (checked.entry.ready before) (.value (.signed .i32 1))
-        (.signed .i32 1) (checked.entry.ready before) from ⟨1, rfl⟩)
+        (.signed .i32 1) (checked.entry.ready before) from evaluatesValue)
     have small : (before.world.arguments.length : Int) ≤ 1 := by omega
     simp [evalBinaryValue, evalSignedBinary, small]
   have executed : Executes program before checked.entry.statement
@@ -210,7 +210,7 @@ theorem CheckedArguments.rejectsNoInputs (checked : CheckedArguments program sou
     exact executesLetLocal evaluated (executesSequenceReturned
       (executesIfTrue test (executesSequenceReturned
         (executesReturnValue (show Evaluates program (checked.entry.ready before)
-          (.value (.signed .i32 1)) (.signed .i32 1) (checked.entry.ready before) from ⟨1, rfl⟩)))))
+          (.value (.signed .i32 1)) (.signed .i32 1) (checked.entry.ready before) from evaluatesValue)))))
   simpa only [← checked.exactSource] using executed
 
 end Lanius.Extraction.Entry

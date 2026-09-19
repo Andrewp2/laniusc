@@ -1067,60 +1067,31 @@ theorem parserScanStorageCallee_entry
         (signedI32Values (tokens.map Int.ofNat ++ unused)))
     } := ((enterCall_effect caller bindings).oldCells tokensCell tokensOld
       (by simp [CellSet.empty])).trans tokensBacking
-  have local0 : callee.local? 0 =
-      some (parserGrammarValue words grammarCell) := by
-    simpa [callee, bindings, parserScanStorageBindings] using
-      (enterCall_local_of_binding caller [] [
-        (1, (.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length))),
-        (2, .signed .i32 (Int.ofNat tokens.length)),
-        (3, .signed .i32 (Int.ofNat position)),
-        (4, .signed .i32 (Int.ofNat semanticKind))]
-        0 (parserGrammarValue words grammarCell) wellFormed (by simp))
-  have local1 : callee.local? 1 =
-      some ((.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length))) := by
-    simpa [callee, bindings, parserScanStorageBindings] using
-      (enterCall_local_of_binding caller [
-        (0, parserGrammarValue words grammarCell)] [
-        (2, .signed .i32 (Int.ofNat tokens.length)),
-        (3, .signed .i32 (Int.ofNat position)),
-        (4, .signed .i32 (Int.ofNat semanticKind))]
-        1 ((.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length))) wellFormed (by simp))
-  have local2 : callee.local? 2 =
-      some (.signed .i32 (Int.ofNat tokens.length)) := by
-    simpa [callee, bindings, parserScanStorageBindings] using
-      (enterCall_local_of_binding caller [
-        (0, parserGrammarValue words grammarCell),
-        (1, (.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length)))] [
-        (3, .signed .i32 (Int.ofNat position)),
-        (4, .signed .i32 (Int.ofNat semanticKind))]
-        2 (.signed .i32 (Int.ofNat tokens.length)) wellFormed (by simp))
-  have local3 : callee.local? 3 =
-      some (.signed .i32 (Int.ofNat position)) := by
-    simpa [callee, bindings, parserScanStorageBindings] using
-      (enterCall_local_of_binding caller [
-        (0, parserGrammarValue words grammarCell),
-        (1, (.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length))),
-        (2, .signed .i32 (Int.ofNat tokens.length))] [
-        (4, .signed .i32 (Int.ofNat semanticKind))]
-        3 (.signed .i32 (Int.ofNat position)) wellFormed (by simp))
-  have local4 : callee.local? 4 =
-      some (.signed .i32 (Int.ofNat semanticKind)) := by
-    simpa [callee, bindings, parserScanStorageBindings] using
-      (enterCall_local_of_binding caller [
-        (0, parserGrammarValue words grammarCell),
-        (1, (.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length))),
-        (2, .signed .i32 (Int.ofNat tokens.length)),
-        (3, .signed .i32 (Int.ofNat position))] []
-        4 (.signed .i32 (Int.ofNat semanticKind)) wellFormed (by simp))
+  let environment : Lanius.FunctionalView.Env 5
+    | ⟨0, _⟩ => parserGrammarValue words grammarCell
+    | ⟨1, _⟩ => .slice parserI32Type tokensCell [] 0
+        (tokens.length + unused.length)
+    | ⟨2, _⟩ => .signed .i32 (Int.ofNat tokens.length)
+    | ⟨3, _⟩ => .signed .i32 (Int.ofNat position)
+    | ⟨4, _⟩ => .signed .i32 (Int.ofNat semanticKind)
+  have bindingsEq : Lanius.FunctionalView.Core.parameterBindings environment = bindings := by
+    rfl
+  have locals := Lanius.FunctionalView.Core.enterCall_parameterBindings_matches
+    (environment := environment) wellFormed
+  rw [bindingsEq] at locals
+  have localAt : ∀ index : Fin 5,
+      callee.local? index.val = some (environment index) := by
+    intro index
+    simpa [callee, Lanius.FunctionalView.Core.identityLayout] using locals index
   simpa [parserScanStorageCallee, bindings, callee] using
     (show Proof.ScanStorageEntry words tokens unused grammarCell
       tokensCell position semanticKind callee from {
         wellFormed := calleeWellFormed
-        grammarLocal := local0
-        tokensLocal := local1
-        countLocal := local2
-        positionLocal := local3
-        kindLocal := local4
+        grammarLocal := by simpa [environment] using localAt ⟨0, by decide⟩
+        tokensLocal := by simpa [environment] using localAt ⟨1, by decide⟩
+        countLocal := by simpa [environment] using localAt ⟨2, by decide⟩
+        positionLocal := by simpa [environment] using localAt ⟨3, by decide⟩
+        kindLocal := by simpa [environment] using localAt ⟨4, by decide⟩
         grammarBacking := calleeGrammarBacking
         tokensBacking := calleeTokensBacking })
 

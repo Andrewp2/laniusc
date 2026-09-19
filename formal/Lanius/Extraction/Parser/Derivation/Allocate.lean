@@ -137,10 +137,10 @@ theorem ReaderRuntime.BeforeCursor.with_cursors {reader : ReaderRuntime}
     (.signed .i32 (Int.ofNat stateId)) entry.wellFormed
   have stateRead : Evaluates verifiedParserCore before (.local stateIdLocal)
       (.signed .i32 (Int.ofNat stateId)) before :=
-    ⟨1, evalLocal_of_local 0 verifiedParserCore before stateIdLocal _ stateLocal⟩
+    Lanius.Semantics.evaluatesLocal stateLocal
   have countRead : Evaluates verifiedParserCore first (.local countId) (.signed .i32 (Int.ofNat count)) first :=
-    ⟨1, evalLocal_of_local 0 verifiedParserCore first countId _
-      ((bindLocal_preserves_other_local entry.wellFormed countUnshadowed).trans countLocal)⟩
+    Lanius.Semantics.evaluatesLocal
+      ((bindLocal_preserves_other_local entry.wellFormed countUnshadowed).trans countLocal)
   have bodyExecution : Executes verifiedParserCore
       (first.bindLocal reader.tail.remaining (.signed .i32 (Int.ofNat count))) body completion completed := execution
   have closed := CellEffect.closeLocal before reader.stores.current (.signed .i32 (Int.ofNat stateId))

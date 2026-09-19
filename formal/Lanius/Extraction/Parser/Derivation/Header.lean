@@ -97,7 +97,7 @@ theorem RecognizerWorkspaceArtifact.store_header
     rw [sum]
     apply evaluatesEagerBinary (by decide) (by decide)
       (ParserDerivation.output_local_operand wellFormed slotLocal backing effect)
-      (show Evaluates verifiedParserCore middle (.value (.signed .i32 3)) (.signed .i32 3) middle from ⟨1, rfl⟩)
+      (show Evaluates verifiedParserCore middle (.value (.signed .i32 3)) (.signed .i32 3) middle from Lanius.Semantics.evaluatesValue)
     simp only [evalBinaryValue, evalSignedBinary]
     rw [wrapSigned_i32_of_nonnegative verifiedParserCore.target _
       (by change 0 ≤ (slot : Int) + 3; omega) (by change (slot : Int) + 3 ≤ 2147483647; omega)]

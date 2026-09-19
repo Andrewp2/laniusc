@@ -50,7 +50,7 @@ theorem executes_finish (table : Table program rangeTokens)
     exact fun written => written.elim notRecords (Nat.ne_of_lt old)
   obtain ⟨completed, loop, finalStorage, finalCount, loopEffect, loopMemory⟩ := executes_loop table request [] tokens ready invariant
   have result : Evaluates program completed (.local 4) (.signed .i32 tokens.length) completed :=
-    ⟨1, evalLocal_of_local 0 program completed 4 _ finalCount⟩
+    Lanius.Semantics.evaluatesLocal finalCount
   have closed := CellEffect.closeLocal before 10 (.signed .i32 0) storage.wellFormed loopEffect
   have visible : CellEffect (CellSet.singleton recordsCell) before (restoreLocals before completed) :=
     closed.narrow (by
@@ -59,7 +59,7 @@ theorem executes_finish (table : Table program rangeTokens)
       · exact records
       · exact False.elim ((Nat.ne_of_lt old) cursor))
   exact ⟨restoreLocals before completed,
-    executesLetLocal (show Evaluates program before (literal 0) (.signed .i32 0) before from ⟨1, rfl⟩)
+    executesLetLocal (show Evaluates program before (literal 0) (.signed .i32 0) before from evaluatesValue)
       (executesSequence loop (executesSequenceReturned (executesReturnValue result))),
     finalStorage.recordsContents, visible,
     ((Host.MemoryFrame.bindLocal before 10 (.signed .i32 0)).trans loopMemory).restoreLocals before visible.wellFormed⟩

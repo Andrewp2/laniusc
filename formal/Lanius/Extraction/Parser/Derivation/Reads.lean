@@ -96,7 +96,7 @@ theorem RecognizerWorkspaceArtifact.read_field_after_output
   have localRead {localId : Lanius.VarId} {value : Value}
       (localValue : runtime.local? localId = some value) :
       Evaluates verifiedParserCore runtime (.local localId) value runtime :=
-    ⟨1, evalLocal_of_local 0 verifiedParserCore runtime localId value localValue⟩
+    Lanius.Semantics.evaluatesLocal localValue
   have arguments := ArgumentsEvaluateTo.cons (localRead workspaceStill)
     (.cons (localRead baseStill) (.cons (localRead currentStill)
       (.cons fieldRead (.nil verifiedParserCore runtime))))
@@ -126,7 +126,7 @@ theorem RecognizerWorkspaceArtifact.read_field_locals
   have localRead {localId : Lanius.VarId} {value : Value}
       (localValue : before.local? localId = some value) :
       Evaluates verifiedParserCore before (.local localId) value before :=
-    ⟨1, evalLocal_of_local 0 verifiedParserCore before localId value localValue⟩
+    Lanius.Semantics.evaluatesLocal localValue
   have arguments := ArgumentsEvaluateTo.cons (localRead workspaceLocal)
     (.cons (localRead baseLocal) (.cons (localRead currentLocal)
       (.cons (evaluatesConstant selector) (.nil verifiedParserCore before))))

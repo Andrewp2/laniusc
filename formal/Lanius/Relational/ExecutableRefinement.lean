@@ -204,35 +204,31 @@ theorem termToExecutable
         simpa only [Effectful.termCallFree, Bool.and_eq_true] using free
       obtain ⟨values, afterArguments, argumentsResult, operationResult⟩ :=
         TermEvaluates.applyInversion evaluated
-      simp only [FunctionalView.Term.evaluate]
-      rw [termsToExecutable reflection components.2 argumentsResult]
-      exact reflection.operation components.1 operationResult
+      exact FunctionalView.Term.evaluate_apply
+        (termsToExecutable reflection components.2 argumentsResult)
+        (reflection.operation components.1 operationResult)
   | logicalAnd left right =>
       have components : Effectful.termCallFree left = true ∧
           Effectful.termCallFree right = true := by
         simpa only [Effectful.termCallFree, Bool.and_eq_true] using free
       rcases TermEvaluates.logicalAndInversion evaluated with
         ⟨rfl, leftResult⟩ | ⟨afterLeft, leftResult, rightResult⟩
-      · simp only [FunctionalView.Term.evaluate]
-        rw [termToExecutable reflection components.1 leftResult]
-        rfl
-      · simp only [FunctionalView.Term.evaluate]
-        rw [termToExecutable reflection components.1 leftResult]
-        simpa only [bind, Except.bind] using
-          termToExecutable reflection components.2 rightResult
+      · exact FunctionalView.Term.evaluate_logicalAnd_false
+          (termToExecutable reflection components.1 leftResult)
+      · exact FunctionalView.Term.evaluate_logicalAnd_true
+          (termToExecutable reflection components.1 leftResult)
+          (termToExecutable reflection components.2 rightResult)
   | logicalOr left right =>
       have components : Effectful.termCallFree left = true ∧
           Effectful.termCallFree right = true := by
         simpa only [Effectful.termCallFree, Bool.and_eq_true] using free
       rcases TermEvaluates.logicalOrInversion evaluated with
         ⟨rfl, leftResult⟩ | ⟨afterLeft, leftResult, rightResult⟩
-      · simp only [FunctionalView.Term.evaluate]
-        rw [termToExecutable reflection components.1 leftResult]
-        rfl
-      · simp only [FunctionalView.Term.evaluate]
-        rw [termToExecutable reflection components.1 leftResult]
-        simpa only [bind, Except.bind] using
-          termToExecutable reflection components.2 rightResult
+      · exact FunctionalView.Term.evaluate_logicalOr_true
+          (termToExecutable reflection components.1 leftResult)
+      · exact FunctionalView.Term.evaluate_logicalOr_false
+          (termToExecutable reflection components.1 leftResult)
+          (termToExecutable reflection components.2 rightResult)
 
 theorem termsToExecutable
     {world afterWorld : ReadOnly.World}
@@ -252,7 +248,6 @@ theorem termsToExecutable
         simpa only [Effectful.termsCallFree, Bool.and_eq_true] using free
       obtain ⟨value, tailValues, afterHead, rfl, headResult, tailResult⟩ :=
         TermsEvaluate.consInversion evaluated
-      change ReadOnly.World at afterHead
       exact FunctionalView.evaluateTerms_cons
         (termToExecutable reflection components.1 headResult)
         (termsToExecutable reflection components.2 tailResult)

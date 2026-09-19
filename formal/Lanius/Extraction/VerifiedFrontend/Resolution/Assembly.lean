@@ -5,14 +5,12 @@ namespace Lanius.Extraction
 
 set_option maxRecDepth 100000
 set_option maxHeartbeats 0
-set_option cbv.warning false
-set_option cbv.maxSteps 100000000
 
 theorem verifiedFrontendPack_resolution_checked_kernel :
     (GlobalResolutionEvidenceChecker.checkPackResolution?
       verifiedFrontendPack
       verifiedFrontendPackSemanticsKernel.context).isSome = true := by
-  cbv
+  decide +kernel
 
 def verifiedFrontendPackResolutionKernel :=
   (GlobalResolutionEvidenceChecker.checkPackResolution?

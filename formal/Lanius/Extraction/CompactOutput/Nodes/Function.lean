@@ -126,7 +126,7 @@ theorem Entry.execute (entry : Entry before) (word : Word.Checked program byte d
   have run := executesSequence (executesIfFalse (thenBranch := returned negativeOne) (entry.guard program.core) (executesSkip _ _))
     (executesLetLocal (id := 8) (type := i32) (local_evaluates program.core entry.positionRead)
       (executesLetLocal (id := 9) (type := i32)
-        (show Evaluates program.core first (number 0) (.signed .i32 0) first from ⟨1, rfl⟩) tailRun))
+        (show Evaluates program.core first (number 0) (.signed .i32 0) first from evaluatesValue) tailRun))
   have closed := CellEffect.closeLocal before 8 (.signed .i32 entry.position) entry.wellFormed
     (CellEffect.closeLocal first 9 (.signed .i32 0) firstWF effect)
   refine ⟨restoreLocals before completed, run, backing, closed.narrow ?_⟩

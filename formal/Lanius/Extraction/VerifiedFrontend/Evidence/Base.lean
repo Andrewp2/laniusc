@@ -1,4 +1,4 @@
-import Lanius.Extraction.VerifiedFrontend.Assembly.Semantics
+import Lanius.Extraction.VerifiedFrontend.Surface.Data
 import Lanius.Extraction.CompleteChecker
 
 namespace Lanius.Extraction

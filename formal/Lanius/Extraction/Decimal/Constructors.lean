@@ -52,10 +52,8 @@ private theorem wrapperBody_executes
     constantFound
   have offsetResult : Evaluates verifiedFrontendCore callee (.local 0)
       (.signed .i32 offset) callee := by
-    exact ⟨1, evalLocal_of_local 0 verifiedFrontendCore callee 0
-      (.signed .i32 offset)
-      (singleArgumentCalleeState_local state wellFormed
-        (.signed .i32 offset))⟩
+    exact Lanius.Semantics.evaluatesLocal
+      (singleArgumentCalleeState_local state wellFormed (.signed .i32 offset))
   have call := Dependencies.successfulTokenScanCall_executes callee
     calleeWellFormed (.constant constant) (.local 0) kind offset
     kindResult offsetResult
@@ -98,10 +96,8 @@ theorem numberFailureBody_executes
     wellFormed (.signed .i32 errorOffset)
   have argument : Evaluates verifiedFrontendCore callee (.local 0)
       (.signed .i32 errorOffset) callee := by
-    exact ⟨1, evalLocal_of_local 0 verifiedFrontendCore callee 0
-      (.signed .i32 errorOffset)
-      (singleArgumentCalleeState_local state wellFormed
-        (.signed .i32 errorOffset))⟩
+    exact Lanius.Semantics.evaluatesLocal
+      (singleArgumentCalleeState_local state wellFormed (.signed .i32 errorOffset))
   have call := Dependencies.failedTokenScanCall_executes callee
     calleeWellFormed (.local 0) errorOffset argument
   rw [show Functions.numberFailureBody = .sequence

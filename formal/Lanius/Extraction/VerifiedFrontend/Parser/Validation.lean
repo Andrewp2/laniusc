@@ -28,6 +28,49 @@ def extractedParserGrammarValidFunction : Function :=
 def extractedParserGrammarValidBody : Stmt :=
   extractedParserGrammarValidFunction.body.getD .skip
 
+private theorem evaluatesI32Local
+    {program : Program} {state : State} {id : VarId} {value : Nat}
+    (found : state.local? id =
+      some (.signed .i32 (Int.ofNat value))) :
+    Evaluates program state (.local id)
+      (.signed .i32 (Int.ofNat value)) state :=
+  Lanius.Semantics.evaluatesLocal found
+
+private theorem evaluatesI32Zero
+    {program : Program} {state : State} :
+    Evaluates program state (.value (.signed .i32 0))
+      (.signed .i32 0) state :=
+  Lanius.Semantics.evaluatesValue
+
+private theorem evaluatesI32LessLocalsOfNat
+    {program : Program} {state : State} {leftId rightId : VarId}
+    {leftValue rightValue : Nat}
+    (leftFound : state.local? leftId =
+      some (.signed .i32 (Int.ofNat leftValue)))
+    (rightFound : state.local? rightId =
+      some (.signed .i32 (Int.ofNat rightValue)))
+    (bound : leftValue < rightValue) :
+    Evaluates program state (.binary .less (.local leftId) (.local rightId))
+      (.boolean true) state := by
+  apply evaluatesEagerBinary (by decide) (by decide)
+    (evaluatesI32Local leftFound) (evaluatesI32Local rightFound)
+  simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt, bound]
+
+private theorem evaluatesI32NotLessLocalsOfNat
+    {program : Program} {state : State} {leftId rightId : VarId}
+    {leftValue rightValue : Nat}
+    (leftFound : state.local? leftId =
+      some (.signed .i32 (Int.ofNat leftValue)))
+    (rightFound : state.local? rightId =
+      some (.signed .i32 (Int.ofNat rightValue)))
+    (bound : rightValue ≤ leftValue) :
+    Evaluates program state (.binary .less (.local leftId) (.local rightId))
+      (.boolean false) state := by
+  apply evaluatesEagerBinary (by decide) (by decide)
+    (evaluatesI32Local leftFound) (evaluatesI32Local rightFound)
+  simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt]
+  omega
+
 theorem extractedParserGrammarValid_function_shape :
     extractedParserGrammarValidFunction.id = 8 ∧
       extractedParserGrammarValidFunction.parameters = [
@@ -44,6 +87,12 @@ theorem verifiedParserCore_finds_grammarValid :
   unfold verifiedParserCore extractedParserGrammarValidFunction
     extractedParserGrammarValidWire
   rfl
+
+private abbrev verifiedParserSignedI32ConstantEvidence (id value : Nat) : Prop :=
+  (verifiedParserCore.constant? id).map (fun declaration =>
+    (declaration.id, declaration.type,
+      signedI32ConstantValue? declaration.value)) =
+    some (id, parserI32Type, some (Int.ofNat value))
 
 def parserGrammarLengthGuardExpr : Expr :=
   .binary .less (.local 1) (.constant 6)
@@ -89,14 +138,8 @@ theorem verifiedParser_grammar_guard_constants :
         value := .signed .i32 1
       } := by
   have evidence :
-      (verifiedParserCore.constant? 7).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (7, parserI32Type, some 0) ∧
-      (verifiedParserCore.constant? 5).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (5, parserI32Type, some 1) := by
+      verifiedParserSignedI32ConstantEvidence 7 0 ∧
+      verifiedParserSignedI32ConstantEvidence 5 1 := by
     decide +kernel
   exact ⟨
     constant_eq_of_signed_i32_evidence verifiedParserCore 7 0 evidence.1,
@@ -282,11 +325,8 @@ noncomputable def GrammarValidationInvariant.evaluate_range_call
       Int.ofNat offset := by
     simpa using header.get
   rw [headerValue] at offsetResult
-  have lengthResult : Evaluates verifiedParserCore state (.local 1)
-      (.signed .i32 (Int.ofNat words.length)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 1
-      (.signed .i32 (Int.ofNat words.length))
-      invariant.grammarLengthLocal⟩
+  have lengthResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.grammarLengthLocal
   have argumentsResult : ArgumentsEvaluateTo verifiedParserCore state [
       .index (.local 0) (.constant headerConstant), countExpression,
       .local 1] [
@@ -379,6 +419,8 @@ theorem GrammarValidationInvariant.range_state_invariant
     (by decide) (by decide)
   have finalState : state7 = parserGrammarRangeState state grammar := by
     rfl
+  let lookup := bindLocals_local_of_index state
+    (parserGrammarCountBindings grammar)
   refine {
     validation := ?_
     kindCountLocal := ?_
@@ -389,48 +431,24 @@ theorem GrammarValidationInvariant.range_state_invariant
     lhsProductionCountLocal := ?_ }
   · rw [← finalState]
     exact invariant7
-  · simpa [state7, state6, state5, state4, state3, state2, kindValue,
-      productionValue, nonterminalValue, startValue, rhsSymbolValue,
-      lhsProductionValue, parserGrammarRangeState, parserGrammarCountBindings]
-      using bindLocals_local_of_binding state [] [
-        (3, productionValue), (4, nonterminalValue), (5, startValue),
-        (6, rhsSymbolValue), (7, lhsProductionValue)] 2 kindValue
-        invariant.stateWellFormed (by simp)
-  · simpa [state7, state6, state5, state4, state3, state2, kindValue,
-      productionValue, nonterminalValue, startValue, rhsSymbolValue,
-      lhsProductionValue, parserGrammarRangeState, parserGrammarCountBindings]
-      using bindLocals_local_of_binding state [(2, kindValue)] [
-        (4, nonterminalValue), (5, startValue), (6, rhsSymbolValue),
-        (7, lhsProductionValue)] 3 productionValue
-        invariant.stateWellFormed (by simp)
-  · simpa [state7, state6, state5, state4, state3, state2, kindValue,
-      productionValue, nonterminalValue, startValue, rhsSymbolValue,
-      lhsProductionValue, parserGrammarRangeState, parserGrammarCountBindings]
-      using bindLocals_local_of_binding state [
-        (2, kindValue), (3, productionValue)] [
-        (5, startValue), (6, rhsSymbolValue), (7, lhsProductionValue)]
-        4 nonterminalValue invariant.stateWellFormed (by simp)
-  · simpa [state7, state6, state5, state4, state3, state2, kindValue,
-      productionValue, nonterminalValue, startValue, rhsSymbolValue,
-      lhsProductionValue, parserGrammarRangeState, parserGrammarCountBindings]
-      using bindLocals_local_of_binding state [
-        (2, kindValue), (3, productionValue), (4, nonterminalValue)] [
-        (6, rhsSymbolValue), (7, lhsProductionValue)] 5 startValue
-        invariant.stateWellFormed (by simp)
-  · simpa [state7, state6, state5, state4, state3, state2, kindValue,
-      productionValue, nonterminalValue, startValue, rhsSymbolValue,
-      lhsProductionValue, parserGrammarRangeState, parserGrammarCountBindings]
-      using bindLocals_local_of_binding state [
-        (2, kindValue), (3, productionValue), (4, nonterminalValue),
-        (5, startValue)] [(7, lhsProductionValue)] 6 rhsSymbolValue
-        invariant.stateWellFormed (by simp)
-  · simpa [state7, state6, state5, state4, state3, state2, kindValue,
-      productionValue, nonterminalValue, startValue, rhsSymbolValue,
-      lhsProductionValue, parserGrammarRangeState, parserGrammarCountBindings]
-      using bindLocals_local_of_binding state [
-        (2, kindValue), (3, productionValue), (4, nonterminalValue),
-        (5, startValue), (6, rhsSymbolValue)] [] 7 lhsProductionValue
-        invariant.stateWellFormed (by simp)
+  · simpa [kindValue, parserGrammarRangeState, parserGrammarCountBindings]
+      using lookup ⟨0, by simp [parserGrammarCountBindings]⟩ invariant.stateWellFormed
+        (by simp [parserGrammarCountBindings])
+  · simpa [productionValue, parserGrammarRangeState, parserGrammarCountBindings]
+      using lookup ⟨1, by simp [parserGrammarCountBindings]⟩ invariant.stateWellFormed
+        (by simp [parserGrammarCountBindings])
+  · simpa [nonterminalValue, parserGrammarRangeState, parserGrammarCountBindings]
+      using lookup ⟨2, by simp [parserGrammarCountBindings]⟩ invariant.stateWellFormed
+        (by simp [parserGrammarCountBindings])
+  · simpa [startValue, parserGrammarRangeState, parserGrammarCountBindings]
+      using lookup ⟨3, by simp [parserGrammarCountBindings]⟩ invariant.stateWellFormed
+        (by simp [parserGrammarCountBindings])
+  · simpa [rhsSymbolValue, parserGrammarRangeState, parserGrammarCountBindings]
+      using lookup ⟨4, by simp [parserGrammarCountBindings]⟩ invariant.stateWellFormed
+        (by simp [parserGrammarCountBindings])
+  · simpa [lhsProductionValue, parserGrammarRangeState, parserGrammarCountBindings]
+      using lookup ⟨5, by simp [parserGrammarCountBindings]⟩ invariant.stateWellFormed
+        (by simp [parserGrammarCountBindings])
 
 theorem GrammarRangeInvariant.after_empty_effect
     (invariant : GrammarRangeInvariant layout grammar words
@@ -608,46 +626,14 @@ theorem verifiedParser_range_header_constants :
         type := parserI32Type
         value := .signed .i32 15
       } := by
-  have evidence14 :
-      (verifiedParserCore.constant? 14).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (14, parserI32Type, some 7) := by decide +kernel
-  have evidence15 :
-      (verifiedParserCore.constant? 15).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (15, parserI32Type, some 8) := by decide +kernel
-  have evidence16 :
-      (verifiedParserCore.constant? 16).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (16, parserI32Type, some 9) := by decide +kernel
-  have evidence17 :
-      (verifiedParserCore.constant? 17).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (17, parserI32Type, some 10) := by decide +kernel
-  have evidence18 :
-      (verifiedParserCore.constant? 18).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (18, parserI32Type, some 11) := by decide +kernel
-  have evidence20 :
-      (verifiedParserCore.constant? 20).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (20, parserI32Type, some 13) := by decide +kernel
-  have evidence21 :
-      (verifiedParserCore.constant? 21).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (21, parserI32Type, some 14) := by decide +kernel
-  have evidence22 :
-      (verifiedParserCore.constant? 22).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (22, parserI32Type, some 15) := by decide +kernel
+  have evidence14 : verifiedParserSignedI32ConstantEvidence 14 7 := by decide +kernel
+  have evidence15 : verifiedParserSignedI32ConstantEvidence 15 8 := by decide +kernel
+  have evidence16 : verifiedParserSignedI32ConstantEvidence 16 9 := by decide +kernel
+  have evidence17 : verifiedParserSignedI32ConstantEvidence 17 10 := by decide +kernel
+  have evidence18 : verifiedParserSignedI32ConstantEvidence 18 11 := by decide +kernel
+  have evidence20 : verifiedParserSignedI32ConstantEvidence 20 13 := by decide +kernel
+  have evidence21 : verifiedParserSignedI32ConstantEvidence 21 14 := by decide +kernel
+  have evidence22 : verifiedParserSignedI32ConstantEvidence 22 15 := by decide +kernel
   exact ⟨
     constant_eq_of_signed_i32_evidence verifiedParserCore 14 7 evidence14,
     constant_eq_of_signed_i32_evidence verifiedParserCore 15 8 evidence15,
@@ -689,36 +675,12 @@ theorem verifiedParser_count_header_constants :
         type := parserI32Type
         value := .signed .i32 16
       } := by
-  have evidence8 :
-      (verifiedParserCore.constant? 8).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (8, parserI32Type, some 1) := by decide +kernel
-  have evidence9 :
-      (verifiedParserCore.constant? 9).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (9, parserI32Type, some 2) := by decide +kernel
-  have evidence10 :
-      (verifiedParserCore.constant? 10).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (10, parserI32Type, some 3) := by decide +kernel
-  have evidence11 :
-      (verifiedParserCore.constant? 11).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (11, parserI32Type, some 4) := by decide +kernel
-  have evidence19 :
-      (verifiedParserCore.constant? 19).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (19, parserI32Type, some 12) := by decide +kernel
-  have evidence23 :
-      (verifiedParserCore.constant? 23).map (fun declaration =>
-        (declaration.id, declaration.type,
-          signedI32ConstantValue? declaration.value)) =
-          some (23, parserI32Type, some 16) := by decide +kernel
+  have evidence8 : verifiedParserSignedI32ConstantEvidence 8 1 := by decide +kernel
+  have evidence9 : verifiedParserSignedI32ConstantEvidence 9 2 := by decide +kernel
+  have evidence10 : verifiedParserSignedI32ConstantEvidence 10 3 := by decide +kernel
+  have evidence11 : verifiedParserSignedI32ConstantEvidence 11 4 := by decide +kernel
+  have evidence19 : verifiedParserSignedI32ConstantEvidence 19 12 := by decide +kernel
+  have evidence23 : verifiedParserSignedI32ConstantEvidence 23 16 := by decide +kernel
   exact ⟨
     constant_eq_of_signed_i32_evidence verifiedParserCore 8 1 evidence8,
     constant_eq_of_signed_i32_evidence verifiedParserCore 9 2 evidence9,
@@ -736,9 +698,7 @@ noncomputable def GrammarRangeInvariant.canonical_kinds_range
     grammar.grammar.n_kinds (.local 2)
     invariant.validation.encoded.canonicalKindsOffset
     verifiedParser_range_header_constants.1
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 2
-      (.signed .i32 (Int.ofNat grammar.grammar.n_kinds))
-      invariant.kindCountLocal⟩
+    (evaluatesI32Local invariant.kindCountLocal)
     (invariant.validation.encoded.validation_facts
       invariant.validation.grammarWellFormed).prelude.canonicalKindsRange
 
@@ -751,9 +711,7 @@ noncomputable def GrammarRangeInvariant.production_lhs_range
     grammar.productionCount (.local 3)
     invariant.validation.encoded.productionLhsOffset
     verifiedParser_range_header_constants.2.1
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 3
-      (.signed .i32 (Int.ofNat grammar.productionCount))
-      invariant.productionCountLocal⟩
+    (evaluatesI32Local invariant.productionCountLocal)
     (invariant.validation.encoded.validation_facts
       invariant.validation.grammarWellFormed).prelude.productionLhsRange
 
@@ -766,9 +724,7 @@ noncomputable def GrammarRangeInvariant.rhs_offsets_range
     grammar.productionCount (.local 3)
     invariant.validation.encoded.rhsOffsetsOffset
     verifiedParser_range_header_constants.2.2.1
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 3
-      (.signed .i32 (Int.ofNat grammar.productionCount))
-      invariant.productionCountLocal⟩
+    (evaluatesI32Local invariant.productionCountLocal)
     (invariant.validation.encoded.validation_facts
       invariant.validation.grammarWellFormed).prelude.rhsOffsetsRange
 
@@ -781,9 +737,7 @@ noncomputable def GrammarRangeInvariant.rhs_lengths_range
     grammar.productionCount (.local 3)
     invariant.validation.encoded.rhsLengthsOffset
     verifiedParser_range_header_constants.2.2.2.1
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 3
-      (.signed .i32 (Int.ofNat grammar.productionCount))
-      invariant.productionCountLocal⟩
+    (evaluatesI32Local invariant.productionCountLocal)
     (invariant.validation.encoded.validation_facts
       invariant.validation.grammarWellFormed).prelude.rhsLengthsRange
 
@@ -796,9 +750,7 @@ noncomputable def GrammarRangeInvariant.rhs_symbols_range
     grammar.rhsSymbols.length (.local 6)
     invariant.validation.encoded.rhsSymbolsOffset
     verifiedParser_range_header_constants.2.2.2.2.1
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 6
-      (.signed .i32 (Int.ofNat grammar.rhsSymbols.length))
-      invariant.rhsSymbolCountLocal⟩
+    (evaluatesI32Local invariant.rhsSymbolCountLocal)
     (invariant.validation.encoded.validation_facts
       invariant.validation.grammarWellFormed).prelude.rhsSymbolsRange
 
@@ -811,9 +763,7 @@ noncomputable def GrammarRangeInvariant.lhs_offsets_range
     grammar.grammar.n_nonterminals (.local 4)
     invariant.validation.encoded.lhsOffsetsOffset
     verifiedParser_range_header_constants.2.2.2.2.2.1
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 4
-      (.signed .i32 (Int.ofNat grammar.grammar.n_nonterminals))
-      invariant.nonterminalCountLocal⟩
+    (evaluatesI32Local invariant.nonterminalCountLocal)
     (invariant.validation.encoded.validation_facts
       invariant.validation.grammarWellFormed).prelude.lhsOffsetsRange
 
@@ -826,9 +776,7 @@ noncomputable def GrammarRangeInvariant.lhs_counts_range
     grammar.grammar.n_nonterminals (.local 4)
     invariant.validation.encoded.lhsCountsOffset
     verifiedParser_range_header_constants.2.2.2.2.2.2.1
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 4
-      (.signed .i32 (Int.ofNat grammar.grammar.n_nonterminals))
-      invariant.nonterminalCountLocal⟩
+    (evaluatesI32Local invariant.nonterminalCountLocal)
     (invariant.validation.encoded.validation_facts
       invariant.validation.grammarWellFormed).prelude.lhsCountsRange
 
@@ -841,9 +789,7 @@ noncomputable def GrammarRangeInvariant.lhs_productions_range
     grammar.lhsProductions.length (.local 7)
     invariant.validation.encoded.lhsProductionsOffset
     verifiedParser_range_header_constants.2.2.2.2.2.2.2
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 7
-      (.signed .i32 (Int.ofNat grammar.lhsProductions.length))
-      invariant.lhsProductionCountLocal⟩
+    (evaluatesI32Local invariant.lhsProductionCountLocal)
     (invariant.validation.encoded.validation_facts
       invariant.validation.grammarWellFormed).prelude.lhsProductionsRange
 
@@ -914,24 +860,15 @@ theorem GrammarRangeInvariant.counts_guard_evaluates_false
     (invariant : GrammarRangeInvariant layout grammar words grammarCell state) :
     Evaluates verifiedParserCore state parserGrammarCountsInvalidExpr
       (.boolean false) state := by
-  have zero : Evaluates verifiedParserCore state (.value (.signed .i32 0))
-      (.signed .i32 0) state := ⟨1, rfl⟩
-  have kindLocal : Evaluates verifiedParserCore state (.local 2)
-      (.signed .i32 (Int.ofNat grammar.grammar.n_kinds)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 2 _
-      invariant.kindCountLocal⟩
-  have productionLocal : Evaluates verifiedParserCore state (.local 3)
-      (.signed .i32 (Int.ofNat grammar.productionCount)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 3 _
-      invariant.productionCountLocal⟩
-  have nonterminalLocal : Evaluates verifiedParserCore state (.local 4)
-      (.signed .i32 (Int.ofNat grammar.grammar.n_nonterminals)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 4 _
-      invariant.nonterminalCountLocal⟩
-  have startLocal : Evaluates verifiedParserCore state (.local 5)
-      (.signed .i32 (Int.ofNat grammar.grammar.start_nonterminal)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 5 _
-      invariant.startNonterminalLocal⟩
+  have zero := evaluatesI32Zero (program := verifiedParserCore) (state := state)
+  have kindLocal := evaluatesI32Local (program := verifiedParserCore)
+    invariant.kindCountLocal
+  have productionLocal := evaluatesI32Local (program := verifiedParserCore)
+    invariant.productionCountLocal
+  have nonterminalLocal := evaluatesI32Local (program := verifiedParserCore)
+    invariant.nonterminalCountLocal
+  have startLocal := evaluatesI32Local (program := verifiedParserCore)
+    invariant.startNonterminalLocal
   have kindValid : Evaluates verifiedParserCore state
       (.binary .lessEqual (.local 2) (.value (.signed .i32 0)))
       (.boolean false) state := by
@@ -1276,7 +1213,7 @@ def parserGrammarProductionProtectedIds : List VarId :=
 @[simp] theorem parserGrammarProductionProtectedBindings_core_ids :
     parserGrammarProductionProtectedBindings.coreIds =
       [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5] := by
-  decide +kernel
+  rfl
 
 theorem parserGrammarProductionLoop_source_frame :
     parserGrammarProductionLoopFrame.map (fun access =>
@@ -1292,18 +1229,20 @@ theorem parserGrammarProductionLoop_source_frame :
       ("rhs_symbols_offset", 11, .read),
       ("kind_count", 2, .read),
       ("lhs_production_count", 7, .read)] := by
-  decide +kernel
+  rfl
 
 @[simp] theorem parserGrammarProductionProtectedIds_shape :
     parserGrammarProductionProtectedIds = [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5] := by
-  decide +kernel
+  exact parserGrammarProductionProtectedBindings_core_ids
 
 @[simp] theorem mem_parserGrammarProductionProtectedIds_iff (id : VarId) :
     id ∈ parserGrammarProductionProtectedIds ↔ id < 12 := by
-  have same : List.Perm parserGrammarProductionProtectedIds
-      (List.range 12) := by decide +kernel
-  rw [same.mem_iff]
-  simp
+  rw [parserGrammarProductionProtectedIds_shape]
+  simp only [List.mem_cons, List.not_mem_nil, or_false]
+  have natResult (n : Nat) :
+      n = 3 ∨ n = 0 ∨ n = 8 ∨ n = 9 ∨ n = 10 ∨ n = 4 ∨ n = 6 ∨ n = 11 ∨
+      n = 2 ∨ n = 7 ∨ n = 1 ∨ n = 5 ↔ n < 12 := by omega
+  exact natResult id
 
 def parserGrammarSymbolLoopAccessFrame :
     LocalAccessFrame :=
@@ -1325,7 +1264,7 @@ theorem parserGrammarSymbolLoop_source_access_frame :
       ("rhs_offset", 14, .read),
       ("kind_count", 2, .read),
       ("nonterminal_count", 4, .read)] := by
-  decide +kernel
+  rfl
 
 theorem parserGrammarSymbolLoop_source_live_frame :
     parserGrammarSymbolLoopLiveFrame.map (fun access =>
@@ -1338,7 +1277,7 @@ theorem parserGrammarSymbolLoop_source_live_frame :
       ("kind_count", 2, .read),
       ("nonterminal_count", 4, .read),
       ("production", 12, .readWrite)] := by
-  decide +kernel
+  rfl
 
 /-- Bindings whose cells must remain distinct from the symbol-loop index:
     the enclosing production frame, its owned counter, and the three row
@@ -1360,19 +1299,22 @@ def parserGrammarSymbolProtectedIds : List VarId :=
 @[simp] theorem parserGrammarSymbolProtectedBindings_core_ids :
     parserGrammarSymbolProtectedBindings.coreIds =
       [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5, 12, 13, 14, 15] := by
-  decide +kernel
+  rfl
 
 @[simp] theorem parserGrammarSymbolProtectedIds_shape :
     parserGrammarSymbolProtectedIds =
       [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5, 12, 13, 14, 15] := by
-  decide +kernel
+  exact parserGrammarSymbolProtectedBindings_core_ids
 
 @[simp] theorem mem_parserGrammarSymbolProtectedIds_iff (id : VarId) :
     id ∈ parserGrammarSymbolProtectedIds ↔ id < 16 := by
-  have same : List.Perm parserGrammarSymbolProtectedIds (List.range 16) := by
-    decide +kernel
-  rw [same.mem_iff]
-  simp
+  rw [parserGrammarSymbolProtectedIds_shape]
+  simp only [List.mem_cons, List.not_mem_nil, or_false]
+  have natResult (n : Nat) :
+      n = 3 ∨ n = 0 ∨ n = 8 ∨ n = 9 ∨ n = 10 ∨ n = 4 ∨ n = 6 ∨ n = 11 ∨
+      n = 2 ∨ n = 7 ∨ n = 1 ∨ n = 5 ∨ n = 12 ∨ n = 13 ∨ n = 14 ∨ n = 15 ↔
+        n < 16 := by omega
+  exact natResult id
 
 theorem parserGrammarProductionProtectedIds_subset_symbol
     {id : VarId} (member : id ∈ parserGrammarProductionProtectedIds) :
@@ -1394,8 +1336,8 @@ def parserGrammarNonterminalLoopLiveFrame :
 
 theorem parserGrammarNonterminalLoop_source_frame :
     parserGrammarNonterminalLoopAccessFrame =
-      parserGrammarNonterminalLoopLiveFrame := by
-  decide +kernel
+    parserGrammarNonterminalLoopLiveFrame := by
+  rfl
 
 theorem parserGrammarNonterminalLoop_source_access_frame :
     parserGrammarNonterminalLoopAccessFrame.map (fun access =>
@@ -1409,7 +1351,7 @@ theorem parserGrammarNonterminalLoop_source_access_frame :
       ("lhs_productions_offset", 20, .read),
       ("production_count", 3, .read),
       ("production_lhs_offset", 8, .read)] := by
-  decide +kernel
+  rfl
 
 /-- The closed production-row temporaries 13 through 17 are deliberately
     absent: the nonterminal loop preserves the production frame, its counter,
@@ -1431,12 +1373,12 @@ def parserGrammarNonterminalProtectedIds : List VarId :=
 @[simp] theorem parserGrammarNonterminalProtectedBindings_core_ids :
     parserGrammarNonterminalProtectedBindings.coreIds =
       [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5, 12, 18, 19, 20] := by
-  decide +kernel
+  rfl
 
 @[simp] theorem parserGrammarNonterminalProtectedIds_shape :
     parserGrammarNonterminalProtectedIds =
       [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5, 12, 18, 19, 20] := by
-  decide +kernel
+  exact parserGrammarNonterminalProtectedBindings_core_ids
 
 theorem mem_parserGrammarNonterminalProtectedIds_lt
     (id : VarId) (member : id ∈ parserGrammarNonterminalProtectedIds) :
@@ -1475,7 +1417,7 @@ theorem parserGrammarListedLoop_source_access_frame :
       ("production_count", 3, .read),
       ("production_lhs_offset", 8, .read),
       ("nonterminal", 21, .read)] := by
-  decide +kernel
+  rfl
 
 theorem parserGrammarListedLoop_source_live_frame :
     parserGrammarListedLoopLiveFrame.map (fun access =>
@@ -1488,7 +1430,7 @@ theorem parserGrammarListedLoop_source_live_frame :
       ("production_count", 3, .read),
       ("production_lhs_offset", 8, .read),
       ("nonterminal", 21, .readWrite)] := by
-  decide +kernel
+  rfl
 
 def parserGrammarListedProtectedBindings : LocalBindingFrame :=
   LocalBindingFrame.union parserGrammarNonterminalProtectedBindings [
@@ -1505,12 +1447,12 @@ def parserGrammarListedProtectedIds : List VarId :=
 @[simp] theorem parserGrammarListedProtectedBindings_core_ids :
     parserGrammarListedProtectedBindings.coreIds =
       [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5, 12, 18, 19, 20, 21, 22, 23] := by
-  decide +kernel
+  rfl
 
 @[simp] theorem parserGrammarListedProtectedIds_shape :
     parserGrammarListedProtectedIds =
       [3, 0, 8, 9, 10, 4, 6, 11, 2, 7, 1, 5, 12, 18, 19, 20, 21, 22, 23] := by
-  decide +kernel
+  exact parserGrammarListedProtectedBindings_core_ids
 
 theorem mem_parserGrammarListedProtectedIds_lt
     (id : VarId) (member : id ∈ parserGrammarListedProtectedIds) : id < 24 := by
@@ -1540,6 +1482,22 @@ def parserGrammarProductionState
     (state : State) (layout : PackedGrammarLayout) : State :=
   state.bindLocals (parserGrammarProductionBindings layout)
 
+private theorem bindLocal_preserves_frame_disjoint
+    (state : State) (id : VarId) (value : Value)
+    (locals : VarId → Prop) (cell : CellId)
+    (different : ∀ queried, locals queried → id ≠ queried)
+    (separate : CellSet.Disjoint (localCellFootprint state locals)
+      (CellSet.singleton cell)) :
+    CellSet.Disjoint (localCellFootprint (state.bindLocal id value) locals)
+      (CellSet.singleton cell) := by
+  intro current framed written
+  obtain ⟨queried, member, cellId⟩ := framed
+  apply separate current
+  · exact ⟨queried, member, by
+      simpa [State.bindLocal, State.bindCell, State.cellId?,
+        different queried member] using cellId⟩
+  · exact written
+
 structure GrammarProductionLoopInvariant
     (layout : PackedGrammarLayout) (grammar : IndexedGrammar)
     (words : List Int) (grammarCell : CellId)
@@ -1568,18 +1526,10 @@ theorem GrammarProductionLoopInvariant.condition_true
     (bound : production < grammar.productionCount) :
     Evaluates verifiedParserCore state
       (.binary .less (.local 12) (.local 3)) (.boolean true) state := by
-  have productionResult : Evaluates verifiedParserCore state (.local 12)
-      (.signed .i32 (Int.ofNat production)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 12 _
-      (Assertion.localPointsTo_local 12 invariant.productionCell _ state
-        invariant.productionOwned)⟩
-  have countResult : Evaluates verifiedParserCore state (.local 3)
-      (.signed .i32 (Int.ofNat grammar.productionCount)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 3 _
-      invariant.range.productionCountLocal⟩
-  apply evaluatesEagerBinary (by decide) (by decide) productionResult
-    countResult
-  simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt, bound]
+  exact evaluatesI32LessLocalsOfNat
+    (Assertion.localPointsTo_local 12 invariant.productionCell _ state
+      invariant.productionOwned)
+    invariant.range.productionCountLocal bound
 
 theorem GrammarProductionLoopInvariant.condition_false
     (invariant : GrammarProductionLoopInvariant layout grammar words
@@ -1587,28 +1537,19 @@ theorem GrammarProductionLoopInvariant.condition_false
     (bound : grammar.productionCount ≤ production) :
     Evaluates verifiedParserCore state
       (.binary .less (.local 12) (.local 3)) (.boolean false) state := by
-  have productionResult : Evaluates verifiedParserCore state (.local 12)
-      (.signed .i32 (Int.ofNat production)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 12 _
-      (Assertion.localPointsTo_local 12 invariant.productionCell _ state
-        invariant.productionOwned)⟩
-  have countResult : Evaluates verifiedParserCore state (.local 3)
-      (.signed .i32 (Int.ofNat grammar.productionCount)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 3 _
-      invariant.range.productionCountLocal⟩
-  apply evaluatesEagerBinary (by decide) (by decide) productionResult
-    countResult
-  simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt]
-  omega
+  exact evaluatesI32NotLessLocalsOfNat
+    (Assertion.localPointsTo_local 12 invariant.productionCell _ state
+      invariant.productionOwned)
+    invariant.range.productionCountLocal bound
 
 theorem GrammarProductionLoopInvariant.production_local
     (invariant : GrammarProductionLoopInvariant layout grammar words
       grammarCell state production) :
     Evaluates verifiedParserCore state (.local 12)
       (.signed .i32 (Int.ofNat production)) state :=
-  ⟨1, evalLocal_of_local 1 verifiedParserCore state 12 _
+  evaluatesI32Local (program := verifiedParserCore)
     (Assertion.localPointsTo_local 12 invariant.productionCell _ state
-      invariant.productionOwned)⟩
+      invariant.productionOwned)
 
 theorem GrammarProductionLoopInvariant.read_production_lhs
     (invariant : GrammarProductionLoopInvariant layout grammar words
@@ -1626,8 +1567,7 @@ theorem GrammarProductionLoopInvariant.read_production_lhs
     (invariant.range.validation.encoded.productionLhs.row_in_bounds rowBound)
     invariant.range.validation.wordsI32 state
     invariant.range.validation.grammarLocal (.local 8) (.local 12)
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 8 _
-      invariant.productionLhsOffsetLocal⟩
+    (evaluatesI32Local invariant.productionLhsOffsetLocal)
     invariant.production_local invariant.range.validation.grammarBacking
   have physical := invariant.range.validation.encoded.productionLhs.get rowBound
   rw [physical] at read
@@ -1649,8 +1589,7 @@ theorem GrammarProductionLoopInvariant.read_rhs_offset
     (invariant.range.validation.encoded.rhsOffsets.row_in_bounds rowBound)
     invariant.range.validation.wordsI32 state
     invariant.range.validation.grammarLocal (.local 9) (.local 12)
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 9 _
-      invariant.rhsOffsetsOffsetLocal⟩
+    (evaluatesI32Local invariant.rhsOffsetsOffsetLocal)
     invariant.production_local invariant.range.validation.grammarBacking
   have physical := invariant.range.validation.encoded.rhsOffsets.get rowBound
   rw [physical] at read
@@ -1672,8 +1611,7 @@ theorem GrammarProductionLoopInvariant.read_rhs_length
     (invariant.range.validation.encoded.rhsLengths.row_in_bounds rowBound)
     invariant.range.validation.wordsI32 state
     invariant.range.validation.grammarLocal (.local 10) (.local 12)
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 10 _
-      invariant.rhsLengthsOffsetLocal⟩
+    (evaluatesI32Local invariant.rhsLengthsOffsetLocal)
     invariant.production_local invariant.range.validation.grammarBacking
   have physical := invariant.range.validation.encoded.rhsLengths.get rowBound
   rw [physical] at read
@@ -1705,28 +1643,17 @@ theorem GrammarProductionRowInvariant.invalid_guard_evaluates_false
     (rhsRange : rhsOffset + rhsLength ≤ grammar.rhsSymbols.length) :
     Evaluates verifiedParserCore state parserGrammarProductionInvalidExpr
       (.boolean false) state := by
-  have zero : Evaluates verifiedParserCore state (.value (.signed .i32 0))
-      (.signed .i32 0) state := ⟨1, rfl⟩
-  have lhsResult : Evaluates verifiedParserCore state (.local 13)
-      (.signed .i32 (Int.ofNat lhs)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 13 _
-      invariant.lhsLocal⟩
-  have offsetResult : Evaluates verifiedParserCore state (.local 14)
-      (.signed .i32 (Int.ofNat rhsOffset)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 14 _
-      invariant.rhsOffsetLocal⟩
-  have lengthResult : Evaluates verifiedParserCore state (.local 15)
-      (.signed .i32 (Int.ofNat rhsLength)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 15 _
-      invariant.rhsLengthLocal⟩
-  have nonterminalResult : Evaluates verifiedParserCore state (.local 4)
-      (.signed .i32 (Int.ofNat grammar.grammar.n_nonterminals)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 4 _
-      invariant.loop.range.nonterminalCountLocal⟩
-  have symbolCountResult : Evaluates verifiedParserCore state (.local 6)
-      (.signed .i32 (Int.ofNat grammar.rhsSymbols.length)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 6 _
-      invariant.loop.range.rhsSymbolCountLocal⟩
+  have zero := evaluatesI32Zero (program := verifiedParserCore) (state := state)
+  have lhsResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.lhsLocal
+  have offsetResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.rhsOffsetLocal
+  have lengthResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.rhsLengthLocal
+  have nonterminalResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.loop.range.nonterminalCountLocal
+  have symbolCountResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.loop.range.rhsSymbolCountLocal
   have lhsNonnegative : Evaluates verifiedParserCore state
       (.binary .less (.local 13) (.value (.signed .i32 0)))
       (.boolean false) state := by
@@ -1974,9 +1901,6 @@ def GrammarProductionLoopInvariant.after_temporary_bind
     (idNe 2 (by decide)) (idNe 3 (by decide))
     (idNe 4 (by decide)) (idNe 5 (by decide))
     (idNe 6 (by decide)) (idNe 7 (by decide))
-  have counterOld : invariant.productionCell < state.nextCell :=
-    Lanius.Separation.StateWellFormed.cell_lt_next_of_entry
-      invariant.range.validation.stateWellFormed invariant.productionOwned.2
   refine {
     range := rangeAfter
     productionLhsOffsetLocal :=
@@ -2003,23 +1927,19 @@ def GrammarProductionLoopInvariant.after_temporary_bind
     productionOwned := ?_
     productionSeparate := ?_
     productionNotGrammar := invariant.productionNotGrammar }
-  · constructor
-    · simpa [State.bindLocal, State.bindCell, State.cellId?,
-        idNe 12 (by decide)]
-        using invariant.productionOwned.1
-    · exact (bindCell_preserves_old_cell state id (some value)
-        invariant.productionCell counterOld).trans invariant.productionOwned.2
-  · intro cell framed written
-    obtain ⟨queried, bound, same⟩ := framed
-    subst cell
-    apply invariant.productionSeparate.localCell_ne_of_singleton bound
-    have queriedLt : queried < 12 :=
-      mem_parserGrammarProductionProtectedIds_iff queried |>.1 bound
-    have different : id ≠ queried := by
-      intro equal
-      rw [equal] at temporary
-      exact (Nat.not_lt_of_ge (Nat.le_of_lt queriedLt)) temporary
-    simpa [State.bindLocal, State.bindCell, State.cellId?, different] using same
+  · exact bindLocal_preserves_localPointsTo_of_ne state id 12 value
+      invariant.productionCell _
+      invariant.range.validation.stateWellFormed
+      (idNe 12 (by decide)) invariant.productionOwned
+  · exact bindLocal_preserves_frame_disjoint state id value
+      parserGrammarProductionProtectedBindings.ContainsCoreId
+      invariant.productionCell
+      (fun queried member => by
+        have bound := (mem_parserGrammarProductionProtectedIds_iff queried).mp member
+        intro equal
+        rw [equal] at temporary
+        exact (Nat.not_lt_of_ge (Nat.le_of_lt bound)) temporary)
+      invariant.productionSeparate
 
 noncomputable def GrammarProductionLoopInvariant.bind_row
     (invariant : GrammarProductionLoopInvariant layout grammar words
@@ -2040,6 +1960,8 @@ noncomputable def GrammarProductionLoopInvariant.bind_row
   have finalState : state15 =
       parserGrammarProductionRowState state lhs rhsOffset rhsLength := by
     rfl
+  let lookup := bindLocals_local_of_index state
+    [(13, lhsValue), (14, offsetValue), (15, lengthValue)]
   refine {
     loop := by rw [← finalState]; exact invariant15
     lhsLocal := ?_
@@ -2047,19 +1969,13 @@ noncomputable def GrammarProductionLoopInvariant.bind_row
     rhsLengthLocal := ?_ }
   · simpa [parserGrammarProductionRowState, lhsValue, offsetValue,
       lengthValue] using
-      bindLocals_local_of_binding state [] [
-        (14, offsetValue), (15, lengthValue)] 13 lhsValue
-        invariant.range.validation.stateWellFormed (by simp)
+      lookup ⟨0, by simp⟩ invariant.range.validation.stateWellFormed (by simp)
   · simpa [parserGrammarProductionRowState, lhsValue, offsetValue,
       lengthValue] using
-      bindLocals_local_of_binding state [(13, lhsValue)] [
-        (15, lengthValue)] 14 offsetValue
-        invariant.range.validation.stateWellFormed (by simp)
+      lookup ⟨1, by simp⟩ invariant.range.validation.stateWellFormed (by simp)
   · simpa [parserGrammarProductionRowState, lhsValue, offsetValue,
       lengthValue] using
-      bindLocals_local_of_binding state [
-        (13, lhsValue), (14, offsetValue)] [] 15 lengthValue
-        invariant.range.validation.stateWellFormed (by simp)
+      lookup ⟨2, by simp⟩ invariant.range.validation.stateWellFormed (by simp)
 
 def GrammarProductionRowInvariant.after_temporary_bind
     (invariant : GrammarProductionRowInvariant layout grammar words
@@ -2155,17 +2071,10 @@ theorem GrammarSymbolLoopInvariant.condition_true
     (bound : rhsIndex < rhsLength) :
     Evaluates verifiedParserCore state
       (.binary .less (.local 16) (.local 15)) (.boolean true) state := by
-  have indexResult : Evaluates verifiedParserCore state (.local 16)
-      (.signed .i32 (Int.ofNat rhsIndex)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 16 _
-      (Assertion.localPointsTo_local 16 invariant.indexCell _ state
-        invariant.indexOwned)⟩
-  have lengthResult : Evaluates verifiedParserCore state (.local 15)
-      (.signed .i32 (Int.ofNat rhsLength)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 15 _
-      invariant.row.rhsLengthLocal⟩
-  apply evaluatesEagerBinary (by decide) (by decide) indexResult lengthResult
-  simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt, bound]
+  exact evaluatesI32LessLocalsOfNat
+    (Assertion.localPointsTo_local 16 invariant.indexCell _ state
+      invariant.indexOwned)
+    invariant.row.rhsLengthLocal bound
 
 theorem GrammarSymbolLoopInvariant.condition_false
     (invariant : GrammarSymbolLoopInvariant layout grammar words grammarCell
@@ -2173,18 +2082,10 @@ theorem GrammarSymbolLoopInvariant.condition_false
     (bound : rhsLength ≤ rhsIndex) :
     Evaluates verifiedParserCore state
       (.binary .less (.local 16) (.local 15)) (.boolean false) state := by
-  have indexResult : Evaluates verifiedParserCore state (.local 16)
-      (.signed .i32 (Int.ofNat rhsIndex)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 16 _
-      (Assertion.localPointsTo_local 16 invariant.indexCell _ state
-        invariant.indexOwned)⟩
-  have lengthResult : Evaluates verifiedParserCore state (.local 15)
-      (.signed .i32 (Int.ofNat rhsLength)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 15 _
-      invariant.row.rhsLengthLocal⟩
-  apply evaluatesEagerBinary (by decide) (by decide) indexResult lengthResult
-  simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt]
-  omega
+  exact evaluatesI32NotLessLocalsOfNat
+    (Assertion.localPointsTo_local 16 invariant.indexCell _ state
+      invariant.indexOwned)
+    invariant.row.rhsLengthLocal bound
 
 theorem GrammarSymbolLoopInvariant.read_symbol
     (invariant : GrammarSymbolLoopInvariant layout grammar words grammarCell
@@ -2209,21 +2110,14 @@ theorem GrammarSymbolLoopInvariant.read_symbol
     simpa [Nat.add_assoc] using physicalBound
   have grammarResult : Evaluates verifiedParserCore state (.local 0)
       (parserGrammarValue words grammarCell) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 0 _
-      invariant.row.loop.range.validation.grammarLocal⟩
-  have symbolsOffsetResult : Evaluates verifiedParserCore state (.local 11)
-      (.signed .i32 (Int.ofNat layout.rhsSymbolsOffset)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 11 _
-      invariant.row.loop.rhsSymbolsOffsetLocal⟩
-  have rhsOffsetResult : Evaluates verifiedParserCore state (.local 14)
-      (.signed .i32 (Int.ofNat rhsOffset)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 14 _
-      invariant.row.rhsOffsetLocal⟩
-  have indexResult : Evaluates verifiedParserCore state (.local 16)
-      (.signed .i32 (Int.ofNat rhsIndex)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 16 _
-      (Assertion.localPointsTo_local 16 invariant.indexCell _ state
-        invariant.indexOwned)⟩
+    Lanius.Semantics.evaluatesLocal invariant.row.loop.range.validation.grammarLocal
+  have symbolsOffsetResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.row.loop.rhsSymbolsOffsetLocal
+  have rhsOffsetResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.row.rhsOffsetLocal
+  have indexResult := evaluatesI32Local (program := verifiedParserCore)
+    (Assertion.localPointsTo_local 16 invariant.indexCell _ state
+      invariant.indexOwned)
   have partialBound : layout.rhsSymbolsOffset + rhsOffset ≤ 2147483647 :=
     Nat.le_trans (Nat.le_of_lt (Nat.lt_of_le_of_lt
       (Nat.le_add_right _ _) physicalBound'))
@@ -2291,10 +2185,6 @@ def GrammarSymbolLoopInvariant.after_temporary_bind
     intro same
     rw [same] at temporary
     exact (Nat.not_lt_of_ge bound) temporary
-  have indexOld : invariant.indexCell < state.nextCell :=
-    Lanius.Separation.StateWellFormed.cell_lt_next_of_entry
-      invariant.row.loop.range.validation.stateWellFormed
-      invariant.indexOwned.2
   refine {
     row := invariant.row.after_temporary_bind id value
       (Nat.lt_trans (by decide) temporary)
@@ -2302,23 +2192,18 @@ def GrammarSymbolLoopInvariant.after_temporary_bind
     indexOwned := ?_
     indexFrameSeparate := ?_
     indexNotGrammar := invariant.indexNotGrammar }
-  · constructor
-    · simpa [State.bindLocal, State.bindCell, State.cellId?,
-        different 16 (by decide)] using invariant.indexOwned.1
-    · exact (bindCell_preserves_old_cell state id (some value)
-        invariant.indexCell indexOld).trans invariant.indexOwned.2
-  · intro cell framed written
-    obtain ⟨queried, member, cellId⟩ := framed
-    have bound := (mem_parserGrammarSymbolProtectedIds_iff queried).mp member
-    have notQueried : id ≠ queried := by
-      intro equal
-      rw [equal] at temporary
-      exact (Nat.not_lt_of_ge (Nat.le_of_lt bound)) temporary
-    apply invariant.indexFrameSeparate cell
-    · exact ⟨queried, member, by
-        simpa [State.bindLocal, State.bindCell, State.cellId?, notQueried]
-          using cellId⟩
-    · exact written
+  · exact bindLocal_preserves_localPointsTo_of_ne state id 16 value
+      invariant.indexCell _
+      invariant.row.loop.range.validation.stateWellFormed
+      (different 16 (by decide)) invariant.indexOwned
+  · exact bindLocal_preserves_frame_disjoint state id value
+      parserGrammarSymbolProtectedBindings.ContainsCoreId invariant.indexCell
+      (fun queried member => by
+        have bound := (mem_parserGrammarSymbolProtectedIds_iff queried).mp member
+        intro equal
+        rw [equal] at temporary
+        exact (Nat.not_lt_of_ge (Nat.le_of_lt bound)) temporary)
+      invariant.indexFrameSeparate
 
 @[simp] theorem GrammarSymbolLoopInvariant.after_temporary_bind_indexCell
     (invariant : GrammarSymbolLoopInvariant layout grammar words grammarCell
@@ -2338,19 +2223,13 @@ theorem GrammarSymbolLoopInvariant.symbol_guard_evaluates_false
       grammar.grammar.n_kinds + grammar.grammar.n_nonterminals) :
     Evaluates verifiedParserCore state parserGrammarSymbolInvalidExpr
       (.boolean false) state := by
-  have zero : Evaluates verifiedParserCore state (.value (.signed .i32 0))
-      (.signed .i32 0) state := ⟨1, rfl⟩
-  have symbolResult : Evaluates verifiedParserCore state (.local 17)
-      (.signed .i32 (Int.ofNat symbol)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 17 _ symbolLocal⟩
-  have kindResult : Evaluates verifiedParserCore state (.local 2)
-      (.signed .i32 (Int.ofNat grammar.grammar.n_kinds)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 2 _
-      invariant.row.loop.range.kindCountLocal⟩
-  have nonterminalResult : Evaluates verifiedParserCore state (.local 4)
-      (.signed .i32 (Int.ofNat grammar.grammar.n_nonterminals)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 4 _
-      invariant.row.loop.range.nonterminalCountLocal⟩
+  have zero := evaluatesI32Zero (program := verifiedParserCore) (state := state)
+  have symbolResult := evaluatesI32Local (program := verifiedParserCore)
+    symbolLocal
+  have kindResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.row.loop.range.kindCountLocal
+  have nonterminalResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.row.loop.range.nonterminalCountLocal
   have nonnegative : Evaluates verifiedParserCore state
       (.binary .less (.local 17) (.value (.signed .i32 0)))
       (.boolean false) state := by
@@ -2553,6 +2432,32 @@ structure GrammarSymbolLoopExecution
   productionCell_eq : invariant.row.loop.productionCell =
     beforeInvariant.row.loop.productionCell
 
+private theorem closeOwnedLoopIteration
+    {state completed : State} {temporaryId : VarId}
+    {temporaryValue : Value} {written completedCell : CellId}
+    {localId : VarId} {nextValue : Value}
+    (beforeWellFormed : StateWellFormed state)
+    (completedWellFormed : StateWellFormed completed)
+    (incrementEffect :
+      ModifiesOnly (CellSet.singleton written)
+        (state.bindLocal temporaryId temporaryValue) completed)
+    (beforeCell : state.cellId? localId = some written)
+    (completedEntry : completed.cellEntry? completedCell = some {
+      id := completedCell, value := some nextValue })
+    (cellEq : completedCell = written) :
+    ModifiesOnly (CellSet.singleton written) state
+        (restoreLocals state completed) ∧
+      StateWellFormed (restoreLocals state completed) ∧
+      (Assertion.localPointsTo localId written (some nextValue)).holds
+        (restoreLocals state completed) := by
+  have combined :=
+    ((bindLocal_effect state temporaryId temporaryValue).weaken
+      CellSet.empty_subset).trans_same incrementEffect.toStoreEffect
+  rw [cellEq] at completedEntry
+  exact ⟨combined.restoreLocals,
+    combined.restoreLocals_wellFormed beforeWellFormed completedWellFormed,
+    ⟨beforeCell, completedEntry⟩⟩
+
 noncomputable def GrammarSymbolLoopInvariant.execute_loop
     (invariant : GrammarSymbolLoopInvariant layout grammar words grammarCell
       state production lhs rhsOffset rhsLength rhsIndex)
@@ -2601,44 +2506,20 @@ noncomputable def GrammarSymbolLoopInvariant.execute_loop
         (restoreLocals state increment.after) := by
       simpa [parserGrammarSymbolLoopBody, symbolValue, symbolState, symbol]
         using executesLetLocal (type := parserI32Type) symbolRead boundBody
-    let afterIteration := restoreLocals state increment.after
-    have entered : StoreEffect (CellSet.singleton invariant.indexCell) state
-        symbolState :=
-      (bindLocal_effect state 17 symbolValue).weaken CellSet.empty_subset
-    have incrementEffect : ModifiesOnly
-        (CellSet.singleton invariant.indexCell) symbolState increment.after := by
-      simpa [symbolInvariant, symbolState] using increment.effect
-    have iterationStore : StoreEffect (CellSet.singleton invariant.indexCell)
-        state increment.after := entered.trans_same incrementEffect.toStoreEffect
-    have iterationEffect : ModifiesOnly
-        (CellSet.singleton invariant.indexCell) state afterIteration := by
-      simpa [afterIteration] using iterationStore.restoreLocals
-    have afterWellFormed : StateWellFormed afterIteration := by
-      exact iterationStore.restoreLocals_wellFormed
+    obtain ⟨iterationEffect, afterWellFormed, afterOwned⟩ :=
+      closeOwnedLoopIteration
         invariant.row.loop.range.validation.stateWellFormed
         increment.invariant.row.loop.range.validation.stateWellFormed
-    have afterOwned : (Assertion.localPointsTo 16 invariant.indexCell
-        (some (.signed .i32 (Int.ofNat (rhsIndex + 1))))).holds
-        afterIteration := by
-      constructor
-      · change state.cellId? 16 = some invariant.indexCell
-        exact invariant.indexOwned.1
-      · change increment.after.cellEntry? invariant.indexCell = some {
-          id := invariant.indexCell
-          value := some (.signed .i32 (Int.ofNat (rhsIndex + 1))) }
-        have found := increment.invariant.indexOwned.2
-        have cellEq : increment.invariant.indexCell = invariant.indexCell :=
-          increment.indexCell_eq.trans (by
-            simp [symbolInvariant])
-        rw [cellEq] at found
-        exact found
+        (by simpa [symbolInvariant, symbolState] using increment.effect)
+        invariant.indexOwned.1 increment.invariant.indexOwned.2
+        (increment.indexCell_eq.trans (by simp [symbolInvariant]))
     let afterInvariant := invariant.after_index_effect iterationEffect
       afterWellFormed afterOwned
     let rest := afterInvariant.execute_loop rowRange (by omega)
     exact {
       after := rest.after
       execution := executesWhileTrueThen (invariant.condition_true indexBound)
-        (by simpa [afterIteration] using scopedBody) rest.execution
+        scopedBody rest.execution
       effect := iterationEffect.trans_same rest.effect
       invariant := rest.invariant
       indexCell_eq := rest.indexCell_eq.trans (by
@@ -2795,96 +2676,52 @@ noncomputable def GrammarProductionLoopInvariant.execute_iteration
     have entryState : state15.bindLocal 16 zeroValue =
         (parserGrammarProductionRowState state lhs rhsOffset rhsLength).bindLocal
           16 (.signed .i32 0) := by
-      simpa [rowState, zeroValue]
+      simp [rowState, zeroValue]
     rw [entryState]
     exact executesSequence symbolRun.execution increment.execution
-  let after16 := restoreLocals state15 increment.after
-  have scoped16 : Executes verifiedParserCore state15
-      (.letLocal 16 parserI32Type (.value (.signed .i32 0))
-        (.sequence parserGrammarSymbolLoop (parserIncrementLocal 12)))
-      .next after16 := by
-    simpa [after16, zeroValue] using
-      executesLetLocal (type := parserI32Type)
-        (show Evaluates verifiedParserCore state15
-          (.value (.signed .i32 0)) zeroValue state15 from ⟨1, rfl⟩)
-        local16Body
-  have indexFresh : state15.nextCell ≤ symbolInvariant.indexCell := by
-    exact Nat.le_refl _
-  have entered16 : StoreEffect
-      (CellSet.singleton symbolInvariant.indexCell) state15
-      (state15.bindLocal 16 zeroValue) :=
-    (bindLocal_effect state15 16 zeroValue).weaken CellSet.empty_subset
-  have symbolStore : StoreEffect
-      (CellSet.singleton symbolInvariant.indexCell) state15 symbolRun.after :=
-    entered16.trans_same symbolRun.effect.toStoreEffect
-  have combinedStore : StoreEffect
-      (CellSet.union (CellSet.singleton symbolInvariant.indexCell)
-        (CellSet.singleton rowInvariant.loop.productionCell))
-      state15 increment.after :=
-    symbolStore.trans incrementEffect.toStoreEffect
-  have visibleStore : StoreEffect
-      (CellSet.singleton rowInvariant.loop.productionCell)
-      state15 increment.after := by
-    apply combinedStore.hideFreshWritesExcept
-    intro cell written
-    rcases written with fresh | retained
-    · exact Or.inr (by simpa [CellSet.singleton] using
-        (show state15.nextCell ≤ cell from fresh ▸ indexFresh))
-    · exact Or.inl retained
-  have effect16 : ModifiesOnly
-      (CellSet.singleton rowInvariant.loop.productionCell)
-      state15 after16 := by
-    simpa [after16] using visibleStore.restoreLocals
-  have after16WellFormed : StateWellFormed after16 := by
-    exact visibleStore.restoreLocals_wellFormed
-      rowInvariant.loop.range.validation.stateWellFormed
-      increment.invariant.range.validation.stateWellFormed
-  let after15 := restoreLocals state14 after16
-  let after14 := restoreLocals state13 after15
-  let after13 := restoreLocals state after14
-  have effect15 : ModifiesOnly
-      (CellSet.singleton invariant.productionCell) state14 after15 := by
-    have sameCell : rowInvariant.loop.productionCell =
-        invariant.productionCell := by rfl
-    simpa [after15, state15, lengthValue, sameCell] using
-      temporaryLocal_effect 15 lengthValue effect16.toStoreEffect
-  have after15WellFormed : StateWellFormed after15 := by
-    have entered := (bindLocal_effect state14 15 lengthValue).weaken
-      (CellSet.empty_subset : CellSet.Subset CellSet.empty
-        (CellSet.singleton invariant.productionCell))
-    have body : StoreEffect (CellSet.singleton invariant.productionCell)
-        (state14.bindLocal 15 lengthValue) after16 := by
-      have sameCell : rowInvariant.loop.productionCell =
-          invariant.productionCell := by rfl
-      simpa [state15, sameCell] using effect16.toStoreEffect
-    exact (entered.trans_same body).restoreLocals_wellFormed
-      invariant14.range.validation.stateWellFormed after16WellFormed
-  have effect14 : ModifiesOnly
-      (CellSet.singleton invariant.productionCell) state13 after14 := by
-    simpa [after14, state14, offsetValue] using
-      temporaryLocal_effect 14 offsetValue effect15.toStoreEffect
-  have after14WellFormed : StateWellFormed after14 := by
-    have entered := (bindLocal_effect state13 14 offsetValue).weaken
-      (CellSet.empty_subset : CellSet.Subset CellSet.empty
-        (CellSet.singleton invariant.productionCell))
-    have body : StoreEffect (CellSet.singleton invariant.productionCell)
-        (state13.bindLocal 14 offsetValue) after15 := by
-      simpa [state14] using effect15.toStoreEffect
-    exact (entered.trans_same body).restoreLocals_wellFormed
-      invariant13.range.validation.stateWellFormed after15WellFormed
-  have effect13 : ModifiesOnly
-      (CellSet.singleton invariant.productionCell) state after13 := by
-    simpa [after13, state13, lhsValue] using
-      temporaryLocal_effect 13 lhsValue effect14.toStoreEffect
-  have after13WellFormed : StateWellFormed after13 := by
-    have entered := (bindLocal_effect state 13 lhsValue).weaken
-      (CellSet.empty_subset : CellSet.Subset CellSet.empty
-        (CellSet.singleton invariant.productionCell))
-    have body : StoreEffect (CellSet.singleton invariant.productionCell)
-        (state.bindLocal 13 lhsValue) after14 := by
-      simpa [state13] using effect14.toStoreEffect
-    exact (entered.trans_same body).restoreLocals_wellFormed
-      invariant.range.validation.stateWellFormed after14WellFormed
+  have indexCell_eq : symbolInvariant.indexCell = state15.nextCell := by
+    rfl
+  let closed16 := closesFreshLocalExcept (type := parserI32Type)
+    (CellSet.singleton rowInvariant.loop.productionCell)
+    rowInvariant.loop.range.validation.stateWellFormed
+    (show Evaluates verifiedParserCore state15
+      (.value (.signed .i32 0)) zeroValue state15 from Lanius.Semantics.evaluatesValue)
+    local16Body
+    (by
+      apply ModifiesOnly.weaken (symbolRun.effect.trans incrementEffect)
+      intro cell written
+      change (cell = symbolInvariant.indexCell ∨
+        cell = rowInvariant.loop.productionCell) at written
+      change cell = rowInvariant.loop.productionCell ∨ cell = state15.nextCell
+      rcases written with index | production
+      · exact Or.inr (by simpa [indexCell_eq] using index)
+      · exact Or.inl production)
+    increment.invariant.range.validation.stateWellFormed
+  have guardedBody : Executes verifiedParserCore state15
+      (.sequence parserGrammarProductionInvalidGuard
+        (.letLocal 16 parserI32Type (.value (.signed .i32 0))
+          (.sequence parserGrammarSymbolLoop (parserIncrementLocal 12))))
+      .next closed16.after :=
+    executesSequence guardExecution closed16.execution
+  let closed15 := closesFreshLocalExcept (type := parserI32Type)
+    (CellSet.singleton invariant.productionCell)
+    invariant14.range.validation.stateWellFormed
+    lengthInitializer guardedBody
+    (closed16.effect.weaken CellSet.subset_union_left)
+    closed16.wellFormed
+  let closed14 := closesFreshLocalExcept (type := parserI32Type)
+    (CellSet.singleton invariant.productionCell)
+    invariant13.range.validation.stateWellFormed
+    offsetInitializer closed15.execution
+    (closed15.effect.weaken CellSet.subset_union_left)
+    closed15.wellFormed
+  let closed13 := closesFreshLocalExcept (type := parserI32Type)
+    (CellSet.singleton invariant.productionCell)
+    invariant.range.validation.stateWellFormed
+    lhsInitializer closed14.execution
+    (closed14.effect.weaken CellSet.subset_union_left)
+    closed14.wellFormed
+  let after13 := closed13.after
   have afterOwned : (Assertion.localPointsTo 12 invariant.productionCell
       (some (.signed .i32 (Int.ofNat (production + 1))))).holds after13 := by
     constructor
@@ -2900,27 +2737,15 @@ noncomputable def GrammarProductionLoopInvariant.execute_iteration
           (symbolRun.productionCell_eq.trans (by rfl))
       rw [cellEq] at found
       exact found
-  let afterInvariant := invariant.after_counter_effect effect13
-    after13WellFormed afterOwned
-  have guardedBody : Executes verifiedParserCore state15
-      (.sequence parserGrammarProductionInvalidGuard
-        (.letLocal 16 parserI32Type (.value (.signed .i32 0))
-          (.sequence parserGrammarSymbolLoop (parserIncrementLocal 12))))
-      .next after16 :=
-    executesSequence guardExecution scoped16
-  have scoped15 := executesLetLocal (type := parserI32Type)
-    lengthInitializer guardedBody
-  have scoped14 := executesLetLocal (type := parserI32Type)
-    offsetInitializer scoped15
-  have scoped13 := executesLetLocal (type := parserI32Type)
-    lhsInitializer scoped14
+  let afterInvariant := invariant.after_counter_effect closed13.effect
+    closed13.wellFormed afterOwned
   exact {
     after := after13
     execution := by
-      simpa [parserGrammarProductionLoopBody, after13, after14, after15,
-        after16, state13, state14, state15, lhsValue, offsetValue,
-        lengthValue, zeroValue] using scoped13
-    effect := effect13
+      simpa [parserGrammarProductionLoopBody, after13, state13, state14,
+        state15, lhsValue, offsetValue, lengthValue, zeroValue] using
+        closed13.execution
+    effect := closed13.effect
     invariant := afterInvariant
     productionCell_eq := rfl }
 
@@ -3043,6 +2868,13 @@ noncomputable def GrammarProductionLoopInvariant.nonterminal_loop_entry
   let invariant21 := invariant20.after_temporary_bind 21 zeroValue (by decide)
   have finalState : state21 = parserGrammarNonterminalState state layout := by
     rfl
+  have bindingsState : parserGrammarNonterminalState state layout =
+      state.bindLocals [(18, offsetsValue), (19, countsValue),
+        (20, productionsValue), (21, zeroValue)] := by
+    rfl
+  let lookup := bindLocals_local_of_index state
+    [(18, offsetsValue), (19, countsValue), (20, productionsValue),
+      (21, zeroValue)]
   let productionFinal : GrammarProductionLoopInvariant layout grammar words
       grammarCell (parserGrammarNonterminalState state layout)
       grammar.productionCount := finalState ▸ invariant21
@@ -3063,25 +2895,12 @@ noncomputable def GrammarProductionLoopInvariant.nonterminal_loop_entry
     nonterminalFrameSeparate := ?_
     nonterminalNotGrammar := ?_
     nonterminalNotProduction := ?_ }
-  · simpa [parserGrammarNonterminalState,
-      parserGrammarNonterminalBindings, offsetsValue, countsValue,
-      productionsValue, zeroValue] using
-      bindLocals_local_of_binding state [] [
-        (19, countsValue), (20, productionsValue), (21, zeroValue)]
-        18 offsetsValue invariant.range.validation.stateWellFormed (by simp)
-  · simpa [parserGrammarNonterminalState,
-      parserGrammarNonterminalBindings, offsetsValue, countsValue,
-      productionsValue, zeroValue] using
-      bindLocals_local_of_binding state [(18, offsetsValue)] [
-        (20, productionsValue), (21, zeroValue)] 19 countsValue
-        invariant.range.validation.stateWellFormed (by simp)
-  · simpa [parserGrammarNonterminalState,
-      parserGrammarNonterminalBindings, offsetsValue, countsValue,
-      productionsValue, zeroValue] using
-      bindLocals_local_of_binding state [
-        (18, offsetsValue), (19, countsValue)] [(21, zeroValue)]
-        20 productionsValue invariant.range.validation.stateWellFormed
-        (by simp)
+  · rw [bindingsState]
+    exact lookup ⟨0, by simp⟩ invariant.range.validation.stateWellFormed (by simp)
+  · rw [bindingsState]
+    exact lookup ⟨1, by simp⟩ invariant.range.validation.stateWellFormed (by simp)
+  · rw [bindingsState]
+    exact lookup ⟨2, by simp⟩ invariant.range.validation.stateWellFormed (by simp)
   · apply localCellFootprint_disjoint_singleton
     intro id member same
     have idBound := mem_parserGrammarNonterminalProtectedIds_lt id member
@@ -3125,17 +2944,10 @@ theorem GrammarNonterminalLoopInvariant.condition_true
     (bound : nonterminal < grammar.grammar.n_nonterminals) :
     Evaluates verifiedParserCore state
       (.binary .less (.local 21) (.local 4)) (.boolean true) state := by
-  have left : Evaluates verifiedParserCore state (.local 21)
-      (.signed .i32 (Int.ofNat nonterminal)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 21 _
-      (Assertion.localPointsTo_local 21 invariant.nonterminalCell _ state
-        invariant.nonterminalOwned)⟩
-  have right : Evaluates verifiedParserCore state (.local 4)
-      (.signed .i32 (Int.ofNat grammar.grammar.n_nonterminals)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 4 _
-      invariant.production.range.nonterminalCountLocal⟩
-  apply evaluatesEagerBinary (by decide) (by decide) left right
-  simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt, bound]
+  exact evaluatesI32LessLocalsOfNat
+    (Assertion.localPointsTo_local 21 invariant.nonterminalCell _ state
+      invariant.nonterminalOwned)
+    invariant.production.range.nonterminalCountLocal bound
 
 theorem GrammarNonterminalLoopInvariant.condition_false
     (invariant : GrammarNonterminalLoopInvariant layout grammar words
@@ -3143,18 +2955,10 @@ theorem GrammarNonterminalLoopInvariant.condition_false
     (bound : grammar.grammar.n_nonterminals ≤ nonterminal) :
     Evaluates verifiedParserCore state
       (.binary .less (.local 21) (.local 4)) (.boolean false) state := by
-  have left : Evaluates verifiedParserCore state (.local 21)
-      (.signed .i32 (Int.ofNat nonterminal)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 21 _
-      (Assertion.localPointsTo_local 21 invariant.nonterminalCell _ state
-        invariant.nonterminalOwned)⟩
-  have right : Evaluates verifiedParserCore state (.local 4)
-      (.signed .i32 (Int.ofNat grammar.grammar.n_nonterminals)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 4 _
-      invariant.production.range.nonterminalCountLocal⟩
-  apply evaluatesEagerBinary (by decide) (by decide) left right
-  simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt]
-  omega
+  exact evaluatesI32NotLessLocalsOfNat
+    (Assertion.localPointsTo_local 21 invariant.nonterminalCell _ state
+      invariant.nonterminalOwned)
+    invariant.production.range.nonterminalCountLocal bound
 
 theorem GrammarNonterminalLoopInvariant.read_first
     (invariant : GrammarNonterminalLoopInvariant layout grammar words
@@ -3169,19 +2973,16 @@ theorem GrammarNonterminalLoopInvariant.read_first
   have rowBound : nonterminal < grammar.lhsOffsets.length := by
     simpa [invariant.production.range.validation.grammarWellFormed.lhsIndexCount]
       using bound
-  have counter : Evaluates verifiedParserCore state (.local 21)
-      (.signed .i32 (Int.ofNat nonterminal)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 21 _
-      (Assertion.localPointsTo_local 21 invariant.nonterminalCell _ state
-        invariant.nonterminalOwned)⟩
+  have counter := evaluatesI32Local (program := verifiedParserCore)
+    (Assertion.localPointsTo_local 21 invariant.nonterminalCell _ state
+      invariant.nonterminalOwned)
   have read := evaluatesParserDirectTableRead words grammarCell
     layout.lhsOffsetsOffset nonterminal
     (invariant.production.range.validation.encoded.lhsOffsets.row_in_bounds
       rowBound)
     invariant.production.range.validation.wordsI32 state
     invariant.production.range.validation.grammarLocal (.local 18) (.local 21)
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 18 _
-      invariant.lhsOffsetsOffsetLocal⟩ counter
+    (evaluatesI32Local invariant.lhsOffsetsOffsetLocal) counter
     invariant.production.range.validation.grammarBacking
   have physical := invariant.production.range.validation.encoded.lhsOffsets.get
     rowBound
@@ -3201,19 +3002,16 @@ theorem GrammarNonterminalLoopInvariant.read_count
   have rowBound : nonterminal < grammar.lhsCounts.length := by
     simpa [invariant.production.range.validation.grammarWellFormed.lhsIndexCount]
       using bound
-  have counter : Evaluates verifiedParserCore state (.local 21)
-      (.signed .i32 (Int.ofNat nonterminal)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 21 _
-      (Assertion.localPointsTo_local 21 invariant.nonterminalCell _ state
-        invariant.nonterminalOwned)⟩
+  have counter := evaluatesI32Local (program := verifiedParserCore)
+    (Assertion.localPointsTo_local 21 invariant.nonterminalCell _ state
+      invariant.nonterminalOwned)
   have read := evaluatesParserDirectTableRead words grammarCell
     layout.lhsCountsOffset nonterminal
     (invariant.production.range.validation.encoded.lhsCounts.row_in_bounds
       rowBound)
     invariant.production.range.validation.wordsI32 state
     invariant.production.range.validation.grammarLocal (.local 19) (.local 21)
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 19 _
-      invariant.lhsCountsOffsetLocal⟩ counter
+    (evaluatesI32Local invariant.lhsCountsOffsetLocal) counter
     invariant.production.range.validation.grammarBacking
   have physical := invariant.production.range.validation.encoded.lhsCounts.get
     rowBound
@@ -3245,10 +3043,6 @@ def GrammarNonterminalLoopInvariant.after_temporary_bind
     intro same
     rw [same] at temporary
     exact (Nat.not_lt_of_ge bound) temporary
-  have cellOld : invariant.nonterminalCell < state.nextCell :=
-    Lanius.Separation.StateWellFormed.cell_lt_next_of_entry
-      invariant.production.range.validation.stateWellFormed
-      invariant.nonterminalOwned.2
   refine {
     production := invariant.production.after_temporary_bind id value
       (Nat.lt_trans (by decide) temporary)
@@ -3269,23 +3063,18 @@ def GrammarNonterminalLoopInvariant.after_temporary_bind
     nonterminalFrameSeparate := ?_
     nonterminalNotGrammar := invariant.nonterminalNotGrammar
     nonterminalNotProduction := invariant.nonterminalNotProduction }
-  · constructor
-    · simpa [State.bindLocal, State.bindCell, State.cellId?,
-        different 21 (by decide)] using invariant.nonterminalOwned.1
-    · exact (bindCell_preserves_old_cell state id (some value)
-        invariant.nonterminalCell cellOld).trans invariant.nonterminalOwned.2
-  · intro cell framed written
-    obtain ⟨queried, member, cellId⟩ := framed
-    have bound := mem_parserGrammarNonterminalProtectedIds_lt queried member
-    have notQueried : id ≠ queried := by
-      intro equal
-      rw [equal] at temporary
-      exact (Nat.not_lt_of_ge (Nat.le_of_lt bound)) temporary
-    apply invariant.nonterminalFrameSeparate cell
-    · exact ⟨queried, member, by
-        simpa [State.bindLocal, State.bindCell, State.cellId?, notQueried]
-          using cellId⟩
-    · exact written
+  · exact bindLocal_preserves_localPointsTo_of_ne state id 21 value
+      invariant.nonterminalCell _
+      invariant.production.range.validation.stateWellFormed
+      (different 21 (by decide)) invariant.nonterminalOwned
+  · exact bindLocal_preserves_frame_disjoint state id value
+      parserGrammarNonterminalProtectedBindings.ContainsCoreId invariant.nonterminalCell
+      (fun queried member => by
+        have bound := mem_parserGrammarNonterminalProtectedIds_lt queried member
+        intro equal
+        rw [equal] at temporary
+        exact (Nat.not_lt_of_ge (Nat.le_of_lt bound)) temporary)
+      invariant.nonterminalFrameSeparate
 
 noncomputable def GrammarNonterminalLoopInvariant.bind_row
     (invariant : GrammarNonterminalLoopInvariant layout grammar words
@@ -3302,16 +3091,17 @@ noncomputable def GrammarNonterminalLoopInvariant.bind_row
   let invariant23 := invariant22.after_temporary_bind 23 countValue (by decide)
   have finalState : state23 =
       parserGrammarNonterminalRowState state first count := by rfl
+  let lookup := bindLocals_local_of_index state
+    [(22, firstValue), (23, countValue)]
+  let wellFormed := invariant.production.range.validation.stateWellFormed
   refine {
     loop := by rw [← finalState]; exact invariant23
     firstLocal := ?_
     countLocal := ?_ }
   · simpa [parserGrammarNonterminalRowState, firstValue, countValue] using
-      bindLocals_local_of_binding state [] [(23, countValue)] 22 firstValue
-        invariant.production.range.validation.stateWellFormed (by simp)
+      lookup ⟨0, by simp⟩ wellFormed (by simp)
   · simpa [parserGrammarNonterminalRowState, firstValue, countValue] using
-      bindLocals_local_of_binding state [(22, firstValue)] [] 23 countValue
-        invariant.production.range.validation.stateWellFormed (by simp)
+      lookup ⟨1, by simp⟩ wellFormed (by simp)
 
 theorem GrammarNonterminalRowInvariant.invalid_guard_evaluates_false
     (invariant : GrammarNonterminalRowInvariant layout grammar words
@@ -3319,20 +3109,13 @@ theorem GrammarNonterminalRowInvariant.invalid_guard_evaluates_false
     (rowRange : first + count ≤ grammar.lhsProductions.length) :
     Evaluates verifiedParserCore state parserGrammarNonterminalInvalidExpr
       (.boolean false) state := by
-  have zero : Evaluates verifiedParserCore state (.value (.signed .i32 0))
-      (.signed .i32 0) state := ⟨1, rfl⟩
-  have firstResult : Evaluates verifiedParserCore state (.local 22)
-      (.signed .i32 (Int.ofNat first)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 22 _
-      invariant.firstLocal⟩
-  have countResult : Evaluates verifiedParserCore state (.local 23)
-      (.signed .i32 (Int.ofNat count)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 23 _
-      invariant.countLocal⟩
-  have totalResult : Evaluates verifiedParserCore state (.local 7)
-      (.signed .i32 (Int.ofNat grammar.lhsProductions.length)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 7 _
-      invariant.loop.production.range.lhsProductionCountLocal⟩
+  have zero := evaluatesI32Zero (program := verifiedParserCore) (state := state)
+  have firstResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.firstLocal
+  have countResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.countLocal
+  have totalResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.loop.production.range.lhsProductionCountLocal
   have firstNonnegative : Evaluates verifiedParserCore state
       (.binary .less (.local 22) (.value (.signed .i32 0)))
       (.boolean false) state := by
@@ -3490,17 +3273,10 @@ theorem GrammarListedLoopInvariant.condition_true
     (bound : index < count) :
     Evaluates verifiedParserCore state
       (.binary .less (.local 24) (.local 23)) (.boolean true) state := by
-  have left : Evaluates verifiedParserCore state (.local 24)
-      (.signed .i32 (Int.ofNat index)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 24 _
-      (Assertion.localPointsTo_local 24 invariant.indexCell _ state
-        invariant.indexOwned)⟩
-  have right : Evaluates verifiedParserCore state (.local 23)
-      (.signed .i32 (Int.ofNat count)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 23 _
-      invariant.row.countLocal⟩
-  apply evaluatesEagerBinary (by decide) (by decide) left right
-  simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt, bound]
+  exact evaluatesI32LessLocalsOfNat
+    (Assertion.localPointsTo_local 24 invariant.indexCell _ state
+      invariant.indexOwned)
+    invariant.row.countLocal bound
 
 theorem GrammarListedLoopInvariant.condition_false
     (invariant : GrammarListedLoopInvariant layout grammar words grammarCell
@@ -3508,18 +3284,10 @@ theorem GrammarListedLoopInvariant.condition_false
     (bound : count ≤ index) :
     Evaluates verifiedParserCore state
       (.binary .less (.local 24) (.local 23)) (.boolean false) state := by
-  have left : Evaluates verifiedParserCore state (.local 24)
-      (.signed .i32 (Int.ofNat index)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 24 _
-      (Assertion.localPointsTo_local 24 invariant.indexCell _ state
-        invariant.indexOwned)⟩
-  have right : Evaluates verifiedParserCore state (.local 23)
-      (.signed .i32 (Int.ofNat count)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 23 _
-      invariant.row.countLocal⟩
-  apply evaluatesEagerBinary (by decide) (by decide) left right
-  simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt]
-  omega
+  exact evaluatesI32NotLessLocalsOfNat
+    (Assertion.localPointsTo_local 24 invariant.indexCell _ state
+      invariant.indexOwned)
+    invariant.row.countLocal bound
 
 theorem GrammarListedLoopInvariant.read_listed
     (invariant : GrammarListedLoopInvariant layout grammar words grammarCell
@@ -3541,21 +3309,14 @@ theorem GrammarListedLoopInvariant.read_listed
     simpa [Nat.add_assoc] using physicalBound
   have grammarResult : Evaluates verifiedParserCore state (.local 0)
       (parserGrammarValue words grammarCell) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 0 _
-      invariant.row.loop.production.range.validation.grammarLocal⟩
-  have tableOffset : Evaluates verifiedParserCore state (.local 20)
-      (.signed .i32 (Int.ofNat layout.lhsProductionsOffset)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 20 _
-      invariant.row.loop.lhsProductionsOffsetLocal⟩
-  have firstResult : Evaluates verifiedParserCore state (.local 22)
-      (.signed .i32 (Int.ofNat first)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 22 _
-      invariant.row.firstLocal⟩
-  have indexResult : Evaluates verifiedParserCore state (.local 24)
-      (.signed .i32 (Int.ofNat index)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 24 _
-      (Assertion.localPointsTo_local 24 invariant.indexCell _ state
-        invariant.indexOwned)⟩
+    Lanius.Semantics.evaluatesLocal invariant.row.loop.production.range.validation.grammarLocal
+  have tableOffset := evaluatesI32Local (program := verifiedParserCore)
+    invariant.row.loop.lhsProductionsOffsetLocal
+  have firstResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.row.firstLocal
+  have indexResult := evaluatesI32Local (program := verifiedParserCore)
+    (Assertion.localPointsTo_local 24 invariant.indexCell _ state
+      invariant.indexOwned)
   have partialBound : layout.lhsProductionsOffset + first ≤ 2147483647 :=
     Nat.le_trans (Nat.le_of_lt (Nat.lt_of_le_of_lt
       (Nat.le_add_right _ _) physicalBound'))
@@ -3618,10 +3379,6 @@ def GrammarListedLoopInvariant.after_temporary_bind
     intro same
     rw [same] at temporary
     exact (Nat.not_lt_of_ge bound) temporary
-  have indexOld : invariant.indexCell < state.nextCell :=
-    Lanius.Separation.StateWellFormed.cell_lt_next_of_entry
-      invariant.row.loop.production.range.validation.stateWellFormed
-      invariant.indexOwned.2
   refine {
     row := invariant.row.after_temporary_bind id value
       (Nat.lt_trans (by decide) temporary)
@@ -3629,23 +3386,18 @@ def GrammarListedLoopInvariant.after_temporary_bind
     indexOwned := ?_
     indexFrameSeparate := ?_
     indexNotGrammar := invariant.indexNotGrammar }
-  · constructor
-    · simpa [State.bindLocal, State.bindCell, State.cellId?,
-        different 24 (by decide)] using invariant.indexOwned.1
-    · exact (bindCell_preserves_old_cell state id (some value)
-        invariant.indexCell indexOld).trans invariant.indexOwned.2
-  · intro cell framed written
-    obtain ⟨queried, member, cellId⟩ := framed
-    have bound := mem_parserGrammarListedProtectedIds_lt queried member
-    have notQueried : id ≠ queried := by
-      intro equal
-      rw [equal] at temporary
-      exact (Nat.not_lt_of_ge (Nat.le_of_lt bound)) temporary
-    apply invariant.indexFrameSeparate cell
-    · exact ⟨queried, member, by
-        simpa [State.bindLocal, State.bindCell, State.cellId?, notQueried]
-          using cellId⟩
-    · exact written
+  · exact bindLocal_preserves_localPointsTo_of_ne state id 24 value
+      invariant.indexCell _
+      invariant.row.loop.production.range.validation.stateWellFormed
+      (different 24 (by decide)) invariant.indexOwned
+  · exact bindLocal_preserves_frame_disjoint state id value
+      parserGrammarListedProtectedBindings.ContainsCoreId invariant.indexCell
+      (fun queried member => by
+        have bound := mem_parserGrammarListedProtectedIds_lt queried member
+        intro equal
+        rw [equal] at temporary
+        exact (Nat.not_lt_of_ge (Nat.le_of_lt bound)) temporary)
+      invariant.indexFrameSeparate
 
 @[simp] theorem GrammarListedLoopInvariant.after_temporary_bind_indexCell
     (invariant : GrammarListedLoopInvariant layout grammar words grammarCell
@@ -3666,21 +3418,15 @@ theorem GrammarListedLoopInvariant.listed_guard_executes
       nonterminal) :
     Executes verifiedParserCore state parserGrammarListedInvalidGuard
       .next state := by
-  have zero : Evaluates verifiedParserCore state (.value (.signed .i32 0))
-      (.signed .i32 0) state := ⟨1, rfl⟩
-  have listedResult : Evaluates verifiedParserCore state (.local 25)
-      (.signed .i32 (Int.ofNat listed)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 25 _ listedLocal⟩
-  have countResult : Evaluates verifiedParserCore state (.local 3)
-      (.signed .i32 (Int.ofNat grammar.productionCount)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 3 _
-      invariant.row.loop.production.range.productionCountLocal⟩
-  have nonterminalResult : Evaluates verifiedParserCore state (.local 21)
-      (.signed .i32 (Int.ofNat nonterminal)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 21 _
-      (Assertion.localPointsTo_local 21
-        invariant.row.loop.nonterminalCell _ state
-        invariant.row.loop.nonterminalOwned)⟩
+  have zero := evaluatesI32Zero (program := verifiedParserCore) (state := state)
+  have listedResult := evaluatesI32Local (program := verifiedParserCore)
+    listedLocal
+  have countResult := evaluatesI32Local (program := verifiedParserCore)
+    invariant.row.loop.production.range.productionCountLocal
+  have nonterminalResult := evaluatesI32Local (program := verifiedParserCore)
+    (Assertion.localPointsTo_local 21
+      invariant.row.loop.nonterminalCell _ state
+      invariant.row.loop.nonterminalOwned)
   have nonnegative : Evaluates verifiedParserCore state
       (.binary .less (.local 25) (.value (.signed .i32 0)))
       (.boolean false) state := by
@@ -3699,8 +3445,8 @@ theorem GrammarListedLoopInvariant.listed_guard_executes
     invariant.row.loop.production.range.validation.wordsI32 state
     invariant.row.loop.production.range.validation.grammarLocal
     (.local 8) (.local 25)
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 8 _
-      invariant.row.loop.production.productionLhsOffsetLocal⟩
+    (evaluatesI32Local
+      invariant.row.loop.production.productionLhsOffsetLocal)
     listedResult
     invariant.row.loop.production.range.validation.grammarBacking
   have physical := invariant.row.loop.production.range.validation.encoded.productionLhs.get
@@ -4089,41 +3835,18 @@ noncomputable def GrammarListedLoopInvariant.execute_loop
         (.sequence parserGrammarListedInvalidGuard (parserIncrementLocal 24))
         .next increment.after :=
       executesSequence guardExecution increment.execution
-    let afterIteration := restoreLocals state increment.after
     have scopedBody : Executes verifiedParserCore state
-        parserGrammarListedLoopBody .next afterIteration := by
+        parserGrammarListedLoopBody .next (restoreLocals state increment.after) := by
       simpa [parserGrammarListedLoopBody, listedValue, listedState, listed,
-        afterIteration] using
+        restoreLocals] using
         executesLetLocal (type := parserI32Type) listedRead body
-    have entered : StoreEffect (CellSet.singleton invariant.indexCell) state
-        listedState :=
-      (bindLocal_effect state 25 listedValue).weaken CellSet.empty_subset
-    have incrementEffect : ModifiesOnly
-        (CellSet.singleton invariant.indexCell) listedState increment.after := by
-      simpa [listedInvariant, listedState] using increment.effect
-    have iterationStore : StoreEffect (CellSet.singleton invariant.indexCell)
-        state increment.after := entered.trans_same incrementEffect.toStoreEffect
-    have iterationEffect : ModifiesOnly
-        (CellSet.singleton invariant.indexCell) state afterIteration := by
-      simpa [afterIteration] using iterationStore.restoreLocals
-    have afterWellFormed : StateWellFormed afterIteration :=
-      iterationStore.restoreLocals_wellFormed
+    obtain ⟨iterationEffect, afterWellFormed, afterOwned⟩ :=
+      closeOwnedLoopIteration
         invariant.row.loop.production.range.validation.stateWellFormed
         increment.invariant.row.loop.production.range.validation.stateWellFormed
-    have afterOwned : (Assertion.localPointsTo 24 invariant.indexCell
-        (some (.signed .i32 (Int.ofNat (index + 1))))).holds
-        afterIteration := by
-      constructor
-      · change state.cellId? 24 = some invariant.indexCell
-        exact invariant.indexOwned.1
-      · change increment.after.cellEntry? invariant.indexCell = some {
-          id := invariant.indexCell
-          value := some (.signed .i32 (Int.ofNat (index + 1))) }
-        have found := increment.invariant.indexOwned.2
-        have cellEq : increment.invariant.indexCell = invariant.indexCell :=
-          increment.indexCell_eq.trans (by simp [listedInvariant])
-        rw [cellEq] at found
-        exact found
+        (by simpa [listedInvariant, listedState] using increment.effect)
+        invariant.indexOwned.1 increment.invariant.indexOwned.2
+        (increment.indexCell_eq.trans (by simp [listedInvariant]))
     let afterInvariant := invariant.after_index_effect iterationEffect
       afterWellFormed afterOwned
     let rest := afterInvariant.execute_loop nonterminalBound firstEq countEq
@@ -4267,82 +3990,46 @@ noncomputable def GrammarNonterminalLoopInvariant.execute_iteration
     have entryState : state23.bindLocal 24 zeroValue =
         (parserGrammarNonterminalRowState state first count).bindLocal 24
           (.signed .i32 0) := by
-      simpa [rowState, zeroValue]
+      simp [rowState, zeroValue]
     rw [entryState]
     exact executesSequence listedRun.execution increment.execution
-  let after24 := restoreLocals state23 increment.after
-  have scoped24 : Executes verifiedParserCore state23
-      (.letLocal 24 parserI32Type (.value (.signed .i32 0))
-        (.sequence parserGrammarListedLoop (parserIncrementLocal 21)))
-      .next after24 := by
-    simpa [after24, zeroValue] using
-      executesLetLocal (type := parserI32Type)
-        (show Evaluates verifiedParserCore state23
-          (.value (.signed .i32 0)) zeroValue state23 from ⟨1, rfl⟩)
-        local24Body
-  have entered24 : StoreEffect
-      (CellSet.singleton listedInvariant.indexCell) state23
-      (state23.bindLocal 24 zeroValue) :=
-    (bindLocal_effect state23 24 zeroValue).weaken CellSet.empty_subset
-  have listedStore : StoreEffect
-      (CellSet.singleton listedInvariant.indexCell) state23 listedRun.after :=
-    entered24.trans_same listedRun.effect.toStoreEffect
-  have combinedStore : StoreEffect
-      (CellSet.union (CellSet.singleton listedInvariant.indexCell)
-        (CellSet.singleton rowInvariant.loop.nonterminalCell))
-      state23 increment.after :=
-    listedStore.trans incrementEffect.toStoreEffect
-  have visibleStore : StoreEffect
-      (CellSet.singleton rowInvariant.loop.nonterminalCell)
-      state23 increment.after := by
-    apply combinedStore.hideFreshWritesExcept
-    intro cell written
-    rcases written with fresh | retained
-    · exact Or.inr (by simpa [CellSet.singleton] using
-        (show state23.nextCell ≤ cell from fresh ▸ Nat.le_refl _))
-    · exact Or.inl retained
-  have effect24 : ModifiesOnly
-      (CellSet.singleton rowInvariant.loop.nonterminalCell)
-      state23 after24 := by
-    simpa [after24] using visibleStore.restoreLocals
-  have after24WellFormed : StateWellFormed after24 :=
-    visibleStore.restoreLocals_wellFormed
-      rowInvariant.loop.production.range.validation.stateWellFormed
-      increment.invariant.production.range.validation.stateWellFormed
-  let after23 := restoreLocals state22 after24
-  let after22 := restoreLocals state after23
-  have effect23 : ModifiesOnly
-      (CellSet.singleton invariant.nonterminalCell) state22 after23 := by
-    have sameCell : rowInvariant.loop.nonterminalCell =
-        invariant.nonterminalCell := by rfl
-    simpa [after23, state23, countValue, sameCell] using
-      temporaryLocal_effect 23 countValue effect24.toStoreEffect
-  have after23WellFormed : StateWellFormed after23 := by
-    have entered := (bindLocal_effect state22 23 countValue).weaken
-      (CellSet.empty_subset : CellSet.Subset CellSet.empty
-        (CellSet.singleton invariant.nonterminalCell))
-    have body : StoreEffect (CellSet.singleton invariant.nonterminalCell)
-        (state22.bindLocal 23 countValue) after24 := by
-      have sameCell : rowInvariant.loop.nonterminalCell =
-          invariant.nonterminalCell := by rfl
-      simpa [state23, sameCell] using effect24.toStoreEffect
-    exact (entered.trans_same body).restoreLocals_wellFormed
-      invariant22.production.range.validation.stateWellFormed
-      after24WellFormed
-  have effect22 : ModifiesOnly
-      (CellSet.singleton invariant.nonterminalCell) state after22 := by
-    simpa [after22, state22, firstValue] using
-      temporaryLocal_effect 22 firstValue effect23.toStoreEffect
-  have after22WellFormed : StateWellFormed after22 := by
-    have entered := (bindLocal_effect state 22 firstValue).weaken
-      (CellSet.empty_subset : CellSet.Subset CellSet.empty
-        (CellSet.singleton invariant.nonterminalCell))
-    have body : StoreEffect (CellSet.singleton invariant.nonterminalCell)
-        (state.bindLocal 22 firstValue) after23 := by
-      simpa [state22] using effect23.toStoreEffect
-    exact (entered.trans_same body).restoreLocals_wellFormed
-      invariant.production.range.validation.stateWellFormed
-      after23WellFormed
+  have indexCell_eq : listedInvariant.indexCell = state23.nextCell := by
+    rfl
+  let closed24 := closesFreshLocalExcept (type := parserI32Type)
+    (CellSet.singleton rowInvariant.loop.nonterminalCell)
+    rowInvariant.loop.production.range.validation.stateWellFormed
+    (show Evaluates verifiedParserCore state23
+      (.value (.signed .i32 0)) zeroValue state23 from Lanius.Semantics.evaluatesValue)
+    local24Body
+    (by
+      apply ModifiesOnly.weaken (listedRun.effect.trans incrementEffect)
+      intro cell written
+      change (cell = listedInvariant.indexCell ∨
+        cell = rowInvariant.loop.nonterminalCell) at written
+      change cell = rowInvariant.loop.nonterminalCell ∨ cell = state23.nextCell
+      rcases written with index | nonterminal
+      · exact Or.inr (by simpa [indexCell_eq] using index)
+      · exact Or.inl nonterminal)
+    increment.invariant.production.range.validation.stateWellFormed
+  have guardedBody : Executes verifiedParserCore state23
+      (.sequence parserGrammarNonterminalInvalidGuard
+        (.letLocal 24 parserI32Type (.value (.signed .i32 0))
+          (.sequence parserGrammarListedLoop (parserIncrementLocal 21))))
+      .next closed24.after :=
+    executesSequence guardExecution closed24.execution
+  let closed23 := closesFreshLocalExcept (type := parserI32Type)
+    (CellSet.singleton invariant.nonterminalCell)
+    invariant22.production.range.validation.stateWellFormed
+    countInitializer guardedBody
+    (closed24.effect.weaken CellSet.subset_union_left)
+    closed24.wellFormed
+  let closed22 := closesFreshLocalExcept (type := parserI32Type)
+    (CellSet.singleton invariant.nonterminalCell)
+    invariant.production.range.validation.stateWellFormed
+    firstInitializer closed23.execution
+    (closed23.effect.weaken CellSet.subset_union_left)
+    closed23.wellFormed
+  let after22 := closed22.after
   have afterOwned : (Assertion.localPointsTo 21 invariant.nonterminalCell
       (some (.signed .i32 (Int.ofNat (nonterminal + 1))))).holds after22 := by
     constructor
@@ -4358,24 +4045,14 @@ noncomputable def GrammarNonterminalLoopInvariant.execute_iteration
           (listedRun.nonterminalCell_eq.trans (by rfl))
       rw [cellEq] at found
       exact found
-  let afterInvariant := invariant.after_counter_effect effect22
-    after22WellFormed afterOwned
-  have guardedBody : Executes verifiedParserCore state23
-      (.sequence parserGrammarNonterminalInvalidGuard
-        (.letLocal 24 parserI32Type (.value (.signed .i32 0))
-          (.sequence parserGrammarListedLoop (parserIncrementLocal 21))))
-      .next after24 :=
-    executesSequence guardExecution scoped24
-  have scoped23 := executesLetLocal (type := parserI32Type)
-    countInitializer guardedBody
-  have scoped22 := executesLetLocal (type := parserI32Type)
-    firstInitializer scoped23
+  let afterInvariant := invariant.after_counter_effect closed22.effect
+    closed22.wellFormed afterOwned
   exact {
     after := after22
     execution := by
-      simpa [parserGrammarNonterminalLoopBody, after22, after23, after24,
-        state22, state23, firstValue, countValue, zeroValue] using scoped22
-    effect := effect22
+      simpa [parserGrammarNonterminalLoopBody, after22, state22, state23,
+        firstValue, countValue, zeroValue] using closed22.execution
+    effect := closed22.effect
     invariant := afterInvariant
     nonterminalCell_eq := rfl }
 
@@ -4470,6 +4147,13 @@ noncomputable def GrammarRangeInvariant.production_loop_entry
     (by decide) (by decide)
   have finalState : state12 = parserGrammarProductionState state layout := by
     rfl
+  have bindingsState : parserGrammarProductionState state layout =
+      state.bindLocals [(8, lhsValue), (9, offsetsValue),
+        (10, lengthsValue), (11, symbolsValue), (12, zeroValue)] := by
+    rfl
+  let lookup := bindLocals_local_of_index state
+    [(8, lhsValue), (9, offsetsValue), (10, lengthsValue),
+      (11, symbolsValue), (12, zeroValue)]
   have counterOwned : (Assertion.localPointsTo 12 state11.nextCell
       (some zeroValue)).holds state12 := by
     constructor
@@ -4489,28 +4173,14 @@ noncomputable def GrammarRangeInvariant.production_loop_entry
     productionNotGrammar := ?_ }
   · rw [← finalState]
     exact invariant12
-  · simpa [parserGrammarProductionState, parserGrammarProductionBindings,
-      lhsValue, offsetsValue, lengthsValue, symbolsValue, zeroValue] using
-      bindLocals_local_of_binding state [] [
-        (9, offsetsValue), (10, lengthsValue), (11, symbolsValue),
-        (12, zeroValue)] 8 lhsValue invariant.validation.stateWellFormed
-        (by simp)
-  · simpa [parserGrammarProductionState, parserGrammarProductionBindings,
-      lhsValue, offsetsValue, lengthsValue, symbolsValue, zeroValue] using
-      bindLocals_local_of_binding state [(8, lhsValue)] [
-        (10, lengthsValue), (11, symbolsValue), (12, zeroValue)]
-        9 offsetsValue invariant.validation.stateWellFormed (by simp)
-  · simpa [parserGrammarProductionState, parserGrammarProductionBindings,
-      lhsValue, offsetsValue, lengthsValue, symbolsValue, zeroValue] using
-      bindLocals_local_of_binding state [(8, lhsValue), (9, offsetsValue)] [
-        (11, symbolsValue), (12, zeroValue)] 10 lengthsValue
-        invariant.validation.stateWellFormed (by simp)
-  · simpa [parserGrammarProductionState, parserGrammarProductionBindings,
-      lhsValue, offsetsValue, lengthsValue, symbolsValue, zeroValue] using
-      bindLocals_local_of_binding state [
-        (8, lhsValue), (9, offsetsValue), (10, lengthsValue)] [
-        (12, zeroValue)] 11 symbolsValue
-        invariant.validation.stateWellFormed (by simp)
+  · rw [bindingsState]
+    exact lookup ⟨0, by simp⟩ invariant.validation.stateWellFormed (by simp)
+  · rw [bindingsState]
+    exact lookup ⟨1, by simp⟩ invariant.validation.stateWellFormed (by simp)
+  · rw [bindingsState]
+    exact lookup ⟨2, by simp⟩ invariant.validation.stateWellFormed (by simp)
+  · rw [bindingsState]
+    exact lookup ⟨3, by simp⟩ invariant.validation.stateWellFormed (by simp)
   · simpa [finalState, zeroValue] using counterOwned
   · intro cell framed written
     obtain ⟨id, idBound, same⟩ := framed
@@ -4597,7 +4267,7 @@ noncomputable def GrammarRangeInvariant.execute_production_scopes
       layout.rhsSymbolsOffset invariant10.validation.encoded.rhsSymbolsOffset
       verifiedParser_range_header_constants.2.2.2.2.1
   have zeroInitializer : Evaluates verifiedParserCore state11
-      (.value (.signed .i32 0)) zeroValue state11 := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) zeroValue state11 := Lanius.Semantics.evaluatesValue
   have effect12 : ModifiesOnly (CellSet.singleton state11.nextCell)
       state12 completed := by
     have next11 : state11.nextCell = state.nextCell + 4 := by
@@ -4688,7 +4358,7 @@ noncomputable def GrammarProductionLoopInvariant.execute_nonterminal_scopes
         invariant19.range.validation.encoded.lhsProductionsOffset
         verifiedParser_range_header_constants.2.2.2.2.2.2.2
   have zeroInitializer : Evaluates verifiedParserCore state20
-      (.value (.signed .i32 0)) zeroValue state20 := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) zeroValue state20 := Lanius.Semantics.evaluatesValue
   have effect21 : ModifiesOnly (CellSet.singleton state20.nextCell)
       state21 completed := by
     have next20 : state20.nextCell = state.nextCell + 3 := by
@@ -4854,11 +4524,8 @@ theorem GrammarValidationInvariant.length_guard_evaluates_false
       grammarCell state) :
     Evaluates verifiedParserCore state parserGrammarLengthGuardExpr
       (.boolean false) state := by
-  have left : Evaluates verifiedParserCore state (.local 1)
-      (.signed .i32 (Int.ofNat words.length)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 1
-      (.signed .i32 (Int.ofNat words.length))
-      invariant.grammarLengthLocal⟩
+  have left := evaluatesI32Local (program := verifiedParserCore)
+    invariant.grammarLengthLocal
   have right : Evaluates verifiedParserCore state (.constant 6)
       (.signed .i32 17) state :=
     evaluatesConstant verifiedParser_range_valid_constant
@@ -4961,7 +4628,7 @@ noncomputable def GrammarValidationInvariant.execute_success
       (executesReturnValue
         (show Evaluates verifiedParserCore nonterminalRun.after
           (.value (.boolean true)) (.boolean true) nonterminalRun.after from
-          ⟨1, rfl⟩))
+          Lanius.Semantics.evaluatesValue))
   have nonterminalBody : Executes verifiedParserCore
       (parserGrammarNonterminalState productionRun.after layout)
       (.sequence parserGrammarNonterminalLoop

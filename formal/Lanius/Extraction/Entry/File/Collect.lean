@@ -55,7 +55,7 @@ theorem Stage.arguments_evaluate {count nodeCount : Nat} (stage : Stage) (progra
     ArgumentsEvaluateTo program before stage.arguments (collectorValues data count nodeCount outputCell original) before := by
   have readValue {id : VarId} {value : Value} (member : (id, value) ∈ stage.bindings data outputCell original) :=
     local_evaluates program (reads _ member)
-  have literal (value : Nat) : Evaluates program before (number value) (.signed .i32 value) before := ⟨1, rfl⟩
+  have literal (value : Nat) : Evaluates program before (number value) (.signed .i32 value) before := evaluatesValue
   simp only [Stage.arguments, collectorValues, argumentValues,
     capacity.grammar, capacity.records, outputCapacity]
   apply ArgumentsEvaluateTo.cons (readValue (by simp [Stage.bindings, capacity.grammar]))
@@ -155,7 +155,7 @@ theorem Stage.executes {count nodes words : Nat} (stage : Stage) (checked : Chec
   have guard : Evaluates program.core ready
       (binary .notEqual (.call checked.source.function.id stage.arguments) (number 0)) (.boolean false) collected :=
     evaluatesEagerBinary (by decide) (by decide) call
-      (show Evaluates program.core collected (number 0) (.signed .i32 0) collected from ⟨1, rfl⟩) rfl
+      (show Evaluates program.core collected (number 0) (.signed .i32 0) collected from evaluatesValue) rfl
   obtain ⟨completion, after, continued, done⟩ := continuationRun collection collected contents effect (memory.evaluates call)
   exact ⟨completion, after, executesSequence (executesIfFalse guard (executesSkip _ _)) continued, done⟩
 

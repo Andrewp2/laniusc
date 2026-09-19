@@ -48,7 +48,7 @@ theorem execute_child_phase {memory : HeaderMemory} {refs : References memory}
   cases outcome : appendAll memory.capacity (encodeChildren memory.record.children) position contents with
   | full retained =>
     have run := executesLetLocal (id := 13) (type := i32)
-      (show Evaluates program.core before (number 0) (.signed .i32 0) before from ⟨1, rfl⟩)
+      (show Evaluates program.core before (number 0) (.signed .i32 0) before from evaluatesValue)
       (executesSequenceReturned (second := .sequence (.expression increment) .skip)
         (by simpa only [outcome, AppendOutcome.completion] using loopRun))
     have closed := CellEffect.closeLocal before 13 (.signed .i32 0) owned.wellFormed effect
@@ -76,7 +76,7 @@ theorem execute_child_phase {memory : HeaderMemory} {refs : References memory}
     have combined := (effect.weaken CellSet.subset_union_left).trans
       (incrementEffect.weaken CellSet.subset_union_right)
     have run := executesLetLocal (id := 13) (type := i32)
-      (show Evaluates program.core before (number 0) (.signed .i32 0) before from ⟨1, rfl⟩)
+      (show Evaluates program.core before (number 0) (.signed .i32 0) before from evaluatesValue)
       (executesSequence (by simpa only [outcome, AppendOutcome.completion] using loopRun)
         (executesSequence (executesExpression incremented) (executesSkip _ _)))
     have closed := CellEffect.closeLocal before 13 (.signed .i32 0) owned.wellFormed combined

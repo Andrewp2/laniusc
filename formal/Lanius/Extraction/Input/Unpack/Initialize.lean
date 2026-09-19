@@ -190,7 +190,7 @@ theorem Stage.executes (stage : Stage) (supported : stage.Supported)
         initial.wellFormed originalBinding)
       exact changed.elim notOutput notCursor)
     (.letLocal ⟨1, rfl⟩ (.sequence loop .here))
-  exact ⟨completion, restoreLocals before after, executesLetLocal (⟨1, rfl⟩ :
+  exact ⟨completion, restoreLocals before after, executesLetLocal (Lanius.Semantics.evaluatesValue :
     Evaluates program before (.value (.signed .i32 0)) (.signed .i32 0) before)
     (executesSequence loop continued), satisfied⟩
 

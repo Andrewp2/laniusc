@@ -1277,7 +1277,7 @@ noncomputable def RecognizerRootCandidateBinding.evaluate_predicate
       (.signed .i32 (Int.ofNat candidate.origin)) originRead.after := by
     simpa [before, stateFieldValue] using originRead.evaluation
   have zeroEvaluation : Evaluates verifiedParserCore originRead.after
-      (.value (.signed .i32 0)) (.signed .i32 0) originRead.after := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) originRead.after := Lanius.Semantics.evaluatesValue
   have originEquality := evaluatesNatEqualityThreaded before originRead.after
     originRead.after (parserRecognizeStateValueCall 41 30)
     (.value (.signed .i32 0)) candidate.origin 0 originEvaluation zeroEvaluation
@@ -1296,8 +1296,7 @@ noncomputable def RecognizerRootCandidateBinding.evaluate_predicate
     have productionResult : Evaluates verifiedParserCore originRead.after
         (.local 42) (.signed .i32 (Int.ofNat candidate.production))
         originRead.after :=
-      ⟨1, evalLocal_of_local 1 verifiedParserCore originRead.after 42 _
-        productionAfterOrigin⟩
+      Lanius.Semantics.evaluatesLocal productionAfterOrigin
     let lhsRead := afterOrigin.chartCursor.read_lhs candidate.production
       productionBound (.local 42) productionResult
     have lhsEvaluation : Evaluates verifiedParserCore originRead.after
@@ -1315,8 +1314,7 @@ noncomputable def RecognizerRootCandidateBinding.evaluate_predicate
     have startResult : Evaluates verifiedParserCore lhsRead.after (.local 12)
         (.signed .i32 (Int.ofNat grammar.grammar.start_nonterminal))
         lhsRead.after :=
-      ⟨1, evalLocal_of_local 1 verifiedParserCore lhsRead.after 12 _
-        startAfterLhs⟩
+      Lanius.Semantics.evaluatesLocal startAfterLhs
     have lhsEquality := evaluatesNatEqualityThreaded originRead.after
       lhsRead.after lhsRead.after
       (.call extractedParserLhsFunction.id [.local 0, .local 42]) (.local 12)
@@ -1348,8 +1346,7 @@ noncomputable def RecognizerRootCandidateBinding.evaluate_predicate
       have productionAfterDotResult : Evaluates verifiedParserCore dotRead.after
           (.local 42) (.signed .i32 (Int.ofNat candidate.production))
           dotRead.after :=
-        ⟨1, evalLocal_of_local 1 verifiedParserCore dotRead.after 42 _
-          productionAfterDot⟩
+        Lanius.Semantics.evaluatesLocal productionAfterDot
       let afterDot := afterLhs.after_empty_effect dotRead.effect
         dotRead.invariant.recognizer.wellFormed
       let rhsRead := afterDot.chartCursor.read_rhs_length candidate.production
@@ -1453,6 +1450,63 @@ structure RecognizerRootFinishedInvariant
   cursorFrameDisjoint : CellSet.Disjoint
     (localBindingFrameFootprint runtime verifiedParserRootLoopBindings)
     (CellSet.singleton cursorCell)
+
+private structure RecognizerRootPersistentFrame
+    (grammar : IndexedGrammar) (workspace : LogicalWorkspace)
+    (stateCountCell cursorCell : CellId) (runtime : State) where
+  startNonterminalLocal : runtime.local? 12 = some
+    (.signed .i32 (Int.ofNat grammar.grammar.start_nonterminal))
+  stateCountOwned : (Assertion.localPointsTo 18 stateCountCell
+    (some (.signed .i32 (Int.ofNat workspace.states.length)))).holds runtime
+  furthestPosition : Nat
+  furthestPositionLocal : runtime.local? 22 = some
+    (.signed .i32 (Int.ofNat furthestPosition))
+  cursorFrameDisjoint : CellSet.Disjoint
+    (localBindingFrameFootprint runtime verifiedParserRootLoopBindings)
+    (CellSet.singleton cursorCell)
+
+private def RecognizerRootPersistentFrame.after_cursor_effect
+    (invariant : RecognizerRootLoopInvariant grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell cursorCell before current remaining)
+    (effect : ModifiesOnly (CellSet.singleton cursorCell) before after) :
+    RecognizerRootPersistentFrame grammar workspace stateCountCell cursorCell after := by
+  have preserveLocal (id : VarId) (framed : RootLoopFramedLocal id)
+      (value : Value)
+      (found : before.local? id = some value) : after.local? id = some value :=
+    effect.preserves_local_of_disjoint
+      invariant.chartCursor.recognizer.wellFormed
+      invariant.cursorFrameDisjoint
+      ((RootLoopFramedLocal_source_frame id).mp framed) found
+  have stateCountNotCursor : stateCountCell ≠ cursorCell := by
+    intro equal
+    apply invariant.cursorFrameDisjoint.localCell_ne_of_singleton (id := 18)
+      ((RootLoopFramedLocal_source_frame 18).mp (by
+        simp [RootLoopFramedLocal]))
+    rw [← equal]
+    exact invariant.stateCountOwned.1
+  have stateCountOwned : (Assertion.localPointsTo 18 stateCountCell
+      (some (.signed .i32 (Int.ofNat workspace.states.length)))).holds after :=
+    effect.preserve invariant.chartCursor.recognizer.wellFormed
+      (Assertion.localPointsTo 18 stateCountCell
+        (some (.signed .i32 (Int.ofNat workspace.states.length))))
+      invariant.stateCountOwned (by
+        intro cell member written
+        change cell = stateCountCell at member
+        change cell = cursorCell at written
+        subst cell
+        exact stateCountNotCursor written)
+  exact {
+    startNonterminalLocal := preserveLocal 12 (by
+      simp [RootLoopFramedLocal]) _ invariant.startNonterminalLocal
+    stateCountOwned := stateCountOwned
+    furthestPosition := invariant.furthestPosition
+    furthestPositionLocal := preserveLocal 22 (by
+      simp [RootLoopFramedLocal]) _ invariant.furthestPositionLocal
+    cursorFrameDisjoint := by
+      rw [effect.localBindingFrameFootprint_eq verifiedParserRootLoopBindings]
+      exact invariant.cursorFrameDisjoint
+  }
 
 /-- The exhausted-root continuation runs the exact reified rejected-result
     command in the canonical final root environment. -/
@@ -1634,43 +1688,14 @@ def RecognizerRootLoopInvariant.after_cursor_effect
     RecognizerRootLoopInvariant grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell stateCountCell cursorCell after next nextRemaining := by
-  have preserveLocal (id : VarId) (framed : RootLoopFramedLocal id)
-      (value : Value)
-      (found : before.local? id = some value) : after.local? id = some value :=
-    effect.preserves_local_of_disjoint
-      invariant.chartCursor.recognizer.wellFormed
-      invariant.cursorFrameDisjoint
-      ((RootLoopFramedLocal_source_frame id).mp framed) found
-  have stateCountNotCursor : stateCountCell ≠ cursorCell := by
-    intro equal
-    apply invariant.cursorFrameDisjoint.localCell_ne_of_singleton (id := 18)
-      ((RootLoopFramedLocal_source_frame 18).mp (by
-        simp [RootLoopFramedLocal]))
-    rw [← equal]
-    exact invariant.stateCountOwned.1
-  have stateCountOwned : (Assertion.localPointsTo 18 stateCountCell
-      (some (.signed .i32 (Int.ofNat workspace.states.length)))).holds after :=
-    effect.preserve invariant.chartCursor.recognizer.wellFormed
-      (Assertion.localPointsTo 18 stateCountCell
-        (some (.signed .i32 (Int.ofNat workspace.states.length))))
-      invariant.stateCountOwned (by
-        intro cell member written
-        change cell = stateCountCell at member
-        change cell = cursorCell at written
-        subst cell
-        exact stateCountNotCursor written)
+  let frame := RecognizerRootPersistentFrame.after_cursor_effect invariant effect
   exact {
     chartCursor := afterCursor
-    startNonterminalLocal := preserveLocal 12 (by
-      simp [RootLoopFramedLocal]) _
-      invariant.startNonterminalLocal
-    stateCountOwned := stateCountOwned
-    furthestPosition := invariant.furthestPosition
-    furthestPositionLocal := preserveLocal 22 (by
-      simp [RootLoopFramedLocal]) _ invariant.furthestPositionLocal
-    cursorFrameDisjoint := by
-      rw [effect.localBindingFrameFootprint_eq verifiedParserRootLoopBindings]
-      exact invariant.cursorFrameDisjoint
+    startNonterminalLocal := frame.startNonterminalLocal
+    stateCountOwned := frame.stateCountOwned
+    furthestPosition := frame.furthestPosition
+    furthestPositionLocal := frame.furthestPositionLocal
+    cursorFrameDisjoint := frame.cursorFrameDisjoint
   }
 
 def RecognizerRootLoopInvariant.after_cursor_exhaustion
@@ -1685,43 +1710,14 @@ def RecognizerRootLoopInvariant.after_cursor_exhaustion
     RecognizerRootFinishedInvariant grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell stateCountCell cursorCell after := by
-  have preserveLocal (id : VarId) (framed : RootLoopFramedLocal id)
-      (value : Value)
-      (found : before.local? id = some value) : after.local? id = some value :=
-    effect.preserves_local_of_disjoint
-      invariant.chartCursor.recognizer.wellFormed
-      invariant.cursorFrameDisjoint
-      ((RootLoopFramedLocal_source_frame id).mp framed) found
-  have stateCountNotCursor : stateCountCell ≠ cursorCell := by
-    intro equal
-    apply invariant.cursorFrameDisjoint.localCell_ne_of_singleton (id := 18)
-      ((RootLoopFramedLocal_source_frame 18).mp (by
-        simp [RootLoopFramedLocal]))
-    rw [← equal]
-    exact invariant.stateCountOwned.1
-  have stateCountOwned : (Assertion.localPointsTo 18 stateCountCell
-      (some (.signed .i32 (Int.ofNat workspace.states.length)))).holds after :=
-    effect.preserve invariant.chartCursor.recognizer.wellFormed
-      (Assertion.localPointsTo 18 stateCountCell
-        (some (.signed .i32 (Int.ofNat workspace.states.length))))
-      invariant.stateCountOwned (by
-        intro cell member written
-        change cell = stateCountCell at member
-        change cell = cursorCell at written
-        subst cell
-        exact stateCountNotCursor written)
+  let frame := RecognizerRootPersistentFrame.after_cursor_effect invariant effect
   exact {
     chartCursor := afterCursor
-    startNonterminalLocal := preserveLocal 12 (by
-      simp [RootLoopFramedLocal]) _
-      invariant.startNonterminalLocal
-    stateCountOwned := stateCountOwned
-    furthestPosition := invariant.furthestPosition
-    furthestPositionLocal := preserveLocal 22 (by
-      simp [RootLoopFramedLocal]) _ invariant.furthestPositionLocal
-    cursorFrameDisjoint := by
-      rw [effect.localBindingFrameFootprint_eq verifiedParserRootLoopBindings]
-      exact invariant.cursorFrameDisjoint
+    startNonterminalLocal := frame.startNonterminalLocal
+    stateCountOwned := frame.stateCountOwned
+    furthestPosition := frame.furthestPosition
+    furthestPositionLocal := frame.furthestPositionLocal
+    cursorFrameDisjoint := frame.cursorFrameDisjoint
   }
 
 structure RecognizerRootScopedExecution
@@ -1823,6 +1819,8 @@ def RecognizerRootScopedExecution.restore_invariant
         (localBindingFrameFootprint_mono (fun id bound =>
           (RootLoopFramedLocal_source_frame id).mp (Or.inl bound)))
         beforeInvariant.cursorFrameDisjoint)
+  let frame := RecognizerRootPersistentFrame.after_cursor_effect beforeInvariant
+    closed.effect
   have entryTransferred (cell : CellId) (entry : Cell)
       (innerEntry : innerAfter.cellEntry? cell = some entry) :
       closed.after.cellEntry? cell = some entry := by
@@ -1836,14 +1834,6 @@ def RecognizerRootScopedExecution.restore_invariant
       rw [closed.effect.locals]
       exact beforeInvariant.chartCursor.cursorOwned.1
     · exact entryTransferred cursorCell _ innerInvariant.chartCursor.cursorOwned.2
-  have stateCountOwned : (Assertion.localPointsTo 18 stateCountCell
-      (some (.signed .i32 (Int.ofNat workspace.states.length)))).holds
-      closed.after := by
-    constructor
-    · unfold State.cellId?
-      rw [closed.effect.locals]
-      exact beforeInvariant.stateCountOwned.1
-    · exact entryTransferred stateCountCell _ innerInvariant.stateCountOwned.2
   exact {
     chartCursor := {
       recognizer := recognizer
@@ -1864,22 +1854,11 @@ def RecognizerRootScopedExecution.restore_invariant
       chartPositionBound := innerInvariant.chartCursor.chartPositionBound
       cursor := innerInvariant.chartCursor.cursor
     }
-    startNonterminalLocal := closed.effect.preserves_local_of_disjoint
-      beforeInvariant.chartCursor.recognizer.wellFormed
-      beforeInvariant.cursorFrameDisjoint
-      ((RootLoopFramedLocal_source_frame 12).mp (by
-        simp [RootLoopFramedLocal])) beforeInvariant.startNonterminalLocal
-    stateCountOwned := stateCountOwned
-    furthestPosition := beforeInvariant.furthestPosition
-    furthestPositionLocal := closed.effect.preserves_local_of_disjoint
-      beforeInvariant.chartCursor.recognizer.wellFormed
-      beforeInvariant.cursorFrameDisjoint
-      ((RootLoopFramedLocal_source_frame 22).mp (by
-        simp [RootLoopFramedLocal])) beforeInvariant.furthestPositionLocal
-    cursorFrameDisjoint := by
-      rw [closed.effect.localBindingFrameFootprint_eq
-        verifiedParserRootLoopBindings]
-      exact beforeInvariant.cursorFrameDisjoint
+    startNonterminalLocal := frame.startNonterminalLocal
+    stateCountOwned := frame.stateCountOwned
+    furthestPosition := frame.furthestPosition
+    furthestPositionLocal := frame.furthestPositionLocal
+    cursorFrameDisjoint := frame.cursorFrameDisjoint
   }
 
 def RecognizerRootScopedExecution.restore_finished
@@ -1909,6 +1888,8 @@ def RecognizerRootScopedExecution.restore_finished
         (localBindingFrameFootprint_mono (fun id bound =>
           (RootLoopFramedLocal_source_frame id).mp (Or.inl bound)))
         beforeInvariant.cursorFrameDisjoint)
+  let frame := RecognizerRootPersistentFrame.after_cursor_effect beforeInvariant
+    closed.effect
   have entryTransferred (cell : CellId) (entry : Cell)
       (innerEntry : innerAfter.cellEntry? cell = some entry) :
       closed.after.cellEntry? cell = some entry := by
@@ -1922,14 +1903,6 @@ def RecognizerRootScopedExecution.restore_finished
       rw [closed.effect.locals]
       exact beforeInvariant.chartCursor.cursorOwned.1
     · exact entryTransferred cursorCell _ innerInvariant.chartCursor.cursorOwned.2
-  have stateCountOwned : (Assertion.localPointsTo 18 stateCountCell
-      (some (.signed .i32 (Int.ofNat workspace.states.length)))).holds
-      closed.after := by
-    constructor
-    · unfold State.cellId?
-      rw [closed.effect.locals]
-      exact beforeInvariant.stateCountOwned.1
-    · exact entryTransferred stateCountCell _ innerInvariant.stateCountOwned.2
   exact {
     chartCursor := {
       recognizer := recognizer
@@ -1949,22 +1922,11 @@ def RecognizerRootScopedExecution.restore_finished
       cursorBackingDistinct := beforeInvariant.chartCursor.cursorBackingDistinct
       chartPositionBound := innerInvariant.chartCursor.chartPositionBound
     }
-    startNonterminalLocal := closed.effect.preserves_local_of_disjoint
-      beforeInvariant.chartCursor.recognizer.wellFormed
-      beforeInvariant.cursorFrameDisjoint
-      ((RootLoopFramedLocal_source_frame 12).mp (by
-        simp [RootLoopFramedLocal])) beforeInvariant.startNonterminalLocal
-    stateCountOwned := stateCountOwned
-    furthestPosition := beforeInvariant.furthestPosition
-    furthestPositionLocal := closed.effect.preserves_local_of_disjoint
-      beforeInvariant.chartCursor.recognizer.wellFormed
-      beforeInvariant.cursorFrameDisjoint
-      ((RootLoopFramedLocal_source_frame 22).mp (by
-        simp [RootLoopFramedLocal])) beforeInvariant.furthestPositionLocal
-    cursorFrameDisjoint := by
-      rw [closed.effect.localBindingFrameFootprint_eq
-        verifiedParserRootLoopBindings]
-      exact beforeInvariant.cursorFrameDisjoint
+    startNonterminalLocal := frame.startNonterminalLocal
+    stateCountOwned := frame.stateCountOwned
+    furthestPosition := frame.furthestPosition
+    furthestPositionLocal := frame.furthestPositionLocal
+    cursorFrameDisjoint := frame.cursorFrameDisjoint
   }
 
 theorem verifiedParserRecognize_parse_success_constant :
@@ -2094,16 +2056,14 @@ private noncomputable def RecognizerRootLoopInvariant.execute_step_structural
       evaluatesConstant verifiedParserRecognize_parse_success_constant
     have countResult : Evaluates verifiedParserCore predicate.after (.local 18)
         (.signed .i32 (Int.ofNat workspace.states.length)) predicate.after :=
-      ⟨1, evalLocal_of_local 1 verifiedParserCore predicate.after 18 _
-        (Assertion.localPointsTo_local 18 stateCountCell _ predicate.after
-          predicate.invariant.stateCountOwned)⟩
+      Lanius.Semantics.evaluatesLocal
+        (Assertion.localPointsTo_local 18 stateCountCell _ predicate.after predicate.invariant.stateCountOwned)
     have rootResult : Evaluates verifiedParserCore predicate.after (.local 41)
         (.signed .i32 (Int.ofNat current)) predicate.after :=
-      ⟨1, evalLocal_of_local 1 verifiedParserCore predicate.after 41 _
-        (Assertion.localPointsTo_local 41 cursorCell _ predicate.after
-          predicate.invariant.chartCursor.cursorOwned)⟩
+      Lanius.Semantics.evaluatesLocal
+        (Assertion.localPointsTo_local 41 cursorCell _ predicate.after predicate.invariant.chartCursor.cursorOwned)
     have zeroResult : Evaluates verifiedParserCore predicate.after
-        (.value (.signed .i32 0)) (.signed .i32 0) predicate.after := ⟨1, rfl⟩
+        (.value (.signed .i32 0)) (.signed .i32 0) predicate.after := Lanius.Semantics.evaluatesValue
     have arguments : ArgumentsEvaluateTo verifiedParserCore predicate.after
         [.constant 0, .local 18, .local 41, .value (.signed .i32 0)]
         [.signed .i32 0,
@@ -3216,17 +3176,15 @@ noncomputable def RecognizerRootFinishedInvariant.execute_rejected
     evaluatesConstant verifiedParserRecognize_parse_rejected_constant
   have countResult : Evaluates verifiedParserCore before (.local 18)
       (.signed .i32 (Int.ofNat workspace.states.length)) before :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore before 18 _
-      (Assertion.localPointsTo_local 18 stateCountCell _ before
-        invariant.stateCountOwned)⟩
+    Lanius.Semantics.evaluatesLocal
+      (Assertion.localPointsTo_local 18 stateCountCell _ before invariant.stateCountOwned)
   have negativeOne : Evaluates verifiedParserCore before
       (.unary .negate (.value (.signed .i32 1)))
       (.signed .i32 (-1)) before :=
     evaluatesParserAppendNegativeOne before
   have furthestResult : Evaluates verifiedParserCore before (.local 22)
       (.signed .i32 (Int.ofNat invariant.furthestPosition)) before :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore before 22 _
-      invariant.furthestPositionLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.furthestPositionLocal
   have arguments : ArgumentsEvaluateTo verifiedParserCore before [
       .constant 1, .local 18,
       .unary .negate (.value (.signed .i32 1)), .local 22] [

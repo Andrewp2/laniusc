@@ -134,16 +134,7 @@ def environment (seed : StateSeed) : Env 7
 theorem parameterBindings_eq (seed : StateSeed) :
     Lanius.FunctionalView.Core.parameterBindings (environment seed) =
       parserStateSeedBindings seed := by
-  apply List.ext_getElem
-  · simp [parserStateSeedBindings]
-  · intro index leftBound rightBound
-    have alternatives : index = 0 ∨ index = 1 ∨ index = 2 ∨ index = 3 ∨
-        index = 4 ∨ index = 5 ∨ index = 6 := by
-      simp [parserStateSeedBindings] at rightBound
-      omega
-    rcases alternatives with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-      simp [Lanius.FunctionalView.Core.parameterBindings_getElem,
-        parserStateSeedBindings, environment]
+  rfl
 
 private def resultTerm : Term Lanius.FunctionalView.Core.signature 7 :=
   .apply (.structValue 1 (List.replicate 7 parserI32Type)) [
@@ -414,30 +405,42 @@ def parserAppendStateWrite (fieldConstant : ConstantId) (value : Expr) : Stmt :=
         [.local 1, .local 7, .constant fieldConstant]))
     value)
 
-def parserAppendLinkChart : Stmt :=
-  .sequence
-    (.ifThenElse
-      (.binary .less (.local 10) (.value (.signed .i32 0)))
-      (.sequence
-        (.expression (.assign .set
-          (.index (.local 0) (.local 8)) (.local 7)))
-        .skip)
-      (.sequence
-        (.expression (.assign .set
-          (.index (.local 0)
-            (.call extractedParserStateWordFunction.id
-              [.local 1, .local 10, .constant 32]))
-          (.local 7)))
-        .skip))
+def parserAppendChartLinkIf : Stmt :=
+  .ifThenElse
+    (.binary .less (.local 10) (.value (.signed .i32 0)))
     (.sequence
       (.expression (.assign .set
-        (.index (.local 0) (.local 9)) (.local 7)))
-      (.sequence
-        (.returnValue (some (parserAppendResultCall
-          (.constant 40) (.local 7)
-          (.binary .add (.local 5) (.value (.signed .i32 1)))
-          (.value (.boolean true)))))
-        .skip))
+        (.index (.local 0) (.local 8)) (.local 7)))
+      .skip)
+    (.sequence
+      (.expression (.assign .set
+        (.index (.local 0)
+          (.call extractedParserStateWordFunction.id
+            [.local 1, .local 10, .constant 32]))
+        (.local 7)))
+      .skip)
+
+def parserAppendChartTail : Stmt :=
+  .sequence
+    (.expression (.assign .set
+      (.index (.local 0) (.local 9)) (.local 7)))
+    (.sequence
+      (.returnValue (some (parserAppendResultCall
+        (.constant 40) (.local 7)
+        (.binary .add (.local 5) (.value (.signed .i32 1)))
+        (.value (.boolean true)))))
+      .skip)
+
+def parserAppendLinkChart : Stmt :=
+  .sequence parserAppendChartLinkIf parserAppendChartTail
+
+private theorem executesParserAppendLinkChart
+    (selected : Executes verifiedParserCore before parserAppendChartLinkIf
+      .next first)
+    (tail : Executes verifiedParserCore first parserAppendChartTail
+      outcome after) :
+    Executes verifiedParserCore before parserAppendLinkChart outcome after := by
+  simpa [parserAppendLinkChart] using executesSequence selected tail
 
 def parserAppendChartWords : Stmt :=
   .letLocal 8 parserI32Type
@@ -741,13 +744,10 @@ noncomputable def AppendMutationInvariant.write_state_id_at_local_index
       index workspace.states.length := by
   have indexResult : Evaluates verifiedParserCore runtime (.local indexLocal)
       (.signed .i32 (Int.ofNat index)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime indexLocal
-      (.signed .i32 (Int.ofNat index)) indexFound⟩
+    Lanius.Semantics.evaluatesLocal indexFound
   have rightResult : Evaluates verifiedParserCore runtime (.local 7)
       (.signed .i32 (Int.ofNat workspace.states.length)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 7
-      (.signed .i32 (Int.ofNat workspace.states.length))
-      invariant.stateIdLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.stateIdLocal
   have write := evaluatesSetSignedI32SliceIndexFromEmpty verifiedParserCore
     runtime runtime runtime values 0 (.local indexLocal) (.local 7)
     workspaceCell index (Int.ofNat workspace.states.length) indexBound
@@ -785,13 +785,10 @@ noncomputable def AppendMutationInvariant.write_tail_next
     (Int.ofNat (stateBase layout.tokenCount)) (Int.ofNat tail) 4
   have baseArgument : Evaluates verifiedParserCore runtime (.local 1)
       (.signed .i32 (Int.ofNat (stateBase layout.tokenCount))) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 1
-      (.signed .i32 (Int.ofNat (stateBase layout.tokenCount)))
-      invariant.baseLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.baseLocal
   have tailArgument : Evaluates verifiedParserCore runtime (.local 10)
       (.signed .i32 (Int.ofNat tail)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 10
-      (.signed .i32 (Int.ofNat tail)) tailLocal⟩
+    Lanius.Semantics.evaluatesLocal tailLocal
   have fieldArgument : Evaluates verifiedParserCore runtime (.constant 32)
       (.signed .i32 4) runtime := by
     refine ⟨2, ?_⟩
@@ -831,9 +828,7 @@ noncomputable def AppendMutationInvariant.write_tail_next
     indexWellFormed
   have rightResult : Evaluates verifiedParserCore afterIndex (.local 7)
       (.signed .i32 (Int.ofNat workspace.states.length)) afterIndex :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore afterIndex 7
-      (.signed .i32 (Int.ofNat workspace.states.length))
-      afterIndexInvariant.stateIdLocal⟩
+    Lanius.Semantics.evaluatesLocal afterIndexInvariant.stateIdLocal
   have addressBound : address < values.length := by
     rw [invariant.valuesLength]
     exact layout.state_address_valid tailBound (by decide)
@@ -887,8 +882,7 @@ noncomputable def AppendMutationInvariant.read_chart_address
       runtime invariant fieldConstant field := by
   have positionArgument : Evaluates verifiedParserCore runtime (.local 3)
       (.signed .i32 (Int.ofNat position)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 3
-      (.signed .i32 (Int.ofNat position)) invariant.positionLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.positionLocal
   have fieldArgument : Evaluates verifiedParserCore runtime
       (.constant fieldConstant) (.signed .i32 (Int.ofNat field)) runtime := by
     refine ⟨2, ?_⟩
@@ -948,14 +942,10 @@ noncomputable def AppendMutationInvariant.write_state_field
     (Int.ofNat workspace.states.length) (Int.ofNat field)
   have baseArgument : Evaluates verifiedParserCore runtime (.local 1)
       (.signed .i32 (Int.ofNat (stateBase layout.tokenCount))) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 1
-      (.signed .i32 (Int.ofNat (stateBase layout.tokenCount)))
-      invariant.baseLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.baseLocal
   have stateIdArgument : Evaluates verifiedParserCore runtime (.local 7)
       (.signed .i32 (Int.ofNat workspace.states.length)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 7
-      (.signed .i32 (Int.ofNat workspace.states.length))
-      invariant.stateIdLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.stateIdLocal
   have fieldArgument : Evaluates verifiedParserCore runtime
       (.constant fieldConstant) (.signed .i32 (Int.ofNat field)) runtime := by
     refine ⟨2, ?_⟩
@@ -1022,8 +1012,7 @@ theorem AppendMutationInvariant.evaluates_seed_field
       (.signed .i32 (appendSeedFieldValue seed field)) runtime := by
   have seedResult : Evaluates verifiedParserCore runtime (.local 4)
       (stateSeedValue seed) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 4
-      (stateSeedValue seed) invariant.seedLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.seedLocal
   apply evaluatesStructureField seedResult
   simpa [stateSeedValue] using
     (stateSeedValue_append_field (seed := seed) (field := field) fieldBound)
@@ -1033,8 +1022,7 @@ theorem AppendMutationInvariant.evaluates_position
       position seed runtime) :
     Evaluates verifiedParserCore runtime (.local 3)
       (.signed .i32 (Int.ofNat position)) runtime :=
-  ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 3
-    (.signed .i32 (Int.ofNat position)) invariant.positionLocal⟩
+  Lanius.Semantics.evaluatesLocal invariant.positionLocal
 
 noncomputable def AppendMutationInvariant.write_seed_field
     (invariant : AppendMutationInvariant layout workspace values workspaceCell
@@ -1256,12 +1244,10 @@ noncomputable def AppendStateRecordExecution.setup_chart_locals
       (.signed .i32 (chartTailValue workspace position)) bound9 := by
     have baseResult : Evaluates verifiedParserCore bound9 (.local 0)
         (workspaceValue values workspaceCell) bound9 :=
-      ⟨1, evalLocal_of_local 1 verifiedParserCore bound9 0
-        (workspaceValue values workspaceCell) bound9Invariant.workspaceLocal⟩
+      Lanius.Semantics.evaluatesLocal bound9Invariant.workspaceLocal
     have indexResult : Evaluates verifiedParserCore bound9 (.local 9)
         (.signed .i32 (Int.ofNat (chartWord position 1))) bound9 :=
-      ⟨1, evalLocal_of_local 1 verifiedParserCore bound9 9
-        (.signed .i32 (Int.ofNat (chartWord position 1))) local9AtBound9⟩
+      Lanius.Semantics.evaluatesLocal local9AtBound9
     have result := evaluatesSignedI32SliceIndex verifiedParserCore bound9 bound9
       bound9 values (.local 0) (.local 9) workspaceCell
       (chartWord position 1) chartTailBound baseResult indexResult
@@ -1357,21 +1343,16 @@ noncomputable def AppendEntryInvariant.read_find_state
       invariant := by
   have workspaceArgument : Evaluates verifiedParserCore runtime (.local 0)
       (workspaceValue values workspaceCell) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 0
-      (workspaceValue values workspaceCell) invariant.workspaceLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.workspaceLocal
   have baseArgument : Evaluates verifiedParserCore runtime (.local 1)
       (.signed .i32 (Int.ofNat (stateBase layout.tokenCount))) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 1
-      (.signed .i32 (Int.ofNat (stateBase layout.tokenCount)))
-      invariant.baseLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.baseLocal
   have positionArgument : Evaluates verifiedParserCore runtime (.local 3)
       (.signed .i32 (Int.ofNat position)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 3
-      (.signed .i32 (Int.ofNat position)) invariant.positionLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.positionLocal
   have seedArgument : Evaluates verifiedParserCore runtime (.local 4)
       (stateSeedValue seed) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 4
-      (stateSeedValue seed) invariant.seedLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.seedLocal
   have arguments : ArgumentsEvaluateTo verifiedParserCore runtime
       [.local 0, .local 1, .local 3, .local 4] [
         workspaceValue values workspaceCell,
@@ -1398,19 +1379,21 @@ noncomputable def AppendEntryInvariant.read_find_state
     invariant := invariant.after_empty_effect effect afterWellFormed
   }
 
+private theorem evaluatesLocal
+    (id : VarId) (value : Value)
+    (found : runtime.local? id = some value) :
+    Evaluates verifiedParserCore runtime (.local id) value runtime :=
+  Lanius.Semantics.evaluatesLocal found
+
 theorem evaluatesParserAppendExistingCondition
     (localFound : runtime.local? 6 =
       some (.signed .i32 (Int.ofNat stateId))) :
     Evaluates verifiedParserCore runtime
       (.binary .greaterEqual (.local 6) (.value (.signed .i32 0)))
       (.boolean true) runtime := by
-  have left : Evaluates verifiedParserCore runtime (.local 6)
-      (.signed .i32 (Int.ofNat stateId)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 6
-      (.signed .i32 (Int.ofNat stateId)) localFound⟩
-  have right : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 0)) (.signed .i32 0) runtime := ⟨1, rfl⟩
-  apply evaluatesEagerBinary (by decide) (by decide) left right
+  apply evaluatesEagerBinary (by decide) (by decide)
+    (evaluatesLocal 6 (.signed .i32 (Int.ofNat stateId)) localFound)
+    ⟨1, rfl⟩
   simp [evalBinaryValue, evalSignedBinary]
 
 theorem evaluatesParserAppendMissingCondition
@@ -1418,13 +1401,9 @@ theorem evaluatesParserAppendMissingCondition
     Evaluates verifiedParserCore runtime
       (.binary .greaterEqual (.local 6) (.value (.signed .i32 0)))
       (.boolean false) runtime := by
-  have left : Evaluates verifiedParserCore runtime (.local 6)
-      (.signed .i32 (-1)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 6
-      (.signed .i32 (-1)) localFound⟩
-  have right : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 0)) (.signed .i32 0) runtime := ⟨1, rfl⟩
-  apply evaluatesEagerBinary (by decide) (by decide) left right
+  apply evaluatesEagerBinary (by decide) (by decide)
+    (evaluatesLocal 6 (.signed .i32 (-1)) localFound)
+    ⟨1, rfl⟩
   simp [evalBinaryValue, evalSignedBinary]
 
 theorem evaluatesParserAppendCapacityConditionFull
@@ -1436,15 +1415,9 @@ theorem evaluatesParserAppendCapacityConditionFull
     Evaluates verifiedParserCore runtime
       (.binary .greaterEqual (.local 5) (.local 2))
       (.boolean true) runtime := by
-  have left : Evaluates verifiedParserCore runtime (.local 5)
-      (.signed .i32 (Int.ofNat count)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 5
-      (.signed .i32 (Int.ofNat count)) countLocal⟩
-  have right : Evaluates verifiedParserCore runtime (.local 2)
-      (.signed .i32 (Int.ofNat capacity)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 2
-      (.signed .i32 (Int.ofNat capacity)) capacityLocal⟩
-  apply evaluatesEagerBinary (by decide) (by decide) left right
+  apply evaluatesEagerBinary (by decide) (by decide)
+    (evaluatesLocal 5 (.signed .i32 (Int.ofNat count)) countLocal)
+    (evaluatesLocal 2 (.signed .i32 (Int.ofNat capacity)) capacityLocal)
   simp [evalBinaryValue, evalSignedBinary, full]
 
 theorem evaluatesParserAppendCapacityConditionAvailable
@@ -1456,15 +1429,9 @@ theorem evaluatesParserAppendCapacityConditionAvailable
     Evaluates verifiedParserCore runtime
       (.binary .greaterEqual (.local 5) (.local 2))
       (.boolean false) runtime := by
-  have left : Evaluates verifiedParserCore runtime (.local 5)
-      (.signed .i32 (Int.ofNat count)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 5
-      (.signed .i32 (Int.ofNat count)) countLocal⟩
-  have right : Evaluates verifiedParserCore runtime (.local 2)
-      (.signed .i32 (Int.ofNat capacity)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 2
-      (.signed .i32 (Int.ofNat capacity)) capacityLocal⟩
-  apply evaluatesEagerBinary (by decide) (by decide) left right
+  apply evaluatesEagerBinary (by decide) (by decide)
+    (evaluatesLocal 5 (.signed .i32 (Int.ofNat count)) countLocal)
+    (evaluatesLocal 2 (.signed .i32 (Int.ofNat capacity)) capacityLocal)
   simp [evalBinaryValue, evalSignedBinary, Nat.not_le_of_lt available]
 
 theorem evaluatesParserAppendNegativeOne (runtime : State) :
@@ -1489,15 +1456,7 @@ theorem AppendResultProof.parameterBindings_eq
     Lanius.FunctionalView.Core.parameterBindings
         (AppendResultProof.environment status stateId stateCount inserted) =
       parserAppendResultBindings status stateId stateCount inserted := by
-  apply List.ext_getElem
-  · simp [parserAppendResultBindings]
-  · intro index leftBound rightBound
-    have alternatives : index = 0 ∨ index = 1 ∨ index = 2 ∨ index = 3 := by
-      simp [parserAppendResultBindings] at rightBound
-      omega
-    rcases alternatives with rfl | rfl | rfl | rfl <;>
-      simp [Lanius.FunctionalView.Core.parameterBindings_getElem,
-        parserAppendResultBindings, AppendResultProof.environment]
+  rfl
 
 def parserAppendResultCallee
     (caller : State) (status stateId stateCount : Int) (inserted : Bool) :
@@ -1648,18 +1607,14 @@ theorem AppendMutationInvariant.evaluates_incremented_count
     Evaluates verifiedParserCore runtime
       (.binary .add (.local 5) (.value (.signed .i32 1)))
       (.signed .i32 (Int.ofNat (workspace.states.length + 1))) runtime := by
-  have left : Evaluates verifiedParserCore runtime (.local 5)
-      (.signed .i32 (Int.ofNat workspace.states.length)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 5
-      (.signed .i32 (Int.ofNat workspace.states.length))
-      invariant.stateCountLocal⟩
-  have right : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 1)) (.signed .i32 1) runtime := ⟨1, rfl⟩
   have wrapped := wrapSigned_i32_ofNat verifiedParserCore.target
     (workspace.states.length + 1) invariant.stateCountSuccI32
   have sumCast : Int.ofNat workspace.states.length + 1 =
       Int.ofNat (workspace.states.length + 1) := by simp
-  apply evaluatesEagerBinary (by decide) (by decide) left right
+  apply evaluatesEagerBinary (by decide) (by decide)
+    (evaluatesLocal 5 (.signed .i32 (Int.ofNat workspace.states.length))
+      invariant.stateCountLocal)
+    ⟨1, rfl⟩
   simp only [evalBinaryValue, evalSignedBinary]
   rw [sumCast, wrapped]
   rfl
@@ -1694,9 +1649,7 @@ noncomputable def AppendMutationInvariant.return_inserted
     simp [evalExpr, verifiedParser_append_status_constants.1]
   have stateIdArgument : Evaluates verifiedParserCore runtime (.local 7)
       (.signed .i32 (Int.ofNat workspace.states.length)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 7
-      (.signed .i32 (Int.ofNat workspace.states.length))
-      invariant.stateIdLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.stateIdLocal
   have countArgument := invariant.evaluates_incremented_count
   have insertedArgument : Evaluates verifiedParserCore runtime
       (.value (.boolean true)) (.boolean true) runtime := ⟨1, rfl⟩
@@ -1742,13 +1695,9 @@ theorem evaluatesParserAppendEmptyTailCondition
     Evaluates verifiedParserCore runtime
       (.binary .less (.local 10) (.value (.signed .i32 0)))
       (.boolean true) runtime := by
-  have left : Evaluates verifiedParserCore runtime (.local 10)
-      (.signed .i32 (-1)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 10
-      (.signed .i32 (-1)) local10⟩
-  have right : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 0)) (.signed .i32 0) runtime := ⟨1, rfl⟩
-  apply evaluatesEagerBinary (by decide) (by decide) left right
+  apply evaluatesEagerBinary (by decide) (by decide)
+    (evaluatesLocal 10 (.signed .i32 (-1)) local10)
+    ⟨1, rfl⟩
   simp [evalBinaryValue, evalSignedBinary]
 
 theorem evaluatesParserAppendNonemptyTailCondition
@@ -1757,13 +1706,9 @@ theorem evaluatesParserAppendNonemptyTailCondition
     Evaluates verifiedParserCore runtime
       (.binary .less (.local 10) (.value (.signed .i32 0)))
       (.boolean false) runtime := by
-  have left : Evaluates verifiedParserCore runtime (.local 10)
-      (.signed .i32 (Int.ofNat tail)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 10
-      (.signed .i32 (Int.ofNat tail)) local10⟩
-  have right : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 0)) (.signed .i32 0) runtime := ⟨1, rfl⟩
-  apply evaluatesEagerBinary (by decide) (by decide) left right
+  apply evaluatesEagerBinary (by decide) (by decide)
+    (evaluatesLocal 10 (.signed .i32 (Int.ofNat tail)) local10)
+    ⟨1, rfl⟩
   simp [evalBinaryValue, evalSignedBinary]
 
 structure AppendChartLinkExecution
@@ -1818,36 +1763,15 @@ noncomputable def AppendChartSetupExecution.execute_empty_chart
     (chartWord position 1) tailBound local9AfterHead
   let returned := tailWrite.invariant.return_inserted
   have selected : Executes verifiedParserCore setup.after
-      (.ifThenElse
-        (.binary .less (.local 10) (.value (.signed .i32 0)))
-        (.sequence
-          (.expression (.assign .set
-            (.index (.local 0) (.local 8)) (.local 7))) .skip)
-        (.sequence
-          (.expression (.assign .set
-            (.index (.local 0)
-              (.call extractedParserStateWordFunction.id
-                [.local 1, .local 10, .constant 32]))
-            (.local 7))) .skip))
-      .next headWrite.after := by
+      parserAppendChartLinkIf .next headWrite.after := by
     have thenBranch := executesSequence headWrite.execution
       (executesSkip verifiedParserCore headWrite.after)
     exact executesIfTrue condition thenBranch
   have rest : Executes verifiedParserCore headWrite.after
-      (.sequence
-        (.expression (.assign .set
-          (.index (.local 0) (.local 9)) (.local 7)))
-        (.sequence
-          (.returnValue (some (parserAppendResultCall
-            (.constant 40) (.local 7)
-            (.binary .add (.local 5) (.value (.signed .i32 1)))
-            (.value (.boolean true))))) .skip))
+      parserAppendChartTail
       (.returned (some (appendOutcomeValue (insertedAppendOutcome workspace))))
       returned.after := executesSequence tailWrite.execution returned.execution
-  have execution : Executes verifiedParserCore setup.after parserAppendLinkChart
-      (.returned (some (appendOutcomeValue (insertedAppendOutcome workspace))))
-      returned.after := by
-    simpa [parserAppendLinkChart] using executesSequence selected rest
+  have execution := executesParserAppendLinkChart selected rest
   have returnedAsWorkspace : ModifiesOnly (CellSet.singleton workspaceCell)
       tailWrite.after returned.after :=
     returned.effect.weaken CellSet.empty_subset
@@ -1902,36 +1826,15 @@ noncomputable def AppendChartSetupExecution.execute_nonempty_chart
     (chartWord position 1) chartTailBound local9AfterLink
   let returned := tailWrite.invariant.return_inserted
   have selected : Executes verifiedParserCore setup.after
-      (.ifThenElse
-        (.binary .less (.local 10) (.value (.signed .i32 0)))
-        (.sequence
-          (.expression (.assign .set
-            (.index (.local 0) (.local 8)) (.local 7))) .skip)
-        (.sequence
-          (.expression (.assign .set
-            (.index (.local 0)
-              (.call extractedParserStateWordFunction.id
-                [.local 1, .local 10, .constant 32]))
-            (.local 7))) .skip))
-      .next linkWrite.after := by
+      parserAppendChartLinkIf .next linkWrite.after := by
     have elseBranch := executesSequence linkWrite.execution
       (executesSkip verifiedParserCore linkWrite.after)
     exact executesIfFalse condition elseBranch
   have rest : Executes verifiedParserCore linkWrite.after
-      (.sequence
-        (.expression (.assign .set
-          (.index (.local 0) (.local 9)) (.local 7)))
-        (.sequence
-          (.returnValue (some (parserAppendResultCall
-            (.constant 40) (.local 7)
-            (.binary .add (.local 5) (.value (.signed .i32 1)))
-            (.value (.boolean true))))) .skip))
+      parserAppendChartTail
       (.returned (some (appendOutcomeValue (insertedAppendOutcome workspace))))
       returned.after := executesSequence tailWrite.execution returned.execution
-  have execution : Executes verifiedParserCore setup.after parserAppendLinkChart
-      (.returned (some (appendOutcomeValue (insertedAppendOutcome workspace))))
-      returned.after := by
-    simpa [parserAppendLinkChart] using executesSequence selected rest
+  have execution := executesParserAppendLinkChart selected rest
   have returnedAsWorkspace : ModifiesOnly (CellSet.singleton workspaceCell)
       tailWrite.after returned.after :=
     returned.effect.weaken CellSet.empty_subset
@@ -2005,9 +1908,7 @@ noncomputable def AppendEntryInvariant.execute_inserted
         (executesSkip verifiedParserCore bound6))
   have stateIdInitializer : Evaluates verifiedParserCore bound6 (.local 5)
       (.signed .i32 (Int.ofNat workspace.states.length)) bound6 :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound6 5
-      (.signed .i32 (Int.ofNat workspace.states.length))
-      bound6Invariant.stateCountLocal⟩
+    Lanius.Semantics.evaluatesLocal bound6Invariant.stateCountLocal
   let bound7 := bound6.bindLocal 7
     (.signed .i32 (Int.ofNat workspace.states.length))
   have mutationInvariant : AppendMutationInvariant layout workspace values
@@ -2211,12 +2112,10 @@ noncomputable def AppendEntryInvariant.execute_existing
     simp [evalExpr, verifiedParser_append_status_constants.1]
   have stateIdArgument : Evaluates verifiedParserCore bound (.local 6)
       (.signed .i32 (Int.ofNat stateId)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound 6
-      (.signed .i32 (Int.ofNat stateId)) local6⟩
+    Lanius.Semantics.evaluatesLocal local6
   have countArgument : Evaluates verifiedParserCore bound (.local 5)
       (.signed .i32 (Int.ofNat workspace.states.length)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound 5
-      (.signed .i32 (Int.ofNat workspace.states.length)) local5⟩
+    Lanius.Semantics.evaluatesLocal local5
   have insertedArgument : Evaluates verifiedParserCore bound
       (.value (.boolean false)) (.boolean false) bound := ⟨1, rfl⟩
   have arguments : ArgumentsEvaluateTo verifiedParserCore bound
@@ -2235,18 +2134,15 @@ noncomputable def AppendEntryInvariant.execute_existing
     [.constant 40, .local 6, .local 5, .value (.boolean false)]
     0 (Int.ofNat stateId) (Int.ofNat workspace.states.length) false
     boundWellFormed arguments
-  have resultEvaluation : Evaluates verifiedParserCore bound
+  have result : Evaluates verifiedParserCore bound
       (parserAppendResultCall (.constant 40) (.local 6) (.local 5)
         (.value (.boolean false)))
       (appendOutcomeValue (existingAppendOutcome workspace stateId))
-      resultAfter := by
+      resultAfter ∧ ModifiesOnly CellSet.empty bound resultAfter ∧
+      StateWellFormed resultAfter := by
     simpa [parserAppendResultCall, resultAfter, existingAppendOutcome,
-      appendOutcomeValue, appendStatusValue, encodeStateId] using
-        resultContract.1
-  have resultEffect : ModifiesOnly CellSet.empty bound resultAfter := by
-    simpa [resultAfter] using resultContract.2.1
-  have resultWellFormed : StateWellFormed resultAfter := by
-    simpa [resultAfter] using resultContract.2.2
+      appendOutcomeValue, appendStatusValue, encodeStateId] using resultContract
+  obtain ⟨resultEvaluation, resultEffect, resultWellFormed⟩ := result
   have condition := evaluatesParserAppendExistingCondition local6
   have selected : Executes verifiedParserCore bound parserAppendExistingIf
       (.returned (some
@@ -2341,8 +2237,7 @@ noncomputable def AppendEntryInvariant.execute_full
   have missingArgument := evaluatesParserAppendNegativeOne bound
   have countArgument : Evaluates verifiedParserCore bound (.local 5)
       (.signed .i32 (Int.ofNat workspace.states.length)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound 5
-      (.signed .i32 (Int.ofNat workspace.states.length)) local5⟩
+    Lanius.Semantics.evaluatesLocal local5
   have insertedArgument : Evaluates verifiedParserCore bound
       (.value (.boolean false)) (.boolean false) bound := ⟨1, rfl⟩
   have arguments : ArgumentsEvaluateTo verifiedParserCore bound [
@@ -2366,18 +2261,16 @@ noncomputable def AppendEntryInvariant.execute_full
       .local 5,
       .value (.boolean false)]
     1 (-1) (Int.ofNat workspace.states.length) false boundWellFormed arguments
-  have resultEvaluation : Evaluates verifiedParserCore bound
+  have result : Evaluates verifiedParserCore bound
       (parserAppendResultCall (.constant 41)
         (.unary .negate (.value (.signed .i32 1)))
         (.local 5) (.value (.boolean false)))
-      (appendOutcomeValue (fullAppendOutcome workspace)) resultAfter := by
+      (appendOutcomeValue (fullAppendOutcome workspace)) resultAfter ∧
+      ModifiesOnly CellSet.empty bound resultAfter ∧
+      StateWellFormed resultAfter := by
     simpa [parserAppendResultCall, resultAfter, fullAppendOutcome,
-      appendOutcomeValue, appendStatusValue, encodeStateId] using
-        resultContract.1
-  have resultEffect : ModifiesOnly CellSet.empty bound resultAfter := by
-    simpa [resultAfter] using resultContract.2.1
-  have resultWellFormed : StateWellFormed resultAfter := by
-    simpa [resultAfter] using resultContract.2.2
+      appendOutcomeValue, appendStatusValue, encodeStateId] using resultContract
+  obtain ⟨resultEvaluation, resultEffect, resultWellFormed⟩ := result
   have fullSelected : Executes verifiedParserCore bound parserAppendFullIf
       (.returned (some (appendOutcomeValue (fullAppendOutcome workspace))))
       resultAfter := by
@@ -2588,47 +2481,26 @@ theorem parserAppendStateCallee_entry
     } := by
     exact (enterCall_effect caller bindings).oldCells workspaceCell workspaceOld
       (by simp [CellSet.empty]) |>.trans backing
-  have local0 : callee.local? 0 = some workspaceArgument := by
-    simpa [callee, bindings] using
-      (enterCall_local_of_binding caller [] [
-        (1, .signed .i32 base), (2, .signed .i32 capacity),
-        (3, .signed .i32 sourcePosition), (4, seedArgument),
-        (5, .signed .i32 count)] 0 workspaceArgument wellFormed (by simp))
-  have local1 : callee.local? 1 = some (.signed .i32 base) := by
-    simpa [callee, bindings] using
-      (enterCall_local_of_binding caller [(0, workspaceArgument)] [
-        (2, .signed .i32 capacity), (3, .signed .i32 sourcePosition),
-        (4, seedArgument), (5, .signed .i32 count)] 1
-        (.signed .i32 base) wellFormed (by simp))
-  have local2 : callee.local? 2 = some (.signed .i32 capacity) := by
-    simpa [callee, bindings] using
-      (enterCall_local_of_binding caller [
-        (0, workspaceArgument), (1, .signed .i32 base)] [
-        (3, .signed .i32 sourcePosition), (4, seedArgument),
-        (5, .signed .i32 count)] 2 (.signed .i32 capacity) wellFormed
-        (by simp))
-  have local3 : callee.local? 3 = some (.signed .i32 sourcePosition) := by
-    simpa [callee, bindings] using
-      (enterCall_local_of_binding caller [
-        (0, workspaceArgument), (1, .signed .i32 base),
-        (2, .signed .i32 capacity)] [
-        (4, seedArgument), (5, .signed .i32 count)] 3
-        (.signed .i32 sourcePosition) wellFormed (by simp))
-  have local4 : callee.local? 4 = some seedArgument := by
-    simpa [callee, bindings] using
-      (enterCall_local_of_binding caller [
-        (0, workspaceArgument), (1, .signed .i32 base),
-        (2, .signed .i32 capacity), (3, .signed .i32 sourcePosition)] [
-        (5, .signed .i32 count)] 4 seedArgument wellFormed (by simp))
-  have local5 : callee.local? 5 = some (.signed .i32 count) := by
-    simpa [callee, bindings] using
-      (enterCall_local_of_binding caller [
-        (0, workspaceArgument), (1, .signed .i32 base),
-        (2, .signed .i32 capacity), (3, .signed .i32 sourcePosition),
-        (4, seedArgument)] [] 5 (.signed .i32 count) wellFormed (by simp))
+  let environment : Lanius.FunctionalView.Env 6
+    | ⟨0, _⟩ => workspaceArgument
+    | ⟨1, _⟩ => .signed .i32 base
+    | ⟨2, _⟩ => .signed .i32 capacity
+    | ⟨3, _⟩ => .signed .i32 sourcePosition
+    | ⟨4, _⟩ => seedArgument
+    | ⟨5, _⟩ => .signed .i32 count
+  have bindingsEq : Lanius.FunctionalView.Core.parameterBindings environment =
+      bindings := by
+    rfl
+  have locals := Lanius.FunctionalView.Core.enterCall_parameterBindings_matches
+    (environment := environment) wellFormed
+  rw [bindingsEq] at locals
+  have localAt : ∀ index : Fin 6,
+      callee.local? index.val = some (environment index) := by
+    intro index
+    simpa [callee, Lanius.FunctionalView.Core.identityLayout] using locals index
   simpa [parserAppendStateCallee, parserAppendStateBindings,
       workspaceArgument, base, capacity, sourcePosition, seedArgument, count,
-      bindings, callee] using
+      bindings, callee, environment] using
     (show AppendEntryInvariant layout workspace values workspaceCell position
         seed callee from {
       valuesLength := valuesLength
@@ -2636,12 +2508,12 @@ theorem parserAppendStateCallee_entry
       positionBound := positionBound
       seedOriginBound := seedOriginBound
       wellFormed := calleeWellFormed
-      workspaceLocal := local0
-      baseLocal := local1
-      capacityLocal := local2
-      positionLocal := local3
-      seedLocal := local4
-      stateCountLocal := local5
+      workspaceLocal := by simpa [environment] using localAt ⟨0, by decide⟩
+      baseLocal := by simpa [environment, base] using localAt ⟨1, by decide⟩
+      capacityLocal := by simpa [environment, capacity] using localAt ⟨2, by decide⟩
+      positionLocal := by simpa [environment, sourcePosition] using localAt ⟨3, by decide⟩
+      seedLocal := by simpa [environment, seedArgument] using localAt ⟨4, by decide⟩
+      stateCountLocal := by simpa [environment, count] using localAt ⟨5, by decide⟩
       backing := calleeBacking
     })
 

@@ -83,7 +83,7 @@ theorem Stage.arguments_evaluate {status detail position : Int}
     local_evaluates program.core (reads _ member)
   have readAfter {id : VarId} {value : Value} (member : (id, value) ∈ stage.bindings emission) :=
     local_evaluates program.core (effect.empty_preserves_local wellFormed (reads _ member))
-  have literal (state : State) (value : Nat) : Evaluates program.core state (number value) (.signed .i32 value) state := ⟨1, rfl⟩
+  have literal (state : State) (value : Nat) : Evaluates program.core state (number value) (.signed .i32 value) state := evaluatesValue
   refine ⟨ready, ?_, effect⟩
   simp only [Stage.arguments, Unit.Emission.values, capacities.raw, capacities.canonical,
     capacities.records, semanticCapacity, outputCapacity]

@@ -77,13 +77,13 @@ theorem Stage.executes (stage : Stage) (header : PackHeader.Checked program byte
     intro same; rw [same, positionOwned.2] at backing; cases backing
   have countResult := evaluatesNatI32Subtract (leftValue := count + 1) (rightValue := 1)
     (local_evaluates program.core countRead)
-    (show Evaluates program.core before (number 1) (.signed .i32 1) before from ⟨1, rfl⟩)
+    (show Evaluates program.core before (number 1) (.signed .i32 1) before from evaluatesValue)
     (by omega) (by omega)
   simp only [Nat.add_sub_cancel] at countResult
   obtain ⟨written, call, output, effect, heapFrame⟩ := header.write count stage.capacity position wellFormed
     (by omega) capacityBound capacityFit backing
     (.cons countResult (.cons (local_evaluates program.core outputRead)
-      (.cons (show Evaluates program.core before (number stage.capacity) (.signed .i32 stage.capacity) before from ⟨1, rfl⟩)
+      (.cons (show Evaluates program.core before (number stage.capacity) (.signed .i32 stage.capacity) before from evaluatesValue)
         (.cons (local_evaluates program.core (Assertion.localPointsTo_local _ _ _ _ positionOwned)) (.nil _ _)))))
   have appended := appendAll_success stage.capacity position (PackHeader.encoding count) original
     (by simpa only [encoding_length] using room) capacityBound

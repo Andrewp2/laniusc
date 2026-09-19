@@ -74,7 +74,7 @@ theorem validation_step {memory : ValidationMemory} (program : Program)
   obtain ⟨firstFound, secondFound⟩ := assignment_words_fields found
   have firstIndex := evaluatesNatI32Multiply
     (local_evaluates program (Assertion.localPointsTo_local _ _ _ _ held.cursor))
-    (show Evaluates program before (number 2) (.signed .i32 2) before from ⟨1, rfl⟩)
+    (show Evaluates program before (number 2) (.signed .i32 2) before from evaluatesValue)
     (by have := memory.data.tokensFit; omega : index * 2 ≤ 2147483647)
   have firstResult := read_word program held.assignments _ _ firstFound firstIndex
   let first := before.bindLocal 24 (.signed .i32 assignment.first)
@@ -83,10 +83,10 @@ theorem validation_step {memory : ValidationMemory} (program : Program)
     bindLocal_finds_local _ _ _ held.wellFormed
   have twice := evaluatesNatI32Multiply
     (local_evaluates program (Assertion.localPointsTo_local _ _ _ _ firstHeld.cursor))
-    (show Evaluates program first (number 2) (.signed .i32 2) first from ⟨1, rfl⟩)
+    (show Evaluates program first (number 2) (.signed .i32 2) first from evaluatesValue)
     (by have := memory.data.tokensFit; omega : index * 2 ≤ 2147483647)
   have secondIndex := evaluatesNatI32Add (leftValue := index * 2) (rightValue := 1) twice
-    (show Evaluates program first (number 1) (.signed .i32 1) first from ⟨1, rfl⟩)
+    (show Evaluates program first (number 1) (.signed .i32 1) first from evaluatesValue)
     (by have := memory.data.tokensFit; omega)
   have secondResult := read_word program firstHeld.assignments _ _ secondFound secondIndex
   let secondValue := (assignment.second.map Int.ofNat).getD (-1)

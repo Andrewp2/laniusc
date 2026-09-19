@@ -1,22 +1,30 @@
 import Lanius.Extraction.Parser.Tree.Source
 import Lanius.CallContracts
 import Lanius.ExecutionRules
+import Lanius.FunctionalViewCoreSimulation
 import Lanius.Separation.CellEffect
 import Lanius.Separation.SliceStore
 
 namespace Lanius.Extraction.ParserTreeSource
 
 open Lanius.Core Lanius.Semantics Lanius.Properties Lanius.Separation Lanius.CallContracts
+open Lanius.FunctionalView
+open Lanius.FunctionalView.Core
 
 def resultValue (typeId : Lanius.TypeId) (status nodes words : Int) : Value :=
   .structure typeId [.signed .i32 status, .signed .i32 nodes, .signed .i32 words]
 
-def resultBindings (status nodes words : Int) : List (Lanius.VarId × Value) :=
-  [(0, .signed .i32 status), (1, .signed .i32 nodes), (2, .signed .i32 words)]
-
 private theorem readLocal {id : Lanius.VarId} (found : before.local? id = some value) :
     Evaluates program before (.local id) value before :=
-  ⟨1, evalLocal_of_local 0 program before id value found⟩
+  Lanius.Semantics.evaluatesLocal found
+
+private theorem checkedSourceFunction_found
+    (checked : Lanius.Extraction.CoreSynthesis.Program.CheckedSourceFunction
+      program modulePath name) :
+    program.core.function? checked.function.id = some checked.function := by
+  rw [show checked.function.id = checked.source.id by
+    simpa [Program.function?] using List.find?_some checked.found]
+  exact checked.found
 
 /-- The checked constructor packages its three actual argument values and
     has no caller-visible writes. No constructor execution is assumed. -/
@@ -27,29 +35,25 @@ theorem CheckedVisit.constructor_call (checked : CheckedVisit program)
     ∃ after, Evaluates program.core before (.call checked.symbols.result arguments)
       (resultValue checked.symbols.resultType status nodes words) after ∧
       ModifiesOnly CellSet.empty afterArguments after ∧ StateWellFormed after := by
-  let bindings := resultBindings status nodes words
+  let environment : Env 3
+    | ⟨0, _⟩ => .signed .i32 status
+    | ⟨1, _⟩ => .signed .i32 nodes
+    | ⟨2, _⟩ => .signed .i32 words
+  let bindings := parameterBindings environment
   let callee := enterCall afterArguments bindings
-  have statusLocal : callee.local? 0 = some (.signed .i32 status) := by
-    exact enterCall_local_of_binding afterArguments []
-      [(1, .signed .i32 nodes), (2, .signed .i32 words)] 0 (.signed .i32 status)
-      wellFormed (by simp)
-  have nodesLocal : callee.local? 1 = some (.signed .i32 nodes) := by
-    exact enterCall_local_of_binding afterArguments [(0, .signed .i32 status)]
-      [(2, .signed .i32 words)] 1 (.signed .i32 nodes) wellFormed (by simp)
-  have wordsLocal : callee.local? 2 = some (.signed .i32 words) := by
-    exact enterCall_local_of_binding afterArguments
-      [(0, .signed .i32 status), (1, .signed .i32 nodes)] [] 2 (.signed .i32 words)
-      wellFormed (by simp)
+  have localAt : ∀ index : Fin 3,
+      callee.local? index.val = some (environment index) :=
+    enterCall_parameterBindings_matches (environment := environment) wellFormed
   have body : Executes program.core callee (resultBody checked.symbols.resultType)
       (.returned (some (resultValue checked.symbols.resultType status nodes words))) callee :=
     executesSequenceReturned (executesReturnValue (evaluatesStructValue
-      (ArgumentsEvaluateTo.cons (readLocal statusLocal) (ArgumentsEvaluateTo.cons (readLocal nodesLocal)
-        (ArgumentsEvaluateTo.cons (readLocal wordsLocal) (ArgumentsEvaluateTo.nil _ _))))))
-  have identity : checked.constructor.function.id = checked.constructor.source.id := by
-    simpa [Program.function?] using List.find?_some checked.constructor.found
-  have found : program.core.function? checked.constructor.function.id = some checked.constructor.function := by
-    rw [identity]
-    exact checked.constructor.found
+      (ArgumentsEvaluateTo.cons
+        (readLocal (by simpa [environment] using localAt ⟨0, by decide⟩))
+        (ArgumentsEvaluateTo.cons
+          (readLocal (by simpa [environment] using localAt ⟨1, by decide⟩))
+          (ArgumentsEvaluateTo.cons
+            (readLocal (by simpa [environment] using localAt ⟨2, by decide⟩))
+            (ArgumentsEvaluateTo.nil _ _))))))
   have bound : bindParameters checked.constructor.function.parameters
       [.signed .i32 status, .signed .i32 nodes, .signed .i32 words] = some bindings := by
     rw [checked.constructorSignature.1]
@@ -57,8 +61,8 @@ theorem CheckedVisit.constructor_call (checked : CheckedVisit program)
   have entered := enterCall_effect afterArguments bindings
   refine ⟨restoreLocals afterArguments callee, ?_, entered.restoreLocals,
     entered.restoreLocals_wellFormed wellFormed (enterCall_preserves_wellFormed wellFormed)⟩
-  rw [checked.identities.2.2]
-  exact evaluatesCallReturned argumentsResult found bound checked.constructorBody body
+  simpa only [checked.identities.2.2] using evaluatesCallReturned argumentsResult
+    (checkedSourceFunction_found checked.constructor) bound checked.constructorBody body
 
 private theorem CheckedVisit.failure_result (checked : CheckedVisit program)
     (wellFormed : StateWellFormed before)
@@ -89,7 +93,7 @@ theorem CheckedVisit.depth_limit (checked : CheckedVisit program)
   apply executesSequenceReturned
   apply executesIfTrue (afterCondition := before)
   · exact evaluatesEagerBinary (by decide) (by decide) (readLocal depthLocal)
-      (show Evaluates program.core before (.value (.signed .i32 0)) (.signed .i32 0) before from ⟨1, rfl⟩)
+      (show Evaluates program.core before (.value (.signed .i32 0)) (.signed .i32 0) before from Lanius.Semantics.evaluatesValue)
       (by simp [evalBinaryValue, evalSignedBinary, exhausted])
   · exact executesSequenceReturned (executesReturnValue returned)
 
@@ -111,7 +115,7 @@ theorem CheckedVisit.output_full (checked : CheckedVisit program)
   apply executesSequence (middle := before)
   · apply executesIfFalse (afterCondition := before)
     · exact evaluatesEagerBinary (by decide) (by decide) (readLocal depthLocal)
-        (show Evaluates program.core before (.value (.signed .i32 0)) (.signed .i32 0) before from ⟨1, rfl⟩)
+        (show Evaluates program.core before (.value (.signed .i32 0)) (.signed .i32 0) before from Lanius.Semantics.evaluatesValue)
         (by simp [evalBinaryValue, evalSignedBinary, Int.not_le.mpr hasDepth])
     · exact executesSkip _ _
   · apply executesSequenceReturned
@@ -132,39 +136,40 @@ theorem CheckedVisit.failure_call (checked : CheckedVisit program)
     ∃ after, Evaluates program.core before (.call checked.source.function.id arguments)
       (resultValue checked.symbols.resultType (if depth ≤ 0 then 3 else 2) nodes words) after ∧
       ModifiesOnly CellSet.empty afterArguments after ∧ StateWellFormed after := by
-  let leading : List (Lanius.VarId × Value) :=
-    [(0, workspace), (1, workspaceLength), (2, tokenCount), (3, stateCount),
-      (4, stateId), (5, records), (6, recordsLength), (7, offsets)]
-  let bindings := leading ++ [(8, .signed .i32 capacity), (9, .signed .i32 nodes),
-    (10, .signed .i32 words), (11, .signed .i32 depth)]
+  let environment : Env 12
+    | ⟨0, _⟩ => workspace
+    | ⟨1, _⟩ => workspaceLength
+    | ⟨2, _⟩ => tokenCount
+    | ⟨3, _⟩ => stateCount
+    | ⟨4, _⟩ => stateId
+    | ⟨5, _⟩ => records
+    | ⟨6, _⟩ => recordsLength
+    | ⟨7, _⟩ => offsets
+    | ⟨8, _⟩ => .signed .i32 capacity
+    | ⟨9, _⟩ => .signed .i32 nodes
+    | ⟨10, _⟩ => .signed .i32 words
+    | ⟨11, _⟩ => .signed .i32 depth
+  let bindings := parameterBindings environment
   let callee := enterCall afterArguments bindings
   have calleeWF : StateWellFormed callee := enterCall_preserves_wellFormed wellFormed
-  have capacityLocal : callee.local? 8 = some (.signed .i32 capacity) :=
-    enterCall_local_of_binding afterArguments leading
-      [(9, .signed .i32 nodes), (10, .signed .i32 words), (11, .signed .i32 depth)]
-      8 (.signed .i32 capacity) wellFormed (by simp)
-  have nodesLocal : callee.local? 9 = some (.signed .i32 nodes) := by
-    exact enterCall_local_of_binding afterArguments (leading.append [(8, .signed .i32 capacity)])
-        [(10, .signed .i32 words), (11, .signed .i32 depth)] 9 (.signed .i32 nodes) wellFormed (by simp)
-  have wordsLocal : callee.local? 10 = some (.signed .i32 words) := by
-    exact enterCall_local_of_binding afterArguments (leading.append [(8, .signed .i32 capacity), (9, .signed .i32 nodes)])
-        [(11, .signed .i32 depth)] 10 (.signed .i32 words) wellFormed (by simp)
-  have depthLocal : callee.local? 11 = some (.signed .i32 depth) := by
-    exact enterCall_local_of_binding afterArguments (leading.append [(8, .signed .i32 capacity),
-        (9, .signed .i32 nodes), (10, .signed .i32 words)]) [] 11 (.signed .i32 depth) wellFormed (by simp)
+  have localAt : ∀ index : Fin 12,
+      callee.local? index.val = some (environment index) :=
+    enterCall_parameterBindings_matches (environment := environment) wellFormed
   have execution : ∃ completed, Executes program.core callee (visitBody checked.symbols)
       (.returned (some (resultValue checked.symbols.resultType (if depth ≤ 0 then 3 else 2) nodes words))) completed ∧
       ModifiesOnly CellSet.empty callee completed ∧ StateWellFormed completed := by
     by_cases exhausted : depth ≤ 0
-    · simpa only [if_pos exhausted] using checked.depth_limit calleeWF depthLocal nodesLocal wordsLocal exhausted
-    · simpa only [if_neg exhausted] using checked.output_full calleeWF depthLocal capacityLocal nodesLocal wordsLocal
+    · simpa only [if_pos exhausted] using checked.depth_limit calleeWF
+        (by simpa [environment] using localAt ⟨11, by decide⟩)
+        (by simpa [environment] using localAt ⟨9, by decide⟩)
+        (by simpa [environment] using localAt ⟨10, by decide⟩) exhausted
+    · simpa only [if_neg exhausted] using checked.output_full calleeWF
+        (by simpa [environment] using localAt ⟨11, by decide⟩)
+        (by simpa [environment] using localAt ⟨8, by decide⟩)
+        (by simpa [environment] using localAt ⟨9, by decide⟩)
+        (by simpa [environment] using localAt ⟨10, by decide⟩)
         (Int.not_le.mp exhausted) (failure.resolve_left exhausted)
   obtain ⟨completed, executed, bodyEffect, completedWF⟩ := execution
-  have identity : checked.source.function.id = checked.source.source.id := by
-    simpa [Program.function?] using List.find?_some checked.source.found
-  have found : program.core.function? checked.source.function.id = some checked.source.function := by
-    rw [identity]
-    exact checked.source.found
   have bound : bindParameters checked.source.function.parameters
       [workspace, workspaceLength, tokenCount, stateCount, stateId, records, recordsLength, offsets,
         .signed .i32 capacity, .signed .i32 nodes, .signed .i32 words, .signed .i32 depth] = some bindings := by
@@ -172,7 +177,8 @@ theorem CheckedVisit.failure_call (checked : CheckedVisit program)
     rfl
   have effect := (enterCall_effect afterArguments bindings).trans_same bodyEffect.toStoreEffect
   exact ⟨restoreLocals afterArguments completed,
-    evaluatesCallReturned argumentsResult found bound checked.bodyExact executed,
+    evaluatesCallReturned argumentsResult
+      (checkedSourceFunction_found checked.source) bound checked.bodyExact executed,
     effect.restoreLocals, effect.restoreLocals_wellFormed wellFormed completedWF⟩
 
 /-- Complete any successfully expanded node. The only visible write is its
@@ -201,7 +207,7 @@ theorem CheckedVisit.finish (checked : CheckedVisit program)
   have increment : Evaluates program.core written
       (.binary .add (.local 14) (.value (.signed .i32 1)))
       (.signed .i32 (Int.ofNat (nodes + 1))) written :=
-    evaluatesNatI32Add (readLocal nodesAfter) ⟨1, rfl⟩ (by omega)
+    evaluatesNatI32Add (readLocal nodesAfter) Lanius.Semantics.evaluatesValue (by omega)
   obtain ⟨after, returned, resultEffect, afterWF⟩ := checked.constructor_call storeEffect.wellFormed
     (ArgumentsEvaluateTo.cons (evaluatesConstant checked.statuses.1)
       (ArgumentsEvaluateTo.cons increment (ArgumentsEvaluateTo.cons (readLocal wordsAfter) (ArgumentsEvaluateTo.nil _ _))))

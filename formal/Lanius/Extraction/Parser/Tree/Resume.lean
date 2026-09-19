@@ -7,7 +7,7 @@ open Lanius.Core Lanius.Semantics Lanius.Properties Lanius.Separation
 
 private theorem local_read {id : Lanius.VarId} (found : before.local? id = some value) :
     Evaluates program before (.local id) value before :=
-  ⟨1, evalLocal_of_local 0 program before id value found⟩
+  Lanius.Semantics.evaluatesLocal found
 
 /-- The write footprint of the continuation after a recursive child returns. -/
 def childResultWrites (recordsCell nodesCell wordsCell : CellId) : CellSet :=
@@ -44,11 +44,11 @@ theorem CheckedVisit.resume_child (checked : CheckedVisit program)
     local_cell_ne_of_distinct_value wordsLocal recordsBacking (by intro impossible; cases impossible) wordsOwned.1
   have slotEvaluation : Evaluates program.core before
       (.binary .add (.local 16) (.value (.signed .i32 1))) (.signed .i32 (Int.ofNat (slot + 1))) before :=
-    evaluatesNatI32Add (local_read slotLocal) ⟨1, rfl⟩ (by omega)
+    evaluatesNatI32Add (local_read slotLocal) Lanius.Semantics.evaluatesValue (by omega)
   have rootEvaluation : Evaluates program.core before
       (.binary .subtract (.field (.local 17) 1) (.value (.signed .i32 1)))
       (.signed .i32 (Int.ofNat (nodes - 1))) before :=
-    evaluatesNatI32Subtract (evaluatesStructureField (local_read resultLocal) rfl) ⟨1, rfl⟩ (by omega) (by omega)
+    evaluatesNatI32Subtract (evaluatesStructureField (local_read resultLocal) rfl) Lanius.Semantics.evaluatesValue (by omega) (by omega)
   obtain ⟨stored, store, backing, storedEffect, storeHeapFrame, _⟩ := evaluatesSliceStore program.core before before records
     5 (.binary .add (.local 16) (.value (.signed .i32 1)))
     (.binary .subtract (.field (.local 17) 1) (.value (.signed .i32 1)))

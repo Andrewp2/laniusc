@@ -75,7 +75,7 @@ theorem Stage.success {detail raw count nodes words position : Int}
   have guard : Evaluates program.core before
       (binary .notEqual (.call accessors.status.source.function.id [read stage.result]) (number 0)) (.boolean false) guarded :=
     evaluatesEagerBinary (by decide) (by decide) statusCall
-      (show Evaluates program.core guarded (number 0) (.signed .i32 0) guarded from ⟨1, rfl⟩) rfl
+      (show Evaluates program.core guarded (number 0) (.signed .i32 0) guarded from evaluatesValue) rfl
   have guardedResult := statusEffect.empty_preserves_local wellFormed resultRead
   obtain ⟨nodeCalled, nodeCall, nodeEffect, nodeHeap⟩ := accessors.nodes.call statusEffect.wellFormed
     (.cons (local_evaluates program.core guardedResult) (.nil _ _)) (by rfl)
@@ -152,7 +152,7 @@ theorem Stage.dispatch {status detail raw count nodes words position : Int}
     have guard : Evaluates program.core before
         (binary .notEqual (.call accessors.status.source.function.id [read stage.result]) (number 0)) (.boolean true) guarded :=
       evaluatesEagerBinary (by decide) (by decide) statusCall
-        (show Evaluates program.core guarded (number 0) (.signed .i32 0) guarded from ⟨1, rfl⟩)
+        (show Evaluates program.core guarded (number 0) (.signed .i32 0) guarded from evaluatesValue)
         (by simp [evalBinaryValue, scalarEqual, success])
     obtain ⟨completion, after, failed, done⟩ := failureRun success guarded effect heap
       (.sequenceHead (.ifTrue guard .here))

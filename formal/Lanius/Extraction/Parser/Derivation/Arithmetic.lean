@@ -62,12 +62,12 @@ theorem output_capacity_expression
       (.binary .subtract (.binary .subtract capacityExpr offsetExpr)
         (.value (.signed .i32 4))) (.signed .i32 (capacity - offset - 4)) after := by
     apply evaluatesEagerBinary (by decide) (by decide) difference
-      (show Evaluates program after (.value (.signed .i32 4)) (.signed .i32 4) after from ⟨1, rfl⟩)
+      (show Evaluates program after (.value (.signed .i32 4)) (.signed .i32 4) after from Lanius.Semantics.evaluatesValue)
     simp only [evalBinaryValue, evalSignedBinary]
     rw [wrapSigned_i32_of_nonnegative program.target _ (by omega) (by omega)]
     rfl
   apply evaluatesEagerBinary (by decide) (by decide) available
-    (show Evaluates program after (.value (.signed .i32 3)) (.signed .i32 3) after from ⟨1, rfl⟩)
+    (show Evaluates program after (.value (.signed .i32 3)) (.signed .i32 3) after from Lanius.Semantics.evaluatesValue)
   exact output_division_evaluates program.target capacity offset offsetNonnegative headerFits capacityI32
 
 open Lanius.Properties Lanius.Separation
@@ -83,7 +83,7 @@ theorem output_local_operand
     Evaluates program runtime (.local localId) (.signed .i32 value) runtime := by
   have preserved := effect.preserves_local_of_distinct_value wellFormed localValue backing
     (by simp)
-  exact ⟨1, evalLocal_of_local 0 program runtime localId (.signed .i32 value) preserved⟩
+  exact Lanius.Semantics.evaluatesLocal preserved
 
 /-- The three output indices have the source shape `slot`, `slot + 1`,
     `slot + 2`, and remain valid after earlier stores in the same triple. -/
@@ -107,7 +107,7 @@ theorem output_index_operand
     rw [sum]
     apply evaluatesEagerBinary (by decide) (by decide) read
       (show Evaluates program runtime (.value (.signed .i32 (Int.ofNat offset)))
-        (.signed .i32 (Int.ofNat offset)) runtime from ⟨1, rfl⟩)
+        (.signed .i32 (Int.ofNat offset)) runtime from Lanius.Semantics.evaluatesValue)
     simp only [evalBinaryValue, evalSignedBinary]
     rw [wrapSigned_i32_of_nonnegative program.target _
       (by change 0 ≤ (slot : Int) + (offset : Int); omega)
@@ -130,7 +130,7 @@ theorem output_slot_expression
   have header : Evaluates program before
       (.binary .add offsetExpression (.value (.signed .i32 4))) (.signed .i32 (offset + 4)) middle := by
     apply evaluatesEagerBinary (by decide) (by decide) offsetRead
-      (show Evaluates program middle (.value (.signed .i32 4)) (.signed .i32 4) middle from ⟨1, rfl⟩)
+      (show Evaluates program middle (.value (.signed .i32 4)) (.signed .i32 4) middle from Lanius.Semantics.evaluatesValue)
     simp only [evalBinaryValue, evalSignedBinary]
     rw [wrapSigned_i32_of_nonnegative program.target _ (by omega) (by omega)]
     rfl
@@ -138,7 +138,7 @@ theorem output_slot_expression
       (.binary .subtract remainingExpression (.value (.signed .i32 1)))
       (.signed .i32 (remaining - 1)) after := by
     apply evaluatesEagerBinary (by decide) (by decide) remainingRead
-      (show Evaluates program after (.value (.signed .i32 1)) (.signed .i32 1) after from ⟨1, rfl⟩)
+      (show Evaluates program after (.value (.signed .i32 1)) (.signed .i32 1) after from Lanius.Semantics.evaluatesValue)
     simp only [evalBinaryValue, evalSignedBinary]
     rw [wrapSigned_i32_of_nonnegative program.target _ (by omega) (by omega)]
     rfl
@@ -148,7 +148,7 @@ theorem output_slot_expression
       (.binary .multiply (.binary .subtract remainingExpression (.value (.signed .i32 1)))
         (.value (.signed .i32 3))) (.signed .i32 ((remaining - 1) * 3)) after := by
     apply evaluatesEagerBinary (by decide) (by decide) predecessor
-      (show Evaluates program after (.value (.signed .i32 3)) (.signed .i32 3) after from ⟨1, rfl⟩)
+      (show Evaluates program after (.value (.signed .i32 3)) (.signed .i32 3) after from Lanius.Semantics.evaluatesValue)
     simp only [evalBinaryValue, evalSignedBinary]
     rw [wrapSigned_i32_of_nonnegative program.target _ bounds.1 bounds.2.1]
     rfl

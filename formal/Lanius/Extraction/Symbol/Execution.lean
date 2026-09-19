@@ -332,6 +332,73 @@ theorem returnMatch_run_id
   subst id
   exact returnMatch_run kind length environment _ found rfl
 
+private structure FirstCase where
+  expected : Int
+  kind : Int
+  length : Int
+  id : ConstantId
+  idEq : Structure.tokenKindConstantId kind = id
+  found : verifiedFrontendCore.constant? id = some {
+    id := id
+    type := Structure.i32
+    value := .signed .i32 kind
+  }
+
+private def firstCases (cases : List FirstCase)
+    (fallback : FirstCase) : Structure.PCommand 6 :=
+  Structure.orderedCases
+    (cases.map fun entry =>
+      (Structure.equal (Structure.slot 4) (Structure.integer entry.expected),
+        Structure.returnMatch entry.kind entry.length))
+    (Structure.returnMatch fallback.kind fallback.length)
+
+private def firstCaseResult (cases : List FirstCase)
+    (fallback : FirstCase) (second : Int) : Behavior.Match :=
+  match cases with
+  | [] => ⟨fallback.kind, fallback.length⟩
+  | head :: tail =>
+      if second = head.expected then ⟨head.kind, head.length⟩
+      else firstCaseResult tail fallback second
+
+private theorem firstCases_run
+    (world : ReadOnly.World) (baseEnvironment : Env 3)
+    (first second third : Int)
+    (cases : List FirstCase) (fallback : FirstCase) :
+    Acyclic.run? termEvaluationMachine commandEvaluationMachine world
+        (caseEnvironment baseEnvironment first second third)
+        (firstCases cases fallback).denote =
+      some (.returned (some (Semantics.value
+        (firstCaseResult cases fallback second).kind
+        (firstCaseResult cases fallback second).length)), world,
+        caseEnvironment baseEnvironment first second third) := by
+  induction cases with
+  | nil =>
+      simpa [firstCases, Structure.orderedCases, firstCaseResult] using
+        (returnMatch_run_id fallback.kind fallback.length fallback.id _
+          fallback.idEq fallback.found)
+  | cons head tail ih =>
+      change Acyclic.run? termEvaluationMachine commandEvaluationMachine world
+          (caseEnvironment baseEnvironment first second third)
+          (Structure.orderedCases
+            ((Structure.equal (Structure.slot 4) (Structure.integer head.expected),
+              Structure.returnMatch head.kind head.length) ::
+              List.map (fun entry =>
+                (Structure.equal (Structure.slot 4) (Structure.integer entry.expected),
+                  Structure.returnMatch entry.kind entry.length)) tail)
+            (Structure.returnMatch fallback.kind fallback.length)).denote = _
+      simp only [Structure.orderedCases, List.foldr,
+        Structure.sequence_denote,
+        Structure.ifThenElse_denote, Structure.skip_denote, Acyclic.run?.eq_2,
+        Acyclic.run?.eq_7, evaluate_equal_second]
+      by_cases hmatch : second = head.expected
+      · rw [show decide (second = head.expected) = true by simp [hmatch]]
+        simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_10]
+        rw [returnMatch_run_id head.kind head.length head.id _ head.idEq head.found]
+        simp [firstCaseResult, hmatch]
+      · rw [show decide (second = head.expected) = false by simp [hmatch]]
+        simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7]
+        simpa [firstCases, Structure.orderedCases, firstCaseResult, hmatch] using ih
+
 theorem first60_run (world : ReadOnly.World)
     (baseEnvironment : Env 3) (first second third : Int) :
     Acyclic.run? termEvaluationMachine commandEvaluationMachine world
@@ -419,27 +486,13 @@ theorem first43_run (world : ReadOnly.World)
         (Behavior.classify 43 second third).kind
         (Behavior.classify 43 second third).length)),
         world, caseEnvironment baseEnvironment first second third) := by
-  simp only [Structure.first43, Structure.orderedCases, List.foldr,
-    Structure.sequence_denote, Structure.ifThenElse_denote,
-    Structure.skip_denote]
-  by_cases second61 : second = 61
-  · subst second
-    simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 46 2 48 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
-  · by_cases second43 : second = 43
-    · subst second
-      simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-        evaluate_equal_second, decide_true, decide_false, second61,
-        Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 56 2 58 _ (by decide) (by rfl)]
-      simp [Behavior.classify]
-    · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-        evaluate_equal_second, decide_false, second61, second43,
-        Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 6 1 12 _ (by decide) (by rfl)]
-      simp [Behavior.classify]
+  have result := firstCases_run world baseEnvironment first second third
+    [⟨61, 46, 2, 48, by decide, by rfl⟩,
+      ⟨43, 56, 2, 58, by decide, by rfl⟩]
+      ⟨0, 6, 1, 12, by decide, by rfl⟩
+  by_cases second61 : second = 61 <;> by_cases second43 : second = 43 <;>
+    simpa [firstCases, firstCaseResult, Structure.first43,
+      Behavior.classify, second61, second43] using result
 
 theorem first45_run (world : ReadOnly.World)
     (baseEnvironment : Env 3) (first second third : Int) :
@@ -449,34 +502,15 @@ theorem first45_run (world : ReadOnly.World)
         (Behavior.classify 45 second third).kind
         (Behavior.classify 45 second third).length)),
         world, caseEnvironment baseEnvironment first second third) := by
-  simp only [Structure.first45, Structure.orderedCases, List.foldr,
-    Structure.sequence_denote, Structure.ifThenElse_denote,
-    Structure.skip_denote]
-  by_cases second61 : second = 61
-  · subst second
-    simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 47 2 49 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
-  · by_cases second45 : second = 45
-    · subst second
-      simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-        evaluate_equal_second, decide_true, decide_false, second61,
-        Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 57 2 59 _ (by decide) (by rfl)]
-      simp [Behavior.classify]
-    · by_cases second62 : second = 62
-      · subst second
-        simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-          evaluate_equal_second, decide_true, decide_false, second61,
-          second45, Behavior.classify, if_pos, if_false]
-        rw [returnMatch_run_id 75 2 69 _ (by decide) (by rfl)]
-        simp [Behavior.classify]
-      · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-          evaluate_equal_second, decide_false, second61, second45,
-          second62, Behavior.classify, if_pos, if_false]
-        rw [returnMatch_run_id 27 1 33 _ (by decide) (by rfl)]
-        simp [Behavior.classify]
+  have result := firstCases_run world baseEnvironment first second third
+    [⟨61, 47, 2, 49, by decide, by rfl⟩,
+      ⟨45, 57, 2, 59, by decide, by rfl⟩,
+      ⟨62, 75, 2, 69, by decide, by rfl⟩]
+      ⟨0, 27, 1, 33, by decide, by rfl⟩
+  by_cases second61 : second = 61 <;> by_cases second45 : second = 45 <;>
+      by_cases second62 : second = 62 <;>
+    simpa [firstCases, firstCaseResult, Structure.first45,
+      Behavior.classify, second61, second45, second62] using result
 
 theorem first61_run (world : ReadOnly.World)
     (baseEnvironment : Env 3) (first second third : Int) :
@@ -486,27 +520,13 @@ theorem first61_run (world : ReadOnly.World)
         (Behavior.classify 61 second third).kind
         (Behavior.classify 61 second third).length)),
         world, caseEnvironment baseEnvironment first second third) := by
-  simp only [Structure.first61, Structure.orderedCases, List.foldr,
-    Structure.sequence_denote, Structure.ifThenElse_denote,
-    Structure.skip_denote]
-  by_cases second61 : second = 61
-  · subst second
-    simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 16 2 22 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
-  · by_cases second62 : second = 62
-    · subst second
-      simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-        evaluate_equal_second, decide_true, decide_false, second61,
-        Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 113 2 86 _ (by decide) (by rfl)]
-      simp [Behavior.classify]
-    · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-        evaluate_equal_second, decide_false, second61, second62,
-        Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 8 1 14 _ (by decide) (by rfl)]
-      simp [Behavior.classify]
+  have result := firstCases_run world baseEnvironment first second third
+    [⟨61, 16, 2, 22, by decide, by rfl⟩,
+      ⟨62, 113, 2, 86, by decide, by rfl⟩]
+      ⟨0, 8, 1, 14, by decide, by rfl⟩
+  by_cases second61 : second = 61 <;> by_cases second62 : second = 62 <;>
+    simpa [firstCases, firstCaseResult, Structure.first61,
+      Behavior.classify, second61, second62] using result
 
 theorem first47_run (world : ReadOnly.World)
     (baseEnvironment : Env 3) (first second third : Int) :
@@ -516,34 +536,15 @@ theorem first47_run (world : ReadOnly.World)
         (Behavior.classify 47 second third).kind
         (Behavior.classify 47 second third).length)),
         world, caseEnvironment baseEnvironment first second third) := by
-  simp only [Structure.first47, Structure.orderedCases, List.foldr,
-    Structure.sequence_denote, Structure.ifThenElse_denote,
-    Structure.skip_denote]
-  by_cases second47 : second = 47
-  · subst second
-    simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 10 2 16 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
-  · by_cases second42 : second = 42
-    · subst second
-      simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-        evaluate_equal_second, decide_true, decide_false, second47,
-        Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 11 2 17 _ (by decide) (by rfl)]
-      simp [Behavior.classify]
-    · by_cases second61 : second = 61
-      · subst second
-        simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-          evaluate_equal_second, decide_true, decide_false, second47,
-          second42, Behavior.classify, if_pos, if_false]
-        rw [returnMatch_run_id 49 2 51 _ (by decide) (by rfl)]
-        simp [Behavior.classify]
-      · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-          evaluate_equal_second, decide_false, second47, second42,
-          second61, Behavior.classify, if_pos, if_false]
-        rw [returnMatch_run_id 9 1 15 _ (by decide) (by rfl)]
-        simp [Behavior.classify]
+  have result := firstCases_run world baseEnvironment first second third
+    [⟨47, 10, 2, 16, by decide, by rfl⟩,
+      ⟨42, 11, 2, 17, by decide, by rfl⟩,
+      ⟨61, 49, 2, 51, by decide, by rfl⟩]
+      ⟨0, 9, 1, 15, by decide, by rfl⟩
+  by_cases second47 : second = 47 <;> by_cases second42 : second = 42 <;>
+      by_cases second61 : second = 61 <;>
+    simpa [firstCases, firstCaseResult, Structure.first47,
+      Behavior.classify, second47, second42, second61] using result
 
 theorem first38_run (world : ReadOnly.World)
     (baseEnvironment : Env 3) (first second third : Int) :
@@ -553,27 +554,13 @@ theorem first38_run (world : ReadOnly.World)
         (Behavior.classify 38 second third).kind
         (Behavior.classify 38 second third).length)),
         world, caseEnvironment baseEnvironment first second third) := by
-  simp only [Structure.first38, Structure.orderedCases, List.foldr,
-    Structure.sequence_denote, Structure.ifThenElse_denote,
-    Structure.skip_denote]
-  by_cases second38 : second = 38
-  · subst second
-    simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 17 2 23 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
-  · by_cases second61 : second = 61
-    · subst second
-      simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-        evaluate_equal_second, decide_true, decide_false, second38,
-        Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 54 2 56 _ (by decide) (by rfl)]
-      simp [Behavior.classify]
-    · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-        evaluate_equal_second, decide_false, second38, second61,
-        Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 25 1 31 _ (by decide) (by rfl)]
-      simp [Behavior.classify]
+  have result := firstCases_run world baseEnvironment first second third
+    [⟨38, 17, 2, 23, by decide, by rfl⟩,
+      ⟨61, 54, 2, 56, by decide, by rfl⟩]
+      ⟨0, 25, 1, 31, by decide, by rfl⟩
+  by_cases second38 : second = 38 <;> by_cases second61 : second = 61 <;>
+    simpa [firstCases, firstCaseResult, Structure.first38,
+      Behavior.classify, second38, second61] using result
 
 theorem first124_run (world : ReadOnly.World)
     (baseEnvironment : Env 3) (first second third : Int) :
@@ -583,27 +570,13 @@ theorem first124_run (world : ReadOnly.World)
         (Behavior.classify 124 second third).kind
         (Behavior.classify 124 second third).length)),
         world, caseEnvironment baseEnvironment first second third) := by
-  simp only [Structure.first124, Structure.orderedCases, List.foldr,
-    Structure.sequence_denote, Structure.ifThenElse_denote,
-    Structure.skip_denote]
-  by_cases second124 : second = 124
-  · subst second
-    simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 18 2 24 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
-  · by_cases second61 : second = 61
-    · subst second
-      simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-        evaluate_equal_second, decide_true, decide_false, second124,
-        Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 55 2 57 _ (by decide) (by rfl)]
-      simp [Behavior.classify]
-    · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-        evaluate_equal_second, decide_false, second124, second61,
-        Behavior.classify, if_pos, if_false]
-      rw [returnMatch_run_id 26 1 32 _ (by decide) (by rfl)]
-      simp [Behavior.classify]
+  have result := firstCases_run world baseEnvironment first second third
+    [⟨124, 18, 2, 24, by decide, by rfl⟩,
+      ⟨61, 55, 2, 57, by decide, by rfl⟩]
+      ⟨0, 26, 1, 32, by decide, by rfl⟩
+  by_cases second124 : second = 124 <;> by_cases second61 : second = 61 <;>
+    simpa [firstCases, firstCaseResult, Structure.first124,
+      Behavior.classify, second124, second61] using result
 
 theorem first33_run (world : ReadOnly.World)
     (baseEnvironment : Env 3) (first second third : Int) :
@@ -613,20 +586,14 @@ theorem first33_run (world : ReadOnly.World)
         (Behavior.classify 33 second third).kind
         (Behavior.classify 33 second third).length)),
         world, caseEnvironment baseEnvironment first second third) := by
-  simp only [Structure.first33, Structure.orderedCases, List.foldr,
-    Structure.sequence_denote, Structure.ifThenElse_denote,
-    Structure.skip_denote]
+  have result := firstCases_run world baseEnvironment first second third
+    [⟨61, 40, 2, 42, by decide, by rfl⟩]
+      ⟨0, 19, 1, 25, by decide, by rfl⟩
   by_cases second61 : second = 61
-  · subst second
-    simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 40 2 42 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
-  · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_false, second61,
-      Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 19 1 25 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
+  · simpa [firstCases, firstCaseResult, Structure.first33,
+      Behavior.classify, second61] using result
+  · simpa [firstCases, firstCaseResult, Structure.first33,
+      Behavior.classify, second61] using result
 
 theorem first42_run (world : ReadOnly.World)
     (baseEnvironment : Env 3) (first second third : Int) :
@@ -636,20 +603,14 @@ theorem first42_run (world : ReadOnly.World)
         (Behavior.classify 42 second third).kind
         (Behavior.classify 42 second third).length)),
         world, caseEnvironment baseEnvironment first second third) := by
-  simp only [Structure.first42, Structure.orderedCases, List.foldr,
-    Structure.sequence_denote, Structure.ifThenElse_denote,
-    Structure.skip_denote]
+  have result := firstCases_run world baseEnvironment first second third
+    [⟨61, 48, 2, 50, by decide, by rfl⟩]
+      ⟨0, 7, 1, 13, by decide, by rfl⟩
   by_cases second61 : second = 61
-  · subst second
-    simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 48 2 50 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
-  · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_false, second61,
-      Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 7 1 13 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
+  · simpa [firstCases, firstCaseResult, Structure.first42,
+      Behavior.classify, second61] using result
+  · simpa [firstCases, firstCaseResult, Structure.first42,
+      Behavior.classify, second61] using result
 
 theorem first37_run (world : ReadOnly.World)
     (baseEnvironment : Env 3) (first second third : Int) :
@@ -659,20 +620,14 @@ theorem first37_run (world : ReadOnly.World)
         (Behavior.classify 37 second third).kind
         (Behavior.classify 37 second third).length)),
         world, caseEnvironment baseEnvironment first second third) := by
-  simp only [Structure.first37, Structure.orderedCases, List.foldr,
-    Structure.sequence_denote, Structure.ifThenElse_denote,
-    Structure.skip_denote]
+  have result := firstCases_run world baseEnvironment first second third
+    [⟨61, 50, 2, 52, by decide, by rfl⟩]
+      ⟨0, 41, 1, 43, by decide, by rfl⟩
   by_cases second61 : second = 61
-  · subst second
-    simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 50 2 52 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
-  · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_false, second61,
-      Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 41 1 43 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
+  · simpa [firstCases, firstCaseResult, Structure.first37,
+      Behavior.classify, second61] using result
+  · simpa [firstCases, firstCaseResult, Structure.first37,
+      Behavior.classify, second61] using result
 
 theorem first94_run (world : ReadOnly.World)
     (baseEnvironment : Env 3) (first second third : Int) :
@@ -682,20 +637,14 @@ theorem first94_run (world : ReadOnly.World)
         (Behavior.classify 94 second third).kind
         (Behavior.classify 94 second third).length)),
         world, caseEnvironment baseEnvironment first second third) := by
-  simp only [Structure.first94, Structure.orderedCases, List.foldr,
-    Structure.sequence_denote, Structure.ifThenElse_denote,
-    Structure.skip_denote]
+  have result := firstCases_run world baseEnvironment first second third
+    [⟨61, 51, 2, 53, by decide, by rfl⟩]
+      ⟨0, 42, 1, 44, by decide, by rfl⟩
   by_cases second61 : second = 61
-  · subst second
-    simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 51 2 53 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
-  · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_false, second61,
-      Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 42 1 44 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
+  · simpa [firstCases, firstCaseResult, Structure.first94,
+      Behavior.classify, second61] using result
+  · simpa [firstCases, firstCaseResult, Structure.first94,
+      Behavior.classify, second61] using result
 
 theorem first46_run (world : ReadOnly.World)
     (baseEnvironment : Env 3) (first second third : Int) :
@@ -705,20 +654,14 @@ theorem first46_run (world : ReadOnly.World)
         (Behavior.classify 46 second third).kind
         (Behavior.classify 46 second third).length)),
         world, caseEnvironment baseEnvironment first second third) := by
-  simp only [Structure.first46, Structure.orderedCases, List.foldr,
-    Structure.sequence_denote, Structure.ifThenElse_denote,
-    Structure.skip_denote]
+  have result := firstCases_run world baseEnvironment first second third
+    [⟨46, 182, 2, 87, by decide, by rfl⟩]
+      ⟨0, 35, 1, 37, by decide, by rfl⟩
   by_cases second46 : second = 46
-  · subst second
-    simp only [Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_true, Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 182 2 87 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
-  · simp only [Acyclic.run?.eq_1, Acyclic.run?.eq_2, Acyclic.run?.eq_7,
-      evaluate_equal_second, decide_false, second46,
-      Behavior.classify, if_pos, if_false]
-    rw [returnMatch_run_id 35 1 37 _ (by decide) (by rfl)]
-    simp [Behavior.classify]
+  · simpa [firstCases, firstCaseResult, Structure.first46,
+      Behavior.classify, second46] using result
+  · simpa [firstCases, firstCaseResult, Structure.first46,
+      Behavior.classify, second46] using result
 
 macro "simplify_symbol_cases" : tactic =>
   `(tactic|

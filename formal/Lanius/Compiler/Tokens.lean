@@ -268,6 +268,8 @@ theorem TokenKind.ofGpuCode_gpuCode (kind : TokenKind) :
 
 theorem TokenKind.gpuCode_injective : Function.Injective TokenKind.gpuCode := by
   intro left right equalCodes
-  cases left <;> cases right <;> simp [TokenKind.gpuCode] at equalCodes <;> rfl
+  have equalOptions := congrArg TokenKind.ofGpuCode equalCodes
+  exact Option.some.inj (by
+    simpa only [TokenKind.ofGpuCode_gpuCode] using equalOptions)
 
 end Lanius.Compiler

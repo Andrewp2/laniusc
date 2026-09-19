@@ -99,14 +99,14 @@ theorem rejectsLoop (reader : Host.CheckedExternal program .read 3)
         ih _ decreased afterIteration nextSource rfl
       refine ⟨after, copied, finalReads, ?_, done, sourcePrefix, world,
         Nat.lt_trans (Nat.lt_succ_self _) moreReads, effect.trans finalEffect⟩
-      exact executesWhileTrueThen ⟨1, rfl⟩ (by simpa [Memory.completion, nonempty] using iteration) rest
+      exact executesWhileTrueThen Lanius.Semantics.evaluatesValue (by simpa [Memory.completion, nonempty] using iteration) rest
     · have consumed : processed.length + (memory.chunk processed).length = memory.capacity + 1 := by
         have chunkBound : (memory.chunk processed).length ≤ requestSize (memory.capacity - processed.length) := List.length_take_le _ _
         have := (requestSize_bounds (memory.capacity - processed.length)).2.2
         have := invariant.capacity
         omega
       obtain ⟨after, run, done, world, effect⟩ := iterationOversized reader wordsFound wordsValue invariant sizeFit (by omega)
-      exact ⟨after, processed, reads + 1, executesWhileReturned ⟨1, rfl⟩ run, done, ⟨remaining, source.symm⟩,
+      exact ⟨after, processed, reads + 1, executesWhileReturned Lanius.Semantics.evaluatesValue run, done, ⟨remaining, source.symm⟩,
         by simpa only [consumed] using world, Nat.lt_succ_self _, effect⟩
 
 /-- The common loop boundary for fitting and oversized inputs. Both cases

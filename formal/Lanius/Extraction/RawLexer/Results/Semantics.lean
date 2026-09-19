@@ -53,7 +53,7 @@ theorem accessorBody_executes
         wellFormed (by simp)
   have localEvaluation : Evaluates verifiedFrontendCore callee (.local 0)
       (.structure 4 fields) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedFrontendCore callee 0 _ localFound⟩
+    evaluatesLocal localFound
   have fieldEvaluation : Evaluates verifiedFrontendCore callee
       (.field (.local 0) field) result callee :=
     evaluatesStructureField localEvaluation found
@@ -226,11 +226,11 @@ private theorem localEvaluation
     (state : State) (id : VarId) (localValue : Value)
     (found : state.local? id = some localValue) :
     Evaluates verifiedFrontendCore state (.local id) localValue state :=
-  ⟨1, evalLocal_of_local 1 verifiedFrontendCore state id localValue found⟩
+  evaluatesLocal found
 
 private theorem literalEvaluation (state : State) (literalValue : Value) :
     Evaluates verifiedFrontendCore state (.value literalValue)
-      literalValue state := ⟨1, rfl⟩
+      literalValue state := evaluatesValue
 
 private theorem constructorExpression_evaluates
     (state : State) (statusExpression tokenCountExpression

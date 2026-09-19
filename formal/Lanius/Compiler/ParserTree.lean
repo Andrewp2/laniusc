@@ -286,6 +286,29 @@ def materializeRoot?
   else
     none
 
+private theorem materializeStatePrefix?_append
+    {grammar : IndexedGrammar} {tokens : List Nat}
+    {workspace : LogicalWorkspace} {fuel stateId : Nat}
+    {trees : List ParseTree} {rhs : List Nat}
+    {dot start middle finish symbol : Nat} {tree : ParseTree}
+    (computed : materializeStatePrefix? grammar workspace fuel stateId =
+      some (trees ++ [tree]))
+    (recognizedPrefix : ParseTreesRecognizeSequence grammar tokens trees
+      (List.take dot rhs) start middle)
+    (symbolFound : rhs[dot]? = some symbol)
+    (treeRecognizes : ParseTreeRecognizesSymbol grammar tokens tree symbol middle finish) :
+    materializeStatePrefix? grammar workspace fuel stateId =
+        some (trees ++ [tree]) ∧
+      ParseTreesRecognizeSequence grammar tokens (trees ++ [tree])
+        (List.take (dot + 1) rhs) start finish := by
+  have dotBound := List.getElem?_eq_some_iff.mp symbolFound |>.1
+  have symbolEq : rhs[dot] = symbol := by
+    rw [List.getElem?_eq_getElem dotBound] at symbolFound
+    exact Option.some.inj symbolFound
+  refine ⟨computed, ?_⟩
+  rw [List.take_succ_eq_append_getElem dotBound]
+  simpa only [symbolEq] using recognizedPrefix.append_symbol treeRecognizes
+
 /-- The complete semantic contract retained for one recognizer workspace.
     Keeping the derivation meaning and its materializable representation in
     one object prevents parser phases from preserving one while silently
@@ -460,32 +483,15 @@ theorem WorkspaceBackpointersSound.materializeStatePrefix?_complete
               obtain ⟨previousTrees, previousComputed, previousRecognize⟩ :=
                 ih previousId previousBefore previousFound
                   previousProductionBound (fuel := remainingFuel) (by omega)
-              have dotBound : previous.dot <
-                  (grammar.productionAt
-                    ⟨previous.production, previousProductionBound⟩).rhs.length :=
-                List.getElem?_eq_some_iff.mp symbolFound |>.1
-              have symbolEq :
-                  (grammar.productionAt
-                    ⟨previous.production, previousProductionBound⟩).rhs[
-                      previous.dot] = semanticKind := by
-                rw [List.getElem?_eq_getElem dotBound] at symbolFound
-                exact Option.some.inj symbolFound
               let leaf := ParseTree.terminal (previous.position / 2) semanticKind
-              refine ⟨previousTrees ++ [leaf], ?_, ?_⟩
-              · simp [materializeStatePrefix?, found, previousComputed,
-                  EarleyState.advanceSeed, StateSeed.atPosition, leaf]
-              · have leafRecognizes : ParseTreeRecognizesSymbol grammar tokens
+              have leafRecognizes : ParseTreeRecognizesSymbol grammar tokens
                     leaf semanticKind previous.position finish :=
-                  .terminal rfl semanticKindBound scanned
-                have appended := previousRecognize.append_symbol leafRecognizes
-                change ParseTreesRecognizeSequence grammar tokens
-                  (previousTrees ++ [leaf])
-                  (List.take (previous.dot + 1)
-                    (grammar.productionAt
-                      ⟨previous.production, previousProductionBound⟩).rhs)
-                  previous.origin finish
-                rw [List.take_succ_eq_append_getElem dotBound]
-                simpa only [symbolEq] using appended
+                .terminal rfl semanticKindBound scanned
+              refine ⟨previousTrees ++ [leaf], ?_⟩
+              refine materializeStatePrefix?_append (computed := ?_)
+                previousRecognize symbolFound leafRecognizes
+              simp [materializeStatePrefix?, found, previousComputed,
+                EarleyState.advanceSeed, StateSeed.atPosition, leaf]
           | nonterminal previousFound previousBefore childFound childBefore
               previousProductionBound childProductionBound symbolFound
               childLhsBound childOrigin childComplete =>
@@ -496,19 +502,6 @@ theorem WorkspaceBackpointersSound.materializeStatePrefix?_complete
               obtain ⟨childTrees, childComputed, childRecognize⟩ :=
                 ih childId childBefore childFound childProductionBound
                   (fuel := remainingFuel) (by omega)
-              have previousDotBound : previous.dot <
-                  (grammar.productionAt
-                    ⟨previous.production, previousProductionBound⟩).rhs.length :=
-                List.getElem?_eq_some_iff.mp symbolFound |>.1
-              have symbolEq :
-                  (grammar.productionAt
-                    ⟨previous.production, previousProductionBound⟩).rhs[
-                      previous.dot] =
-                    grammar.grammar.n_kinds +
-                      (grammar.productionAt
-                        ⟨child.production, childProductionBound⟩).lhs := by
-                rw [List.getElem?_eq_getElem previousDotBound] at symbolFound
-                exact Option.some.inj symbolFound
               have childCompleteRecognize : ParseTreesRecognizeSequence
                   grammar tokens childTrees
                   (grammar.productionAt
@@ -519,34 +512,21 @@ theorem WorkspaceBackpointersSound.materializeStatePrefix?_complete
                 (grammar.productionAt
                   ⟨child.production, childProductionBound⟩).lhs
                 child.origin child.position childTrees
-              refine ⟨previousTrees ++ [childTree], ?_, ?_⟩
-              · simp [materializeStatePrefix?, found, previousComputed,
-                  childFound, childProductionBound, childComputed,
-                  EarleyState.advanceSeed, StateSeed.atPosition, childTree]
-              · have childTreeRecognizes : ParseTreeRecognizesSymbol grammar tokens
+              have childTreeRecognizes : ParseTreeRecognizesSymbol grammar tokens
                     childTree
                     (grammar.grammar.n_kinds +
                       (grammar.productionAt
                         ⟨child.production, childProductionBound⟩).lhs)
                     child.origin child.position :=
-                  .nonterminal childLhsBound childProductionBound rfl
-                    childCompleteRecognize
-                have childAtPrevious : ParseTreeRecognizesSymbol grammar tokens
-                    childTree
-                    (grammar.grammar.n_kinds +
-                      (grammar.productionAt
-                        ⟨child.production, childProductionBound⟩).lhs)
-                    previous.position child.position := by
-                  simpa [childOrigin] using childTreeRecognizes
-                have appended := previousRecognize.append_symbol childAtPrevious
-                change ParseTreesRecognizeSequence grammar tokens
-                  (previousTrees ++ [childTree])
-                  (List.take (previous.dot + 1)
-                    (grammar.productionAt
-                      ⟨previous.production, previousProductionBound⟩).rhs)
-                  previous.origin child.position
-                rw [List.take_succ_eq_append_getElem previousDotBound]
-                simpa only [symbolEq] using appended
+                .nonterminal childLhsBound childProductionBound rfl
+                  childCompleteRecognize
+              refine ⟨previousTrees ++ [childTree], ?_⟩
+              refine materializeStatePrefix?_append (finish := child.position) (computed := ?_)
+                previousRecognize symbolFound
+                (by simpa [childOrigin] using childTreeRecognizes)
+              simp [materializeStatePrefix?, found, previousComputed,
+                childFound, childProductionBound, childComputed,
+                EarleyState.advanceSeed, StateSeed.atPosition, childTree]
 /-- Decreasing backpointers reconstruct the exact concrete child prefix of
     every stored Earley item. This existential interface is retained for
     proof clients; its witness is produced by the executable walker above. -/

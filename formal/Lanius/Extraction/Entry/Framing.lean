@@ -122,10 +122,10 @@ theorem Stage.executes (stage : Stage) (text : Text.Checked program byte)
     (by rw [bytes_length]; decide) supported.padded supported.emitted
     (.cons (local_evaluates program.core (id := stage.output)
       (by simpa only [List.length_nil, Nat.zero_add] using outputReady))
-      (.cons (show Evaluates program.core ready (number stage.capacity) (.signed .i32 stage.capacity) ready from ⟨1, rfl⟩)
-        (.cons (show Evaluates program.core ready (number 0) (.signed .i32 0) ready from ⟨1, rfl⟩)
+      (.cons (show Evaluates program.core ready (number stage.capacity) (.signed .i32 stage.capacity) ready from evaluatesValue)
+        (.cons (show Evaluates program.core ready (number 0) (.signed .i32 0) ready from evaluatesValue)
           (.cons (local_evaluates program.core prefixReady)
-            (.cons (show Evaluates program.core ready (number bytes.length) (.signed .i32 bytes.length) ready from ⟨1, rfl⟩)
+            (.cons (show Evaluates program.core ready (number bytes.length) (.signed .i32 bytes.length) ready from evaluatesValue)
               (.nil _ _))))))
   have fits : ([] : List Int).length + bytes.length ≤ stage.capacity := by
     simpa only [List.length_nil, Nat.zero_add] using supported.room
@@ -159,7 +159,7 @@ theorem Stage.executes (stage : Stage) (text : Text.Checked program byte)
       (.boolean false) middle := by
     apply evaluatesEagerBinary (by decide) (by decide)
       (local_evaluates program.core (Assertion.localPointsTo_local _ _ _ _ owned))
-      (show Evaluates program.core middle (number bytes.length) (.signed .i32 bytes.length) middle from ⟨1, rfl⟩)
+      (show Evaluates program.core middle (number bytes.length) (.signed .i32 bytes.length) middle from evaluatesValue)
     simp [evalBinaryValue, scalarEqual]
   obtain ⟨after, continued, satisfied⟩ := continuationRun middle written.nextCell
     (bindLocal_preserves_well_formed written stage.position (.signed .i32 bytes.length) effect.wellFormed)
@@ -171,11 +171,11 @@ theorem Stage.executes (stage : Stage) (text : Text.Checked program byte)
         change before.nextCell + 1 + 1 ≤ written.nextCell at fresh
         exact Nat.le_trans (Nat.le_trans (Nat.le_succ _) (Nat.le_succ _)) fresh)
     suffixMiddle
-    (.letLocal (show Evaluates program.core before (.value (.string stage.prefixText)) (.string stage.prefixText) before from ⟨1, rfl⟩)
-      (.letLocal (show Evaluates program.core prefixState (.value (.string stage.suffixText)) (.string stage.suffixText) prefixState from ⟨1, rfl⟩)
+    (.letLocal (show Evaluates program.core before (.value (.string stage.prefixText)) (.string stage.prefixText) before from evaluatesValue)
+      (.letLocal (show Evaluates program.core prefixState (.value (.string stage.suffixText)) (.string stage.suffixText) prefixState from evaluatesValue)
         (.letLocal call (.sequence (executesIfFalse guard (executesSkip _ _)) .here))))
-  exact ⟨_, executesLetLocal (show Evaluates program.core before (.value (.string stage.prefixText)) (.string stage.prefixText) before from ⟨1, rfl⟩)
-    (executesLetLocal (show Evaluates program.core prefixState (.value (.string stage.suffixText)) (.string stage.suffixText) prefixState from ⟨1, rfl⟩)
+  exact ⟨_, executesLetLocal (show Evaluates program.core before (.value (.string stage.prefixText)) (.string stage.prefixText) before from evaluatesValue)
+    (executesLetLocal (show Evaluates program.core prefixState (.value (.string stage.suffixText)) (.string stage.suffixText) prefixState from evaluatesValue)
       (executesLetLocal call (executesSequence (executesIfFalse guard (executesSkip _ _)) continued))), satisfied⟩
 
 end Lanius.Extraction.Entry.Framing

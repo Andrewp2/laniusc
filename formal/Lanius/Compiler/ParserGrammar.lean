@@ -31,6 +31,13 @@ def IndexedGrammar.productionAt (grammar : IndexedGrammar)
   grammar.grammar.productions.get ⟨productionId, by
     simpa [IndexedGrammar.productionCount] using productionId.isLt⟩
 
+@[simp] theorem IndexedGrammar.productionAt_lookup
+    (grammar : IndexedGrammar) (productionId : Fin grammar.productionCount) :
+    grammar.grammar.production? productionId =
+      some (grammar.productionAt productionId) := by
+  simp [Lanius.Extraction.Grammar.production?, IndexedGrammar.productionAt,
+    IndexedGrammar.productionCount]
+
 def IndexedGrammar.rhsSymbols (grammar : IndexedGrammar) : List Nat :=
   grammar.grammar.productions.flatMap (fun production => production.rhs)
 
@@ -314,6 +321,26 @@ theorem flatten_get_at_row
           have selected := shifted.trans previous
           simpa [Nat.add_assoc] using selected
 
+theorem flatten_get_at_offset
+    (rows : List (List α)) (row : Fin rows.length)
+    (index : Nat)
+    (indexBound : index < (rows.get row).length)
+    (bound :
+      (offsetsFrom 0 rows).get
+          ⟨row, by simpa using row.isLt⟩ + index < rows.flatten.length) :
+    rows.flatten.get
+        ⟨(offsetsFrom 0 rows).get
+              ⟨row, by simpa using row.isLt⟩ + index, bound⟩ =
+      (rows.get row).get ⟨index, indexBound⟩ := by
+  have offsetEq := offsetsFrom_get_eq_cursor_add_prefix 0 rows row
+  simp only [Nat.zero_add] at offsetEq
+  have selected := flatten_get_at_row rows row index row.isLt indexBound (by
+    rw [← offsetEq]
+    exact bound)
+  have same := getElem_congr (rfl : rows.flatten = rows.flatten)
+    (congrArg (fun value : Nat => value + index) offsetEq) bound
+  simpa [List.get_eq_getElem] using same.trans selected
+
 @[simp] theorem IndexedGrammar.rhsOffsets_length
     (grammar : IndexedGrammar) :
     grammar.rhsOffsets.length = grammar.productionCount := by
@@ -335,7 +362,7 @@ theorem flatten_get_at_row
         ⟨productionId, by simpa using productionId.isLt⟩ =
       (grammar.productionAt productionId).lhs := by
   simp [IndexedGrammar.productionLhs, IndexedGrammar.productionAt,
-    IndexedGrammar.productionCount, List.get_eq_getElem]
+    IndexedGrammar.productionCount]
 
 @[simp] theorem IndexedGrammar.rhsLengths_get
     (grammar : IndexedGrammar) (productionId : Fin grammar.productionCount) :
@@ -343,7 +370,7 @@ theorem flatten_get_at_row
         ⟨productionId, by simpa using productionId.isLt⟩ =
       (grammar.productionAt productionId).rhs.length := by
   simp [IndexedGrammar.rhsLengths, IndexedGrammar.productionAt,
-    IndexedGrammar.productionCount, List.get_eq_getElem]
+    IndexedGrammar.productionCount]
 
 @[simp] theorem IndexedGrammar.lhsCounts_get
     (grammar : IndexedGrammar)
@@ -352,7 +379,7 @@ theorem flatten_get_at_row
         ⟨nonterminal, by
           simpa [IndexedGrammar.lhsCounts] using nonterminal.isLt⟩ =
       (grammar.productionsByLhs.get nonterminal).length := by
-  simp [IndexedGrammar.lhsCounts, List.get_eq_getElem]
+  simp [IndexedGrammar.lhsCounts]
 
 @[simp] theorem IndexedGrammar.lhsOffsets_length
     (grammar : IndexedGrammar) :
@@ -377,35 +404,15 @@ theorem IndexedGrammar.lhsProductions_get_at_row
             unfold IndexedGrammar.lhsOffsets IndexedGrammar.lhsProductions
             omega⟩ =
       (grammar.productionsByLhs.get nonterminal).get index := by
-  have offsetEq := offsetsFrom_get_eq_cursor_add_prefix 0
-    grammar.productionsByLhs nonterminal
-  simp only [Nat.zero_add] at offsetEq
   have fits := offsetsFrom_row_fits 0 grammar.productionsByLhs nonterminal
-  have bound : (grammar.productionsByLhs.take nonterminal).flatten.length +
-      index < grammar.productionsByLhs.flatten.length := by
-    rw [← offsetEq]
-    omega
-  have selected := flatten_get_at_row grammar.productionsByLhs
-    nonterminal index nonterminal.isLt index.isLt bound
   have targetBound :
-      (offsetsFrom 0 grammar.productionsByLhs).get
+    (offsetsFrom 0 grammar.productionsByLhs).get
           ⟨nonterminal, by simpa using nonterminal.isLt⟩ + index <
         grammar.productionsByLhs.flatten.length := by
-    rw [offsetEq]
-    exact bound
-  let targetIndex : Fin grammar.productionsByLhs.flatten.length :=
-    ⟨(offsetsFrom 0 grammar.productionsByLhs).get
-        ⟨nonterminal, by simpa using nonterminal.isLt⟩ + index, targetBound⟩
-  let prefixIndex : Fin grammar.productionsByLhs.flatten.length :=
-    ⟨(grammar.productionsByLhs.take nonterminal).flatten.length + index,
-      bound⟩
-  have indexEq : targetIndex = prefixIndex := by
-    apply Fin.ext
-    exact congrArg (fun value : Nat => value + (index : Nat)) offsetEq
-  have same := congrArg grammar.productionsByLhs.flatten.get indexEq
-  change grammar.productionsByLhs.flatten.get targetIndex =
-    (grammar.productionsByLhs.get nonterminal).get index
-  exact same.trans (by simpa [prefixIndex] using selected)
+    omega
+  simpa [IndexedGrammar.lhsOffsets, IndexedGrammar.lhsProductions] using
+    (flatten_get_at_offset grammar.productionsByLhs nonterminal index
+      index.isLt targetBound)
 
 /-- All non-iterative checks at the front of `grammar_is_valid`, stated over
     the semantic grammar and its packed layout.  The production and
@@ -548,11 +555,7 @@ theorem IndexedGrammar.WellFormed.production_validation
   · intro productionId
     exact wellFormed.productionLhsInBounds productionId
       (grammar.productionAt productionId)
-      (by
-        unfold Lanius.Extraction.Grammar.production?
-        rw [List.getElem?_eq_getElem (by
-          simpa [IndexedGrammar.productionCount] using productionId.isLt)]
-        simp [IndexedGrammar.productionAt, List.get_eq_getElem])
+      (grammar.productionAt_lookup productionId)
   · intro productionId
     let rows := grammar.grammar.productions.map (fun production =>
       production.rhs)
@@ -566,11 +569,7 @@ theorem IndexedGrammar.WellFormed.production_validation
   · intro productionId symbol member
     exact wellFormed.rhsSymbolsInBounds productionId
       (grammar.productionAt productionId) symbol
-      (by
-        unfold Lanius.Extraction.Grammar.production?
-        rw [List.getElem?_eq_getElem (by
-          simpa [IndexedGrammar.productionCount] using productionId.isLt)]
-        simp [IndexedGrammar.productionAt, List.get_eq_getElem]) member
+      (grammar.productionAt_lookup productionId) member
 
 /-- The packed RHS offset for a production selects the same symbol as direct
     indexing into that production's semantic RHS row. -/
@@ -587,42 +586,23 @@ theorem IndexedGrammar.rhsSymbolAt
     grammar.rhsSymbols.get ⟨relative + dot, symbolRowBound⟩ =
       (grammar.productionAt ⟨production, productionBound⟩).rhs.get
         ⟨dot, dotBound⟩ := by
-  dsimp only
   let rows := grammar.grammar.productions.map (fun production => production.rhs)
   have rowBound : production < rows.length := by
     simpa [rows, IndexedGrammar.productionCount] using productionBound
   have indexBound : dot < (rows.get ⟨production, rowBound⟩).length := by
     simpa [rows, IndexedGrammar.productionAt, IndexedGrammar.productionCount,
       List.get_eq_getElem, Function.comp_def] using dotBound
-  have offsetEq := offsetsFrom_get_eq_cursor_add_prefix 0 rows
-    ⟨production, rowBound⟩
-  have offsetEq' : grammar.rhsOffsets.get
-      ⟨production, by simpa using productionBound⟩ =
-      (rows.take production).flatten.length := by
-    simpa [rows, IndexedGrammar.rhsOffsets,
-      IndexedGrammar.productionCount] using offsetEq
-  have flattenedBound : (rows.take production).flatten.length + dot <
-      rows.flatten.length := by
-    rw [← offsetEq']
-    simpa [rows, IndexedGrammar.rhsSymbols, Function.comp_def] using
-      symbolRowBound
-  have selected := flatten_get_at_row rows production dot rowBound indexBound
-    flattenedBound
-  have flattenEq : grammar.rhsSymbols = rows.flatten := by
-    rfl
-  have indexEq : grammar.rhsOffsets.get
-        ⟨production, by simpa using productionBound⟩ + dot =
-      (rows.take production).flatten.length + dot :=
-    congrArg (fun offset => offset + dot) offsetEq'
-  have lhsEq := getElem_congr flattenEq indexEq symbolRowBound
-  have rowEq : rows.get ⟨production, rowBound⟩ =
-      (grammar.productionAt ⟨production, productionBound⟩).rhs := by
-    simp [rows, IndexedGrammar.productionAt, List.get_eq_getElem]
-  have rhsEq := getElem_congr
-    (valid := fun (values : List Nat) index => index < values.length)
-    rowEq rfl indexBound
-  simp only [List.get_eq_getElem]
-  exact lhsEq.trans (selected.trans rhsEq)
+  have targetBound :
+      (offsetsFrom 0 rows).get
+          ⟨production, by simpa using rowBound⟩ + dot < rows.flatten.length := by
+    simpa [rows, IndexedGrammar.rhsOffsets, IndexedGrammar.rhsSymbols,
+      IndexedGrammar.productionCount, Function.comp_def] using symbolRowBound
+  simpa [rows, IndexedGrammar.rhsOffsets,
+    IndexedGrammar.rhsSymbols, IndexedGrammar.productionCount,
+    IndexedGrammar.productionAt,
+    List.flatMap_def, List.get_eq_getElem, Function.comp_def] using
+    (flatten_get_at_offset rows ⟨production, rowBound⟩ dot indexBound
+      targetBound)
 
 theorem IndexedGrammar.productionIdsFor_member
     {grammar : IndexedGrammar} {nonterminal productionId : Nat}
@@ -635,13 +615,8 @@ theorem IndexedGrammar.productionIdsFor_member
   have productionBound : productionId < grammar.productionCount :=
     List.mem_range.mp inRange
   refine ⟨productionBound, ?_⟩
-  have found : grammar.grammar.production? productionId =
-      some (grammar.productionAt ⟨productionId, productionBound⟩) := by
-    unfold Lanius.Extraction.Grammar.production?
-    rw [List.getElem?_eq_getElem (by
-      simpa [IndexedGrammar.productionCount] using productionBound)]
-    rfl
-  rw [found] at selected
+  rw [grammar.productionAt_lookup
+    (⟨productionId, productionBound⟩ : Fin grammar.productionCount)] at selected
   simpa using selected
 
 theorem IndexedGrammar.WellFormed.nonterminal_validation

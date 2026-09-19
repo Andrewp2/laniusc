@@ -303,31 +303,16 @@ theorem parserChartWordExpr_evaluates
     }) :
     Evaluates program state parserChartWordExpr
       (.signed .i32 (parserChartWordValue program.target position field)) state := by
-  have positionResult := evalLocal_of_local 1 program state 0
-    (.signed .i32 position) positionLocal
-  have wordsResult : evalExpr 2 program state (.constant 24) =
-      .done (.signed .i32 2) state := by
-    simp [evalExpr, wordsPerChart]
-  have multiplied : evalExpr 3 program state
-      (.binary .multiply (.local 0) (.constant 24)) =
-      .done (.signed .i32
-        (wrapSigned program.target .i32 (position * 2))) state := by
-    rw [Lanius.Semantics.evalExpr.eq_def]
-    simp only
-    rw [positionResult]
-    simp only
-    rw [wordsResult]
-    simp [evalBinaryValue, evalSignedBinary]
-  have fieldResult := evalLocal_of_local 2 program state 1
-    (.signed .i32 field) fieldLocal
-  refine ⟨4, ?_⟩
-  simp only [parserChartWordExpr]
-  rw [Lanius.Semantics.evalExpr.eq_def]
-  simp only
-  rw [multiplied]
-  simp only
-  rw [fieldResult]
-  simp [parserChartWordValue, evalBinaryValue, evalSignedBinary]
+  simpa only [parserChartWordExpr] using
+    (evaluatesEagerBinary (op := .add) (by decide) (by decide)
+      (evaluatesEagerBinary (result := .signed .i32
+          (wrapSigned program.target .i32 (position * 2)))
+        (by decide) (by decide)
+        (evaluatesLocal positionLocal)
+        (evaluatesConstant wordsPerChart)
+        (by simp [evalBinaryValue, evalSignedBinary]))
+      (evaluatesLocal fieldLocal)
+      (by simp [evalBinaryValue, evalSignedBinary, parserChartWordValue]))
 
 theorem parserStateWordExpr_evaluates
     (program : Program) (state : State) (base stateId field : Int)
@@ -342,46 +327,22 @@ theorem parserStateWordExpr_evaluates
     Evaluates program state parserStateWordExpr
       (.signed .i32
         (parserStateWordValue program.target base stateId field)) state := by
-  have stateIdResult := evalLocal_of_local 1 program state 1
-    (.signed .i32 stateId) stateIdLocal
-  have wordsResult : evalExpr 2 program state (.constant 27) =
-      .done (.signed .i32 9) state := by
-    simp [evalExpr, wordsPerState]
-  have multiplied : evalExpr 3 program state
-      (.binary .multiply (.local 1) (.constant 27)) =
-      .done (.signed .i32
-        (wrapSigned program.target .i32 (stateId * 9))) state := by
-    rw [Lanius.Semantics.evalExpr.eq_def]
-    simp only
-    rw [stateIdResult]
-    simp only
-    rw [wordsResult]
-    simp [evalBinaryValue, evalSignedBinary]
-  have baseResult := evalLocal_of_local 2 program state 0
-    (.signed .i32 base) baseLocal
-  have basePlusState : evalExpr 4 program state
-      (.binary .add
-        (.local 0)
-        (.binary .multiply (.local 1) (.constant 27))) =
-      .done (.signed .i32
-        (wrapSigned program.target .i32
-          (base + wrapSigned program.target .i32 (stateId * 9)))) state := by
-    rw [Lanius.Semantics.evalExpr.eq_def]
-    simp only
-    rw [baseResult]
-    simp only
-    rw [multiplied]
-    simp [evalBinaryValue, evalSignedBinary]
-  have fieldResult := evalLocal_of_local 3 program state 2
-    (.signed .i32 field) fieldLocal
-  refine ⟨5, ?_⟩
-  simp only [parserStateWordExpr]
-  rw [Lanius.Semantics.evalExpr.eq_def]
-  simp only
-  rw [basePlusState]
-  simp only
-  rw [fieldResult]
-  simp [parserStateWordValue, evalBinaryValue, evalSignedBinary]
+  simpa only [parserStateWordExpr] using
+    (evaluatesEagerBinary (op := .add) (by decide) (by decide)
+      (evaluatesEagerBinary (op := .add) (result := .signed .i32
+          (wrapSigned program.target .i32
+            (base + wrapSigned program.target .i32 (stateId * 9))))
+        (by decide) (by decide)
+        (evaluatesLocal baseLocal)
+        (evaluatesEagerBinary (result := .signed .i32
+            (wrapSigned program.target .i32 (stateId * 9)))
+          (by decide) (by decide)
+          (evaluatesLocal stateIdLocal)
+          (evaluatesConstant wordsPerState)
+          (by simp [evalBinaryValue, evalSignedBinary]))
+        (by simp [evalBinaryValue, evalSignedBinary]))
+      (evaluatesLocal fieldLocal)
+      (by simp [evalBinaryValue, evalSignedBinary, parserStateWordValue]))
 
 theorem parserChartWordBody_executes
     (program : Program) (state : State) (position field : Int)

@@ -10,7 +10,7 @@ open Lanius.CallContracts Lanius.Extraction.ParserDerivation Lanius.Extraction.P
 
 private theorem local_read {id : Lanius.VarId} (found : before.local? id = some value) :
     Evaluates program before (.local id) value before :=
-  ⟨1, evalLocal_of_local 0 program before id value found⟩
+  Lanius.Semantics.evaluatesLocal found
 
 def TreeRuntime.visitValues (runtime : TreeRuntime) (workspaceValues : List Int)
     (workspaceCell : CellId) (tokenCount stateCount stateId depth : Nat) : List Value :=
@@ -190,7 +190,7 @@ theorem TreeRuntime.CallEntry.body {runtime : TreeRuntime}
       CellEffect runtime.outputs before (restoreLocals afterRead completed) := by
   have depthGuard : Evaluates program.core before
       (.binary .lessEqual (.local 11) (.value (.signed .i32 0))) (.boolean false) before :=
-    evaluatesEagerBinary (by decide) (by decide) (local_read input.frame.depthLocal) ⟨1, rfl⟩
+    evaluatesEagerBinary (by decide) (by decide) (local_read input.frame.depthLocal) Lanius.Semantics.evaluatesValue
       (by simp [evalBinaryValue, evalSignedBinary, Nat.ne_of_gt positive])
   have capacityGuard : Evaluates program.core before
       (.binary .greaterEqual (.local 9) (.local 8)) (.boolean false) before :=
@@ -202,7 +202,7 @@ theorem TreeRuntime.CallEntry.body {runtime : TreeRuntime}
   have negativeTwo : Evaluates program.core bound (.unary .negate (.value (.signed .i32 2)))
       (.signed .i32 (-2)) bound := by
     apply evaluatesUnary (show
-      Evaluates program.core bound (.value (.signed .i32 2)) (.signed .i32 2) bound from ⟨1, rfl⟩)
+      Evaluates program.core bound (.value (.signed .i32 2)) (.signed .i32 2) bound from Lanius.Semantics.evaluatesValue)
     simp [evalUnaryValue, wrapSigned, signedModulus, signedSignBit, SignedIntTy.bits]
   have countNotFull : Evaluates program.core bound
       (.binary .equal (.local 12) (.unary .negate (.value (.signed .i32 2)))) (.boolean false) bound :=

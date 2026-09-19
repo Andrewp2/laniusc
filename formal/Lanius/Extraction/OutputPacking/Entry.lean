@@ -166,7 +166,7 @@ theorem cleared_packing_entry (memory : LoopMemory) (locals : LoopLocals)
         · exact Or.inl workspace
         · exact Or.inr (by rw [show cell = state.nextCell from cursor.trans fresh]; exact Nat.le_refl _))
   exact ⟨restoreLocals state packed, executesLetLocal (show Evaluates program state
-      (.value (.signed .i32 0)) (.signed .i32 0) state from ⟨1, rfl⟩) run,
+      (.value (.signed .i32 0)) (.signed .i32 0) state from evaluatesValue) run,
     complete.complete_contents, complete.inputContents, closed,
     combined.restoreLocals_wellFormed cleared.wellFormed complete.wellFormed⟩
 
@@ -186,7 +186,7 @@ theorem packing_then_continue (program : Program) (memory : LoopMemory) (locals 
     (state.bindLocal locals.cursor (.signed .i32 0)) rfl initial
   obtain ⟨after, continued, output⟩ := continueRun packed complete effect
   exact ⟨restoreLocals state after, executesLetLocal
-    (show Evaluates program state (.value (.signed .i32 0)) (.signed .i32 0) state from ⟨1, rfl⟩)
+    (show Evaluates program state (.value (.signed .i32 0)) (.signed .i32 0) state from evaluatesValue)
     (executesSequence run continued), output⟩
 
 end Lanius.Extraction.OutputPacking

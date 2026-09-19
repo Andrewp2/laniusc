@@ -20,12 +20,12 @@ theorem evaluatesByte (word : Int) (lane : Nat) (laneBound : lane < 4)
   · subst lane
     simp only [byteExpression, if_pos rfl, Nat.zero_mul, Nat.pow_zero, Int.natCast_one, Int.ediv_one]
     apply evaluatesEagerBinary (by decide) (by decide) evaluated
-      (show Evaluates program before (.value (.signed .i32 255)) (.signed .i32 255) before from ⟨1, rfl⟩)
+      (show Evaluates program before (.value (.signed .i32 255)) (.signed .i32 255) before from evaluatesValue)
     have masked := Input.mask_low_byte program.target word
     rw [wrapSigned_i32_of_nonnegative program.target word nonnegative bounded] at masked
     simpa only [evalBinaryValue, BEq.rfl, if_true] using masked
   · simp only [byteExpression, if_neg zero]
-    exact Input.evaluates_unpacked_byte word lane laneBound evaluated ⟨1, rfl⟩
+    exact Input.evaluates_unpacked_byte word lane laneBound evaluated evaluatesValue
 
 theorem Checked.decodeLane (checked : Checked program) (word : Int) (lane digit : Nat)
     (laneBound : lane < 4) (digitBound : digit < 16)

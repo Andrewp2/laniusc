@@ -73,9 +73,9 @@ theorem copy_then_canonicalize
       [.slice (.scalar (.signed .i32)) sourceCell [] 0 request.source.length,
        .slice (.scalar (.signed .i32)) memory.destinationCell [] 0 memory.untouched.length,
        .signed .i32 raw.length] copied := by
-    exact .cons ⟨1, evalLocal_of_local 0 program copied sourceId _ sourceLocalCopied⟩
-      (.cons ⟨1, evalLocal_of_local 0 program copied locals.destination _ complete.destinationLocal⟩
-        (.singleton ⟨1, evalLocal_of_local 0 program copied locals.count _ (by simpa only [rawCount] using complete.count)⟩))
+    exact .cons (Lanius.Semantics.evaluatesLocal sourceLocalCopied)
+      (.cons (Lanius.Semantics.evaluatesLocal complete.destinationLocal)
+        (.singleton (Lanius.Semantics.evaluatesLocal (by simpa only [rawCount] using complete.count))))
   obtain ⟨after, canonicalized, contents, canonicalEffect, canonicalMemory⟩ := checked.evaluates_call copied
     sourceCell memory.destinationCell request.source raw (memory.untouched.drop (3 * raw.length))
     _ complete.wellFormed sourceCopied recordsCopied sourceDestination
@@ -101,7 +101,7 @@ theorem copy_then_canonicalize
   intro resultId rest completion final tailRun
   have tailWithCount := executesLetLocal (type := .scalar (.signed .i32)) canonicalized tailRun
   exact executesLetLocal (show Evaluates program before (.value (.signed .i32 0))
-      (.signed .i32 0) before from ⟨1, rfl⟩) (executesSequence loop tailWithCount)
+      (.signed .i32 0) before from evaluatesValue) (executesSequence loop tailWithCount)
 
 /-- Construct the raw-copy entry directly from the lexer's emitted prefix and
 ordinary caller storage. Spare raw words are not copied or interpreted as tokens.

@@ -47,7 +47,7 @@ theorem Storage.readIndex (storage : Storage before sourceCell recordsCell sourc
     Evaluates program before (read expression) (.signed .i32 value) before := by
   have sliceResult : Evaluates program before (.local 1)
       (.slice (.scalar (.signed .i32)) recordsCell [] 0 records.length) before :=
-    ⟨1, evalLocal_of_local 0 program before 1 _ storage.recordsLocal⟩
+    Lanius.Semantics.evaluatesLocal storage.recordsLocal
   have readResult := evaluatesSignedI32SliceIndex program before before before records (.local 1)
     expression recordsCell index bound sliceResult indexResult storage.recordsContents
   have actual : records.get ⟨index, bound⟩ = value := by
@@ -62,8 +62,8 @@ theorem Storage.readLocal (storage : Storage before sourceCell recordsCell sourc
     (selected : records[base + offset]? = some value) :
     Evaluates program before (read (add (.local id) (literal offset))) (.signed .i32 value) before := by
   have baseResult : Evaluates program before (.local id) (.signed .i32 base) before :=
-    ⟨1, evalLocal_of_local 0 program before id _ baseLocal⟩
-  have offsetResult : Evaluates program before (literal offset) (.signed .i32 offset) before := ⟨1, rfl⟩
+    Lanius.Semantics.evaluatesLocal baseLocal
+  have offsetResult : Evaluates program before (literal offset) (.signed .i32 offset) before := evaluatesValue
   have indexResult := evaluatesNatI32Add baseResult offsetResult (by have := storage.recordsFit; omega)
   exact storage.readIndex _ _ _ indexResult bound selected
 

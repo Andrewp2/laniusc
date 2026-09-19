@@ -69,25 +69,6 @@ private theorem modelFor_success
     next => contradiction
   next => contradiction
 
-private theorem frameExtension_modifiesOnly
-    (extension : FrameExtension before after)
-    (wellFormed : StateWellFormed before) :
-    ModifiesOnly CellSet.empty before after := {
-  oldCells := fun cell old _ => extension.oldCells cell old
-  nextCell := extension.nextCell
-  heap := extension.heap
-  world := extension.world
-  views := extension.views
-  domain := by
-    constructor
-    intro entry member
-    have old := wellFormed.cellIdsBelowNext entry member
-    have foundBefore := stateWellFormed_cellEntry_of_mem wellFormed member
-    have foundAfter : after.cellEntry? entry.id = some entry := by
-      rw [extension.oldCells entry.id old, foundBefore]
-    exact ⟨entry, List.mem_of_find?_eq_some foundAfter, rfl⟩
-  locals := extension.locals }
-
 private theorem soundnessFor
     (function : Function) (body : Stmt) (resultFor : Nat → Value)
     (found : verifiedFrontendCore.function? function.id = some function)
@@ -140,12 +121,10 @@ private theorem soundnessFor
     simpa [calleeEq] using
       bodyWellFormed afterArguments afterArgumentsWellFormed offset
   have bodyEffect : ModifiesOnly CellSet.empty callee completedState :=
-    frameExtension_modifiesOnly
-      (by
-        rw [← calleeEq]
-        simpa [completedState, calleeEq] using
-          bodyFrame afterArguments afterArgumentsWellFormed offset)
-      calleeWellFormed
+    by
+      rw [← calleeEq]
+      simpa [completedState, calleeEq] using
+        bodyFrame afterArguments afterArgumentsWellFormed offset
   obtain ⟨after, callExecution, afterWellFormed, afterRepresented, callEffect⟩ :=
     represented.callReturned (function := function) (body := body)
       (bindings := bindings) argumentsExecution argumentsEffect found

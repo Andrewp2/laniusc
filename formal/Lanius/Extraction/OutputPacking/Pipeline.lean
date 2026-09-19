@@ -148,7 +148,7 @@ theorem clear_setup_then_pack (program : Program) (clear : ClearMemory) (clearLo
       · exact Or.inl (workspace.trans sameCell)
       · exact Or.inr (by rw [show cell = before.nextCell from cursor.trans fresh]; exact Nat.le_refl _))
   exact ⟨restoreLocals before packed, executesLetLocal (show Evaluates program before
-    (.value (.signed .i32 0)) (.signed .i32 0) before from ⟨1, rfl⟩) run, output, input, closed,
+    (.value (.signed .i32 0)) (.signed .i32 0) before from evaluatesValue) run, output, input, closed,
     combined.restoreLocals_wellFormed wellFormed packedWF⟩
 
 theorem clear_setup_then_continue (program : Program) (clear : ClearMemory) (clearLocals : LoopLocals)
@@ -202,6 +202,6 @@ theorem clear_setup_then_continue (program : Program) (clear : ClearMemory) (cle
       · exact inputFrame.2
       · exact lengthFrame.2) packDistinct continueRun
   exact ⟨restoreLocals before after, executesLetLocal
-    (show Evaluates program before (.value (.signed .i32 0)) (.signed .i32 0) before from ⟨1, rfl⟩) run, output⟩
+    (show Evaluates program before (.value (.signed .i32 0)) (.signed .i32 0) before from evaluatesValue) run, output⟩
 
 end Lanius.Extraction.OutputPacking

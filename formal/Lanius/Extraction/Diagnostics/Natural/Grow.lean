@@ -27,7 +27,7 @@ theorem grow (program : Program) (value divisor : Nat)
       (Nat.le_trans (Nat.div_le_self _ _) bounded)
     have condition : Evaluates program before growCondition (.boolean (decide (10 ≤ value / divisor))) before := by
       apply evaluatesEagerBinary (by decide) (by decide) divided
-        (show Evaluates program before (number 10) (.signed .i32 10) before from ⟨1, rfl⟩)
+        (show Evaluates program before (number 10) (.signed .i32 10) before from evaluatesValue)
       simp only [evalBinaryValue, evalSignedBinary, BEq.rfl, if_true, Except.ok.injEq,
         Value.boolean.injEq, decide_eq_decide, Int.ofNat_eq_natCast]
       omega
@@ -37,7 +37,7 @@ theorem grow (program : Program) (value divisor : Nat)
         simpa only [Nat.mul_comm] using found
       have productFit := Nat.le_trans productBound bounded
       obtain ⟨middle, updated, divisorOwned, effect, heap⟩ := evaluatesOwnedLocalUpdate wellFormed owned
-        (show Evaluates program before (number 10) (.signed .i32 10) before from ⟨1, rfl⟩)
+        (show Evaluates program before (number 10) (.signed .i32 10) before from evaluatesValue)
         (op := .multiply) (replacement := .signed .i32 (divisor * 10 : Nat)) (by
           simp only [evalAssignValue, assignOpBinary?, evalBinaryValue, BEq.rfl, if_true, evalSignedBinary]
           have wrapped := wrapSigned_i32_ofNat program.target _ productFit

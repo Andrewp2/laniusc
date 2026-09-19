@@ -47,7 +47,7 @@ inductive CheckedUseEvidence
       (checked : CheckedReference graph use.reference)
       (outcome : use.resolution = .local checked)
       (row : ResolutionEvidence)
-      (uniqueRow : rowsForUse artifact use.reference.node = [row])
+      (sameNode : row.use_node = use.reference.node)
       (sameDeclarationUnit :
         row.declaration_unit = checked.declaration.id.unit)
       (sameDeclarationNode :
@@ -61,119 +61,126 @@ inductive CheckedUseEvidence
       (path : List ScopeId)
       (pathFound : enclosingPath? graph use.reference.scope = some path)
       (row : ResolutionEvidence)
-      (uniqueRow : rowsForUse artifact use.reference.node = [row])
+      (sameNode : row.use_node = use.reference.node)
       (sameNamespace :
         row.namespace_tag = namespaceWire use.reference.lookupNamespace)
       (samePath : row.scope_path = wirePath path)
 
-def checkUse? (artifact : Artifact) (use : CheckedUse graph) :
-    Option (CheckedUseEvidence artifact graph use) :=
-  match uniqueRow : rowsForUse artifact use.reference.node with
-  | [row] =>
-      match outcome : use.resolution with
-      | .local checked =>
-          if sameDeclarationUnit :
-              row.declaration_unit = checked.declaration.id.unit then
-            if sameDeclarationNode :
-                row.declaration_node = checked.declaration.id.node then
-              if sameNamespace :
-                  row.namespace_tag = namespaceWire use.reference.lookupNamespace then
-                if samePath : row.scope_path = wirePath checked.path then
-                  some (.local checked outcome row uniqueRow sameDeclarationUnit
-                    sameDeclarationNode sameNamespace samePath)
-                else none
-              else none
-            else none
-          else none
-      | .global noLocal =>
-          match pathFound : enclosingPath? graph use.reference.scope with
-          | none => none
-          | some path =>
-              if sameNamespace :
-                  row.namespace_tag = namespaceWire use.reference.lookupNamespace then
-                if samePath : row.scope_path = wirePath path then
-                  some (.global noLocal outcome path pathFound row uniqueRow
-                    sameNamespace samePath)
-                else none
-              else none
-  | _ => none
-
-def checkUses? (artifact : Artifact) (graph : Graph) :
-    (uses : List (CheckedUse graph)) →
-      Option (List (Sigma fun use => CheckedUseEvidence artifact graph use))
-  | [] => some []
-  | use :: tail => do
-      let head ← checkUse? artifact use
-      let rest ← checkUses? artifact graph tail
-      pure (⟨use, head⟩ :: rest)
-
 structure CheckedFunctionEvidence
     (artifact : Artifact) (function : CheckedFunction) where
   uses : List (Sigma fun use => CheckedUseEvidence artifact function.graph use)
-  accepted : checkUses? artifact function.graph function.uses = some uses
-
-def checkFunction? (artifact : Artifact) (function : CheckedFunction) :
-    Option (CheckedFunctionEvidence artifact function) :=
-  match accepted : checkUses? artifact function.graph function.uses with
-  | none => none
-  | some uses => some ⟨uses, accepted⟩
-
-def checkFunctions? (artifact : Artifact) :
-    (functions : List CheckedFunction) →
-      Option (List (Sigma fun function => CheckedFunctionEvidence artifact function))
-  | [] => some []
-  | function :: tail => do
-      let head ← checkFunction? artifact function
-      let rest ← checkFunctions? artifact tail
-      pure (⟨function, head⟩ :: rest)
 
 structure CheckedModuleUseEvidence
     (artifact : Artifact) (use : ModuleUse) where
   row : ResolutionEvidence
-  uniqueRow : rowsForUse artifact use.node = [row]
+  sameNode : row.use_node = use.node
   sameNamespace :
     row.namespace_tag = namespaceWire (referenceNamespace use.target)
   moduleScope : row.scope_path = []
 
-def checkModuleUse? (artifact : Artifact) (use : ModuleUse) :
-    Option (CheckedModuleUseEvidence artifact use) :=
-  match uniqueRow : rowsForUse artifact use.node with
-  | [row] =>
-      if sameNamespace :
-          row.namespace_tag = namespaceWire (referenceNamespace use.target) then
-        if moduleScope : row.scope_path = [] then
-          some ⟨row, uniqueRow, sameNamespace, moduleScope⟩
+def checkUseRow? (artifact : Artifact) (use : CheckedUse graph)
+    (row : ResolutionEvidence) :
+    Option (CheckedUseEvidence artifact graph use) :=
+  match outcome : use.resolution with
+  | .local checked =>
+      if sameNode : row.use_node = use.reference.node then
+        if sameDeclarationUnit :
+            row.declaration_unit = checked.declaration.id.unit then
+          if sameDeclarationNode :
+              row.declaration_node = checked.declaration.id.node then
+            if sameNamespace :
+                row.namespace_tag = namespaceWire use.reference.lookupNamespace then
+              if samePath : row.scope_path = wirePath checked.path then
+                some (.local checked outcome row sameNode sameDeclarationUnit
+                  sameDeclarationNode sameNamespace samePath)
+              else none
+            else none
+          else none
         else none
       else none
-  | _ => none
+  | .global noLocal =>
+      match pathFound : enclosingPath? graph use.reference.scope with
+      | none => none
+      | some path =>
+          if sameNode : row.use_node = use.reference.node then
+            if sameNamespace :
+                row.namespace_tag = namespaceWire use.reference.lookupNamespace then
+              if samePath : row.scope_path = wirePath path then
+                some (.global noLocal outcome path pathFound row sameNode
+                  sameNamespace samePath)
+              else none
+            else none
+          else none
 
-def checkModuleUses? (artifact : Artifact) :
-    (uses : List ModuleUse) →
-      Option (List (Sigma fun use => CheckedModuleUseEvidence artifact use))
-  | [] => some []
-  | use :: tail => do
-      let head ← checkModuleUse? artifact use
-      let rest ← checkModuleUses? artifact tail
-      pure (⟨use, head⟩ :: rest)
+def checkUsesRows? (artifact : Artifact) (graph : Graph) :
+    (uses : List (CheckedUse graph)) → (rows : List ResolutionEvidence) →
+      Option ((List (Sigma fun use => CheckedUseEvidence artifact graph use)) ×
+        List ResolutionEvidence)
+  | [], rows => some ([], rows)
+  | use :: tail, row :: rows => do
+      let head ← checkUseRow? artifact use row
+      let (rest, remaining) ← checkUsesRows? artifact graph tail rows
+      pure (⟨use, head⟩ :: rest, remaining)
+  | _ :: _, [] => none
+
+def checkFunctionsRows? (artifact : Artifact) :
+    (functions : List CheckedFunction) → (rows : List ResolutionEvidence) →
+      Option ((List (Sigma fun function => CheckedFunctionEvidence artifact function)) ×
+        List ResolutionEvidence)
+  | [], rows => some ([], rows)
+  | function :: tail, rows => do
+      let (uses, remaining) ←
+        checkUsesRows? artifact function.graph function.uses rows
+      let (rest, finalRows) ← checkFunctionsRows? artifact tail remaining
+      pure (⟨function, ⟨uses⟩⟩ :: rest, finalRows)
+
+def checkModuleUseRow? (artifact : Artifact) (use : ModuleUse)
+    (row : ResolutionEvidence) :
+    Option (CheckedModuleUseEvidence artifact use) :=
+  if sameNode : row.use_node = use.node then
+    if sameNamespace :
+        row.namespace_tag = namespaceWire (referenceNamespace use.target) then
+      if moduleScope : row.scope_path = [] then
+        some ⟨row, sameNode, sameNamespace, moduleScope⟩
+      else none
+    else none
+  else none
+
+def checkModuleUsesRows? (artifact : Artifact) :
+    (uses : List ModuleUse) → (rows : List ResolutionEvidence) →
+      Option ((List (Sigma fun use => CheckedModuleUseEvidence artifact use)) ×
+        List ResolutionEvidence)
+  | [], rows => some ([], rows)
+  | use :: tail, row :: rows => do
+      let head ← checkModuleUseRow? artifact use row
+      let (rest, remaining) ← checkModuleUsesRows? artifact tail rows
+      pure (⟨use, head⟩ :: rest, remaining)
+  | _ :: _, [] => none
+
+def checkArtifactRows? (artifact : Artifact)
+    (surface : CheckedArtifact artifact) :
+    Option ((List (Sigma fun use => CheckedModuleUseEvidence artifact use)) ×
+      (List (Sigma fun function => CheckedFunctionEvidence artifact function))) := do
+  let (moduleUses, remaining) ←
+    checkModuleUsesRows? artifact surface.moduleUses artifact.resolutions
+  let (functions, finalRows) ←
+    checkFunctionsRows? artifact surface.functions remaining
+  match finalRows with
+  | [] => some (moduleUses, functions)
+  | _ => none
 
 structure CheckedArtifactEvidence
     (artifact : Artifact) (surface : CheckedArtifact artifact) where
   functions :
     List (Sigma fun function => CheckedFunctionEvidence artifact function)
-  functionsAccepted : checkFunctions? artifact surface.functions = some functions
   moduleUses :
     List (Sigma fun use => CheckedModuleUseEvidence artifact use)
-  moduleUsesAccepted :
-    checkModuleUses? artifact surface.moduleUses = some moduleUses
+  accepted : checkArtifactRows? artifact surface = some (moduleUses, functions)
 
 def checkArtifact? (artifact : Artifact) (surface : CheckedArtifact artifact) :
     Option (CheckedArtifactEvidence artifact surface) :=
-  match functionsAccepted : checkFunctions? artifact surface.functions with
+  match accepted : checkArtifactRows? artifact surface with
   | none => none
-  | some functions =>
-      match moduleUsesAccepted : checkModuleUses? artifact surface.moduleUses with
-      | none => none
-      | some moduleUses => some ⟨functions, functionsAccepted, moduleUses,
-          moduleUsesAccepted⟩
+  | some (moduleUses, functions) => some ⟨functions, moduleUses, accepted⟩
 
 end Lanius.Extraction.ResolutionEvidenceChecker

@@ -12,16 +12,16 @@ theorem finish_executes (writer : Host.CheckedExternal program .writeByte 2)
       Allocation.Registry after ∧ Host.RepresentableViews after ∧ Host.Effect CellSet.empty before after ∧
       Host.StderrOnly before.world after.world := by
   obtain ⟨after, called, registered, frame, effect, world⟩ := Host.evaluatesStderr writer initial representable 10
-    (.cons (show Evaluates program before (number 2) (.signed .i32 2) before from ⟨1, rfl⟩)
-      (.cons (show Evaluates program before (number 10) (.signed .i32 10) before from ⟨1, rfl⟩) (.nil _ _)))
+    (.cons (show Evaluates program before (number 2) (.signed .i32 2) before from evaluatesValue)
+      (.cons (show Evaluates program before (number 10) (.signed .i32 10) before from evaluatesValue) (.nil _ _)))
   have guard : Evaluates program before (writeGuard writer.function.id (number 10)) (.boolean false) after :=
     evaluatesEagerBinary (by decide) (by decide) called
-      (show Evaluates program after (number 1) (.signed .i32 1) after from ⟨1, rfl⟩) rfl
+      (show Evaluates program after (number 1) (.signed .i32 1) after from evaluatesValue) rfl
   have kept := effect.preservesLocal initial.wellFormed writtenRead (by simp [CellSet.empty])
   have result : Evaluates program after (binary .add (read 2) (number 1))
       (.signed .i32 (wrapSigned program.target .i32 (written + 1))) after :=
     evaluatesEagerBinary (by decide) (by decide) (local_evaluates program kept)
-      (show Evaluates program after (number 1) (.signed .i32 1) after from ⟨1, rfl⟩) rfl
+      (show Evaluates program after (number 1) (.signed .i32 1) after from evaluatesValue) rfl
   exact ⟨_, after, executesSequence (executesIfFalse guard (executesSkip _ _))
     (executesSequenceReturned (executesReturnValue result)), registered, frame.representable, effect,
     world.symm ▸ Host.StderrOnly.byte before.world 10⟩
@@ -89,9 +89,9 @@ theorem nonnegative (writer : Host.CheckedExternal program .writeByte 2) (value 
     exact combined
   exact ⟨result, restoreLocals before (restoreLocals grown completed),
     executesSequence (executesIfFalse guard (executesSkip _ _))
-      (executesLetLocal (show Evaluates program before (number 1) (.signed .i32 1) before from ⟨1, rfl⟩)
+      (executesLetLocal (show Evaluates program before (number 1) (.signed .i32 1) before from evaluatesValue)
         (executesSequence grownRun
-          (executesLetLocal (show Evaluates program grown (number 0) (.signed .i32 0) grown from ⟨1, rfl⟩)
+          (executesLetLocal (show Evaluates program grown (number 0) (.signed .i32 0) grown from evaluatesValue)
             (executesSequence digitRun finished)))),
     (finalRegistry.restoreLocals grown closedWritten.wellFormed).restoreLocals before effect.wellFormed,
     finalRepresentable, effect, world⟩

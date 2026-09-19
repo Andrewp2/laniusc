@@ -10,6 +10,7 @@ open Lanius.Semantics
 open Lanius.Fuel
 open Lanius.Properties
 open Lanius.Separation
+open Lanius.CallContracts
 
 def digitScanValue : DigitScanResult → Value
   | .success endOffset =>
@@ -31,19 +32,9 @@ theorem twoI32CalleeState_store_extends
     StoreExtension state (twoI32CalleeState state left right) := by
   let bindings : List (VarId × Value) :=
     [(0, .signed .i32 left), (1, .signed .i32 right)]
-  constructor
-  · intro cell old
-    have preserved := bindLocals_preserves_old_cell
-      (clearLocals state) bindings cell (by simpa [clearLocals] using old)
-    have clearedEntry :
-        (clearLocals state).cellEntry? cell = state.cellEntry? cell := rfl
-    change (twoI32CalleeState state left right).cellEntry? cell =
-      state.cellEntry? cell
-    simpa [twoI32CalleeState, bindings] using preserved.trans clearedEntry
-  · simp [twoI32CalleeState, clearLocals, bindLocals_nextCell]
-  · rfl
-  · rfl
-  · rfl
+  exact (clearLocals_store_extends state).trans_same
+    (by simpa [twoI32CalleeState, bindings] using
+      bindLocals_effect (clearLocals state) bindings)
 
 theorem twoI32CallState_extends
     (state : State) (left right : Int) :
@@ -54,7 +45,7 @@ theorem twoI32CalleeState_well_formed
     (state : State) (wellFormed : StateWellFormed state)
     (left right : Int) :
     StateWellFormed (twoI32CalleeState state left right) := by
-  exact bindLocals_preserves_well_formed (clearLocals state)
+  exact bindLocals_preserves_wellFormed (clearLocals state)
     [(0, .signed .i32 left), (1, .signed .i32 right)]
     (clearLocals_well_formed state wellFormed)
 
@@ -63,7 +54,7 @@ theorem twoI32CallState_well_formed
     (left right : Int) :
     StateWellFormed (twoI32CallState state left right) :=
   (twoI32CalleeState_store_extends state left right)
-    |>.restoreLocals_well_formed wellFormed
+    |>.restoreLocals_wellFormed wellFormed
       (twoI32CalleeState_well_formed state wellFormed left right)
 
 theorem twoI32CalleeState_left
@@ -668,7 +659,7 @@ theorem DigitRunState.offsetLocal
 theorem digitParameterState_well_formed
     (source : List Byte) (start base : Nat) :
     StateWellFormed (digitParameterState source start base) := by
-  exact bindLocals_preserves_well_formed (sourceState source)
+  exact bindLocals_preserves_wellFormed (sourceState source)
     [(0, .slice i32Type 0 [] 0 source.length),
       (1, .signed .i32 source.length), (2, .signed .i32 start),
       (3, .signed .i32 base)]
@@ -740,7 +731,8 @@ theorem digitInitialState_after_frame_invariant
   have oldParameter (cell : Nat) (bound : cell < 5) :
       (digitParameterState source start base).cellEntry? cell =
         afterParameters.cellEntry? cell := by
-    exact (extension.oldCells cell (by simpa [parameterNext] using bound)).symm
+    exact (extension.oldCells cell (by simpa [parameterNext] using bound)
+      (by simp [CellSet.empty])).symm
   have sourceIdAfter : afterParameters.cellId? 0 = some 1 := by
     unfold State.cellId?
     rw [extension.locals]
@@ -808,22 +800,28 @@ theorem DigitRunState.afterFrameExtension
   · exact invariant.offsetBound
   · exact invariant.offsetCellFresh
   · exact Nat.lt_of_lt_of_le invariant.offsetCellBound extension.nextCell
-  · exact (extension.oldCells 0 (old 0 (by decide))).trans
+  · exact (extension.oldCells 0 (old 0 (by decide))
+      (by simp [CellSet.empty])).trans
       invariant.sourceCell
   · simpa [State.cellId?, extension.locals] using invariant.sourceLocalId
-  · exact (extension.oldCells 1 (old 1 (by decide))).trans
+  · exact (extension.oldCells 1 (old 1 (by decide))
+      (by simp [CellSet.empty])).trans
       invariant.sourceLocalCell
   · simpa [State.cellId?, extension.locals] using invariant.limitLocalId
-  · exact (extension.oldCells 2 (old 2 (by decide))).trans
+  · exact (extension.oldCells 2 (old 2 (by decide))
+      (by simp [CellSet.empty])).trans
       invariant.limitLocalCell
   · simpa [State.cellId?, extension.locals] using invariant.startLocalId
-  · exact (extension.oldCells 3 (old 3 (by decide))).trans
+  · exact (extension.oldCells 3 (old 3 (by decide))
+      (by simp [CellSet.empty])).trans
       invariant.startLocalCell
   · simpa [State.cellId?, extension.locals] using invariant.baseLocalId
-  · exact (extension.oldCells 4 (old 4 (by decide))).trans
+  · exact (extension.oldCells 4 (old 4 (by decide))
+      (by simp [CellSet.empty])).trans
       invariant.baseLocalCell
   · simpa [State.cellId?, extension.locals] using invariant.offsetLocalId
-  · exact (extension.oldCells offsetCell invariant.offsetCellBound).trans
+  · exact (extension.oldCells offsetCell invariant.offsetCellBound
+      (by simp [CellSet.empty])).trans
       invariant.offsetLocalCell
 
 /-- The numeric-run proof depends on a program only through these three
@@ -897,86 +895,8 @@ theorem DigitRunState.evalSourceByte
   evalSourceIndexAt state source offset 4 inBounds invariant.sourceLocal
     invariant.offsetLocal invariant.sourceCell
 
-theorem FrameExtension.domainExtension
-    (extension : FrameExtension before after)
-    (beforeWellFormed : StateWellFormed before) :
-    CellDomainExtension before after := by
-  constructor
-  intro entry member
-  have old := beforeWellFormed.cellIdsBelowNext entry member
-  have foundBefore := stateWellFormed_cellEntry_of_mem beforeWellFormed member
-  have foundAfter : after.cellEntry? entry.id = some entry := by
-    rw [extension.oldCells entry.id old, foundBefore]
-  exact ⟨entry, List.mem_of_find?_eq_some foundAfter, rfl⟩
-
 def digitByteState (state : State) (byte : Byte) : State :=
   state.bindLocal 5 (.signed .i32 byte.val)
-
-theorem DigitRunState.afterByteBind
-    (invariant : DigitRunState offsetCell state source start base offset)
-    (byte : Byte) :
-    DigitRunState offsetCell (digitByteState state byte)
-      source start base offset := by
-  have old (cell : Nat) (bound : cell < 6) : cell < state.nextCell :=
-    Nat.lt_of_lt_of_le bound invariant.nextCell
-  let next := digitByteState state byte
-  constructor
-  · exact bindLocal_preserves_well_formed state 5 (.signed .i32 byte.val)
-      invariant.wellFormed
-  · change 6 ≤ state.nextCell + 1
-    exact Nat.le_trans invariant.nextCell (Nat.le_succ state.nextCell)
-  · exact invariant.offsetBound
-  · exact invariant.offsetCellFresh
-  · exact Nat.lt_succ_of_lt invariant.offsetCellBound
-  · exact (bindCell_preserves_old_cell state 5
-      (some (.signed .i32 byte.val)) 0 (old 0 (by decide))).trans
-      invariant.sourceCell
-  · simpa [next, digitByteState, State.bindLocal, State.bindCell,
-      State.cellId?] using invariant.sourceLocalId
-  · exact (bindCell_preserves_old_cell state 5
-      (some (.signed .i32 byte.val)) 1 (old 1 (by decide))).trans
-      invariant.sourceLocalCell
-  · simpa [next, digitByteState, State.bindLocal, State.bindCell,
-      State.cellId?] using invariant.limitLocalId
-  · exact (bindCell_preserves_old_cell state 5
-      (some (.signed .i32 byte.val)) 2 (old 2 (by decide))).trans
-      invariant.limitLocalCell
-  · simpa [next, digitByteState, State.bindLocal, State.bindCell,
-      State.cellId?] using invariant.startLocalId
-  · exact (bindCell_preserves_old_cell state 5
-      (some (.signed .i32 byte.val)) 3 (old 3 (by decide))).trans
-      invariant.startLocalCell
-  · simpa [next, digitByteState, State.bindLocal, State.bindCell,
-      State.cellId?] using invariant.baseLocalId
-  · exact (bindCell_preserves_old_cell state 5
-      (some (.signed .i32 byte.val)) 4 (old 4 (by decide))).trans
-      invariant.baseLocalCell
-  · simpa [next, digitByteState, State.bindLocal, State.bindCell,
-      State.cellId?] using invariant.offsetLocalId
-  · exact (bindCell_preserves_old_cell state 5
-      (some (.signed .i32 byte.val)) offsetCell
-      invariant.offsetCellBound).trans
-      invariant.offsetLocalCell
-
-theorem digitByteState_byteLocal
-    (invariant : DigitRunState offsetCell state source start base offset)
-    (byte : Byte) :
-    (digitByteState state byte).local? 5 =
-      some (.signed .i32 byte.val) := by
-  have fresh := bindCell_finds_fresh_cell state 5
-    (some (.signed .i32 byte.val)) invariant.wellFormed
-  simp only [digitByteState, State.bindLocal, State.local?, State.cellId?,
-    State.bindCell, List.find?_cons, beq_self_eq_true]
-  exact congrArg (fun entry => entry.bind Cell.value) fresh
-
-theorem bindLocal_finds_bound
-    (state : State) (wellFormed : StateWellFormed state)
-    (id : VarId) (value : Value) :
-    (state.bindLocal id value).local? id = some value := by
-  have fresh := bindCell_finds_fresh_cell state id (some value) wellFormed
-  simp only [State.bindLocal, State.local?, State.cellId?, State.bindCell,
-    List.find?_cons, beq_self_eq_true]
-  exact congrArg (fun entry => entry.bind Cell.value) fresh
 
 theorem DigitRunState.afterAuxBind
     (invariant : DigitRunState offsetCell state source start base offset)
@@ -1023,6 +943,31 @@ theorem DigitRunState.afterAuxBind
       invariant.offsetLocalId
   · exact (bindCell_preserves_old_cell state id (some value) offsetCell
       invariant.offsetCellBound).trans invariant.offsetLocalCell
+
+theorem bindLocal_finds_bound
+    (state : State) (wellFormed : StateWellFormed state)
+    (id : VarId) (value : Value) :
+    (state.bindLocal id value).local? id = some value := by
+  have fresh := bindCell_finds_fresh_cell state id (some value) (wellFormed)
+  simp only [State.bindLocal, State.local?, State.cellId?, State.bindCell,
+    List.find?_cons, beq_self_eq_true]
+  exact congrArg (fun entry => entry.bind Cell.value) fresh
+
+theorem DigitRunState.afterByteBind
+    (invariant : DigitRunState offsetCell state source start base offset)
+    (byte : Byte) :
+    DigitRunState offsetCell (digitByteState state byte)
+      source start base offset := by
+  simpa [digitByteState] using invariant.afterAuxBind 5 (by decide)
+    (.signed .i32 byte.val)
+
+theorem digitByteState_byteLocal
+    (invariant : DigitRunState offsetCell state source start base offset)
+    (byte : Byte) :
+    (digitByteState state byte).local? 5 =
+      some (.signed .i32 byte.val) := by
+  simpa [digitByteState] using
+    bindLocal_finds_bound state invariant.wellFormed 5 (.signed .i32 byte.val)
 
 def updatedDigitOffsetState
     (state : State) (offsetCell nextOffset : Nat) : State :=
@@ -1078,7 +1023,7 @@ theorem DigitRunState.restoreAfter
     DigitRunState offsetCell (restoreLocals before completed)
       source start base afterOffset := by
   constructor
-  · exact domain.restoreLocals_well_formed beforeInvariant.wellFormed
+  · exact domain.restoreLocals_wellFormed beforeInvariant.wellFormed
       completedInvariant.wellFormed
   · exact completedInvariant.nextCell
   · exact completedInvariant.offsetBound
@@ -1323,11 +1268,11 @@ theorem DigitRunState.execAcceptedDigitBody
   let finalState := restoreLocals state assigned
   have bindDomain : CellDomainExtension state withByte := by
     simpa [withByte, digitByteState] using
-      bindLocal_domain_extends state 5 (.signed .i32 byte.val)
+      bindLocal_domainExtension state 5 (.signed .i32 byte.val)
   have callDomain : CellDomainExtension withByte called :=
-    predicateExtension.domainExtension byteInvariant.wellFormed
+    predicateExtension.domain
   have assignmentDomain : CellDomainExtension called assigned := by
-    exact assignCell_domain_extends
+    exact assignCell_domainExtension
       (calledInvariant.assignOffset (offset + 1))
   have completedDomain : CellDomainExtension state assigned :=
     bindDomain.trans (callDomain.trans assignmentDomain)
@@ -1430,7 +1375,7 @@ theorem DigitRunState.execBoundaryDigitBody
     predicateExtension afterPredicateWellFormed
   have afterPredicateByteLocal :
       afterPredicate.local? 5 = some (.signed .i32 byte.val) :=
-    predicateExtension.preserves_local byteInvariant.wellFormed byteLocal
+    predicateExtension.empty_preserves_local byteInvariant.wellFormed byteLocal
   have separatorBase := evalI32LocalEqualNatLiteral (program := program)
     afterPredicate 5 byte.val 95 afterPredicateByteLocal
   have notSeparatorByte : byte.val ≠ 95 := by
@@ -1491,7 +1436,7 @@ theorem DigitRunState.execSeparatorAtEndBody
     predicateExtension afterPredicateWellFormed
   have afterPredicateByteLocal :
       afterPredicate.local? 5 = some (.signed .i32 byte.val) :=
-    predicateExtension.preserves_local byteInvariant.wellFormed byteLocal
+    predicateExtension.empty_preserves_local byteInvariant.wellFormed byteLocal
   have separatorBase := evalI32LocalEqualNatLiteral (program := program)
     afterPredicate 5 byte.val 95 afterPredicateByteLocal
   have separatorByte : byte.val = 95 := by simpa [byte] using separator
@@ -1603,7 +1548,7 @@ theorem DigitRunState.execSeparatorBeforeInvalidBody
     predicateExtension afterPredicateWellFormed
   have afterPredicateByteLocal :
       afterPredicate.local? 5 = some (.signed .i32 byte.val) :=
-    predicateExtension.preserves_local byteInvariant.wellFormed byteLocal
+    predicateExtension.empty_preserves_local byteInvariant.wellFormed byteLocal
   have separatorBase := evalI32LocalEqualNatLiteral (program := program)
     afterPredicate 5 byte.val 95 afterPredicateByteLocal
   have separatorByte : byte.val = 95 := by simpa [byte] using separator
@@ -1679,7 +1624,7 @@ theorem DigitRunState.execSeparatorBeforeInvalidBody
       withRequired requiredInvariant.wellFormed nextByte.val base
   have afterNextRequiredLocal : afterNextPredicate.local? 6 =
       some (.signed .i32 (offset + 1)) :=
-    nextPredicateExtension.preserves_local requiredInvariant.wellFormed
+    nextPredicateExtension.empty_preserves_local requiredInvariant.wellFormed
       requiredLocal
   have argumentResult : Evaluates program afterNextPredicate (.local 6)
       (.signed .i32 (offset + 1)) afterNextPredicate :=
@@ -1767,7 +1712,7 @@ theorem DigitRunState.execAcceptedSeparatorBody
     predicateExtension afterPredicateWellFormed
   have afterPredicateByteLocal :
       afterPredicate.local? 5 = some (.signed .i32 byte.val) :=
-    predicateExtension.preserves_local byteInvariant.wellFormed byteLocal
+    predicateExtension.empty_preserves_local byteInvariant.wellFormed byteLocal
   have separatorBase := evalI32LocalEqualNatLiteral (program := program)
     afterPredicate 5 byte.val 95 afterPredicateByteLocal
   have separatorByte : byte.val = 95 := by simpa [byte] using separator
@@ -1846,7 +1791,7 @@ theorem DigitRunState.execAcceptedSeparatorBody
     nextPredicateExtension afterNextWellFormed
   have afterNextRequiredLocal : afterNextPredicate.local? 6 =
       some (.signed .i32 (offset + 1)) :=
-    nextPredicateExtension.preserves_local requiredInvariant.wellFormed
+    nextPredicateExtension.empty_preserves_local requiredInvariant.wellFormed
       requiredLocal
   have invalidBranch : Executes program withRequired
       (.ifThenElse
@@ -1923,17 +1868,17 @@ theorem DigitRunState.execAcceptedSeparatorBody
           branchResult)
   have byteDomain : CellDomainExtension state withByte := by
     simpa [withByte, digitByteState] using
-      bindLocal_domain_extends state 5 (.signed .i32 byte.val)
+      bindLocal_domainExtension state 5 (.signed .i32 byte.val)
   have predicateDomain : CellDomainExtension withByte afterPredicate :=
-    predicateExtension.domainExtension byteInvariant.wellFormed
+    predicateExtension.domain
   have requiredDomain : CellDomainExtension afterPredicate withRequired := by
-    simpa [withRequired] using bindLocal_domain_extends afterPredicate 6
+    simpa [withRequired] using bindLocal_domainExtension afterPredicate 6
       (.signed .i32 (offset + 1))
   have nextPredicateDomain : CellDomainExtension withRequired
       afterNextPredicate :=
-    nextPredicateExtension.domainExtension requiredInvariant.wellFormed
+    nextPredicateExtension.domain
   have assignmentDomain : CellDomainExtension afterNextPredicate assigned :=
-    assignCell_domain_extends
+    assignCell_domainExtension
       (afterNextInvariant.assignOffset (offset + 2))
   have separatorCompletedDomain : CellDomainExtension afterPredicate assigned :=
     requiredDomain.trans (nextPredicateDomain.trans assignmentDomain)
@@ -2223,7 +2168,7 @@ theorem scanDigitRunBody_executes
           (executesSkip program afterPredicate)
       have afterStartLocal : afterPredicate.local? 2 =
           some (.signed .i32 start) :=
-        predicateExtension.preserves_local parametersWellFormed
+        predicateExtension.empty_preserves_local parametersWellFormed
           (digitParameterState_startLocal source start base)
       have initializerBound : start + 1 ≤ 2147483647 :=
         Nat.le_trans (Nat.succ_le_of_lt inBounds) sourceBound
@@ -2280,7 +2225,7 @@ theorem scanDigitRunBody_executes
         simpa using evalLogicalNot_executes predicateResult
       have afterStartLocal : afterPredicate.local? 2 =
           some (.signed .i32 start) :=
-        predicateExtension.preserves_local parametersWellFormed
+        predicateExtension.empty_preserves_local parametersWellFormed
           (digitParameterState_startLocal source start base)
       have argumentResult : Evaluates program afterPredicate (.local 2)
           (.signed .i32 start) afterPredicate :=
@@ -2381,21 +2326,14 @@ theorem scanDigitRunFunction_executes
   obtain ⟨bodyFinal, bodyExec⟩ :=
     scanDigitRunBody_executes (program := lexerProgram)
       source start base sourceBound
-  obtain ⟨bodyFuel, bodyResult⟩ := bodyExec
-  have argumentsBase :
-      evalExprs 5 lexerProgram (sourceState source)
+  have argumentsResult :
+      ArgumentsEvaluateTo lexerProgram (sourceState source)
         [sourceSlice source, i32Literal source.length, i32Literal start,
-          i32Literal base] =
-        .done
-          [.slice i32Type 0 [] 0 source.length,
-            .signed .i32 source.length, .signed .i32 start,
-            .signed .i32 base]
-          (sourceState source) := by rfl
-  let fuel := max 5 bodyFuel
-  have argumentsAtFuel := evalExprs_done_at_larger_fuel
-    (Nat.le_max_left 5 bodyFuel) argumentsBase
-  have bodyAtFuel := execStmt_done_at_larger_fuel
-    (Nat.le_max_right 5 bodyFuel) bodyResult
+          i32Literal base]
+        [.slice i32Type 0 [] 0 source.length,
+          .signed .i32 source.length, .signed .i32 start,
+          .signed .i32 base]
+        (sourceState source) := ⟨5, by rfl⟩
   have boundParameters :
       bindParameters scanDigitRunFunction.parameters
         [.slice i32Type 0 [] 0 source.length,
@@ -2405,22 +2343,10 @@ theorem scanDigitRunFunction_executes
           [(0, .slice i32Type 0 [] 0 source.length),
             (1, .signed .i32 source.length), (2, .signed .i32 start),
             (3, .signed .i32 base)] := by rfl
-  have callee :
-      ({ sourceState source with locals := [] }).bindLocals
-        [(0, .slice i32Type 0 [] 0 source.length),
-          (1, .signed .i32 source.length), (2, .signed .i32 start),
-          (3, .signed .i32 base)] =
-        digitParameterState source start base := by rfl
-  let finalState := restoreLocals (sourceState source) bodyFinal
-  refine ⟨finalState, fuel + 1, ?_⟩
-  unfold scanDigitRunCall
-  rw [evalExpr, argumentsAtFuel]
-  simp only
-  rw [lexerProgram_finds_scanDigitRunFunction]
-  simp only
-  rw [boundParameters]
-  simp only [scanDigitRunFunction]
-  rw [callee, bodyAtFuel]
+  have execution := evaluatesCallReturned argumentsResult
+    lexerProgram_finds_scanDigitRunFunction boundParameters rfl bodyExec
+  exact ⟨restoreLocals (sourceState source) bodyFinal, by
+    simpa [scanDigitRunCall] using execution⟩
 
 /-- Relational refinement form: any result admitted by the independent
 `DigitRunScan` specification is produced by the represented Lanius function. -/

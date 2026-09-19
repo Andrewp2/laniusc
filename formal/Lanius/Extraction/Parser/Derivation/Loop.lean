@@ -56,14 +56,14 @@ theorem ReaderRuntime.At.execute_loop {reader : ReaderRuntime}
     have localRead := Assertion.localPointsTo_local _ _ _ _ held.remainingOwned
     have read : Evaluates verifiedParserCore before (.local reader.tail.remaining)
         (.signed .i32 (Int.ofNat remaining)) before :=
-      ⟨1, evalLocal_of_local 0 verifiedParserCore before _ _ localRead⟩
+      Lanius.Semantics.evaluatesLocal localRead
     cases remaining with
     | zero =>
       have guard : Evaluates verifiedParserCore before
           (.binary .notEqual (.local reader.tail.remaining) (.value (.signed .i32 0)))
           (.boolean false) before := by
         apply evaluatesEagerBinary (by decide) (by decide) read
-          (show Evaluates verifiedParserCore before (.value (.signed .i32 0)) (.signed .i32 0) before from ⟨1, rfl⟩)
+          (show Evaluates verifiedParserCore before (.value (.signed .i32 0)) (.signed .i32 0) before from Lanius.Semantics.evaluatesValue)
         rfl
       obtain ⟨suffixDone, seedPrevious, seedChild⟩ := cursor.finish sound
       have contents := layout.finish
@@ -79,7 +79,7 @@ theorem ReaderRuntime.At.execute_loop {reader : ReaderRuntime}
           (.binary .notEqual (.local reader.tail.remaining) (.value (.signed .i32 0)))
           (.boolean true) before := by
         apply evaluatesEagerBinary (by decide) (by decide) read
-          (show Evaluates verifiedParserCore before (.value (.signed .i32 0)) (.signed .i32 0) before from ⟨1, rfl⟩)
+          (show Evaluates verifiedParserCore before (.value (.signed .i32 0)) (.signed .i32 0) before from Lanius.Semantics.evaluatesValue)
         simp [evalBinaryValue, scalarEqual]
         omega
       obtain ⟨middle, iteration, result, effect⟩ := held.execute_iteration accessor selector sound cursor

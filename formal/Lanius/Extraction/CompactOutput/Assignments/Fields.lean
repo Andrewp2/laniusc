@@ -14,7 +14,7 @@ theorem encode_second (program : Program) (second : Int)
   have nonnegative : 0 ≤ second + 1 := by omega
   have cast : ((second + 1).toNat : Int) = second + 1 := Int.toNat_of_nonneg nonnegative
   apply evaluatesEagerBinary (by decide) (by decide) readSecond
-    (show Evaluates program before (number 1) (.signed .i32 1) before from ⟨1, rfl⟩)
+    (show Evaluates program before (number 1) (.signed .i32 1) before from evaluatesValue)
   simp only [evalBinaryValue, evalSignedBinary, beq_self_eq_true, if_true]
   have wrapped : wrapSigned program.target .i32 (second + 1) = second + 1 := by
     simpa only [Int.ofNat_eq_natCast, cast] using
@@ -38,7 +38,7 @@ theorem fields_valid (program : Program) (first : Nat) (second : Int)
   have secondGuard : Evaluates program before
       (binary .lessEqual (read 9) (.unary .negate (number 2))) (.boolean false) before := by
     have negativeTwo : Evaluates program before (.unary .negate (number 2)) (.signed .i32 (-2)) before := by
-      apply evaluatesUnary (show Evaluates program before (number 2) (.signed .i32 2) before from ⟨1, rfl⟩)
+      apply evaluatesUnary (show Evaluates program before (number 2) (.signed .i32 2) before from evaluatesValue)
       simp [evalUnaryValue, wrapSigned, signedModulus, signedSignBit, SignedIntTy.bits]
     apply evaluatesEagerBinary (by decide) (by decide) (local_evaluates program secondRead)
       negativeTwo

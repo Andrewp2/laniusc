@@ -22,7 +22,7 @@ theorem read_child (program : Program) (record : RecordVisit) (child : ChildVisi
   have slotRun := local_evaluates program slot
   have payloadBound := (List.getElem?_eq_some_iff.mp payload).1
   have address := evaluatesNatI32Add (leftValue := record.offset + 4 + index * 3) (rightValue := 1)
-    slotRun (show Evaluates program before (number 1) (.signed .i32 1) before from ⟨1, rfl⟩) (by omega)
+    slotRun (show Evaluates program before (number 1) (.signed .i32 1) before from evaluatesValue) (by omega)
   exact ⟨Collect.read_word program input _ _ tag slotRun,
     Collect.read_word program input _ _ payload address⟩
 

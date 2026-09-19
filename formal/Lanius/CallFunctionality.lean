@@ -412,166 +412,40 @@ theorem ExprInferenceDerivationSpecializes.functionPathCall_unique_of_functional
       rightSymbolic rightGround rightCore) :
     leftSymbolic = rightSymbolic ∧ leftGround = rightGround ∧
       leftCore = rightCore := by
-  cases resolved with
-  | function selected notIntrinsic =>
-      cases left with
-      | printI32 builtin _argument =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | assert builtin _argument =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | i32ArrayDataPtr builtin _argument =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | i32SliceFromRawParts builtin _pointer _length =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | i32SliceDataPtr builtin _slice =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | stringDataPtr builtin _string =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | variantExplicit evidence _payload =>
-          exact (complete.function_excludes_symbolicVariantConstructor selected
-            evidence.selected).elim
-      | variantInferred evidence _payload =>
-          exact (complete.function_excludes_symbolicVariantConstructor selected
-            evidence.selected).elim
-      | variantNongeneric evidence _payload =>
-          exact (complete.function_excludes_symbolicVariantConstructor selected
-            evidence.selected).elim
-      | associatedCallInferred evidence _arguments =>
-          exact (evidence.notFunction ⟨_, selected⟩).elim
-      | associatedCallContextual evidence _arguments =>
-          exact (evidence.notFunction ⟨_, selected⟩).elim
-      | directCallInferred leftEvidence leftArguments =>
-          cases right with
-          | printI32 builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | assert builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32ArrayDataPtr builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceFromRawParts builtin _pointer _length =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceDataPtr builtin _slice =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | stringDataPtr builtin _string =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | variantExplicit evidence _payload =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                selected evidence.selected).elim
-          | variantInferred evidence _payload =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                selected evidence.selected).elim
-          | variantNongeneric evidence _payload =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                selected evidence.selected).elim
-          | associatedCallInferred evidence _arguments =>
-              exact (evidence.notFunction ⟨_, selected⟩).elim
-          | associatedCallContextual evidence _arguments =>
-              exact (evidence.notFunction ⟨_, selected⟩).elim
-          | directCallInferred rightEvidence rightArguments =>
-              rcases leftEvidence.results_unique_of_functional
-                  argumentsFunctional complete rightEvidence leftArguments
-                  rightArguments with ⟨rfl, rfl, rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl, rfl⟩
-          | directCallExplicit rightEvidence _rightArguments =>
-              exact (rightEvidence.excludesInference leftEvidence).elim
-          | directCallNongeneric rightEvidence _rightArguments =>
-              exact (leftEvidence.excludesNongeneric rightEvidence).elim
-      | directCallExplicit leftEvidence leftArguments =>
-          cases right with
-          | printI32 builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | assert builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32ArrayDataPtr builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceFromRawParts builtin _pointer _length =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceDataPtr builtin _slice =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | stringDataPtr builtin _string =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | variantExplicit evidence _payload =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                selected evidence.selected).elim
-          | variantInferred evidence _payload =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                selected evidence.selected).elim
-          | variantNongeneric evidence _payload =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                selected evidence.selected).elim
-          | associatedCallInferred evidence _arguments =>
-              exact (evidence.notFunction ⟨_, selected⟩).elim
-          | associatedCallContextual evidence _arguments =>
-              exact (evidence.notFunction ⟨_, selected⟩).elim
-          | directCallInferred rightEvidence _rightArguments =>
-              exact (leftEvidence.excludesInference rightEvidence).elim
-          | directCallExplicit rightEvidence rightArguments =>
-              rcases leftEvidence.results_unique_of_functional
-                  argumentsFunctional complete rightEvidence leftArguments
-                  rightArguments with ⟨rfl, rfl, rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl, rfl⟩
-          | directCallNongeneric rightEvidence _rightArguments =>
-              exact (leftEvidence.excludesNongeneric rightEvidence).elim
-      | directCallNongeneric leftEvidence leftArguments =>
-          cases right with
-          | printI32 builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | assert builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32ArrayDataPtr builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceFromRawParts builtin _pointer _length =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceDataPtr builtin _slice =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | stringDataPtr builtin _string =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | variantExplicit evidence _payload =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                selected evidence.selected).elim
-          | variantInferred evidence _payload =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                selected evidence.selected).elim
-          | variantNongeneric evidence _payload =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                selected evidence.selected).elim
-          | associatedCallInferred evidence _arguments =>
-              exact (evidence.notFunction ⟨_, selected⟩).elim
-          | associatedCallContextual evidence _arguments =>
-              exact (evidence.notFunction ⟨_, selected⟩).elim
-          | directCallInferred rightEvidence _rightArguments =>
-              exact (rightEvidence.excludesNongeneric leftEvidence).elim
-          | directCallExplicit rightEvidence _rightArguments =>
-              exact (rightEvidence.excludesNongeneric leftEvidence).elim
-          | directCallNongeneric rightEvidence rightArguments =>
-              rcases leftEvidence.results_unique_of_functional
-                  argumentsFunctional complete rightEvidence leftArguments
-                  rightArguments with ⟨rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl, rfl⟩
+  cases path_call_view complete resolved left with
+  | directInferred leftEvidence leftArguments =>
+      cases path_call_view complete resolved right with
+      | directInferred rightEvidence rightArguments =>
+          rcases leftEvidence.results_unique_of_functional
+              argumentsFunctional complete rightEvidence leftArguments
+              rightArguments with ⟨rfl, rfl, rfl, rfl, rfl⟩
+          exact ⟨rfl, rfl, rfl⟩
+      | directExplicit rightEvidence _rightArguments =>
+          exact (rightEvidence.excludesInference leftEvidence).elim
+      | directNongeneric rightEvidence _rightArguments =>
+          exact (leftEvidence.excludesNongeneric rightEvidence).elim
+  | directExplicit leftEvidence leftArguments =>
+      cases path_call_view complete resolved right with
+      | directInferred rightEvidence _rightArguments =>
+          exact (leftEvidence.excludesInference rightEvidence).elim
+      | directExplicit rightEvidence rightArguments =>
+          rcases leftEvidence.results_unique_of_functional
+              argumentsFunctional complete rightEvidence leftArguments
+              rightArguments with ⟨rfl, rfl, rfl, rfl, rfl⟩
+          exact ⟨rfl, rfl, rfl⟩
+      | directNongeneric rightEvidence _rightArguments =>
+          exact (leftEvidence.excludesNongeneric rightEvidence).elim
+  | directNongeneric leftEvidence leftArguments =>
+      cases path_call_view complete resolved right with
+      | directInferred rightEvidence _rightArguments =>
+          exact (rightEvidence.excludesNongeneric leftEvidence).elim
+      | directExplicit rightEvidence _rightArguments =>
+          exact (rightEvidence.excludesNongeneric leftEvidence).elim
+      | directNongeneric rightEvidence rightArguments =>
+          rcases leftEvidence.results_unique_of_functional
+              argumentsFunctional complete rightEvidence leftArguments
+              rightArguments with ⟨rfl, rfl, rfl⟩
+          exact ⟨rfl, rfl, rfl⟩
 
 theorem ExprInferenceDerivationSpecializes.variantPathCall_unique_of_functional
     (argumentsFunctional : ExprListSpecializationFunctional surfaceArguments)
@@ -586,169 +460,40 @@ theorem ExprInferenceDerivationSpecializes.variantPathCall_unique_of_functional
       rightSymbolic rightGround rightCore) :
     leftSymbolic = rightSymbolic ∧ leftGround = rightGround ∧
       leftCore = rightCore := by
-  cases resolved with
-  | variant selected notIntrinsic =>
-      cases left with
-      | printI32 builtin _argument =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | assert builtin _argument =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | i32ArrayDataPtr builtin _argument =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | i32SliceFromRawParts builtin _pointer _length =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | i32SliceDataPtr builtin _slice =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | stringDataPtr builtin _string =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | directCallInferred evidence _arguments =>
-          exact (complete.function_excludes_symbolicVariantConstructor
-            evidence.selected selected).elim
-      | directCallExplicit evidence _arguments =>
-          exact (complete.function_excludes_symbolicVariantConstructor
-            evidence.selected selected).elim
-      | directCallNongeneric evidence _arguments =>
-          exact (complete.function_excludes_symbolicVariantConstructor
-            evidence.selected selected).elim
-      | associatedCallInferred evidence _arguments =>
-          exact (evidence.notVariant ⟨_, selected⟩).elim
-      | associatedCallContextual evidence _arguments =>
-          exact (evidence.notVariant ⟨_, selected⟩).elim
-      | variantExplicit leftEvidence leftPayload =>
-          cases right with
-          | printI32 builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | assert builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32ArrayDataPtr builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceFromRawParts builtin _pointer _length =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceDataPtr builtin _slice =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | stringDataPtr builtin _string =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | directCallInferred evidence _arguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                evidence.selected selected).elim
-          | directCallExplicit evidence _arguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                evidence.selected selected).elim
-          | directCallNongeneric evidence _arguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                evidence.selected selected).elim
-          | associatedCallInferred evidence _arguments =>
-              exact (evidence.notVariant ⟨_, selected⟩).elim
-          | associatedCallContextual evidence _arguments =>
-              exact (evidence.notVariant ⟨_, selected⟩).elim
-          | variantExplicit rightEvidence rightPayload =>
-              rcases leftEvidence.results_unique_of_functional
-                  argumentsFunctional complete rightEvidence leftPayload
-                  rightPayload with ⟨rfl, rfl, rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl, rfl⟩
-          | variantInferred rightEvidence _rightPayload =>
-              exact (leftEvidence.excludesInference rightEvidence).elim
-          | variantNongeneric rightEvidence _rightPayload =>
-              exact (leftEvidence.excludesNongeneric rightEvidence).elim
-      | variantInferred leftEvidence leftPayload =>
-          cases right with
-          | printI32 builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | assert builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32ArrayDataPtr builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceFromRawParts builtin _pointer _length =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceDataPtr builtin _slice =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | stringDataPtr builtin _string =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | directCallInferred evidence _arguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                evidence.selected selected).elim
-          | directCallExplicit evidence _arguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                evidence.selected selected).elim
-          | directCallNongeneric evidence _arguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                evidence.selected selected).elim
-          | associatedCallInferred evidence _arguments =>
-              exact (evidence.notVariant ⟨_, selected⟩).elim
-          | associatedCallContextual evidence _arguments =>
-              exact (evidence.notVariant ⟨_, selected⟩).elim
-          | variantExplicit rightEvidence _rightPayload =>
-              exact (rightEvidence.excludesInference leftEvidence).elim
-          | variantInferred rightEvidence rightPayload =>
-              rcases leftEvidence.results_unique_of_functional
-                  argumentsFunctional complete rightEvidence leftPayload
-                  rightPayload with
-                ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl, rfl⟩
-          | variantNongeneric rightEvidence _rightPayload =>
-              exact (leftEvidence.excludesNongeneric complete
-                rightEvidence).elim
-      | variantNongeneric leftEvidence leftPayload =>
-          cases right with
-          | printI32 builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | assert builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32ArrayDataPtr builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceFromRawParts builtin _pointer _length =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceDataPtr builtin _slice =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | stringDataPtr builtin _string =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | directCallInferred evidence _arguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                evidence.selected selected).elim
-          | directCallExplicit evidence _arguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                evidence.selected selected).elim
-          | directCallNongeneric evidence _arguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                evidence.selected selected).elim
-          | associatedCallInferred evidence _arguments =>
-              exact (evidence.notVariant ⟨_, selected⟩).elim
-          | associatedCallContextual evidence _arguments =>
-              exact (evidence.notVariant ⟨_, selected⟩).elim
-          | variantExplicit rightEvidence _rightPayload =>
-              exact (rightEvidence.excludesNongeneric leftEvidence).elim
-          | variantInferred rightEvidence _rightPayload =>
-              exact (rightEvidence.excludesNongeneric complete
-                leftEvidence).elim
-          | variantNongeneric rightEvidence rightPayload =>
-              rcases leftEvidence.results_unique_of_functional
-                  argumentsFunctional complete rightEvidence leftPayload
-                  rightPayload with ⟨rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl, rfl⟩
+  cases path_call_view complete resolved left with
+  | variantExplicit leftEvidence leftPayload =>
+      cases path_call_view complete resolved right with
+      | variantExplicit rightEvidence rightPayload =>
+          rcases leftEvidence.results_unique_of_functional
+              argumentsFunctional complete rightEvidence leftPayload
+              rightPayload with ⟨rfl, rfl, rfl, rfl, rfl⟩
+          exact ⟨rfl, rfl, rfl⟩
+      | variantInferred rightEvidence _rightPayload =>
+          exact (leftEvidence.excludesInference rightEvidence).elim
+      | variantNongeneric rightEvidence _rightPayload =>
+          exact (leftEvidence.excludesNongeneric rightEvidence).elim
+  | variantInferred leftEvidence leftPayload =>
+      cases path_call_view complete resolved right with
+      | variantExplicit rightEvidence _rightPayload =>
+          exact (rightEvidence.excludesInference leftEvidence).elim
+      | variantInferred rightEvidence rightPayload =>
+          rcases leftEvidence.results_unique_of_functional
+              argumentsFunctional complete rightEvidence leftPayload
+              rightPayload with ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+          exact ⟨rfl, rfl, rfl⟩
+      | variantNongeneric rightEvidence _rightPayload =>
+          exact (leftEvidence.excludesNongeneric complete rightEvidence).elim
+  | variantNongeneric leftEvidence leftPayload =>
+      cases path_call_view complete resolved right with
+      | variantExplicit rightEvidence _rightPayload =>
+          exact (rightEvidence.excludesNongeneric leftEvidence).elim
+      | variantInferred rightEvidence _rightPayload =>
+          exact (rightEvidence.excludesNongeneric complete leftEvidence).elim
+      | variantNongeneric rightEvidence rightPayload =>
+          rcases leftEvidence.results_unique_of_functional
+              argumentsFunctional complete rightEvidence leftPayload
+              rightPayload with ⟨rfl, rfl, rfl⟩
+          exact ⟨rfl, rfl, rfl⟩
 
 theorem ExprInferenceDerivationSpecializes.intrinsicPathCall_unique_of_functional
     (argumentsFunctional : ExprListSpecializationFunctional surfaceArguments)
@@ -763,270 +508,100 @@ theorem ExprInferenceDerivationSpecializes.intrinsicPathCall_unique_of_functiona
       rightSymbolic rightGround rightCore) :
     leftSymbolic = rightSymbolic ∧ leftGround = rightGround ∧
       leftCore = rightCore := by
-  cases resolved with
-  | intrinsic found =>
-      cases left with
-      | printI32 leftBuiltin leftArgument =>
-          cases right with
-          | printI32 _rightBuiltin rightArgument =>
-              obtain ⟨_groundEquality, coreEquality⟩ :=
-                (argumentsFunctional _ (by simp)).checking complete
-                  leftArgument rightArgument
-              exact ⟨rfl, rfl, congrArg
-                (fun argument => Core.Expr.intrinsic .printI32 argument)
-                coreEquality⟩
-          | assert rightBuiltin _rightArgument =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | i32ArrayDataPtr rightBuiltin _rightArgument =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | i32SliceDataPtr rightBuiltin _rightSlice =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | stringDataPtr rightBuiltin _rightString =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | variantExplicit evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | variantInferred evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | variantNongeneric evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallInferred evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallExplicit evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallNongeneric evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | associatedCallInferred evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | associatedCallContextual evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-      | assert leftBuiltin leftArgument =>
-          cases right with
-          | printI32 rightBuiltin _rightArgument =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | assert _rightBuiltin rightArgument =>
-              obtain ⟨_groundEquality, coreEquality⟩ :=
-                (argumentsFunctional _ (by simp)).checking complete
-                  leftArgument rightArgument
-              exact ⟨rfl, rfl, congrArg
-                (fun argument => Core.Expr.intrinsic .assert argument)
-                coreEquality⟩
-          | i32ArrayDataPtr rightBuiltin _rightArgument =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | i32SliceDataPtr rightBuiltin _rightSlice =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | stringDataPtr rightBuiltin _rightString =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | variantExplicit evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | variantInferred evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | variantNongeneric evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallInferred evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallExplicit evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallNongeneric evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | associatedCallInferred evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | associatedCallContextual evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-      | i32ArrayDataPtr leftBuiltin leftArgument =>
-          cases right with
-          | printI32 rightBuiltin _rightArgument =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | assert rightBuiltin _rightArgument =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | i32ArrayDataPtr _rightBuiltin rightArgument =>
-              obtain ⟨_lengthEquality, _groundEquality, coreEquality⟩ :=
-                ExprCheckingDerivationSpecializes.array_unique_of_expr
-                  ((argumentsFunctional _ (by simp)).inference complete)
-                  ((argumentsFunctional _ (by simp)).checking complete)
-                  leftArgument rightArgument
-              exact ⟨rfl, rfl, congrArg Core.Expr.i32ArrayDataPtr coreEquality⟩
-          | i32SliceDataPtr rightBuiltin _rightSlice =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | stringDataPtr rightBuiltin _rightString =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | variantExplicit evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | variantInferred evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | variantNongeneric evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallInferred evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallExplicit evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallNongeneric evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | associatedCallInferred evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | associatedCallContextual evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-      | i32SliceFromRawParts leftBuiltin leftPointer leftLength =>
-          cases right with
-          | i32SliceFromRawParts _rightBuiltin rightPointer rightLength =>
-              obtain ⟨_pointerGroundEquality, pointerCoreEquality⟩ :=
-                (argumentsFunctional _ (by simp)).checking complete
-                  leftPointer rightPointer
-              obtain ⟨_lengthGroundEquality, lengthCoreEquality⟩ :=
-                (argumentsFunctional _ (by simp)).checking complete
-                  leftLength rightLength
-              cases pointerCoreEquality
-              cases lengthCoreEquality
-              exact ⟨rfl, rfl, rfl⟩
-          | variantExplicit evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | variantInferred evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | variantNongeneric evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallInferred evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallExplicit evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallNongeneric evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | associatedCallInferred evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | associatedCallContextual evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-      | i32SliceDataPtr leftBuiltin leftSlice =>
-          cases right with
-          | printI32 rightBuiltin _rightArgument =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | assert rightBuiltin _rightArgument =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | i32ArrayDataPtr rightBuiltin _rightArgument =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | i32SliceDataPtr _rightBuiltin rightSlice =>
-              obtain ⟨_groundEquality, coreEquality⟩ :=
-                (argumentsFunctional _ (by simp)).checking complete
-                  leftSlice rightSlice
-              exact ⟨rfl, rfl, congrArg Core.Expr.i32SliceDataPtr coreEquality⟩
-          | stringDataPtr rightBuiltin _rightString =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | variantExplicit evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | variantInferred evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | variantNongeneric evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallInferred evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallExplicit evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallNongeneric evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | associatedCallInferred evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | associatedCallContextual evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-      | stringDataPtr leftBuiltin leftString =>
-          cases right with
-          | printI32 rightBuiltin _rightArgument =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | assert rightBuiltin _rightArgument =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | i32ArrayDataPtr rightBuiltin _rightArgument =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | i32SliceDataPtr rightBuiltin _rightSlice =>
-              cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
-          | stringDataPtr _rightBuiltin rightString =>
-              obtain ⟨_groundEquality, coreEquality⟩ :=
-                (argumentsFunctional _ (by simp)).checking complete
-                  leftString rightString
-              exact ⟨rfl, rfl, congrArg Core.Expr.stringDataPtr coreEquality⟩
-          | variantExplicit evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | variantInferred evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | variantNongeneric evidence _payload =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallInferred evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallExplicit evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | directCallNongeneric evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | associatedCallInferred evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-          | associatedCallContextual evidence _arguments =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                found evidence.notIntrinsic).elim
-      | variantExplicit evidence _payload =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none found
-            evidence.notIntrinsic).elim
-      | variantInferred evidence _payload =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none found
-            evidence.notIntrinsic).elim
-      | variantNongeneric evidence _payload =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none found
-            evidence.notIntrinsic).elim
-      | directCallInferred evidence _arguments =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none found
-            evidence.notIntrinsic).elim
-      | directCallExplicit evidence _arguments =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none found
-            evidence.notIntrinsic).elim
-      | directCallNongeneric evidence _arguments =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none found
-            evidence.notIntrinsic).elim
-      | associatedCallInferred evidence _arguments =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none found
-            evidence.notIntrinsic).elim
-      | associatedCallContextual evidence _arguments =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none found
-            evidence.notIntrinsic).elim
+  cases path_call_view complete resolved left with
+  | printI32 leftBuiltin leftArgument =>
+      cases path_call_view complete resolved right with
+      | printI32 _rightBuiltin rightArgument =>
+          obtain ⟨_groundEquality, coreEquality⟩ :=
+            (argumentsFunctional _ (by simp)).checking complete
+              leftArgument rightArgument
+          exact ⟨rfl, rfl, congrArg
+            (fun argument => Core.Expr.intrinsic .printI32 argument)
+            coreEquality⟩
+      | assert rightBuiltin _rightArgument =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | i32ArrayDataPtr rightBuiltin _rightArgument =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | i32SliceDataPtr rightBuiltin _rightSlice =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | stringDataPtr rightBuiltin _rightString =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+  | assert leftBuiltin leftArgument =>
+      cases path_call_view complete resolved right with
+      | printI32 rightBuiltin _rightArgument =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | assert _rightBuiltin rightArgument =>
+          obtain ⟨_groundEquality, coreEquality⟩ :=
+            (argumentsFunctional _ (by simp)).checking complete
+              leftArgument rightArgument
+          exact ⟨rfl, rfl, congrArg
+            (fun argument => Core.Expr.intrinsic .assert argument)
+            coreEquality⟩
+      | i32ArrayDataPtr rightBuiltin _rightArgument =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | i32SliceDataPtr rightBuiltin _rightSlice =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | stringDataPtr rightBuiltin _rightString =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+  | i32ArrayDataPtr leftBuiltin leftArgument =>
+      cases path_call_view complete resolved right with
+      | printI32 rightBuiltin _rightArgument =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | assert rightBuiltin _rightArgument =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | i32ArrayDataPtr _rightBuiltin rightArgument =>
+          obtain ⟨_lengthEquality, _groundEquality, coreEquality⟩ :=
+            ExprCheckingDerivationSpecializes.array_unique_of_expr
+              ((argumentsFunctional _ (by simp)).inference complete)
+              ((argumentsFunctional _ (by simp)).checking complete)
+              leftArgument rightArgument
+          exact ⟨rfl, rfl, congrArg Core.Expr.i32ArrayDataPtr coreEquality⟩
+      | i32SliceDataPtr rightBuiltin _rightSlice =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | stringDataPtr rightBuiltin _rightString =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+  | i32SliceFromRawParts leftBuiltin leftPointer leftLength =>
+      cases path_call_view complete resolved right with
+      | i32SliceFromRawParts _rightBuiltin rightPointer rightLength =>
+          obtain ⟨_pointerGroundEquality, pointerCoreEquality⟩ :=
+            (argumentsFunctional _ (by simp)).checking complete
+              leftPointer rightPointer
+          obtain ⟨_lengthGroundEquality, lengthCoreEquality⟩ :=
+            (argumentsFunctional _ (by simp)).checking complete
+              leftLength rightLength
+          cases pointerCoreEquality
+          cases lengthCoreEquality
+          exact ⟨rfl, rfl, rfl⟩
+  | i32SliceDataPtr leftBuiltin leftSlice =>
+      cases path_call_view complete resolved right with
+      | printI32 rightBuiltin _rightArgument =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | assert rightBuiltin _rightArgument =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | i32ArrayDataPtr rightBuiltin _rightArgument =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | i32SliceDataPtr _rightBuiltin rightSlice =>
+          obtain ⟨_groundEquality, coreEquality⟩ :=
+            (argumentsFunctional _ (by simp)).checking complete
+              leftSlice rightSlice
+          exact ⟨rfl, rfl, congrArg Core.Expr.i32SliceDataPtr coreEquality⟩
+      | stringDataPtr rightBuiltin _rightString =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+  | stringDataPtr leftBuiltin leftString =>
+      cases path_call_view complete resolved right with
+      | printI32 rightBuiltin _rightArgument =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | assert rightBuiltin _rightArgument =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | i32ArrayDataPtr rightBuiltin _rightArgument =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | i32SliceDataPtr rightBuiltin _rightSlice =>
+          cases Option.some.inj (leftBuiltin.symm.trans rightBuiltin)
+      | stringDataPtr _rightBuiltin rightString =>
+          obtain ⟨_groundEquality, coreEquality⟩ :=
+            (argumentsFunctional _ (by simp)).checking complete
+              leftString rightString
+          exact ⟨rfl, rfl, congrArg Core.Expr.stringDataPtr coreEquality⟩
 
 theorem ExprInferenceDerivationSpecializes.associatedPathCall_unique_of_functional
     (argumentsFunctional : ExprListSpecializationFunctional surfaceArguments)
@@ -1041,127 +616,35 @@ theorem ExprInferenceDerivationSpecializes.associatedPathCall_unique_of_function
       rightSymbolic rightGround rightCore) :
     leftSymbolic = rightSymbolic ∧ leftGround = rightGround ∧
       leftCore = rightCore := by
-  cases resolved with
-  | associated notIntrinsic notFunction notVariant =>
-      cases left with
-      | printI32 builtin _argument =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | assert builtin _argument =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | i32ArrayDataPtr builtin _argument =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | i32SliceFromRawParts builtin _pointer _length =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | i32SliceDataPtr builtin _slice =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | stringDataPtr builtin _string =>
-          exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none builtin
-            notIntrinsic).elim
-      | directCallInferred evidence _arguments =>
-          exact (notFunction ⟨_, evidence.selected⟩).elim
-      | directCallExplicit evidence _arguments =>
-          exact (notFunction ⟨_, evidence.selected⟩).elim
-      | directCallNongeneric evidence _arguments =>
-          exact (notFunction ⟨_, evidence.selected⟩).elim
-      | variantExplicit evidence _payload =>
-          exact (notVariant ⟨_, evidence.selected⟩).elim
-      | variantInferred evidence _payload =>
-          exact (notVariant ⟨_, evidence.selected⟩).elim
-      | variantNongeneric evidence _payload =>
-          exact (notVariant ⟨_, evidence.selected⟩).elim
-      | associatedCallInferred leftEvidence leftArguments =>
-          cases right with
-          | printI32 builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | assert builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32ArrayDataPtr builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceFromRawParts builtin _pointer _length =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceDataPtr builtin _slice =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | stringDataPtr builtin _string =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | directCallInferred evidence _arguments =>
-              exact (notFunction ⟨_, evidence.selected⟩).elim
-          | directCallExplicit evidence _arguments =>
-              exact (notFunction ⟨_, evidence.selected⟩).elim
-          | directCallNongeneric evidence _arguments =>
-              exact (notFunction ⟨_, evidence.selected⟩).elim
-          | variantExplicit evidence _payload =>
-              exact (notVariant ⟨_, evidence.selected⟩).elim
-          | variantInferred evidence _payload =>
-              exact (notVariant ⟨_, evidence.selected⟩).elim
-          | variantNongeneric evidence _payload =>
-              exact (notVariant ⟨_, evidence.selected⟩).elim
-          | associatedCallInferred rightEvidence rightArguments =>
-              rcases leftEvidence.results_unique_of_arguments complete
-                  (ExprListInferenceDerivationSpecializes.unique_of_functional
-                    argumentsFunctional complete)
-                  rightEvidence leftArguments rightArguments with ⟨rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl, rfl⟩
-          | associatedCallContextual rightEvidence rightArguments =>
-              rcases leftEvidence.results_unique_of_contextual complete
-                  (ExprListCheckingDerivationSpecializes.unique_of_functional
-                    argumentsFunctional complete)
-                  rightEvidence leftArguments rightArguments with ⟨rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl, rfl⟩
-      | associatedCallContextual leftEvidence leftArguments =>
-          cases right with
-          | printI32 builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | assert builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32ArrayDataPtr builtin _argument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceFromRawParts builtin _pointer _length =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | i32SliceDataPtr builtin _slice =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | stringDataPtr builtin _string =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                builtin notIntrinsic).elim
-          | directCallInferred evidence _arguments =>
-              exact (notFunction ⟨_, evidence.selected⟩).elim
-          | directCallExplicit evidence _arguments =>
-              exact (notFunction ⟨_, evidence.selected⟩).elim
-          | directCallNongeneric evidence _arguments =>
-              exact (notFunction ⟨_, evidence.selected⟩).elim
-          | variantExplicit evidence _payload =>
-              exact (notVariant ⟨_, evidence.selected⟩).elim
-          | variantInferred evidence _payload =>
-              exact (notVariant ⟨_, evidence.selected⟩).elim
-          | variantNongeneric evidence _payload =>
-              exact (notVariant ⟨_, evidence.selected⟩).elim
-          | associatedCallInferred rightEvidence rightArguments =>
-              rcases rightEvidence.results_unique_of_contextual complete
-                  (ExprListCheckingDerivationSpecializes.unique_of_functional
-                    argumentsFunctional complete)
-                  leftEvidence rightArguments leftArguments with ⟨rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl, rfl⟩
-          | associatedCallContextual rightEvidence rightArguments =>
-              rcases leftEvidence.results_unique_of_arguments complete
-                  (ExprListCheckingDerivationSpecializes.unique_of_functional
-                    argumentsFunctional complete)
-                  rightEvidence leftArguments rightArguments with ⟨rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl, rfl⟩
+  cases path_call_view complete resolved left with
+  | associatedInferred leftEvidence leftArguments =>
+      cases path_call_view complete resolved right with
+      | associatedInferred rightEvidence rightArguments =>
+          rcases leftEvidence.results_unique_of_arguments complete
+              (ExprListInferenceDerivationSpecializes.unique_of_functional
+                argumentsFunctional complete)
+              rightEvidence leftArguments rightArguments with ⟨rfl, rfl, rfl⟩
+          exact ⟨rfl, rfl, rfl⟩
+      | associatedContextual rightEvidence rightArguments =>
+          rcases leftEvidence.results_unique_of_contextual complete
+              (ExprListCheckingDerivationSpecializes.unique_of_functional
+                argumentsFunctional complete)
+              rightEvidence leftArguments rightArguments with ⟨rfl, rfl, rfl⟩
+          exact ⟨rfl, rfl, rfl⟩
+  | associatedContextual leftEvidence leftArguments =>
+      cases path_call_view complete resolved right with
+      | associatedInferred rightEvidence rightArguments =>
+          rcases rightEvidence.results_unique_of_contextual complete
+              (ExprListCheckingDerivationSpecializes.unique_of_functional
+                argumentsFunctional complete)
+              leftEvidence rightArguments leftArguments with ⟨rfl, rfl, rfl⟩
+          exact ⟨rfl, rfl, rfl⟩
+      | associatedContextual rightEvidence rightArguments =>
+          rcases leftEvidence.results_unique_of_arguments complete
+              (ExprListCheckingDerivationSpecializes.unique_of_functional
+                argumentsFunctional complete)
+              rightEvidence leftArguments rightArguments with ⟨rfl, rfl, rfl⟩
+          exact ⟨rfl, rfl, rfl⟩
 
 theorem ExprInferenceSpecializationFunctional.pathCall
     {path : Surface.Path} {surfaceArguments : List Surface.Expr}
@@ -1185,6 +668,65 @@ theorem ExprInferenceSpecializationFunctional.pathCall
   | associated =>
       exact left.associatedPathCall_unique_of_functional argumentsFunctional
         complete resolved right
+
+private theorem inferred_variant_unique_of_functional
+    (argumentsFunctional : ExprListSpecializationFunctional surfaceArguments)
+    (complete : CompleteProgramElaboration pack catalog imports program
+      symbolic.globals externalBindings)
+    (left : ExprInferenceDerivationSpecializes outer groundEnclosingReturn
+      symbolic concrete contexts (.call (.path path) surfaceArguments)
+      leftSymbolic leftGround leftCore)
+    (leftExpected : expectedType = leftSymbolic)
+    (rightSelected : SelectsSymbolicVariantConstructor symbolic path
+      rightConstructor)
+    (rightNotIntrinsic : SurfaceElaboration.builtinIntrinsic? path = none)
+    (rightExpected : expectedType = Static.Ty.nominal
+      rightConstructor.sourceType rightTypeArguments rightConstArguments)
+    (rightArguments : Static.SymbolicArgumentsBound rightInner
+      rightConstructor.genericParameters rightTypeArguments rightConstArguments)
+    (rightTypeArgumentsGround : Static.instantiateTypes outer
+      rightTypeArguments = some rightGroundTypeArguments)
+    (rightConstArgumentsGround : Static.instantiateConstants outer
+      rightConstArguments = some rightGroundConstArguments)
+    (rightArtifact : NominalArtifactDemand concrete
+      rightConstructor.nominalDeclaration rightConstructor.sourceType
+      .enumeration rightGroundTypeArguments rightGroundConstArguments
+      rightResolved)
+    (rightPayload : ExprListSubstitutedCheckingDerivationSpecializes outer
+      groundEnclosingReturn symbolic concrete contexts rightInner surfaceArguments
+      rightConstructor.payload rightCoreArguments)
+    : leftGround = Static.GroundTy.nominal rightConstructor.sourceType
+        rightResolved.typeArguments rightResolved.constArguments ∧
+      leftCore = Core.Expr.enumValue rightResolved.coreType
+        rightConstructor.variant rightCoreArguments := by
+  cases path_call_view complete
+      (.variant rightSelected rightNotIntrinsic) left with
+  | variantExplicit leftEvidence leftPayload =>
+      rcases contextualVariantResults_unique_of_functional
+          argumentsFunctional complete leftEvidence.selected rightSelected
+          leftExpected rightExpected leftEvidence.nominal.arguments
+          rightArguments
+          leftEvidence.nominal.typeArgumentsGround rightTypeArgumentsGround
+          leftEvidence.nominal.constArgumentsGround
+          rightConstArgumentsGround leftEvidence.nominal.artifact rightArtifact
+          leftPayload rightPayload with ⟨rfl, rfl, rfl, rfl, rfl⟩
+      exact ⟨rfl, rfl⟩
+  | variantInferred leftEvidence leftPayload =>
+      rcases leftEvidence.results_unique_of_contextual
+          argumentsFunctional complete rightSelected
+          (leftExpected.symm.trans rightExpected) rightArguments
+          rightTypeArgumentsGround rightConstArgumentsGround rightArtifact
+          leftPayload rightPayload with ⟨rfl, rfl, rfl, rfl, rfl⟩
+      exact ⟨rfl, rfl⟩
+  | variantNongeneric leftEvidence leftPayload =>
+      rcases contextualVariantResults_unique_of_functional
+          argumentsFunctional complete leftEvidence.selected rightSelected
+          leftExpected rightExpected leftEvidence.nominal.arguments rightArguments
+          leftEvidence.nominal.typeArgumentsGround rightTypeArgumentsGround
+          leftEvidence.nominal.constArgumentsGround
+          rightConstArgumentsGround leftEvidence.nominal.artifact rightArtifact
+          leftPayload rightPayload with ⟨rfl, rfl, rfl, rfl, rfl⟩
+      exact ⟨rfl, rfl⟩
 
 theorem ExprCheckingSpecializationFunctional.pathCall
     {path : Surface.Path} {surfaceArguments : List Surface.Expr}
@@ -1217,67 +759,10 @@ theorem ExprCheckingSpecializationFunctional.pathCall
           rightArguments rightTypeArgumentsGround rightConstArgumentsGround
           _rightPathArguments _rightRequirements rightArtifact rightPayload
           _rightSymbolicPayload _rightConcretePayload =>
-          cases leftInferred with
-          | printI32 leftBuiltin _leftArgument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                leftBuiltin rightNotIntrinsic).elim
-          | assert leftBuiltin _leftArgument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                leftBuiltin rightNotIntrinsic).elim
-          | i32ArrayDataPtr leftBuiltin _leftArgument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                leftBuiltin rightNotIntrinsic).elim
-          | i32SliceFromRawParts leftBuiltin _leftPointer _leftLength =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                leftBuiltin rightNotIntrinsic).elim
-          | i32SliceDataPtr leftBuiltin _leftSlice =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                leftBuiltin rightNotIntrinsic).elim
-          | stringDataPtr leftBuiltin _leftString =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                leftBuiltin rightNotIntrinsic).elim
-          | directCallInferred leftEvidence _leftArguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                leftEvidence.selected rightSelected).elim
-          | directCallExplicit leftEvidence _leftArguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                leftEvidence.selected rightSelected).elim
-          | directCallNongeneric leftEvidence _leftArguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                leftEvidence.selected rightSelected).elim
-          | associatedCallInferred leftEvidence _leftArguments =>
-              exact (leftEvidence.notVariant ⟨_, rightSelected⟩).elim
-          | associatedCallContextual leftEvidence _leftArguments =>
-              exact (leftEvidence.notVariant ⟨_, rightSelected⟩).elim
-          | variantExplicit leftEvidence leftPayload =>
-              rcases contextualVariantResults_unique_of_functional
-                  argumentsFunctional complete leftEvidence.selected
-                  rightSelected rfl rightExpected leftEvidence.nominal.arguments
-                  rightArguments leftEvidence.nominal.typeArgumentsGround
-                  rightTypeArgumentsGround
-                  leftEvidence.nominal.constArgumentsGround
-                  rightConstArgumentsGround leftEvidence.nominal.artifact
-                  rightArtifact leftPayload rightPayload with
-                ⟨rfl, rfl, rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl⟩
-          | variantInferred leftEvidence leftPayload =>
-              rcases leftEvidence.results_unique_of_contextual
-                  argumentsFunctional complete rightSelected rightExpected
-                  rightArguments rightTypeArgumentsGround
-                  rightConstArgumentsGround rightArtifact leftPayload
-                  rightPayload with ⟨rfl, rfl, rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl⟩
-          | variantNongeneric leftEvidence leftPayload =>
-              rcases contextualVariantResults_unique_of_functional
-                  argumentsFunctional complete leftEvidence.selected
-                  rightSelected rfl rightExpected leftEvidence.nominal.arguments
-                  rightArguments leftEvidence.nominal.typeArgumentsGround
-                  rightTypeArgumentsGround
-                  leftEvidence.nominal.constArgumentsGround
-                  rightConstArgumentsGround leftEvidence.nominal.artifact
-                  rightArtifact leftPayload rightPayload with
-                ⟨rfl, rfl, rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl⟩
+          exact inferred_variant_unique_of_functional argumentsFunctional
+            complete leftInferred rfl rightSelected rightNotIntrinsic rightExpected
+            rightArguments rightTypeArgumentsGround rightConstArgumentsGround
+            rightArtifact rightPayload
   | scalarCast leftInferred _leftSymbolic _leftConcrete _leftNotContextual
       leftDifferent _leftConversion =>
       cases right with
@@ -1333,67 +818,10 @@ theorem ExprCheckingSpecializationFunctional.pathCall
       _leftConcretePayload =>
       cases right with
       | exact rightInferred _rightSymbolic _rightGrounds _rightConcrete =>
-          cases rightInferred with
-          | printI32 rightBuiltin _rightArgument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                rightBuiltin leftNotIntrinsic).elim
-          | assert rightBuiltin _rightArgument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                rightBuiltin leftNotIntrinsic).elim
-          | i32ArrayDataPtr rightBuiltin _rightArgument =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                rightBuiltin leftNotIntrinsic).elim
-          | i32SliceFromRawParts rightBuiltin _rightPointer _rightLength =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                rightBuiltin leftNotIntrinsic).elim
-          | i32SliceDataPtr rightBuiltin _rightSlice =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                rightBuiltin leftNotIntrinsic).elim
-          | stringDataPtr rightBuiltin _rightString =>
-              exact (SurfaceElaboration.builtinIntrinsic_some_excludes_none
-                rightBuiltin leftNotIntrinsic).elim
-          | directCallInferred rightEvidence _rightArguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                rightEvidence.selected leftSelected).elim
-          | directCallExplicit rightEvidence _rightArguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                rightEvidence.selected leftSelected).elim
-          | directCallNongeneric rightEvidence _rightArguments =>
-              exact (complete.function_excludes_symbolicVariantConstructor
-                rightEvidence.selected leftSelected).elim
-          | associatedCallInferred rightEvidence _rightArguments =>
-              exact (rightEvidence.notVariant ⟨_, leftSelected⟩).elim
-          | associatedCallContextual rightEvidence _rightArguments =>
-              exact (rightEvidence.notVariant ⟨_, leftSelected⟩).elim
-          | variantExplicit rightEvidence rightPayload =>
-              rcases contextualVariantResults_unique_of_functional
-                  argumentsFunctional complete leftSelected
-                  rightEvidence.selected leftExpected rfl leftArguments
-                  rightEvidence.nominal.arguments leftTypeArgumentsGround
-                  rightEvidence.nominal.typeArgumentsGround
-                  leftConstArgumentsGround
-                  rightEvidence.nominal.constArgumentsGround leftArtifact
-                  rightEvidence.nominal.artifact leftPayload rightPayload with
-                ⟨rfl, rfl, rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl⟩
-          | variantInferred rightEvidence rightPayload =>
-              rcases rightEvidence.results_unique_of_contextual
-                  argumentsFunctional complete leftSelected leftExpected
-                  leftArguments leftTypeArgumentsGround
-                  leftConstArgumentsGround leftArtifact rightPayload
-                  leftPayload with ⟨rfl, rfl, rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl⟩
-          | variantNongeneric rightEvidence rightPayload =>
-              rcases contextualVariantResults_unique_of_functional
-                  argumentsFunctional complete leftSelected
-                  rightEvidence.selected leftExpected rfl leftArguments
-                  rightEvidence.nominal.arguments leftTypeArgumentsGround
-                  rightEvidence.nominal.typeArgumentsGround
-                  leftConstArgumentsGround
-                  rightEvidence.nominal.constArgumentsGround leftArtifact
-                  rightEvidence.nominal.artifact leftPayload rightPayload with
-                ⟨rfl, rfl, rfl, rfl, rfl⟩
-              exact ⟨rfl, rfl⟩
+          exact (inferred_variant_unique_of_functional argumentsFunctional
+            complete rightInferred rfl leftSelected leftNotIntrinsic leftExpected
+            leftArguments leftTypeArgumentsGround leftConstArgumentsGround
+            leftArtifact leftPayload).imp Eq.symm Eq.symm
       | scalarCast _rightInferred _rightSymbolic _rightConcrete
           _rightNotContextual _rightDifferent _rightConversion =>
           cases leftExpected

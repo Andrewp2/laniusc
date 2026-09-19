@@ -81,8 +81,8 @@ theorem CheckedSource.executes_body
       · exact records
       · exact False.elim ((Nat.ne_of_lt (Nat.lt_succ_of_lt old)) output)
       · exact False.elim ((Nat.ne_of_lt old) input))
-  exact ⟨_, executesLetLocal (show Evaluates program before (literal 0) (.signed .i32 0) before from ⟨1, rfl⟩)
-    (executesLetLocal (show Evaluates program withInput (literal 0) (.signed .i32 0) withInput from ⟨1, rfl⟩) run), contents, visible,
+  exact ⟨_, executesLetLocal (show Evaluates program before (literal 0) (.signed .i32 0) before from evaluatesValue)
+    (executesLetLocal (show Evaluates program withInput (literal 0) (.signed .i32 0) withInput from evaluatesValue) run), contents, visible,
     ((Host.MemoryFrame.bindLocal before 3 (.signed .i32 0)).trans
       ((Host.MemoryFrame.bindLocal withInput 4 (.signed .i32 0)).trans memory)).restoreLocals before visible.wellFormed⟩
 

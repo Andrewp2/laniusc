@@ -159,16 +159,12 @@ theorem evaluatesParserHeaderRead
     Evaluates verifiedParserCore state
       (.index (.local 0) (.constant headerConstant))
       (.signed .i32 (values.get ⟨headerIndex, headerBound⟩)) state := by
-  have grammarResult : Evaluates verifiedParserCore state (.local 0)
-      (parserGrammarValue values grammarCell) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 0
-      (parserGrammarValue values grammarCell) grammarLocal⟩
   have headerIndexResult : Evaluates verifiedParserCore state
       (.constant headerConstant) (.signed .i32 (Int.ofNat headerIndex)) state :=
     evaluatesConstant constantFound
   exact evaluatesSignedI32SliceIndex verifiedParserCore state state state values
     (.local 0) (.constant headerConstant) grammarCell headerIndex headerBound
-    grammarResult headerIndexResult backing
+    (evaluatesLocal grammarLocal) headerIndexResult backing
 
 /-- Read a packed grammar table through an offset already held in a local or
     prior expression. Validator loops hoist table offsets out of their bodies;
@@ -195,10 +191,6 @@ theorem evaluatesParserDirectTableRead
       (.index (.local 0) (.binary .add offsetExpression rowExpression))
       (.signed .i32
         (values.get ⟨tableOffset + row, addressBound⟩)) state := by
-  have grammarResult : Evaluates verifiedParserCore state (.local 0)
-      (parserGrammarValue values grammarCell) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 0
-      (parserGrammarValue values grammarCell) grammarLocal⟩
   have addressI32 : tableOffset + row ≤ 2147483647 :=
     Nat.le_trans (Nat.le_of_lt addressBound) valuesI32
   have addressWrap := wrapSigned_i32_ofNat verifiedParserCore.target
@@ -216,7 +208,8 @@ theorem evaluatesParserDirectTableRead
     simp
   exact evaluatesSignedI32SliceIndex verifiedParserCore state state state values
     (.local 0) (.binary .add offsetExpression rowExpression)
-    grammarCell (tableOffset + row) addressBound grammarResult addressResult
+    grammarCell (tableOffset + row) addressBound (evaluatesLocal grammarLocal)
+    addressResult
     backing
 
 namespace TableReadProof
@@ -286,22 +279,8 @@ theorem result_evaluates
       .ok (.signed .i32
         (values.get ⟨tableOffset + row, addressBound⟩),
         world values cell) := by
-  have baseValue : (environment values cell row) ⟨0, by omega⟩ =
-      .slice parserI32Type cell [] 0 values.length := by
-    simp [environment, parserGrammarValue]
-  have rowValue : (environment values cell row) ⟨1, by omega⟩ =
-      .signed .i32 (Int.ofNat row) := by
-    simp [environment]
   have found : (world values cell).i32Slice? cell = some values := by
     simp [world]
-  have addressI32 : tableOffset + row ≤ 2147483647 := by omega
-  have constantResult : Term.evaluate (machine verifiedParserCore)
-      (world values cell) (environment values cell row)
-      (constant headerConstant) =
-        .ok (.signed .i32 (Int.ofNat headerIndex), world values cell) := by
-    simp only [constant, Lanius.FunctionalView.Core.apply, Term.evaluate,
-      evaluateTerms, machine, evaluateOperation, bind, Except.bind]
-    rw [constantFound]
   simp only [result, index, add, constant, slot,
     Lanius.FunctionalView.Core.apply, Lanius.FunctionalView.Core.reference]
   functional_eval
@@ -440,14 +419,9 @@ theorem relative_evaluates
       .ok (.signed .i32
         (values.get ⟨tableOffset + production, addressBound⟩),
         world values cell) := by
-  have baseValue : (environment values cell production dot) ⟨0, by omega⟩ =
-      .slice parserI32Type cell [] 0 values.length := by
-    simp [environment, parserGrammarValue]
   have found : (world values cell).i32Slice? cell = some values := by
     simp [world]
   have constantFound := verifiedParser_rhs_symbol_constants.1
-  have addressI32 : tableOffset + production ≤ 2147483647 := by
-    omega
   simp only [relative, index, add, constant, slot,
     Lanius.FunctionalView.Core.apply, Lanius.FunctionalView.Core.reference]
   functional_eval
@@ -467,15 +441,9 @@ theorem symbol_evaluates
   dsimp only
   let extended := (environment values cell production dot).push
     (.signed .i32 (Int.ofNat relativeValue))
-  have baseValue : extended ⟨0, by omega⟩ =
-      .slice parserI32Type cell [] 0 values.length := by
-    simp [extended, environment, parserGrammarValue, Env.push]
   have found : (world values cell).i32Slice? cell = some values := by
     simp [world]
   have constantFound := verifiedParser_rhs_symbol_constants.2
-  have partialBound : tableOffset + relativeValue ≤ 2147483647 := by omega
-  have addressI32 : tableOffset + relativeValue + dot ≤ 2147483647 := by
-    omega
   simp only [symbol, index, add, constant, slot,
     Lanius.FunctionalView.Core.apply, Lanius.FunctionalView.Core.reference]
   functional_eval
@@ -613,6 +581,29 @@ theorem GrammarEntry.enterCall_backing
     StateWellFormed.cell_lt_next_of_entry entry.wellFormed entry.backing
   exact ((enterCall_effect caller bindings).oldCells grammarCell old
     (by simp [CellSet.empty])).trans entry.backing
+
+/-- Close a store-pure accessor call while preserving grammar backing. -/
+theorem GrammarEntry.closeReadOnlyCall
+    (entry : GrammarEntry values grammarCell caller)
+    (bindings : List (VarId × Value)) (completed after : State)
+    (afterEq : after = restoreLocals caller completed)
+    (bodyEffect : StoreEffect CellSet.empty
+      (enterCall caller bindings) completed)
+    (completedWellFormed : StateWellFormed completed) :
+    ModifiesOnly CellSet.empty caller after ∧
+      StateWellFormed after ∧
+      after.cellEntry? grammarCell = some {
+        id := grammarCell
+        value := some (.array (signedI32Values values)) } := by
+  subst after
+  have closed : StoreEffect CellSet.empty caller completed :=
+    (enterCall_effect caller bindings).trans_same bodyEffect
+  have old : grammarCell < caller.nextCell :=
+    StateWellFormed.cell_lt_next_of_entry entry.wellFormed entry.backing
+  exact ⟨closed.restoreLocals,
+    closed.restoreLocals_wellFormed entry.wellFormed completedWellFormed,
+    (closed.oldCells grammarCell old (by simp [CellSet.empty])).trans
+      entry.backing⟩
 
 abbrev GrammarRowEntry
     (values : List Int) (grammarCell : CellId) (_row : Nat)
@@ -884,35 +875,21 @@ theorem extractedParserRhsSymbolCall_evaluates
     · exact extractedParserRhsSymbol_function_shape.2.2.2.1
     · simpa [callee, after, parserGrammarDotCallee,
         parserGrammarDotBindings] using body
-  have relativeWellFormed : StateWellFormed relativeState := by
-    exact bindLocal_preserves_well_formed callee 3
-      (.signed .i32 (Int.ofNat relative)) entry.callee_wellFormed
-  have temporaryStore : StoreEffect CellSet.empty callee completed := by
-    exact ((bindLocal_effect callee 3 (.signed .i32 (Int.ofNat relative)))
-      |>.restoreLocals).toStoreEffect
-  have effect : ModifiesOnly CellSet.empty afterArguments after := by
-    simpa [callee, completed, after, parserGrammarDotCallee] using
-      (call_effect temporaryStore)
   have completedWellFormed : StateWellFormed completed := by
     exact (bindLocal_effect callee 3 (.signed .i32 (Int.ofNat relative)))
-      |>.restoreLocals_wellFormed entry.callee_wellFormed relativeWellFormed
-  have callStore : StoreEffect CellSet.empty afterArguments completed := by
-    exact (enterCall_effect afterArguments
-      (parserGrammarDotBindings values grammarCell production dot))
-      |>.trans_same temporaryStore
-  have afterWellFormed : StateWellFormed after := by
-    exact callStore.restoreLocals_wellFormed entry.wellFormed
-      completedWellFormed
-  have backingAfter : after.cellEntry? grammarCell = some {
-      id := grammarCell
-      value := some (.array (signedI32Values values))
-    } := by
-    have old : grammarCell < afterArguments.nextCell :=
-      Lanius.Separation.StateWellFormed.cell_lt_next_of_entry
-        entry.wellFormed entry.backing
-    exact (effect.toStoreEffect.oldCells grammarCell old
-      (by simp [CellSet.empty])).trans entry.backing
-  exact ⟨evaluation, effect, afterWellFormed, backingAfter⟩
+      |>.restoreLocals_wellFormed entry.callee_wellFormed
+        (bindLocal_preserves_well_formed callee 3
+          (.signed .i32 (Int.ofNat relative)) entry.callee_wellFormed)
+  have closed := entry.closeReadOnlyCall
+    (bindings := parserGrammarDotBindings values grammarCell production dot)
+    (completed := completed)
+    (after := after) rfl
+    (bodyEffect := by
+      simpa [callee, completed, relativeState, parserGrammarDotCallee] using
+        ((bindLocal_effect callee 3 (.signed .i32 (Int.ofNat relative)))
+          |>.restoreLocals).toStoreEffect)
+    completedWellFormed
+  exact ⟨evaluation, closed.1, closed.2.1, closed.2.2⟩
 
 /-- Semantic wrapper for `production_rhs_length`: the physical header and
     table premises are discharged from the packed-grammar relation, so users

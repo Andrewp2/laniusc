@@ -30,15 +30,8 @@ theorem ResolvesLocal.unique
     (left : ResolvesLocal locals name leftBinding)
     (right : ResolvesLocal locals name rightBinding) :
     leftBinding = rightBinding := by
-  induction left generalizing rightBinding with
-  | head =>
-      cases right with
-      | head => rfl
-      | tail different _ => exact (different rfl).elim
-  | tail different _ induction =>
-      cases right with
-      | head => exact (different rfl).elim
-      | tail _ resolved => exact induction resolved
+  induction left generalizing rightBinding <;>
+    cases right <;> simp_all <;> solve_by_elim
 
 def NoLocalNamed (locals : List LocalBinding) (name : Surface.Name) : Prop :=
   ∀ binding, binding ∈ locals → binding.name ≠ name
@@ -376,29 +369,15 @@ theorem ResolvesTypeParameter.unique
     (left : ResolvesTypeParameter bindings name leftBinding)
     (right : ResolvesTypeParameter bindings name rightBinding) :
     leftBinding = rightBinding := by
-  induction left generalizing rightBinding with
-  | head =>
-      cases right with
-      | head => rfl
-      | tail different _ => exact (different rfl).elim
-  | tail different _ induction =>
-      cases right with
-      | head => exact (different rfl).elim
-      | tail _ resolved => exact induction resolved
+  induction left generalizing rightBinding <;>
+    cases right <;> simp_all <;> solve_by_elim
 
 theorem ResolvesConstParameter.unique
     (left : ResolvesConstParameter bindings name leftBinding)
     (right : ResolvesConstParameter bindings name rightBinding) :
     leftBinding = rightBinding := by
-  induction left generalizing rightBinding with
-  | head =>
-      cases right with
-      | head => rfl
-      | tail different _ => exact (different rfl).elim
-  | tail different _ induction =>
-      cases right with
-      | head => exact (different rfl).elim
-      | tail _ resolved => exact induction resolved
+  induction left generalizing rightBinding <;>
+    cases right <;> simp_all <;> solve_by_elim
 
 /-- Qualified type paths bypass generic parameters.  An unqualified global
     type path is admissible only when no in-scope type parameter has that name.
@@ -1014,17 +993,8 @@ theorem RemovesNamedField.unique
     (left : RemovesNamedField name fields leftValue leftRemainder)
     (right : RemovesNamedField name fields rightValue rightRemainder) :
     leftValue = rightValue ∧ leftRemainder = rightRemainder := by
-  induction left generalizing rightValue rightRemainder with
-  | head =>
-      cases right with
-      | head => exact ⟨rfl, rfl⟩
-      | tail different _ => exact (different rfl).elim
-  | tail different _ induction =>
-      cases right with
-      | head => exact (different rfl).elim
-      | tail _ removed =>
-          rcases induction removed with ⟨rfl, rfl⟩
-          exact ⟨rfl, rfl⟩
+  induction left generalizing rightValue rightRemainder <;>
+    cases right <;> simp_all <;> solve_by_elim
 
 theorem RemovesNamedField.selected_mem
     (removed : RemovesNamedField name fields value remainder) :

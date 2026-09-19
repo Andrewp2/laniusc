@@ -790,13 +790,19 @@ theorem recognizerPreludeBindings_after_parameters
     (binding : VarId × Value)
     (member : binding ∈ recognizerPreludeBindings layout) :
     5 < binding.1 := by
-  have idMember : binding.1 ∈
+  rcases binding with ⟨id, value⟩
+  have idMember : id ∈
       (recognizerPreludeBindings layout).map Prod.fst :=
     List.mem_map_of_mem member
-  have cases : binding.1 = 6 ∨ binding.1 = 7 ∨ binding.1 = 8 ∨
-      binding.1 = 9 ∨ binding.1 = 10 := by
-    simpa [recognizerPreludeBindings] using idMember
-  rcases cases with same | same | same | same | same <;> simp_all
+  simp [recognizerPreludeBindings] at idMember
+  rcases idMember with h | h | h | h | h <;> simp_all
+
+private theorem recognizerPreludeBinding_ne_of_le_five
+    (id : VarId) (idBound : id ≤ 5)
+    (binding : VarId × Value) (member : binding ∈ recognizerPreludeBindings layout) :
+    binding.1 ≠ id := by
+  exact Nat.ne_of_gt (Nat.lt_of_le_of_lt idBound
+    (recognizerPreludeBindings_after_parameters binding member))
 
 theorem RecognizerEntryResources.prelude_resources
     (entry : RecognizerEntryResources grammarLayout grammar words tokens
@@ -855,22 +861,8 @@ noncomputable def makeRecognizerChartEntry
     · have notRebound : ∀ binding, binding ∈ bindings →
           binding.1 ≠ id := by
         intro binding bindingMember
-        have idMember : binding.1 ∈ bindings.map Prod.fst :=
-          List.mem_map_of_mem bindingMember
-        have cases : binding.1 = 6 ∨ binding.1 = 7 ∨ binding.1 = 8 ∨
-            binding.1 = 9 ∨ binding.1 = 10 := by
-          simpa [bindings, recognizerPreludeBindings] using idMember
-        rcases cases with same | same | same | same | same
-        · rw [same]
-          exact Nat.ne_of_gt (Nat.lt_of_le_of_lt oldId (by decide : 5 < 6))
-        · rw [same]
-          exact Nat.ne_of_gt (Nat.lt_of_le_of_lt oldId (by decide : 5 < 7))
-        · rw [same]
-          exact Nat.ne_of_gt (Nat.lt_of_le_of_lt oldId (by decide : 5 < 8))
-        · rw [same]
-          exact Nat.ne_of_gt (Nat.lt_of_le_of_lt oldId (by decide : 5 < 9))
-        · rw [same]
-          exact Nat.ne_of_gt (Nat.lt_of_le_of_lt oldId (by decide : 5 < 10))
+        exact recognizerPreludeBinding_ne_of_le_five id oldId binding
+          (by simpa [bindings] using bindingMember)
       change (before.bindLocals bindings).cellId? id ≠ some workspaceCell
       rw [bindLocals_preserves_cellId before bindings id notRebound]
       apply entry.parameterWorkspaceSeparate.localCell_ne_of_singleton
@@ -887,25 +879,16 @@ noncomputable def makeRecognizerChartEntry
             simp_all
       have old := StateWellFormed.cell_lt_next_of_entry
         entry.resources.wellFormed entry.resources.workspaceBacking
-      rcases choices with rfl | rfl | rfl
-      · simp [after, recognizerPreludeState,
-          recognizerPreludeBindings, State.bindLocals, State.bindLocal,
-          State.bindCell, State.cellId?]
+      have freshWorkspace (offset : Nat) :
+          before.nextCell + offset ≠ workspaceCell := by
         intro same
         rw [← same] at old
-        exact (Nat.not_lt_of_ge (Nat.le_add_right before.nextCell 0)) old
-      · simp [after, recognizerPreludeState,
+        exact (Nat.not_lt_of_ge (Nat.le_add_right before.nextCell offset)) old
+      rcases choices with h | h | h <;>
+        simpa [h, after, recognizerPreludeState,
           recognizerPreludeBindings, State.bindLocals, State.bindLocal,
-          State.bindCell, State.cellId?]
-        intro same
-        rw [← same] at old
-        exact (Nat.not_lt_of_ge (Nat.le_add_right before.nextCell 2)) old
-      · simp [after, recognizerPreludeState,
-          recognizerPreludeBindings, State.bindLocals, State.bindLocal,
-          State.bindCell, State.cellId?]
-        intro same
-        rw [← same] at old
-        exact (Nat.not_lt_of_ge (Nat.le_add_right before.nextCell 3)) old
+          State.bindCell, State.cellId?, Nat.add_assoc] using
+          (freshWorkspace (id - 6))
   have indexSeparate : CellSet.Disjoint
       (localBindingFrameFootprint after
         verifiedParserChartClearPersistentBindings)
@@ -928,6 +911,13 @@ noncomputable def makeRecognizerChartEntry
       (CellSet.singleton indexCell)
     rw [← beforeIndexNext]
     exact fresh
+  have localOfIndex (index : Fin bindings.length)
+      (notRebound : ∀ binding, binding ∈ bindings.drop (index.val + 1) →
+        binding.1 ≠ bindings[index.val].1) :
+      after.local? (bindings[index.val]).1 = some (bindings[index.val]).2 := by
+    simpa [after, recognizerPreludeState] using
+      bindLocals_local_of_index before bindings index entry.resources.wellFormed
+        notRebound
   exact {
     indexCell := indexCell
     indexCellEq := rfl
@@ -936,30 +926,15 @@ noncomputable def makeRecognizerChartEntry
       wellFormed := afterResources.wellFormed
       workspaceLocal := afterResources.workspaceLocal
       workspaceLengthLocal := afterResources.workspaceLengthLocal
-      stateBaseLocal := by
-        simpa [after, bindings, recognizerPreludeState,
-          recognizerPreludeBindings] using
-          bindLocals_local_of_binding before (bindings.take 2)
-            (bindings.drop 3) 8
-            (.signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)))
-            entry.resources.wellFormed
-            (by simp [bindings, recognizerPreludeBindings])
-      stateCapacityLocal := by
-        simpa [after, bindings, recognizerPreludeState,
-          recognizerPreludeBindings] using
-          bindLocals_local_of_binding before (bindings.take 3)
-            (bindings.drop 4) 9
-            (.signed .i32 (Int.ofNat workspaceLayout.capacity))
-            entry.resources.wellFormed
-            (by simp [bindings, recognizerPreludeBindings])
-      finalPositionLocal := by
-        simpa [after, bindings, recognizerPreludeState,
-          recognizerPreludeBindings] using
-          bindLocals_local_of_binding before [] (bindings.drop 1) 6
-            (.signed .i32
-              (Int.ofNat (finalPosition workspaceLayout.tokenCount)))
-            entry.resources.wellFormed
-            (by simp [bindings, recognizerPreludeBindings])
+      stateBaseLocal := localOfIndex
+        ⟨2, by simp [bindings, recognizerPreludeBindings]⟩
+        (by simp [bindings, recognizerPreludeBindings])
+      stateCapacityLocal := localOfIndex
+        ⟨3, by simp [bindings, recognizerPreludeBindings]⟩
+        (by simp [bindings, recognizerPreludeBindings])
+      finalPositionLocal := localOfIndex
+        ⟨0, by simp [bindings, recognizerPreludeBindings]⟩
+        (by simp [bindings, recognizerPreludeBindings])
       workspaceBacking := afterResources.workspaceBacking
       indexOwned := indexOwned
       indexLe := by simp
@@ -993,14 +968,21 @@ theorem recognizerSetupBindings_id_range
     (binding : VarId × Value)
     (member : binding ∈ recognizerSetupBindings layout grammar first count) :
     11 ≤ binding.1 ∧ binding.1 ≤ 19 := by
-  have idMember : binding.1 ∈
+  rcases binding with ⟨id, value⟩
+  have idMember : id ∈
       (recognizerSetupBindings layout grammar first count).map Prod.fst :=
     List.mem_map_of_mem member
-  have cases : binding.1 = 11 ∨ binding.1 = 12 ∨ binding.1 = 13 ∨
-      binding.1 = 14 ∨ binding.1 = 15 ∨ binding.1 = 16 ∨
-      binding.1 = 17 ∨ binding.1 = 18 ∨ binding.1 = 19 := by
-    simpa [recognizerSetupBindings] using idMember
-  rcases cases with h | h | h | h | h | h | h | h | h <;> simp_all
+  simp [recognizerSetupBindings] at idMember
+  rcases idMember with h | h | h | h | h | h | h | h | h <;> simp_all
+
+private theorem recognizerSetupBinding_ne_of_le_nine
+    (id : VarId) (idBound : id ≤ 9)
+    (binding : VarId × Value)
+    (member : binding ∈ recognizerSetupBindings layout grammar first count) :
+    binding.1 ≠ id := by
+  have range := recognizerSetupBindings_id_range binding member
+  exact Nat.ne_of_gt (Nat.lt_of_le_of_lt idBound
+    (Nat.lt_of_lt_of_le (by decide : 9 < 11) range.1))
 
 structure RecognizerSetupEntry
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
@@ -1050,12 +1032,10 @@ noncomputable def makeRecognizerSetupEntry
   have afterRecognizer : RecognizerInvariant grammarLayout grammar words tokens
       workspaceLayout emptyWorkspace workspaceValues grammarCell tokensCell
       workspaceCell after := by
-    exact recognizer.after_bind_locals bindings (by
-      intro binding member
-      have range := recognizerSetupBindings_id_range binding (by
-        simpa [bindings] using member)
-      obtain ⟨lower, upper⟩ := range
-      exact Nat.lt_of_lt_of_le (by decide : 5 < 11) lower)
+    exact recognizer.after_bind_locals bindings (fun binding member =>
+      Nat.lt_of_lt_of_le (by decide : 5 < 11)
+        (recognizerSetupBindings_id_range binding
+          (by simpa [bindings] using member)).1)
   let stateCountCell := before.nextCell + 7
   let indexCell := before.nextCell + 8
   have stateCountOwned : (Assertion.localPointsTo 18 stateCountCell
@@ -1076,17 +1056,20 @@ noncomputable def makeRecognizerSetupEntry
     have idLe := (mem_verifiedParserRecognizerParameterIds_iff id).mp member
     have notRebound : ∀ binding, binding ∈ bindings → binding.1 ≠ id := by
       intro binding bindingMember
-      have range := recognizerSetupBindings_id_range binding (by
-        simpa [bindings] using bindingMember)
-      obtain ⟨lower, upper⟩ := range
-      exact Nat.ne_of_gt (Nat.lt_of_le_of_lt idLe
-        (Nat.lt_of_lt_of_le (by decide : 5 < 11) lower))
+      exact recognizerSetupBinding_ne_of_le_nine id
+        (Nat.le_trans idLe (by decide)) binding (by simpa [bindings] using bindingMember)
     change (before.bindLocals bindings).cellId? id ≠ some stateCountCell
     rw [bindLocals_preserves_cellId before bindings id notRebound]
     intro found
     have old := StateWellFormed.cell_lt_next_of_local_binding id
       stateCountCell recognizer.wellFormed found
     exact (Nat.not_lt_of_ge (by simp [stateCountCell])) old
+  have freshDistinct (cell : CellId) (offset : Nat)
+      (old : cell < before.nextCell) :
+      before.nextCell + offset ≠ cell := by
+    intro same
+    rw [← same] at old
+    exact (Nat.not_lt_of_ge (Nat.le_add_right before.nextCell offset)) old
   have stateCountDistinct : stateCountCell ≠ grammarCell ∧
       stateCountCell ≠ tokensCell ∧ stateCountCell ≠ workspaceCell := by
     have grammarOld := StateWellFormed.cell_lt_next_of_entry
@@ -1095,22 +1078,9 @@ noncomputable def makeRecognizerSetupEntry
       recognizer.wellFormed recognizer.tokenStorage.unused_backing
     have workspaceOld := StateWellFormed.cell_lt_next_of_entry
       recognizer.wellFormed recognizer.workspaceBacking
-    refine ⟨?_, ?_, ?_⟩
-    · intro same
-      have impossible := grammarOld
-      rw [← same] at impossible
-      change before.nextCell + 7 < before.nextCell at impossible
-      exact (Nat.not_lt_of_ge (Nat.le_add_right before.nextCell 7)) impossible
-    · intro same
-      have impossible := tokensOld
-      rw [← same] at impossible
-      change before.nextCell + 7 < before.nextCell at impossible
-      exact (Nat.not_lt_of_ge (Nat.le_add_right before.nextCell 7)) impossible
-    · intro same
-      have impossible := workspaceOld
-      rw [← same] at impossible
-      change before.nextCell + 7 < before.nextCell at impossible
-      exact (Nat.not_lt_of_ge (Nat.le_add_right before.nextCell 7)) impossible
+    exact ⟨freshDistinct grammarCell 7 grammarOld,
+      freshDistinct tokensCell 7 tokensOld,
+      freshDistinct workspaceCell 7 workspaceOld⟩
   have rowRange : first + count ≤ grammar.lhsProductions.length := by
     have fits := offsetsFrom_row_fits 0 grammar.productionsByLhs rowId
     simpa [first, count, rowId, IndexedGrammar.lhsOffsets,
@@ -1156,11 +1126,8 @@ noncomputable def makeRecognizerSetupEntry
       · have notRebound : ∀ binding, binding ∈ bindings →
             binding.1 ≠ id := by
           intro binding bindingMember
-          have range := recognizerSetupBindings_id_range binding (by
-            simpa [bindings] using bindingMember)
-          obtain ⟨lower, upper⟩ := range
-          exact Nat.ne_of_gt (Nat.lt_of_le_of_lt oldId
-            (Nat.lt_of_lt_of_le (by decide : 9 < 11) lower))
+          exact recognizerSetupBinding_ne_of_le_nine id oldId binding
+            (by simpa [bindings] using bindingMember)
         have beforeFound : before.cellId? id = some workspaceCell := by
           rw [← bindLocals_preserves_cellId before bindings id notRebound]
           simpa [after, recognizerSetupState] using found
@@ -1192,28 +1159,11 @@ noncomputable def makeRecognizerSetupEntry
           rw [← same] at impossible
           exact (Nat.not_lt_of_ge (Nat.le_add_right before.nextCell offset))
             impossible
-        rcases choices with rfl | rfl | rfl | rfl | rfl | rfl | rfl
-        · apply freshNotWorkspace 0
-          simpa [after, bindings, recognizerSetupState, recognizerSetupBindings, State.bindLocals,
-            State.bindLocal, State.bindCell, State.cellId?] using found
-        · apply freshNotWorkspace 1
-          simpa [after, bindings, recognizerSetupState, recognizerSetupBindings, State.bindLocals,
-            State.bindLocal, State.bindCell, State.cellId?] using found
-        · apply freshNotWorkspace 2
-          simpa [after, bindings, recognizerSetupState, recognizerSetupBindings, State.bindLocals,
-            State.bindLocal, State.bindCell, State.cellId?, Nat.add_assoc] using found
-        · apply freshNotWorkspace 3
-          simpa [after, bindings, recognizerSetupState, recognizerSetupBindings, State.bindLocals,
-            State.bindLocal, State.bindCell, State.cellId?, Nat.add_assoc] using found
-        · apply freshNotWorkspace 4
-          simpa [after, bindings, recognizerSetupState, recognizerSetupBindings, State.bindLocals,
-            State.bindLocal, State.bindCell, State.cellId?, Nat.add_assoc] using found
-        · apply freshNotWorkspace 5
-          simpa [after, bindings, recognizerSetupState, recognizerSetupBindings, State.bindLocals,
-            State.bindLocal, State.bindCell, State.cellId?, Nat.add_assoc] using found
-        · apply freshNotWorkspace 6
-          simpa [after, bindings, recognizerSetupState, recognizerSetupBindings, State.bindLocals,
-            State.bindLocal, State.bindCell, State.cellId?, Nat.add_assoc] using found
+        rcases choices with h | h | h | h | h | h | h <;>
+          apply freshNotWorkspace (id - 11) <;>
+          simpa [h, after, bindings, recognizerSetupState, recognizerSetupBindings,
+            State.bindLocals, State.bindLocal, State.bindCell, State.cellId?,
+            Nat.add_assoc] using found
     · rcases countOrIndex with countWritten | indexWritten
       · have state17WellFormed := bindLocals_preserves_wellFormed before
           (bindings.take 7) recognizer.wellFormed
@@ -1259,6 +1209,13 @@ noncomputable def makeRecognizerSetupEntry
         apply indexDisjoint indexCell ⟨id, member, found⟩
         simp [CellSet.singleton, indexCell, bindings, recognizerSetupBindings,
           bindLocals_nextCell]
+  have localOfIndex (index : Fin bindings.length)
+      (notRebound : ∀ binding, binding ∈ bindings.drop (index.val + 1) →
+        binding.1 ≠ bindings[index.val].1) :
+      after.local? (bindings[index.val]).1 = some (bindings[index.val]).2 := by
+    simpa [after, recognizerSetupState] using
+      bindLocals_local_of_index before bindings index recognizer.wellFormed
+        notRebound
   exact {
     first := first
     count := count
@@ -1276,20 +1233,14 @@ noncomputable def makeRecognizerSetupEntry
         stateBaseLocal := bindLocals_preserves_local before bindings 8 _
           recognizer.wellFormed clear.stateBaseLocal (by
             intro binding member
-            have range := recognizerSetupBindings_id_range binding (by
-              simpa [bindings] using member)
-            obtain ⟨lower, upper⟩ := range
-            exact Nat.ne_of_gt (Nat.lt_of_lt_of_le (by decide : 8 < 11)
-              lower))
+            exact recognizerSetupBinding_ne_of_le_nine 8 (by decide) binding
+              (by simpa [bindings] using member))
         stateCapacityLocal :=
           bindLocals_preserves_local before bindings 9 _
             recognizer.wellFormed clear.stateCapacityLocal (by
               intro binding member
-              have range := recognizerSetupBindings_id_range binding (by
-                simpa [bindings] using member)
-              obtain ⟨lower, upper⟩ := range
-              exact Nat.ne_of_gt (Nat.lt_of_lt_of_le (by decide : 9 < 11)
-                lower))
+              exact recognizerSetupBinding_ne_of_le_nine 9 (by decide) binding
+                (by simpa [bindings] using member))
         stateCountLocal := Assertion.localPointsTo_local 18 stateCountCell _
           after stateCountOwned
         stateCountOwned := stateCountOwned
@@ -1301,50 +1252,29 @@ noncomputable def makeRecognizerSetupEntry
         bindLocals_preserves_local before bindings 6 _ recognizer.wellFormed
           clear.finalPositionLocal (by
             intro binding member
-            have range := recognizerSetupBindings_id_range binding (by
-              simpa [bindings] using member)
-            obtain ⟨lower, upper⟩ := range
-            exact Nat.ne_of_gt (Nat.lt_of_lt_of_le (by decide : 6 < 11)
-              lower))
-      kindCountLocal := by
-        simpa [after, bindings, recognizerSetupState, recognizerSetupBindings] using
-          bindLocals_local_of_binding before [] (bindings.drop 1) 11
-            (.signed .i32 (Int.ofNat grammar.grammar.n_kinds))
-            recognizer.wellFormed (by simp [bindings, recognizerSetupBindings])
-      startNonterminalLocal := by
-        simpa [after, bindings, recognizerSetupState, recognizerSetupBindings] using
-          bindLocals_local_of_binding before (bindings.take 1)
-            (bindings.drop 2) 12
-            (.signed .i32 (Int.ofNat grammar.grammar.start_nonterminal))
-            recognizer.wellFormed (by simp [bindings, recognizerSetupBindings])
-      lhsOffsetsOffsetLocal := by
-        simpa [after, bindings, recognizerSetupState, recognizerSetupBindings] using
-          bindLocals_local_of_binding before (bindings.take 2)
-            (bindings.drop 3) 13
-            (.signed .i32 (Int.ofNat grammarLayout.lhsOffsetsOffset))
-            recognizer.wellFormed (by simp [bindings, recognizerSetupBindings])
-      lhsCountsOffsetLocal := by
-        simpa [after, bindings, recognizerSetupState, recognizerSetupBindings] using
-          bindLocals_local_of_binding before (bindings.take 3)
-            (bindings.drop 4) 14
-            (.signed .i32 (Int.ofNat grammarLayout.lhsCountsOffset))
-            recognizer.wellFormed (by simp [bindings, recognizerSetupBindings])
-      lhsProductionsOffsetLocal := by
-        simpa [after, bindings, recognizerSetupState, recognizerSetupBindings] using
-          bindLocals_local_of_binding before (bindings.take 4)
-            (bindings.drop 5) 15
-            (.signed .i32 (Int.ofNat grammarLayout.lhsProductionsOffset))
-            recognizer.wellFormed (by simp [bindings, recognizerSetupBindings])
-      firstLocal := by
-        simpa [after, bindings, recognizerSetupState, recognizerSetupBindings] using
-          bindLocals_local_of_binding before (bindings.take 5)
-            (bindings.drop 6) 16 (.signed .i32 (Int.ofNat first))
-            recognizer.wellFormed (by simp [bindings, recognizerSetupBindings])
-      countLocal := by
-        simpa [after, bindings, recognizerSetupState, recognizerSetupBindings] using
-          bindLocals_local_of_binding before (bindings.take 6)
-            (bindings.drop 7) 17 (.signed .i32 (Int.ofNat count))
-            recognizer.wellFormed (by simp [bindings, recognizerSetupBindings])
+            exact recognizerSetupBinding_ne_of_le_nine 6 (by decide) binding
+              (by simpa [bindings] using member))
+      kindCountLocal := localOfIndex
+        ⟨0, by simp [bindings, recognizerSetupBindings]⟩
+        (by simp [bindings, recognizerSetupBindings])
+      startNonterminalLocal := localOfIndex
+        ⟨1, by simp [bindings, recognizerSetupBindings]⟩
+        (by simp [bindings, recognizerSetupBindings])
+      lhsOffsetsOffsetLocal := localOfIndex
+        ⟨2, by simp [bindings, recognizerSetupBindings]⟩
+        (by simp [bindings, recognizerSetupBindings])
+      lhsCountsOffsetLocal := localOfIndex
+        ⟨3, by simp [bindings, recognizerSetupBindings]⟩
+        (by simp [bindings, recognizerSetupBindings])
+      lhsProductionsOffsetLocal := localOfIndex
+        ⟨4, by simp [bindings, recognizerSetupBindings]⟩
+        (by simp [bindings, recognizerSetupBindings])
+      firstLocal := localOfIndex
+        ⟨5, by simp [bindings, recognizerSetupBindings]⟩
+        (by simp [bindings, recognizerSetupBindings])
+      countLocal := localOfIndex
+        ⟨6, by simp [bindings, recognizerSetupBindings]⟩
+        (by simp [bindings, recognizerSetupBindings])
       indexOwned := by simpa [indexCell] using indexOwned
       indexLe := by simp
       rowRange := rowRange
@@ -1363,23 +1293,10 @@ noncomputable def makeRecognizerSetupEntry
           recognizer.wellFormed recognizer.tokenStorage.unused_backing
         have workspaceOld := StateWellFormed.cell_lt_next_of_entry
           recognizer.wellFormed recognizer.workspaceBacking
-        refine ⟨?_, ?_, ?_, ?_⟩
-        · intro same
-          have impossible := grammarOld
-          rw [← same] at impossible
-          change before.nextCell + 8 < before.nextCell at impossible
-          exact (Nat.not_lt_of_ge (Nat.le_add_right before.nextCell 8)) impossible
-        · intro same
-          have impossible := tokensOld
-          rw [← same] at impossible
-          change before.nextCell + 8 < before.nextCell at impossible
-          exact (Nat.not_lt_of_ge (Nat.le_add_right before.nextCell 8)) impossible
-        · intro same
-          have impossible := workspaceOld
-          rw [← same] at impossible
-          change before.nextCell + 8 < before.nextCell at impossible
-          exact (Nat.not_lt_of_ge (Nat.le_add_right before.nextCell 8)) impossible
-        · simp [indexCell, stateCountCell]
+        exact ⟨freshDistinct grammarCell 8 grammarOld,
+          freshDistinct tokensCell 8 tokensOld,
+          freshDistinct workspaceCell 8 workspaceOld, by
+            simp [indexCell, stateCountCell]⟩
     }
   }
 
@@ -1408,6 +1325,18 @@ structure RecognizerSetupExecution
     tokens workspaceLayout completion
   outcomeWorkspace : outcome.workspaceAgrees finalWorkspace
 
+private theorem execution_of_closed
+    {before : State} {program : Program} {statement : Stmt}
+    {completion : Completion} {writes : CellSet}
+    {id : VarId} {type : Ty} {initializer : Expr}
+    {body : Stmt}
+    (closed : ExecutionWithEffect program before
+      (.letLocal id type initializer body) completion writes)
+    (shape : statement = .letLocal id type initializer body) :
+    Executes program before statement completion closed.after := by
+  rw [shape]
+  exact closed.execution
+
 /-- Evaluate the exact nested setup statements selected from the extracted
     recognizer, then enter the verified start-production loop. -/
 noncomputable def executeRecognizerSetup
@@ -1425,68 +1354,44 @@ noncomputable def executeRecognizerSetup
     verifiedParser_range_header_constants
   let r1 := before.bindLocal 11
     (.signed .i32 (Int.ofNat grammar.grammar.n_kinds))
-  let recognizer1 := recognizer.after_bind_local 11
-    (.signed .i32 (Int.ofNat grammar.grammar.n_kinds))
-    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+  let recognizer1 := by
+    apply recognizer.after_bind_local 11 (.signed .i32 (Int.ofNat grammar.grammar.n_kinds)) <;> decide
   let r2 := r1.bindLocal 12
     (.signed .i32 (Int.ofNat grammar.grammar.start_nonterminal))
-  let recognizer2 := recognizer1.after_bind_local 12
-    (.signed .i32 (Int.ofNat grammar.grammar.start_nonterminal))
-    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+  let recognizer2 := by
+    apply recognizer1.after_bind_local 12 (.signed .i32 (Int.ofNat grammar.grammar.start_nonterminal)) <;> decide
   let r3 := r2.bindLocal 13
     (.signed .i32 (Int.ofNat grammarLayout.lhsOffsetsOffset))
-  let recognizer3 := recognizer2.after_bind_local 13
-    (.signed .i32 (Int.ofNat grammarLayout.lhsOffsetsOffset))
-    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+  let recognizer3 := by
+    apply recognizer2.after_bind_local 13 (.signed .i32 (Int.ofNat grammarLayout.lhsOffsetsOffset)) <;> decide
   let r4 := r3.bindLocal 14
     (.signed .i32 (Int.ofNat grammarLayout.lhsCountsOffset))
-  let recognizer4 := recognizer3.after_bind_local 14
-    (.signed .i32 (Int.ofNat grammarLayout.lhsCountsOffset))
-    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+  let recognizer4 := by
+    apply recognizer3.after_bind_local 14 (.signed .i32 (Int.ofNat grammarLayout.lhsCountsOffset)) <;> decide
   let r5 := r4.bindLocal 15
     (.signed .i32 (Int.ofNat grammarLayout.lhsProductionsOffset))
-  let recognizer5 := recognizer4.after_bind_local 15
-    (.signed .i32 (Int.ofNat grammarLayout.lhsProductionsOffset))
-    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
-  have startAtR5 : r5.local? 12 = some
-      (.signed .i32 (Int.ofNat grammar.grammar.start_nonterminal)) := by
-    have atR2 := bindLocal_finds_local r1 12
-      (.signed .i32 (Int.ofNat grammar.grammar.start_nonterminal))
-      recognizer1.wellFormed
-    have atR3 := (bindLocal_preserves_other_local recognizer2.wellFormed
-      (boundId := 13) (queriedId := 12) (value :=
-        .signed .i32 (Int.ofNat grammarLayout.lhsOffsetsOffset))
-      (by decide)).trans atR2
-    have atR4 := (bindLocal_preserves_other_local recognizer3.wellFormed
-      (boundId := 14) (queriedId := 12) (value :=
-        .signed .i32 (Int.ofNat grammarLayout.lhsCountsOffset))
-      (by decide)).trans atR3
-    exact (bindLocal_preserves_other_local recognizer4.wellFormed
-      (boundId := 15) (queriedId := 12) (value :=
-        .signed .i32 (Int.ofNat grammarLayout.lhsProductionsOffset))
-      (by decide)).trans atR4
-  have offsetsAtR5 : r5.local? 13 = some
-      (.signed .i32 (Int.ofNat grammarLayout.lhsOffsetsOffset)) := by
-    have atR3 := bindLocal_finds_local r2 13
-      (.signed .i32 (Int.ofNat grammarLayout.lhsOffsetsOffset))
-      recognizer2.wellFormed
-    have atR4 := (bindLocal_preserves_other_local recognizer3.wellFormed
-      (boundId := 14) (queriedId := 13) (value :=
-        .signed .i32 (Int.ofNat grammarLayout.lhsCountsOffset))
-      (by decide)).trans atR3
-    exact (bindLocal_preserves_other_local recognizer4.wellFormed
-      (boundId := 15) (queriedId := 13) (value :=
-        .signed .i32 (Int.ofNat grammarLayout.lhsProductionsOffset))
-      (by decide)).trans atR4
-  have countsAtR5 : r5.local? 14 = some
-      (.signed .i32 (Int.ofNat grammarLayout.lhsCountsOffset)) := by
-    have atR4 := bindLocal_finds_local r3 14
-      (.signed .i32 (Int.ofNat grammarLayout.lhsCountsOffset))
-      recognizer3.wellFormed
-    exact (bindLocal_preserves_other_local recognizer4.wellFormed
-      (boundId := 15) (queriedId := 14) (value :=
-        .signed .i32 (Int.ofNat grammarLayout.lhsProductionsOffset))
-      (by decide)).trans atR4
+  let recognizer5 := by
+    apply recognizer4.after_bind_local 15 (.signed .i32 (Int.ofNat grammarLayout.lhsProductionsOffset)) <;> decide
+  let prefixBindings := [
+    (11, Value.signed .i32 (Int.ofNat grammar.grammar.n_kinds)),
+    (12, .signed .i32 (Int.ofNat grammar.grammar.start_nonterminal)),
+    (13, .signed .i32 (Int.ofNat grammarLayout.lhsOffsetsOffset)),
+    (14, .signed .i32 (Int.ofNat grammarLayout.lhsCountsOffset)),
+    (15, .signed .i32 (Int.ofNat grammarLayout.lhsProductionsOffset))]
+  have prefixLocal (index : Fin prefixBindings.length)
+      (notRebound : ∀ binding, binding ∈ prefixBindings.drop (index.val + 1) →
+        binding.1 ≠ prefixBindings[index.val].1) :
+      r5.local? (prefixBindings[index.val]).1 =
+        some (prefixBindings[index.val]).2 := by
+    simpa [prefixBindings, r5, r4, r3, r2, r1, State.bindLocals] using
+      bindLocals_local_of_index before prefixBindings index
+        recognizer.wellFormed notRebound
+  have startAtR5 := prefixLocal
+      ⟨1, by simp [prefixBindings]⟩ (by simp [prefixBindings])
+  have offsetsAtR5 := prefixLocal
+      ⟨2, by simp [prefixBindings]⟩ (by simp [prefixBindings])
+  have countsAtR5 := prefixLocal
+      ⟨3, by simp [prefixBindings]⟩ (by simp [prefixBindings])
   have kindEvaluation := recognizer.read_packed_header 8 1
     grammar.grammar.n_kinds recognizer.grammarEncoded.kindCount constant8
   have startEvaluation := recognizer1.read_packed_header 11 4
@@ -1511,19 +1416,16 @@ noncomputable def executeRecognizerSetup
         simpa [IndexedGrammar.lhsOffsets_length] using entry.startBound)
     simpa [r5, r4, r3, r2, r1, entry.firstEq] using read
   let r6 := r5.bindLocal 16 (.signed .i32 (Int.ofNat entry.first))
-  let recognizer6 := recognizer5.after_bind_local 16
-    (.signed .i32 (Int.ofNat entry.first))
-    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
-  have startAtR6 : r6.local? 12 = some
-      (.signed .i32 (Int.ofNat grammar.grammar.start_nonterminal)) :=
+  let recognizer6 := by
+    apply recognizer5.after_bind_local 16 (.signed .i32 (Int.ofNat entry.first)) <;> decide
+  have startAtR6 :=
     (bindLocal_preserves_other_local recognizer5.wellFormed
-      (boundId := 16) (queriedId := 12) (value :=
-        .signed .i32 (Int.ofNat entry.first)) (by decide)).trans startAtR5
-  have countsAtR6 : r6.local? 14 = some
-      (.signed .i32 (Int.ofNat grammarLayout.lhsCountsOffset)) :=
+      (boundId := 16) (queriedId := 12)
+      (value := .signed .i32 (Int.ofNat entry.first)) (by decide)).trans startAtR5
+  have countsAtR6 :=
     (bindLocal_preserves_other_local recognizer5.wellFormed
-      (boundId := 16) (queriedId := 14) (value :=
-        .signed .i32 (Int.ofNat entry.first)) (by decide)).trans countsAtR5
+      (boundId := 16) (queriedId := 14)
+      (value := .signed .i32 (Int.ofNat entry.first)) (by decide)).trans countsAtR5
   have countEvaluation : Evaluates verifiedParserCore r6
       (.index (.local 0) (.binary .add (.local 14) (.local 12)))
       (.signed .i32 (Int.ofNat entry.count)) r6 := by
@@ -1569,121 +1471,62 @@ noncomputable def executeRecognizerSetup
   have wellFormed8 : StateWellFormed r8 :=
     bindLocal_preserves_well_formed r7 18 _ wellFormed7
   have zeroAtR8 : Evaluates verifiedParserCore r8
-      (.value (.signed .i32 0)) (.signed .i32 0) r8 := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) r8 := Lanius.Semantics.evaluatesValue
   let closed19 := closesFreshLocalExcept (id := 19)
     (type := parserI32Type) setupWrites wellFormed8 zeroAtR8
     continuationExecution
     (continuationEffect.weaken CellSet.subset_union_left)
     continuation.wellFormed
-  let after19 := closed19.after
-  have execution19 : Executes verifiedParserCore r8
-      parserRecognizeInitialIndexStatement continuation.completion after19 := by
-    rw [extractedParserRecognize_initial_index_statement_shape]
-    simpa [closed19, after19] using closed19.execution
-  have effect19 : ModifiesOnly setupWrites r8 after19 := by
-    simpa [after19] using closed19.effect
-  have wellFormed19 : StateWellFormed after19 := by
-    simpa [after19] using closed19.wellFormed
   have zeroAtR7 : Evaluates verifiedParserCore r7
-      (.value (.signed .i32 0)) (.signed .i32 0) r7 := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) r7 := Lanius.Semantics.evaluatesValue
   let closed18 := closesFreshLocalExcept (id := 18)
-    (type := parserI32Type) setupWrites wellFormed7 zeroAtR7 execution19
-    (effect19.weaken CellSet.subset_union_left) wellFormed19
-  let after18 := closed18.after
-  have execution18 : Executes verifiedParserCore r7
-      parserRecognizeStateCountStatement continuation.completion after18 := by
-    rw [extractedParserRecognize_state_count_statement_shape]
-    simpa [closed18, after18] using closed18.execution
-  have effect18 : ModifiesOnly setupWrites r7 after18 := by
-    simpa [after18] using closed18.effect
-  have wellFormed18 : StateWellFormed after18 := by
-    simpa [after18] using closed18.wellFormed
+    (type := parserI32Type) setupWrites wellFormed7 zeroAtR7
+    (execution_of_closed closed19
+      extractedParserRecognize_initial_index_statement_shape)
+    (closed19.effect.weaken CellSet.subset_union_left) closed19.wellFormed
   let closed17 := closesFreshLocalExcept (id := 17)
     (type := parserI32Type) setupWrites recognizer6.wellFormed countEvaluation
-    execution18 (effect18.weaken CellSet.subset_union_left) wellFormed18
-  let after17 := closed17.after
-  have execution17 : Executes verifiedParserCore r6
-      parserRecognizeStartCountStatement continuation.completion after17 := by
-    rw [extractedParserRecognize_start_count_statement_shape]
-    simpa [closed17, after17, r6, r5, r4, r3, r2, r1] using
-      closed17.execution
-  have effect17 : ModifiesOnly setupWrites r6 after17 := by
-    simpa [after17, r6, r5, r4, r3, r2, r1] using closed17.effect
-  have wellFormed17 : StateWellFormed after17 := by
-    simpa [after17] using closed17.wellFormed
+    (execution_of_closed closed18
+      extractedParserRecognize_state_count_statement_shape)
+    (closed18.effect.weaken CellSet.subset_union_left)
+    closed18.wellFormed
   let closed16 := closesFreshLocalExcept (id := 16)
     (type := parserI32Type) setupWrites recognizer5.wellFormed firstEvaluation
-    execution17 (effect17.weaken CellSet.subset_union_left) wellFormed17
-  let after16 := closed16.after
-  have execution16 : Executes verifiedParserCore r5
-      parserRecognizeStartFirstStatement continuation.completion after16 := by
-    rw [extractedParserRecognize_start_first_statement_shape]
-    simpa [closed16, after16, r5, r4, r3, r2, r1] using
-      closed16.execution
-  have effect16 : ModifiesOnly setupWrites r5 after16 := by
-    simpa [after16, r5, r4, r3, r2, r1] using closed16.effect
-  have wellFormed16 : StateWellFormed after16 := by
-    simpa [after16] using closed16.wellFormed
+    (execution_of_closed closed17
+      extractedParserRecognize_start_count_statement_shape)
+    (closed17.effect.weaken CellSet.subset_union_left)
+    closed17.wellFormed
   let closed15 := closesFreshLocalExcept (id := 15)
     (type := parserI32Type) setupWrites recognizer4.wellFormed
-    productionsEvaluation execution16
-    (effect16.weaken CellSet.subset_union_left) wellFormed16
-  let after15 := closed15.after
-  have execution15 : Executes verifiedParserCore r4
-      parserRecognizeLhsProductionsStatement continuation.completion after15 := by
-    rw [extractedParserRecognize_lhs_productions_statement_shape]
-    simpa [closed15, after15, r4, r3, r2, r1] using closed15.execution
-  have effect15 : ModifiesOnly setupWrites r4 after15 := by
-    simpa [after15, r4, r3, r2, r1] using closed15.effect
-  have wellFormed15 : StateWellFormed after15 := by
-    simpa [after15] using closed15.wellFormed
+    productionsEvaluation
+    (execution_of_closed closed16
+      extractedParserRecognize_start_first_statement_shape)
+    (closed16.effect.weaken CellSet.subset_union_left) closed16.wellFormed
   let closed14 := closesFreshLocalExcept (id := 14)
     (type := parserI32Type) setupWrites recognizer3.wellFormed
-    countsEvaluation execution15
-    (effect15.weaken CellSet.subset_union_left) wellFormed15
-  let after14 := closed14.after
-  have execution14 : Executes verifiedParserCore r3
-      parserRecognizeLhsCountsStatement continuation.completion after14 := by
-    rw [extractedParserRecognize_lhs_counts_statement_shape]
-    simpa [closed14, after14, r3, r2, r1] using closed14.execution
-  have effect14 : ModifiesOnly setupWrites r3 after14 := by
-    simpa [after14, r3, r2, r1] using closed14.effect
-  have wellFormed14 : StateWellFormed after14 := by
-    simpa [after14] using closed14.wellFormed
+    countsEvaluation
+    (execution_of_closed closed15
+      extractedParserRecognize_lhs_productions_statement_shape)
+    (closed15.effect.weaken CellSet.subset_union_left) closed15.wellFormed
   let closed13 := closesFreshLocalExcept (id := 13)
     (type := parserI32Type) setupWrites recognizer2.wellFormed
-    offsetsEvaluation execution14
-    (effect14.weaken CellSet.subset_union_left) wellFormed14
-  let after13 := closed13.after
-  have execution13 : Executes verifiedParserCore r2
-      parserRecognizeLhsOffsetsStatement continuation.completion after13 := by
-    rw [extractedParserRecognize_lhs_offsets_statement_shape]
-    simpa [closed13, after13, r2, r1] using closed13.execution
-  have effect13 : ModifiesOnly setupWrites r2 after13 := by
-    simpa [after13, r2, r1] using closed13.effect
-  have wellFormed13 : StateWellFormed after13 := by
-    simpa [after13] using closed13.wellFormed
+    offsetsEvaluation
+    (execution_of_closed closed14
+      extractedParserRecognize_lhs_counts_statement_shape)
+    (closed14.effect.weaken CellSet.subset_union_left) closed14.wellFormed
   let closed12 := closesFreshLocalExcept (id := 12)
     (type := parserI32Type) setupWrites recognizer1.wellFormed startEvaluation
-    execution13 (effect13.weaken CellSet.subset_union_left) wellFormed13
-  let after12 := closed12.after
-  have execution12 : Executes verifiedParserCore r1
-      parserRecognizeStartNonterminalStatement continuation.completion
-      after12 := by
-    rw [extractedParserRecognize_start_nonterminal_statement_shape]
-    simpa [closed12, after12, r1] using closed12.execution
-  have effect12 : ModifiesOnly setupWrites r1 after12 := by
-    simpa [after12, r1] using closed12.effect
-  have wellFormed12 : StateWellFormed after12 := by
-    simpa [after12] using closed12.wellFormed
+    (execution_of_closed closed13
+      extractedParserRecognize_lhs_offsets_statement_shape)
+    (closed13.effect.weaken CellSet.subset_union_left)
+    closed13.wellFormed
   let closed11 := closesFreshLocalExcept (id := 11)
     (type := parserI32Type) setupWrites recognizer.wellFormed kindEvaluation
-    execution12 (effect12.weaken CellSet.subset_union_left) wellFormed12
+    (execution_of_closed closed12
+      extractedParserRecognize_start_nonterminal_statement_shape)
+    (closed12.effect.weaken CellSet.subset_union_left)
+    closed12.wellFormed
   let after11 := closed11.after
-  have execution11 : Executes verifiedParserCore before
-      parserRecognizeSeedSetupStatement continuation.completion after11 := by
-    rw [extractedParserRecognize_seed_setup_shape]
-    simpa [closed11, after11] using closed11.execution
   have visibleEffect : ModifiesOnly (CellSet.singleton workspaceCell)
       before after11 := by
     apply closed11.effect.hideFreshWritesExcept
@@ -1691,13 +1534,13 @@ noncomputable def executeRecognizerSetup
     change cell = workspaceCell ∨ before.nextCell ≤ cell at written
     exact written
   have cells : after11.cells = continuation.after.cells := by
-    simp [after11, closed11, after12, closed12, after13, closed13, after14,
-      closed14, after15, closed15, after16, closed16, after17, closed17,
-      after18, closed18, after19, closed19]
+    simp [after11, closed11, closed12, closed13, closed14, closed15,
+      closed16, closed17, closed18, closed19]
   exact {
     after := after11
     completion := continuation.completion
-    execution := execution11
+    execution := execution_of_closed closed11
+      extractedParserRecognize_seed_setup_shape
     effect := visibleEffect
     wellFormed := closed11.wellFormed
     finalWorkspace := continuation.finalWorkspace
@@ -1833,10 +1676,9 @@ noncomputable def executeRecognizerAfterGrammarGuard
   have tokenEvaluation : Evaluates verifiedParserCore before (.local 3)
       (.signed .i32 (Int.ofNat workspaceLayout.tokenCount)) before := by
     rw [entry.resources.workspaceTokenCount]
-    exact ⟨1, evalLocal_of_local 1 verifiedParserCore before 3 _
-      entry.resources.tokenCountLocal⟩
+    exact Lanius.Semantics.evaluatesLocal entry.resources.tokenCountLocal
   have twoEvaluation : Evaluates verifiedParserCore before
-      (.value (.signed .i32 2)) (.signed .i32 2) before := ⟨1, rfl⟩
+      (.value (.signed .i32 2)) (.signed .i32 2) before := Lanius.Semantics.evaluatesValue
   have finalPositionEvaluation : Evaluates verifiedParserCore before
       (.binary .multiply (.local 3) (.value (.signed .i32 2)))
       (.signed .i32
@@ -1853,9 +1695,9 @@ noncomputable def executeRecognizerAfterGrammarGuard
   have finalPositionLocalEvaluation : Evaluates verifiedParserCore r6 (.local 6)
       (.signed .i32
         (Int.ofNat (finalPosition workspaceLayout.tokenCount))) r6 :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore r6 6 _ finalPositionLocal⟩
+    Lanius.Semantics.evaluatesLocal finalPositionLocal
   have oneEvaluation : Evaluates verifiedParserCore r6
-      (.value (.signed .i32 1)) (.signed .i32 1) r6 := ⟨1, rfl⟩
+      (.value (.signed .i32 1)) (.signed .i32 1) r6 := Lanius.Semantics.evaluatesValue
   have chartCountEvaluation : Evaluates verifiedParserCore r6
       (.binary .add (.local 6) (.value (.signed .i32 1)))
       (.signed .i32 (Int.ofNat (chartCount workspaceLayout.tokenCount))) r6 := by
@@ -1870,7 +1712,7 @@ noncomputable def executeRecognizerAfterGrammarGuard
     bindLocal_finds_local r6 7 _ wellFormed6
   have chartCountLocalEvaluation : Evaluates verifiedParserCore r7 (.local 7)
       (.signed .i32 (Int.ofNat (chartCount workspaceLayout.tokenCount))) r7 :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore r7 7 _ chartCountLocal⟩
+    Lanius.Semantics.evaluatesLocal chartCountLocal
   have chartWordsEvaluation : Evaluates verifiedParserCore r7 (.constant 24)
       (.signed .i32 2) r7 :=
     evaluatesConstant verifiedParser_workspace_constants.1
@@ -1889,7 +1731,7 @@ noncomputable def executeRecognizerAfterGrammarGuard
     bindLocal_finds_local r7 8 _ wellFormed7
   have stateBaseLocalEvaluation : Evaluates verifiedParserCore r8 (.local 8)
       (.signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount))) r8 :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore r8 8 _ stateBaseLocal⟩
+    Lanius.Semantics.evaluatesLocal stateBaseLocal
   have workspaceLengthAt6 : r6.local? 5 = some
       (.signed .i32 (Int.ofNat workspaceLayout.workspaceLength)) := by
     rw [bindLocal_preserves_other_local entry.resources.wellFormed
@@ -1906,7 +1748,7 @@ noncomputable def executeRecognizerAfterGrammarGuard
     exact workspaceLengthAt7
   have workspaceLengthEvaluation : Evaluates verifiedParserCore r8 (.local 5)
       (.signed .i32 (Int.ofNat workspaceLayout.workspaceLength)) r8 :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore r8 5 _ workspaceLengthAt8⟩
+    Lanius.Semantics.evaluatesLocal workspaceLengthAt8
   have workspaceGuardExecution : Executes verifiedParserCore r8
       parserRecognizeWorkspaceGuard .next r8 := by
     exact WorkspaceGuardProof.executes workspaceLayout.workspaceLength
@@ -1968,80 +1810,54 @@ noncomputable def executeRecognizerAfterGrammarGuard
   have wellFormed10 : StateWellFormed r10 :=
     bindLocal_preserves_well_formed r9 10 _ wellFormed9
   have zeroAtR9 : Evaluates verifiedParserCore r9
-      (.value (.signed .i32 0)) (.signed .i32 0) r9 := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) r9 := Lanius.Semantics.evaluatesValue
   let closed10 := closesFreshLocalExcept (id := 10)
     (type := parserI32Type) preludeWrites wellFormed9 zeroAtR9
     continuationExecution
     (continuationEffect.weaken CellSet.subset_union_left)
     continuation.wellFormed
   let after10 := closed10.after
-  have execution10 : Executes verifiedParserCore r9
-      parserRecognizeChartIndexStatement continuation.completion after10 := by
-    rw [extractedParserRecognize_chart_index_statement_shape]
-    simpa [closed10, after10] using closed10.execution
-  have effect10 : ModifiesOnly preludeWrites r9 after10 := by
-    simpa [after10] using closed10.effect
-  have wellFormedAfter10 : StateWellFormed after10 := by
-    simpa [after10] using closed10.wellFormed
   let closed9 := closesFreshLocalExcept (id := 9)
     (type := parserI32Type) preludeWrites wellFormed8 capacityEvaluation
-    execution10 (effect10.weaken CellSet.subset_union_left)
-    wellFormedAfter10
+    (execution_of_closed closed10
+      extractedParserRecognize_chart_index_statement_shape)
+    (closed10.effect.weaken CellSet.subset_union_left)
+    closed10.wellFormed
   let after9 := closed9.after
-  have execution9 : Executes verifiedParserCore r8
-      parserRecognizeStateCapacityStatement continuation.completion after9 := by
-    rw [extractedParserRecognize_state_capacity_statement_shape]
-    simpa [closed9, after9] using closed9.execution
-  have effect9 : ModifiesOnly preludeWrites r8 after9 := by
-    simpa [after9] using closed9.effect
-  have wellFormedAfter9 : StateWellFormed after9 := by
-    simpa [after9] using closed9.wellFormed
   have executionGuardAndCapacity : Executes verifiedParserCore r8
       (.sequence parserRecognizeWorkspaceGuard
         parserRecognizeStateCapacityStatement)
       continuation.completion after9 :=
-    executesSequence workspaceGuardExecution execution9
+    executesSequence workspaceGuardExecution (execution_of_closed closed9
+      extractedParserRecognize_state_capacity_statement_shape)
   have effectGuardAndCapacity : ModifiesOnly preludeWrites r8 after9 :=
-    (ModifiesOnly.reflAny preludeWrites r8).trans_same effect9
+    (ModifiesOnly.reflAny preludeWrites r8).trans_same closed9.effect
   let closed8 := closesFreshLocalExcept (id := 8)
     (type := parserI32Type) preludeWrites wellFormed7 stateBaseEvaluation
     executionGuardAndCapacity
     (effectGuardAndCapacity.weaken CellSet.subset_union_left)
-    wellFormedAfter9
+    closed9.wellFormed
   let after8 := closed8.after
-  have execution8 : Executes verifiedParserCore r7
-      parserRecognizeStateBaseStatement continuation.completion after8 := by
-    rw [extractedParserRecognize_state_base_statement_shape]
-    simpa [closed8, after8] using closed8.execution
-  have effect8 : ModifiesOnly preludeWrites r7 after8 := by
-    simpa [after8] using closed8.effect
-  have wellFormedAfter8 : StateWellFormed after8 := by
-    simpa [after8] using closed8.wellFormed
   let closed7 := closesFreshLocalExcept (id := 7)
     (type := parserI32Type) preludeWrites wellFormed6 chartCountEvaluation
-    execution8 (effect8.weaken CellSet.subset_union_left) wellFormedAfter8
+    (execution_of_closed closed8
+      extractedParserRecognize_state_base_statement_shape)
+    (closed8.effect.weaken CellSet.subset_union_left)
+    closed8.wellFormed
   let after7 := closed7.after
-  have execution7 : Executes verifiedParserCore r6
-      parserRecognizePositionCountStatement continuation.completion after7 := by
-    rw [extractedParserRecognize_position_count_statement_shape]
-    simpa [closed7, after7] using closed7.execution
-  have effect7 : ModifiesOnly preludeWrites r6 after7 := by
-    simpa [after7] using closed7.effect
-  have wellFormedAfter7 : StateWellFormed after7 := by
-    simpa [after7] using closed7.wellFormed
   let closed6 := closesFreshLocalExcept (id := 6)
     (type := parserI32Type) preludeWrites entry.resources.wellFormed
-    finalPositionEvaluation execution7
-    (effect7.weaken CellSet.subset_union_left) wellFormedAfter7
+    finalPositionEvaluation
+    (execution_of_closed closed7
+      extractedParserRecognize_position_count_statement_shape)
+    (closed7.effect.weaken CellSet.subset_union_left) closed7.wellFormed
   let after6 := closed6.after
-  have execution6 : Executes verifiedParserCore before
-      parserRecognizeFinalPositionStatement continuation.completion after6 := by
-    rw [extractedParserRecognize_final_position_statement_shape]
-    simpa [closed6, after6] using closed6.execution
   have wholeExecution : Executes verifiedParserCore before
       parserRecognizeAfterGrammarGuard continuation.completion after6 := by
     rw [extractedParserRecognize_after_grammar_guard_shape]
-    exact executesSequence entry.resources.input_guard_executes execution6
+    exact executesSequence entry.resources.input_guard_executes
+      (execution_of_closed closed6
+        extractedParserRecognize_final_position_statement_shape)
   have visibleEffect : ModifiesOnly (CellSet.singleton workspaceCell)
       before after6 := by
     apply closed6.effect.hideFreshWritesExcept
@@ -2049,8 +1865,8 @@ noncomputable def executeRecognizerAfterGrammarGuard
     change cell = workspaceCell ∨ before.nextCell ≤ cell at written
     exact written
   have cells : after6.cells = continuation.after.cells := by
-    simp [after6, closed6, after7, closed7, after8, closed8, after9, closed9,
-      after10, closed10]
+    simp [after6, closed6, closed7, closed8, after9, closed9,
+      closed10]
   exact {
     after := after6
     completion := continuation.completion

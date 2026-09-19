@@ -94,34 +94,7 @@ private theorem exprFunctionalityEvidence (surface : Surface.Expr) :
         exact ⟨ExprSpecializationFunctional.methodCall calleeEvidence.2
             argumentsFunctional,
           trivial⟩
-    | literal literal =>
-        exact ⟨ExprSpecializationFunctional.unsupportedCall (by
-            simp [CallableCallee]), trivial⟩
-    | selfValue =>
-        exact ⟨ExprSpecializationFunctional.unsupportedCall (by
-            simp [CallableCallee]), trivial⟩
-    | array elements =>
-        exact ⟨ExprSpecializationFunctional.unsupportedCall (by
-            simp [CallableCallee]), trivial⟩
-    | structValue path fields =>
-        exact ⟨ExprSpecializationFunctional.unsupportedCall (by
-            simp [CallableCallee]), trivial⟩
-    | unary op operand =>
-        exact ⟨ExprSpecializationFunctional.unsupportedCall (by
-            simp [CallableCallee]), trivial⟩
-    | binary op left right =>
-        exact ⟨ExprSpecializationFunctional.unsupportedCall (by
-            simp [CallableCallee]), trivial⟩
-    | assign op place value =>
-        exact ⟨ExprSpecializationFunctional.unsupportedCall (by
-            simp [CallableCallee]), trivial⟩
-    | call nested arguments =>
-        exact ⟨ExprSpecializationFunctional.unsupportedCall (by
-            simp [CallableCallee]), trivial⟩
-    | index base index =>
-        exact ⟨ExprSpecializationFunctional.unsupportedCall (by
-            simp [CallableCallee]), trivial⟩
-    | matchValue scrutinee arms =>
+    | _ =>
         exact ⟨ExprSpecializationFunctional.unsupportedCall (by
             simp [CallableCallee]), trivial⟩
   · intro base index baseEvidence indexEvidence

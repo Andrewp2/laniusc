@@ -72,8 +72,8 @@ theorem verifiedFrontendPack_decoded_tail9_present_kernel :
     (ArtifactPackContextChecker.decodePackUnitsFromCached 9
       verifiedFrontendPackArtifactsTail9Kernel
       verifiedFrontendPackSurfacesTail9Kernel).isSome = true := by
-  rw [verifiedFrontendPack_decoded_tail9_found_kernel]
-  rfl
+  simp [verifiedFrontendPack_decoded_tail9_found_kernel]
+
 def verifiedFrontendPackDecodedTail8Kernel :
     ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail8Kernel :=
   ArtifactPackContextChecker.DecodedPackUnits.prepend 8 verifiedFrontendRawLexerArtifact
@@ -85,21 +85,13 @@ theorem verifiedFrontendPack_decoded_tail8_found_kernel :
     ArtifactPackContextChecker.decodePackUnitsFromCached 8
       verifiedFrontendPackArtifactsTail8Kernel verifiedFrontendPackSurfacesTail8Kernel =
         some verifiedFrontendPackDecodedTail8Kernel := by
-  unfold verifiedFrontendPackArtifactsTail8Kernel verifiedFrontendPackSurfacesTail8Kernel
-    verifiedFrontendPackDecodedTail8Kernel
   exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
-    8 verifiedFrontendRawLexerArtifact verifiedFrontendPackArtifactsTail9Kernel
-    verifiedFrontendRawLexerSurfaceKernel verifiedFrontendPackSurfacesTail9Kernel
-    verifiedFrontendRawLexerModulePathKernel verifiedFrontendRawLexer_checked_module_path_found_kernel
-    verifiedFrontendRawLexerCoreProgramKernel verifiedFrontendRawLexer_core_program_found_kernel
-    verifiedFrontendPackDecodedTail9Kernel
-    verifiedFrontendPack_decoded_tail9_found_kernel
+    (restFound := verifiedFrontendPack_decoded_tail9_found_kernel)
 theorem verifiedFrontendPack_decoded_tail8_present_kernel :
     (ArtifactPackContextChecker.decodePackUnitsFromCached 8
       verifiedFrontendPackArtifactsTail8Kernel
       verifiedFrontendPackSurfacesTail8Kernel).isSome = true := by
-  rw [verifiedFrontendPack_decoded_tail8_found_kernel]
-  rfl
+  simp [verifiedFrontendPack_decoded_tail8_found_kernel]
 def verifiedFrontendPackDecodedTail7Kernel :
     ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail7Kernel :=
   ArtifactPackContextChecker.DecodedPackUnits.prepend 7 verifiedFrontendSymbolArtifact
@@ -111,21 +103,13 @@ theorem verifiedFrontendPack_decoded_tail7_found_kernel :
     ArtifactPackContextChecker.decodePackUnitsFromCached 7
       verifiedFrontendPackArtifactsTail7Kernel verifiedFrontendPackSurfacesTail7Kernel =
         some verifiedFrontendPackDecodedTail7Kernel := by
-  unfold verifiedFrontendPackArtifactsTail7Kernel verifiedFrontendPackSurfacesTail7Kernel
-    verifiedFrontendPackDecodedTail7Kernel
   exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
-    7 verifiedFrontendSymbolArtifact verifiedFrontendPackArtifactsTail8Kernel
-    verifiedFrontendSymbolSurfaceKernel verifiedFrontendPackSurfacesTail8Kernel
-    verifiedFrontendSymbolModulePathKernel verifiedFrontendSymbol_checked_module_path_found_kernel
-    verifiedFrontendSymbolCoreProgramKernel verifiedFrontendSymbol_core_program_found_kernel
-    verifiedFrontendPackDecodedTail8Kernel
-    verifiedFrontendPack_decoded_tail8_found_kernel
+    (restFound := verifiedFrontendPack_decoded_tail8_found_kernel)
 theorem verifiedFrontendPack_decoded_tail7_present_kernel :
     (ArtifactPackContextChecker.decodePackUnitsFromCached 7
       verifiedFrontendPackArtifactsTail7Kernel
       verifiedFrontendPackSurfacesTail7Kernel).isSome = true := by
-  rw [verifiedFrontendPack_decoded_tail7_found_kernel]
-  rfl
+  simp [verifiedFrontendPack_decoded_tail7_found_kernel]
 def verifiedFrontendPackDecodedTail6Kernel :
     ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail6Kernel :=
   ArtifactPackContextChecker.DecodedPackUnits.prepend 6 verifiedFrontendNumberArtifact
@@ -137,21 +121,13 @@ theorem verifiedFrontendPack_decoded_tail6_found_kernel :
     ArtifactPackContextChecker.decodePackUnitsFromCached 6
       verifiedFrontendPackArtifactsTail6Kernel verifiedFrontendPackSurfacesTail6Kernel =
         some verifiedFrontendPackDecodedTail6Kernel := by
-  unfold verifiedFrontendPackArtifactsTail6Kernel verifiedFrontendPackSurfacesTail6Kernel
-    verifiedFrontendPackDecodedTail6Kernel
   exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
-    6 verifiedFrontendNumberArtifact verifiedFrontendPackArtifactsTail7Kernel
-    verifiedFrontendNumberSurfaceKernel verifiedFrontendPackSurfacesTail7Kernel
-    verifiedFrontendNumberModulePathKernel verifiedFrontendNumber_checked_module_path_found_kernel
-    verifiedFrontendNumberCoreProgramKernel verifiedFrontendNumber_core_program_found_kernel
-    verifiedFrontendPackDecodedTail7Kernel
-    verifiedFrontendPack_decoded_tail7_found_kernel
+    (restFound := verifiedFrontendPack_decoded_tail7_found_kernel)
 theorem verifiedFrontendPack_decoded_tail6_present_kernel :
     (ArtifactPackContextChecker.decodePackUnitsFromCached 6
       verifiedFrontendPackArtifactsTail6Kernel
       verifiedFrontendPackSurfacesTail6Kernel).isSome = true := by
-  rw [verifiedFrontendPack_decoded_tail6_found_kernel]
-  rfl
+  simp [verifiedFrontendPack_decoded_tail6_found_kernel]
 def verifiedFrontendPackDecodedTail5Kernel :
     ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail5Kernel :=
   ArtifactPackContextChecker.DecodedPackUnits.prepend 5 verifiedFrontendDecimalArtifact
@@ -163,21 +139,13 @@ theorem verifiedFrontendPack_decoded_tail5_found_kernel :
     ArtifactPackContextChecker.decodePackUnitsFromCached 5
       verifiedFrontendPackArtifactsTail5Kernel verifiedFrontendPackSurfacesTail5Kernel =
         some verifiedFrontendPackDecodedTail5Kernel := by
-  unfold verifiedFrontendPackArtifactsTail5Kernel verifiedFrontendPackSurfacesTail5Kernel
-    verifiedFrontendPackDecodedTail5Kernel
   exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
-    5 verifiedFrontendDecimalArtifact verifiedFrontendPackArtifactsTail6Kernel
-    verifiedFrontendDecimalSurfaceKernel verifiedFrontendPackSurfacesTail6Kernel
-    verifiedFrontendDecimalModulePathKernel verifiedFrontendDecimal_checked_module_path_found_kernel
-    verifiedFrontendDecimalCoreProgramKernel verifiedFrontendDecimal_core_program_found_kernel
-    verifiedFrontendPackDecodedTail6Kernel
-    verifiedFrontendPack_decoded_tail6_found_kernel
+    (restFound := verifiedFrontendPack_decoded_tail6_found_kernel)
 theorem verifiedFrontendPack_decoded_tail5_present_kernel :
     (ArtifactPackContextChecker.decodePackUnitsFromCached 5
       verifiedFrontendPackArtifactsTail5Kernel
       verifiedFrontendPackSurfacesTail5Kernel).isSome = true := by
-  rw [verifiedFrontendPack_decoded_tail5_found_kernel]
-  rfl
+  simp [verifiedFrontendPack_decoded_tail5_found_kernel]
 def verifiedFrontendPackDecodedTail4Kernel :
     ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail4Kernel :=
   ArtifactPackContextChecker.DecodedPackUnits.prepend 4 verifiedFrontendCanonicalTokensArtifact
@@ -189,21 +157,13 @@ theorem verifiedFrontendPack_decoded_tail4_found_kernel :
     ArtifactPackContextChecker.decodePackUnitsFromCached 4
       verifiedFrontendPackArtifactsTail4Kernel verifiedFrontendPackSurfacesTail4Kernel =
         some verifiedFrontendPackDecodedTail4Kernel := by
-  unfold verifiedFrontendPackArtifactsTail4Kernel verifiedFrontendPackSurfacesTail4Kernel
-    verifiedFrontendPackDecodedTail4Kernel
   exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
-    4 verifiedFrontendCanonicalTokensArtifact verifiedFrontendPackArtifactsTail5Kernel
-    verifiedFrontendCanonicalTokensSurfaceKernel verifiedFrontendPackSurfacesTail5Kernel
-    verifiedFrontendCanonicalTokensModulePathKernel verifiedFrontendCanonicalTokens_checked_module_path_found_kernel
-    verifiedFrontendCanonicalTokensCoreProgramKernel verifiedFrontendCanonicalTokens_core_program_found_kernel
-    verifiedFrontendPackDecodedTail5Kernel
-    verifiedFrontendPack_decoded_tail5_found_kernel
+    (restFound := verifiedFrontendPack_decoded_tail5_found_kernel)
 theorem verifiedFrontendPack_decoded_tail4_present_kernel :
     (ArtifactPackContextChecker.decodePackUnitsFromCached 4
       verifiedFrontendPackArtifactsTail4Kernel
       verifiedFrontendPackSurfacesTail4Kernel).isSome = true := by
-  rw [verifiedFrontendPack_decoded_tail4_found_kernel]
-  rfl
+  simp [verifiedFrontendPack_decoded_tail4_found_kernel]
 def verifiedFrontendPackDecodedTail3Kernel :
     ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail3Kernel :=
   ArtifactPackContextChecker.DecodedPackUnits.prepend 3 verifiedFrontendTokenArtifact
@@ -215,21 +175,13 @@ theorem verifiedFrontendPack_decoded_tail3_found_kernel :
     ArtifactPackContextChecker.decodePackUnitsFromCached 3
       verifiedFrontendPackArtifactsTail3Kernel verifiedFrontendPackSurfacesTail3Kernel =
         some verifiedFrontendPackDecodedTail3Kernel := by
-  unfold verifiedFrontendPackArtifactsTail3Kernel verifiedFrontendPackSurfacesTail3Kernel
-    verifiedFrontendPackDecodedTail3Kernel
   exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
-    3 verifiedFrontendTokenArtifact verifiedFrontendPackArtifactsTail4Kernel
-    verifiedFrontendTokenSurfaceKernel verifiedFrontendPackSurfacesTail4Kernel
-    verifiedFrontendTokenModulePathKernel verifiedFrontendToken_checked_module_path_found_kernel
-    verifiedFrontendTokenCoreProgramKernel verifiedFrontendToken_core_program_found_kernel
-    verifiedFrontendPackDecodedTail4Kernel
-    verifiedFrontendPack_decoded_tail4_found_kernel
+    (restFound := verifiedFrontendPack_decoded_tail4_found_kernel)
 theorem verifiedFrontendPack_decoded_tail3_present_kernel :
     (ArtifactPackContextChecker.decodePackUnitsFromCached 3
       verifiedFrontendPackArtifactsTail3Kernel
       verifiedFrontendPackSurfacesTail3Kernel).isSome = true := by
-  rw [verifiedFrontendPack_decoded_tail3_found_kernel]
-  rfl
+  simp [verifiedFrontendPack_decoded_tail3_found_kernel]
 def verifiedFrontendPackDecodedTail2Kernel :
     ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail2Kernel :=
   ArtifactPackContextChecker.DecodedPackUnits.prepend 2 verifiedFrontendDigitsArtifact
@@ -241,21 +193,13 @@ theorem verifiedFrontendPack_decoded_tail2_found_kernel :
     ArtifactPackContextChecker.decodePackUnitsFromCached 2
       verifiedFrontendPackArtifactsTail2Kernel verifiedFrontendPackSurfacesTail2Kernel =
         some verifiedFrontendPackDecodedTail2Kernel := by
-  unfold verifiedFrontendPackArtifactsTail2Kernel verifiedFrontendPackSurfacesTail2Kernel
-    verifiedFrontendPackDecodedTail2Kernel
   exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
-    2 verifiedFrontendDigitsArtifact verifiedFrontendPackArtifactsTail3Kernel
-    verifiedFrontendDigitsSurfaceKernel verifiedFrontendPackSurfacesTail3Kernel
-    verifiedFrontendDigitsModulePathKernel verifiedFrontendDigits_checked_module_path_found_kernel
-    verifiedFrontendDigitsCoreProgramKernel verifiedFrontendDigits_core_program_found_kernel
-    verifiedFrontendPackDecodedTail3Kernel
-    verifiedFrontendPack_decoded_tail3_found_kernel
+    (restFound := verifiedFrontendPack_decoded_tail3_found_kernel)
 theorem verifiedFrontendPack_decoded_tail2_present_kernel :
     (ArtifactPackContextChecker.decodePackUnitsFromCached 2
       verifiedFrontendPackArtifactsTail2Kernel
       verifiedFrontendPackSurfacesTail2Kernel).isSome = true := by
-  rw [verifiedFrontendPack_decoded_tail2_found_kernel]
-  rfl
+  simp [verifiedFrontendPack_decoded_tail2_found_kernel]
 def verifiedFrontendPackDecodedTail1Kernel :
     ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail1Kernel :=
   ArtifactPackContextChecker.DecodedPackUnits.prepend 1 verifiedFrontendTokenScanArtifact
@@ -267,21 +211,13 @@ theorem verifiedFrontendPack_decoded_tail1_found_kernel :
     ArtifactPackContextChecker.decodePackUnitsFromCached 1
       verifiedFrontendPackArtifactsTail1Kernel verifiedFrontendPackSurfacesTail1Kernel =
         some verifiedFrontendPackDecodedTail1Kernel := by
-  unfold verifiedFrontendPackArtifactsTail1Kernel verifiedFrontendPackSurfacesTail1Kernel
-    verifiedFrontendPackDecodedTail1Kernel
   exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
-    1 verifiedFrontendTokenScanArtifact verifiedFrontendPackArtifactsTail2Kernel
-    verifiedFrontendTokenScanSurfaceKernel verifiedFrontendPackSurfacesTail2Kernel
-    verifiedFrontendTokenScanModulePathKernel verifiedFrontendTokenScan_checked_module_path_found_kernel
-    verifiedFrontendTokenScanCoreProgramKernel verifiedFrontendTokenScan_core_program_found_kernel
-    verifiedFrontendPackDecodedTail2Kernel
-    verifiedFrontendPack_decoded_tail2_found_kernel
+    (restFound := verifiedFrontendPack_decoded_tail2_found_kernel)
 theorem verifiedFrontendPack_decoded_tail1_present_kernel :
     (ArtifactPackContextChecker.decodePackUnitsFromCached 1
       verifiedFrontendPackArtifactsTail1Kernel
       verifiedFrontendPackSurfacesTail1Kernel).isSome = true := by
-  rw [verifiedFrontendPack_decoded_tail1_found_kernel]
-  rfl
+  simp [verifiedFrontendPack_decoded_tail1_found_kernel]
 def verifiedFrontendPackDecodedTail0Kernel :
     ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail0Kernel :=
   ArtifactPackContextChecker.DecodedPackUnits.prepend 0 verifiedFrontendLexerArtifact
@@ -293,21 +229,13 @@ theorem verifiedFrontendPack_decoded_tail0_found_kernel :
     ArtifactPackContextChecker.decodePackUnitsFromCached 0
       verifiedFrontendPackArtifactsTail0Kernel verifiedFrontendPackSurfacesTail0Kernel =
         some verifiedFrontendPackDecodedTail0Kernel := by
-  unfold verifiedFrontendPackArtifactsTail0Kernel verifiedFrontendPackSurfacesTail0Kernel
-    verifiedFrontendPackDecodedTail0Kernel
   exact ArtifactPackContextChecker.decodePackUnitsFromCached_cons_of
-    0 verifiedFrontendLexerArtifact verifiedFrontendPackArtifactsTail1Kernel
-    verifiedFrontendLexerSurfaceKernel verifiedFrontendPackSurfacesTail1Kernel
-    verifiedFrontendLexerModulePathKernel verifiedFrontendLexer_checked_module_path_found_kernel
-    verifiedFrontendLexerCoreProgramKernel verifiedFrontendLexer_core_program_found_kernel
-    verifiedFrontendPackDecodedTail1Kernel
-    verifiedFrontendPack_decoded_tail1_found_kernel
+    (restFound := verifiedFrontendPack_decoded_tail1_found_kernel)
 theorem verifiedFrontendPack_decoded_tail0_present_kernel :
     (ArtifactPackContextChecker.decodePackUnitsFromCached 0
       verifiedFrontendPackArtifactsTail0Kernel
       verifiedFrontendPackSurfacesTail0Kernel).isSome = true := by
-  rw [verifiedFrontendPack_decoded_tail0_found_kernel]
-  rfl
+  simp [verifiedFrontendPack_decoded_tail0_found_kernel]
 def verifiedFrontendPackDecodedExplicitKernel :
     ArtifactPackContextChecker.DecodedPackUnits verifiedFrontendPackArtifactsTail0Kernel := {
   units := [verifiedFrontendLexerProgramUnitKernel, verifiedFrontendTokenScanProgramUnitKernel, verifiedFrontendDigitsProgramUnitKernel, verifiedFrontendTokenProgramUnitKernel, verifiedFrontendCanonicalTokensProgramUnitKernel, verifiedFrontendDecimalProgramUnitKernel, verifiedFrontendNumberProgramUnitKernel, verifiedFrontendSymbolProgramUnitKernel, verifiedFrontendRawLexerProgramUnitKernel]

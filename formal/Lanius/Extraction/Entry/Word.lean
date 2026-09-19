@@ -44,7 +44,7 @@ theorem evaluatesShiftLeft (value shift : Nat) (valid : shift < 32)
     Evaluates program before (.binary .shiftLeft expression (.value (.signed .i32 shift)))
       (.signed .i32 (value * 2 ^ shift : Nat)) after := by
   apply evaluatesEagerBinary (by decide) (by decide) evaluated
-    (show Evaluates program after (.value (.signed .i32 shift)) (.signed .i32 shift) after from ⟨1, rfl⟩)
+    (show Evaluates program after (.value (.signed .i32 shift)) (.signed .i32 shift) after from evaluatesValue)
   simpa only [evalBinaryValue, BEq.rfl, if_true] using shiftLeft program.target value shift valid bounded
 
 theorem evaluatesJoin (high low shift : Nat) (lowBound : low < 2 ^ shift)

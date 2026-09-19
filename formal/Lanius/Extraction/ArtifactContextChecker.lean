@@ -19,26 +19,48 @@ body checker.  Declaration IDs are dense checker-local identities; they are
 not trusted exporter row numbers.
 -/
 
-def collectStructures : List Surface.Item → List Surface.StructDecl
-  | [] => []
-  | .structure declaration :: tail => declaration :: collectStructures tail
-  | _ :: tail => collectStructures tail
+def mapIndexedContext (build : Nat → α → β) : Nat → List α → List β
+  | _, [] => []
+  | index, head :: tail =>
+      build index head :: mapIndexedContext build (index + 1) tail
 
-def collectFunctions : List Surface.Item → List Surface.Function
-  | [] => []
-  | .function declaration :: tail => declaration :: collectFunctions tail
-  | _ :: tail => collectFunctions tail
+def mapIndexedPair? (build : Nat → α → β → Option γ) :
+    Nat → List α → List β → Option (List γ)
+  | _, [], [] => some []
+  | index, head :: tail, head' :: tail' => do
+      let value ← build index head head'
+      let rest ← mapIndexedPair? build (index + 1) tail tail'
+      pure (value :: rest)
+  | _, _, _ => none
+
+def buildSymbol (moduleId : ModuleId) (lookupNamespace : Names.LookupNamespace)
+    (name : Surface.Name) (isPublic : Bool) (declaration : Nat) : Names.Symbol := {
+  moduleId
+  lookupNamespace
+  name
+  visibility := if isPublic then .exported else .modulePrivate
+  declaration
+}
+
+def collectStructures : List Surface.Item → List Surface.StructDecl :=
+  List.filterMap fun
+    | .structure declaration => some declaration
+    | _ => none
+
+def collectFunctions : List Surface.Item → List Surface.Function :=
+  List.filterMap fun
+    | .function declaration => some declaration
+    | _ => none
 
 structure SourceTypeAlias where
   name : Surface.Name
   isPublic : Bool
   target : Surface.TypeExpr
 
-def collectTypeAliases : List Surface.Item → List SourceTypeAlias
-  | [] => []
-  | .typeAlias name isPublic _ _ target :: tail =>
-      ⟨name, isPublic, target⟩ :: collectTypeAliases tail
-  | _ :: tail => collectTypeAliases tail
+def collectTypeAliases : List Surface.Item → List SourceTypeAlias :=
+  List.filterMap fun
+    | .typeAlias name isPublic _ _ target => some ⟨name, isPublic, target⟩
+    | _ => none
 
 structure SourceConstant where
   name : Surface.Name
@@ -46,88 +68,78 @@ structure SourceConstant where
   type : Surface.TypeExpr
   value : Surface.Expr
 
-def collectConstants : List Surface.Item → List SourceConstant
-  | [] => []
-  | .constant name isPublic type value :: tail =>
-      ⟨name, isPublic, type, value⟩ :: collectConstants tail
-  | _ :: tail => collectConstants tail
+def collectConstants : List Surface.Item → List SourceConstant :=
+  List.filterMap fun
+    | .constant name isPublic type value => some ⟨name, isPublic, type, value⟩
+    | _ => none
 
-def supportedSingleModuleItems : List Surface.Item → Bool
-  | [] => true
-  | .module _ :: tail => supportedSingleModuleItems tail
-  | .structure declaration :: tail =>
+def supportedSingleModuleItem : Surface.Item → Bool
+  | .module _ => true
+  | .structure declaration =>
       listEmptyBool declaration.genericParameters &&
-        listEmptyBool declaration.wherePredicates &&
-        supportedSingleModuleItems tail
-  | .function declaration :: tail =>
+        listEmptyBool declaration.wherePredicates
+  | .function declaration =>
       listEmptyBool declaration.genericParameters &&
-        listEmptyBool declaration.wherePredicates &&
-        supportedSingleModuleItems tail
-  | .typeAlias _ _ parameters predicates _ :: tail =>
-      listEmptyBool parameters && listEmptyBool predicates &&
-        supportedSingleModuleItems tail
-  | .constant _ _ _ _ :: tail => supportedSingleModuleItems tail
-  | _ :: _ => false
+        listEmptyBool declaration.wherePredicates
+  | .typeAlias _ _ parameters predicates _ =>
+      listEmptyBool parameters && listEmptyBool predicates
+  | .constant _ _ _ _ => true
+  | _ => false
+
+def supportedSingleModuleItems (items : List Surface.Item) : Bool :=
+  items.all supportedSingleModuleItem
 
 structure NominalHeaders where
   symbols : List Names.Symbol
   schemes : List Static.NominalScheme
   instances : List Static.NominalInstance
 
+structure NominalHeader where
+  symbol : Names.Symbol
+  scheme : Static.NominalScheme
+  nominalInstance : Static.NominalInstance
+
 def buildNominalHeaders :
     ModuleId → Nat → TypeId →
       List Surface.StructDecl → List Core.StructDecl →
       Option NominalHeaders
-  | _, _, _, [], [] => some ⟨[], [], []⟩
-  | moduleId, declaration, sourceType,
-      surface :: surfaceTail, core :: coreTail => do
-      let tail ← buildNominalHeaders moduleId (declaration + 1)
-        (sourceType + 1) surfaceTail coreTail
+  | moduleId, declaration, sourceType, surface, core => do
+      let headers ← mapIndexedPair? (fun offset surface core =>
+        pure ({
+          symbol := buildSymbol moduleId .type surface.name surface.isPublic
+            (declaration + offset)
+          scheme := {
+            declaration := declaration + offset
+            type := sourceType + offset
+            kind := .structure
+            isPublic := surface.isPublic
+          }
+          nominalInstance := {
+            declaration := declaration + offset
+            sourceType := sourceType + offset
+            kind := .structure
+            coreType := core.id
+          }
+        } : NominalHeader)) 0 surface core
       pure {
-        symbols := {
-          moduleId
-          lookupNamespace := .type
-          name := surface.name
-          visibility := if surface.isPublic then .exported else .modulePrivate
-          declaration
-        } :: tail.symbols
-        schemes := {
-          declaration
-          type := sourceType
-          kind := .structure
-          isPublic := surface.isPublic
-        } :: tail.schemes
-        instances := {
-          declaration
-          sourceType
-          kind := .structure
-          coreType := core.id
-        } :: tail.instances
+        symbols := headers.map NominalHeader.symbol
+        schemes := headers.map NominalHeader.scheme
+        instances := headers.map NominalHeader.nominalInstance
       }
-  | _, _, _, _, _ => none
 
 structure TypeAliasHeaders where
   symbols : List Names.Symbol
   entries : List TypeAliasEntry
 
 def buildTypeAliasHeaders : ModuleId → Nat → List SourceTypeAlias → TypeAliasHeaders
-  | _, _, [] => ⟨[], []⟩
-  | moduleId, declaration, source :: tail =>
-      let rest := buildTypeAliasHeaders moduleId (declaration + 1) tail
-      {
-        symbols := {
-          moduleId
-          lookupNamespace := .type
-          name := source.name
-          visibility := if source.isPublic then .exported else .modulePrivate
-          declaration
-        } :: rest.symbols
-        entries := {
+  | moduleId, declaration, sources =>
+      let headers := mapIndexedContext (fun declaration source =>
+        ((buildSymbol moduleId .type source.name source.isPublic declaration), ({
           declaration
           moduleId
           target := source.target
-        } :: rest.entries
-      }
+        } : TypeAliasEntry))) declaration sources
+      ⟨headers.map Prod.fst, headers.map Prod.snd⟩
 
 def resolveNominalFrom (instances : List Static.NominalInstance)
     (sourceType : TypeId) (typeArguments : List Static.GroundTy)
@@ -149,26 +161,21 @@ structure StructFields where
 
 def buildStructFields (context : Context) (receiver : Static.GroundTy) :
     FieldId → List Surface.StructField → List Core.Ty → Option StructFields
-  | _, [], [] => some ⟨[], []⟩
-  | fieldId, surface :: surfaceTail, coreType :: coreTail => do
-      let grounded ← groundType? context surface.type
-      let _mapped ← checkCoreTypeMapping? context grounded.type coreType
-      let tail ← buildStructFields context receiver (fieldId + 1)
-        surfaceTail coreTail
-      pure {
-        entries := {
+  | fieldId, surface, core => do
+      let fields ← mapIndexedPair? (fun fieldId surface coreType => do
+        let grounded ← groundType? context surface.type
+        let _mapped ← checkCoreTypeMapping? context grounded.type coreType
+        pure (({
           receiver
           name := surface.name
           field := fieldId
           type := grounded.type
-        } :: tail.entries
-        schemes := {
+        } : FieldEntry), ({
           name := surface.name
           field := fieldId
           type := grounded.type.toTy
-        } :: tail.schemes
-      }
-  | _, _, _ => none
+        } : StructFieldScheme))) fieldId surface core
+      pure ⟨fields.map Prod.fst, fields.map Prod.snd⟩
 
 structure StructDetails where
   fields : List FieldEntry
@@ -193,41 +200,32 @@ def buildStructDetails (context : Context) :
       }
   | _, _, _, _ => none
 
-def buildFunctionSymbols : ModuleId → Nat → List Surface.Function → List Names.Symbol
-  | _, _, [] => []
-  | moduleId, declaration, function :: tail => {
-      moduleId
-      lookupNamespace := .value
-      name := function.name
-      visibility := if function.isPublic then .exported else .modulePrivate
-      declaration
-    } :: buildFunctionSymbols moduleId (declaration + 1) tail
+def buildValueSymbols (moduleId : ModuleId) (declaration : Nat)
+    (name : α → Surface.Name) (isPublic : α → Bool) (values : List α) :
+    List Names.Symbol :=
+  mapIndexedContext (fun declaration value =>
+    buildSymbol moduleId .value (name value) (isPublic value) declaration) declaration values
 
-def buildConstantSymbols : ModuleId → Nat → List SourceConstant → List Names.Symbol
-  | _, _, [] => []
-  | moduleId, declaration, constant :: tail => {
-      moduleId
-      lookupNamespace := .value
-      name := constant.name
-      visibility := if constant.isPublic then .exported else .modulePrivate
-      declaration
-    } :: buildConstantSymbols moduleId (declaration + 1) tail
+def buildFunctionSymbols : ModuleId → Nat → List Surface.Function → List Names.Symbol :=
+  fun moduleId declaration =>
+    buildValueSymbols moduleId declaration (·.name) (·.isPublic)
+
+def buildConstantSymbols : ModuleId → Nat → List SourceConstant → List Names.Symbol :=
+  fun moduleId declaration =>
+    buildValueSymbols moduleId declaration (·.name) (·.isPublic)
 
 def buildConstantEntries (context : Context) :
     Nat → List SourceConstant → List Core.Constant →
       Option (List ConstantEntry)
-  | _, [], [] => some []
-  | declaration, surface :: surfaceTail, core :: coreTail => do
-      let grounded ← groundType? context surface.type
-      let _mapped ← checkCoreTypeMapping? context grounded.type core.type
-      let tail ← buildConstantEntries context (declaration + 1)
-        surfaceTail coreTail
-      pure (({
-        declaration
-        constant := core.id
-        type := grounded.type
-      } : ConstantEntry) :: tail)
-  | _, _, _ => none
+  | declaration, surface, core =>
+      mapIndexedPair? (fun declaration surface core => do
+        let grounded ← groundType? context surface.type
+        let _mapped ← checkCoreTypeMapping? context grounded.type core.type
+        pure (({
+          declaration
+          constant := core.id
+          type := grounded.type
+        } : ConstantEntry))) declaration surface core
 
 structure CheckedConstantPair (context : Context)
     (surface : SourceConstant) (core : Core.Constant) where
@@ -236,22 +234,17 @@ structure CheckedConstantPair (context : Context)
   typeMapped : ground.toCore context.monomorphization = some core.type
   valueChecked : ExprChecks context surface.value ground (.value core.value)
 
-inductive ConstantsChecked (context : Context) :
-    List SourceConstant → List Core.Constant → Prop where
-  | nil : ConstantsChecked context [] []
+inductive PairwiseChecked (check : α → β → Type) :
+    List α → List β → Prop where
+  | nil : PairwiseChecked check [] []
   | cons
-      (head : CheckedConstantPair context surfaceHead coreHead)
-      (tail : ConstantsChecked context surfaceTail coreTail) :
-      ConstantsChecked context (surfaceHead :: surfaceTail) (coreHead :: coreTail)
+      (head : check surfaceHead coreHead)
+      (tail : PairwiseChecked check surfaceTail coreTail) :
+      PairwiseChecked check (surfaceHead :: surfaceTail) (coreHead :: coreTail)
 
-theorem ConstantsChecked.append
-    (left : ConstantsChecked context surfaceLeft coreLeft)
-    (right : ConstantsChecked context surfaceRight coreRight) :
-    ConstantsChecked context (surfaceLeft ++ surfaceRight)
-      (coreLeft ++ coreRight) := by
-  induction left with
-  | nil => exact right
-  | cons head _ induction => exact .cons head induction
+abbrev ConstantsChecked (context : Context) :
+    List SourceConstant → List Core.Constant → Prop :=
+  PairwiseChecked (fun surface core => CheckedConstantPair context surface core)
 
 def checkConstants (context : Context) :
     (surface : List SourceConstant) → (core : List Core.Constant) →
@@ -274,13 +267,15 @@ structure FunctionParameters where
 def buildFunctionParameters (context : Context) :
     List Surface.Parameter → List (VarId × Core.Ty) →
       Option FunctionParameters
-  | [], [] => some ⟨[], []⟩
-  | .named _ surfaceType :: surfaceTail, (_, coreType) :: coreTail => do
-      let grounded ← groundType? context surfaceType
-      let _mapped ← checkCoreTypeMapping? context grounded.type coreType
-      let tail ← buildFunctionParameters context surfaceTail coreTail
-      pure ⟨grounded.type :: tail.ground, grounded.type.toTy :: tail.static⟩
-  | _, _ => none
+  | surface, core => do
+      let parameters ← mapIndexedPair? (fun _ surface core =>
+        match surface, core with
+        | .named _ surfaceType, (_, coreType) => do
+            let grounded ← groundType? context surfaceType
+            let _mapped ← checkCoreTypeMapping? context grounded.type coreType
+            pure (grounded.type, grounded.type.toTy)
+        | _, _ => none) 0 surface core
+      pure ⟨parameters.map Prod.fst, parameters.map Prod.snd⟩
 
 structure FunctionHeaders where
   schemes : List Static.FunctionScheme
@@ -289,30 +284,25 @@ structure FunctionHeaders where
 def buildFunctionHeaders (context : Context) :
     Nat → List Surface.Function → List Core.Function →
       Option FunctionHeaders
-  | _, [], [] => some ⟨[], []⟩
-  | declaration, surface :: surfaceTail, core :: coreTail => do
-      if noExternal : core.external = none then
-        let parameters ← buildFunctionParameters context
-          surface.parameters core.parameters
-        let returned ← groundReturn? context surface.name surface.returnType
-        let _returnMapped ← checkCoreTypeMapping? context returned.type core.returnType
-        let tail ← buildFunctionHeaders context (declaration + 1)
-          surfaceTail coreTail
-        pure {
-          schemes := {
+  | declaration, surface, core => do
+      let headers ← mapIndexedPair? (fun declaration surface core => do
+        if noExternal : core.external = none then
+          let parameters ← buildFunctionParameters context
+            surface.parameters core.parameters
+          let returned ← groundReturn? context surface.name surface.returnType
+          let _returnMapped ← checkCoreTypeMapping? context returned.type core.returnType
+          pure (({
             declaration
             parameterTypes := parameters.static
             returnType := returned.type.toTy
-          } :: tail.schemes
-          instances := {
+          } : Static.FunctionScheme), ({
             declaration
             function := core.id
             parameterTypes := parameters.ground
             returnType := returned.type
-          } :: tail.instances
-        }
-      else none
-  | _, _, _ => none
+          } : Static.FunctionInstance))
+        else none) declaration surface core
+      pure ⟨headers.map Prod.fst, headers.map Prod.snd⟩
 
 def buildContext? (surface : Surface.File) (core : Core.Program) : Option Context := do
   if supported : supportedSingleModuleItems surface.items = true then
@@ -359,22 +349,9 @@ def buildContext? (surface : Surface.File) (core : Core.Program) : Option Contex
     else none
   else none
 
-inductive FunctionsChecked (context : Context) :
-    List Surface.Function → List Core.Function → Prop where
-  | nil : FunctionsChecked context [] []
-  | cons
-      (head : CheckedFunctionBody context surfaceHead coreHead)
-      (tail : FunctionsChecked context surfaceTail coreTail) :
-      FunctionsChecked context (surfaceHead :: surfaceTail) (coreHead :: coreTail)
-
-theorem FunctionsChecked.append
-    (left : FunctionsChecked context surfaceLeft coreLeft)
-    (right : FunctionsChecked context surfaceRight coreRight) :
-    FunctionsChecked context (surfaceLeft ++ surfaceRight)
-      (coreLeft ++ coreRight) := by
-  induction left with
-  | nil => exact right
-  | cons head _ induction => exact .cons head induction
+abbrev FunctionsChecked (context : Context) :
+    List Surface.Function → List Core.Function → Prop :=
+  PairwiseChecked (fun surface core => CheckedFunctionBody context surface core)
 
 def checkFunctions (context : Context) :
     (surface : List Surface.Function) → (core : List Core.Function) →

@@ -168,7 +168,7 @@ theorem Registry.evaluatesPointer (program : Program) (valid : Registry before)
       after.heap.remaining = before.heap.remaining ∧ after.world = before.world := by
   obtain ⟨after, mapped, registry, cells, locals, views, next, remaining, world⟩ := valid.pointer member
   exact ⟨after, evaluatesI32SliceDataPtr
-    ⟨1, evalLocal_of_local 0 program before binding _ read⟩ mapped,
+    (Lanius.Semantics.evaluatesLocal read) mapped,
     valid.nonnull member, registry, cells, locals, views, next, remaining, world⟩
 
 end Lanius.Extraction.Allocation

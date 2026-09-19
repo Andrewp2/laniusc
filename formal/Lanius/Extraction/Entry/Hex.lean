@@ -27,13 +27,13 @@ theorem executes (program : Program) (value : Nat) (bounded : value < 16)
   have lower : Evaluates program before (binary .greaterEqual (read 0) (number 48))
       (.boolean true) before := by
     apply evaluatesEagerBinary (by decide) (by decide)
-      (local_evaluates program found) (show Evaluates program before (number 48) (.signed .i32 48) before from ⟨1, rfl⟩)
+      (local_evaluates program found) (show Evaluates program before (number 48) (.signed .i32 48) before from evaluatesValue)
     simp [evalBinaryValue, evalSignedBinary, hexDigit]
     split <;> omega
   have upper : Evaluates program before (binary .lessEqual (read 0) (number 57))
       (.boolean (decide (value < 10))) before := by
     apply evaluatesEagerBinary (by decide) (by decide)
-      (local_evaluates program found) (show Evaluates program before (number 57) (.signed .i32 57) before from ⟨1, rfl⟩)
+      (local_evaluates program found) (show Evaluates program before (number 57) (.signed .i32 57) before from evaluatesValue)
     simp only [evalBinaryValue, evalSignedBinary, BEq.rfl, if_true, Except.ok.injEq,
       Value.boolean.injEq, decide_eq_decide]
     unfold hexDigit
@@ -42,7 +42,7 @@ theorem executes (program : Program) (value : Nat) (bounded : value < 16)
   by_cases small : value < 10
   · have digit : hexDigit value = 48 + value := by simp [hexDigit, small]
     have sub := evaluatesNatI32Subtract (local_evaluates program found)
-      (show Evaluates program before (number 48) (.signed .i32 48) before from ⟨1, rfl⟩)
+      (show Evaluates program before (number 48) (.signed .i32 48) before from evaluatesValue)
       (by omega : 48 ≤ hexDigit value) (by omega : hexDigit value - 48 ≤ 2147483647)
     have result : hexDigit value - 48 = value := by omega
     rw [result] at sub
@@ -50,7 +50,7 @@ theorem executes (program : Program) (value : Nat) (bounded : value < 16)
       (by simpa [small] using condition) (executesSequenceReturned (executesReturnValue sub)))
   · have digit : hexDigit value = 87 + value := by simp [hexDigit, small]
     have sub := evaluatesNatI32Subtract (local_evaluates program found)
-      (show Evaluates program before (number 87) (.signed .i32 87) before from ⟨1, rfl⟩)
+      (show Evaluates program before (number 87) (.signed .i32 87) before from evaluatesValue)
       (by omega : 87 ≤ hexDigit value) (by omega : hexDigit value - 87 ≤ 2147483647)
     have result : hexDigit value - 87 = value := by omega
     rw [result] at sub

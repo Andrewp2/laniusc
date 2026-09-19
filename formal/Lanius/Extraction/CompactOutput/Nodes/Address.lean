@@ -22,10 +22,10 @@ theorem child_slot (program : Program) (record : RecordVisit) (words : List Int)
   simp only [Nat.zero_add] at storage
   have header := evaluatesNatI32Add (leftValue := record.offset) (rightValue := 4)
     (local_evaluates program recordRead)
-    (show Evaluates program before (number 4) (.signed .i32 4) before from ⟨1, rfl⟩) (by omega)
+    (show Evaluates program before (number 4) (.signed .i32 4) before from evaluatesValue) (by omega)
   have stride := evaluatesNatI32Multiply (leftValue := child) (rightValue := 3)
     (local_evaluates program childRead)
-    (show Evaluates program before (number 3) (.signed .i32 3) before from ⟨1, rfl⟩) (by omega)
+    (show Evaluates program before (number 3) (.signed .i32 3) before from evaluatesValue) (by omega)
   exact ⟨evaluatesNatI32Add header stride (by omega), by omega⟩
 
 end Lanius.Extraction.CompactOutput.Nodes

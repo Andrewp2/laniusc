@@ -72,10 +72,10 @@ theorem initializeAndLoop (checked : Hex.Checked program) (locals : Locals) (mem
   obtain ⟨middle, loop, complete, effect, heapFrame⟩ := executesLoop checked locals memory [] memory.values
     (before.bindLocal locals.cursor (.signed .i32 0)) rfl invariant
   obtain ⟨after, continued, satisfied⟩ := continuationRun middle complete effect heapFrame
-    (.letLocal (show Evaluates program.core before (.value (.signed .i32 0)) (.signed .i32 0) before from ⟨1, rfl⟩)
+    (.letLocal (show Evaluates program.core before (.value (.signed .i32 0)) (.signed .i32 0) before from evaluatesValue)
       (.sequence loop .here))
   exact ⟨restoreLocals before after, executesLetLocal
-    (show Evaluates program.core before (.value (.signed .i32 0)) (.signed .i32 0) before from ⟨1, rfl⟩)
+    (show Evaluates program.core before (.value (.signed .i32 0)) (.signed .i32 0) before from evaluatesValue)
     (executesSequence loop continued), satisfied⟩
 
 end Lanius.Extraction.Entry.Grammar

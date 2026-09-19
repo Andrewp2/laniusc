@@ -56,7 +56,7 @@ private theorem evaluates_equal (program : Program) (before : State) (kind : Int
     (localValue : before.local? 0 = some (.signed .i32 kind)) (constant : ConstantAt program id value) :
     Evaluates program before (equal id) (.boolean (kind == value)) before := by
   have localResult : Evaluates program before (.local 0) (.signed .i32 kind) before :=
-    ⟨1, evalLocal_of_local 0 program before _ _ localValue⟩
+    Lanius.Semantics.evaluatesLocal localValue
   have constantResult : Evaluates program before (.constant id) (.signed .i32 value) before := by
     unfold ConstantAt at constant
     refine ⟨1, ?_⟩

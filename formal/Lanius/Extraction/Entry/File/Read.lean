@@ -96,7 +96,7 @@ theorem Stage.readClose (stage : Stage) (supported : stage.Supported)
   obtain ⟨readState, readCall, finished⟩ := reader.read resources initial representable disjoint outputMember packedMember
     outputContents world sizeFit
     (.cons (local_evaluates program.core handleRead) (.cons (local_evaluates program.core outputRead)
-      (.cons (by simpa [fixedCapacity] using (show Evaluates program.core before (number 65536) (.signed .i32 65536) before from ⟨1, rfl⟩))
+      (.cons (by simpa [fixedCapacity] using (show Evaluates program.core before (number 65536) (.signed .i32 65536) before from evaluatesValue))
         (.cons (local_evaluates program.core packedRead) (.nil _ _)))))
   let counted := readState.bindLocal stage.count (.signed .i32 resources.result)
   have countedRegistry := finished.registry.bindLocal stage.count (.signed .i32 resources.result)

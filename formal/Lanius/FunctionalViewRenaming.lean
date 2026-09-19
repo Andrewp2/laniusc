@@ -134,18 +134,7 @@ theorem Env.Extends.ofFn
     (same : List.ofFn (fun index => large (embedding.slot index)) =
       List.ofFn small) :
     Env.Extends embedding small large := by
-  intro index
-  have selected := congrArg (fun values => values[index.val]?) same
-  have projectedBound : index.val <
-      (List.ofFn (fun index => large (embedding.slot index))).length := by
-    simpa using index.isLt
-  have smallBound : index.val < (List.ofFn small).length := by
-    simpa using index.isLt
-  rw [List.getElem?_eq_getElem projectedBound,
-    List.getElem?_eq_getElem smallBound] at selected
-  simp only [Option.some.injEq] at selected
-  rw [List.getElem_ofFn, List.getElem_ofFn] at selected
-  simpa using selected
+  exact fun index => congrFun (Env.eq_ofFn same) index
 
 /-- A command framed by an embedding does not alter an unrelated target slot. -/
 def Env.PreservesOutside (embedding : Embedding source target)
@@ -372,6 +361,14 @@ theorem Term.evaluate_rename
         simp only [bind, Except.bind]
         rw [tailIH afterHead]
 
+private theorem Term.evaluate_rename_result
+    (related : Env.Extends embedding small large)
+    (evaluated : Term.evaluate machine world small term =
+      .ok (value, afterWorld)) :
+    Term.evaluate machine world large (term.rename embedding) =
+      .ok (value, afterWorld) :=
+  (Term.evaluate_rename related term world).trans evaluated
+
 namespace Stateful
 
 /-- Actions are intrinsically scoped too, so a command dialect supplies its
@@ -468,12 +465,8 @@ theorem Command.Evaluates.rename
         initializedWorld body sourceCompletion sourceAfterWorld
         extendedEnvironment type initializerResult bodyResult bodyIH
       intro target embedding beforeLarge related
-      have renamedInitializer :
-          Term.evaluate termMachine sourceBeforeWorld beforeLarge
-              (initializer.rename embedding) =
-            .ok (value, initializedWorld) := by
-        rw [Term.evaluate_rename related initializer]
-        exact initializerResult
+      have renamedInitializer :=
+        Term.evaluate_rename_result related initializerResult
       obtain ⟨extendedLarge, renamedBody, extendedRelated,
         extendedPreserved⟩ :=
         bodyIH embedding.push (beforeLarge.push value) (related.push value)
@@ -493,10 +486,7 @@ theorem Command.Evaluates.rename
       rename_i sourceBeforeWorld sourceArity sourceBeforeSmall value result
         sourceAfterWorld slot valueResult
       intro target embedding beforeLarge related
-      have renamedValue : Term.evaluate termMachine sourceBeforeWorld beforeLarge
-          (value.rename embedding) = .ok (result, sourceAfterWorld) := by
-        rw [Term.evaluate_rename related value]
-        exact valueResult
+      have renamedValue := Term.evaluate_rename_result related valueResult
       exact ⟨Stateful.Env.set beforeLarge (embedding.slot slot) result,
         .setLocal renamedValue, related.set slot result,
         Env.PreservesOutside.set embedding beforeLarge slot result⟩
@@ -504,10 +494,7 @@ theorem Command.Evaluates.rename
       rename_i sourceBeforeWorld sourceArity sourceBeforeSmall value right
         sourceAfterWorld operation slot result valueResult updateResult
       intro targetArity embedding beforeLarge related
-      have renamedValue : Term.evaluate termMachine sourceBeforeWorld beforeLarge
-          (value.rename embedding) = .ok (right, sourceAfterWorld) := by
-        rw [Term.evaluate_rename related value]
-        exact valueResult
+      have renamedValue := Term.evaluate_rename_result related valueResult
       have renamedUpdate : machine.evalLocalUpdate operation
           (beforeLarge (embedding.slot slot)) right = .ok result := by
         rw [related slot]
@@ -531,11 +518,8 @@ theorem Command.Evaluates.rename
         conditionWorld thenBranch sourceCompletion sourceAfterWorld
         sourceAfterEnvironment elseBranch conditionResult branchResult branchIH
       intro target embedding beforeLarge related
-      have renamedCondition : Term.evaluate termMachine sourceBeforeWorld beforeLarge
-          (condition.rename embedding) =
-          .ok (.boolean true, conditionWorld) := by
-        rw [Term.evaluate_rename related condition]
-        exact conditionResult
+      have renamedCondition :=
+        Term.evaluate_rename_result related conditionResult
       obtain ⟨afterLarge, renamedBranch, afterRelated, preserved⟩ :=
         branchIH embedding beforeLarge related
       exact ⟨afterLarge, .ifTrue renamedCondition renamedBranch,
@@ -545,11 +529,8 @@ theorem Command.Evaluates.rename
         conditionWorld elseBranch sourceCompletion sourceAfterWorld
         sourceAfterEnvironment thenBranch conditionResult branchResult branchIH
       intro target embedding beforeLarge related
-      have renamedCondition : Term.evaluate termMachine sourceBeforeWorld beforeLarge
-          (condition.rename embedding) =
-          .ok (.boolean false, conditionWorld) := by
-        rw [Term.evaluate_rename related condition]
-        exact conditionResult
+      have renamedCondition :=
+        Term.evaluate_rename_result related conditionResult
       obtain ⟨afterLarge, renamedBranch, afterRelated, preserved⟩ :=
         branchIH embedding beforeLarge related
       exact ⟨afterLarge, .ifFalse renamedCondition renamedBranch,
@@ -558,11 +539,8 @@ theorem Command.Evaluates.rename
       rename_i sourceBeforeWorld sourceArity sourceBeforeSmall condition
         sourceAfterWorld body conditionResult
       intro target embedding beforeLarge related
-      have renamedCondition : Term.evaluate termMachine sourceBeforeWorld beforeLarge
-          (condition.rename embedding) =
-          .ok (.boolean false, sourceAfterWorld) := by
-        rw [Term.evaluate_rename related condition]
-        exact conditionResult
+      have renamedCondition :=
+        Term.evaluate_rename_result related conditionResult
       exact ⟨beforeLarge, .whileFalse renamedCondition, related,
         Env.PreservesOutside.refl embedding beforeLarge⟩
   | whileNext =>
@@ -571,11 +549,8 @@ theorem Command.Evaluates.rename
         sourceAfterWorld sourceAfterEnvironment conditionResult bodyResult
         restResult bodyIH restIH
       intro target embedding beforeLarge related
-      have renamedCondition : Term.evaluate termMachine sourceBeforeWorld beforeLarge
-          (condition.rename embedding) =
-          .ok (.boolean true, conditionWorld) := by
-        rw [Term.evaluate_rename related condition]
-        exact conditionResult
+      have renamedCondition :=
+        Term.evaluate_rename_result related conditionResult
       obtain ⟨bodyLarge, renamedBody, bodyRelated, bodyPreserved⟩ :=
         bodyIH embedding beforeLarge related
       obtain ⟨afterLarge, renamedRest, afterRelated, restPreserved⟩ :=
@@ -589,11 +564,8 @@ theorem Command.Evaluates.rename
         sourceAfterWorld sourceAfterEnvironment conditionResult bodyResult
         restResult bodyIH restIH
       intro target embedding beforeLarge related
-      have renamedCondition : Term.evaluate termMachine sourceBeforeWorld beforeLarge
-          (condition.rename embedding) =
-          .ok (.boolean true, conditionWorld) := by
-        rw [Term.evaluate_rename related condition]
-        exact conditionResult
+      have renamedCondition :=
+        Term.evaluate_rename_result related conditionResult
       obtain ⟨bodyLarge, renamedBody, bodyRelated, bodyPreserved⟩ :=
         bodyIH embedding beforeLarge related
       obtain ⟨afterLarge, renamedRest, afterRelated, restPreserved⟩ :=
@@ -606,11 +578,8 @@ theorem Command.Evaluates.rename
         conditionWorld body sourceAfterWorld sourceAfterEnvironment
         conditionResult bodyResult bodyIH
       intro target embedding beforeLarge related
-      have renamedCondition : Term.evaluate termMachine sourceBeforeWorld beforeLarge
-          (condition.rename embedding) =
-          .ok (.boolean true, conditionWorld) := by
-        rw [Term.evaluate_rename related condition]
-        exact conditionResult
+      have renamedCondition :=
+        Term.evaluate_rename_result related conditionResult
       obtain ⟨afterLarge, renamedBody, afterRelated, preserved⟩ :=
         bodyIH embedding beforeLarge related
       exact ⟨afterLarge, .whileBreak renamedCondition renamedBody,
@@ -620,11 +589,8 @@ theorem Command.Evaluates.rename
         conditionWorld body returnedValue sourceAfterWorld sourceAfterEnvironment
         conditionResult bodyResult bodyIH
       intro target embedding beforeLarge related
-      have renamedCondition : Term.evaluate termMachine sourceBeforeWorld beforeLarge
-          (condition.rename embedding) =
-          .ok (.boolean true, conditionWorld) := by
-        rw [Term.evaluate_rename related condition]
-        exact conditionResult
+      have renamedCondition :=
+        Term.evaluate_rename_result related conditionResult
       obtain ⟨afterLarge, renamedBody, afterRelated, preserved⟩ :=
         bodyIH embedding beforeLarge related
       exact ⟨afterLarge, .whileReturn renamedCondition renamedBody,
@@ -637,10 +603,7 @@ theorem Command.Evaluates.rename
       rename_i sourceBeforeWorld sourceArity sourceBeforeSmall value result
         sourceAfterWorld valueResult
       intro target embedding beforeLarge related
-      have renamedValue : Term.evaluate termMachine sourceBeforeWorld beforeLarge
-          (value.rename embedding) = .ok (result, sourceAfterWorld) := by
-        rw [Term.evaluate_rename related value]
-        exact valueResult
+      have renamedValue := Term.evaluate_rename_result related valueResult
       exact ⟨beforeLarge, .returnSome renamedValue, related,
         Env.PreservesOutside.refl embedding beforeLarge⟩
   | breakLoop =>

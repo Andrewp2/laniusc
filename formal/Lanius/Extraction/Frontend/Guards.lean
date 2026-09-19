@@ -17,15 +17,15 @@ theorem capacity_condition_evaluates (program : Program) (before : State)
       (.boolean (!decide (count ≤ words / 3))) before := by
   have quotient := evaluatesNatI32Divide
     (show Evaluates program before (.local capacityId) (.signed .i32 words) before from
-      ⟨1, evalLocal_of_local 0 _ _ _ _ capacityLocal⟩)
-    (show Evaluates program before (.value (.signed .i32 3)) (.signed .i32 3) before from ⟨1, rfl⟩)
+      Lanius.Semantics.evaluatesLocal capacityLocal)
+    (show Evaluates program before (.value (.signed .i32 3)) (.signed .i32 3) before from evaluatesValue)
     (by decide) (Nat.le_trans (Nat.div_le_self _ _) wordsFit)
   have compared : Evaluates program before
       (.binary .lessEqual (.local countId) (.binary .divide (.local capacityId) (.value (.signed .i32 3))))
       (.boolean (decide (count ≤ words / 3))) before := by
     apply evaluatesEagerBinary (by decide) (by decide)
       (show Evaluates program before (.local countId) (.signed .i32 count) before from
-        ⟨1, evalLocal_of_local 0 _ _ _ _ countLocal⟩) quotient
+        Lanius.Semantics.evaluatesLocal countLocal) quotient
     change (Except.ok (Value.boolean (decide ((count : Int) ≤ ((words / 3 : Nat) : Int)))) : Except Trap Value) =
       Except.ok (Value.boolean (decide (count ≤ words / 3)))
     simp only [Int.ofNat_le]
@@ -39,9 +39,9 @@ theorem kinds_capacity_evaluates (program : Program) (before : State) (count cap
       (.boolean (decide (count ≤ capacity))) before := by
     apply evaluatesEagerBinary (by decide) (by decide)
       (show Evaluates program before (.local 20) (.signed .i32 count) before from
-        ⟨1, evalLocal_of_local 0 _ _ _ _ countLocal⟩)
+        Lanius.Semantics.evaluatesLocal countLocal)
       (show Evaluates program before (.local 9) (.signed .i32 capacity) before from
-        ⟨1, evalLocal_of_local 0 _ _ _ _ capacityLocal⟩)
+      Lanius.Semantics.evaluatesLocal capacityLocal)
     change (Except.ok (Value.boolean (decide ((count : Int) ≤ (capacity : Int)))) : Except Trap Value) =
       Except.ok (Value.boolean (decide (count ≤ capacity)))
     simp only [Int.ofNat_le]
@@ -68,7 +68,7 @@ theorem AfterLexer.pass (region : AfterLexer)
   obtain ⟨after, statusCall, effect, heap⟩ := status.call wellFormed
     (.singleton (show Evaluates program.core before (.local region.lexedId)
       (.structure resultType [.signed .i32 0, .signed .i32 count, .signed .i32 0]) before from
-      ⟨1, evalLocal_of_local 0 _ _ _ _ resultLocal⟩)) rfl
+      Lanius.Semantics.evaluatesLocal resultLocal)) rfl
   have statusFalse : Evaluates program.core before region.statusCondition (.boolean false) after := by
     rw [AfterLexer.statusCondition, statusId]
     exact evaluatesEagerBinary (by decide) (by decide) statusCall (evaluatesConstant success) rfl

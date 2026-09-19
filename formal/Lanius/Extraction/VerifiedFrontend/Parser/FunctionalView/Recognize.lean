@@ -595,6 +595,20 @@ theorem soundness
 
 end EntryCallRegistry
 
+private theorem parserFunctionIds :
+    extractedParserRhsLengthFunction.id = 14 ∧
+      extractedParserLhsFunction.id = 16 ∧
+      extractedParserRhsSymbolFunction.id = 15 ∧
+      extractedParserStateSeedFunction.id = 5 ∧
+      extractedParserAppendStateFunction.id = 13 ∧
+      extractedParserGrammarValidFunction.id = 8 ∧
+      extractedParserParseResultFunction.id = 4 ∧
+      extractedParserAppendOrFullFunction.id = 18 ∧
+      extractedParserStateValueFunction.id = 11 ∧
+      extractedParserChartWordFunction.id = 9 ∧
+      extractedParserScanTerminalFunction.id = 17 := by
+  decide +kernel
+
 namespace RecognizerReadCallRegistry
 
 open Lanius.FunctionalView.Core.Effectful
@@ -639,9 +653,7 @@ theorem calls_at_rhs_length
           .signed .i32 (Int.ofNat production)] =
       .ok (.signed .i32 (Int.ofNat
         (grammar.rhsLengths.get ⟨production, bound⟩)), world) := by
-  have notState : extractedParserRhsLengthFunction.id ≠
-      extractedParserStateValueFunction.id := by decide +kernel
-  simpa [calls, CallModel.route, notState] using
+  simpa [calls, CallModel.route, parserFunctionIds] using
     ParserAccessors.FunctionalView.calls_at_rhs_length
       (grammar := grammar) (words := words) (grammarCell := grammarCell)
       found bound
@@ -656,9 +668,7 @@ theorem calls_at_lhs
           .signed .i32 (Int.ofNat production)] =
       .ok (.signed .i32 (Int.ofNat
         (grammar.productionLhs.get ⟨production, bound⟩)), world) := by
-  have notState : extractedParserLhsFunction.id ≠
-      extractedParserStateValueFunction.id := by decide +kernel
-  simpa [calls, CallModel.route, notState] using
+  simpa [calls, CallModel.route, parserFunctionIds] using
     ParserAccessors.FunctionalView.calls_at_lhs
       (grammar := grammar) (words := words) (grammarCell := grammarCell)
       found bound
@@ -677,9 +687,7 @@ theorem calls_at_rhs_symbol
       .ok (.signed .i32 (Int.ofNat
         ((grammar.productionAt ⟨production, productionBound⟩).rhs.get
           ⟨dot, dotBound⟩)), world) := by
-  have notState : extractedParserRhsSymbolFunction.id ≠
-      extractedParserStateValueFunction.id := by decide +kernel
-  simpa [calls, CallModel.route, notState] using
+  simpa [calls, CallModel.route, parserFunctionIds] using
     ParserAccessors.FunctionalView.calls_at_rhs_symbol
       (grammar := grammar) (words := words) (grammarCell := grammarCell)
       found productionBound dotBound
@@ -708,14 +716,8 @@ theorem calls_at_seed (world : World) (seed : StateSeed) :
         extractedParserStateSeedFunction.id
         (parserStateSeedArgumentsValues seed) =
       .ok (stateSeedValue seed, world) := by
-  have notAppend : extractedParserStateSeedFunction.id ≠
-      extractedParserAppendStateFunction.id := by decide +kernel
-  have notGrammar : extractedParserStateSeedFunction.id ≠
-      extractedParserGrammarValidFunction.id := by decide +kernel
-  have notResult : extractedParserStateSeedFunction.id ≠
-      extractedParserParseResultFunction.id := by decide +kernel
-  simpa [calls, EntryCallRegistry.calls, CallModel.route, notAppend,
-    notGrammar, notResult] using
+  simpa [calls, EntryCallRegistry.calls, CallModel.route,
+    parserFunctionIds] using
     StateSeedCall.calls_at_seed world seed
 
 /-- Registry-level semantics of the capacity diagnostic helper. -/
@@ -726,16 +728,8 @@ theorem calls_at_append_or_full (world : World) (appended : AppendOutcome)
         [appendOutcomeValue appended, .signed .i32 errorPosition] =
       .ok (parseResultValue 2 (Int.ofNat appended.stateCount) (-1)
         errorPosition, world) := by
-  have notAppend : extractedParserAppendOrFullFunction.id ≠
-      extractedParserAppendStateFunction.id := by decide +kernel
-  have notGrammar : extractedParserAppendOrFullFunction.id ≠
-      extractedParserGrammarValidFunction.id := by decide +kernel
-  have notResult : extractedParserAppendOrFullFunction.id ≠
-      extractedParserParseResultFunction.id := by decide +kernel
-  have notSeed : extractedParserAppendOrFullFunction.id ≠
-      extractedParserStateSeedFunction.id := by decide +kernel
-  simpa [calls, EntryCallRegistry.calls, CallModel.route, notAppend,
-    notGrammar, notResult, notSeed] using
+  simpa [calls, EntryCallRegistry.calls, CallModel.route,
+    parserFunctionIds] using
     AppendOrFullCall.calls_at world appended errorPosition
 
 /-- Registry-level semantics of the mutating workspace append.  The source
@@ -867,15 +861,7 @@ theorem calls_at_seed
         extractedParserStateSeedFunction.id
         (parserStateSeedArgumentsValues seed) =
       .ok (stateSeedValue seed, world) := by
-  have notState : extractedParserStateSeedFunction.id ≠
-      extractedParserStateValueFunction.id := by decide +kernel
-  have notRhs : extractedParserStateSeedFunction.id ≠
-      extractedParserRhsLengthFunction.id := by decide +kernel
-  have notLhs : extractedParserStateSeedFunction.id ≠
-      extractedParserLhsFunction.id := by decide +kernel
-  have notSymbol : extractedParserStateSeedFunction.id ≠
-      extractedParserRhsSymbolFunction.id := by decide +kernel
-  simpa [calls, CallModel.route, notState, notRhs, notLhs, notSymbol] using
+  simpa [calls, CallModel.route, parserFunctionIds] using
     RecognizerCallRegistry.calls_at_seed
       (workspaceLayout := workspaceLayout) (words := words)
       (grammarCell := grammarCell) world seed
@@ -888,15 +874,7 @@ theorem calls_at_append_or_full
         [appendOutcomeValue appended, .signed .i32 errorPosition] =
       .ok (parseResultValue 2 (Int.ofNat appended.stateCount) (-1)
         errorPosition, world) := by
-  have notState : extractedParserAppendOrFullFunction.id ≠
-      extractedParserStateValueFunction.id := by decide +kernel
-  have notRhs : extractedParserAppendOrFullFunction.id ≠
-      extractedParserRhsLengthFunction.id := by decide +kernel
-  have notLhs : extractedParserAppendOrFullFunction.id ≠
-      extractedParserLhsFunction.id := by decide +kernel
-  have notSymbol : extractedParserAppendOrFullFunction.id ≠
-      extractedParserRhsSymbolFunction.id := by decide +kernel
-  simpa [calls, CallModel.route, notState, notRhs, notLhs, notSymbol] using
+  simpa [calls, CallModel.route, parserFunctionIds] using
     RecognizerCallRegistry.calls_at_append_or_full
       (workspaceLayout := workspaceLayout) (words := words)
       (grammarCell := grammarCell) world appended errorPosition
@@ -912,21 +890,8 @@ theorem calls_at_parse_result
           .signed .i32 rootState, .signed .i32 errorPosition] =
       .ok (parseResultValue status stateCount rootState errorPosition,
         world) := by
-  have notState : extractedParserParseResultFunction.id ≠
-      extractedParserStateValueFunction.id := by decide +kernel
-  have notRhs : extractedParserParseResultFunction.id ≠
-      extractedParserRhsLengthFunction.id := by decide +kernel
-  have notLhs : extractedParserParseResultFunction.id ≠
-      extractedParserLhsFunction.id := by decide +kernel
-  have notSymbol : extractedParserParseResultFunction.id ≠
-      extractedParserRhsSymbolFunction.id := by decide +kernel
-  have notAppend : extractedParserParseResultFunction.id ≠
-      extractedParserAppendStateFunction.id := by decide +kernel
-  have notGrammar : extractedParserParseResultFunction.id ≠
-      extractedParserGrammarValidFunction.id := by decide +kernel
   simp [calls, RecognizerCallRegistry.calls, EntryCallRegistry.calls,
-    CallModel.route, ParseResultCallProof.calls, notState, notRhs, notLhs,
-    notSymbol, notAppend, notGrammar]
+    CallModel.route, ParseResultCallProof.calls, parserFunctionIds]
 
 theorem calls_at_append_input
     (input : AppendStateCall.Input workspaceLayout world callValues)
@@ -942,15 +907,7 @@ theorem calls_at_append_input
     (calls workspaceLayout grammar words grammarCell).evaluate world
         extractedParserAppendStateFunction.id callValues =
       .ok (appendOutcomeValue input.outcome, input.afterWorld) := by
-  have notState : extractedParserAppendStateFunction.id ≠
-      extractedParserStateValueFunction.id := by decide +kernel
-  have notRhs : extractedParserAppendStateFunction.id ≠
-      extractedParserRhsLengthFunction.id := by decide +kernel
-  have notLhs : extractedParserAppendStateFunction.id ≠
-      extractedParserLhsFunction.id := by decide +kernel
-  have notSymbol : extractedParserAppendStateFunction.id ≠
-      extractedParserRhsSymbolFunction.id := by decide +kernel
-  simpa [calls, CallModel.route, notState, notRhs, notLhs, notSymbol] using
+  simpa [calls, CallModel.route, parserFunctionIds] using
     RecognizerCallRegistry.calls_at_append_input
       (workspaceLayout := workspaceLayout) (words := words)
       (grammarCell := grammarCell) input before afterArguments commandLayout
@@ -1094,9 +1051,8 @@ theorem calls_at_chart_word
           .signed .i32 (Int.ofNat position),
           .signed .i32 (Int.ofNat field)] =
       .ok (.signed .i32 (Int.ofNat (chartWord position field)), world) := by
-  have notScan : extractedParserChartWordFunction.id ≠
-      extractedParserScanTerminalFunction.id := by decide +kernel
-  simp only [calls, CallModel.route, beq_iff_eq, notScan, if_false, if_true]
+  simp only [calls, CallModel.route, beq_iff_eq, parserFunctionIds,
+    if_false, if_true]
   have evaluated := ParserReads.Functional.ChartWord.calls_at_arguments
       (world := world) (position := Int.ofNat position)
       (field := Int.ofNat field)
@@ -1104,7 +1060,8 @@ theorem calls_at_chart_word
     positionBound fieldBound
   simp only [ParserReads.Functional.ChartWord.result] at evaluated
   rw [addressValue] at evaluated
-  simpa [ParserReads.Functional.ChartWord.arguments] using evaluated
+  simpa [ParserReads.Functional.ChartWord.arguments, parserFunctionIds] using
+    evaluated
 
 theorem calls_at_traversal
     (world : Lanius.FunctionalView.Core.ReadOnly.World)

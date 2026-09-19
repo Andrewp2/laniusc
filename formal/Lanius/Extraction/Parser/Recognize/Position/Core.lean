@@ -237,13 +237,11 @@ theorem RecognizerPositionLoopInvariant.condition_true
       (.binary .lessEqual (.local 23) (.local 6)) (.boolean true) runtime := by
   have left : Evaluates verifiedParserCore runtime (.local 23)
       (.signed .i32 (Int.ofNat position)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 23 _
-      invariant.positionLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.positionLocal
   have right : Evaluates verifiedParserCore runtime (.local 6)
       (.signed .i32
         (Int.ofNat (finalPosition workspaceLayout.tokenCount))) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 6 _
-      invariant.finalPositionLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.finalPositionLocal
   apply evaluatesEagerBinary (by decide) (by decide) left right
   simp [evalBinaryValue, evalSignedBinary, Int.ofNat_le,
     invariant.appendFrame.positionBound]
@@ -407,7 +405,7 @@ noncomputable def RecognizerPositionLoopInvariant.execute_activity
   let headRead := invariant.appendFrame.recognizer.read_chart_head 23 position
     invariant.positionLocal invariant.appendFrame.positionBound
   have zeroResult : Evaluates verifiedParserCore headRead.after
-      (.value (.signed .i32 0)) (.signed .i32 0) headRead.after := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) headRead.after := Lanius.Semantics.evaluatesValue
   have furthestAfterRead : (Assertion.localPointsTo 22 furthestCell
       (some (.signed .i32 (Int.ofNat furthest)))).holds headRead.after :=
     headRead.effect.empty_preserves_assertion
@@ -450,8 +448,7 @@ noncomputable def RecognizerPositionLoopInvariant.execute_activity
           invariant.appendFrame.recognizer.wellFormed invariant.positionLocal
       have positionResult : Evaluates verifiedParserCore headRead.after
           (.local 23) (.signed .i32 (Int.ofNat position)) headRead.after :=
-        ⟨1, evalLocal_of_local 1 verifiedParserCore headRead.after 23 _
-          positionAfterRead⟩
+        Lanius.Semantics.evaluatesLocal positionAfterRead
       let assigned := evaluatesSetOwnedLocalFromEmpty 22 furthestCell
         headRead.invariant.wellFormed furthestAfterRead positionResult
         headRead.invariant.wellFormed (ModifiesOnly.refl headRead.after)
@@ -1483,6 +1480,30 @@ theorem RecognizerPositionStateScalarFrame.preserve_local_after_position_effect
     frame.positionPreservedSeparate
     ((PositionLoopPreservedLocal_source_frame id).mp preserved) found
 
+/-- Compose the chart-head binding, state-chain effect, and position increment
+    for one preserved outer local. -/
+theorem RecognizerPositionStateEntry.preserve_local_after_state_and_position_effect
+    (entry : RecognizerPositionStateEntry grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell positionCell furthestCell source position
+      furthest sourceInvariant)
+    (stateEffect : ModifiesOnly
+      (stateLoopMutableCells workspaceCell stateCountCell
+        entry.chartEntry.cursorCell) entry.chartEntry.bound stateAfter)
+    (stateScalars : RecognizerPositionStateScalarFrame workspaceCell
+      stateCountCell entry.chartEntry.cursorCell positionCell furthestCell
+      stateAfter position furthest)
+    (stateAfterWellFormed : StateWellFormed stateAfter)
+    (positionEffect : ModifiesOnly (CellSet.singleton positionCell)
+      stateAfter after)
+    (id : VarId) (preserved : PositionLoopPreservedLocal id)
+    (value : Value) (sourceFound : source.local? id = some value) :
+    after.local? id = some value := by
+  exact stateScalars.preserve_local_after_position_effect
+    stateAfterWellFormed positionEffect id preserved value
+    (entry.preserve_local_after_state_effect stateEffect id preserved value
+      (entry.preserved_local_at_bound id preserved value sourceFound))
+
 /-- Normal inner execution for one position: the state chain finishes, then
     local 23 advances exactly once.  The temporary cursor remains in scope;
     `close_scope` is the sole operation that removes it. -/
@@ -1593,32 +1614,12 @@ noncomputable def RecognizerPositionStateEntry.advance_position
   let appendFrame := finished.appendFrame.after_scalar_effect positionCell
     incrementFacts.2.2.2 recognizer stateBaseDistinct stateCapacityDistinct
     stateScalars.positionDistinct.2.1.symm
-  have finalAtBound := entry.preserved_local_at_bound 6 (by
-    simp [PositionLoopPreservedLocal]) _ sourceInvariant.finalPositionLocal
-  have kindAtBound := entry.preserved_local_at_bound 11 (by
-    simp [PositionLoopPreservedLocal]) _ sourceInvariant.kindCountLocal
-  have startAtBound := entry.preserved_local_at_bound 12 (by
-    simp [PositionLoopPreservedLocal]) _ sourceInvariant.startNonterminalLocal
-  have lhsOffsetsAtBound := entry.preserved_local_at_bound 13 (by
-    simp [PositionLoopPreservedLocal]) _ sourceInvariant.lhsOffsetsOffsetLocal
-  have lhsCountsAtBound := entry.preserved_local_at_bound 14 (by
-    simp [PositionLoopPreservedLocal]) _ sourceInvariant.lhsCountsOffsetLocal
-  have lhsProductionsAtBound := entry.preserved_local_at_bound 15 (by
-    simp [PositionLoopPreservedLocal]) _
-    sourceInvariant.lhsProductionsOffsetLocal
-  have finalAtState := entry.preserve_local_after_state_effect stateEffect 6
-    (by simp [PositionLoopPreservedLocal]) _ finalAtBound
-  have kindAtState := entry.preserve_local_after_state_effect stateEffect 11
-    (by simp [PositionLoopPreservedLocal]) _ kindAtBound
-  have startAtState := entry.preserve_local_after_state_effect stateEffect 12
-    (by simp [PositionLoopPreservedLocal]) _ startAtBound
-  have lhsOffsetsAtState := entry.preserve_local_after_state_effect stateEffect
-    13 (by simp [PositionLoopPreservedLocal]) _ lhsOffsetsAtBound
-  have lhsCountsAtState := entry.preserve_local_after_state_effect stateEffect
-    14 (by simp [PositionLoopPreservedLocal]) _ lhsCountsAtBound
-  have lhsProductionsAtState := entry.preserve_local_after_state_effect
-    stateEffect 15 (by simp [PositionLoopPreservedLocal]) _
-    lhsProductionsAtBound
+  have preserveOuter (id : VarId) (preserved : PositionLoopPreservedLocal id)
+      (value : Value) (sourceFound : source.local? id = some value) :
+      after.local? id = some value :=
+    entry.preserve_local_after_state_and_position_effect stateEffect
+      stateScalars finished.appendFrame.recognizer.wellFormed
+      incrementFacts.2.2.2 id preserved value sourceFound
   have combinedEffect := stateEffect.trans incrementFacts.2.2.2
   have writesEqual : CellSet.union
       (stateLoopMutableCells workspaceCell stateCountCell
@@ -1626,20 +1627,10 @@ noncomputable def RecognizerPositionStateEntry.advance_position
       (CellSet.singleton positionCell) =
       positionStateScopeMutableCells workspaceCell stateCountCell positionCell
         entry.chartEntry.cursorCell := by
-    funext cell
+    ext cell
     simp [stateLoopMutableCells, positionStateScopeMutableCells,
       CellSet.union, CellSet.singleton]
-    constructor
-    · rintro ((rfl | rfl | rfl) | rfl)
-      · exact Or.inl rfl
-      · exact Or.inr (Or.inl rfl)
-      · exact Or.inr (Or.inr (Or.inr rfl))
-      · exact Or.inr (Or.inr (Or.inl rfl))
-    · rintro (rfl | rfl | rfl | rfl)
-      · exact Or.inl (Or.inl rfl)
-      · exact Or.inl (Or.inr (Or.inl rfl))
-      · exact Or.inr rfl
-      · exact Or.inl (Or.inr (Or.inr rfl))
+    simp [or_left_comm, or_comm]
   rw [writesEqual] at combinedEffect
   exact {
     after := after
@@ -1650,28 +1641,18 @@ noncomputable def RecognizerPositionStateEntry.advance_position
     scalars := stateScalars.after_position_effect
       finished.appendFrame.recognizer.wellFormed incrementFacts.2.2.2
       incrementFacts.2.2.1 sourceInvariant.positionFurthestDistinct
-    finalPositionLocal :=
-      stateScalars.preserve_local_after_position_effect
-        finished.appendFrame.recognizer.wellFormed incrementFacts.2.2.2 6
-        (by simp [PositionLoopPreservedLocal]) _ finalAtState
-    kindCountLocal := stateScalars.preserve_local_after_position_effect
-      finished.appendFrame.recognizer.wellFormed incrementFacts.2.2.2 11
-      (by simp [PositionLoopPreservedLocal]) _ kindAtState
-    startNonterminalLocal := stateScalars.preserve_local_after_position_effect
-      finished.appendFrame.recognizer.wellFormed incrementFacts.2.2.2 12
-      (by simp [PositionLoopPreservedLocal]) _ startAtState
-    lhsOffsetsOffsetLocal :=
-      stateScalars.preserve_local_after_position_effect
-        finished.appendFrame.recognizer.wellFormed incrementFacts.2.2.2 13
-        (by simp [PositionLoopPreservedLocal]) _ lhsOffsetsAtState
-    lhsCountsOffsetLocal :=
-      stateScalars.preserve_local_after_position_effect
-        finished.appendFrame.recognizer.wellFormed incrementFacts.2.2.2 14
-        (by simp [PositionLoopPreservedLocal]) _ lhsCountsAtState
-    lhsProductionsOffsetLocal :=
-      stateScalars.preserve_local_after_position_effect
-        finished.appendFrame.recognizer.wellFormed incrementFacts.2.2.2 15
-        (by simp [PositionLoopPreservedLocal]) _ lhsProductionsAtState
+    finalPositionLocal := preserveOuter 6
+      (by simp [PositionLoopPreservedLocal]) _ sourceInvariant.finalPositionLocal
+    kindCountLocal := preserveOuter 11
+      (by simp [PositionLoopPreservedLocal]) _ sourceInvariant.kindCountLocal
+    startNonterminalLocal := preserveOuter 12
+      (by simp [PositionLoopPreservedLocal]) _ sourceInvariant.startNonterminalLocal
+    lhsOffsetsOffsetLocal := preserveOuter 13
+      (by simp [PositionLoopPreservedLocal]) _ sourceInvariant.lhsOffsetsOffsetLocal
+    lhsCountsOffsetLocal := preserveOuter 14
+      (by simp [PositionLoopPreservedLocal]) _ sourceInvariant.lhsCountsOffsetLocal
+    lhsProductionsOffsetLocal := preserveOuter 15
+      (by simp [PositionLoopPreservedLocal]) _ sourceInvariant.lhsProductionsOffsetLocal
   }
 
 /-- Resource frame immediately after one normal position iteration.  The
@@ -2478,20 +2459,20 @@ private theorem positionActivityScopeWrites_eq
           positionCell) =
       positionLoopMutableCells workspaceCell stateCountCell positionCell
         furthestCell := by
-  funext cell
+  ext cell
   simp [positionStateScopeRetainedCells, positionLoopMutableCells,
-    CellSet.union, CellSet.singleton]
-  constructor
-  · rintro (rfl | rfl | rfl | rfl)
-    · exact Or.inr (Or.inr (Or.inr rfl))
-    · exact Or.inl rfl
-    · exact Or.inr (Or.inl rfl)
-    · exact Or.inr (Or.inr (Or.inl rfl))
-  · rintro (rfl | rfl | rfl | rfl)
-    · exact Or.inr (Or.inl rfl)
-    · exact Or.inr (Or.inr (Or.inl rfl))
-    · exact Or.inr (Or.inr (Or.inr rfl))
-    · exact Or.inl rfl
+    CellSet.union, CellSet.singleton, or_left_comm, or_comm]
+
+private theorem executesPositionLoopBody
+    {before activityAfter after : State} {completion : Completion}
+    (activityExecution : Executes verifiedParserCore before
+      parserRecognizePositionActivity .next activityAfter)
+    (scopeExecution : Executes verifiedParserCore activityAfter
+      parserRecognizePositionStateScope completion after) :
+    Executes verifiedParserCore before parserRecognizePositionLoopBody
+      completion after := by
+  rw [extractedParserRecognize_position_body_shape]
+  exact executesSequence activityExecution scopeExecution
 
 /-- Execute the whole position body once. FunctionalView owns its sequencing;
     the structural Core trace is carried as refinement evidence for the
@@ -2537,64 +2518,28 @@ private noncomputable def
   cases scope with
   | completed nextWorkspace nextValues physicalAfter growth frame
       scopeFunctional scopePhysical scopeEffect stable =>
-      have functionalExecution :
-          Lanius.FunctionalView.Stateful.Command.Evaluates
-            (positionTermMachine workspaceLayout grammar words tokens grammarCell
-              tokensCell)
-            (positionStatefulMachine workspaceLayout grammar words tokens
-              grammarCell tokensCell)
-            (stateWorld words tokens (unused := invariant.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
-              workspaceCell)
-            (positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
-              tokensCell workspaceCell workspaceLayout grammar grammarLayout
-              workspace.states.length furthest position)
-            positionBodyCommand .next
-            (stateWorld words tokens (unused := frame.appendFrame.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
-              workspaceCell)
-            (positionEnvironment words tokens (tokenCapacity := tokens.length + frame.appendFrame.recognizer.tokenStorage.unused.length) nextValues grammarCell tokensCell
-              workspaceCell workspaceLayout grammar grammarLayout
-              nextWorkspace.states.length activity.nextFurthest
-              (position + 1)) := by
-        rw [positionBodyCommand_shape, positionExpectedBodyCommand]
-        exact .sequenceNext activityFunctional (by simpa only [activitySuffix] using scopeFunctional)
-      have physicalExecution : Executes verifiedParserCore runtime
-          parserRecognizePositionLoopBody .next physicalAfter := by
-        rw [extractedParserRecognize_position_body_shape]
-        exact executesSequence activity.execution scopePhysical
+      have physicalExecution :=
+        executesPositionLoopBody activity.execution scopePhysical
       have effect := activity.effect.trans scopeEffect
       rw [positionActivityScopeWrites_eq] at effect
-      exact .advanced nextWorkspace nextValues physicalAfter growth
-        activity.nextFurthest frame functionalExecution physicalExecution effect stable
+      refine .advanced nextWorkspace nextValues physicalAfter growth
+        activity.nextFurthest frame ?_ physicalExecution effect stable
+      rw [positionBodyCommand_shape, positionExpectedBodyCommand]
+      exact .sequenceNext activityFunctional
+        (by simpa only [activitySuffix] using scopeFunctional)
   | full nextWorkspace nextValues physicalAfter growth terminal stateCount
       wellFormed functionalAfterWorld functionalAfterEnvironment
       scopeFunctional scopePhysical scopeEffect full =>
-      have functionalExecution :
-          Lanius.FunctionalView.Stateful.Command.Evaluates
-            (positionTermMachine workspaceLayout grammar words tokens grammarCell
-              tokensCell)
-            (positionStatefulMachine workspaceLayout grammar words tokens
-              grammarCell tokensCell)
-            (stateWorld words tokens (unused := invariant.appendFrame.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
-              workspaceCell)
-            (positionEnvironment words tokens (tokenCapacity := tokens.length + invariant.appendFrame.recognizer.tokenStorage.unused.length) workspaceValues grammarCell
-              tokensCell workspaceCell workspaceLayout grammar grammarLayout
-              workspace.states.length furthest position)
-            positionBodyCommand
-            (.returned (some (parseResultValue 2 (Int.ofNat stateCount) (-1)
-              (Int.ofNat position))))
-            functionalAfterWorld functionalAfterEnvironment := by
-        rw [positionBodyCommand_shape, positionExpectedBodyCommand]
-        exact .sequenceNext activityFunctional (by simpa only [activitySuffix] using scopeFunctional)
-      have physicalExecution : Executes verifiedParserCore runtime
-          parserRecognizePositionLoopBody
-          (parserCapacityCompletion position stateCount) physicalAfter := by
-        rw [extractedParserRecognize_position_body_shape]
-        exact executesSequence activity.execution scopePhysical
+      have physicalExecution :=
+        executesPositionLoopBody activity.execution scopePhysical
       have effect := activity.effect.trans scopeEffect
       rw [positionActivityScopeWrites_eq] at effect
-      exact .full nextWorkspace nextValues physicalAfter growth terminal
+      refine .full nextWorkspace nextValues physicalAfter growth terminal
         stateCount wellFormed functionalAfterWorld functionalAfterEnvironment
-        functionalExecution physicalExecution effect full
+        ?_ physicalExecution effect full
+      rw [positionBodyCommand_shape, positionExpectedBodyCommand]
+      exact .sequenceNext activityFunctional
+        (by simpa only [activitySuffix] using scopeFunctional)
 
 private def RecognizerPositionStepSynchronizedExecution.physical
     (execution : RecognizerPositionStepSynchronizedExecution grammarLayout
@@ -2667,14 +2612,13 @@ theorem RecognizerPositionFinishedInvariant.condition_negative
   have left : Evaluates verifiedParserCore runtime (.local 23)
       (.signed .i32
         (Int.ofNat (finalPosition workspaceLayout.tokenCount + 1))) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 23 _
+    Lanius.Semantics.evaluatesLocal
       (Assertion.localPointsTo_local 23 positionCell _ runtime
-        invariant.frame.positionOwned)⟩
+        invariant.frame.positionOwned)
   have right : Evaluates verifiedParserCore runtime (.local 6)
       (.signed .i32
         (Int.ofNat (finalPosition workspaceLayout.tokenCount))) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 6 _
-      invariant.frame.finalPositionLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.frame.finalPositionLocal
   apply evaluatesEagerBinary (by decide) (by decide) left right
   simp [evalBinaryValue, evalSignedBinary]
   omega
@@ -3396,12 +3340,12 @@ noncomputable def RecognizerPositionLoopInvariant.execute_loop
 def verifiedParserRootLoopAccessFrame :
     LocalAccessFrame :=
   verifiedParserRecognizerSymbolic.checkedAccessFrameForCore
-    parserRecognizeRootLoop (by decide)
+    parserRecognizeRootLoop rfl
 
 def verifiedParserRootLoopLiveFrame :
     LocalAccessFrame :=
   verifiedParserRecognizerSymbolic.checkedLiveFrameBeforeCore
-    parserRecognizeRootLoop (by decide)
+    parserRecognizeRootLoop rfl
 
 theorem verifiedParser_root_loop_access_frame :
     verifiedParserRootLoopAccessFrame.map (fun access =>
@@ -3412,7 +3356,7 @@ theorem verifiedParser_root_loop_access_frame :
       ("grammar", 0, .read),
       ("start_nonterminal", 12, .read),
       ("state_count", 18, .read)] := by
-  decide
+  rfl
 
 theorem verifiedParser_root_loop_live_frame :
     verifiedParserRootLoopLiveFrame.map (fun access =>
@@ -3424,7 +3368,7 @@ theorem verifiedParser_root_loop_live_frame :
       ("start_nonterminal", 12, .read),
       ("state_count", 18, .read),
       ("furthest_position", 22, .read)] := by
-  decide
+  rfl
 
 /-- Locals live across root search whose cells are shared with the enclosing
     result frame.  The `root_state` cursor is excluded because `chartCursor`
@@ -3438,7 +3382,7 @@ def verifiedParserRootLoopSharedFrameIds : List VarId :=
 
 theorem verifiedParser_root_loop_shared_frame_ids :
     verifiedParserRootLoopSharedFrameIds = [4, 8, 0, 12, 18, 22] := by
-  decide
+  rfl
 
 @[simp] theorem mem_verifiedParserRootLoopSharedFrameIds_iff
     (id : Nat) :
@@ -3461,8 +3405,7 @@ theorem verifiedParserRootLoopBindings_core_ids :
         verifiedParserRootLoopSharedFrameIds := by
   simp only [verifiedParserRootLoopBindings,
     verifiedParserRecognizerParameterIds, verifiedParserRootLoopSharedFrameIds,
-    LocalAccessFrame.ids, LocalBindingFrame.union, LocalBindingFrame.coreIds,
-    List.map_append]
+    LocalAccessFrame.ids, LocalBindingFrame.coreIds_union]
 
 theorem RootLoopFramedLocal_source_frame (id : VarId) :
     RootLoopFramedLocal id ↔

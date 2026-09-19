@@ -38,14 +38,14 @@ theorem Stage.guardResult (stage : Stage) (program : Program) (state : State) (c
   have lower : Evaluates program state (binary .lessEqual (read stage.length) (number 0))
       (.boolean (decide (count = 0))) state := by
     apply evaluatesEagerBinary (by decide) (by decide) lengthRead
-      (show Evaluates program state (number 0) (.signed .i32 0) state from ⟨1, rfl⟩)
+      (show Evaluates program state (number 0) (.signed .i32 0) state from evaluatesValue)
     simp only [evalBinaryValue, evalSignedBinary, BEq.rfl, if_true, Except.ok.injEq,
       Value.boolean.injEq, decide_eq_decide]
     omega
   have upper : Evaluates program state (binary .greaterEqual (read stage.length) (number 1025))
       (.boolean (decide (1025 ≤ count))) state := by
     apply evaluatesEagerBinary (by decide) (by decide) lengthRead
-      (show Evaluates program state (number 1025) (.signed .i32 1025) state from ⟨1, rfl⟩)
+      (show Evaluates program state (number 1025) (.signed .i32 1025) state from evaluatesValue)
     simp only [evalBinaryValue, evalSignedBinary, BEq.rfl, if_true, Except.ok.injEq,
       Value.boolean.injEq, decide_eq_decide]
     omega
@@ -112,7 +112,7 @@ theorem Stage.rejects (stage : Stage) (length : Host.CheckedLength program)
       (.returned (some (.signed .i32 2))) (restoreLocals called middle) :=
     executesLetLocal evaluated (executesSequenceReturned
     (executesIfTrue (elseBranch := .skip) guard (executesSequenceReturned (second := .skip)
-      (executesReturnValue (show Evaluates program middle (number 2) (.signed .i32 2) middle from ⟨1, rfl⟩)))))
+      (executesReturnValue (show Evaluates program middle (number 2) (.signed .i32 2) middle from evaluatesValue)))))
   have restored := CellEffect.closeLocal called stage.length (.signed .i32 path.toUTF8.size)
     registered.wellFormed (CellEffect.refl (writes := CellSet.empty) entered.wellFormed)
   exact ⟨restoreLocals called middle, run, entered.restoreLocals called restored.wellFormed, frame.locals, world⟩

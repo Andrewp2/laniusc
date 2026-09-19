@@ -70,16 +70,16 @@ theorem lex_to_canonical
   have emitted : Model.emittedTokens request.outcome = raw := by rw [successful]; rfl
   have quotient := evaluatesNatI32Divide
     (show Evaluates program.core before (.local 5) (.signed .i32 records.length) before from
-      ⟨1, evalLocal_of_local 0 _ _ _ _ rawLength⟩)
-    (show Evaluates program.core before (.value (.signed .i32 3)) (.signed .i32 3) before from ⟨1, rfl⟩)
+      Lanius.Semantics.evaluatesLocal rawLength)
+    (show Evaluates program.core before (.value (.signed .i32 3)) (.signed .i32 3) before from evaluatesValue)
     (by decide) (Nat.le_trans (Nat.div_le_self _ _) recordsFit)
   have argumentsResult : ArgumentsEvaluateTo program.core before
       [.local 0, .local 1, .local 4, .binary .divide (.local 5) (.value (.signed .i32 3))]
       [.slice Structure.i32Type sourceCell [] 0 request.source.length, .signed .i32 request.source.length,
         .slice Structure.i32Type rawCell [] 0 records.length, .signed .i32 request.capacity] before :=
-    .cons ⟨1, evalLocal_of_local 0 _ _ _ _ sourceLocal⟩
-      (.cons ⟨1, evalLocal_of_local 0 _ _ _ _ sourceLength⟩
-        (.cons ⟨1, evalLocal_of_local 0 _ _ _ _ rawLocal⟩ (.singleton (wordCapacity ▸ quotient))))
+    .cons (Lanius.Semantics.evaluatesLocal sourceLocal)
+      (.cons (Lanius.Semantics.evaluatesLocal sourceLength)
+        (.cons (Lanius.Semantics.evaluatesLocal rawLocal) (.singleton (wordCapacity ▸ quotient))))
   obtain ⟨lexed, prefixRun, lexedWF, countLocal, resultLocal, buffers, preserved, localsPreserved, prefixEffect, prefixMemory⟩ :=
     lex_then_count invariant link injective inverseType inverse retained countAccessor request records recordsCapacity
       sourceCell rawCell sourceRaw 17 18 (by decide) wellFormed owned argumentsResult

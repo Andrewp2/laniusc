@@ -56,11 +56,10 @@ theorem executes_request_adjustment (program : Program) (before : State)
       ModifiesOnly (CellSet.singleton requestCell) before after := by
   have remainingResult : Evaluates program before (.local locals.remaining)
       (.signed .i32 remaining) before :=
-    ⟨1, evalLocal_of_local 0 program before locals.remaining _ remainingLocal⟩
+    Lanius.Semantics.evaluatesLocal remainingLocal
   have requestResult : Evaluates program before (.local locals.request)
       (.signed .i32 65536) before :=
-    ⟨1, evalLocal_of_local 0 program before locals.request _
-      (Assertion.localPointsTo_local _ _ _ _ request)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ request)
   have condition : Evaluates program before
       (.binary .less (.local locals.remaining) (.local locals.request))
       (.boolean (decide (remaining < 65536))) before := by
@@ -69,7 +68,7 @@ theorem executes_request_adjustment (program : Program) (before : State)
     omega
   by_cases small : remaining < 65536
   · have rhs := evaluatesNatI32Add (leftValue := remaining) (rightValue := 1) remainingResult
-      (show Evaluates program before (.value (.signed .i32 1)) (.signed .i32 1) before from ⟨1, rfl⟩)
+      (show Evaluates program before (.value (.signed .i32 1)) (.signed .i32 1) before from Lanius.Semantics.evaluatesValue)
       (by omega)
     obtain ⟨after, assignment, afterWF, afterRequest, effect⟩ :=
       evaluatesSetOwnedLocalFromEmpty locals.request requestCell wellFormed request rhs

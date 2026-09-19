@@ -7,7 +7,7 @@ open Lanius.Compiler.Parser
 
 private theorem read_local (found : before.local? localId = some value) :
     Evaluates program before (.local localId) value before :=
-  ⟨1, evalLocal_of_local 0 program before localId value found⟩
+  Lanius.Semantics.evaluatesLocal found
 
 theorem nonnegative_check_false
     (found : before.local? localId = some (.signed .i32 value)) (nonnegative : 0 ≤ value) :
@@ -17,7 +17,7 @@ theorem nonnegative_check_false
   have negativeOne : Evaluates program before (.unary .negate (.value (.signed .i32 1)))
       (.signed .i32 (-1)) before := by
     apply evaluatesUnary
-      (show Evaluates program before (.value (.signed .i32 1)) (.signed .i32 1) before from ⟨1, rfl⟩)
+      (show Evaluates program before (.value (.signed .i32 1)) (.signed .i32 1) before from Lanius.Semantics.evaluatesValue)
     simp [evalUnaryValue, wrapSigned, signedModulus, signedSignBit, Core.SignedIntTy.bits]
   apply evaluatesEagerBinary (by decide) (by decide) (read_local found) negativeOne
   simp [evalBinaryValue, evalSignedBinary, show ¬ value ≤ -1 by omega]
@@ -63,7 +63,7 @@ theorem input_guard_false
   have tokenUpper : Evaluates program before
       (.binary .greaterEqual (.local tokenId) (.value (.signed .i32 536870912))) (.boolean false) before := by
     apply evaluatesEagerBinary (by decide) (by decide) (read_local tokenLocal)
-      (show Evaluates program before (.value (.signed .i32 536870912)) (.signed .i32 536870912) before from ⟨1, rfl⟩)
+      (show Evaluates program before (.value (.signed .i32 536870912)) (.signed .i32 536870912) before from Lanius.Semantics.evaluatesValue)
     simp [evalBinaryValue, evalSignedBinary, show ¬ 536870912 ≤ tokens by omega]
   have stateUpper : Evaluates program before
       (.binary .greaterEqual (.local stateId) (.local countId)) (.boolean false) before := by
@@ -103,7 +103,7 @@ theorem output_capacity_guard_false
       (.binary .lessEqual (.binary .subtract (.local capacityId) (.local offsetId)) (.value (.signed .i32 3)))
       (.boolean false) before := by
     apply evaluatesEagerBinary (by decide) (by decide) span
-      (show Evaluates program before (.value (.signed .i32 3)) (.signed .i32 3) before from ⟨1, rfl⟩)
+      (show Evaluates program before (.value (.signed .i32 3)) (.signed .i32 3) before from Lanius.Semantics.evaluatesValue)
     simp [evalBinaryValue, evalSignedBinary, show ¬ capacity - offset ≤ 3 by omega]
   have quotient := output_capacity_expression (program := program) (read_local capacityLocal) (read_local offsetLocal)
     offsetNonnegative (by omega) capacityBound
@@ -140,12 +140,12 @@ theorem output_capacity_guard_true
     rfl
   by_cases short : capacity - offset ≤ 3
   · apply evaluatesLogicalOrTrue
-    exact evaluatesEagerBinary (by decide) (by decide) span ⟨1, rfl⟩
+    exact evaluatesEagerBinary (by decide) (by decide) span Lanius.Semantics.evaluatesValue
       (by simp [evalBinaryValue, evalSignedBinary, short])
   · have headerRoom : Evaluates program before
         (.binary .lessEqual (.binary .subtract (.local capacityId) (.local offsetId)) (.value (.signed .i32 3)))
         (.boolean false) before :=
-      evaluatesEagerBinary (by decide) (by decide) span ⟨1, rfl⟩
+      evaluatesEagerBinary (by decide) (by decide) span Lanius.Semantics.evaluatesValue
         (by simp [evalBinaryValue, evalSignedBinary, short])
     have quotient := output_capacity_expression (program := program) (read_local capacityLocal) (read_local offsetLocal)
       offsetNonnegative (by omega) capacityBound

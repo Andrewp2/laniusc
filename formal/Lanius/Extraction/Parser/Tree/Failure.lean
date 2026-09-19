@@ -8,7 +8,7 @@ open Lanius.Compiler.Parser Lanius.Extraction.ParserRecognize Lanius.Extraction.
 
 private theorem local_read {id : Lanius.VarId} (found : before.local? id = some value) :
     Evaluates program before (.local id) value before :=
-  ⟨1, evalLocal_of_local 0 program before id value found⟩
+  Lanius.Semantics.evaluatesLocal found
 
 /-- Derive the failed reader call and execute the complete materializer body
     through its `-2` branch. All original output contents and counters survive. -/
@@ -31,7 +31,7 @@ theorem TreeRuntime.CallEntry.reader_full {runtime : TreeRuntime} {symbols : Cor
   rw [← checked.identities.2.1] at read
   have depthGuard : Evaluates program.core before
       (.binary .lessEqual (.local 11) (.value (.signed .i32 0))) (.boolean false) before :=
-    evaluatesEagerBinary (by decide) (by decide) (local_read input.frame.depthLocal) ⟨1, rfl⟩
+    evaluatesEagerBinary (by decide) (by decide) (local_read input.frame.depthLocal) Lanius.Semantics.evaluatesValue
       (by simp [evalBinaryValue, evalSignedBinary, Nat.ne_of_gt positive])
   have capacityGuard : Evaluates program.core before
       (.binary .greaterEqual (.local 9) (.local 8)) (.boolean false) before :=
@@ -49,7 +49,7 @@ theorem TreeRuntime.CallEntry.reader_full {runtime : TreeRuntime} {symbols : Cor
       (readEffect.empty_preserves_local input.frame.wellFormed input.wordsLocal)
   have negativeTwo : Evaluates program.core bound (.unary .negate (.value (.signed .i32 2)))
       (.signed .i32 (-2)) bound := by
-    apply evaluatesUnary (show Evaluates program.core bound (.value (.signed .i32 2)) (.signed .i32 2) bound from ⟨1, rfl⟩)
+    apply evaluatesUnary (show Evaluates program.core bound (.value (.signed .i32 2)) (.signed .i32 2) bound from Lanius.Semantics.evaluatesValue)
     simp [evalUnaryValue, wrapSigned, signedModulus, signedSignBit, SignedIntTy.bits]
   have countFull : Evaluates program.core bound
       (.binary .equal (.local 12) (.unary .negate (.value (.signed .i32 2)))) (.boolean true) bound :=

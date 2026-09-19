@@ -8,7 +8,7 @@ open Lanius.Core Lanius.Semantics Lanius.Properties Lanius.Separation Lanius.Cal
 
 private theorem localResult (program : Program) (before : State) (id : VarId) (value : Value)
     (found : before.local? id = some value) : Evaluates program before (.local id) value before :=
-  ⟨1, evalLocal_of_local 0 program before id value found⟩
+  Lanius.Semantics.evaluatesLocal found
 
 /-- The first row write calls the proved classifier before updating the buffer.
 Borrowed keyword storage may grow, but every other caller cell is preserved. -/
@@ -65,7 +65,7 @@ private theorem executes_span_store (program : Program) (before : State) (record
         (signedI32Values (records.set (outputRow + offset) value))) } ∧
       CellEffect (CellSet.singleton recordsCell) before after ∧ Host.MemoryFrame before after := by
   have indexResult := evaluatesNatI32Add (localResult program before 9 _ rowLocal)
-    (show Evaluates program before (literal offset) (.signed .i32 offset) before from ⟨1, rfl⟩) (by omega)
+    (show Evaluates program before (literal offset) (.signed .i32 offset) before from evaluatesValue) (by omega)
   obtain ⟨after, assignment, afterContents, effect, storeHeapFrame, _⟩ := evaluatesSliceStore program before before records
     1 _ (.local valueId) recordsCell (outputRow + offset) value wellFormed bound recordsLocal indexResult
     (localResult program before valueId _ valueLocal) (CellEffect.refl wellFormed) contents

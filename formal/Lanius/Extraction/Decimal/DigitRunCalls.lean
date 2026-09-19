@@ -90,7 +90,6 @@ private theorem closeUnchangedCallee
     {environment : Env arity} {caller callee : State}
     (represented : Representation layout localCell world environment caller)
     (callerWellFormed : StateWellFormed caller)
-    (calleeWellFormed : StateWellFormed callee)
     (calleeEq : callee = enterCall caller bindings) :
     let after := restoreLocals caller callee
     StateWellFormed after ∧
@@ -144,13 +143,8 @@ theorem helperFramePreservingCallSoundness :
         rw [← byteEq, ← baseEq]
         exact isDigitInt_of_byte byteValue baseValue
       simpa [resultEq] using bodyExecution
-    have calleeWellFormed : StateWellFormed
-        (twoI32CalleeState afterArguments byteValue.val baseValue) := by
-      rw [calleeEq]
-      exact enterCall_preserves_wellFormed afterArgumentsWellFormed
     obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-      closeUnchangedCallee represented afterArgumentsWellFormed
-        calleeWellFormed calleeEq
+      closeUnchangedCallee represented afterArgumentsWellFormed calleeEq
     exact ⟨_, callExecution, afterWellFormed, afterRepresented,
       argumentsEffect.trans_same
         (callEffect.weaken CellSet.empty_subset)⟩
@@ -180,13 +174,8 @@ theorem helperFramePreservingCallSoundness :
         (by rfl) (by rfl)
       rw [← calleeEq]
       exact bodyExecution
-    have calleeWellFormed : StateWellFormed
-        (singleArgumentCalleeState afterArguments (.signed .i32 offsetValue)) := by
-      rw [calleeEq]
-      exact enterCall_preserves_wellFormed afterArgumentsWellFormed
     obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-      closeUnchangedCallee represented afterArgumentsWellFormed
-        calleeWellFormed calleeEq
+      closeUnchangedCallee represented afterArgumentsWellFormed calleeEq
     exact ⟨_, callExecution, afterWellFormed, afterRepresented,
       argumentsEffect.trans_same
         (callEffect.weaken CellSet.empty_subset)⟩
@@ -216,28 +205,18 @@ theorem helperFramePreservingCallSoundness :
         (by rfl) (by rfl)
       rw [← calleeEq]
       exact bodyExecution
-    have calleeWellFormed : StateWellFormed
-        (singleArgumentCalleeState afterArguments (.signed .i32 offsetValue)) := by
-      rw [calleeEq]
-      exact enterCall_preserves_wellFormed afterArgumentsWellFormed
     obtain ⟨afterWellFormed, afterRepresented, callEffect⟩ :=
-      closeUnchangedCallee represented afterArgumentsWellFormed
-        calleeWellFormed calleeEq
+      closeUnchangedCallee represented afterArgumentsWellFormed calleeEq
     exact ⟨_, callExecution, afterWellFormed, afterRepresented,
       argumentsEffect.trans_same
         (callEffect.weaken CellSet.empty_subset)⟩
 
 theorem helperWorldPreserving : FreshSimulation.WorldPreserving helperCallModel := by
   intro beforeWorld afterWorld function values value evaluated
-  rcases helper_success evaluated with digit | successful | failed
-  · obtain ⟨byte, base, functionEq, valuesEq, byteNonnegative, byteBound,
-        baseNonnegative, baseBound, resultEq, afterEq⟩ := digit
-    exact afterEq
-  · obtain ⟨offset, functionEq, valuesEq, offsetNonnegative, offsetBound,
-        resultEq, afterEq⟩ := successful
-    exact afterEq
-  · obtain ⟨offset, functionEq, valuesEq, offsetNonnegative, offsetBound,
-        resultEq, afterEq⟩ := failed
-    exact afterEq
+  rcases helper_success evaluated with
+    ⟨byte, base, _, _, _, _, _, _, _, afterEq⟩ |
+    ⟨offset, _, _, _, _, _, afterEq⟩ |
+    ⟨offset, _, _, _, _, _, afterEq⟩
+  all_goals exact afterEq
 
 end Lanius.Extraction.Decimal.DigitRunCalls

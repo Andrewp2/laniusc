@@ -26,7 +26,7 @@ private partial def boundQuotation (value : Expr) (share : Bool) :
     args := args.push arg
     size := size + argSize
   let value := mkAppN value.getAppFn args
-  if size < 512 then return (value, size)
+  if size < 2048 then return (value, size)
   let share := share && !value.hasFVar && !value.hasMVar && !value.hasLooseBVars
   if share then
     if let some checked := (proofQuotationCache.getState (← getEnv))[value]? then
@@ -109,6 +109,17 @@ private def elabArtifactPackLiteral (stx : Syntax) : TermElabM ArtifactPack := d
   match ← decodeArtifactPackInput encoded with
   | .ok pack => pure pack
   | .error message => throwError "invalid extraction artifact pack: {message}"
+
+private def elabArtifactPackUnitAt (json : Syntax) (expectedPath : String) : TermElabM Artifact := do
+  let pack ← elabArtifactPackLiteral json
+  let some artifact := pack.units.find? fun artifact =>
+      artifact.sources.any fun source => source.path == expectedPath
+    | throwError "artifact pack has no unit for source {expectedPath}"
+  pure artifact
+
+private def elabArtifactPackUnit (json path : Syntax) : TermElabM (String × Artifact) := do
+  let expectedPath ← elabStringLiteral path
+  pure (expectedPath, ← elabArtifactPackUnitAt json expectedPath)
 
 private def quoteFunctionFromArtifact
     (artifact : Artifact) (expectedPath expectedName : String) : TermElabM Expr := do
@@ -202,11 +213,7 @@ elab "artifact_pack% " json:term : term => do
 /-- Quote one source unit from a pack by its checked source path. Selecting by
     path avoids coupling proofs to incidental pack ordering. -/
 elab "artifact_pack_unit% " json:term ", " path:term : term => do
-  let expectedPath ← elabStringLiteral path
-  let pack ← elabArtifactPackLiteral json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
+  let (_, artifact) ← elabArtifactPackUnit json path
   -- Large raw traces are quoted separately at the one boundary that needs
   -- them.  Keeping them out of ordinary unit constants prevents unrelated
   -- function/body projections from inheriting thousands of token rows.
@@ -216,20 +223,12 @@ elab "artifact_pack_unit% " json:term ", " path:term : term => do
 compiled unit modules: keeping the module boundary per source prevents a proof
 about one unit from loading every artifact in the pack. -/
 elab "artifact_pack_unit_full% " json:term ", " path:term : term => do
-  let expectedPath ← elabStringLiteral path
-  let pack ← elabArtifactPackLiteral json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
+  let (_, artifact) ← elabArtifactPackUnit json path
   pure (toExpr artifact)
 
 /-- Quote the other artifact fields once while reusing a supplied node list. -/
 elab "artifact_pack_unit_reusing_nodes% " json:term ", " path:term ", " nodes:term : term => do
-  let expectedPath ← elabStringLiteral path
-  let pack ← elabArtifactPackLiteral json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
+  let (_, artifact) ← elabArtifactPackUnit json path
   let nodesExpr ← elabTermEnsuringType nodes (mkApp (mkConst ``List [Level.zero]) (mkConst ``ParseNode))
   -- Reuse an explicit node expression instead of quoting a second copy. Like
   -- all artifact quotation, this supplies untrusted input to the checkers;
@@ -241,22 +240,14 @@ elab "artifact_pack_unit_reusing_nodes% " json:term ", " path:term ", " nodes:te
 
 /-- Quote only a unit's optional complete raw-token trace. -/
 elab "artifact_pack_raw_tokens% " json:term ", " path:term : term => do
-  let expectedPath ← elabStringLiteral path
-  let pack ← elabArtifactPackLiteral json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
+  let (_, artifact) ← elabArtifactPackUnit json path
   pure (toExpr artifact.raw_tokens)
 
 /-- Quote one field of a named pack unit.  Large checked units are assembled
 from opaque field constants so reducing one checker projection never unfolds
 the unit's unrelated parse, Surface, evidence, or Core tables. -/
 elab "artifact_pack_unit_field% " json:term ", " path:term ", " field:ident : term => do
-  let expectedPath ← elabStringLiteral path
-  let pack ← elabArtifactPackLiteral json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
+  let (_, artifact) ← elabArtifactPackUnit json path
   match field.getId.toString with
   | "schema_version" => pure (toExpr artifact.schema_version)
   | "sources" => pure (toExpr artifact.sources)
@@ -278,10 +269,7 @@ elab "artifact_pack_unit_parse_nodes% " json:term ", " path:term ", "
   let expectedPath ← elabStringLiteral path
   let start ← elabNatLiteral start
   let count ← elabNatLiteral count
-  let pack ← elabArtifactPackLiteral json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
+  let artifact ← elabArtifactPackUnitAt json expectedPath
   unless start + count ≤ artifact.parse_nodes.length do
     throwError "parse-node slice [{start}, {start + count}) exceeds table length {artifact.parse_nodes.length}"
   pure (toExpr (artifact.parse_nodes.drop start |>.take count))
@@ -294,10 +282,7 @@ elab "artifact_pack_unit_parse_nodes% " json:term ", " path:term ", "
 elab "artifact_pack_function% " json:term ", " path:term ", " name:term : term => do
   let expectedPath ← elabStringLiteral path
   let expectedName ← elabStringLiteral name
-  let pack ← elabArtifactPackLiteral json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
+  let artifact ← elabArtifactPackUnitAt json expectedPath
   quoteFunctionFromArtifact artifact expectedPath expectedName
 
 /-- Quote one Core function from a standalone extraction artifact by its

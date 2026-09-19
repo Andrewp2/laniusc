@@ -7287,11 +7287,7 @@ theorem evalHostCall_has_runtime_type
             called.prepend storePreserved cellsPreserved
               (InitializedCellsPreserved.prependOutcome _ synchronizedCells
                 callCells)
-  | trapped reason next =>
-      rw [argumentsResult] at argumentsPreserved
-      simpa only [evalExpr, argumentsResult, RuntimeValuesOutcomeHaveTypes,
-        RuntimeValueOutcomeHasExtendedType] using argumentsPreserved
-  | exited code next =>
+  | trapped reason next | exited reason next =>
       rw [argumentsResult] at argumentsPreserved
       simpa only [evalExpr, argumentsResult, RuntimeValuesOutcomeHaveTypes,
         RuntimeValueOutcomeHasExtendedType] using argumentsPreserved
@@ -7579,10 +7575,7 @@ theorem ValueOutcomeHasType.prepend
         borrows⟩ := typed
       exact ⟨afterStore, prefixStore.trans suffixStore,
         prefixCells.trans suffixCells, stateTyped, valueTyped, borrows⟩
-  | trapped reason afterState =>
-      exact Lanius.Properties.StateHasExtendedType.prepend
-        prefixStore prefixCells typed
-  | exited code afterState =>
+  | trapped reason afterState | exited reason afterState =>
       exact Lanius.Properties.StateHasExtendedType.prepend
         prefixStore prefixCells typed
   | outOfFuel => trivial
@@ -7605,14 +7598,7 @@ theorem ValueOutcomeHasType.restoreLocals
       exact ⟨completedStore, allStorePreserved, allCellsPreserved,
         callerTyped.restoreLocals completedTyped allStorePreserved,
         valueTyped, valueBorrows.withLocals caller.locals⟩
-  | trapped reason completed =>
-      obtain ⟨completedStore, bodyStorePreserved, bodyCellsPreserved,
-        completedTyped⟩ := typed
-      have allStorePreserved := boundStorePreserved.trans bodyStorePreserved
-      exact ⟨completedStore, allStorePreserved,
-        (boundCellsPreserved.trans bodyCellsPreserved).restoreLocals caller,
-        callerTyped.restoreLocals completedTyped allStorePreserved⟩
-  | exited code completed =>
+  | trapped reason completed | exited reason completed =>
       obtain ⟨completedStore, bodyStorePreserved, bodyCellsPreserved,
         completedTyped⟩ := typed
       have allStorePreserved := boundStorePreserved.trans bodyStorePreserved
@@ -7675,10 +7661,7 @@ theorem CompletionOutcomeHasType.prepend
         completionTyped⟩ := typed
       exact ⟨afterStore, prefixStore.trans suffixStore,
         prefixCells.trans suffixCells, stateTyped, completionTyped⟩
-  | trapped reason afterState =>
-      exact Lanius.Properties.StateHasExtendedType.prepend
-        prefixStore prefixCells typed
-  | exited code afterState =>
+  | trapped reason afterState | exited reason afterState =>
       exact Lanius.Properties.StateHasExtendedType.prepend
         prefixStore prefixCells typed
   | outOfFuel => trivial
@@ -7700,14 +7683,7 @@ theorem CompletionOutcomeHasType.restoreLocals
         (boundCellsPreserved.trans bodyCellsPreserved).restoreLocals caller,
         callerTyped.restoreLocals completedTyped allStorePreserved,
         completionTyped.withLocals caller.locals⟩
-  | trapped reason completed =>
-      obtain ⟨completedStore, bodyStorePreserved, bodyCellsPreserved,
-        completedTyped⟩ := typed
-      have allStorePreserved := boundStorePreserved.trans bodyStorePreserved
-      exact ⟨completedStore, allStorePreserved,
-        (boundCellsPreserved.trans bodyCellsPreserved).restoreLocals caller,
-        callerTyped.restoreLocals completedTyped allStorePreserved⟩
-  | exited code completed =>
+  | trapped reason completed | exited reason completed =>
       obtain ⟨completedStore, bodyStorePreserved, bodyCellsPreserved,
         completedTyped⟩ := typed
       have allStorePreserved := boundStorePreserved.trans bodyStorePreserved
@@ -7771,10 +7747,7 @@ theorem ValuesOutcomeHaveTypes.prepend
         borrows⟩ := typed
       exact ⟨afterStore, prefixStore.trans suffixStore,
         prefixCells.trans suffixCells, stateTyped, valuesTyped, borrows⟩
-  | trapped reason afterState =>
-      exact Lanius.Properties.StateHasExtendedType.prepend
-        prefixStore prefixCells typed
-  | exited code afterState =>
+  | trapped reason afterState | exited reason afterState =>
       exact Lanius.Properties.StateHasExtendedType.prepend
         prefixStore prefixCells typed
   | outOfFuel => trivial
@@ -7790,10 +7763,7 @@ theorem PlaceOutcomeHasType.prepend
       obtain ⟨afterStore, suffixStore, suffixCells, stateTyped, placeTyped⟩ := typed
       exact ⟨afterStore, prefixStore.trans suffixStore,
         prefixCells.trans suffixCells, stateTyped, placeTyped⟩
-  | trapped reason afterState =>
-      exact Lanius.Properties.StateHasExtendedType.prepend
-        prefixStore prefixCells typed
-  | exited code afterState =>
+  | trapped reason afterState | exited reason afterState =>
       exact Lanius.Properties.StateHasExtendedType.prepend
         prefixStore prefixCells typed
   | outOfFuel => trivial
@@ -8053,10 +8023,7 @@ theorem evalFieldPlace_has_type
               exact ⟨afterStore, storePreserved, cellsPreserved, nextTyped,
                 .projected stored cellFound initialized rootTyped rootBorrows
                   (projectionTyped.trans suffixTyped) fieldTyped fieldBorrows⟩
-  | trapped reason next =>
-      rw [baseResult] at basePreserved
-      simpa only [evalPlace, baseResult, PlaceOutcomeHasType] using basePreserved
-  | exited code next =>
+  | trapped reason next | exited reason next =>
       rw [baseResult] at basePreserved
       simpa only [evalPlace, baseResult, PlaceOutcomeHasType] using basePreserved
   | outOfFuel =>
@@ -8211,10 +8178,7 @@ theorem evalArrayIndexPlace_has_type
                   | outOfFuel =>
                       simp [evalPlace, baseResult, indexResult,
                         PlaceOutcomeHasType]
-  | trapped reason next =>
-      rw [baseResult] at basePreserved
-      simpa only [evalPlace, baseResult, PlaceOutcomeHasType] using basePreserved
-  | exited code next =>
+  | trapped reason next | exited reason next =>
       rw [baseResult] at basePreserved
       simpa only [evalPlace, baseResult, PlaceOutcomeHasType] using basePreserved
   | outOfFuel =>
@@ -8411,10 +8375,7 @@ theorem evalSliceIndexPlace_has_type
                   | outOfFuel =>
                       simp [evalPlace, baseResult, indexResult,
                         PlaceOutcomeHasType]
-  | trapped reason next =>
-      rw [baseResult] at basePreserved
-      simpa only [evalPlace, baseResult, PlaceOutcomeHasType] using basePreserved
-  | exited code next =>
+  | trapped reason next | exited reason next =>
       rw [baseResult] at basePreserved
       simpa only [evalPlace, baseResult, PlaceOutcomeHasType] using basePreserved
   | outOfFuel =>
@@ -8686,11 +8647,7 @@ theorem evalCast_has_type
           exact ⟨after, extension, cellsPreserved, nextTyped, resultTyped,
             (Lanius.Properties.ValueHasType.scalar_is_closed
               resultTyped).borrowsValid⟩
-  | trapped reason next =>
-      rw [operandResult] at operandPreserved
-      simpa only [evalExpr, operandResult, ValueOutcomeHasType] using
-        operandPreserved
-  | exited code next =>
+  | trapped reason next | exited reason next =>
       rw [operandResult] at operandPreserved
       simpa only [evalExpr, operandResult, ValueOutcomeHasType] using
         operandPreserved
@@ -8724,11 +8681,7 @@ theorem evalUnary_has_type
             Lanius.Properties.ValueHasType.scalar_is_closed resultTyped
           exact ⟨after, extension, cellsPreserved, nextTyped, resultTyped,
             resultClosed.borrowsValid⟩
-  | trapped reason next =>
-      rw [operandResult] at operandPreserved
-      simpa only [evalExpr, operandResult, ValueOutcomeHasType] using
-        operandPreserved
-  | exited code next =>
+  | trapped reason next | exited reason next =>
       rw [operandResult] at operandPreserved
       simpa only [evalExpr, operandResult, ValueOutcomeHasType] using
         operandPreserved
@@ -8839,12 +8792,7 @@ theorem evalEagerBinary_has_type
                 resultTyped,
                 (Lanius.Properties.ValueHasType.scalar_is_closed
                   resultTyped).borrowsValid⟩
-      | trapped reason next =>
-          rw [rightResult] at rightOutcome
-          simpa only [evalExpr, notAnd, notOr, leftResult, rightResult,
-            ValueOutcomeHasType] using
-              rightOutcome.prepend leftExtension leftCellsPreserved
-      | exited code next =>
+      | trapped reason next | exited reason next =>
           rw [rightResult] at rightOutcome
           simpa only [evalExpr, notAnd, notOr, leftResult, rightResult,
             ValueOutcomeHasType] using
@@ -8852,11 +8800,7 @@ theorem evalEagerBinary_has_type
       | outOfFuel =>
           simp [evalExpr, leftResult, rightResult,
             ValueOutcomeHasType]
-  | trapped reason next =>
-      rw [leftResult] at leftPreserved
-      simpa only [evalExpr, notAnd, notOr, leftResult, ValueOutcomeHasType] using
-        leftPreserved
-  | exited code next =>
+  | trapped reason next | exited reason next =>
       rw [leftResult] at leftPreserved
       simpa only [evalExpr, notAnd, notOr, leftResult, ValueOutcomeHasType] using
         leftPreserved
@@ -8952,10 +8896,7 @@ theorem evalLogicalAnd_has_type
               have rightOutcome := rightPreserved afterLeft leftStore afterLeftTyped
               simpa only [evalExpr, leftResult] using
                 rightOutcome.prepend leftExtension leftCellsPreserved
-  | trapped reason next =>
-      rw [leftResult] at leftPreserved
-      simpa only [evalExpr, leftResult, ValueOutcomeHasType] using leftPreserved
-  | exited code next =>
+  | trapped reason next | exited reason next =>
       rw [leftResult] at leftPreserved
       simpa only [evalExpr, leftResult, ValueOutcomeHasType] using leftPreserved
   | outOfFuel =>
@@ -8990,10 +8931,7 @@ theorem evalLogicalOr_has_type
               exact ⟨leftStore, leftExtension, leftCellsPreserved,
                 afterLeftTyped, .boolean true,
                 (show ValueIsClosed (.boolean true) by rfl).borrowsValid⟩
-  | trapped reason next =>
-      rw [leftResult] at leftPreserved
-      simpa only [evalExpr, leftResult, ValueOutcomeHasType] using leftPreserved
-  | exited code next =>
+  | trapped reason next | exited reason next =>
       rw [leftResult] at leftPreserved
       simpa only [evalExpr, leftResult, ValueOutcomeHasType] using leftPreserved
   | outOfFuel =>
@@ -9264,23 +9202,14 @@ theorem evalExprsCons_have_types
           rcases member with headMember | tailMember
           · exact headBorrowsAfterTail descriptor headMember
           · exact tailBorrows descriptor tailMember
-      | trapped reason next =>
-          rw [tailResult] at tailOutcome
-          simpa only [evalExprs, headResult, tailResult,
-            ValuesOutcomeHaveTypes] using
-              tailOutcome.prepend headStorePreserved headCellsPreserved
-      | exited code next =>
+      | trapped reason next | exited reason next =>
           rw [tailResult] at tailOutcome
           simpa only [evalExprs, headResult, tailResult,
             ValuesOutcomeHaveTypes] using
               tailOutcome.prepend headStorePreserved headCellsPreserved
       | outOfFuel =>
           simp [evalExprs, headResult, tailResult, ValuesOutcomeHaveTypes]
-  | trapped reason next =>
-      rw [headResult] at headPreserved
-      simpa only [evalExprs, headResult, ValueOutcomeHasType,
-        ValuesOutcomeHaveTypes] using headPreserved
-  | exited code next =>
+  | trapped reason next | exited reason next =>
       rw [headResult] at headPreserved
       simpa only [evalExprs, headResult, ValueOutcomeHasType,
         ValuesOutcomeHaveTypes] using headPreserved
@@ -9456,11 +9385,7 @@ theorem evalArray_has_type
       exact ⟨afterStore, storePreserved, cellsPreserved, nextTyped,
         .array values elementType valueLength valuesTyped,
         (by simpa [BorrowsValid, ValuesBorrowsValid, valueBorrows] using borrows)⟩
-  | trapped reason next =>
-      rw [elementsResult] at elementsPreserved
-      simpa only [evalExpr, elementsResult, ValueOutcomeHasType,
-        ValuesOutcomeHaveTypes] using elementsPreserved
-  | exited code next =>
+  | trapped reason next | exited reason next =>
       rw [elementsResult] at elementsPreserved
       simpa only [evalExpr, elementsResult, ValueOutcomeHasType,
         ValuesOutcomeHaveTypes] using elementsPreserved
@@ -9487,11 +9412,7 @@ theorem evalStructValue_has_type
       exact ⟨afterStore, storePreserved, cellsPreserved, nextTyped,
         .structure declaration found valuesTyped,
         (by simpa [BorrowsValid, ValuesBorrowsValid, valueBorrows] using borrows)⟩
-  | trapped reason next =>
-      rw [fieldsResult] at fieldsPreserved
-      simpa only [evalExpr, fieldsResult, ValueOutcomeHasType,
-        ValuesOutcomeHaveTypes] using fieldsPreserved
-  | exited code next =>
+  | trapped reason next | exited reason next =>
       rw [fieldsResult] at fieldsPreserved
       simpa only [evalExpr, fieldsResult, ValueOutcomeHasType,
         ValuesOutcomeHaveTypes] using fieldsPreserved
@@ -9646,10 +9567,7 @@ theorem evalField_has_type
             simpa [valueBorrows] using
               valueBorrows_mem_valueListBorrows
                 (List.mem_of_getElem? fieldValueFound) member)
-  | trapped reason next =>
-      rw [baseResult] at basePreserved
-      simpa only [evalExpr, baseResult, ValueOutcomeHasType] using basePreserved
-  | exited code next =>
+  | trapped reason next | exited reason next =>
       rw [baseResult] at basePreserved
       simpa only [evalExpr, baseResult, ValueOutcomeHasType] using basePreserved
   | outOfFuel =>
@@ -12042,21 +11960,7 @@ theorem execForValues_has_runtime_type
                   rw [execForValues.eq_3]
                   simp only [bodyResult]
                   cases completion with
-                  | next =>
-                      have tailBorrowsAfter := tailBorrows.preserve
-                        bodyStorePreserved bodyCellsPreserved completedTyped.typed
-                      have tailOutcome := induction completedTyped tailTyped
-                        tailBorrowsAfter
-                        (bodyPreserved := fun statementFuel intermediate
-                          intermediateStore statementFuelLt typed =>
-                            bodyPreserved statementFuel intermediate
-                              intermediateStore
-                              (Nat.lt_trans statementFuelLt
-                                (Nat.lt_succ_self fuel)) typed)
-                        (inLoop := inLoop)
-                      exact tailOutcome.prepend bodyStorePreserved
-                        bodyCellsPreserved
-                  | continueLoop =>
+                  | next | continueLoop =>
                       have tailBorrowsAfter := tailBorrows.preserve
                         bodyStorePreserved bodyCellsPreserved completedTyped.typed
                       have tailOutcome := induction completedTyped tailTyped
@@ -12161,31 +12065,7 @@ theorem execForRange_has_runtime_type
             obtain ⟨bodyStore, bodyStorePreserved, bodyCellsPreserved,
               completedTyped, completionTyped⟩ := restoredOutcome
             cases completion with
-            | next =>
-                simp only [running, bodyResult]
-                split
-                next reachedInclusiveEnd =>
-                  exact ⟨bodyStore, bodyStorePreserved,
-                    bodyCellsPreserved, completedTyped, trivial⟩
-                next continueRange =>
-                  have nextTyped : ValueHasType program
-                      (.signed .i32
-                        (wrapSigned program.target .i32 (current + 1)))
-                      (.scalar (.signed .i32)) :=
-                    .signed .i32 _
-                      (wrapSigned_in_range program.target .i32 _).1
-                      (wrapSigned_in_range program.target .i32 _).2
-                  have nextOutcome := induction completedTyped nextTyped
-                    (bodyPreserved := fun statementFuel intermediate
-                      intermediateStore statementFuelLt typed =>
-                        bodyPreserved statementFuel intermediate
-                          intermediateStore
-                          (Nat.lt_trans statementFuelLt
-                            (Nat.lt_succ_self fuel)) typed)
-                    (inLoop := inLoop)
-                  exact nextOutcome.prepend bodyStorePreserved
-                    bodyCellsPreserved
-            | continueLoop =>
+            | next | continueLoop =>
                 simp only [running, bodyResult]
                 split
                 next reachedInclusiveEnd =>
@@ -12730,14 +12610,7 @@ theorem execForValues_has_type
                   rw [execForValues.eq_3]
                   simp only [bodyResult]
                   cases completion with
-                  | next =>
-                      have tailBorrowsAfter := tailBorrows.preserve
-                        bodyStorePreserved bodyCellsPreserved completedTyped
-                      have tailOutcome := induction completedTyped tailTyped
-                        tailBorrowsAfter (inLoop := inLoop)
-                      exact tailOutcome.prepend bodyStorePreserved
-                        bodyCellsPreserved
-                  | continueLoop =>
+                  | next | continueLoop =>
                       have tailBorrowsAfter := tailBorrows.preserve
                         bodyStorePreserved bodyCellsPreserved completedTyped
                       have tailOutcome := induction completedTyped tailTyped
@@ -12754,14 +12627,7 @@ theorem execForValues_has_type
                         cases result <;> exact completionTyped
                       exact ⟨bodyStore, bodyStorePreserved, bodyCellsPreserved,
                         completedTyped, returnedTyped⟩
-              | trapped reason completed =>
-                  rw [bodyResult] at bodyOutcome
-                  have restoredOutcome := bodyOutcome.restoreLocals stateTyped
-                    boundStorePreserved boundCellsPreserved
-                  rw [execForValues.eq_3]
-                  simp only [bodyResult]
-                  exact restoredOutcome
-              | exited code completed =>
+              | trapped reason completed | exited code completed =>
                   rw [bodyResult] at bodyOutcome
                   have restoredOutcome := bodyOutcome.restoreLocals stateTyped
                     boundStorePreserved boundCellsPreserved
@@ -12840,25 +12706,7 @@ theorem execForRange_has_type
             obtain ⟨bodyStore, bodyStorePreserved, bodyCellsPreserved,
               completedTyped, completionTyped⟩ := restoredOutcome
             cases completion with
-            | next =>
-                simp only [running, bodyResult]
-                split
-                next reachedInclusiveEnd =>
-                  exact ⟨bodyStore, bodyStorePreserved,
-                    bodyCellsPreserved, completedTyped, trivial⟩
-                next continueRange =>
-                  have nextTyped : ValueHasType program
-                      (.signed .i32
-                        (wrapSigned program.target .i32 (current + 1)))
-                      (.scalar (.signed .i32)) :=
-                    .signed .i32 _
-                      (wrapSigned_in_range program.target .i32 _).1
-                      (wrapSigned_in_range program.target .i32 _).2
-                  have nextOutcome := induction completedTyped nextTyped
-                    (inLoop := inLoop)
-                  exact nextOutcome.prepend bodyStorePreserved
-                    bodyCellsPreserved
-            | continueLoop =>
+            | next | continueLoop =>
                 simp only [running, bodyResult]
                 split
                 next reachedInclusiveEnd =>
@@ -12888,13 +12736,7 @@ theorem execForRange_has_type
                   cases result <;> exact completionTyped
                 exact ⟨bodyStore, bodyStorePreserved, bodyCellsPreserved,
                   completedTyped, returnedTyped⟩
-        | trapped reason completed =>
-            rw [bodyResult] at bodyOutcome
-            have restoredOutcome := bodyOutcome.restoreLocals stateTyped
-              boundStorePreserved boundCellsPreserved
-            simp only [running, bodyResult]
-            exact restoredOutcome
-        | exited code completed =>
+        | trapped reason completed | exited code completed =>
             rw [bodyResult] at bodyOutcome
             have restoredOutcome := bodyOutcome.restoreLocals stateTyped
               boundStorePreserved boundCellsPreserved

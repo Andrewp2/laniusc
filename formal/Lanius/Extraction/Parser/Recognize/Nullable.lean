@@ -1280,6 +1280,23 @@ def RecognizerNullableLoopInvariant.after_bind_local
     cursorStateCountDistinct := invariant.cursorStateCountDistinct
   }
 
+/-- Any nullable-loop persistent local survives a write to its separately
+    owned cursor cell. -/
+theorem RecognizerNullableLoopInvariant.preserve_local_after_cursor
+    (invariant : RecognizerNullableLoopInvariant grammarLayout grammar words
+      tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell cursorCell before position parentProduction
+      parentDot parentOrigin parentState expected current remaining)
+    (effect : ModifiesOnly (CellSet.singleton cursorCell) before after)
+    (id : VarId) (persistent : NullablePersistentLocal id)
+    (value : Value) (found : before.local? id = some value) :
+    after.local? id = some value := by
+  apply effect.preserves_local invariant.chartCursor.recognizer.wellFormed found
+  intro cell cellId written
+  change cell = cursorCell at written
+  subst cell
+  exact invariant.persistentLocalsSeparate id persistent |>.2.2 cellId
+
 /-- Recombine the shared append frame with a cursor-local write.  The cursor
     and state-count locals own distinct cells, so advancing `STATE_NEXT`
     cannot disturb the logical workspace or its current state count. -/
@@ -1297,65 +1314,28 @@ def RecognizerNullableLoopInvariant.after_cursor_effect
       workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell stateCountCell cursorCell after position parentProduction
       parentDot parentOrigin parentState expected next nextRemaining := by
-  have frameDisjoint : CellSet.Disjoint
-      (localBindingFrameFootprint before
-        verifiedParserNullableLoopPersistentBindings)
-      (CellSet.singleton cursorCell) :=
-    localCellFootprint_disjoint_singleton
-      (fun id framed =>
-        invariant.persistentLocalsSeparate id
-          ((NullablePersistentLocal_source_frame id).mpr framed) |>.2.2)
-  have preserveLocal (id : VarId) (persistent : NullablePersistentLocal id)
-      (value : Value)
-      (found : before.local? id = some value) :
-      after.local? id = some value :=
-    effect.preserves_local_of_disjoint
-      invariant.chartCursor.recognizer.wellFormed frameDisjoint
-        ((NullablePersistentLocal_source_frame id).mp persistent) found
-  have countOwned : (Assertion.localPointsTo 18 stateCountCell
-      (some (.signed .i32 (Int.ofNat workspace.states.length)))).holds after :=
-    effect.preserve invariant.chartCursor.recognizer.wellFormed
-      (Assertion.localPointsTo 18 stateCountCell
-        (some (.signed .i32 (Int.ofNat workspace.states.length))))
-      invariant.appendFrame.stateCountOwned (by
-        intro cell member written
-        change cell = stateCountCell at member
-        change cell = cursorCell at written
-        subst cell
-        exact invariant.cursorStateCountDistinct written.symm)
   exact {
     chartCursor := afterCursor
-    appendFrame := {
-      recognizer := afterCursor.recognizer
-      positionBound := invariant.appendFrame.positionBound
-      stateBaseLocal := afterCursor.stateBaseLocal
-      stateCapacityLocal := preserveLocal 9 (by
-        simp [NullablePersistentLocal]) _
-        invariant.appendFrame.stateCapacityLocal
-      stateCountLocal := preserveLocal 18 (by
-        simp [NullablePersistentLocal]) _
-        invariant.appendFrame.stateCountLocal
-      stateCountOwned := countOwned
-      stateCountBackingDistinct := invariant.appendFrame.stateCountBackingDistinct
-      stateCountParameterSeparate := by
-        unfold RecognizerParameterFrameSeparated
-        rw [effect.localBindingFrameFootprint_eq
-          verifiedParserRecognizerParameterFrame]
-        exact invariant.appendFrame.stateCountParameterSeparate
-    }
-    positionLocal := preserveLocal 23 (by
+    appendFrame := invariant.appendFrame.after_scalar_effect cursorCell effect
+      afterCursor.recognizer
+      (invariant.persistentLocalsSeparate 8 (by
+        simp [NullablePersistentLocal]) |>.2.2)
+      (invariant.persistentLocalsSeparate 9 (by
+        simp [NullablePersistentLocal]) |>.2.2)
+      invariant.cursorStateCountDistinct.symm
+    positionLocal := invariant.preserve_local_after_cursor effect 23 (by
       simp [NullablePersistentLocal]) _ invariant.positionLocal
-    parentStateLocal := preserveLocal 24 (by
+    parentStateLocal := invariant.preserve_local_after_cursor effect 24 (by
       simp [NullablePersistentLocal]) _ invariant.parentStateLocal
-    parentProductionLocal := preserveLocal 25 (by
+    parentProductionLocal := invariant.preserve_local_after_cursor effect 25 (by
       simp [NullablePersistentLocal]) _
       invariant.parentProductionLocal
-    parentDotLocal := preserveLocal 26 (by
+    parentDotLocal := invariant.preserve_local_after_cursor effect 26 (by
       simp [NullablePersistentLocal]) _ invariant.parentDotLocal
-    parentOriginLocal := preserveLocal 27 (by
+    parentOriginLocal := invariant.preserve_local_after_cursor effect 27 (by
       simp [NullablePersistentLocal]) _
       invariant.parentOriginLocal
-    expectedLocal := preserveLocal 30 (by
+    expectedLocal := invariant.preserve_local_after_cursor effect 30 (by
       simp [NullablePersistentLocal]) _ invariant.expectedLocal
     parentProductionBound := invariant.parentProductionBound
     parentDotBeforeEnd := invariant.parentDotBeforeEnd
@@ -1388,67 +1368,29 @@ def RecognizerNullableLoopInvariant.after_cursor_exhaustion
       workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell stateCountCell cursorCell after position parentProduction
       parentDot parentOrigin parentState expected := by
-  have frameDisjoint : CellSet.Disjoint
-      (localBindingFrameFootprint before
-        verifiedParserNullableLoopPersistentBindings)
-      (CellSet.singleton cursorCell) :=
-    localCellFootprint_disjoint_singleton
-      (fun id framed =>
-        invariant.persistentLocalsSeparate id
-          ((NullablePersistentLocal_source_frame id).mpr framed) |>.2.2)
-  have preserveLocal (id : VarId) (persistent : NullablePersistentLocal id)
-      (value : Value)
-      (found : before.local? id = some value) :
-      after.local? id = some value :=
-    effect.preserves_local_of_disjoint
-      invariant.chartCursor.recognizer.wellFormed frameDisjoint
-        ((NullablePersistentLocal_source_frame id).mp persistent) found
-  have countOwned : (Assertion.localPointsTo 18 stateCountCell
-      (some (.signed .i32 (Int.ofNat workspace.states.length)))).holds after :=
-    effect.preserve invariant.chartCursor.recognizer.wellFormed
-      (Assertion.localPointsTo 18 stateCountCell
-        (some (.signed .i32 (Int.ofNat workspace.states.length))))
-      invariant.appendFrame.stateCountOwned (by
-        intro cell member written
-        change cell = stateCountCell at member
-        change cell = cursorCell at written
-        subst cell
-        exact invariant.cursorStateCountDistinct written.symm)
   exact {
     chartCursor := afterCursor
-    appendFrame := {
-      recognizer := afterCursor.recognizer
-      positionBound := invariant.appendFrame.positionBound
-      stateBaseLocal := afterCursor.stateBaseLocal
-      stateCapacityLocal := preserveLocal 9 (by
-        simp [NullablePersistentLocal]) _
-        invariant.appendFrame.stateCapacityLocal
-      stateCountLocal := preserveLocal 18 (by
-        simp [NullablePersistentLocal]) _
-        invariant.appendFrame.stateCountLocal
-      stateCountOwned := countOwned
-      stateCountBackingDistinct :=
-        invariant.appendFrame.stateCountBackingDistinct
-      stateCountParameterSeparate := by
-        unfold RecognizerParameterFrameSeparated
-        rw [effect.localBindingFrameFootprint_eq
-          verifiedParserRecognizerParameterFrame]
-        exact invariant.appendFrame.stateCountParameterSeparate
-    }
-    positionLocal := preserveLocal 23 (by
+    appendFrame := invariant.appendFrame.after_scalar_effect cursorCell effect
+      afterCursor.recognizer
+      (invariant.persistentLocalsSeparate 8 (by
+        simp [NullablePersistentLocal]) |>.2.2)
+      (invariant.persistentLocalsSeparate 9 (by
+        simp [NullablePersistentLocal]) |>.2.2)
+      invariant.cursorStateCountDistinct.symm
+    positionLocal := invariant.preserve_local_after_cursor effect 23 (by
       simp [NullablePersistentLocal]) _ invariant.positionLocal
-    parentStateLocal := preserveLocal 24 (by
+    parentStateLocal := invariant.preserve_local_after_cursor effect 24 (by
       simp [NullablePersistentLocal]) _
       invariant.parentStateLocal
-    parentProductionLocal := preserveLocal 25 (by
+    parentProductionLocal := invariant.preserve_local_after_cursor effect 25 (by
       simp [NullablePersistentLocal]) _
       invariant.parentProductionLocal
-    parentDotLocal := preserveLocal 26 (by
+    parentDotLocal := invariant.preserve_local_after_cursor effect 26 (by
       simp [NullablePersistentLocal]) _ invariant.parentDotLocal
-    parentOriginLocal := preserveLocal 27 (by
+    parentOriginLocal := invariant.preserve_local_after_cursor effect 27 (by
       simp [NullablePersistentLocal]) _
       invariant.parentOriginLocal
-    expectedLocal := preserveLocal 30 (by
+    expectedLocal := invariant.preserve_local_after_cursor effect 30 (by
       simp [NullablePersistentLocal]) _ invariant.expectedLocal
     parentProductionBound := invariant.parentProductionBound
     parentDotBeforeEnd := invariant.parentDotBeforeEnd
@@ -2118,66 +2060,40 @@ def RecognizerNullableScopedExecution.restore_invariant
       exact beforeInvariant.chartCursor.cursorOwned.1
     · exact entryTransferred cursorCell _
         innerInvariant.chartCursor.cursorOwned.2
-  have recognizer : RecognizerInvariant grammarLayout grammar words tokens
-      workspaceLayout nextWorkspace nextWorkspaceValues grammarCell tokensCell
-      workspaceCell closed.after := {
-    grammarEncoded := innerInvariant.chartCursor.recognizer.grammarEncoded
-    grammarWellFormed :=
-      innerInvariant.chartCursor.recognizer.grammarWellFormed
-    wordsI32 := innerInvariant.chartCursor.recognizer.wordsI32
-    tokensI32 := innerInvariant.chartCursor.recognizer.tokensI32
-    workspaceLength :=
-      innerInvariant.chartCursor.recognizer.workspaceLength
-    workspaceTokenCount :=
-      innerInvariant.chartCursor.recognizer.workspaceTokenCount
-    workspaceEncoded :=
-      innerInvariant.chartCursor.recognizer.workspaceEncoded
-    derivations := innerInvariant.chartCursor.recognizer.derivations
-    wellFormed := closed.wellFormed
-    grammarLocal := preserveLocal 0 (by
-      simp [NullablePersistentLocal]) (by decide) _
-      beforeInvariant.chartCursor.recognizer.grammarLocal
-    grammarLengthLocal := preserveLocal 1 (by
-      simp [NullablePersistentLocal]) (by decide) _
-      beforeInvariant.chartCursor.recognizer.grammarLengthLocal
-    tokenStorage := beforeInvariant.chartCursor.recognizer.tokenStorage.transport
-      (fun _ found => preserveLocal 2 (by simp [NullablePersistentLocal])
-        (by decide) _ found)
-      (fun _ found => closed.effect.preserves_entry
-        beforeInvariant.chartCursor.recognizer.wellFormed found (by
-          intro written
-          have mutable := writesMutable tokensCell written
-          change tokensCell = workspaceCell ∨ tokensCell = stateCountCell ∨
-            tokensCell = cursorCell at mutable
-          rcases mutable with same | same | same
-          · exact beforeInvariant.chartCursor.recognizer.tokensWorkspaceDistinct same
-          · exact beforeInvariant.appendFrame.stateCountBackingDistinct.2.1 same.symm
-          · exact beforeInvariant.chartCursor.cursorBackingDistinct.2.1 same.symm))
-    tokenCountLocal := preserveLocal 3 (by
-      simp [NullablePersistentLocal]) (by decide) _
-      beforeInvariant.chartCursor.recognizer.tokenCountLocal
-    workspaceLocal := by
-      have preserved := preserveLocal 4 (by
-        simp [NullablePersistentLocal]) (by decide) _
-        beforeInvariant.chartCursor.recognizer.workspaceLocal
-      simpa [workspaceValue,
-        beforeInvariant.chartCursor.recognizer.workspaceLength,
-        innerInvariant.chartCursor.recognizer.workspaceLength] using preserved
-    workspaceLengthLocal := by
-      have preserved := preserveLocal 5 (by
-        simp [NullablePersistentLocal]) (by decide) _
-        beforeInvariant.chartCursor.recognizer.workspaceLengthLocal
-      simpa [beforeInvariant.chartCursor.recognizer.workspaceLength,
-        innerInvariant.chartCursor.recognizer.workspaceLength] using preserved
-    grammarBacking := entryTransferred grammarCell _
-      innerInvariant.chartCursor.recognizer.grammarBacking
-    workspaceBacking := entryTransferred workspaceCell _
-      innerInvariant.chartCursor.recognizer.workspaceBacking
-    grammarWorkspaceDistinct :=
-      innerInvariant.chartCursor.recognizer.grammarWorkspaceDistinct
-    tokensWorkspaceDistinct :=
-      innerInvariant.chartCursor.recognizer.tokensWorkspaceDistinct
-  }
+  have recognizer := beforeInvariant.chartCursor.recognizer.after_scoped_effect
+    writes closed.effect closed.wellFormed
+    (by
+      intro written
+      have mutable := writesMutable grammarCell written
+      change grammarCell = workspaceCell ∨ grammarCell = stateCountCell
+        ∨ grammarCell = cursorCell at mutable
+      rcases mutable with same | same | same
+      · exact beforeInvariant.chartCursor.recognizer.grammarWorkspaceDistinct same
+      · exact beforeInvariant.appendFrame.stateCountBackingDistinct.1 same.symm
+      · exact beforeInvariant.chartCursor.cursorBackingDistinct.1 same.symm)
+    (by
+      intro written
+      have mutable := writesMutable tokensCell written
+      change tokensCell = workspaceCell ∨ tokensCell = stateCountCell
+        ∨ tokensCell = cursorCell at mutable
+      rcases mutable with same | same | same
+      · exact beforeInvariant.chartCursor.recognizer.tokensWorkspaceDistinct same
+      · exact beforeInvariant.appendFrame.stateCountBackingDistinct.2.1 same.symm
+      · exact beforeInvariant.chartCursor.cursorBackingDistinct.2.1 same.symm)
+    (CellSet.Disjoint.mono_right writesMutable
+      (CellSet.Disjoint.mono_left
+        (localBindingFrameFootprint_mono (fun id idBound =>
+          (NullablePreservedLocal_source_frame id).mp
+            ((NullablePreservedLocal_iff id).mpr ⟨Or.inl idBound, by
+              have bound :=
+                (mem_verifiedParserRecognizerParameterIds_iff id).mp idBound
+              exact Nat.ne_of_lt (Nat.lt_of_le_of_lt bound (by decide))⟩)))
+        beforeInvariant.persistentSeparate))
+    innerInvariant.chartCursor.recognizer
+    (by
+      rw [innerInvariant.chartCursor.recognizer.workspaceLength,
+        beforeInvariant.chartCursor.recognizer.workspaceLength])
+    closed.cells
   exact {
     chartCursor := {
       recognizer := recognizer
@@ -2311,63 +2227,40 @@ def RecognizerNullableScopedExecution.restore_finished
       rw [closed.effect.locals]
       exact beforeInvariant.chartCursor.cursorOwned.1
     · exact entryTransferred cursorCell _ innerInvariant.chartCursor.cursorOwned.2
-  have recognizer : RecognizerInvariant grammarLayout grammar words tokens
-      workspaceLayout nextWorkspace nextWorkspaceValues grammarCell tokensCell
-      workspaceCell closed.after := {
-    grammarEncoded := innerInvariant.chartCursor.recognizer.grammarEncoded
-    grammarWellFormed := innerInvariant.chartCursor.recognizer.grammarWellFormed
-    wordsI32 := innerInvariant.chartCursor.recognizer.wordsI32
-    tokensI32 := innerInvariant.chartCursor.recognizer.tokensI32
-    workspaceLength := innerInvariant.chartCursor.recognizer.workspaceLength
-    workspaceTokenCount :=
-      innerInvariant.chartCursor.recognizer.workspaceTokenCount
-    workspaceEncoded := innerInvariant.chartCursor.recognizer.workspaceEncoded
-    derivations := innerInvariant.chartCursor.recognizer.derivations
-    wellFormed := closed.wellFormed
-    grammarLocal := preserveLocal 0 (by
-      simp [NullablePersistentLocal]) (by decide) _
-      beforeInvariant.chartCursor.recognizer.grammarLocal
-    grammarLengthLocal := preserveLocal 1 (by
-      simp [NullablePersistentLocal]) (by decide) _
-      beforeInvariant.chartCursor.recognizer.grammarLengthLocal
-    tokenStorage := beforeInvariant.chartCursor.recognizer.tokenStorage.transport
-      (fun _ found => preserveLocal 2 (by simp [NullablePersistentLocal])
-        (by decide) _ found)
-      (fun _ found => closed.effect.preserves_entry
-        beforeInvariant.chartCursor.recognizer.wellFormed found (by
-          intro written
-          have mutable := writesMutable tokensCell written
-          change tokensCell = workspaceCell ∨ tokensCell = stateCountCell ∨
-            tokensCell = cursorCell at mutable
-          rcases mutable with same | same | same
-          · exact beforeInvariant.chartCursor.recognizer.tokensWorkspaceDistinct same
-          · exact beforeInvariant.appendFrame.stateCountBackingDistinct.2.1 same.symm
-          · exact beforeInvariant.chartCursor.cursorBackingDistinct.2.1 same.symm))
-    tokenCountLocal := preserveLocal 3 (by
-      simp [NullablePersistentLocal]) (by decide) _
-      beforeInvariant.chartCursor.recognizer.tokenCountLocal
-    workspaceLocal := by
-      have preserved := preserveLocal 4 (by
-        simp [NullablePersistentLocal]) (by decide) _
-        beforeInvariant.chartCursor.recognizer.workspaceLocal
-      simpa [workspaceValue,
-        beforeInvariant.chartCursor.recognizer.workspaceLength,
-        innerInvariant.chartCursor.recognizer.workspaceLength] using preserved
-    workspaceLengthLocal := by
-      have preserved := preserveLocal 5 (by
-        simp [NullablePersistentLocal]) (by decide) _
-        beforeInvariant.chartCursor.recognizer.workspaceLengthLocal
-      simpa [beforeInvariant.chartCursor.recognizer.workspaceLength,
-        innerInvariant.chartCursor.recognizer.workspaceLength] using preserved
-    grammarBacking := entryTransferred grammarCell _
-      innerInvariant.chartCursor.recognizer.grammarBacking
-    workspaceBacking := entryTransferred workspaceCell _
-      innerInvariant.chartCursor.recognizer.workspaceBacking
-    grammarWorkspaceDistinct :=
-      innerInvariant.chartCursor.recognizer.grammarWorkspaceDistinct
-    tokensWorkspaceDistinct :=
-      innerInvariant.chartCursor.recognizer.tokensWorkspaceDistinct
-  }
+  have recognizer := beforeInvariant.chartCursor.recognizer.after_scoped_effect
+    writes closed.effect closed.wellFormed
+    (by
+      intro written
+      have mutable := writesMutable grammarCell written
+      change grammarCell = workspaceCell ∨ grammarCell = stateCountCell
+        ∨ grammarCell = cursorCell at mutable
+      rcases mutable with same | same | same
+      · exact beforeInvariant.chartCursor.recognizer.grammarWorkspaceDistinct same
+      · exact beforeInvariant.appendFrame.stateCountBackingDistinct.1 same.symm
+      · exact beforeInvariant.chartCursor.cursorBackingDistinct.1 same.symm)
+    (by
+      intro written
+      have mutable := writesMutable tokensCell written
+      change tokensCell = workspaceCell ∨ tokensCell = stateCountCell
+        ∨ tokensCell = cursorCell at mutable
+      rcases mutable with same | same | same
+      · exact beforeInvariant.chartCursor.recognizer.tokensWorkspaceDistinct same
+      · exact beforeInvariant.appendFrame.stateCountBackingDistinct.2.1 same.symm
+      · exact beforeInvariant.chartCursor.cursorBackingDistinct.2.1 same.symm)
+    (CellSet.Disjoint.mono_right writesMutable
+      (CellSet.Disjoint.mono_left
+        (localBindingFrameFootprint_mono (fun id idBound =>
+          (NullablePreservedLocal_source_frame id).mp
+            ((NullablePreservedLocal_iff id).mpr ⟨Or.inl idBound, by
+              have bound :=
+                (mem_verifiedParserRecognizerParameterIds_iff id).mp idBound
+              exact Nat.ne_of_lt (Nat.lt_of_le_of_lt bound (by decide))⟩)))
+        beforeInvariant.persistentSeparate))
+    innerInvariant.chartCursor.recognizer
+    (by
+      rw [innerInvariant.chartCursor.recognizer.workspaceLength,
+        beforeInvariant.chartCursor.recognizer.workspaceLength])
+    closed.cells
   exact {
     chartCursor := {
       recognizer := recognizer
@@ -2885,12 +2778,10 @@ noncomputable def RecognizerNullableCandidateBindings.evaluate_predicate
   let lhs := (grammar.productionAt productionFin).lhs
   have originResult : Evaluates verifiedParserCore bound (.local 39)
       (.signed .i32 (Int.ofNat candidate.origin)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound 39 _
-      bindings.originLocal⟩
+    Lanius.Semantics.evaluatesLocal bindings.originLocal
   have positionResult : Evaluates verifiedParserCore bound (.local 23)
       (.signed .i32 (Int.ofNat position)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound 23 _
-      bindings.invariant.positionLocal⟩
+    Lanius.Semantics.evaluatesLocal bindings.invariant.positionLocal
   have originEquality := evaluatesNatEqualityThreaded bound bound bound
     (.local 39) (.local 23) candidate.origin position originResult
     positionResult
@@ -2900,8 +2791,7 @@ noncomputable def RecognizerNullableCandidateBindings.evaluate_predicate
       simpa [originMatches] using originEquality
     have productionResult : Evaluates verifiedParserCore bound (.local 37)
         (.signed .i32 (Int.ofNat candidate.production)) bound :=
-      ⟨1, evalLocal_of_local 1 verifiedParserCore bound 37 _
-        bindings.productionLocal⟩
+      Lanius.Semantics.evaluatesLocal bindings.productionLocal
     let rhsRead := bindings.invariant.chartCursor.read_rhs_length
       candidate.production candidateProductionBound (.local 37)
       productionResult
@@ -2916,8 +2806,7 @@ noncomputable def RecognizerNullableCandidateBindings.evaluate_predicate
       simpa only [rhsValue] using rhsRead.evaluation
     have dotResult : Evaluates verifiedParserCore bound (.local 38)
         (.signed .i32 (Int.ofNat candidate.dot)) bound :=
-      ⟨1, evalLocal_of_local 1 verifiedParserCore bound 38 _
-        bindings.dotLocal⟩
+      Lanius.Semantics.evaluatesLocal bindings.dotLocal
     have dotEquality := evaluatesNatEqualityThreaded bound bound rhsRead.after
       (.local 38)
       (.call extractedParserRhsLengthFunction.id [.local 0, .local 37])
@@ -2939,8 +2828,7 @@ noncomputable def RecognizerNullableCandidateBindings.evaluate_predicate
       have productionAfterRhsResult : Evaluates verifiedParserCore
           rhsRead.after (.local 37)
           (.signed .i32 (Int.ofNat candidate.production)) rhsRead.after :=
-        ⟨1, evalLocal_of_local 1 verifiedParserCore rhsRead.after 37 _
-          productionAfterRhs⟩
+        Lanius.Semantics.evaluatesLocal productionAfterRhs
       let lhsRead := afterRhsInvariant.chartCursor.read_lhs
         candidate.production candidateProductionBound (.local 37)
         productionAfterRhsResult
@@ -2960,8 +2848,7 @@ noncomputable def RecognizerNullableCandidateBindings.evaluate_predicate
           afterRhsInvariant.expectedLocal
       have expectedResult : Evaluates verifiedParserCore lhsRead.after
           (.local 30) (.signed .i32 (Int.ofNat expected)) lhsRead.after :=
-        ⟨1, evalLocal_of_local 1 verifiedParserCore lhsRead.after 30 _
-          expectedAfterLhs⟩
+        Lanius.Semantics.evaluatesLocal expectedAfterLhs
       have lhsEquality := evaluatesNatEqualityThreaded rhsRead.after
         lhsRead.after lhsRead.after
         (.call extractedParserLhsFunction.id [.local 0, .local 37])
@@ -3538,22 +3425,15 @@ private theorem RecognizerNullableLoopInvariant.functional_no_match_body
         (Lanius.FunctionalView.Stateful.Command.Evaluates.letValue
           (type := parserI32Type) originResult body))
   have environmentEq :
-      Lanius.FunctionalView.Stateful.Env.pop
+    Lanius.FunctionalView.Stateful.Env.pop
         (Lanius.FunctionalView.Stateful.Env.pop
           (Lanius.FunctionalView.Stateful.Env.pop afterCursor)) =
       nullableEnvironment words workspaceValues grammarCell workspaceCell
         workspaceLayout workspace.states.length position parentState
         parentProduction parentDot parentOrigin expected
         (encodeStateId remaining.head?) := by
-    funext index
-    have indexCases : index = (0 : Fin 12) ∨ index = (1 : Fin 12) ∨
-        index = (2 : Fin 12) ∨ index = (3 : Fin 12) ∨
-        index = (4 : Fin 12) ∨ index = (5 : Fin 12) ∨
-        index = (6 : Fin 12) ∨ index = (7 : Fin 12) ∨
-        index = (8 : Fin 12) ∨ index = (9 : Fin 12) ∨
-        index = (10 : Fin 12) ∨ index = (11 : Fin 12) := by omega
-    rcases indexCases with h | h | h | h | h | h | h | h | h | h | h | h <;>
-      subst index <;> rfl
+    apply Lanius.FunctionalView.Env.eq_ofFn
+    rfl
   rw [environmentEq] at assembled
   simpa [nullableBodyCommand, nullableCanonicalBodyCommand, world,
     beforeEnvironment] using assembled
@@ -3818,129 +3698,11 @@ private theorem RecognizerNullableLoopInvariant.functional_ok_body
         parentProduction parentDot parentOrigin expected
         (encodeStateId nextRemaining.head?) := by
     rw [collapsedEnvironment]
-    funext index
-    rcases index with ⟨index, indexBound⟩
-    have indexCases : index = 0 ∨ index = 1 ∨ index = 2 ∨
-        index = 3 ∨ index = 4 ∨ index = 5 ∨
-        index = 6 ∨ index = 7 ∨ index = 8 ∨
-        index = 9 ∨ index = 10 ∨ index = 11 := by omega
-    rcases indexCases with zero | one | two | three | four | five | six |
-      seven | eight | nine | ten | eleven
-    · subst index
-      simp [afterCursor, afterAppendEnvironment, afterCount,
-        resultEnvironment, originEnvironment, dotEnvironment,
-        productionEnvironment, beforeEnvironment,
-        Lanius.FunctionalView.Stateful.Env.pop,
-        Lanius.FunctionalView.Stateful.Env.set,
-        Lanius.FunctionalView.Env.push, nullableEnvironment]
-    · subst index
-      simp [afterCursor, afterAppendEnvironment, afterCount,
-        resultEnvironment, originEnvironment, dotEnvironment,
-        productionEnvironment, beforeEnvironment,
-        Lanius.FunctionalView.Stateful.Env.pop,
-        Lanius.FunctionalView.Stateful.Env.set,
-        Lanius.FunctionalView.Env.push, nullableEnvironment, workspaceValue,
-        nextValues, appendResultValues_length]
-    · subst index
-      simp [afterCursor, afterAppendEnvironment, afterCount,
-        resultEnvironment, originEnvironment, dotEnvironment,
-        productionEnvironment, beforeEnvironment,
-        Lanius.FunctionalView.Stateful.Env.pop,
-        Lanius.FunctionalView.Stateful.Env.set,
-        Lanius.FunctionalView.Env.push, nullableEnvironment]
-    · subst index
-      rw [Lanius.FunctionalView.Stateful.Env.set_other
-        (different := by
-          intro equal
-          have valuesEqual := congrArg Fin.val equal
-          change 3 = 11 at valuesEqual
-          omega)]
-      rw [Lanius.FunctionalView.Stateful.Env.set_other
-        (different := by
-          intro equal
-          have valuesEqual := congrArg Fin.val equal
-          change 3 = 4 at valuesEqual
-          omega)]
-      simp [beforeEnvironment, nullableEnvironment]
-    · subst index
-      simp [afterCursor, afterAppendEnvironment, afterCount,
-        resultEnvironment, originEnvironment, dotEnvironment,
-        productionEnvironment, beforeEnvironment,
-        Lanius.FunctionalView.Stateful.Env.pop,
-        Lanius.FunctionalView.Stateful.Env.set,
-        Lanius.FunctionalView.Env.push, nullableEnvironment,
-        nextWorkspace, outcome, seed, appendLogical_stateCount_eq]
-    · subst index
-      simp [afterCursor, afterAppendEnvironment, afterCount,
-        resultEnvironment, originEnvironment, dotEnvironment,
-        productionEnvironment, beforeEnvironment,
-        Lanius.FunctionalView.Stateful.Env.pop,
-        Lanius.FunctionalView.Stateful.Env.set,
-        Lanius.FunctionalView.Env.push, nullableEnvironment]
-    · subst index
-      simp [afterCursor, afterAppendEnvironment, afterCount,
-        resultEnvironment, originEnvironment, dotEnvironment,
-        productionEnvironment, beforeEnvironment,
-        Lanius.FunctionalView.Stateful.Env.pop,
-        Lanius.FunctionalView.Stateful.Env.set,
-        Lanius.FunctionalView.Env.push, nullableEnvironment]
-    · subst index
-      simp [afterCursor, afterAppendEnvironment, afterCount,
-        resultEnvironment, originEnvironment, dotEnvironment,
-        productionEnvironment, beforeEnvironment,
-        Lanius.FunctionalView.Stateful.Env.pop,
-        Lanius.FunctionalView.Stateful.Env.set,
-        Lanius.FunctionalView.Env.push, nullableEnvironment]
-    · subst index
-      rw [Lanius.FunctionalView.Stateful.Env.set_other
-        (different := by
-          intro equal
-          have valuesEqual := congrArg Fin.val equal
-          change 8 = 11 at valuesEqual
-          omega)]
-      rw [Lanius.FunctionalView.Stateful.Env.set_other
-        (different := by
-          intro equal
-          have valuesEqual := congrArg Fin.val equal
-          change 8 = 4 at valuesEqual
-          omega)]
-      simp [beforeEnvironment, nullableEnvironment]
-    · subst index
-      rw [Lanius.FunctionalView.Stateful.Env.set_other
-        (different := by
-          intro equal
-          have valuesEqual := congrArg Fin.val equal
-          change 9 = 11 at valuesEqual
-          omega)]
-      rw [Lanius.FunctionalView.Stateful.Env.set_other
-        (different := by
-          intro equal
-          have valuesEqual := congrArg Fin.val equal
-          change 9 = 4 at valuesEqual
-          omega)]
-      simp [beforeEnvironment, nullableEnvironment]
-    · subst index
-      rw [Lanius.FunctionalView.Stateful.Env.set_other
-        (different := by
-          intro equal
-          have valuesEqual := congrArg Fin.val equal
-          change 10 = 11 at valuesEqual
-          omega)]
-      rw [Lanius.FunctionalView.Stateful.Env.set_other
-        (different := by
-          intro equal
-          have valuesEqual := congrArg Fin.val equal
-          change 10 = 4 at valuesEqual
-          omega)]
-      simp [beforeEnvironment, nullableEnvironment]
-    · subst index
-      simp [afterCursor, afterAppendEnvironment, afterCount,
-        resultEnvironment, originEnvironment, dotEnvironment,
-        productionEnvironment, beforeEnvironment,
-        Lanius.FunctionalView.Stateful.Env.pop,
-        Lanius.FunctionalView.Stateful.Env.set,
-        Lanius.FunctionalView.Env.push, nullableEnvironment]
-    all_goals simp_all [Fin.ext_iff, Fin.ofNat]
+    apply Lanius.FunctionalView.Env.eq_ofFn
+    simp [Lanius.FunctionalView.Stateful.Env.set,
+      beforeEnvironment, nullableEnvironment, workspaceValue, nextValues,
+      appendResultValues_length, nextWorkspace, outcome, seed,
+      appendLogical_stateCount_eq]
   rw [environmentEq] at assembled
   simpa [nullableBodyCommand, nullableCanonicalBodyCommand, beforeWorld,
     beforeEnvironment] using assembled
@@ -5415,6 +5177,61 @@ structure RecognizerNullableFunctionalResult
     (Lanius.FunctionalView.Core.Stateful.toCoreCompletion completion)
   nullables : config.nullablesReady → outcome.nullablesComplete
 
+private noncomputable def RecognizerNullableFunctionalResult.continue
+    (activeConfig : RecognizerNullableActiveConfig grammarLayout grammar words
+      tokens workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
+      cursorCell position parentProduction parentDot parentOrigin parentState
+      expected)
+    (nextConfig : RecognizerNullableConfig grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell
+      cursorCell position parentProduction parentDot parentOrigin parentState
+      expected)
+    {closedAfter : State}
+    (conditionTrue : Evaluates verifiedParserCore activeConfig.runtime
+      (.binary .greaterEqual (.local 36)
+        (.value (.signed .i32 0))) (.boolean true) activeConfig.runtime)
+    (closedExecution : Executes verifiedParserCore activeConfig.runtime
+      parserRecognizeNullableLoopBody
+      (Lanius.FunctionalView.Core.Stateful.toCoreCompletion .next) closedAfter)
+    (closedEffect : ModifiesOnly
+      (CellSet.union (CellSet.singleton workspaceCell)
+        (CellSet.union (CellSet.singleton stateCountCell)
+          (CellSet.singleton cursorCell))) activeConfig.runtime closedAfter)
+    (runtimeEq : nextConfig.runtime = closedAfter)
+    (growth : WorkspaceAppendClosure workspaceLayout.capacity
+      activeConfig.workspace nextConfig.workspace)
+    (stable : ChartsUnchangedBefore position activeConfig.workspace
+      nextConfig.workspace)
+    (advancedKey : nextConfig.workspace.containsKey position
+      ⟨parentProduction, parentDot + 1, parentOrigin⟩)
+    {completion : Lanius.FunctionalView.Stateful.Completion}
+    {after : Lanius.FunctionalView.Stateful.Loop.Runtime
+      (nullableTermMachine workspaceLayout grammar words grammarCell) 12}
+    (result : RecognizerNullableFunctionalResult grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell cursorCell
+      position parentProduction parentDot parentOrigin parentState expected
+      nextConfig completion after) :
+    RecognizerNullableFunctionalResult grammarLayout grammar words tokens
+      workspaceLayout grammarCell tokensCell workspaceCell stateCountCell cursorCell
+      position parentProduction parentDot parentOrigin parentState expected
+      (.active activeConfig) completion after := by
+  have resultExecution := result.execution
+  rw [runtimeEq] at resultExecution
+  have resultEffect := result.effect
+  rw [runtimeEq] at resultEffect
+  exact {
+    physicalAfter := result.physicalAfter
+    execution := by
+      rw [extractedParserRecognize_nullable_loop_shape]
+      exact executesWhileTrueThen conditionTrue closedExecution resultExecution
+    effect := closedEffect.trans_same resultEffect
+    outcome := result.outcome.prepend_growth growth stable
+    nullables := by
+      intro _
+      exact (result.outcome.nullablesComplete_prepend_growth growth stable).mpr
+        (result.outcome.nullablesComplete_of_advanced advancedKey)
+  }
+
 /-- One nullable-traversal decision whose semantic edge is the exact
     artifact-derived FunctionalView body. -/
 noncomputable def RecognizerNullableConfig.functional_decide
@@ -5439,6 +5256,25 @@ noncomputable def RecognizerNullableConfig.functional_decide
   let writes := CellSet.union (CellSet.singleton workspaceCell)
     (CellSet.union (CellSet.singleton stateCountCell)
       (CellSet.singleton cursorCell))
+  have tokenStorage_unused_preserved
+      {workspace : LogicalWorkspace} {workspaceValues : List Int} {runtime : State} {current : Nat} {remaining : List Nat}
+      (invariant : RecognizerNullableLoopInvariant grammarLayout grammar words
+        tokens workspaceLayout workspace workspaceValues grammarCell tokensCell workspaceCell stateCountCell cursorCell runtime position parentProduction parentDot parentOrigin
+        parentState expected current remaining)
+      {after : State} {writes : CellSet}
+      (afterOwned : I32PrefixLocal after 2 tokensCell (tokens.map Int.ofNat))
+      (effect : CellEffect writes runtime after)
+      (writesMutable : CellSet.Subset writes (nullableFrameMutableCells
+        workspaceCell stateCountCell cursorCell)) :
+      afterOwned.unused = invariant.chartCursor.recognizer.tokenStorage.unused := by
+    apply I32PrefixLocal.unused_preserved
+      invariant.chartCursor.recognizer.tokenStorage afterOwned
+      invariant.chartCursor.recognizer.wellFormed effect
+    intro written
+    rcases writesMutable tokensCell written with same | same | same
+    · exact invariant.chartCursor.recognizer.tokensWorkspaceDistinct same
+    · exact invariant.appendFrame.stateCountBackingDistinct.2.1 same.symm
+    · exact invariant.chartCursor.cursorBackingDistinct.2.1 same.symm
   cases config with
   | sentinel sentinelConfig =>
       have functionalFalse : Lanius.FunctionalView.Term.evaluate
@@ -5593,6 +5429,10 @@ noncomputable def RecognizerNullableConfig.functional_decide
                 ⟨parentProduction, parentDot + 1, parentOrigin⟩ := by
               simpa only [seed, recognizerNullableSeed, StateSeed.key] using
                 (appendLogical_refines logical rfl).containsKey_of_ok statusOk
+            let growth := WorkspaceAppendClosure.single workspaceLayout.capacity
+              position seed activeConfig.workspace
+            let stable := appendLogical_chartsUnchangedBefore
+              workspaceLayout.capacity position seed activeConfig.workspace
             cases remainingEq : activeConfig.remaining with
             | nil =>
                 have caseInvariant : RecognizerNullableLoopInvariant
@@ -5635,72 +5475,32 @@ noncomputable def RecognizerNullableConfig.functional_decide
                         simpa [seed] using statusOk) []
                       matched.appended.after (by
                         simpa [logical, nextValues, seed] using beforeExhaust)
-                    have functionalBody :
-                        Lanius.FunctionalView.Stateful.Command.Evaluates
-                          (nullableTermMachine workspaceLayout grammar words
-                            grammarCell)
-                          (nullableStatefulMachine workspaceLayout grammar words
-                            grammarCell)
-                          (RecognizerNullableConfig.functionalRuntime
-                            (.active activeConfig)).world
-                          (RecognizerNullableConfig.functionalRuntime
-                            (.active activeConfig)).environment
-                          nullableBodyCommand .next
-                          nextConfig.functionalRuntime.world
-                          nextConfig.functionalRuntime.environment := by
-                      have suffixEq : nextConfig.tokenStorage.unused =
-                          caseInvariant.chartCursor.recognizer.tokenStorage.unused := by
-                        apply nextConfig.tokenStorage.unused_eq_of_backing
-                        apply closed.effect.preserves_entry
-                          caseInvariant.chartCursor.recognizer.wellFormed
-                          caseInvariant.chartCursor.recognizer.tokenStorage.unused_backing
-                        simp only [writes, CellSet.union, CellSet.singleton, not_or]
-                        exact ⟨caseInvariant.chartCursor.recognizer.tokensWorkspaceDistinct,
-                          caseInvariant.appendFrame.stateCountBackingDistinct.2.1.symm,
-                          caseInvariant.chartCursor.cursorBackingDistinct.2.1.symm⟩
-                      dsimp only [RecognizerNullableConfig.functionalRuntime,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
-                      rw [suffixEq]
-                      simpa [nextConfig,
-                        RecognizerNullableConfig.functionalRuntime, logical,
-                        nextValues, seed, encodeStateId,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
-                        using bodyResult
                     apply Lanius.FunctionalView.Stateful.Loop.Decision.next
                       nextConfig
-                    · exact .next functionalTrue functionalBody
+                    · exact .next functionalTrue (by
+                        have suffixEq := tokenStorage_unused_preserved caseInvariant (writes := writes) nextConfig.tokenStorage
+                          (by simpa [nextConfig] using (CellEffect.ofModifiesOnly closed.effect closed.wellFormed)) (fun _ written => written)
+                        dsimp only [RecognizerNullableConfig.functionalRuntime,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                        rw [suffixEq]
+                        simpa [nextConfig,
+                          RecognizerNullableConfig.functionalRuntime, logical,
+                          nextValues, seed, encodeStateId,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                          using bodyResult)
                     · simp only [WellFoundedRelation.rel,
                         RecognizerNullableConfig.measure, nextConfig]
                       rw [countUnchanged]
                       apply Prod.Lex.right
                       show sizeOf 0 < sizeOf
                         (activeConfig.remaining.length + 1)
-                      simpa [remainingEq] using Nat.zero_lt_one
+                      simp [remainingEq]
                     · intro completion after result
-                      exact {
-                        physicalAfter := result.physicalAfter
-                        execution := by
-                          rw [extractedParserRecognize_nullable_loop_shape]
-                          exact executesWhileTrueThen conditionTrue
-                            closed.execution result.execution
-                        effect := by
-                          simpa [writes] using
-                            closed.effect.trans_same result.effect
-                        outcome := result.outcome.prepend_growth
-                          (WorkspaceAppendClosure.single
-                            workspaceLayout.capacity position seed
-                            activeConfig.workspace)
-                          (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)
-                        nullables := by
-                          intro _
-                          exact (RecognizerNullableSynchronizedOutcome.nullablesComplete_prepend_growth
-                            result.outcome
-                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
-                            (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)).mpr
-                              (result.outcome.nullablesComplete_of_advanced advancedKey)
-                      }
+                      exact RecognizerNullableFunctionalResult.continue
+                        activeConfig nextConfig conditionTrue closed.execution
+                        closed.effect (by rfl) growth stable advancedKey result
                 | extended innerAfter innerExecution innerEffect beforeAdvance
                     innerInvariant countIncreased =>
                     let closed := caseBindings.close_scopes innerAfter .next writes
@@ -5727,42 +5527,21 @@ noncomputable def RecognizerNullableConfig.functional_decide
                       [activeConfig.workspace.states.length]
                       matched.appended.after (by
                         simpa [logical, nextValues, seed] using beforeAdvance)
-                    have functionalBody :
-                        Lanius.FunctionalView.Stateful.Command.Evaluates
-                          (nullableTermMachine workspaceLayout grammar words
-                            grammarCell)
-                          (nullableStatefulMachine workspaceLayout grammar words
-                            grammarCell)
-                          (RecognizerNullableConfig.functionalRuntime
-                            (.active activeConfig)).world
-                          (RecognizerNullableConfig.functionalRuntime
-                            (.active activeConfig)).environment
-                          nullableBodyCommand .next
-                          nextConfig.functionalRuntime.world
-                          nextConfig.functionalRuntime.environment := by
-                      have suffixEq : nextConfig.tokenStorage.unused =
-                          caseInvariant.chartCursor.recognizer.tokenStorage.unused := by
-                        apply nextConfig.tokenStorage.unused_eq_of_backing
-                        apply closed.effect.preserves_entry
-                          caseInvariant.chartCursor.recognizer.wellFormed
-                          caseInvariant.chartCursor.recognizer.tokenStorage.unused_backing
-                        simp only [writes, CellSet.union, CellSet.singleton, not_or]
-                        exact ⟨caseInvariant.chartCursor.recognizer.tokensWorkspaceDistinct,
-                          caseInvariant.appendFrame.stateCountBackingDistinct.2.1.symm,
-                          caseInvariant.chartCursor.cursorBackingDistinct.2.1.symm⟩
-                      dsimp only [RecognizerNullableConfig.functionalRuntime,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
-                      rw [suffixEq]
-                      simpa [nextConfig,
-                        RecognizerNullableConfig.functionalRuntime, logical,
-                        nextValues, seed, encodeStateId,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
-                        using bodyResult
                     apply Lanius.FunctionalView.Stateful.Loop.Decision.next
                       nextConfig
-                    · exact .next functionalTrue functionalBody
+                    · exact .next functionalTrue (by
+                        have suffixEq := tokenStorage_unused_preserved caseInvariant (writes := writes) nextConfig.tokenStorage
+                          (by simpa [nextConfig] using (CellEffect.ofModifiesOnly closed.effect closed.wellFormed)) (fun _ written => written)
+                        dsimp only [RecognizerNullableConfig.functionalRuntime,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                        rw [suffixEq]
+                        simpa [nextConfig,
+                          RecognizerNullableConfig.functionalRuntime, logical,
+                          nextValues, seed, encodeStateId,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                          using bodyResult)
                     · simp only [WellFoundedRelation.rel,
                         RecognizerNullableConfig.measure, nextConfig]
                       have afterFits := innerInvariant.chartCursor.recognizer
@@ -5778,28 +5557,9 @@ noncomputable def RecognizerNullableConfig.functional_decide
                         (Nat.sub_lt_sub_left
                           (Nat.lt_of_lt_of_le grew afterFits) grew)
                     · intro completion after result
-                      exact {
-                        physicalAfter := result.physicalAfter
-                        execution := by
-                          rw [extractedParserRecognize_nullable_loop_shape]
-                          exact executesWhileTrueThen conditionTrue
-                            closed.execution result.execution
-                        effect := by
-                          simpa [writes] using
-                            closed.effect.trans_same result.effect
-                        outcome := result.outcome.prepend_growth
-                          (WorkspaceAppendClosure.single
-                            workspaceLayout.capacity position seed
-                            activeConfig.workspace)
-                          (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)
-                        nullables := by
-                          intro _
-                          exact (RecognizerNullableSynchronizedOutcome.nullablesComplete_prepend_growth
-                            result.outcome
-                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
-                            (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)).mpr
-                              (result.outcome.nullablesComplete_of_advanced advancedKey)
-                      }
+                      exact RecognizerNullableFunctionalResult.continue
+                        activeConfig nextConfig conditionTrue closed.execution
+                        closed.effect (by rfl) growth stable advancedKey result
             | cons next tail =>
                 have caseInvariant : RecognizerNullableLoopInvariant
                     grammarLayout grammar words tokens workspaceLayout
@@ -5842,42 +5602,21 @@ noncomputable def RecognizerNullableConfig.functional_decide
                         simpa [seed] using statusOk) (next :: tail)
                       matched.appended.after (by
                         simpa [logical, nextValues, seed] using beforeAdvance)
-                    have functionalBody :
-                        Lanius.FunctionalView.Stateful.Command.Evaluates
-                          (nullableTermMachine workspaceLayout grammar words
-                            grammarCell)
-                          (nullableStatefulMachine workspaceLayout grammar words
-                            grammarCell)
-                          (RecognizerNullableConfig.functionalRuntime
-                            (.active activeConfig)).world
-                          (RecognizerNullableConfig.functionalRuntime
-                            (.active activeConfig)).environment
-                          nullableBodyCommand .next
-                          nextConfig.functionalRuntime.world
-                          nextConfig.functionalRuntime.environment := by
-                      have suffixEq : nextConfig.tokenStorage.unused =
-                          caseInvariant.chartCursor.recognizer.tokenStorage.unused := by
-                        apply nextConfig.tokenStorage.unused_eq_of_backing
-                        apply closed.effect.preserves_entry
-                          caseInvariant.chartCursor.recognizer.wellFormed
-                          caseInvariant.chartCursor.recognizer.tokenStorage.unused_backing
-                        simp only [writes, CellSet.union, CellSet.singleton, not_or]
-                        exact ⟨caseInvariant.chartCursor.recognizer.tokensWorkspaceDistinct,
-                          caseInvariant.appendFrame.stateCountBackingDistinct.2.1.symm,
-                          caseInvariant.chartCursor.cursorBackingDistinct.2.1.symm⟩
-                      dsimp only [RecognizerNullableConfig.functionalRuntime,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
-                      rw [suffixEq]
-                      simpa [nextConfig,
-                        RecognizerNullableConfig.functionalRuntime, logical,
-                        nextValues, seed, encodeStateId,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
-                        using bodyResult
                     apply Lanius.FunctionalView.Stateful.Loop.Decision.next
                       nextConfig
-                    · exact .next functionalTrue functionalBody
+                    · exact .next functionalTrue (by
+                        have suffixEq := tokenStorage_unused_preserved caseInvariant (writes := writes) nextConfig.tokenStorage
+                          (by simpa [nextConfig] using (CellEffect.ofModifiesOnly closed.effect closed.wellFormed)) (fun _ written => written)
+                        dsimp only [RecognizerNullableConfig.functionalRuntime,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                        rw [suffixEq]
+                        simpa [nextConfig,
+                          RecognizerNullableConfig.functionalRuntime, logical,
+                          nextValues, seed, encodeStateId,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                          using bodyResult)
                     · simp only [WellFoundedRelation.rel,
                         RecognizerNullableConfig.measure, nextConfig]
                       rw [countUnchanged]
@@ -5890,28 +5629,9 @@ noncomputable def RecognizerNullableConfig.functional_decide
                         (activeConfig.remaining.length + 1)
                       simpa using suffixDecrease
                     · intro completion after result
-                      exact {
-                        physicalAfter := result.physicalAfter
-                        execution := by
-                          rw [extractedParserRecognize_nullable_loop_shape]
-                          exact executesWhileTrueThen conditionTrue
-                            closed.execution result.execution
-                        effect := by
-                          simpa [writes] using
-                            closed.effect.trans_same result.effect
-                        outcome := result.outcome.prepend_growth
-                          (WorkspaceAppendClosure.single
-                            workspaceLayout.capacity position seed
-                            activeConfig.workspace)
-                          (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)
-                        nullables := by
-                          intro _
-                          exact (RecognizerNullableSynchronizedOutcome.nullablesComplete_prepend_growth
-                            result.outcome
-                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
-                            (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)).mpr
-                              (result.outcome.nullablesComplete_of_advanced advancedKey)
-                      }
+                      exact RecognizerNullableFunctionalResult.continue
+                        activeConfig nextConfig conditionTrue closed.execution
+                        closed.effect (by rfl) growth stable advancedKey result
                 | extended innerAfter innerExecution innerEffect beforeAdvance
                     innerInvariant countIncreased =>
                     let closed := caseBindings.close_scopes innerAfter .next writes
@@ -5939,42 +5659,21 @@ noncomputable def RecognizerNullableConfig.functional_decide
                         [activeConfig.workspace.states.length])
                       matched.appended.after (by
                         simpa [logical, nextValues, seed] using beforeAdvance)
-                    have functionalBody :
-                        Lanius.FunctionalView.Stateful.Command.Evaluates
-                          (nullableTermMachine workspaceLayout grammar words
-                            grammarCell)
-                          (nullableStatefulMachine workspaceLayout grammar words
-                            grammarCell)
-                          (RecognizerNullableConfig.functionalRuntime
-                            (.active activeConfig)).world
-                          (RecognizerNullableConfig.functionalRuntime
-                            (.active activeConfig)).environment
-                          nullableBodyCommand .next
-                          nextConfig.functionalRuntime.world
-                          nextConfig.functionalRuntime.environment := by
-                      have suffixEq : nextConfig.tokenStorage.unused =
-                          caseInvariant.chartCursor.recognizer.tokenStorage.unused := by
-                        apply nextConfig.tokenStorage.unused_eq_of_backing
-                        apply closed.effect.preserves_entry
-                          caseInvariant.chartCursor.recognizer.wellFormed
-                          caseInvariant.chartCursor.recognizer.tokenStorage.unused_backing
-                        simp only [writes, CellSet.union, CellSet.singleton, not_or]
-                        exact ⟨caseInvariant.chartCursor.recognizer.tokensWorkspaceDistinct,
-                          caseInvariant.appendFrame.stateCountBackingDistinct.2.1.symm,
-                          caseInvariant.chartCursor.cursorBackingDistinct.2.1.symm⟩
-                      dsimp only [RecognizerNullableConfig.functionalRuntime,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
-                      rw [suffixEq]
-                      simpa [nextConfig,
-                        RecognizerNullableConfig.functionalRuntime, logical,
-                        nextValues, seed, encodeStateId,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.world,
-                        Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
-                        using bodyResult
                     apply Lanius.FunctionalView.Stateful.Loop.Decision.next
                       nextConfig
-                    · exact .next functionalTrue functionalBody
+                    · exact .next functionalTrue (by
+                        have suffixEq := tokenStorage_unused_preserved caseInvariant (writes := writes) nextConfig.tokenStorage
+                          (by simpa [nextConfig] using (CellEffect.ofModifiesOnly closed.effect closed.wellFormed)) (fun _ written => written)
+                        dsimp only [RecognizerNullableConfig.functionalRuntime,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                        rw [suffixEq]
+                        simpa [nextConfig,
+                          RecognizerNullableConfig.functionalRuntime, logical,
+                          nextValues, seed, encodeStateId,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                          Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                          using bodyResult)
                     · simp only [WellFoundedRelation.rel,
                         RecognizerNullableConfig.measure, nextConfig]
                       have afterFits := innerInvariant.chartCursor.recognizer
@@ -5990,28 +5689,9 @@ noncomputable def RecognizerNullableConfig.functional_decide
                         (Nat.sub_lt_sub_left
                           (Nat.lt_of_lt_of_le grew afterFits) grew)
                     · intro completion after result
-                      exact {
-                        physicalAfter := result.physicalAfter
-                        execution := by
-                          rw [extractedParserRecognize_nullable_loop_shape]
-                          exact executesWhileTrueThen conditionTrue
-                            closed.execution result.execution
-                        effect := by
-                          simpa [writes] using
-                            closed.effect.trans_same result.effect
-                        outcome := result.outcome.prepend_growth
-                          (WorkspaceAppendClosure.single
-                            workspaceLayout.capacity position seed
-                            activeConfig.workspace)
-                          (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)
-                        nullables := by
-                          intro _
-                          exact (RecognizerNullableSynchronizedOutcome.nullablesComplete_prepend_growth
-                            result.outcome
-                            (WorkspaceAppendClosure.single workspaceLayout.capacity position seed activeConfig.workspace)
-                            (appendLogical_chartsUnchangedBefore workspaceLayout.capacity position seed activeConfig.workspace)).mpr
-                              (result.outcome.nullablesComplete_of_advanced advancedKey)
-                      }
+                      exact RecognizerNullableFunctionalResult.continue
+                        activeConfig nextConfig conditionTrue closed.execution
+                        closed.effect (by rfl) growth stable advancedKey result
       · have unmatched : ∀ child, activeConfig.workspace.state? activeConfig.current = some child →
             NullableChild grammar position expected child →
             activeConfig.workspace.containsKey position ⟨parentProduction, parentDot + 1, parentOrigin⟩ := by
@@ -6047,66 +5727,46 @@ noncomputable def RecognizerNullableConfig.functional_decide
               }
             have bodyResult := caseInvariant.functional_no_match_body candidate
               found candidateWithin doesMatch
-            have functionalBody :
-                Lanius.FunctionalView.Stateful.Command.Evaluates
-                  (nullableTermMachine workspaceLayout grammar words grammarCell)
-                  (nullableStatefulMachine workspaceLayout grammar words
-                    grammarCell)
-                  (RecognizerNullableConfig.functionalRuntime
-                    (.active activeConfig)).world
-                  (RecognizerNullableConfig.functionalRuntime
-                    (.active activeConfig)).environment nullableBodyCommand
-                  .next nextConfig.functionalRuntime.world
-                  nextConfig.functionalRuntime.environment := by
-              have suffixEq : nextConfig.tokenStorage.unused =
-                  caseInvariant.chartCursor.recognizer.tokenStorage.unused := by
-                apply nextConfig.tokenStorage.unused_eq_of_backing
-                apply closed.effect.preserves_entry
-                  caseInvariant.chartCursor.recognizer.wellFormed
-                  caseInvariant.chartCursor.recognizer.tokenStorage.unused_backing
-                exact caseInvariant.chartCursor.cursorBackingDistinct.2.1.symm
-              dsimp only [RecognizerNullableConfig.functionalRuntime,
-                Lanius.FunctionalView.Stateful.Loop.Runtime.world,
-                Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
-              rw [suffixEq]
-              simpa [nextConfig,
-                RecognizerNullableConfig.functionalRuntime,
-                encodeStateId,
-                Lanius.FunctionalView.Stateful.Loop.Runtime.world,
-                Lanius.FunctionalView.Stateful.Loop.Runtime.environment] using
-                  bodyResult
             apply Lanius.FunctionalView.Stateful.Loop.Decision.next nextConfig
-            · exact .next functionalTrue functionalBody
+            · exact .next functionalTrue (by
+                have suffixEq := tokenStorage_unused_preserved caseInvariant
+                  (writes := CellSet.singleton cursorCell) nextConfig.tokenStorage
+                  (by simpa [nextConfig] using (CellEffect.ofModifiesOnly closed.effect closed.wellFormed)) (fun _ written => .inr (.inr written))
+                dsimp only [RecognizerNullableConfig.functionalRuntime,
+                  Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                  Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                rw [suffixEq]
+                simpa [nextConfig,
+                  RecognizerNullableConfig.functionalRuntime,
+                  encodeStateId,
+                  Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                  Lanius.FunctionalView.Stateful.Loop.Runtime.environment] using
+                    bodyResult)
             · simp only [WellFoundedRelation.rel,
                 RecognizerNullableConfig.measure, nextConfig]
               apply Prod.Lex.right
               show sizeOf 0 < sizeOf
                 (activeConfig.remaining.length + 1)
-              simpa [remainingEq] using Nat.zero_lt_one
+              simp [remainingEq]
             · intro completion after result
               exact {
                 physicalAfter := result.physicalAfter
-                execution := by
-                  rw [extractedParserRecognize_nullable_loop_shape]
-                  exact executesWhileTrueThen conditionTrue closed.execution
-                    result.execution
+                execution := by simpa [extractedParserRecognize_nullable_loop_shape] using
+                  executesWhileTrueThen conditionTrue closed.execution result.execution
                 effect := by
-                  have first : ModifiesOnly writes activeConfig.runtime
-                      closed.after := closed.effect.weaken (by
-                    intro cell written
-                    exact .inr (.inr written))
-                  simpa [writes] using first.trans_same result.effect
+                  simpa [writes] using
+                    (closed.effect.weaken (fun _ member => .inr (.inr member))).trans_same
+                      result.effect
                 outcome := result.outcome
                 nullables := by
                   intro prior
                   have processed := NullablesFor.step (capacity := workspaceLayout.capacity)
                     invariant.chartCursor.cursor caseInvariant.chartCursor.cursor (.refl activeConfig.workspace)
                     invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound prior unmatched
-                  have ready : nextConfig.nullablesReady := by
-                    change NullablesFor grammar activeConfig.workspace position expected _ _
-                    rw [caseInvariant.chartCursor.cursor.split]
-                    exact processed
-                  exact result.nullables ready
+                  apply result.nullables
+                  change NullablesFor grammar activeConfig.workspace position expected _ _
+                  rw [caseInvariant.chartCursor.cursor.split]
+                  exact processed
               }
         | cons next tail =>
             have caseInvariant : RecognizerNullableLoopInvariant grammarLayout
@@ -6137,36 +5797,21 @@ noncomputable def RecognizerNullableConfig.functional_decide
               }
             have bodyResult := caseInvariant.functional_no_match_body candidate
               found candidateWithin doesMatch
-            have functionalBody :
-                Lanius.FunctionalView.Stateful.Command.Evaluates
-                  (nullableTermMachine workspaceLayout grammar words grammarCell)
-                  (nullableStatefulMachine workspaceLayout grammar words
-                    grammarCell)
-                  (RecognizerNullableConfig.functionalRuntime
-                    (.active activeConfig)).world
-                  (RecognizerNullableConfig.functionalRuntime
-                    (.active activeConfig)).environment nullableBodyCommand
-                  .next nextConfig.functionalRuntime.world
-                  nextConfig.functionalRuntime.environment := by
-              have suffixEq : nextConfig.tokenStorage.unused =
-                  caseInvariant.chartCursor.recognizer.tokenStorage.unused := by
-                apply nextConfig.tokenStorage.unused_eq_of_backing
-                apply closed.effect.preserves_entry
-                  caseInvariant.chartCursor.recognizer.wellFormed
-                  caseInvariant.chartCursor.recognizer.tokenStorage.unused_backing
-                exact caseInvariant.chartCursor.cursorBackingDistinct.2.1.symm
-              dsimp only [RecognizerNullableConfig.functionalRuntime,
-                Lanius.FunctionalView.Stateful.Loop.Runtime.world,
-                Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
-              rw [suffixEq]
-              simpa [nextConfig,
-                RecognizerNullableConfig.functionalRuntime,
-                encodeStateId,
-                Lanius.FunctionalView.Stateful.Loop.Runtime.world,
-                Lanius.FunctionalView.Stateful.Loop.Runtime.environment] using
-                  bodyResult
             apply Lanius.FunctionalView.Stateful.Loop.Decision.next nextConfig
-            · exact .next functionalTrue functionalBody
+            · exact .next functionalTrue (by
+                have suffixEq := tokenStorage_unused_preserved caseInvariant
+                  (writes := CellSet.singleton cursorCell) nextConfig.tokenStorage
+                  (by simpa [nextConfig] using (CellEffect.ofModifiesOnly closed.effect closed.wellFormed)) (fun _ written => .inr (.inr written))
+                dsimp only [RecognizerNullableConfig.functionalRuntime,
+                  Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                  Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+                rw [suffixEq]
+                simpa [nextConfig,
+                  RecognizerNullableConfig.functionalRuntime,
+                  encodeStateId,
+                  Lanius.FunctionalView.Stateful.Loop.Runtime.world,
+                  Lanius.FunctionalView.Stateful.Loop.Runtime.environment] using
+                    bodyResult)
             · simp only [WellFoundedRelation.rel,
                 RecognizerNullableConfig.measure, nextConfig]
               apply Prod.Lex.right
@@ -6180,30 +5825,25 @@ noncomputable def RecognizerNullableConfig.functional_decide
             · intro completion after result
               exact {
                 physicalAfter := result.physicalAfter
-                execution := by
-                  rw [extractedParserRecognize_nullable_loop_shape]
-                  exact executesWhileTrueThen conditionTrue closed.execution
-                    result.execution
+                execution := by simpa [extractedParserRecognize_nullable_loop_shape] using
+                  executesWhileTrueThen conditionTrue closed.execution result.execution
                 effect := by
-                  have first : ModifiesOnly writes activeConfig.runtime
-                      closed.after := closed.effect.weaken (by
-                    intro cell written
-                    exact .inr (.inr written))
-                  simpa [writes] using first.trans_same result.effect
+                  simpa [writes] using
+                    (closed.effect.weaken (fun _ member => .inr (.inr member))).trans_same
+                      result.effect
                 outcome := result.outcome
                 nullables := by
                   intro prior
                   have processed := NullablesFor.step (capacity := workspaceLayout.capacity)
                     invariant.chartCursor.cursor caseInvariant.chartCursor.cursor (.refl activeConfig.workspace)
                     invariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartSound prior unmatched
-                  have ready : nextConfig.nullablesReady := by
-                    change NullablesFor grammar activeConfig.workspace position expected _ nextInvariant.chartCursor.cursor.visited
-                    have visited := nextInvariant.chartCursor.cursor.visited_eq
-                      (caseInvariant.chartCursor.cursor.next
-                        (caseInvariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartIdsUnique position))
-                    rw [visited]
-                    exact processed
-                  exact result.nullables ready
+                  apply result.nullables
+                  change NullablesFor grammar activeConfig.workspace position expected _ nextInvariant.chartCursor.cursor.visited
+                  have visited := nextInvariant.chartCursor.cursor.visited_eq
+                    (caseInvariant.chartCursor.cursor.next
+                      (caseInvariant.chartCursor.recognizer.workspaceEncoded.wellFormed.chartIdsUnique position))
+                  rw [visited]
+                  exact processed
               }
 
 /-- The total compact FunctionalView execution retained independently of its

@@ -41,9 +41,9 @@ theorem evaluates_condition (program : Program) (matcher : FunctionId)
       Host.MemoryFrame before after := by
   have sourceResult : Evaluates program before (.local 0)
       (.slice (.scalar (.signed .i32)) sourceCell [] 0 source.length) before :=
-    ⟨1, evalLocal_of_local 0 program before _ _ sourceLocal⟩
+    Lanius.Semantics.evaluatesLocal sourceLocal
   have startResult : Evaluates program before (.local 1) (.signed .i32 start) before :=
-    ⟨1, evalLocal_of_local 0 program before _ _ startLocal⟩
+    Lanius.Semantics.evaluatesLocal startLocal
   have arguments : ArgumentsEvaluateTo program before
       [.local 0, .local 1, .value (.string rule.text), .value (.signed .i32 width)]
       [.slice (.scalar (.signed .i32)) sourceCell [] 0 source.length,
@@ -51,9 +51,9 @@ theorem evaluates_condition (program : Program) (matcher : FunctionId)
     rw [valid.spelling_length]
     exact ArgumentsEvaluateTo.cons sourceResult (ArgumentsEvaluateTo.cons startResult
       (ArgumentsEvaluateTo.cons
-        (show Evaluates program before (.value (.string rule.text)) (.string rule.text) before from ⟨1, rfl⟩)
+        (show Evaluates program before (.value (.string rule.text)) (.string rule.text) before from evaluatesValue)
         (ArgumentsEvaluateTo.cons
-          (show Evaluates program before (.value (.signed .i32 width)) (.signed .i32 width) before from ⟨1, rfl⟩)
+          (show Evaluates program before (.value (.signed .i32 width)) (.signed .i32 width) before from evaluatesValue)
           (ArgumentsEvaluateTo.nil program before))))
   obtain ⟨after, evaluated, afterWF, locals, world, cells, domain, frontier, memory⟩ :=
     Ascii.evaluates_call program matcher before sourceCell source start rule.text (rule.spelling width)

@@ -36,7 +36,6 @@ theorem RecognizerInitialContinuationOutcome.capacity_result
       workspaceLayout.capacity ≤ finalWorkspace.states.length := by
   cases outcome with
   | full stateCount workspace full =>
-      change workspace = finalWorkspace at agreement
       subst finalWorkspace
       exact ⟨0, by simp [RecognizerInitialContinuationOutcome.resultValue, full.count],
         full.capacity_le_states⟩
@@ -72,25 +71,36 @@ theorem RecognizerCallExecution.capacity_exhausted
   obtain ⟨_, _, full⟩ := execution.capacity_result exhausted
   exact Nat.le_antisymm execution.workspaceArtifact.workspaceEncoded.stateCountFits full
 
+private theorem RecognizerInitialContinuationOutcome.workspaceFacts
+    (outcome : RecognizerInitialContinuationOutcome grammarLayout grammar words
+      tokens workspaceLayout completion)
+    (agreement : outcome.workspaceAgrees finalWorkspace) :
+    WorkspaceGenerated grammar tokens finalWorkspace ∧
+      (parseResultStatus? outcome.resultValue = some 2 ∨
+        (StartSeeded grammar finalWorkspace ∧
+          PredictionsBefore grammar finalWorkspace (finalPosition tokens.length + 1) ∧
+          ScansBefore grammar tokens finalWorkspace (finalPosition tokens.length + 1) ∧
+          ChartClosed grammar tokens finalWorkspace)) := by
+  cases outcome with
+  | full count workspace full generated =>
+      exact ⟨agreement ▸ generated, .inl rfl⟩
+  | seeded workspace values completion continuation =>
+      cases continuation with
+      | full position count storedWorkspace full generated =>
+          exact ⟨agreement ▸ generated, .inl rfl⟩
+      | completed storedWorkspace values growth completion root seeded predicted scanned closed generated =>
+          exact ⟨agreement ▸ generated,
+            .inr ⟨agreement ▸ seeded, agreement ▸ predicted,
+              agreement ▸ scanned, agreement ▸ closed⟩⟩
+
 /-- Every returned workspace retains its generation from the input grammar,
 including early capacity returns. -/
 theorem RecognizerInitialContinuationOutcome.generated
     (outcome : RecognizerInitialContinuationOutcome grammarLayout grammar words
       tokens workspaceLayout completion)
     (agreement : outcome.workspaceAgrees finalWorkspace) :
-    WorkspaceGenerated grammar tokens finalWorkspace := by
-  cases outcome with
-  | full count workspace full generated =>
-      change workspace = finalWorkspace at agreement
-      exact agreement ▸ generated
-  | seeded workspace values completion continuation =>
-      cases continuation with
-      | full position count storedWorkspace full generated =>
-          change storedWorkspace = finalWorkspace at agreement
-          exact agreement ▸ generated
-      | completed storedWorkspace values growth completion root seeded predicted scanned closed generated =>
-          change storedWorkspace = finalWorkspace at agreement
-          exact agreement ▸ generated
+    WorkspaceGenerated grammar tokens finalWorkspace :=
+  (outcome.workspaceFacts agreement).1
 
 theorem RecognizerCallExecution.generated
     (execution : RecognizerCallExecution grammarLayout grammar words tokens
@@ -146,7 +156,6 @@ def RecognizerInitialContinuationOutcome.successRoot
       | completed storedWorkspace finalValues growth completion root =>
           cases root with
           | accepted rootState candidate found productionBound candidateMatches stored =>
-              change storedWorkspace = finalWorkspace at agreement
               subst finalWorkspace
               exact ⟨rootState, candidate, found, stored, rfl⟩
           | rejected furthest =>
@@ -226,7 +235,6 @@ theorem RecognizerInitialContinuationOutcome.rejected_noRoot
           | accepted rootState candidate found bound matched stored =>
               simp [RecognizerInitialContinuationOutcome.resultValue] at rejected
           | rejected furthest absent =>
-              change storedWorkspace = finalWorkspace at agreement
               subst finalWorkspace
               exact absent
 
@@ -245,15 +253,8 @@ theorem RecognizerInitialContinuationOutcome.startSeeded
     (agreement : outcome.workspaceAgrees finalWorkspace)
     (notFull : parseResultStatus? outcome.resultValue ≠ some 2) :
     StartSeeded grammar finalWorkspace := by
-  cases outcome with
-  | full stateCount => simp [RecognizerInitialContinuationOutcome.resultValue] at notFull
-  | seeded workspace values completion continuation =>
-      cases continuation with
-      | full position stateCount => simp [RecognizerInitialContinuationOutcome.resultValue] at notFull
-      | completed storedWorkspace finalValues growth completion root seeded =>
-          change storedWorkspace = finalWorkspace at agreement
-          subst finalWorkspace
-          exact seeded
+  exact (outcome.workspaceFacts agreement).2.elim
+    (fun full => False.elim (notFull full)) (fun facts => facts.1)
 
 theorem RecognizerCallExecution.startSeeded
     (execution : RecognizerCallExecution grammarLayout grammar words tokens
@@ -270,15 +271,8 @@ theorem RecognizerInitialContinuationOutcome.predictionsComplete
     (agreement : outcome.workspaceAgrees finalWorkspace)
     (notFull : parseResultStatus? outcome.resultValue ≠ some 2) :
     PredictionsBefore grammar finalWorkspace (finalPosition tokens.length + 1) := by
-  cases outcome with
-  | full stateCount => simp [RecognizerInitialContinuationOutcome.resultValue] at notFull
-  | seeded workspace values completion continuation =>
-      cases continuation with
-      | full position stateCount => simp [RecognizerInitialContinuationOutcome.resultValue] at notFull
-      | completed storedWorkspace finalValues growth completion root seeded predicted =>
-          change storedWorkspace = finalWorkspace at agreement
-          subst finalWorkspace
-          exact predicted
+  exact (outcome.workspaceFacts agreement).2.elim
+    (fun full => False.elim (notFull full)) (fun facts => facts.2.1)
 
 theorem RecognizerCallExecution.predictionsComplete
     (execution : RecognizerCallExecution grammarLayout grammar words tokens
@@ -295,15 +289,8 @@ theorem RecognizerInitialContinuationOutcome.scansComplete
     (agreement : outcome.workspaceAgrees finalWorkspace)
     (notFull : parseResultStatus? outcome.resultValue ≠ some 2) :
     ScansBefore grammar tokens finalWorkspace (finalPosition tokens.length + 1) := by
-  cases outcome with
-  | full stateCount => simp [RecognizerInitialContinuationOutcome.resultValue] at notFull
-  | seeded workspace values completion continuation =>
-      cases continuation with
-      | full position stateCount => simp [RecognizerInitialContinuationOutcome.resultValue] at notFull
-      | completed storedWorkspace finalValues growth completion root seeded predicted scanned =>
-          change storedWorkspace = finalWorkspace at agreement
-          subst finalWorkspace
-          exact scanned
+  exact (outcome.workspaceFacts agreement).2.elim
+    (fun full => False.elim (notFull full)) (fun facts => facts.2.2.1)
 
 theorem RecognizerCallExecution.scansComplete
     (execution : RecognizerCallExecution grammarLayout grammar words tokens
@@ -319,15 +306,8 @@ theorem RecognizerInitialContinuationOutcome.chartClosed
     (agreement : outcome.workspaceAgrees finalWorkspace)
     (notFull : parseResultStatus? outcome.resultValue ≠ some 2) :
     ChartClosed grammar tokens finalWorkspace := by
-  cases outcome with
-  | full stateCount => simp [RecognizerInitialContinuationOutcome.resultValue] at notFull
-  | seeded workspace values completion continuation =>
-      cases continuation with
-      | full position stateCount => simp [RecognizerInitialContinuationOutcome.resultValue] at notFull
-      | completed storedWorkspace finalValues growth completion root seeded predicted scanned closed =>
-          change storedWorkspace = finalWorkspace at agreement
-          subst finalWorkspace
-          exact closed
+  exact (outcome.workspaceFacts agreement).2.elim
+    (fun full => False.elim (notFull full)) (fun facts => facts.2.2.2)
 
 theorem RecognizerCallExecution.chartClosed
     (execution : RecognizerCallExecution grammarLayout grammar words tokens

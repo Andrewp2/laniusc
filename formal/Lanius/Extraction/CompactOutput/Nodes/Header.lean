@@ -25,7 +25,7 @@ theorem read_header (program : Program) (record : RecordVisit)
       Evaluates program before (recordRead field) (.signed .i32 value) before := by
     have bound := (List.getElem?_eq_some_iff.mp found).1
     have address := evaluatesNatI32Add (leftValue := record.offset) (rightValue := field)
-      baseRun (show Evaluates program before (number field) (.signed .i32 field) before from ⟨1, rfl⟩) (by omega)
+      baseRun (show Evaluates program before (number field) (.signed .i32 field) before from evaluatesValue) (by omega)
     exact Collect.read_word program input _ _ found address
   exact ⟨Collect.read_word program input _ _ production baseRun,
     selected 1 _ start, selected 2 _ finish, selected 3 _ count⟩
@@ -45,7 +45,7 @@ theorem record_guard_pass (program : Program) (record : RecordVisit)
   have remaining := evaluatesNatI32Subtract (leftValue := inputLength) (rightValue := record.offset)
     lengthResult offsetResult (by omega) (by omega)
   have header := Collect.lessEqual_evaluates remaining
-    (show Evaluates program before (number 3) (.signed .i32 3) before from ⟨1, rfl⟩)
+    (show Evaluates program before (number 3) (.signed .i32 3) before from evaluatesValue)
   have all := evaluatesPureLogicalOr (evaluatesPureLogicalOr nonnegative inside) header
   have notNegative : ¬ ((record.offset : Int) ≤ -1) := by omega
   have inRange : (record.offset : Int) ≤ inputLength := by omega
@@ -67,9 +67,9 @@ theorem children_guard_pass (program : Program) (record : RecordVisit)
   have leftover := evaluatesNatI32Subtract (leftValue := inputLength) (rightValue := record.offset)
     (local_evaluates program lengthRead) (local_evaluates program base) (by omega) (by omega)
   have payload := evaluatesNatI32Subtract (leftValue := inputLength - record.offset) (rightValue := 4)
-    leftover (show Evaluates program before (number 4) (.signed .i32 4) before from ⟨1, rfl⟩) (by omega) (by omega)
+    leftover (show Evaluates program before (number 4) (.signed .i32 4) before from evaluatesValue) (by omega) (by omega)
   have slots := evaluatesNatI32Divide (leftValue := inputLength - record.offset - 4) (rightValue := 3)
-    payload (show Evaluates program before (number 3) (.signed .i32 3) before from ⟨1, rfl⟩)
+    payload (show Evaluates program before (number 3) (.signed .i32 3) before from evaluatesValue)
     (by decide) (by have := Nat.div_le_self (inputLength - record.offset - 4) 3; omega)
   have count := local_evaluates program childrenRead
   have negativeProduction := Collect.lessEqual_evaluates (local_evaluates program productionRead)

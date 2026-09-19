@@ -1,17 +1,16 @@
 import Lanius.Extraction.VerifiedFrontend.Pack
 import Lanius.Extraction.ArtifactPackChecker
+import Lanius.Extraction.KernelReduction
 
 namespace Lanius.Extraction
 
 set_option maxRecDepth 100000
 set_option maxHeartbeats 0
-set_option cbv.maxSteps 100000000
-set_option cbv.warning false
 
 theorem verifiedFrontendPack_wire_checked_kernel :
     (ArtifactPackChecker.mergeCorePrograms?
       verifiedFrontendPack.units).isSome = true := by
-  cbv
+  kernel_rfl
 
 def verifiedFrontendPackWireKernel :=
   (ArtifactPackChecker.mergeCorePrograms?

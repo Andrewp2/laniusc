@@ -60,7 +60,7 @@ theorem ChildStores.execute_slot {workspace : LogicalWorkspace}
   let entered := before.bindLocal stores.slot value
   have localRead {localId : VarId} {word : Value} (h : before.local? localId = some word) :
       Evaluates verifiedParserCore before (.local localId) word before :=
-    ⟨1, evalLocal_of_local 0 verifiedParserCore before localId word h⟩
+    Lanius.Semantics.evaluatesLocal h
   have initializer := output_slot_expression (localRead offsetLocal)
     (localRead (Assertion.localPointsTo_local _ _ _ _ remainingOwned))
     (count := (count : Int)) (capacity := (values.length : Int))

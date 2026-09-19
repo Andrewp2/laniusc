@@ -486,6 +486,26 @@ def SymbolicSubstitution.composeGround
     (symbolic.constants parameter).bind (Const.instantiate outer)
 }
 
+private theorem optionList_cons_of_some
+    (evaluate : List α → Option (List β)) (step : α → Option β)
+    (head : α) (tail : List α) (grounds : List β)
+    (evaluateCons : evaluate (head :: tail) = do
+      let resolvedHead ← step head
+      let resolvedTail ← evaluate tail
+      pure (resolvedHead :: resolvedTail))
+    (found : evaluate (head :: tail) = some grounds) :
+    ∃ headValue tailValues, grounds = headValue :: tailValues ∧
+      step head = some headValue ∧ evaluate tail = some tailValues := by
+  cases grounds with
+  | nil =>
+      rw [evaluateCons] at found
+      cases headFound : step head <;> cases tailFound : evaluate tail <;>
+        simp_all
+  | cons headValue tailValues =>
+      rw [evaluateCons] at found
+      cases headFound : step head <;> cases tailFound : evaluate tail <;>
+        simp_all
+
 /- Successful symbolic substitution followed by successful grounding is a
    successful single instantiation under the composed substitution. The four
    mutually recursive forms are the reusable algebra needed by generic calls,
@@ -613,25 +633,16 @@ mutual
         subst retained
         simpa [instantiateTypes] using grounded
     | cons head tail =>
-        cases headFound : head.substitute symbolic with
-        | none => simp [substituteTypes, headFound] at substituted
-        | some retainedHead =>
-            cases tailFound : substituteTypes symbolic tail with
-            | none => simp [substituteTypes, headFound, tailFound] at substituted
-            | some retainedTail =>
-                simp [substituteTypes, headFound, tailFound] at substituted
-                subst retained
-                cases headGrounded : retainedHead.instantiate outer with
-                | none => simp [instantiateTypes, headGrounded] at grounded
-                | some groundHead =>
-                    cases tailGrounded : instantiateTypes outer retainedTail with
-                    | none => simp [instantiateTypes, headGrounded, tailGrounded] at grounded
-                    | some groundTail =>
-                        simp [instantiateTypes, headGrounded, tailGrounded] at grounded
-                        subst grounds
-                        simp [instantiateTypes,
-                          Ty.substitute_then_instantiate headFound headGrounded,
-                          substituteTypes_then_instantiate tailFound tailGrounded]
+        obtain ⟨retainedHead, retainedTail, rfl, headFound, tailFound⟩ :=
+          optionList_cons_of_some (substituteTypes symbolic)
+            (Ty.substitute symbolic) head tail retained (by rfl) substituted
+        obtain ⟨groundHead, groundTail, rfl, headGrounded, tailGrounded⟩ :=
+          optionList_cons_of_some (instantiateTypes outer)
+            (Ty.instantiate outer) retainedHead retainedTail grounds (by rfl)
+            grounded
+        simp [instantiateTypes,
+          Ty.substitute_then_instantiate headFound headGrounded,
+          substituteTypes_then_instantiate tailFound tailGrounded]
 
   theorem substituteConstants_then_instantiate
       {constants retained : List Const} {symbolic : SymbolicSubstitution}
@@ -645,27 +656,16 @@ mutual
         subst retained
         simpa [instantiateConstants] using grounded
     | cons head tail =>
-        cases headFound : head.substitute symbolic with
-        | none => simp [substituteConstants, headFound] at substituted
-        | some retainedHead =>
-            cases tailFound : substituteConstants symbolic tail with
-            | none =>
-                simp [substituteConstants, headFound, tailFound] at substituted
-            | some retainedTail =>
-                simp [substituteConstants, headFound, tailFound] at substituted
-                subst retained
-                cases headGrounded : retainedHead.instantiate outer with
-                | none => simp [instantiateConstants, headGrounded] at grounded
-                | some groundHead =>
-                    cases tailGrounded : instantiateConstants outer retainedTail with
-                    | none =>
-                        simp [instantiateConstants, headGrounded, tailGrounded] at grounded
-                    | some groundTail =>
-                        simp [instantiateConstants, headGrounded, tailGrounded] at grounded
-                        subst grounds
-                        simp [instantiateConstants,
-                          Const.substitute_then_instantiate headFound headGrounded,
-                          substituteConstants_then_instantiate tailFound tailGrounded]
+        obtain ⟨retainedHead, retainedTail, rfl, headFound, tailFound⟩ :=
+          optionList_cons_of_some (substituteConstants symbolic)
+            (Const.substitute symbolic) head tail retained (by rfl) substituted
+        obtain ⟨groundHead, groundTail, rfl, headGrounded, tailGrounded⟩ :=
+          optionList_cons_of_some (instantiateConstants outer)
+            (Const.instantiate outer) retainedHead retainedTail grounds (by rfl)
+            grounded
+        simp [instantiateConstants,
+          Const.substitute_then_instantiate headFound headGrounded,
+          substituteConstants_then_instantiate tailFound tailGrounded]
 end
 
 /-- Binding nominal arguments symbolically and then grounding the retained
@@ -689,40 +689,24 @@ theorem SymbolicArgumentsBound.composeGround
       exact .nil
   | @typeParameter parameter argument parameters typeArguments constArguments
       found tail tailIH =>
-      cases argumentGrounded : argument.instantiate outer with
-      | none =>
-          simp [instantiateTypes, argumentGrounded] at typesGrounded
-      | some groundArgument =>
-          cases tailGrounded : instantiateTypes outer typeArguments with
-          | none =>
-              simp [instantiateTypes, argumentGrounded, tailGrounded]
-                at typesGrounded
-          | some groundTail =>
-              simp [instantiateTypes, argumentGrounded, tailGrounded]
-                at typesGrounded
-              subst groundTypes
-              apply NominalArgumentsBound.typeParameter
-              · simpa [SymbolicSubstitution.composeGround, found] using
-                  argumentGrounded
-              · exact tailIH tailGrounded constantsGrounded
+      obtain ⟨groundArgument, groundTail, rfl, argumentGrounded, tailGrounded⟩ :=
+        optionList_cons_of_some (instantiateTypes outer)
+          (Ty.instantiate outer) argument typeArguments groundTypes (by rfl)
+          typesGrounded
+      apply NominalArgumentsBound.typeParameter
+      · simpa [SymbolicSubstitution.composeGround, found] using
+          argumentGrounded
+      · exact tailIH tailGrounded constantsGrounded
   | @constParameter parameter argument parameters typeArguments constArguments
       found tail tailIH =>
-      cases argumentGrounded : argument.instantiate outer with
-      | none =>
-          simp [instantiateConstants, argumentGrounded] at constantsGrounded
-      | some groundArgument =>
-          cases tailGrounded : instantiateConstants outer constArguments with
-          | none =>
-              simp [instantiateConstants, argumentGrounded, tailGrounded]
-                at constantsGrounded
-          | some groundTail =>
-              simp [instantiateConstants, argumentGrounded, tailGrounded]
-                at constantsGrounded
-              subst groundConstants
-              apply NominalArgumentsBound.constParameter
-              · simpa [SymbolicSubstitution.composeGround, found] using
-                  argumentGrounded
-              · exact tailIH typesGrounded tailGrounded
+      obtain ⟨groundArgument, groundTail, rfl, argumentGrounded, tailGrounded⟩ :=
+        optionList_cons_of_some (instantiateConstants outer)
+          (Const.instantiate outer) argument constArguments groundConstants
+          (by rfl) constantsGrounded
+      apply NominalArgumentsBound.constParameter
+      · simpa [SymbolicSubstitution.composeGround, found] using
+          argumentGrounded
+      · exact tailIH typesGrounded tailGrounded
 
 /-- Evidence that every symbolic argument assigned to the listed generic
     parameters becomes ground under the surrounding substitution. -/
@@ -780,28 +764,20 @@ theorem SymbolicArgumentsBound.parametersGround
   | nil => exact .nil
   | @typeParameter parameter argument parameters typeArguments constArguments
       found tail tailIH =>
-      cases argumentGrounded : argument.instantiate outer with
-      | none => simp [instantiateTypes, argumentGrounded] at typesGrounded
-      | some groundArgument =>
-          cases tailGrounded : instantiateTypes outer typeArguments with
-          | none =>
-              simp [instantiateTypes, argumentGrounded, tailGrounded]
-                at typesGrounded
-          | some groundTail =>
-              exact .typeParameter found argumentGrounded
-                (tailIH tailGrounded constantsGrounded)
+      obtain ⟨groundArgument, groundTail, rfl, argumentGrounded, tailGrounded⟩ :=
+        optionList_cons_of_some (instantiateTypes outer)
+          (Ty.instantiate outer) argument typeArguments groundTypes (by rfl)
+          typesGrounded
+      exact .typeParameter found argumentGrounded
+        (tailIH tailGrounded constantsGrounded)
   | @constParameter parameter argument parameters typeArguments constArguments
       found tail tailIH =>
-      cases argumentGrounded : argument.instantiate outer with
-      | none => simp [instantiateConstants, argumentGrounded] at constantsGrounded
-      | some groundArgument =>
-          cases tailGrounded : instantiateConstants outer constArguments with
-          | none =>
-              simp [instantiateConstants, argumentGrounded, tailGrounded]
-                at constantsGrounded
-          | some groundTail =>
-              exact .constParameter found argumentGrounded
-                (tailIH typesGrounded tailGrounded)
+      obtain ⟨groundArgument, groundTail, rfl, argumentGrounded, tailGrounded⟩ :=
+        optionList_cons_of_some (instantiateConstants outer)
+          (Const.instantiate outer) argument constArguments groundConstants
+          (by rfl) constantsGrounded
+      exact .constParameter found argumentGrounded
+        (tailIH typesGrounded tailGrounded)
 
 mutual
   inductive TyMatches (substitution : Substitution) : Ty → GroundTy → Prop where
@@ -970,17 +946,11 @@ mutual
         subst grounds
         exact .nil
     | cons head tail =>
-        cases headGrounded : head.instantiate substitution with
-        | none => simp [instantiateTypes, headGrounded] at grounded
-        | some groundHead =>
-            cases tailGrounded : instantiateTypes substitution tail with
-            | none =>
-                simp [instantiateTypes, headGrounded, tailGrounded] at grounded
-            | some groundTail =>
-                simp [instantiateTypes, headGrounded, tailGrounded] at grounded
-                subst grounds
-                exact .cons (Ty.matchesOfInstantiate headGrounded)
-                  (TypesMatch.ofInstantiate tailGrounded)
+        obtain ⟨groundHead, groundTail, rfl, headGrounded, tailGrounded⟩ :=
+          optionList_cons_of_some (instantiateTypes substitution)
+            (Ty.instantiate substitution) head tail grounds (by rfl) grounded
+        exact .cons (Ty.matchesOfInstantiate headGrounded)
+          (TypesMatch.ofInstantiate tailGrounded)
 
   theorem ConstsMatch.ofInstantiate
       (grounded : instantiateConstants substitution patterns = some grounds) :
@@ -991,17 +961,11 @@ mutual
         subst grounds
         exact .nil
     | cons head tail =>
-        cases headGrounded : head.instantiate substitution with
-        | none => simp [instantiateConstants, headGrounded] at grounded
-        | some groundHead =>
-            cases tailGrounded : instantiateConstants substitution tail with
-            | none =>
-                simp [instantiateConstants, headGrounded, tailGrounded] at grounded
-            | some groundTail =>
-                simp [instantiateConstants, headGrounded, tailGrounded] at grounded
-                subst grounds
-                exact .cons (Const.matchesOfInstantiate headGrounded)
-                  (ConstsMatch.ofInstantiate tailGrounded)
+        obtain ⟨groundHead, groundTail, rfl, headGrounded, tailGrounded⟩ :=
+          optionList_cons_of_some (instantiateConstants substitution)
+            (Const.instantiate substitution) head tail grounds (by rfl) grounded
+        exact .cons (Const.matchesOfInstantiate headGrounded)
+          (ConstsMatch.ofInstantiate tailGrounded)
 end
 
 /- Symbolic matching composes with grounding. This is the central algebraic
@@ -1013,67 +977,33 @@ mutual
       (symbolicMatch : TySymbolicallyMatches symbolic pattern actual)
       (groundMatch : TyMatches outer actual ground) :
       TyMatches (symbolic.composeGround outer) pattern ground := by
-    cases symbolicMatch with
-    | unit => cases groundMatch; exact .unit
-    | scalar => cases groundMatch; exact .scalar
-    | parameter found =>
-        exact .parameter _ _ (by
-          simp [SymbolicSubstitution.composeGround, found,
-            groundMatch.instantiates])
-    | array element length =>
-        cases groundMatch with
-        | array groundElement groundLength =>
-            exact .array
-              (element.composeGround groundElement)
-              (length.composeGround groundLength)
-    | slice element =>
-        cases groundMatch with
-        | slice groundElement => exact .slice (element.composeGround groundElement)
-    | reference referent =>
-        cases groundMatch with
-        | reference groundReferent =>
-            exact .reference (referent.composeGround groundReferent)
-    | nominal types constants =>
-        cases groundMatch with
-        | nominal typeId groundTypes groundConstants =>
-            exact .nominal _
-              (types.composeGround groundTypes)
-              (constants.composeGround groundConstants)
+    exact Ty.matchesOfInstantiate <|
+      Ty.substitute_then_instantiate symbolicMatch.substitutes
+        groundMatch.instantiates
 
   theorem TypesSymbolicallyMatch.composeGround
       (symbolicMatch : TypesSymbolicallyMatch symbolic patterns actuals)
       (groundMatch : TypesMatch outer actuals grounds) :
       TypesMatch (symbolic.composeGround outer) patterns grounds := by
-    cases symbolicMatch with
-    | nil => cases groundMatch; exact .nil
-    | cons head tail =>
-        cases groundMatch with
-        | cons groundHead groundTail =>
-            exact .cons (head.composeGround groundHead)
-              (tail.composeGround groundTail)
+    exact TypesMatch.ofInstantiate <|
+      substituteTypes_then_instantiate symbolicMatch.substitutes
+        groundMatch.instantiate
 
   theorem ConstSymbolicallyMatches.composeGround
       (symbolicMatch : ConstSymbolicallyMatches symbolic pattern actual)
       (groundMatch : ConstMatches outer actual ground) :
       ConstMatches (symbolic.composeGround outer) pattern ground := by
-    cases symbolicMatch with
-    | literal => cases groundMatch; exact .literal
-    | parameter found =>
-        exact .parameter _ _ (by
-          simp [SymbolicSubstitution.composeGround, found,
-            groundMatch.instantiates])
+    exact Const.matchesOfInstantiate <|
+      Const.substitute_then_instantiate symbolicMatch.substitutes
+        groundMatch.instantiates
 
   theorem ConstsSymbolicallyMatch.composeGround
       (symbolicMatch : ConstsSymbolicallyMatch symbolic patterns actuals)
       (groundMatch : ConstsMatch outer actuals grounds) :
       ConstsMatch (symbolic.composeGround outer) patterns grounds := by
-    cases symbolicMatch with
-    | nil => cases groundMatch; exact .nil
-    | cons head tail =>
-        cases groundMatch with
-        | cons groundHead groundTail =>
-            exact .cons (head.composeGround groundHead)
-              (tail.composeGround groundTail)
+    exact ConstsMatch.ofInstantiate <|
+      substituteConstants_then_instantiate symbolicMatch.substitutes
+        groundMatch.instantiate
 end
 
 inductive BindsTypeArguments (substitution : Substitution) :

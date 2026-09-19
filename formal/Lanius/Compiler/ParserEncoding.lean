@@ -78,87 +78,64 @@ def nextAfter : List Nat → Nat → Option Nat
   | current :: rest, stateId =>
       if current = stateId then rest.head? else nextAfter rest stateId
 
+private theorem nextAfter_append
+    (states suffix : List Nat) (stateId : Nat) :
+    nextAfter (states ++ suffix) stateId =
+      match nextAfter states stateId with
+      | some nextState => some nextState
+      | none => if stateId ∈ states then suffix.head? else nextAfter suffix stateId := by
+  induction states with
+  | nil => simp [nextAfter]
+  | cons head tail inductionHypothesis =>
+      by_cases current : head = stateId
+      · subst head
+        cases tail <;> simp [nextAfter]
+      · have reverse : stateId ≠ head := Ne.symm current
+        simp [nextAfter, current, reverse, inductionHypothesis]
+
+@[simp] private theorem nextAfter_none_of_not_mem
+    (states : List Nat) (stateId : Nat) (absent : stateId ∉ states) :
+    nextAfter states stateId = none := by
+  induction states with
+  | nil => rfl
+  | cons head tail inductionHypothesis =>
+      simp only [nextAfter]
+      split
+      · rename_i equal
+        exact False.elim (absent (by simp [equal]))
+      · apply inductionHypothesis
+        simp_all
+
 theorem nextAfter_append_new
     {states : List Nat} {newState : Nat}
     (fresh : newState ∉ states) :
     nextAfter (states ++ [newState]) newState = none := by
-  induction states with
-  | nil => simp [nextAfter]
-  | cons head tail inductionHypothesis =>
-      have headDifferent : head ≠ newState := by
-        intro equal
-        apply fresh
-        simp [equal]
-      have tailFresh : newState ∉ tail := by
-        intro member
-        exact fresh (List.mem_cons_of_mem head member)
-      simp [nextAfter, headDifferent, inductionHypothesis tailFresh]
+  simp [nextAfter_append, nextAfter, fresh]
 
 theorem nextAfter_append_of_found
     {states : List Nat} {stateId nextState newState : Nat}
     (found : nextAfter states stateId = some nextState) :
     nextAfter (states ++ [newState]) stateId = some nextState := by
-  induction states with
-  | nil => simp [nextAfter] at found
-  | cons head tail inductionHypothesis =>
-      by_cases current : head = stateId
-      · subst head
-        cases tail <;> simp [nextAfter] at found ⊢
-        simpa using found
-      · simp only [nextAfter, current, if_false] at found
-        simpa only [List.cons_append, nextAfter, current, if_false] using
-          inductionHypothesis found
+  simp [nextAfter_append, found]
 
 theorem nextAfter_append_of_last
     {states : List Nat} {stateId newState : Nat}
     (listed : stateId ∈ states)
     (last : nextAfter states stateId = none) :
     nextAfter (states ++ [newState]) stateId = some newState := by
-  induction states with
-  | nil => simp at listed
-  | cons head tail inductionHypothesis =>
-      by_cases current : head = stateId
-      · subst head
-        cases tail <;> simp [nextAfter] at last ⊢
-      · have listedTail : stateId ∈ tail := by
-          rcases List.mem_cons.mp listed with equal | member
-          · exact False.elim (current equal.symm)
-          · exact member
-        simp only [nextAfter, current, if_false] at last
-        simpa only [List.cons_append, nextAfter, current, if_false] using
-          inductionHypothesis listedTail last
+  simp [nextAfter_append, last, listed]
 
 theorem nextAfter_append_absent
     {states : List Nat} {stateId newState : Nat}
     (absent : stateId ∉ states) (different : stateId ≠ newState) :
     nextAfter (states ++ [newState]) stateId = none := by
-  induction states with
-  | nil => simp [nextAfter, different.symm]
-  | cons head tail inductionHypothesis =>
-      have current : head ≠ stateId := by
-        intro equal
-        apply absent
-        simp [equal]
-      have absentTail : stateId ∉ tail := by
-        intro member
-        exact absent (List.mem_cons_of_mem head member)
-      simp [nextAfter, current, inductionHypothesis absentTail]
+  simp [nextAfter, absent, different]
 
 theorem nextAfter_append_cons_of_not_mem
     (visited suffix : List Nat) (current : Nat)
     (unseen : current ∉ visited) :
     nextAfter (visited ++ current :: suffix) current = suffix.head? := by
-  induction visited with
-  | nil => simp [nextAfter]
-  | cons head tail inductionHypothesis =>
-      have headDifferent : head ≠ current := by
-        intro equal
-        apply unseen
-        simp [equal]
-      have unseenTail : current ∉ tail := by
-        intro listed
-        exact unseen (List.mem_cons_of_mem head listed)
-      simp [nextAfter, headDifferent, inductionHypothesis unseenTail]
+  simp [nextAfter_append, nextAfter, unseen]
 
 /-- A cursor into a chart remembers the unvisited suffix.  Carrying the
     decomposition explicitly is what lets the concrete `STATE_NEXT` walk use
@@ -715,6 +692,74 @@ theorem insertedWorkspaceWrites_bounded
   · exact insertedChartLinkWrites_bounded layout workspace position encoded
       positionBound write chartWrite
 
+private theorem insertEncodedState_writes_bounded
+    (layout : WorkspaceLayout) (workspace : LogicalWorkspace)
+    (position : Nat) (seed : StateSeed) (values : List Int)
+    (valuesLength : values.length = layout.workspaceLength)
+    (encoded : EncodesWorkspace layout workspace (listWords values))
+    (positionBound : position ≤ finalPosition layout.tokenCount)
+    (hasCapacity : workspace.states.length < layout.capacity) :
+    ∀ write, write ∈ insertedWorkspaceWrites layout workspace position seed → write.1 < values.length := by
+  intro write listed
+  rw [valuesLength]
+  exact insertedWorkspaceWrites_bounded layout workspace position seed
+    encoded positionBound hasCapacity write listed
+
+private theorem insertedWorkspaceWrites_stateField_other
+    (layout : WorkspaceLayout) (workspace : LogicalWorkspace)
+    (position : Nat) (seed : StateSeed)
+    (stateId field : Nat)
+    (positionBound : position ≤ finalPosition layout.tokenCount)
+    (stateIdBound : stateId < workspace.states.length)
+    (fieldBound : field < stateWords)
+    (linkDifferent : ∀ tail,
+      (workspace.chart position).getLast? = some tail →
+      stateWord (stateBase layout.tokenCount) stateId field ≠
+        stateWord (stateBase layout.tokenCount) tail 4) :
+    ∀ write, write ∈ insertedWorkspaceWrites layout workspace position seed →
+      stateWord (stateBase layout.tokenCount) stateId field ≠ write.1 := by
+  intro write listed
+  have newStateDifferent (newField : Nat)
+      (newFieldBound : newField < stateWords) :
+      stateWord (stateBase layout.tokenCount) stateId field ≠
+        stateWord (stateBase layout.tokenCount) workspace.states.length
+          newField := by
+    intro same
+    have ids := stateWord_injective fieldBound newFieldBound same
+    omega
+  have chartDifferent (chartField : Nat)
+      (chartFieldBound : chartField < chartWords) :
+      stateWord (stateBase layout.tokenCount) stateId field ≠
+        chartWord position chartField :=
+    (chart_state_words_disjoint positionBound chartFieldBound).symm
+  have stateWriteDifferent : ∀ write,
+      write ∈ insertedStateRecordWrites layout workspace position seed →
+      stateWord (stateBase layout.tokenCount) stateId field ≠ write.1 := by
+    intro write listed
+    simp [insertedStateRecordWrites] at listed
+    rcases listed with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+    all_goals exact newStateDifferent _ (by decide)
+  have chartWriteDifferent : ∀ write,
+      write ∈ insertedChartLinkWrites layout workspace position →
+      stateWord (stateBase layout.tokenCount) stateId field ≠ write.1 := by
+    intro write listed
+    cases tailFound : (workspace.chart position).getLast? with
+    | none =>
+        simp [insertedChartLinkWrites, tailFound] at listed
+        rcases listed with rfl | rfl
+        · exact chartDifferent 0 (by decide)
+        · exact chartDifferent 1 (by decide)
+    | some tail =>
+        simp [insertedChartLinkWrites, tailFound] at listed
+        rcases listed with rfl | rfl
+        · exact linkDifferent tail tailFound
+        · exact chartDifferent 1 (by decide)
+  change write ∈ insertedStateRecordWrites layout workspace position seed ++
+    insertedChartLinkWrites layout workspace position at listed
+  rcases List.mem_append.mp listed with stateWrite | chartWrite
+  · exact stateWriteDifferent _ stateWrite
+  · exact chartWriteDifferent _ chartWrite
+
 theorem insertEncodedState_new_state_field
     (layout : WorkspaceLayout) (workspace : LogicalWorkspace)
     (position : Nat) (seed : StateSeed) (values : List Int)
@@ -727,13 +772,8 @@ theorem insertEncodedState_new_state_field
         (stateWord (stateBase layout.tokenCount) workspace.states.length field) =
       stateFieldValue (insertState workspace position seed)
         workspace.states.length (seed.atPosition position) field := by
-  have bounded : ∀ write,
-      write ∈ insertedWorkspaceWrites layout workspace position seed →
-      write.1 < values.length := by
-    intro write listed
-    rw [valuesLength]
-    exact insertedWorkspaceWrites_bounded layout workspace position seed
-      encoded positionBound hasCapacity write listed
+  have bounded := insertEncodedState_writes_bounded layout workspace position seed values
+    valuesLength encoded positionBound hasCapacity
   rw [insertEncodedState,
     listWords_applyWordWrites values
       (insertedWorkspaceWrites layout workspace position seed) bounded]
@@ -820,13 +860,8 @@ theorem insertEncodedState_chart_head_at_position
     listWords (insertEncodedState layout workspace position seed values)
         (chartWord position 0) =
       chartHeadValue (insertState workspace position seed) position := by
-  have bounded : ∀ write,
-      write ∈ insertedWorkspaceWrites layout workspace position seed →
-      write.1 < values.length := by
-    intro write listed
-    rw [valuesLength]
-    exact insertedWorkspaceWrites_bounded layout workspace position seed
-      encoded positionBound hasCapacity write listed
+  have bounded := insertEncodedState_writes_bounded layout workspace position seed values
+    valuesLength encoded positionBound hasCapacity
   rw [insertEncodedState,
     listWords_applyWordWrites values
       (insertedWorkspaceWrites layout workspace position seed) bounded]
@@ -863,13 +898,8 @@ theorem insertEncodedState_chart_tail_at_position
     listWords (insertEncodedState layout workspace position seed values)
         (chartWord position 1) =
       chartTailValue (insertState workspace position seed) position := by
-  have bounded : ∀ write,
-      write ∈ insertedWorkspaceWrites layout workspace position seed →
-      write.1 < values.length := by
-    intro write listed
-    rw [valuesLength]
-    exact insertedWorkspaceWrites_bounded layout workspace position seed
-      encoded positionBound hasCapacity write listed
+  have bounded := insertEncodedState_writes_bounded layout workspace position seed values
+    valuesLength encoded positionBound hasCapacity
   rw [insertEncodedState,
     listWords_applyWordWrites values
       (insertedWorkspaceWrites layout workspace position seed) bounded]
@@ -907,13 +937,8 @@ theorem insertEncodedState_chart_other
     listWords (insertEncodedState layout workspace position seed values)
         (chartWord queried field) =
       listWords values (chartWord queried field) := by
-  have bounded : ∀ write,
-      write ∈ insertedWorkspaceWrites layout workspace position seed →
-      write.1 < values.length := by
-    intro write listed
-    rw [valuesLength]
-    exact insertedWorkspaceWrites_bounded layout workspace position seed
-      encoded positionBound hasCapacity write listed
+  have bounded := insertEncodedState_writes_bounded layout workspace position seed values
+    valuesLength encoded positionBound hasCapacity
   rw [insertEncodedState,
     listWords_applyWordWrites values
       (insertedWorkspaceWrites layout workspace position seed) bounded]
@@ -1004,63 +1029,17 @@ theorem insertEncodedState_old_state_field_of_not_tail
         (stateWord (stateBase layout.tokenCount) stateId field) := by
   rw [insertEncodedState]
   apply listWords_applyWordWrites_other
-  intro write listed
   have stateIdBound : stateId < workspace.states.length :=
     getElem?_some_implies_bound found
-  have newStateDifferent (newField : Nat)
-      (newFieldBound : newField < stateWords) :
-      stateWord (stateBase layout.tokenCount) stateId field ≠
-        stateWord (stateBase layout.tokenCount) workspace.states.length
-          newField := by
-    intro same
-    have ids := stateWord_injective fieldBound newFieldBound same
-    omega
-  have chartDifferent (chartField : Nat)
-      (chartFieldBound : chartField < chartWords) :
-      stateWord (stateBase layout.tokenCount) stateId field ≠
-        chartWord position chartField :=
-    (chart_state_words_disjoint positionBound chartFieldBound).symm
-  cases tailFound : (workspace.chart position).getLast? with
-  | none =>
-      simp [insertedWorkspaceWrites, insertedStateRecordWrites,
-        insertedChartLinkWrites, tailFound] at listed
-      rcases listed with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
-      · exact newStateDifferent 0 (by decide)
-      · exact newStateDifferent 1 (by decide)
-      · exact newStateDifferent 2 (by decide)
-      · exact newStateDifferent 3 (by decide)
-      · exact newStateDifferent 4 (by decide)
-      · exact newStateDifferent 5 (by decide)
-      · exact newStateDifferent 6 (by decide)
-      · exact newStateDifferent 7 (by decide)
-      · exact newStateDifferent 8 (by decide)
-      · exact chartDifferent 0 (by decide)
-      · exact chartDifferent 1 (by decide)
-  | some tail =>
+  exact insertedWorkspaceWrites_stateField_other layout workspace position seed
+    stateId field positionBound stateIdBound fieldBound (by
+      intro tail tailFound equal
       have tailDifferent : stateId ≠ tail := by
         intro same
         subst tail
         exact notTail tailFound
-      have linkDifferent :
-          stateWord (stateBase layout.tokenCount) stateId field ≠
-            stateWord (stateBase layout.tokenCount) tail 4 := by
-        intro same
-        exact tailDifferent
-          (stateWord_injective fieldBound (by decide) same).1
-      simp [insertedWorkspaceWrites, insertedStateRecordWrites,
-        insertedChartLinkWrites, tailFound] at listed
-      rcases listed with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
-      · exact newStateDifferent 0 (by decide)
-      · exact newStateDifferent 1 (by decide)
-      · exact newStateDifferent 2 (by decide)
-      · exact newStateDifferent 3 (by decide)
-      · exact newStateDifferent 4 (by decide)
-      · exact newStateDifferent 5 (by decide)
-      · exact newStateDifferent 6 (by decide)
-      · exact newStateDifferent 7 (by decide)
-      · exact newStateDifferent 8 (by decide)
-      · exact linkDifferent
-      · exact chartDifferent 1 (by decide)
+      exact tailDifferent
+        (stateWord_injective fieldBound (by decide) equal).1)
 
 theorem insertEncodedState_old_tail_next
     (layout : WorkspaceLayout) (workspace : LogicalWorkspace)
@@ -1075,13 +1054,8 @@ theorem insertEncodedState_old_tail_next
     listWords (insertEncodedState layout workspace position seed values)
         (stateWord (stateBase layout.tokenCount) stateId 4) =
       Int.ofNat workspace.states.length := by
-  have bounded : ∀ write,
-      write ∈ insertedWorkspaceWrites layout workspace position seed →
-      write.1 < values.length := by
-    intro write listed
-    rw [valuesLength]
-    exact insertedWorkspaceWrites_bounded layout workspace position seed
-      encoded positionBound hasCapacity write listed
+  have bounded := insertEncodedState_writes_bounded layout workspace position seed values
+    valuesLength encoded positionBound hasCapacity
   rw [insertEncodedState,
     listWords_applyWordWrites values
       (insertedWorkspaceWrites layout workspace position seed) bounded]
@@ -1257,40 +1231,11 @@ theorem insertEncodedState_encodes
                     (stateWord (stateBase layout.tokenCount) stateId field) := by
               rw [insertEncodedState]
               apply listWords_applyWordWrites_other
-              intro write listed
-              have newDifferent (newField : Nat)
-                  (newFieldBound : newField < stateWords) :
-                  stateWord (stateBase layout.tokenCount) stateId field ≠
-                    stateWord (stateBase layout.tokenCount)
-                      workspace.states.length newField := by
-                intro equal
-                have ids := stateWord_injective fieldBound newFieldBound equal
-                omega
-              have chartDifferent (chartField : Nat)
-                  (chartFieldBound : chartField < chartWords) :
-                  stateWord (stateBase layout.tokenCount) stateId field ≠
-                    chartWord position chartField :=
-                (chart_state_words_disjoint positionBound chartFieldBound).symm
-              have linkDifferent :
-                  stateWord (stateBase layout.tokenCount) stateId field ≠
-                    stateWord (stateBase layout.tokenCount) stateId 4 := by
-                intro equal
-                exact notNext
-                  (stateWord_injective fieldBound (by decide) equal).2
-              simp [insertedWorkspaceWrites, insertedStateRecordWrites,
-                insertedChartLinkWrites, tail] at listed
-              rcases listed with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
-              · exact newDifferent 0 (by decide)
-              · exact newDifferent 1 (by decide)
-              · exact newDifferent 2 (by decide)
-              · exact newDifferent 3 (by decide)
-              · exact newDifferent 4 (by decide)
-              · exact newDifferent 5 (by decide)
-              · exact newDifferent 6 (by decide)
-              · exact newDifferent 7 (by decide)
-              · exact newDifferent 8 (by decide)
-              · exact linkDifferent
-              · exact chartDifferent 1 (by decide)
+              exact insertedWorkspaceWrites_stateField_other layout workspace
+                position seed stateId field positionBound old fieldBound (by
+                  intro _ _ equal
+                  exact notNext
+                    (stateWord_injective fieldBound (by decide) equal).2)
             calc
               listWords
                     (insertEncodedState layout workspace position seed values)

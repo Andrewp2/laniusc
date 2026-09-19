@@ -71,12 +71,12 @@ private theorem scaled_result (program : Program) (before : State) (scale : Scal
     (fits : value * scale.factor ≤ 2147483647) :
     Evaluates program before (scale.expression id) (.signed .i32 (value * scale.factor : Nat)) before := by
   have localResult : Evaluates program before (.local id) (.signed .i32 value) before :=
-    ⟨1, evalLocal_of_local 0 program before id _ found⟩
+    Lanius.Semantics.evaluatesLocal found
   cases scale with
   | plain => simpa [Scale.expression, Scale.factor] using localResult
   | triple =>
       exact evaluatesNatI32Multiply localResult
-        (show Evaluates program before (.value (.signed .i32 3)) (.signed .i32 3) before from ⟨1, rfl⟩) fits
+        (show Evaluates program before (.value (.signed .i32 3)) (.signed .i32 3) before from evaluatesValue) fits
 
 theorem body_step (program : Program) (locals : Locals) (memory : Memory locals)
     (processed remaining : List Int) (value : Int) (before : State)
@@ -97,7 +97,7 @@ theorem body_step (program : Program) (locals : Locals) (memory : Memory locals)
     simpa only [List.getElem?_eq_getElem readBound, Option.some.injEq, List.get_eq_getElem] using selected
   have cursorLocal := Assertion.localPointsTo_local _ _ _ _ invariant.cursor
   have indexResult : Evaluates program before (.local locals.cursor) (.signed .i32 processed.length) before :=
-    ⟨1, evalLocal_of_local 0 program before locals.cursor _ cursorLocal⟩
+    Lanius.Semantics.evaluatesLocal cursorLocal
   have readResult := scaled_result program before locals.readScale locals.cursor processed.length cursorLocal
     (by have := memory.sourceFits; omega)
   have length := buffer_length memory.untouched processed (by omega)
@@ -138,8 +138,7 @@ theorem executes_loop (program : Program) (locals : Locals) (memory : Memory loc
     ∃ after, Executes program before locals.loop .next after ∧
       Invariant memory memory.values after ∧ CellEffect memory.writes before after ∧ HeapFrame before after := by
   have cursorResult : Evaluates program before (.local locals.cursor) (.signed .i32 processed.length) before :=
-    ⟨1, evalLocal_of_local 0 program before locals.cursor _
-      (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)
   have countResult := scaled_result program before locals.countScale locals.count memory.count invariant.count
     (by have := memory.countLength; have := memory.capacity; have := memory.destinationFits; omega)
   rw [memory.countLength] at countResult

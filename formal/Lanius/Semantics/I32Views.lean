@@ -243,53 +243,104 @@ theorem i32Views_disjoint_of_distinct_addresses
           (valid first (by simp)) (valid view (by simp [member])) (headDifferent view member)
       · exact induction (fun view member => valid view (by simp [member])) restDifferent
 
+theorem writeResolvedPlace_assignCell
+    {before after : State} {place : ResolvedPlace} {value : Value}
+    (written : writeResolvedPlace before place value = .ok after) :
+    ∃ updated, before.assignCell place.root updated = some after := by
+  cases projections : place.projections with
+  | nil =>
+      cases assigned : before.assignCell place.root value with
+      | none => simp [writeResolvedPlace, projections, assigned] at written
+      | some state =>
+          simp only [writeResolvedPlace, projections, assigned, Except.ok.injEq] at written
+          subst after
+          exact ⟨value, assigned⟩
+  | cons projection rest =>
+      cases found : before.cellEntry? place.root with
+      | none => simp [writeResolvedPlace, projections, found] at written
+      | some cell =>
+          obtain ⟨cellId, contents⟩ := cell
+          cases contents with
+          | none => simp [writeResolvedPlace, projections, found] at written
+          | some rootValue =>
+              cases replaced : replaceProjectedValue rootValue place.projections value with
+              | error reason =>
+                  simp [writeResolvedPlace, projections, found, projections ▸ replaced] at written
+              | ok updated =>
+                  cases assigned : before.assignCell place.root updated with
+                  | none =>
+                      simp [writeResolvedPlace, projections, found,
+                        projections ▸ replaced, assigned] at written
+                  | some state =>
+                      have same : state = after := by
+                        simpa [writeResolvedPlace, projections, found,
+                          projections ▸ replaced, assigned] using written
+                      subst after
+                      exact ⟨updated, assigned⟩
+
+private theorem syncI32ViewsFromHeapFrom_cons_invert_local
+    {view : I32ArrayView} {rest : List I32ArrayView} {before after : State}
+    (synced : syncI32ViewsFromHeapFrom (view :: rest) before = .ok after) :
+    ∃ bytes elements middle,
+      before.heap.loadBytes view.address (view.length * 4) = .ok bytes ∧
+      decodeI32Array view.length bytes = .ok elements ∧
+      writeResolvedPlace before
+        { root := view.root, projections := view.projections, value := none }
+        (.array elements) = .ok middle ∧
+      syncI32ViewsFromHeapFrom rest middle = .ok after := by
+  simp only [syncI32ViewsFromHeapFrom] at synced
+  split at synced <;> simp_all
+  split at synced <;> simp_all
+  split at synced <;> simp_all
+
+private theorem syncI32ViewsFromHeapFrom_preserves_basic
+    {pending : List I32ArrayView} {before after : State}
+    (synced : syncI32ViewsFromHeapFrom pending before = .ok after) :
+    after.world = before.world ∧ after.locals = before.locals ∧
+      after.heap = before.heap ∧ after.i32ArrayViews = before.i32ArrayViews ∧
+      after.nextCell = before.nextCell ∧
+      (Lanius.Properties.StateWellFormed before →
+        Lanius.Properties.StateWellFormed after) := by
+  induction pending generalizing before with
+  | nil => cases synced; exact ⟨rfl, rfl, rfl, rfl, rfl, id⟩
+  | cons view rest induction =>
+      obtain ⟨_, _, middle, _, _, written, remaining⟩ :=
+        syncI32ViewsFromHeapFrom_cons_invert_local synced
+      obtain ⟨_, assigned⟩ := writeResolvedPlace_assignCell written
+      obtain ⟨world, locals, heap, views, nextCell, valid⟩ := induction remaining
+      rw [Lanius.Properties.assignCell_state assigned] at heap views nextCell
+      exact ⟨world.trans (by rw [Lanius.Properties.assignCell_state assigned]),
+        locals.trans (by rw [Lanius.Properties.assignCell_state assigned]), heap, views, nextCell,
+        fun initial => valid (Lanius.Properties.assignCell_preserves_well_formed initial assigned)⟩
+
+private theorem syncI32ViewsFromHeapFrom_preserves_other_cell_fold
+    {pending : List I32ArrayView} {before after : State} {cell : CellId}
+    (separate : ∀ view ∈ pending, cell ≠ view.root)
+    (synced : syncI32ViewsFromHeapFrom pending before = .ok after) :
+    after.cellEntry? cell = before.cellEntry? cell := by
+  induction pending generalizing before with
+  | nil => cases synced; rfl
+  | cons view rest induction =>
+      obtain ⟨_, _, middle, _, _, written, remaining⟩ :=
+        syncI32ViewsFromHeapFrom_cons_invert_local synced
+      obtain ⟨_, assigned⟩ := writeResolvedPlace_assignCell written
+      exact (induction (fun other member => separate other (by simp [member])) remaining).trans
+        (Lanius.Properties.assignCell_preserves_other assigned (separate view (by simp)))
+
 theorem syncI32RootViewsFromHeapFrom_preserves_other_cell
     {pending : List I32ArrayView} {before after : State} {cell : CellId}
     (roots : ∀ view ∈ pending, view.projections = [])
     (separate : ∀ view ∈ pending, cell ≠ view.root)
     (synced : syncI32ViewsFromHeapFrom pending before = .ok after) :
     after.cellEntry? cell = before.cellEntry? cell := by
-  induction pending generalizing before with
-  | nil => cases synced; rfl
-  | cons view rest ih =>
-      have root := roots view (by simp)
-      cases loaded : before.heap.loadBytes view.address (view.length * 4) with
-      | error reason => simp [syncI32ViewsFromHeapFrom, loaded] at synced
-      | ok bytes =>
-          cases decoded : decodeI32Array view.length bytes with
-          | error reason => simp [syncI32ViewsFromHeapFrom, loaded, decoded] at synced
-          | ok elements =>
-              cases assigned : before.assignCell view.root (.array elements) with
-              | none => simp [syncI32ViewsFromHeapFrom, loaded, decoded, writeResolvedPlace, root, assigned] at synced
-              | some next =>
-                  have remaining : syncI32ViewsFromHeapFrom rest next = .ok after := by
-                    simpa only [syncI32ViewsFromHeapFrom, loaded, decoded, writeResolvedPlace, root, assigned] using synced
-                  exact (ih (fun other member => roots other (by simp [member]))
-                    (fun other member => separate other (by simp [member])) remaining).trans
-                    (Lanius.Properties.assignCell_preserves_other assigned (separate view (by simp)))
+  exact syncI32ViewsFromHeapFrom_preserves_other_cell_fold separate synced
 
 theorem syncI32RootViewsFromHeapFrom_preserves_locals
     {pending : List I32ArrayView} {before after : State}
     (roots : ∀ view ∈ pending, view.projections = [])
     (synced : syncI32ViewsFromHeapFrom pending before = .ok after) :
     after.locals = before.locals := by
-  induction pending generalizing before with
-  | nil => cases synced; rfl
-  | cons view rest ih =>
-      have root := roots view (by simp)
-      cases loaded : before.heap.loadBytes view.address (view.length * 4) with
-      | error reason => simp [syncI32ViewsFromHeapFrom, loaded] at synced
-      | ok bytes =>
-          cases decoded : decodeI32Array view.length bytes with
-          | error reason => simp [syncI32ViewsFromHeapFrom, loaded, decoded] at synced
-          | ok elements =>
-              cases assigned : before.assignCell view.root (.array elements) with
-              | none => simp [syncI32ViewsFromHeapFrom, loaded, decoded, writeResolvedPlace, root, assigned] at synced
-              | some next =>
-                  have remaining : syncI32ViewsFromHeapFrom rest next = .ok after := by
-                    simpa only [syncI32ViewsFromHeapFrom, loaded, decoded, writeResolvedPlace, root, assigned] using synced
-                  rw [ih (fun other member => roots other (by simp [member])) remaining,
-                    Lanius.Properties.assignCell_state assigned]
+  exact (syncI32ViewsFromHeapFrom_preserves_basic synced).2.1
 
 /-- Refreshing distinct root cells establishes each array's declared length
 and element shape; later refreshes cannot overwrite an earlier root. -/
@@ -305,30 +356,28 @@ theorem syncI32RootViewsFromHeapFrom_arrays
   induction pending generalizing before with
   | nil => simp
   | cons view rest ih =>
-      have root := roots view (by simp)
       obtain ⟨headDifferent, restDifferent⟩ := List.pairwise_cons.mp distinct
-      cases loaded : before.heap.loadBytes view.address (view.length * 4) with
-      | error reason => simp [syncI32ViewsFromHeapFrom, loaded] at synced
-      | ok bytes =>
-          cases decoded : decodeI32Array view.length bytes with
-          | error reason => simp [syncI32ViewsFromHeapFrom, loaded, decoded] at synced
-          | ok elements =>
-              cases assigned : before.assignCell view.root (.array elements) with
-              | none => simp [syncI32ViewsFromHeapFrom, loaded, decoded, writeResolvedPlace, root, assigned] at synced
-              | some next =>
-                  have remaining : syncI32ViewsFromHeapFrom rest next = .ok after := by
-                    simpa only [syncI32ViewsFromHeapFrom, loaded, decoded, writeResolvedPlace, root, assigned] using synced
-                  have restRoots := fun other member => roots other (List.mem_cons_of_mem view member)
-                  have tailArrays := ih restRoots restDifferent remaining
-                  intro other member
-                  rcases List.mem_cons.mp member with same | inRest
-                  · subst other
-                    have kept := syncI32RootViewsFromHeapFrom_preserves_other_cell
-                      restRoots headDifferent remaining
-                    have found := Lanius.Properties.assignCell_finds_assigned assigned
-                    refine ⟨elements, ?_, decodeI32Array_shape decoded⟩
-                    simp only [readCellProjection, kept, found, root, projectedValue]
-                  · exact tailArrays other inRest
+      obtain ⟨_, elements, middle, _, decoded, written, remaining⟩ :=
+        syncI32ViewsFromHeapFrom_cons_invert_local synced
+      have root := roots view (by simp)
+      have restRoots := fun other member => roots other (List.mem_cons_of_mem view member)
+      have tailArrays := ih restRoots restDifferent remaining
+      cases assigned : before.assignCell view.root (.array elements) with
+      | none => simp [writeResolvedPlace, root, assigned] at written
+      | some next =>
+          have same : next = middle := by
+            simpa [writeResolvedPlace, root, assigned] using written
+          have assignedState : before.assignCell view.root (.array elements) = some middle :=
+            assigned.trans (congrArg some same)
+          intro other member
+          rcases List.mem_cons.mp member with same | inRest
+          · subst other
+            have kept := syncI32RootViewsFromHeapFrom_preserves_other_cell
+              restRoots headDifferent remaining
+            have found := Lanius.Properties.assignCell_finds_assigned assignedState
+            refine ⟨elements, ?_, decodeI32Array_shape decoded⟩
+            simp [readCellProjection, kept, found, root, projectedValue]
+          · exact tailArrays other inRest
 
 theorem syncI32ViewsToHeapFrom_cons_invert
     {view : I32ArrayView} {rest : List I32ArrayView} {before after : State}
@@ -339,22 +388,11 @@ theorem syncI32ViewsToHeapFrom_cons_invert
       encodeI32Array elements = .ok bytes ∧
       before.heap.storeBytes view.address bytes = .ok heap ∧
       syncI32ViewsToHeapFrom rest { before with heap } = .ok after := by
-  cases read : readCellProjection before view.root view.projections with
-  | error reason => simp [syncI32ViewsToHeapFrom, read] at synced
-  | ok value =>
-      cases value <;> try simp [syncI32ViewsToHeapFrom, read] at synced
-      rename_i elements
-      by_cases lengthMatches : elements.length = view.length
-      · cases encoded : encodeI32Array elements with
-        | error reason => simp [lengthMatches, encoded] at synced
-        | ok bytes =>
-            cases stored : before.heap.storeBytes view.address bytes with
-            | error reason =>
-                simp [lengthMatches, encoded, stored] at synced
-            | ok heap =>
-                exact ⟨elements, bytes, heap, rfl, lengthMatches, encoded, stored,
-                  by simpa [syncI32ViewsToHeapFrom, read, lengthMatches, encoded, stored] using synced⟩
-      · simp [lengthMatches] at synced
+  simp only [syncI32ViewsToHeapFrom] at synced
+  split at synced <;> simp_all
+  split at synced <;> simp_all
+  split at synced <;> simp_all
+  split at synced <;> simp_all
 
 theorem syncI32RootViewsFromHeapFrom_preserves_structure
     {pending : List I32ArrayView} {before after : State}
@@ -363,26 +401,8 @@ theorem syncI32RootViewsFromHeapFrom_preserves_structure
     (synced : syncI32ViewsFromHeapFrom pending before = .ok after) :
     Lanius.Properties.StateWellFormed after ∧ after.heap = before.heap ∧
       after.i32ArrayViews = before.i32ArrayViews ∧ after.nextCell = before.nextCell := by
-  induction pending generalizing before with
-  | nil => cases synced; exact ⟨initial, rfl, rfl, rfl⟩
-  | cons view rest ih =>
-      have root := roots view (by simp)
-      cases loaded : before.heap.loadBytes view.address (view.length * 4) with
-      | error reason => simp [syncI32ViewsFromHeapFrom, loaded] at synced
-      | ok bytes =>
-          cases decoded : decodeI32Array view.length bytes with
-          | error reason => simp [syncI32ViewsFromHeapFrom, loaded, decoded] at synced
-          | ok elements =>
-              cases assigned : before.assignCell view.root (.array elements) with
-              | none => simp [syncI32ViewsFromHeapFrom, loaded, decoded, writeResolvedPlace, root, assigned] at synced
-              | some next =>
-                  have remaining : syncI32ViewsFromHeapFrom rest next = .ok after := by
-                    simpa only [syncI32ViewsFromHeapFrom, loaded, decoded, writeResolvedPlace, root, assigned] using synced
-                  obtain ⟨valid, heap, registry, nextCell⟩ := ih
-                    (fun other member => roots other (by simp [member]))
-                    (Lanius.Properties.assignCell_preserves_well_formed initial assigned) remaining
-                  rw [Lanius.Properties.assignCell_state assigned] at heap registry nextCell
-                  exact ⟨valid, heap, registry, nextCell⟩
+  rcases syncI32ViewsFromHeapFrom_preserves_basic synced with ⟨_, _, heap, views, nextCell, valid⟩
+  exact ⟨valid initial, heap, views, nextCell⟩
 
 theorem syncI32ViewsToHeapFrom_nextCell
     {pending : List I32ArrayView} {before after : State}
@@ -444,10 +464,10 @@ theorem syncI32ViewsToHeapFrom_preserves_read_outside
   | cons view rest ih =>
       obtain ⟨elements, bytes, heap, _, lengthMatches, encoded, stored, restSynced⟩ :=
         syncI32ViewsToHeapFrom_cons_invert synced
-      have width := Lanius.Properties.encodeI32Array_length encoded
       have away : pointer + offset < view.address + 0 ∨
           view.address + 0 + bytes.length ≤ pointer + offset := by
-        simpa only [Nat.add_zero, width, lengthMatches] using outside view (by simp)
+        simpa only [Nat.add_zero, lengthMatches,
+          Lanius.Properties.encodeI32Array_length encoded] using outside view (by simp)
       have preserved := storeBytesFrom_preserves_read_outside wellFormed stored loaded away
       exact ih (Lanius.Properties.storeBytes_preserves_heap_well_formed
         wellFormed stored) restSynced preserved
@@ -512,41 +532,6 @@ theorem assignCell_preserves_world
     rfl
   · contradiction
 
-theorem writeResolvedPlace_assignCell
-    {before after : State} {place : ResolvedPlace} {value : Value}
-    (written : writeResolvedPlace before place value = .ok after) :
-    ∃ updated, before.assignCell place.root updated = some after := by
-  cases projections : place.projections with
-  | nil =>
-      cases assigned : before.assignCell place.root value with
-      | none => simp [writeResolvedPlace, projections, assigned] at written
-      | some state =>
-          simp only [writeResolvedPlace, projections, assigned, Except.ok.injEq] at written
-          subst after
-          exact ⟨value, assigned⟩
-  | cons projection rest =>
-      cases found : before.cellEntry? place.root with
-      | none => simp [writeResolvedPlace, projections, found] at written
-      | some cell =>
-          obtain ⟨cellId, contents⟩ := cell
-          cases contents with
-          | none => simp [writeResolvedPlace, projections, found] at written
-          | some rootValue =>
-              cases replaced : replaceProjectedValue rootValue place.projections value with
-              | error reason =>
-                  simp [writeResolvedPlace, projections, found, projections ▸ replaced] at written
-              | ok updated =>
-                  cases assigned : before.assignCell place.root updated with
-                  | none =>
-                      simp [writeResolvedPlace, projections, found,
-                        projections ▸ replaced, assigned] at written
-                  | some state =>
-                      have same : state = after := by
-                        simpa [writeResolvedPlace, projections, found,
-                          projections ▸ replaced, assigned] using written
-                      subst after
-                      exact ⟨updated, assigned⟩
-
 theorem writeResolvedPlace_preserves_world
     {before after : State} {place : ResolvedPlace} {value : Value}
     (written : writeResolvedPlace before place value = .ok after) :
@@ -573,27 +558,7 @@ theorem syncI32ViewsFromHeapFrom_preserves_world
     {pending : List I32ArrayView} {before after : State}
     (synced : syncI32ViewsFromHeapFrom pending before = .ok after) :
     after.world = before.world := by
-  induction pending generalizing before with
-  | nil =>
-      simp only [syncI32ViewsFromHeapFrom, Except.ok.injEq] at synced
-      subst after
-      rfl
-  | cons view rest ih =>
-      cases loaded : before.heap.loadBytes view.address (view.length * 4) with
-      | error reason => simp [syncI32ViewsFromHeapFrom, loaded] at synced
-      | ok bytes =>
-          cases decoded : decodeI32Array view.length bytes with
-          | error reason => simp [syncI32ViewsFromHeapFrom, loaded, decoded] at synced
-          | ok elements =>
-              cases written : writeResolvedPlace before
-                  { root := view.root, projections := view.projections, value := none }
-                  (.array elements) with
-              | error reason =>
-                  simp [syncI32ViewsFromHeapFrom, loaded, decoded, written] at synced
-              | ok state =>
-                  have restSynced : syncI32ViewsFromHeapFrom rest state = .ok after := by
-                    simpa [syncI32ViewsFromHeapFrom, loaded, decoded, written] using synced
-                  exact (ih restSynced).trans (writeResolvedPlace_preserves_world written)
+  exact (syncI32ViewsFromHeapFrom_preserves_basic synced).1
 
 theorem syncI32ViewsFromHeap_preserves_world
     {before after : State} (synced : syncI32ViewsFromHeap before = .ok after) :

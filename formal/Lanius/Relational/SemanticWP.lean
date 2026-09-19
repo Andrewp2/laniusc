@@ -76,9 +76,7 @@ theorem skip
     {world : machine.World} {environment : Env arity}
     (next : post .next world environment) :
     WP machine .skip post world environment := by
-  intro completion afterWorld afterEnvironment evaluated
-  cases evaluated
-  exact next
+  exact fun _ _ _ evaluated => by cases evaluated; exact next
 
 theorem sequence
     {machine : Semantics.Machine signature actions}
@@ -118,10 +116,9 @@ theorem letValue
           initializedWorld (environment.push value))
       world environment) :
     WP machine (.letValue type initializerTerm body) post world environment := by
-  intro completion afterWorld afterEnvironment evaluated
-  cases evaluated with
-  | letValue initializerResult bodyResult =>
-      exact hinitializer _ _ initializerResult _ _ _ bodyResult
+  exact fun _ _ _ evaluated => by
+    cases evaluated
+    exact hinitializer _ _ ‹_› _ _ _ ‹_›
 
 theorem setLocal
     {machine : Semantics.Machine signature actions}
@@ -134,9 +131,7 @@ theorem setLocal
         (FunctionalView.Stateful.Env.set environment target result))
       world environment) :
     WP machine (.setLocal target valueTerm) post world environment := by
-  intro completion afterWorld afterEnvironment evaluated
-  cases evaluated with
-  | setLocal valueResult => exact hvalue _ _ valueResult
+  exact fun _ _ _ evaluated => by cases evaluated; exact hvalue _ _ ‹_›
 
 theorem updateLocal
     {machine : Semantics.Machine signature actions}
@@ -151,10 +146,9 @@ theorem updateLocal
           (FunctionalView.Stateful.Env.set environment target result))
       world environment) :
     WP machine (.updateLocal operation target valueTerm) post world environment := by
-  intro completion afterWorld afterEnvironment evaluated
-  cases evaluated with
-  | updateLocal valueResult updateResult =>
-      exact hvalue _ _ valueResult _ updateResult
+  exact fun _ _ _ evaluated => by
+    cases evaluated
+    exact hvalue _ _ ‹_› _ ‹_›
 
 theorem action
     {machine : Semantics.Machine signature actions}
@@ -165,9 +159,7 @@ theorem action
       machine.action world environment operation afterWorld →
       post .next afterWorld environment) :
     WP machine (.action operation) post world environment := by
-  intro completion afterWorld afterEnvironment evaluated
-  cases evaluated with
-  | action actionResult => exact effect _ actionResult
+  exact fun _ _ _ evaluated => by cases evaluated; exact effect _ ‹_›
 
 theorem ifThenElse
     {machine : Semantics.Machine signature actions}
@@ -222,15 +214,6 @@ theorem whileLoop
       (FunctionalView.Stateful.Command.whileLoop condition body) = command
       at evaluated
   induction evaluated with
-  | skip => cases commandEq
-  | sequenceNext _ _ _ _ => cases commandEq
-  | sequenceStop _ _ _ => cases commandEq
-  | letValue _ _ _ => cases commandEq
-  | setLocal _ => cases commandEq
-  | updateLocal _ _ => cases commandEq
-  | action _ => cases commandEq
-  | ifTrue _ _ _ => cases commandEq
-  | ifFalse _ _ _ => cases commandEq
   | whileFalse conditionResult =>
       cases commandEq
       exact conditionFalse _ _ _ initial conditionResult
@@ -250,10 +233,7 @@ theorem whileLoop
   | whileReturn conditionResult bodyResult bodyIH =>
       cases commandEq
       exact conditionTrue _ _ _ initial conditionResult _ _ _ bodyResult
-  | returnNone => cases commandEq
-  | returnSome _ => cases commandEq
-  | breakLoop => cases commandEq
-  | continueLoop => cases commandEq
+  | _ => cases commandEq
 
 theorem returnSome
     {machine : Semantics.Machine signature actions}
@@ -265,9 +245,7 @@ theorem returnSome
         post (.returned (some result)) afterWorld environment)
       world environment) :
     WP machine (.returnValue (some valueTerm)) post world environment := by
-  intro completion afterWorld afterEnvironment evaluated
-  cases evaluated with
-  | returnSome valueResult => exact hvalue _ _ valueResult
+  exact fun _ _ _ evaluated => by cases evaluated; exact hvalue _ _ ‹_›
 
 theorem returnNone
     {machine : Semantics.Machine signature actions}
@@ -275,9 +253,7 @@ theorem returnNone
     {world : machine.World} {environment : Env arity}
     (returned : post (.returned none) world environment) :
     WP machine (.returnValue none) post world environment := by
-  intro completion afterWorld afterEnvironment evaluated
-  cases evaluated
-  exact returned
+  exact fun _ _ _ evaluated => by cases evaluated; exact returned
 
 theorem breakLoop
     {machine : Semantics.Machine signature actions}
@@ -285,9 +261,7 @@ theorem breakLoop
     {world : machine.World} {environment : Env arity}
     (stopped : post .breakLoop world environment) :
     WP machine .breakLoop post world environment := by
-  intro completion afterWorld afterEnvironment evaluated
-  cases evaluated
-  exact stopped
+  exact fun _ _ _ evaluated => by cases evaluated; exact stopped
 
 theorem continueLoop
     {machine : Semantics.Machine signature actions}
@@ -295,9 +269,7 @@ theorem continueLoop
     {world : machine.World} {environment : Env arity}
     (stopped : post .continueLoop world environment) :
     WP machine .continueLoop post world environment := by
-  intro completion afterWorld afterEnvironment evaluated
-  cases evaluated
-  exact stopped
+  exact fun _ _ _ evaluated => by cases evaluated; exact stopped
 
 namespace CursorScan
 

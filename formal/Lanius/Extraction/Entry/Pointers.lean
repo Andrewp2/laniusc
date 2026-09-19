@@ -73,7 +73,7 @@ theorem Pointer.evaluates (pointer : Pointer) (program : Program) (registry : Al
   cases pointer with
   | localValue binding =>
       obtain ⟨address, read, nonnull⟩ := ready
-      exact ⟨address, before, ⟨1, evalLocal_of_local 0 program before binding _ read⟩,
+      exact ⟨address, before, evaluatesLocal read,
         nonnull, registry, Frame.refl before, read⟩
   | slice binding =>
       obtain ⟨view, member, read⟩ := ready

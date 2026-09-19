@@ -315,35 +315,11 @@ theorem findStateIn?_none_iff :
   | cons head rest inductionHypothesis =>
       cases stateFound : workspace.state? head with
       | none =>
-          simp only [findStateIn?, stateFound, inductionHypothesis]
-          constructor
-          · intro noTail ⟨stateId, state, listed, exactState, sameKey⟩
-            rcases List.mem_cons.mp listed with equal | tailListed
-            · subst stateId
-              simp [stateFound] at exactState
-            · exact noTail ⟨stateId, state, tailListed, exactState, sameKey⟩
-          · intro noMatch ⟨stateId, state, listed, exactState, sameKey⟩
-            exact noMatch ⟨stateId, state, List.mem_cons_of_mem head listed,
-              exactState, sameKey⟩
+          simp [findStateIn?, stateFound, inductionHypothesis]
       | some state =>
           by_cases sameKey : state.key = key
           · simp [findStateIn?, stateFound, sameKey]
-          · simp only [findStateIn?, stateFound, sameKey, if_false,
-              inductionHypothesis]
-            constructor
-            · intro noTail ⟨stateId, foundState, listed, exactState,
-                  foundKey⟩
-              rcases List.mem_cons.mp listed with equal | tailListed
-              · subst stateId
-                rw [stateFound] at exactState
-                injection exactState with stateEqual
-                exact sameKey (stateEqual ▸ foundKey)
-              · exact noTail ⟨stateId, foundState, tailListed,
-                  exactState, foundKey⟩
-            · intro noMatch ⟨stateId, foundState, listed, exactState,
-                  foundKey⟩
-              exact noMatch ⟨stateId, foundState,
-                List.mem_cons_of_mem head listed, exactState, foundKey⟩
+          · simp [findStateIn?, stateFound, sameKey, inductionHypothesis]
 
 theorem LogicalWorkspace.findStateId?_some_sound
     {workspace : LogicalWorkspace} {position : Nat} {key : StateKey}
@@ -592,6 +568,32 @@ theorem insertState_preserves_old
   simp only [insertState, LogicalWorkspace.state?]
   exact List.getElem?_append_left stateIdBound
 
+theorem getElem?_some_implies_bound
+    {values : List α} {index : Nat} {value : α}
+    (found : values[index]? = some value) : index < values.length := by
+  exact (List.getElem?_eq_some_iff.mp found).1
+
+theorem insertState_found_old_or_new
+    {workspace : LogicalWorkspace} {position : Nat} {seed : StateSeed}
+    {stateId : Nat} {state : EarleyState}
+    (found :
+      (insertState workspace position seed).state? stateId = some state) :
+    (∃ oldState, workspace.state? stateId = some oldState ∧
+        state = oldState) ∨
+      (stateId = workspace.states.length ∧
+        state = seed.atPosition position) := by
+  by_cases old : stateId < workspace.states.length
+  · left
+    exact ⟨state, (insertState_preserves_old workspace position seed old) ▸ found,
+      rfl⟩
+  · right
+    have bound := getElem?_some_implies_bound found
+    rw [insertState_count] at bound
+    have equal : stateId = workspace.states.length := by omega
+    subst stateId
+    rw [insertState_finds_new] at found
+    exact ⟨rfl, (Option.some.inj found).symm⟩
+
 /-- Inserting one semantically justified seed preserves soundness of every
     workspace item. -/
 theorem insertState_preserves_languageSound
@@ -600,40 +602,20 @@ theorem insertState_preserves_languageSound
     WorkspaceLanguageSound grammar tokens
       (insertState workspace position seed) := by
   intro stateId state found
-  by_cases old : stateId < workspace.states.length
-  · have oldFound : workspace.state? stateId = some state := by
-      rw [← insertState_preserves_old workspace position seed old]
-      exact found
-    exact sound stateId state oldFound
-  · have bound : stateId < (insertState workspace position seed).states.length :=
-      List.getElem?_eq_some_iff.mp found |>.1
-    rw [insertState_count] at bound
-    have equal : stateId = workspace.states.length := by omega
-    subst stateId
-    rw [insertState_finds_new] at found
-    injection found with stateEqual
-    subst state
-    exact seedSound
+  rcases insertState_found_old_or_new found with
+    ⟨oldState, oldFound, stateEqual⟩ | ⟨idEqual, stateEqual⟩
+  · exact stateEqual ▸ sound stateId oldState oldFound
+  · exact stateEqual ▸ seedSound
 
 theorem insertState_preserves_withinGrammar
     (within : WorkspaceWithinGrammar grammar workspace)
     (seedWithin : StateKeyWithinGrammar grammar seed.key) :
     WorkspaceWithinGrammar grammar (insertState workspace position seed) := by
   intro stateId state found
-  by_cases old : stateId < workspace.states.length
-  · rw [insertState_preserves_old workspace position seed old] at found
-    exact within stateId state found
-  · have bound : stateId < (insertState workspace position seed).states.length := by
-      unfold LogicalWorkspace.state? at found
-      exact (List.getElem?_eq_some_iff.mp found).1
-    rw [insertState_count] at bound
-    have equal : stateId = workspace.states.length := by omega
-    subst stateId
-    rw [insertState_finds_new] at found
-    injection found with stateEqual
-    subst state
-    simpa [EarleyState.key, StateSeed.key, StateSeed.atPosition] using
-      seedWithin
+  rcases insertState_found_old_or_new found with
+    ⟨oldState, oldFound, stateEqual⟩ | ⟨idEqual, stateEqual⟩
+  · exact stateEqual ▸ within stateId oldState oldFound
+  · simpa [stateEqual, EarleyState.key, StateSeed.key, StateSeed.atPosition] using seedWithin
 
 theorem insertState_lists_new
     (workspace : LogicalWorkspace) (position : Nat) (seed : StateSeed) :
@@ -641,10 +623,17 @@ theorem insertState_lists_new
       (insertState workspace position seed).chart position := by
   simp [insertState, appendChart]
 
-theorem getElem?_some_implies_bound
-    {values : List α} {index : Nat} {value : α}
-    (found : values[index]? = some value) : index < values.length := by
-  exact (List.getElem?_eq_some_iff.mp found).1
+private theorem insertState_preserves_old_chart_item
+    (sound : ChartSound workspace)
+    {queried stateId : Nat}
+    (listed : stateId ∈ workspace.chart queried) :
+    ∃ state,
+      (insertState workspace position seed).state? stateId = some state ∧
+      state.position = queried := by
+  obtain ⟨state, found, statePosition⟩ := sound queried stateId listed
+  have stateIdBound := getElem?_some_implies_bound found
+  exact ⟨state, (insertState_preserves_old workspace position seed stateIdBound).trans
+    found, statePosition⟩
 
 theorem insertState_preserves_ChartSound
     (sound : ChartSound workspace) :
@@ -657,10 +646,7 @@ theorem insertState_preserves_ChartSound
       at listed
     rw [appendChart_same] at listed
     rcases List.mem_append.mp listed with old | new
-    · obtain ⟨state, found, statePosition⟩ := sound position stateId old
-      have stateIdBound := getElem?_some_implies_bound found
-      exact ⟨state, insertState_preserves_old workspace position seed
-        stateIdBound |>.trans found, statePosition⟩
+    · exact insertState_preserves_old_chart_item sound old
     · simp only [List.mem_singleton] at new
       subst stateId
       exact ⟨seed.atPosition position,
@@ -669,40 +655,27 @@ theorem insertState_preserves_ChartSound
       appendChart workspace.chart position workspace.states.length queried
       at listed
     rw [appendChart_other workspace.chart samePosition] at listed
-    obtain ⟨state, found, statePosition⟩ := sound queried stateId listed
-    have stateIdBound := getElem?_some_implies_bound found
-    exact ⟨state, insertState_preserves_old workspace position seed
-      stateIdBound |>.trans found, statePosition⟩
+    exact insertState_preserves_old_chart_item sound listed
 
 theorem insertState_preserves_EveryStateCharted
     (charted : EveryStateCharted workspace) :
     EveryStateCharted (insertState workspace position seed) := by
   intro stateId state found
-  by_cases old : stateId < workspace.states.length
-  · have oldFound : workspace.state? stateId = some state := by
-      rw [← insertState_preserves_old workspace position seed old]
-      exact found
-    have listed := charted stateId state oldFound
-    by_cases samePosition : state.position = position
+  rcases insertState_found_old_or_new found with
+    ⟨oldState, oldFound, stateEqual⟩ | ⟨idEqual, stateEqual⟩
+  · subst state
+    have listed := charted stateId oldState oldFound
+    by_cases samePosition : oldState.position = position
     · subst position
-      change stateId ∈ appendChart workspace.chart state.position
-        workspace.states.length state.position
+      change stateId ∈ appendChart workspace.chart oldState.position
+        workspace.states.length oldState.position
       rw [appendChart_same]
       exact List.mem_append_left _ listed
     · change stateId ∈ appendChart workspace.chart position
-        workspace.states.length state.position
+        workspace.states.length oldState.position
       rw [appendChart_other workspace.chart samePosition]
       exact listed
-  · have newId : stateId = workspace.states.length := by
-      have upper : stateId < workspace.states.length + 1 := by
-        rw [← insertState_count workspace position seed]
-        exact getElem?_some_implies_bound found
-      omega
-    subst stateId
-    rw [insertState_finds_new] at found
-    injection found with stateEqual
-    subst state
-    exact insertState_lists_new workspace position seed
+  · simpa [idEqual, stateEqual, StateSeed.atPosition] using insertState_lists_new workspace position seed
 
 private theorem insertState_old_found_of_chart
     (sound : ChartSound workspace)
@@ -804,14 +777,26 @@ theorem insertState_preserves_ChartIdsUnique
     rw [appendChart_other workspace.chart samePosition]
     exact uniqueIds queried
 
+theorem Append.preserves
+    (appended : Append capacity position seed before outcome after)
+    {motive : LogicalWorkspace → Prop}
+    (beforeProperty : motive before)
+    (inserted : (¬ before.containsKey position seed.key) →
+      motive (insertState before position seed)) :
+    motive after := by
+  cases appended with
+  | existing => exact beforeProperty
+  | full => exact beforeProperty
+  | inserted absent _ => exact inserted absent
+
 theorem Append.preserves_existing_states
     (appended : Append capacity position seed before outcome after)
     {stateId : Nat} (stateIdBound : stateId < before.states.length) :
     after.state? stateId = before.state? stateId := by
-  cases appended with
-  | existing => rfl
-  | full => rfl
-  | inserted => exact insertState_preserves_old before position seed stateIdBound
+  exact appended.preserves
+    (motive := fun workspace =>
+      workspace.state? stateId = before.state? stateId) rfl
+    (fun _ => insertState_preserves_old before position seed stateIdBound)
 
 theorem Append.state_count
     (appended : Append capacity position seed before outcome after) :
@@ -822,18 +807,19 @@ theorem Append.count_change
     (appended : Append capacity position seed before outcome after) :
     after.states.length = before.states.length ∨
       after.states.length = before.states.length + 1 := by
-  cases appended with
-  | existing => exact .inl rfl
-  | full => exact .inl rfl
-  | inserted => exact .inr (insertState_count before position seed)
+  exact appended.preserves
+    (motive := fun workspace =>
+      workspace.states.length = before.states.length ∨
+        workspace.states.length = before.states.length + 1)
+    (Or.inl rfl)
+    (fun _ => Or.inr (insertState_count before position seed))
 
 theorem Append.preserves_chart_sound
     (appended : Append capacity position seed before outcome after)
     (sound : ChartSound before) : ChartSound after := by
-  cases appended with
-  | existing => exact sound
-  | full => exact sound
-  | inserted => exact insertState_preserves_ChartSound sound
+  exact appended.preserves
+    (beforeProperty := sound)
+    (inserted := fun _ => insertState_preserves_ChartSound sound)
 
 /-- The abstract append operation preserves declarative language soundness
     when the proposed new item is itself justified. Existing-key and
@@ -844,47 +830,41 @@ theorem Append.preserves_languageSound
     (sound : WorkspaceLanguageSound grammar tokens before)
     (seedSound : EarleyStateSound grammar tokens (seed.atPosition position)) :
     WorkspaceLanguageSound grammar tokens after := by
-  cases appended with
-  | existing => exact sound
-  | full => exact sound
-  | inserted => exact insertState_preserves_languageSound sound seedSound
+  exact appended.preserves
+    (beforeProperty := sound)
+    (inserted := fun _ => insertState_preserves_languageSound sound seedSound)
 
 theorem Append.preserves_every_state_charted
     (appended : Append capacity position seed before outcome after)
     (charted : EveryStateCharted before) : EveryStateCharted after := by
-  cases appended with
-  | existing => exact charted
-  | full => exact charted
-  | inserted => exact insertState_preserves_EveryStateCharted charted
+  exact appended.preserves
+    (beforeProperty := charted)
+    (inserted := fun _ => insertState_preserves_EveryStateCharted charted)
 
 theorem Append.preserves_unique_keys
     (appended : Append capacity position seed before outcome after)
     (sound : ChartSound before) (unique : UniqueKeys before) :
     UniqueKeys after := by
-  cases appended with
-  | existing => exact unique
-  | full => exact unique
-  | inserted absent _ =>
-      exact insertState_preserves_UniqueKeys sound unique absent
+  exact appended.preserves
+    (beforeProperty := unique)
+    (inserted := fun absent => insertState_preserves_UniqueKeys sound unique absent)
 
 theorem Append.preserves_chart_ids_unique
     (appended : Append capacity position seed before outcome after)
     (sound : ChartSound before) (uniqueIds : ChartIdsUnique before) :
     ChartIdsUnique after := by
-  cases appended with
-  | existing => exact uniqueIds
-  | full => exact uniqueIds
-  | inserted => exact insertState_preserves_ChartIdsUnique sound uniqueIds
+  exact appended.preserves
+    (beforeProperty := uniqueIds)
+    (inserted := fun _ => insertState_preserves_ChartIdsUnique sound uniqueIds)
 
 theorem Append.preserves_withinGrammar
     (appended : Append capacity position seed before outcome after)
     (within : WorkspaceWithinGrammar grammar before)
     (seedWithin : StateKeyWithinGrammar grammar seed.key) :
     WorkspaceWithinGrammar grammar after := by
-  cases appended with
-  | existing => exact within
-  | full => exact within
-  | inserted => exact insertState_preserves_withinGrammar within seedWithin
+  exact appended.preserves
+    (beforeProperty := within)
+    (inserted := fun _ => insertState_preserves_withinGrammar within seedWithin)
 
 theorem Append.preserves_well_formed
     (appended : Append capacity position seed before outcome after)

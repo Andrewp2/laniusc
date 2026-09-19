@@ -529,8 +529,7 @@ theorem verifiedParserInitialLoopPersistentBindings_core_ids :
         verifiedParserInitialLoopSharedFrameIds := by
   simp only [verifiedParserInitialLoopPersistentBindings,
     verifiedParserRecognizerParameterIds, verifiedParserInitialLoopSharedFrameIds,
-    LocalAccessFrame.ids, LocalBindingFrame.union, LocalBindingFrame.coreIds,
-    List.map_append]
+    LocalAccessFrame.ids, LocalBindingFrame.coreIds_union]
 
 @[simp] theorem mem_verifiedParserInitialLoopSharedFrameIds_iff
     (id : Nat) :
@@ -645,19 +644,19 @@ theorem parserRecognizeScanTerminalCall_implements_model
       } := by
   have grammarResult : Evaluates verifiedParserCore state (.local 0)
       (parserGrammarValue words grammarCell) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 0 _ grammarLocal⟩
+    Lanius.Semantics.evaluatesLocal grammarLocal
   have tokensResult : Evaluates verifiedParserCore state (.local 2)
       (parserTokensValue tokens tokensCell) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 2 _ tokensLocal⟩
+    Lanius.Semantics.evaluatesLocal tokensLocal
   have countResult : Evaluates verifiedParserCore state (.local 3)
       (.signed .i32 (Int.ofNat tokens.length)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 3 _ tokenCountLocal⟩
+    Lanius.Semantics.evaluatesLocal tokenCountLocal
   have positionResult : Evaluates verifiedParserCore state (.local 23)
       (.signed .i32 (Int.ofNat position)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 23 _ positionLocal⟩
+    Lanius.Semantics.evaluatesLocal positionLocal
   have kindResult : Evaluates verifiedParserCore state (.local 29)
       (.signed .i32 (Int.ofNat semanticKind)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 29 _ semanticKindLocal⟩
+    Lanius.Semantics.evaluatesLocal semanticKindLocal
   have arguments : ArgumentsEvaluateTo verifiedParserCore state
       parserRecognizeScanTerminalArguments [
         parserGrammarValue words grammarCell,
@@ -700,19 +699,19 @@ theorem parserRecognizeScanTerminalCall_implements_prefix_model
   have physicalLength : tokens.length + unused.length = capacity := by simpa using length
   have grammarResult : Evaluates verifiedParserCore state (.local 0)
       (parserGrammarValue words grammarCell) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 0 _ grammarLocal⟩
+    Lanius.Semantics.evaluatesLocal grammarLocal
   have tokensResult : Evaluates verifiedParserCore state (.local 2)
       ((.slice parserI32Type tokensCell [] 0 (tokens.length + unused.length))) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 2 _ (by simpa only [physicalLength, parserI32Type] using tokensLocal)⟩
+    Lanius.Semantics.evaluatesLocal (by simpa only [physicalLength, parserI32Type] using tokensLocal)
   have countResult : Evaluates verifiedParserCore state (.local 3)
       (.signed .i32 (Int.ofNat tokens.length)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 3 _ tokenCountLocal⟩
+    Lanius.Semantics.evaluatesLocal tokenCountLocal
   have positionResult : Evaluates verifiedParserCore state (.local 23)
       (.signed .i32 (Int.ofNat position)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 23 _ positionLocal⟩
+    Lanius.Semantics.evaluatesLocal positionLocal
   have kindResult : Evaluates verifiedParserCore state (.local 29)
       (.signed .i32 (Int.ofNat semanticKind)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state 29 _ semanticKindLocal⟩
+    Lanius.Semantics.evaluatesLocal semanticKindLocal
   have arguments : ArgumentsEvaluateTo verifiedParserCore state
       parserRecognizeScanTerminalArguments [
         parserGrammarValue words grammarCell,
@@ -1601,22 +1600,18 @@ noncomputable def RecognizerAppendFrame.evaluate_seeded_append
     afterSeedWellFormed
   have workspaceResult : Evaluates verifiedParserCore runtime (.local 4)
       (workspaceValue workspaceValues workspaceCell) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 4 _
-      frame.recognizer.workspaceLocal⟩
+    Lanius.Semantics.evaluatesLocal frame.recognizer.workspaceLocal
   have baseResult : Evaluates verifiedParserCore runtime (.local 8)
       (.signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)))
       runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 8 _
-      frame.stateBaseLocal⟩
+    Lanius.Semantics.evaluatesLocal frame.stateBaseLocal
   have capacityResult : Evaluates verifiedParserCore runtime (.local 9)
       (.signed .i32 (Int.ofNat workspaceLayout.capacity)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 9 _
-      frame.stateCapacityLocal⟩
+    Lanius.Semantics.evaluatesLocal frame.stateCapacityLocal
   have stateCountResult : Evaluates verifiedParserCore afterSeed (.local 18)
       (.signed .i32 (Int.ofNat workspace.states.length)) afterSeed :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore afterSeed 18 _
-      (seedEffect.empty_preserves_local frame.recognizer.wellFormed
-        frame.stateCountLocal)⟩
+    Lanius.Semantics.evaluatesLocal (seedEffect.empty_preserves_local frame.recognizer.wellFormed
+        frame.stateCountLocal)
   have argumentsResult : ArgumentsEvaluateTo verifiedParserCore runtime
       (recognizerAppendArguments positionExpr seedExpr) [
         workspaceValue workspaceValues workspaceCell,
@@ -1660,6 +1655,43 @@ noncomputable def RecognizerAppendFrame.evaluate_seeded_append
     stateCountOwned := ownedAfterAppend
     invariant := appended.invariant
   }
+
+/- Compose the extracted `state_seed` contract with the shared append frame.
+   Every recognizer append site supplies only its artifact-derived argument
+   evaluation and seed expression; the call-local store restoration and
+   state-count ownership transfer are common semantic bookkeeping. -/
+noncomputable def RecognizerAppendFrame.evaluate_seeded_append_contract
+    (frame : RecognizerAppendFrame grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell runtime position)
+    (positionExpr : Expr) (seedArguments : List Expr)
+    (seed : StateSeed)
+    (seedDerivation : EarleySeedDerivation grammar tokens workspace position seed)
+    (seedOriginBound : seed.origin ≤
+      finalPosition workspaceLayout.tokenCount)
+    (positionResult : Evaluates verifiedParserCore runtime positionExpr
+      (.signed .i32 (Int.ofNat position)) runtime)
+    (seedArgumentsResult : ArgumentsEvaluateTo verifiedParserCore runtime
+      seedArguments (parserStateSeedArgumentsValues seed) runtime) :
+    RecognizerSeededAppendResult grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell runtime position positionExpr
+      (.call extractedParserStateSeedFunction.id seedArguments) seed
+      frame := by
+  let afterSeed := restoreLocals runtime
+    (parserStateSeedCallee runtime seed)
+  have seedContract := extractedParserStateSeedCall_contract runtime runtime
+    seedArguments seed frame.recognizer.wellFormed seedArgumentsResult
+  have seedEvaluation : Evaluates verifiedParserCore runtime
+      (.call extractedParserStateSeedFunction.id seedArguments)
+      (stateSeedValue seed) afterSeed := by
+    simpa [afterSeed] using seedContract.1
+  have seedEffect : ModifiesOnly CellSet.empty runtime afterSeed := by
+    simpa [afterSeed] using seedContract.2.1
+  exact frame.evaluate_seeded_append positionExpr
+    (.call extractedParserStateSeedFunction.id seedArguments) seed afterSeed
+    seedDerivation seedOriginBound positionResult seedEvaluation seedEffect
+    (by simpa [afterSeed] using seedContract.2.2)
 
 /-- Close a no-tail append-result scope on its successful path. This is the
     common operation used by terminal, nullable, and parent-completion sites;
@@ -1761,6 +1793,87 @@ theorem RecognizerSeededAppendResult.execute_ok
     by simpa [logical] using afterInvariant,
     by simpa [logical] using afterCountOwned⟩
 
+/- A full append returns before its continuation, so the continuation's
+   particular tail is irrelevant to the frame proof. -/
+theorem RecognizerSeededAppendResult.execute_full_then
+    (appended : RecognizerSeededAppendResult grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell runtime position positionExpr seedExpr seed
+      frame)
+    (resultLocal : VarId) (errorPosition : Expr) (tail : Stmt)
+    (errorValue : Int)
+    (errorResult : Evaluates verifiedParserCore
+      (appended.after.bindLocal resultLocal
+        (appendOutcomeValue
+          (appendLogical workspaceLayout.capacity position seed workspace).1))
+      errorPosition (.signed .i32 errorValue)
+      (appended.after.bindLocal resultLocal
+        (appendOutcomeValue
+          (appendLogical workspaceLayout.capacity position seed workspace).1)))
+    (statusFull : (appendLogical workspaceLayout.capacity position seed
+      workspace).1.status = .full) :
+    ∃ after,
+      Executes verifiedParserCore runtime
+        (.letLocal resultLocal (.structure 2)
+          (recognizerAppendCall positionExpr seedExpr)
+          (parserAppendOutcomeContinuationThen resultLocal 18 errorPosition tail))
+        (.returned (some (parseResultValue 2
+          (Int.ofNat
+            (appendLogical workspaceLayout.capacity position seed
+              workspace).1.stateCount)
+          (-1) errorValue))) after ∧
+      ModifiesOnly (CellSet.singleton workspaceCell) runtime after ∧
+      StateWellFormed after ∧
+      RecognizerInvariant grammarLayout grammar words tokens workspaceLayout
+        workspace workspaceValues grammarCell tokensCell workspaceCell after := by
+  let logical := appendLogical workspaceLayout.capacity position seed workspace
+  let outcome := logical.1
+  let bound := appended.after.bindLocal resultLocal (appendOutcomeValue outcome)
+  have boundWellFormed : StateWellFormed bound :=
+    bindLocal_preserves_well_formed appended.after resultLocal
+      (appendOutcomeValue outcome) appended.invariant.wellFormed
+  have resultFound : bound.local? resultLocal =
+      some (appendOutcomeValue outcome) :=
+    bindLocal_finds_local appended.after resultLocal
+      (appendOutcomeValue outcome) appended.invariant.wellFormed
+  have outcomeStatus : outcome.status = .full := by
+    simpa [outcome, logical] using statusFull
+  let controlled := executeAppendOutcomeFullThen bound resultLocal 18
+    errorPosition tail outcome errorValue boundWellFormed resultFound
+    errorResult outcomeStatus
+  let after := restoreLocals appended.after controlled.after
+  have execution : Executes verifiedParserCore runtime
+      (.letLocal resultLocal (.structure 2)
+        (recognizerAppendCall positionExpr seedExpr)
+        (parserAppendOutcomeContinuationThen resultLocal 18 errorPosition tail))
+      (.returned (some (parseResultValue 2
+        (Int.ofNat outcome.stateCount) (-1) errorValue))) after := by
+    simpa [bound, after] using
+      (executesLetLocal (type := .structure 2) appended.evaluation
+        controlled.execution)
+  have entered : StoreEffect CellSet.empty appended.after bound := by
+    simpa [bound] using
+      bindLocal_effect appended.after resultLocal (appendOutcomeValue outcome)
+  have scopedStore : StoreEffect CellSet.empty appended.after controlled.after :=
+    entered.trans_same controlled.effect.toStoreEffect
+  have closed : ModifiesOnly CellSet.empty appended.after after := by
+    simpa [after] using scopedStore.restoreLocals
+  have effect : ModifiesOnly (CellSet.singleton workspaceCell) runtime after :=
+    appended.effect.trans_same (closed.weaken CellSet.empty_subset)
+  have afterWellFormed : StateWellFormed after :=
+    scopedStore.restoreLocals_wellFormed appended.invariant.wellFormed
+      controlled.wellFormed
+  have workspaceEq : logical.2 = workspace :=
+    appendLogical_workspace_eq_of_full statusFull
+  have valuesEq : appendResultValues workspaceLayout workspace position seed
+      workspaceValues = workspaceValues :=
+    appendResultValues_eq_of_full statusFull
+  have afterInvariant :=
+    appended.invariant.after_empty_effect closed afterWellFormed
+  rw [workspaceEq, valuesEq] at afterInvariant
+  exact ⟨after, by simpa [logical, outcome] using execution, effect,
+    afterWellFormed, afterInvariant⟩
+
 /-- Close a no-tail append-result scope on its capacity-full path. The error
     position is read from an existing local, and return propagation skips the
     successful state-count assignment. -/
@@ -1796,56 +1909,16 @@ theorem RecognizerSeededAppendResult.execute_full_at_local
   have boundWellFormed : StateWellFormed bound :=
     bindLocal_preserves_well_formed appended.after resultLocal
       (appendOutcomeValue outcome) appended.invariant.wellFormed
-  have resultFound : bound.local? resultLocal =
-      some (appendOutcomeValue outcome) :=
-    bindLocal_finds_local appended.after resultLocal
-      (appendOutcomeValue outcome) appended.invariant.wellFormed
   have errorBound : bound.local? errorLocal =
       some (.signed .i32 (Int.ofNat errorValue)) :=
     (bindLocal_preserves_other_local appended.invariant.wellFormed
       resultNotError).trans errorAfterAppend
   have errorResult : Evaluates verifiedParserCore bound (.local errorLocal)
       (.signed .i32 (Int.ofNat errorValue)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound errorLocal _ errorBound⟩
-  have outcomeStatus : outcome.status = .full := by
-    simpa [outcome, logical] using statusFull
-  let controlled := executeAppendOutcomeFull bound resultLocal 18
-    (.local errorLocal) outcome (Int.ofNat errorValue) boundWellFormed
-    resultFound errorResult outcomeStatus
-  let after := restoreLocals appended.after controlled.after
-  have execution : Executes verifiedParserCore runtime
-      (.letLocal resultLocal (.structure 2)
-        (recognizerAppendCall positionExpr seedExpr)
-        (parserAppendOutcomeContinuation resultLocal 18
-          (.local errorLocal)))
-      (.returned (some (parseResultValue 2
-        (Int.ofNat outcome.stateCount) (-1) (Int.ofNat errorValue))))
-      after := by
-    simpa [bound, after] using
-      (executesLetLocal (type := .structure 2) appended.evaluation
-        controlled.execution)
-  have entered : StoreEffect CellSet.empty appended.after bound := by
-    simpa [bound] using
-      bindLocal_effect appended.after resultLocal (appendOutcomeValue outcome)
-  have scopedStore : StoreEffect CellSet.empty appended.after
-      controlled.after := entered.trans_same controlled.effect.toStoreEffect
-  have closed : ModifiesOnly CellSet.empty appended.after after := by
-    simpa [after] using scopedStore.restoreLocals
-  have effect : ModifiesOnly (CellSet.singleton workspaceCell) runtime after :=
-    appended.effect.trans_same (closed.weaken CellSet.empty_subset)
-  have afterWellFormed : StateWellFormed after :=
-    scopedStore.restoreLocals_wellFormed appended.invariant.wellFormed
-      controlled.wellFormed
-  have workspaceEq : logical.2 = workspace :=
-    appendLogical_workspace_eq_of_full statusFull
-  have valuesEq : appendResultValues workspaceLayout workspace position seed
-      workspaceValues = workspaceValues :=
-    appendResultValues_eq_of_full statusFull
-  have afterInvariant :=
-    appended.invariant.after_empty_effect closed afterWellFormed
-  rw [workspaceEq, valuesEq] at afterInvariant
-  exact ⟨after, by simpa [logical, outcome] using execution, effect,
-    afterWellFormed, afterInvariant⟩
+    Lanius.Semantics.evaluatesLocal errorBound
+  simpa [parserAppendOutcomeContinuation, logical, outcome, bound] using
+    (appended.execute_full_then resultLocal (.local errorLocal) .skip
+      (Int.ofNat errorValue) errorResult statusFull)
 
 /-- Successful append followed by an owned `i32` loop-index increment. This
     is shared by initial grammar seeding and nonterminal prediction. -/
@@ -2081,9 +2154,9 @@ private theorem evaluatesNatSuccAtLocal
       (.signed .i32 (Int.ofNat (value + 1))) state := by
   have left : Evaluates verifiedParserCore state (.local id)
       (.signed .i32 (Int.ofNat value)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state id _ localValue⟩
+    Lanius.Semantics.evaluatesLocal localValue
   have right : Evaluates verifiedParserCore state
-      (.value (.signed .i32 1)) (.signed .i32 1) state := ⟨1, rfl⟩
+      (.value (.signed .i32 1)) (.signed .i32 1) state := Lanius.Semantics.evaluatesValue
   have wrapped := wrapSigned_i32_ofNat verifiedParserCore.target
     (value + 1) bound
   have cast : Int.ofNat value + 1 = Int.ofNat (value + 1) := by simp
@@ -2101,9 +2174,9 @@ private theorem evaluatesNatHalfAtLocal
       (.signed .i32 (Int.ofNat (value / 2))) state := by
   have left : Evaluates verifiedParserCore state (.local id)
       (.signed .i32 (Int.ofNat value)) state :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore state id _ localValue⟩
+    Lanius.Semantics.evaluatesLocal localValue
   have right : Evaluates verifiedParserCore state
-      (.value (.signed .i32 2)) (.signed .i32 2) state := ⟨1, rfl⟩
+      (.value (.signed .i32 2)) (.signed .i32 2) state := Lanius.Semantics.evaluatesValue
   have quotient : truncDiv (Int.ofNat value) 2 =
       Int.ofNat (value / 2) := by simp [truncDiv]
   have quotientBound : value / 2 ≤ 2147483647 := by omega
@@ -2173,6 +2246,24 @@ structure RecognizerTerminalAppendInvariant
     (.signed .i32 (Int.ofNat origin))
   nextPositionLocal : runtime.local? 30 = some
     (.signed .i32 (Int.ofNat nextPosition))
+
+theorem RecognizerTerminalAppendInvariant.appendFrame
+    (invariant : RecognizerTerminalAppendInvariant grammarLayout grammar words
+      tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell runtime position semanticKind nextPosition
+      production dot origin stateId) :
+    RecognizerAppendFrame grammarLayout grammar words tokens workspaceLayout
+      workspace workspaceValues grammarCell tokensCell workspaceCell
+      stateCountCell runtime nextPosition := {
+  recognizer := invariant.terminal.recognizer
+  positionBound := invariant.nextPositionBound
+  stateBaseLocal := invariant.stateBaseLocal
+  stateCapacityLocal := invariant.stateCapacityLocal
+  stateCountLocal := invariant.stateCountLocal
+  stateCountOwned := invariant.stateCountOwned
+  stateCountBackingDistinct := invariant.stateCountBackingDistinct
+  stateCountParameterSeparate := invariant.stateCountParameterSeparate
+}
 
 theorem RecognizerTerminalAppendInvariant.stateCountParameterDistinct
     (invariant : RecognizerTerminalAppendInvariant grammarLayout grammar words
@@ -2349,10 +2440,9 @@ noncomputable def RecognizerTerminalReadyInvariant.bind_scan_match
       simp [bound, State.bindLocal, State.bindCell, State.cellId?, different]
     invariant := {
       terminal := {
-        recognizer := afterScanInvariant.after_bind_local 30
-          (.signed .i32 (Int.ofNat nextPosition))
-          (by decide) (by decide) (by decide) (by decide) (by decide)
-          (by decide)
+        recognizer := by
+          apply afterScanInvariant.after_bind_local 30
+            (.signed .i32 (Int.ofNat nextPosition)) <;> decide
         positionAdvanceI32 := invariant.terminal.positionAdvanceI32
         semanticKindBound := invariant.terminal.semanticKindBound
         positionLocal := preserveLocal 23 (by decide) _
@@ -2396,18 +2486,15 @@ theorem RecognizerTerminalAppendInvariant.seed_arguments
           semanticKind)) runtime := by
   have productionResult : Evaluates verifiedParserCore runtime (.local 25)
       (.signed .i32 (Int.ofNat production)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 25 _
-      invariant.productionLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.productionLocal
   have dotResult := evaluatesNatSuccAtLocal runtime 26 dot
     invariant.dotLocal invariant.dotSuccI32
   have originResult : Evaluates verifiedParserCore runtime (.local 27)
       (.signed .i32 (Int.ofNat origin)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 27 _
-      invariant.originLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.originLocal
   have stateIdResult : Evaluates verifiedParserCore runtime (.local 24)
       (.signed .i32 (Int.ofNat stateId)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 24 _
-      invariant.stateIdLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.stateIdLocal
   have childTagResult : Evaluates verifiedParserCore runtime (.constant 38)
       (.signed .i32 1) runtime := by
     refine ⟨2, ?_⟩
@@ -2419,8 +2506,7 @@ theorem RecognizerTerminalAppendInvariant.seed_arguments
     invariant.terminal.positionLocal positionI32
   have kindResult : Evaluates verifiedParserCore runtime (.local 29)
       (.signed .i32 (Int.ofNat semanticKind)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 29 _
-      invariant.terminal.semanticKindLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.terminal.semanticKindLocal
   simpa [parserRecognizeTerminalSeedArguments,
       parserStateSeedArgumentsValues, recognizerTerminalSeed,
       previousValue, encodeStateId, childTag, childPayload, childKind] using
@@ -2432,54 +2518,6 @@ theorem RecognizerTerminalAppendInvariant.seed_arguments
               (ArgumentsEvaluateTo.cons tokenIndexResult
                 (ArgumentsEvaluateTo.singleton kindResult))))))
 
-structure RecognizerTerminalAppendResult
-    (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
-    (words : List Int) (tokens : List Nat)
-    (workspaceLayout : WorkspaceLayout) (workspace : LogicalWorkspace)
-    (workspaceValues : List Int)
-    (grammarCell tokensCell workspaceCell stateCountCell : CellId)
-    (before : State)
-    (position semanticKind nextPosition production dot origin stateId : Nat)
-    (beforeInvariant : RecognizerTerminalAppendInvariant grammarLayout grammar
-      words tokens workspaceLayout workspace workspaceValues grammarCell
-      tokensCell workspaceCell stateCountCell before position semanticKind
-      nextPosition production dot origin stateId) where
-  argumentsState : State
-  argumentsEffect : ModifiesOnly CellSet.empty before argumentsState
-  argumentsEvaluation : ArgumentsEvaluateTo verifiedParserCore before
-    parserRecognizeTerminalAppendArguments [
-      workspaceValue workspaceValues workspaceCell,
-      .signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)),
-      .signed .i32 (Int.ofNat workspaceLayout.capacity),
-      .signed .i32 (Int.ofNat nextPosition),
-      stateSeedValue
-        (recognizerTerminalSeed production dot origin stateId position
-          semanticKind),
-      .signed .i32 (Int.ofNat workspace.states.length)] argumentsState
-  argumentsInvariant : RecognizerInvariant grammarLayout grammar words tokens
-    workspaceLayout workspace workspaceValues grammarCell tokensCell
-    workspaceCell argumentsState
-  after : State
-  evaluation : Evaluates verifiedParserCore before
-    parserRecognizeTerminalAppendCall
-    (appendOutcomeValue
-      (appendLogical workspaceLayout.capacity nextPosition
-        (recognizerTerminalSeed production dot origin stateId position
-          semanticKind) workspace).1) after
-  effect : ModifiesOnly (CellSet.singleton workspaceCell) before after
-  stateCountOwned : (Assertion.localPointsTo 18
-    stateCountCell
-    (some (.signed .i32 (Int.ofNat workspace.states.length)))).holds after
-  invariant : RecognizerInvariant grammarLayout grammar words tokens
-    workspaceLayout
-    (appendLogical workspaceLayout.capacity nextPosition
-      (recognizerTerminalSeed production dot origin stateId position
-        semanticKind) workspace).2
-    (appendResultValues workspaceLayout workspace nextPosition
-      (recognizerTerminalSeed production dot origin stateId position
-        semanticKind) workspaceValues)
-    grammarCell tokensCell workspaceCell after
-
 /-- Execute the exact successful terminal append found in the extracted
     recognizer. The nested seed constructor has an empty footprint; composing
     it with `append_state` leaves precisely the workspace singleton as the
@@ -2489,55 +2527,35 @@ noncomputable def RecognizerTerminalAppendInvariant.evaluate_append
       tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell stateCountCell runtime position semanticKind nextPosition
       production dot origin stateId) :
-    RecognizerTerminalAppendResult grammarLayout grammar words tokens
+    RecognizerSeededAppendResult grammarLayout grammar words tokens
       workspaceLayout workspace workspaceValues grammarCell tokensCell
-      workspaceCell stateCountCell runtime position semanticKind nextPosition
-      production dot origin stateId invariant := by
+      workspaceCell stateCountCell runtime nextPosition (.local 30)
+      parserRecognizeTerminalSeedCall
+      (recognizerTerminalSeed production dot origin stateId position
+        semanticKind) invariant.appendFrame := by
   let seed := recognizerTerminalSeed production dot origin stateId position
     semanticKind
-  let afterSeed := restoreLocals runtime
-    (parserStateSeedCallee runtime seed)
-  have seedContract := extractedParserStateSeedCall_contract runtime runtime
-    parserRecognizeTerminalSeedArguments seed
-    invariant.terminal.recognizer.wellFormed invariant.seed_arguments
-  have seedEvaluation : Evaluates verifiedParserCore runtime
-      parserRecognizeTerminalSeedCall (stateSeedValue seed) afterSeed := by
-    simpa [parserRecognizeTerminalSeedCall, afterSeed] using seedContract.1
-  have seedEffect : ModifiesOnly CellSet.empty runtime afterSeed := by
-    simpa [afterSeed] using seedContract.2.1
   have nextPositionResult : Evaluates verifiedParserCore runtime (.local 30)
       (.signed .i32 (Int.ofNat nextPosition)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 30 _
-      invariant.nextPositionLocal⟩
-  have frame : RecognizerAppendFrame grammarLayout grammar words tokens
-      workspaceLayout workspace workspaceValues grammarCell tokensCell
-      workspaceCell stateCountCell runtime nextPosition := {
-    recognizer := invariant.terminal.recognizer
-    positionBound := invariant.nextPositionBound
-    stateBaseLocal := invariant.stateBaseLocal
-    stateCapacityLocal := invariant.stateCapacityLocal
-    stateCountLocal := invariant.stateCountLocal
-    stateCountOwned := invariant.stateCountOwned
-    stateCountBackingDistinct := invariant.stateCountBackingDistinct
-    stateCountParameterSeparate := invariant.stateCountParameterSeparate
-  }
-  let appended := frame.evaluate_seeded_append (.local 30)
-    parserRecognizeTerminalSeedCall seed afterSeed invariant.seedDerivation
-    invariant.originBound
-    nextPositionResult
-    seedEvaluation seedEffect (by simpa [afterSeed] using seedContract.2.2)
+    Lanius.Semantics.evaluatesLocal invariant.nextPositionLocal
+  let frame := invariant.appendFrame
+  let appended := frame.evaluate_seeded_append_contract (.local 30)
+    parserRecognizeTerminalSeedArguments seed
+    invariant.seedDerivation invariant.originBound nextPositionResult
+    (by simpa [seed] using invariant.seed_arguments)
   exact {
     argumentsState := appended.argumentsState
     argumentsEffect := appended.argumentsEffect
     argumentsEvaluation := by
       simpa [parserRecognizeTerminalAppendArguments, recognizerAppendArguments,
-        seed] using appended.argumentsEvaluation
+        parserRecognizeTerminalSeedCall, seed] using appended.argumentsEvaluation
     argumentsInvariant := appended.argumentsInvariant
     after := appended.after
     evaluation := by
       simpa [parserRecognizeTerminalAppendCall,
         parserRecognizeTerminalAppendArguments, recognizerAppendCall,
-        recognizerAppendArguments, seed] using appended.evaluation
+        recognizerAppendArguments, parserRecognizeTerminalSeedCall, seed] using
+        appended.evaluation
     effect := appended.effect
     stateCountOwned := appended.stateCountOwned
     invariant := by
@@ -2589,17 +2607,7 @@ noncomputable def RecognizerTerminalAppendInvariant.execute_full
       production dot origin stateId invariant := by
   let seed := recognizerTerminalSeed production dot origin stateId position
     semanticKind
-  let logical := appendLogical workspaceLayout.capacity nextPosition seed
-    workspace
-  let outcome := logical.1
   let appended := invariant.evaluate_append
-  let bound := appended.after.bindLocal 31 (appendOutcomeValue outcome)
-  have boundWellFormed : StateWellFormed bound :=
-    bindLocal_preserves_well_formed appended.after 31
-      (appendOutcomeValue outcome) appended.invariant.wellFormed
-  have resultLocal : bound.local? 31 = some (appendOutcomeValue outcome) :=
-    bindLocal_finds_local appended.after 31 (appendOutcomeValue outcome)
-      appended.invariant.wellFormed
   have positionAfterAppend : appended.after.local? 23 =
       some (.signed .i32 (Int.ofNat position)) :=
     appended.effect.singleton_preserves_local_of_ne
@@ -2607,55 +2615,31 @@ noncomputable def RecognizerTerminalAppendInvariant.execute_full
       invariant.terminal.positionLocal
       invariant.terminal.recognizer.workspaceBacking (by
         simp [workspaceValue])
+  let bound := appended.after.bindLocal 31
+    (appendOutcomeValue
+      (appendLogical workspaceLayout.capacity nextPosition seed workspace).1)
   have positionBound : bound.local? 23 =
       some (.signed .i32 (Int.ofNat position)) := by
     exact (bindLocal_preserves_other_local appended.invariant.wellFormed
       (by decide)).trans positionAfterAppend
-  have outcomeStatus : outcome.status = .full := by
-    simpa [outcome, logical, seed] using statusFull
   have positionArgument : Evaluates verifiedParserCore bound (.local 23)
       (.signed .i32 (Int.ofNat position)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound 23 _ positionBound⟩
-  let controlled := executeAppendOutcomeFull bound 31 18 (.local 23)
-    outcome (Int.ofNat position) boundWellFormed resultLocal positionArgument
-    outcomeStatus
-  let after := restoreLocals appended.after controlled.after
-  have execution : Executes verifiedParserCore runtime
-      parserRecognizeTerminalSuccessStatement
-      (.returned (some (parseResultValue 2
-        (Int.ofNat outcome.stateCount) (-1) (Int.ofNat position))))
-      after := by
-    rw [extractedParserRecognize_terminal_append_control_shape]
-    simpa [bound, after] using
-      (executesLetLocal (type := .structure 2) appended.evaluation
-        controlled.execution)
-  have entered : StoreEffect CellSet.empty appended.after bound := by
-    simpa [bound] using
-      bindLocal_effect appended.after 31 (appendOutcomeValue outcome)
-  have scopedStore : StoreEffect CellSet.empty appended.after
-      controlled.after := entered.trans_same controlled.effect.toStoreEffect
-  have closed : ModifiesOnly CellSet.empty appended.after after := by
-    simpa [after] using scopedStore.restoreLocals
-  have effect : ModifiesOnly (CellSet.singleton workspaceCell) runtime after :=
-    appended.effect.trans_same (closed.weaken CellSet.empty_subset)
-  have afterWellFormed : StateWellFormed after :=
-    scopedStore.restoreLocals_wellFormed appended.invariant.wellFormed
-      controlled.wellFormed
-  have workspaceEq : logical.2 = workspace := by
-    simpa [logical, seed] using appendLogical_workspace_eq_of_full statusFull
-  have valuesEq : appendResultValues workspaceLayout workspace nextPosition seed
-      workspaceValues = workspaceValues := by
-    exact appendResultValues_eq_of_full (by
-      simpa [seed] using statusFull)
-  have afterInvariant :=
-    appended.invariant.after_empty_effect closed afterWellFormed
-  rw [workspaceEq, valuesEq] at afterInvariant
+    Lanius.Semantics.evaluatesLocal positionBound
+  let result := appended.execute_full_then 31 (.local 23) .skip
+    (Int.ofNat position) positionArgument statusFull
+  let after := Classical.choose result
+  have facts := Classical.choose_spec result
   exact {
     after := after
-    execution := by simpa [seed, logical, outcome] using execution
-    effect := effect
-    wellFormed := afterWellFormed
-    invariant := afterInvariant
+    execution := by
+      rw [extractedParserRecognize_terminal_append_control_shape]
+      simpa [parserRecognizeTerminalAppendCall,
+        parserRecognizeTerminalAppendArguments, recognizerAppendCall,
+        recognizerAppendArguments, parserAppendOutcomeContinuation, seed,
+        after] using facts.1
+    effect := facts.2.1
+    wellFormed := facts.2.2.1
+    invariant := facts.2.2.2
   }
 
 structure RecognizerTerminalSuccessResult
@@ -2708,77 +2692,21 @@ noncomputable def RecognizerTerminalAppendInvariant.execute_success
       production dot origin stateId invariant := by
   let seed := recognizerTerminalSeed production dot origin stateId position
     semanticKind
-  let logical := appendLogical workspaceLayout.capacity nextPosition seed
-    workspace
-  let outcome := logical.1
   let appended := invariant.evaluate_append
-  let bound := appended.after.bindLocal 31 (appendOutcomeValue outcome)
-  have boundWellFormed : StateWellFormed bound :=
-    bindLocal_preserves_well_formed appended.after 31
-      (appendOutcomeValue outcome) appended.invariant.wellFormed
-  have resultLocal : bound.local? 31 = some (appendOutcomeValue outcome) :=
-    bindLocal_finds_local appended.after 31 (appendOutcomeValue outcome)
-      appended.invariant.wellFormed
-  have countOwnedBound : (Assertion.localPointsTo 18 stateCountCell
-      (some (.signed .i32 (Int.ofNat workspace.states.length)))).holds bound :=
-    bindLocal_preserves_localPointsTo_of_ne appended.after 31 18
-      (appendOutcomeValue outcome) stateCountCell
-      (some (.signed .i32 (Int.ofNat workspace.states.length)))
-      appended.invariant.wellFormed (by decide) appended.stateCountOwned
-  have outcomeStatus : outcome.status = .ok := by
-    simpa [outcome, logical, seed] using statusOk
-  let controlled := executeAppendOutcomeOk bound 31 18 stateCountCell
-    (.local 23) outcome workspace.states.length boundWellFormed resultLocal
-    countOwnedBound outcomeStatus
-  let after := restoreLocals appended.after controlled.after
-  have execution : Executes verifiedParserCore runtime
-      parserRecognizeTerminalSuccessStatement .next after := by
-    rw [extractedParserRecognize_terminal_append_control_shape]
-    simpa [bound, after] using
-      (executesLetLocal (type := .structure 2) appended.evaluation
-        controlled.execution)
-  have entered : StoreEffect CellSet.empty appended.after bound := by
-    simpa [bound] using
-      bindLocal_effect appended.after 31 (appendOutcomeValue outcome)
-  have scopedStore : StoreEffect (CellSet.singleton stateCountCell)
-      appended.after controlled.after :=
-    (entered.weaken CellSet.empty_subset).trans_same
-      controlled.effect.toStoreEffect
-  have closed : ModifiesOnly (CellSet.singleton stateCountCell)
-      appended.after after := by
-    simpa [after] using scopedStore.restoreLocals
-  have afterWellFormed : StateWellFormed after :=
-    scopedStore.restoreLocals_wellFormed appended.invariant.wellFormed
-      controlled.wellFormed
-  have parameterFrameAfterAppend : RecognizerParameterFrameSeparated
-      appended.after stateCountCell := by
-    unfold RecognizerParameterFrameSeparated
-    rw [appended.effect.localBindingFrameFootprint_eq
-      verifiedParserRecognizerParameterFrame]
-    exact invariant.stateCountParameterSeparate
-  have afterInvariant := appended.invariant.after_disjoint_scalar_effect
-    stateCountCell closed afterWellFormed
-    invariant.stateCountBackingDistinct.1.symm
-    invariant.stateCountBackingDistinct.2.1.symm
-    invariant.stateCountBackingDistinct.2.2.symm
-    parameterFrameAfterAppend
-  have afterCountOwned : (Assertion.localPointsTo 18 stateCountCell
-      (some (.signed .i32 (Int.ofNat logical.2.states.length)))).holds
-      after := by
-    constructor
-    · change appended.after.cellId? 18 = some stateCountCell
-      exact appended.stateCountOwned.1
-    · change controlled.after.cellEntry? stateCountCell = some {
-        id := stateCountCell
-        value := some (.signed .i32 (Int.ofNat logical.2.states.length))
-      }
-      simpa [logical, outcome] using controlled.stateCountOwned.2
+  let result := appended.execute_ok 31 (.local 23) (by decide) statusOk
+  let after := Classical.choose result
+  have facts := Classical.choose_spec result
   exact {
     after := after
-    execution := execution
-    effect := appended.effect.trans closed
-    invariant := by simpa [seed, logical] using afterInvariant
-    stateCountOwned := by simpa [seed, logical] using afterCountOwned
+    execution := by
+      rw [extractedParserRecognize_terminal_append_control_shape]
+      simpa [parserRecognizeTerminalAppendCall,
+        parserRecognizeTerminalAppendArguments, recognizerAppendCall,
+        recognizerAppendArguments, parserAppendOutcomeContinuation, seed,
+        after] using facts.1
+    effect := facts.2.1
+    invariant := by simpa [seed] using facts.2.2.1
+    stateCountOwned := by simpa [seed] using facts.2.2.2
   }
 
 structure RecognizerTerminalMatchedResult
@@ -2814,6 +2742,37 @@ structure RecognizerTerminalMatchedResult
         (recognizerTerminalSeed production dot origin stateId position
           semanticKind) workspace).2.states.length)))).holds after
 
+theorem executesTerminalNonnegativeBranchWithSkip
+    (bound : State) (nextPosition : Nat) (branch : Stmt)
+    {completion : Completion} {after : State}
+    (nextLocal : bound.local? 30 =
+      some (.signed .i32 (Int.ofNat nextPosition)))
+    (branchExecution : Executes verifiedParserCore bound branch completion after) :
+    Executes verifiedParserCore bound
+      (.sequence
+        (.ifThenElse
+          (.binary .greaterEqual (.local 30) (.value (.signed .i32 0)))
+          branch .skip)
+        .skip)
+      completion after := by
+  have left : Evaluates verifiedParserCore bound (.local 30)
+      (.signed .i32 (Int.ofNat nextPosition)) bound :=
+    Lanius.Semantics.evaluatesLocal nextLocal
+  have right : Evaluates verifiedParserCore bound
+      (.value (.signed .i32 0)) (.signed .i32 0) bound :=
+    Lanius.Semantics.evaluatesValue
+  have nonnegative : Evaluates verifiedParserCore bound
+      (.binary .greaterEqual (.local 30) (.value (.signed .i32 0)))
+      (.boolean true) bound := by
+    apply evaluatesEagerBinary (by decide) (by decide) left right
+    simp [evalBinaryValue, evalSignedBinary]
+  have selected := executesIfTrue (elseBranch := .skip) nonnegative branchExecution
+  cases completion with
+  | next => exact executesSequence selected (executesSkip verifiedParserCore after)
+  | returned _ => exact executesSequenceReturned selected
+  | breakLoop => exact executesSequenceNonNext selected (by simp)
+  | continueLoop => exact executesSequenceNonNext selected (by simp)
+
 /-- Complete successful terminal transition, from the scanner call through
     both nested temporary scopes. This is the first whole extracted Earley
     transition whose result is a new logical workspace and matching encoded
@@ -2838,31 +2797,9 @@ noncomputable def RecognizerTerminalReadyInvariant.execute_match
   let matched := invariant.bind_scan_match nextPosition scanResult
     nextPositionBound
   let success := matched.invariant.execute_success statusOk
-  have nextLocal : matched.bound.local? 30 =
-      some (.signed .i32 (Int.ofNat nextPosition)) :=
-    matched.invariant.nextPositionLocal
-  have left : Evaluates verifiedParserCore matched.bound (.local 30)
-      (.signed .i32 (Int.ofNat nextPosition)) matched.bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore matched.bound 30 _ nextLocal⟩
-  have right : Evaluates verifiedParserCore matched.bound
-      (.value (.signed .i32 0)) (.signed .i32 0) matched.bound := ⟨1, rfl⟩
-  have nonnegative : Evaluates verifiedParserCore matched.bound
-      (.binary .greaterEqual (.local 30) (.value (.signed .i32 0)))
-      (.boolean true) matched.bound := by
-    apply evaluatesEagerBinary (by decide) (by decide) left right
-    simp [evalBinaryValue, evalSignedBinary]
-  have selected : Executes verifiedParserCore matched.bound
-      (.ifThenElse
-        (.binary .greaterEqual (.local 30) (.value (.signed .i32 0)))
-        parserRecognizeTerminalSuccessStatement .skip) .next success.after :=
-    executesIfTrue nonnegative success.execution
-  have body : Executes verifiedParserCore matched.bound
-      (.sequence
-        (.ifThenElse
-          (.binary .greaterEqual (.local 30) (.value (.signed .i32 0)))
-          parserRecognizeTerminalSuccessStatement .skip)
-        .skip) .next success.after :=
-    executesSequence selected (executesSkip verifiedParserCore success.after)
+  let body := executesTerminalNonnegativeBranchWithSkip matched.bound nextPosition
+    parserRecognizeTerminalSuccessStatement matched.invariant.nextPositionLocal
+    success.execution
   let after := restoreLocals matched.afterScan success.after
   have execution : Executes verifiedParserCore runtime
       parserRecognizeTerminalStatement .next after := by
@@ -3012,43 +2949,9 @@ noncomputable def RecognizerTerminalReadyInvariant.execute_match_full
   let matched := invariant.bind_scan_match nextPosition scanResult
     nextPositionBound
   let full := matched.invariant.execute_full statusFull
-  have nextLocal : matched.bound.local? 30 =
-      some (.signed .i32 (Int.ofNat nextPosition)) :=
-    matched.invariant.nextPositionLocal
-  have left : Evaluates verifiedParserCore matched.bound (.local 30)
-      (.signed .i32 (Int.ofNat nextPosition)) matched.bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore matched.bound 30 _ nextLocal⟩
-  have right : Evaluates verifiedParserCore matched.bound
-      (.value (.signed .i32 0)) (.signed .i32 0) matched.bound := ⟨1, rfl⟩
-  have nonnegative : Evaluates verifiedParserCore matched.bound
-      (.binary .greaterEqual (.local 30) (.value (.signed .i32 0)))
-      (.boolean true) matched.bound := by
-    apply evaluatesEagerBinary (by decide) (by decide) left right
-    simp [evalBinaryValue, evalSignedBinary]
-  have selected : Executes verifiedParserCore matched.bound
-      (.ifThenElse
-        (.binary .greaterEqual (.local 30) (.value (.signed .i32 0)))
-        parserRecognizeTerminalSuccessStatement .skip)
-      (.returned (some (parseResultValue 2
-        (Int.ofNat
-          (appendLogical workspaceLayout.capacity nextPosition
-            (recognizerTerminalSeed production dot origin stateId position
-              semanticKind) workspace).1.stateCount)
-        (-1) (Int.ofNat position)))) full.after :=
-    executesIfTrue nonnegative full.execution
-  have body : Executes verifiedParserCore matched.bound
-      (.sequence
-        (.ifThenElse
-          (.binary .greaterEqual (.local 30) (.value (.signed .i32 0)))
-          parserRecognizeTerminalSuccessStatement .skip)
-        .skip)
-      (.returned (some (parseResultValue 2
-        (Int.ofNat
-          (appendLogical workspaceLayout.capacity nextPosition
-            (recognizerTerminalSeed production dot origin stateId position
-              semanticKind) workspace).1.stateCount)
-        (-1) (Int.ofNat position)))) full.after :=
-    executesSequenceReturned selected
+  let body := executesTerminalNonnegativeBranchWithSkip matched.bound nextPosition
+    parserRecognizeTerminalSuccessStatement matched.invariant.nextPositionLocal
+    full.execution
   let after := restoreLocals matched.afterScan full.after
   have execution : Executes verifiedParserCore runtime
       parserRecognizeTerminalStatement
@@ -3145,25 +3048,21 @@ theorem RecognizerNullableAppendInvariant.seed_arguments
       runtime := by
   have productionResult : Evaluates verifiedParserCore runtime (.local 25)
       (.signed .i32 (Int.ofNat production)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 25 _
-      invariant.productionLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.productionLocal
   have dotResult := evaluatesNatSuccAtLocal runtime 26 dot
     invariant.dotLocal invariant.dotSuccI32
   have originResult : Evaluates verifiedParserCore runtime (.local 27)
       (.signed .i32 (Int.ofNat origin)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 27 _
-      invariant.originLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.originLocal
   have stateIdResult : Evaluates verifiedParserCore runtime (.local 24)
       (.signed .i32 (Int.ofNat stateId)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 24 _
-      invariant.stateIdLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.stateIdLocal
   have childTagResult : Evaluates verifiedParserCore runtime (.constant 39)
       (.signed .i32 2) runtime :=
     evaluatesConstant verifiedParser_child_state_constant
   have candidateResult : Evaluates verifiedParserCore runtime (.local 36)
       (.signed .i32 (Int.ofNat candidate)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 36 _
-      invariant.candidateLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.candidateLocal
   have missingKind := evaluatesParserAppendNegativeOne runtime
   simpa [parserRecognizeNullableSeedArguments,
       parserStateSeedArgumentsValues, recognizerNullableSeed,
@@ -3190,25 +3089,12 @@ noncomputable def RecognizerNullableAppendInvariant.evaluate_append
       (recognizerNullableSeed production dot origin stateId candidate)
       invariant.frame := by
   let seed := recognizerNullableSeed production dot origin stateId candidate
-  let afterSeed := restoreLocals runtime
-    (parserStateSeedCallee runtime seed)
-  have seedContract := extractedParserStateSeedCall_contract runtime runtime
-    parserRecognizeNullableSeedArguments seed
-    invariant.frame.recognizer.wellFormed invariant.seed_arguments
-  have seedEvaluation : Evaluates verifiedParserCore runtime
-      parserRecognizeNullableSeedCall (stateSeedValue seed) afterSeed := by
-    simpa [parserRecognizeNullableSeedCall, afterSeed] using seedContract.1
-  have seedEffect : ModifiesOnly CellSet.empty runtime afterSeed := by
-    simpa [afterSeed] using seedContract.2.1
   have positionResult : Evaluates verifiedParserCore runtime (.local 23)
       (.signed .i32 (Int.ofNat position)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 23 _
-      invariant.positionLocal⟩
-  exact invariant.frame.evaluate_seeded_append (.local 23)
-    parserRecognizeNullableSeedCall seed afterSeed seedDerivation
-    invariant.originBound
-    positionResult
-    seedEvaluation seedEffect (by simpa [afterSeed] using seedContract.2.2)
+    Lanius.Semantics.evaluatesLocal invariant.positionLocal
+  exact invariant.frame.evaluate_seeded_append_contract (.local 23)
+    parserRecognizeNullableSeedArguments seed seedDerivation invariant.originBound
+    positionResult (by simpa [seed] using invariant.seed_arguments)
 
 structure RecognizerNullableOkResult
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
@@ -3390,14 +3276,12 @@ theorem RecognizerPredictionAppendInvariant.seed_arguments
         (recognizerPredictionSeed production position)) runtime := by
   have productionResult : Evaluates verifiedParserCore runtime (.local 34)
       (.signed .i32 (Int.ofNat production)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 34 _
-      invariant.productionLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.productionLocal
   have zero : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 0)) (.signed .i32 0) runtime := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) runtime := Lanius.Semantics.evaluatesValue
   have positionResult : Evaluates verifiedParserCore runtime (.local 23)
       (.signed .i32 (Int.ofNat position)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 23 _
-      invariant.positionLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.positionLocal
   have negativeOne := evaluatesParserAppendNegativeOne runtime
   have childNone : Evaluates verifiedParserCore runtime (.constant 37)
       (.signed .i32 0) runtime :=
@@ -3424,26 +3308,14 @@ noncomputable def RecognizerPredictionAppendInvariant.evaluate_append
       parserRecognizePredictionSeedCall
       (recognizerPredictionSeed production position) invariant.frame := by
   let seed := recognizerPredictionSeed production position
-  let afterSeed := restoreLocals runtime
-    (parserStateSeedCallee runtime seed)
-  have seedContract := extractedParserStateSeedCall_contract runtime runtime
-    parserRecognizePredictionSeedArguments seed
-    invariant.frame.recognizer.wellFormed invariant.seed_arguments
-  have seedEvaluation : Evaluates verifiedParserCore runtime
-      parserRecognizePredictionSeedCall (stateSeedValue seed) afterSeed := by
-    simpa [parserRecognizePredictionSeedCall, afterSeed] using seedContract.1
-  have seedEffect : ModifiesOnly CellSet.empty runtime afterSeed := by
-    simpa [afterSeed] using seedContract.2.1
   have positionResult : Evaluates verifiedParserCore runtime (.local 23)
       (.signed .i32 (Int.ofNat position)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 23 _
-      invariant.positionLocal⟩
-  exact invariant.frame.evaluate_seeded_append (.local 23)
-    parserRecognizePredictionSeedCall seed afterSeed
-    invariant.seedDerivation
+    Lanius.Semantics.evaluatesLocal invariant.positionLocal
+  exact invariant.frame.evaluate_seeded_append_contract (.local 23)
+    parserRecognizePredictionSeedArguments seed invariant.seedDerivation
     (by simpa [seed, recognizerPredictionSeed] using invariant.frame.positionBound)
     positionResult
-    seedEvaluation seedEffect (by simpa [afterSeed] using seedContract.2.2)
+    (by simpa [seed] using invariant.seed_arguments)
 
 structure RecognizerPredictionFullResult
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
@@ -3483,70 +3355,37 @@ noncomputable def RecognizerPredictionAppendInvariant.execute_full
       workspaceCell stateCountCell indexCell runtime position production index
       invariant := by
   let seed := recognizerPredictionSeed production position
-  let logical := appendLogical workspaceLayout.capacity position seed workspace
-  let outcome := logical.1
   let appended := invariant.evaluate_append
-  let bound := appended.after.bindLocal 35 (appendOutcomeValue outcome)
-  have boundWellFormed : StateWellFormed bound :=
-    bindLocal_preserves_well_formed appended.after 35
-      (appendOutcomeValue outcome) appended.invariant.wellFormed
-  have resultLocal : bound.local? 35 = some (appendOutcomeValue outcome) :=
-    bindLocal_finds_local appended.after 35 (appendOutcomeValue outcome)
-      appended.invariant.wellFormed
   have positionAfterAppend : appended.after.local? 23 =
       some (.signed .i32 (Int.ofNat position)) :=
     appended.effect.singleton_preserves_local_of_ne
       invariant.frame.recognizer.wellFormed invariant.positionLocal
       invariant.frame.recognizer.workspaceBacking (by simp [workspaceValue])
+  let bound := appended.after.bindLocal 35
+    (appendOutcomeValue
+      (appendLogical workspaceLayout.capacity position seed workspace).1)
   have positionBound : bound.local? 23 =
       some (.signed .i32 (Int.ofNat position)) :=
     (bindLocal_preserves_other_local appended.invariant.wellFormed
       (by decide)).trans positionAfterAppend
   have positionResult : Evaluates verifiedParserCore bound (.local 23)
       (.signed .i32 (Int.ofNat position)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound 23 _ positionBound⟩
-  have outcomeStatus : outcome.status = .full := by
-    simpa [outcome, logical, seed] using statusFull
-  let controlled := executeAppendOutcomeFullThen bound 35 18 (.local 23)
-    (parserRecognizeIncrementLocal 33) outcome (Int.ofNat position)
-    boundWellFormed resultLocal positionResult outcomeStatus
-  let after := restoreLocals appended.after controlled.after
-  have execution : Executes verifiedParserCore runtime
-      parserRecognizePredictionAppendStatement
-      (.returned (some (parseResultValue 2
-        (Int.ofNat outcome.stateCount) (-1) (Int.ofNat position)))) after := by
-    rw [extractedParserRecognize_prediction_append_shape]
-    simpa [parserRecognizePredictionAppendCall,
-      parserRecognizePredictionAppendArguments, recognizerAppendCall,
-      recognizerAppendArguments, bound, after] using
-      (executesLetLocal (type := .structure 2) appended.evaluation
-        controlled.execution)
-  have entered : StoreEffect CellSet.empty appended.after bound := by
-    simpa [bound] using
-      bindLocal_effect appended.after 35 (appendOutcomeValue outcome)
-  have scopedStore : StoreEffect CellSet.empty appended.after
-      controlled.after := entered.trans_same controlled.effect.toStoreEffect
-  have closed : ModifiesOnly CellSet.empty appended.after after := by
-    simpa [after] using scopedStore.restoreLocals
-  have effect : ModifiesOnly (CellSet.singleton workspaceCell) runtime after :=
-    appended.effect.trans_same (closed.weaken CellSet.empty_subset)
-  have afterWellFormed : StateWellFormed after :=
-    scopedStore.restoreLocals_wellFormed appended.invariant.wellFormed
-      controlled.wellFormed
-  have workspaceEq : logical.2 = workspace := by
-    simpa [logical, seed] using appendLogical_workspace_eq_of_full statusFull
-  have valuesEq : appendResultValues workspaceLayout workspace position seed
-      workspaceValues = workspaceValues :=
-    appendResultValues_eq_of_full (by simpa [seed] using statusFull)
-  have afterInvariant :=
-    appended.invariant.after_empty_effect closed afterWellFormed
-  rw [workspaceEq, valuesEq] at afterInvariant
+    Lanius.Semantics.evaluatesLocal positionBound
+  let result := appended.execute_full_then 35 (.local 23)
+    (parserRecognizeIncrementLocal 33) (Int.ofNat position)
+    positionResult statusFull
+  let after := Classical.choose result
+  have facts := Classical.choose_spec result
   exact {
     after := after
-    execution := by simpa [seed, logical, outcome] using execution
-    effect := effect
-    wellFormed := afterWellFormed
-    invariant := afterInvariant
+    execution := by
+      rw [extractedParserRecognize_prediction_append_shape]
+      simpa [parserRecognizePredictionAppendCall,
+        parserRecognizePredictionAppendArguments, recognizerAppendCall,
+        recognizerAppendArguments, seed, after] using facts.1
+    effect := facts.2.1
+    wellFormed := facts.2.2.1
+    invariant := facts.2.2.2
   }
 
 structure RecognizerPredictionOkResult
@@ -3662,25 +3501,21 @@ theorem RecognizerParentAppendInvariant.seed_arguments
       runtime := by
   have productionResult : Evaluates verifiedParserCore runtime (.local 31)
       (.signed .i32 (Int.ofNat production)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 31 _
-      invariant.productionLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.productionLocal
   have dotResult := evaluatesNatSuccAtLocal runtime 32 dot
     invariant.dotLocal invariant.dotSuccI32
   have originResult : Evaluates verifiedParserCore runtime (.local 34)
       (.signed .i32 (Int.ofNat origin)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 34 _
-      invariant.originLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.originLocal
   have parentResult : Evaluates verifiedParserCore runtime (.local 30)
       (.signed .i32 (Int.ofNat parent)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 30 _
-      invariant.parentLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.parentLocal
   have childTagResult : Evaluates verifiedParserCore runtime (.constant 39)
       (.signed .i32 2) runtime :=
     evaluatesConstant verifiedParser_child_state_constant
   have completedResult : Evaluates verifiedParserCore runtime (.local 24)
       (.signed .i32 (Int.ofNat completed)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 24 _
-      invariant.completedLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.completedLocal
   have missingKind := evaluatesParserAppendNegativeOne runtime
   simpa [parserRecognizeParentSeedArguments,
       parserStateSeedArgumentsValues, recognizerParentSeed,
@@ -3705,25 +3540,13 @@ noncomputable def RecognizerParentAppendInvariant.evaluate_append
       (recognizerParentSeed production dot origin parent completed)
       invariant.frame := by
   let seed := recognizerParentSeed production dot origin parent completed
-  let afterSeed := restoreLocals runtime
-    (parserStateSeedCallee runtime seed)
-  have seedContract := extractedParserStateSeedCall_contract runtime runtime
-    parserRecognizeParentSeedArguments seed
-    invariant.frame.recognizer.wellFormed invariant.seed_arguments
-  have seedEvaluation : Evaluates verifiedParserCore runtime
-      parserRecognizeParentSeedCall (stateSeedValue seed) afterSeed := by
-    simpa [parserRecognizeParentSeedCall, afterSeed] using seedContract.1
-  have seedEffect : ModifiesOnly CellSet.empty runtime afterSeed := by
-    simpa [afterSeed] using seedContract.2.1
   have positionResult : Evaluates verifiedParserCore runtime (.local 23)
       (.signed .i32 (Int.ofNat position)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 23 _
-      invariant.positionLocal⟩
-  exact invariant.frame.evaluate_seeded_append (.local 23)
-    parserRecognizeParentSeedCall seed afterSeed invariant.seedDerivation
-    invariant.originBound
-    positionResult seedEvaluation seedEffect
-    (by simpa [afterSeed] using seedContract.2.2)
+    Lanius.Semantics.evaluatesLocal invariant.positionLocal
+  exact invariant.frame.evaluate_seeded_append_contract (.local 23)
+    parserRecognizeParentSeedArguments seed invariant.seedDerivation
+    invariant.originBound positionResult
+    (by simpa [seed] using invariant.seed_arguments)
 
 structure RecognizerParentOkResult
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
@@ -3951,13 +3774,11 @@ theorem RecognizerInitialLoopInvariant.condition_true
       (.binary .less (.local 19) (.local 17)) (.boolean true) runtime := by
   have left : Evaluates verifiedParserCore runtime (.local 19)
       (.signed .i32 (Int.ofNat index)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 19 _
-      (Assertion.localPointsTo_local 19 indexCell _ runtime
-        invariant.indexOwned)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local 19 indexCell _ runtime
+        invariant.indexOwned)
   have right : Evaluates verifiedParserCore runtime (.local 17)
       (.signed .i32 (Int.ofNat count)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 17 _
-      invariant.countLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.countLocal
   apply evaluatesEagerBinary (by decide) (by decide) left right
   simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt, indexBound]
 
@@ -3970,13 +3791,11 @@ theorem RecognizerInitialLoopInvariant.condition_false
       (.binary .less (.local 19) (.local 17)) (.boolean false) runtime := by
   have left : Evaluates verifiedParserCore runtime (.local 19)
       (.signed .i32 (Int.ofNat index)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 19 _
-      (Assertion.localPointsTo_local 19 indexCell _ runtime
-        invariant.indexOwned)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local 19 indexCell _ runtime
+        invariant.indexOwned)
   have right : Evaluates verifiedParserCore runtime (.local 17)
       (.signed .i32 (Int.ofNat count)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 17 _
-      invariant.countLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.countLocal
   apply evaluatesEagerBinary (by decide) (by decide) left right
   simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt]
   omega
@@ -4007,21 +3826,17 @@ theorem RecognizerInitialLoopInvariant.read_production
     simpa [Nat.add_assoc] using physicalBound
   have grammarResult : Evaluates verifiedParserCore runtime (.local 0)
       (parserGrammarValue words grammarCell) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 0 _
-      invariant.frame.recognizer.grammarLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.frame.recognizer.grammarLocal
   have tableOffset : Evaluates verifiedParserCore runtime (.local 15)
       (.signed .i32 (Int.ofNat grammarLayout.lhsProductionsOffset)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 15 _
-      invariant.lhsProductionsOffsetLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.lhsProductionsOffsetLocal
   have firstResult : Evaluates verifiedParserCore runtime (.local 16)
       (.signed .i32 (Int.ofNat first)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 16 _
-      invariant.firstLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.firstLocal
   have indexResult : Evaluates verifiedParserCore runtime (.local 19)
       (.signed .i32 (Int.ofNat index)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 19 _
-      (Assertion.localPointsTo_local 19 indexCell _ runtime
-        invariant.indexOwned)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local 19 indexCell _ runtime
+        invariant.indexOwned)
   have partialBound : grammarLayout.lhsProductionsOffset + first ≤
       2147483647 := Nat.le_trans
     (Nat.le_of_lt (Nat.lt_of_le_of_lt (Nat.le_add_right _ _) physicalBound'))
@@ -4106,10 +3921,11 @@ theorem RecognizerInitialLoopInvariant.after_temporary_bind
     invariant.frame.recognizer.wellFormed
   exact {
     frame := {
-      recognizer := invariant.frame.recognizer.after_bind_local id value
-        (different 0 (by decide)) (different 1 (by decide))
-        (different 2 (by decide)) (different 3 (by decide))
-        (different 4 (by decide)) (different 5 (by decide))
+      recognizer := by
+        exact invariant.frame.recognizer.after_bind_local id value
+          (different 0 (by decide)) (different 1 (by decide))
+          (different 2 (by decide)) (different 3 (by decide))
+          (different 4 (by decide)) (different 5 (by decide))
       positionBound := invariant.frame.positionBound
       stateBaseLocal :=
         (bindLocal_preserves_other_local
@@ -4293,10 +4109,9 @@ theorem RecognizerInitialAppendInvariant.seed_arguments
       runtime := by
   have productionResult : Evaluates verifiedParserCore runtime (.local 20)
       (.signed .i32 (Int.ofNat production)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 20 _
-      invariant.productionLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.productionLocal
   have zero : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 0)) (.signed .i32 0) runtime := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) runtime := Lanius.Semantics.evaluatesValue
   have negativeOne := evaluatesParserAppendNegativeOne runtime
   have childNone : Evaluates verifiedParserCore runtime (.constant 37)
       (.signed .i32 0) runtime :=
@@ -4322,23 +4137,12 @@ noncomputable def RecognizerInitialAppendInvariant.evaluate_append
       parserRecognizeInitialSeedCall (recognizerInitialSeed production)
       invariant.frame := by
   let seed := recognizerInitialSeed production
-  let afterSeed := restoreLocals runtime
-    (parserStateSeedCallee runtime seed)
-  have seedContract := extractedParserStateSeedCall_contract runtime runtime
-    parserRecognizeInitialSeedArguments seed
-    invariant.frame.recognizer.wellFormed invariant.seed_arguments
-  have seedEvaluation : Evaluates verifiedParserCore runtime
-      parserRecognizeInitialSeedCall (stateSeedValue seed) afterSeed := by
-    simpa [parserRecognizeInitialSeedCall, afterSeed] using seedContract.1
-  have seedEffect : ModifiesOnly CellSet.empty runtime afterSeed := by
-    simpa [afterSeed] using seedContract.2.1
   have zero : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 0)) (.signed .i32 0) runtime := ⟨1, rfl⟩
-  exact invariant.frame.evaluate_seeded_append
-    (.value (.signed .i32 0)) parserRecognizeInitialSeedCall seed afterSeed
+      (.value (.signed .i32 0)) (.signed .i32 0) runtime := Lanius.Semantics.evaluatesValue
+  exact invariant.frame.evaluate_seeded_append_contract
+    (.value (.signed .i32 0)) parserRecognizeInitialSeedArguments seed
     invariant.seedDerivation (by simp [seed, recognizerInitialSeed]) zero
-    seedEvaluation seedEffect
-    (by simpa [afterSeed] using seedContract.2.2)
+    (by simpa [seed] using invariant.seed_arguments)
 
 structure RecognizerInitialOkResult
     (grammarLayout : PackedGrammarLayout) (grammar : IndexedGrammar)
@@ -4438,60 +4242,26 @@ noncomputable def RecognizerInitialAppendInvariant.execute_full
       workspaceCell stateCountCell indexCell runtime production index
       invariant := by
   let seed := recognizerInitialSeed production
-  let logical := appendLogical workspaceLayout.capacity 0 seed workspace
-  let outcome := logical.1
   let appended := invariant.evaluate_append
-  let bound := appended.after.bindLocal 21 (appendOutcomeValue outcome)
-  have boundWellFormed : StateWellFormed bound :=
-    bindLocal_preserves_well_formed appended.after 21
-      (appendOutcomeValue outcome) appended.invariant.wellFormed
-  have resultFound : bound.local? 21 = some (appendOutcomeValue outcome) :=
-    bindLocal_finds_local appended.after 21 (appendOutcomeValue outcome)
-      appended.invariant.wellFormed
+  let bound := appended.after.bindLocal 21
+    (appendOutcomeValue
+      (appendLogical workspaceLayout.capacity 0 seed workspace).1)
   have zero : Evaluates verifiedParserCore bound
-      (.value (.signed .i32 0)) (.signed .i32 0) bound := ⟨1, rfl⟩
-  have outcomeStatus : outcome.status = .full := by
-    simpa [outcome, logical, seed] using statusFull
-  let controlled := executeAppendOutcomeFullThen bound 21 18
-    (.value (.signed .i32 0)) (parserRecognizeIncrementLocal 19) outcome 0
-    boundWellFormed resultFound zero outcomeStatus
-  let after := restoreLocals appended.after controlled.after
-  have execution : Executes verifiedParserCore runtime
-      parserRecognizeInitialAppendStatement
-      (.returned (some (parseResultValue 2
-        (Int.ofNat outcome.stateCount) (-1) 0))) after := by
-    rw [extractedParserRecognize_initial_append_shape]
-    simpa [parserRecognizeInitialAppendCall,
-      parserRecognizeInitialAppendArguments, recognizerAppendCall,
-      recognizerAppendArguments, bound, after] using
-      (executesLetLocal (type := .structure 2) appended.evaluation
-        controlled.execution)
-  have entered : StoreEffect CellSet.empty appended.after bound := by
-    simpa [bound] using
-      bindLocal_effect appended.after 21 (appendOutcomeValue outcome)
-  have scopedStore : StoreEffect CellSet.empty appended.after
-      controlled.after := entered.trans_same controlled.effect.toStoreEffect
-  have closed : ModifiesOnly CellSet.empty appended.after after := by
-    simpa [after] using scopedStore.restoreLocals
-  have effect : ModifiesOnly (CellSet.singleton workspaceCell) runtime after :=
-    appended.effect.trans_same (closed.weaken CellSet.empty_subset)
-  have afterWellFormed : StateWellFormed after :=
-    scopedStore.restoreLocals_wellFormed appended.invariant.wellFormed
-      controlled.wellFormed
-  have workspaceEq : logical.2 = workspace := by
-    simpa [logical, seed] using appendLogical_workspace_eq_of_full statusFull
-  have valuesEq : appendResultValues workspaceLayout workspace 0 seed
-      workspaceValues = workspaceValues :=
-    appendResultValues_eq_of_full (by simpa [seed] using statusFull)
-  have afterInvariant :=
-    appended.invariant.after_empty_effect closed afterWellFormed
-  rw [workspaceEq, valuesEq] at afterInvariant
+      (.value (.signed .i32 0)) (.signed .i32 0) bound := Lanius.Semantics.evaluatesValue
+  let result := appended.execute_full_then 21 (.value (.signed .i32 0))
+    (parserRecognizeIncrementLocal 19) 0 zero statusFull
+  let after := Classical.choose result
+  have facts := Classical.choose_spec result
   exact {
     after := after
-    execution := by simpa [seed, logical, outcome] using execution
-    effect := effect
-    wellFormed := afterWellFormed
-    invariant := afterInvariant
+    execution := by
+      rw [extractedParserRecognize_initial_append_shape]
+      simpa [parserRecognizeInitialAppendCall,
+        parserRecognizeInitialAppendArguments, recognizerAppendCall,
+        recognizerAppendArguments, seed, after] using facts.1
+    effect := facts.2.1
+    wellFormed := facts.2.2.1
+    invariant := facts.2.2.2
   }
 
 structure RecognizerInitialLoopOkStepResult
@@ -4963,9 +4733,9 @@ theorem RecognizerTerminalInvariant.executes_no_match
       scan.invariant.wellFormed
   have left : Evaluates verifiedParserCore bound (.local 30)
       (.signed .i32 (-1)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound 30 _ resultLocal⟩
+    Lanius.Semantics.evaluatesLocal resultLocal
   have right : Evaluates verifiedParserCore bound
-      (.value (.signed .i32 0)) (.signed .i32 0) bound := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) bound := Lanius.Semantics.evaluatesValue
   have condition : Evaluates verifiedParserCore bound
       (.binary .greaterEqual (.local 30) (.value (.signed .i32 0)))
       (.boolean false) bound := by

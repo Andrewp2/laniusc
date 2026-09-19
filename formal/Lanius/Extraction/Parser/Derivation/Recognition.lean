@@ -103,7 +103,7 @@ private theorem value_arguments (values : List Value) :
     ArgumentsEvaluateTo program caller (values.map Expr.value) values caller := by
   induction values with
   | nil => exact .nil program caller
-  | cons value rest ih => exact .cons ⟨1, rfl⟩ ih
+  | cons value rest ih => exact .cons Lanius.Semantics.evaluatesValue ih
 
 /-- Connect the two verified source functions at their value-level call
     boundary. The root and state-count arguments come from the recognizer's

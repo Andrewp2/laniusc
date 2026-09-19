@@ -12,7 +12,7 @@ private theorem literal_arguments (program : Program) (state : State) (values : 
     ArgumentsEvaluateTo program state (values.map Expr.value) values state := by
   induction values with
   | nil => exact .nil _ _
-  | cons value values ih => exact .cons ⟨1, rfl⟩ ih
+  | cons value values ih => exact .cons evaluatesValue ih
 
 /-- Consume the proved collector continuation and execute the real unit
 emitter. The surrounding main/I/O control flow is a separate obligation. -/

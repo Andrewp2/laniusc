@@ -24,7 +24,7 @@ theorem negate_evaluates (evaluated : Evaluates program before expression (.bool
 
 theorem local_evaluates (program : Program) {id : VarId} (found : before.local? id = some value) :
     Evaluates program before (read id) value before :=
-  ⟨1, evalLocal_of_local 0 program before id value found⟩
+  Lanius.Semantics.evaluatesLocal found
 
 /-- These are exactly the scalar values read before any array access. The
 guard proof also covers negative lengths and overflowing lattice counts. -/
@@ -46,10 +46,10 @@ def InputScalars.bad (input : InputScalars before) : Bool :=
 theorem InputScalars.evaluates (input : InputScalars before) (program : Program) :
     Evaluates program before inputGuard (.boolean input.bad) before := by
   have header := lessEqual_evaluates (local_evaluates program input.grammarRead)
-    (show Evaluates program before (number 16) (.signed .i32 16) before from ⟨1, rfl⟩)
+    (show Evaluates program before (number 16) (.signed .i32 16) before from evaluatesValue)
   have negativeTokens := lessEqual_evaluates (local_evaluates program input.tokensRead) (negativeOne_evaluates program before)
   have largeTokens := greaterEqual_evaluates (local_evaluates program input.tokensRead)
-    (show Evaluates program before (number 1073741824) (.signed .i32 1073741824) before from ⟨1, rfl⟩)
+    (show Evaluates program before (number 1073741824) (.signed .i32 1073741824) before from evaluatesValue)
   have negativeNodes := lessEqual_evaluates (local_evaluates program input.nodesRead) (negativeOne_evaluates program before)
   have negativeRecords := lessEqual_evaluates (local_evaluates program input.recordsRead) (negativeOne_evaluates program before)
   exact evaluatesPureLogicalOr
@@ -84,7 +84,7 @@ theorem capacityGuard_nonnegative (program : Program) (count capacity : Nat)
   simp only [positive, decide_false] at nonnegative
   have divided := evaluatesNatI32Divide (leftValue := capacity) (rightValue := 2)
     (local_evaluates program capacityRead)
-    (show Evaluates program before (number 2) (.signed .i32 2) before from ⟨1, rfl⟩) (by decide)
+    (show Evaluates program before (number 2) (.signed .i32 2) before from evaluatesValue) (by decide)
     (Nat.le_trans (Nat.div_le_self capacity 2) capacityBound)
   have enough := lessEqual_evaluates (local_evaluates program tokensRead) divided
   have inverted := negate_evaluates enough
@@ -100,7 +100,7 @@ private theorem InputScalars.reject_capacity (input : InputScalars before) (prog
   have first := input.evaluates program
   rw [validInput] at first
   have negativeTwo : Evaluates program before (negative 2) (.signed .i32 (-2)) before := by
-    apply evaluatesUnary (show Evaluates program before (number 2) (.signed .i32 2) before from ⟨1, rfl⟩)
+    apply evaluatesUnary (show Evaluates program before (number 2) (.signed .i32 2) before from evaluatesValue)
     simp [evalUnaryValue, wrapSigned, signedModulus, signedSignBit, SignedIntTy.bits]
   exact executesSequence (executesIfFalse first (executesSkip _ _))
     (executesSequenceReturned (executesIfTrue capacityRejected

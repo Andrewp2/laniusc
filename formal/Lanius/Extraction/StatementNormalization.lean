@@ -71,15 +71,7 @@ private theorem removeTrailingSkips_complete_at_fuel :
   | succ fuel fuelIH =>
       intro statement program state completion finalState supported execution
       induction statement generalizing program state completion finalState with
-      | skip =>
-          exact ⟨fuel + 1, execution⟩
-      | expression expression =>
-          exact ⟨fuel + 1, execution⟩
-      | returnValue value =>
-          exact ⟨fuel + 1, execution⟩
-      | breakLoop =>
-          exact ⟨fuel + 1, execution⟩
-      | continueLoop =>
+      | skip | expression _ | returnValue _ | breakLoop | continueLoop =>
           exact ⟨fuel + 1, execution⟩
       | sequence first second firstIH secondIH =>
           simp only [SkipNormalizationSupported, skipNormalizationSupported,
@@ -102,59 +94,36 @@ private theorem removeTrailingSkips_complete_at_fuel :
             cases completion with
             | next =>
                 exact executesSequence firstExecution secondExecution
-            | returned value =>
-                exact executesSequenceNonNext firstExecution (by simp)
-            | breakLoop =>
-                exact executesSequenceNonNext firstExecution (by simp)
-            | continueLoop =>
+            | returned _ | breakLoop | continueLoop =>
                 exact executesSequenceNonNext firstExecution (by simp)
           next normalizedSecond normalizedSecondEq =>
             simp only [execStmt] at execution
             cases firstResult :
                 execStmt fuel program state (removeTrailingSkips first) with
-            | outOfFuel => simp [firstResult] at execution
-            | trapped reason trappedState => simp [firstResult] at execution
-            | exited code exitedState => simp [firstResult] at execution
+            | outOfFuel | trapped _ _ | exited _ _ => simp [firstResult] at execution
             | done firstCompletion middle =>
                 rw [firstResult] at execution
+                have firstExecution := fuelIH first program state firstCompletion middle
+                  firstSupported firstResult
                 cases firstCompletion with
                 | next =>
-                    have firstExecution := fuelIH first program state .next middle
-                      firstSupported firstResult
                     have secondExecution := fuelIH second program middle completion
                       finalState secondSupported execution
                     exact executesSequence firstExecution secondExecution
-                | returned value =>
-                    have firstExecution := fuelIH first program state
-                      (.returned value) middle firstSupported firstResult
-                    cases execution
-                    exact executesSequenceNonNext firstExecution (by simp)
-                | breakLoop =>
-                    have firstExecution := fuelIH first program state .breakLoop middle
-                      firstSupported firstResult
-                    cases execution
-                    exact executesSequenceNonNext firstExecution (by simp)
-                | continueLoop =>
-                    have firstExecution := fuelIH first program state .continueLoop
-                      middle firstSupported firstResult
+                | returned _ | breakLoop | continueLoop =>
                     cases execution
                     exact executesSequenceNonNext firstExecution (by simp)
       | letLocal id ty initializer body bodyIH =>
           simp only [SkipNormalizationSupported, skipNormalizationSupported] at supported
           simp only [removeTrailingSkips, execStmt] at execution
           cases initializerResult : evalExpr fuel program state initializer with
-          | outOfFuel => simp [initializerResult] at execution
-          | trapped reason trappedState => simp [initializerResult] at execution
-          | exited code exitedState => simp [initializerResult] at execution
+          | outOfFuel | trapped _ _ | exited _ _ => simp [initializerResult] at execution
           | done value afterInitializer =>
               simp only [initializerResult] at execution
               cases bodyResult : execStmt fuel program
                   (afterInitializer.bindLocal id value)
                   (removeTrailingSkips body) with
-              | outOfFuel => simp [bodyResult, restoreOutcomeLocals] at execution
-              | trapped reason trappedState =>
-                  simp [bodyResult, restoreOutcomeLocals] at execution
-              | exited code exitedState =>
+              | outOfFuel | trapped _ _ | exited _ _ =>
                   simp [bodyResult, restoreOutcomeLocals] at execution
               | done bodyCompletion completed =>
                   simp only [bodyResult, restoreOutcomeLocals] at execution
@@ -168,10 +137,7 @@ private theorem removeTrailingSkips_complete_at_fuel :
           simp only [removeTrailingSkips, execStmt] at execution
           cases bodyResult : execStmt fuel program (state.bindUninitialized id)
               (removeTrailingSkips body) with
-          | outOfFuel => simp [bodyResult, restoreOutcomeLocals] at execution
-          | trapped reason trappedState =>
-              simp [bodyResult, restoreOutcomeLocals] at execution
-          | exited code exitedState =>
+          | outOfFuel | trapped _ _ | exited _ _ =>
               simp [bodyResult, restoreOutcomeLocals] at execution
           | done bodyCompletion completed =>
               simp only [bodyResult, restoreOutcomeLocals] at execution
@@ -189,9 +155,7 @@ private theorem removeTrailingSkips_complete_at_fuel :
           rcases supported with ⟨thenSupported, elseSupported⟩
           simp only [removeTrailingSkips, execStmt] at execution
           cases conditionResult : evalExpr fuel program state condition with
-          | outOfFuel => simp [conditionResult] at execution
-          | trapped reason trappedState => simp [conditionResult] at execution
-          | exited code exitedState => simp [conditionResult] at execution
+          | outOfFuel | trapped _ _ | exited _ _ => simp [conditionResult] at execution
           | done value afterCondition =>
               simp only [conditionResult] at execution
               cases value with
@@ -205,26 +169,12 @@ private theorem removeTrailingSkips_complete_at_fuel :
                       have branchExecution := fuelIH thenBranch program afterCondition
                         completion finalState thenSupported execution
                       exact executesIfTrue ⟨fuel, conditionResult⟩ branchExecution
-              | unit => simp at execution
-              | signed width value => simp at execution
-              | unsigned width value => simp at execution
-              | f32Bits bits => simp at execution
-              | f64Bits bits => simp at execution
-              | character value => simp at execution
-              | string value => simp at execution
-              | pointer address => simp at execution
-              | array values => simp at execution
-              | slice elementType cell projections start length => simp at execution
-              | «structure» type fields => simp at execution
-              | enumeration type variant fields => simp at execution
-              | reference type cell projections => simp at execution
+              | _ => simp at execution
       | whileLoop condition body bodyIH =>
           simp only [SkipNormalizationSupported, skipNormalizationSupported] at supported
           simp only [removeTrailingSkips, execStmt] at execution
           cases conditionResult : evalExpr fuel program state condition with
-          | outOfFuel => simp [conditionResult] at execution
-          | trapped reason trappedState => simp [conditionResult] at execution
-          | exited code exitedState => simp [conditionResult] at execution
+          | outOfFuel | trapped _ _ | exited _ _ => simp [conditionResult] at execution
           | done value afterCondition =>
               simp only [conditionResult] at execution
               cases value with
@@ -236,9 +186,7 @@ private theorem removeTrailingSkips_complete_at_fuel :
                   | true =>
                       cases bodyResult : execStmt fuel program afterCondition
                           (removeTrailingSkips body) with
-                      | outOfFuel => simp [bodyResult] at execution
-                      | trapped reason trappedState => simp [bodyResult] at execution
-                      | exited code exitedState => simp [bodyResult] at execution
+                      | outOfFuel | trapped _ _ | exited _ _ => simp [bodyResult] at execution
                       | done bodyCompletion afterBody =>
                           simp only [bodyResult] at execution
                           have bodyExecution := fuelIH body program afterCondition
@@ -268,22 +216,8 @@ private theorem removeTrailingSkips_complete_at_fuel :
                               cases execution
                               exact executesWhileReturned ⟨fuel, conditionResult⟩
                                 bodyExecution
-              | unit => simp at execution
-              | signed width value => simp at execution
-              | unsigned width value => simp at execution
-              | f32Bits bits => simp at execution
-              | f64Bits bits => simp at execution
-              | character value => simp at execution
-              | string value => simp at execution
-              | pointer address => simp at execution
-              | array values => simp at execution
-              | slice elementType cell projections start length => simp at execution
-              | «structure» type fields => simp at execution
-              | enumeration type variant fields => simp at execution
-              | reference type cell projections => simp at execution
-      | forValues id iterable body bodyIH =>
-          simp [SkipNormalizationSupported, skipNormalizationSupported] at supported
-      | forRange id start stop inclusive body bodyIH =>
+              | _ => simp at execution
+      | forValues _ _ _ _ | forRange _ _ _ _ _ =>
           simp [SkipNormalizationSupported, skipNormalizationSupported] at supported
 
 /-- Completeness of trailing-skip removal for successful executions of the

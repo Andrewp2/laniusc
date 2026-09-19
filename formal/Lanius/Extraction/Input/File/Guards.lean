@@ -23,7 +23,7 @@ theorem eofGuard_evaluates (program : Program) (count : Nat)
     (countRead : before.local? 9 = some (.signed .i32 count)) :
     Evaluates program before eofGuard (.boolean (decide (count = 0))) before := by
   apply evaluatesEagerBinary (by decide) (by decide) (local_evaluates program countRead)
-    (show Evaluates program before (number 0) (.signed .i32 0) before from ⟨1, rfl⟩)
+    (show Evaluates program before (number 0) (.signed .i32 0) before from Lanius.Semantics.evaluatesValue)
   simp [evalBinaryValue, scalarEqual]
   apply Bool.eq_iff_iff.mpr
   simp
@@ -70,7 +70,7 @@ theorem guards_overflow (program : Program) (count request remaining : Nat)
   simp only [Nat.ne_of_gt (Nat.lt_of_le_of_lt (Nat.zero_le _) oversize), decide_false] at notEof
   simp only [oversize, decide_true] at overflow
   have negative : Evaluates program before negativeTwo (.signed .i32 (-2)) before := by
-    apply evaluatesUnary (show Evaluates program before (number 2) (.signed .i32 2) before from ⟨1, rfl⟩)
+    apply evaluatesUnary (show Evaluates program before (number 2) (.signed .i32 2) before from Lanius.Semantics.evaluatesValue)
     simp [evalUnaryValue, wrapSigned, signedModulus, signedSignBit, SignedIntTy.bits]
   exact executesSequence (executesIfFalse (errorGuard_passes program count request countRead requestRead requested) (executesSkip _ _))
     (executesSequence (executesIfFalse notEof (executesSkip _ _))

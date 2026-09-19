@@ -67,7 +67,7 @@ theorem lex_then_count
   obtain ⟨counted, countCall, countEffect, countHeap⟩ := accessor.call resultWF
     (.singleton (show Evaluates program.core withResult (.local lexedId)
       (.structure (symbols.typeId 4) fields) withResult from
-      ⟨1, evalLocal_of_local 0 _ _ _ _ (resultShape ▸ resultLocal)⟩)) countField
+      Lanius.Semantics.evaluatesLocal (resultShape ▸ resultLocal))) countField
   let ready := counted.bindLocal countId (.signed .i32 (Model.emittedTokens request.outcome).length)
   have readyWF : StateWellFormed ready := bindLocal_preserves_well_formed _ _ _ countEffect.wellFormed
   have preserveResult {cell : CellId} {value : Option Value}

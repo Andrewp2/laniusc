@@ -130,12 +130,10 @@ noncomputable def RecognizerStateCandidateBindings.bind_incomplete_symbol
       productionBound⟩).rhs.length))
   have productionResult : Evaluates verifiedParserCore before (.local 25)
       (.signed .i32 (Int.ofNat candidate.production)) before :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore before 25 _
-      (by simpa [before] using bindings.productionLocal)⟩
+    Lanius.Semantics.evaluatesLocal (by simpa [before] using bindings.productionLocal)
   have dotResult : Evaluates verifiedParserCore before (.local 26)
       (.signed .i32 (Int.ofNat candidate.dot)) before :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore before 26 _
-      (by simpa [before] using bindings.dotLocal)⟩
+    Lanius.Semantics.evaluatesLocal (by simpa [before] using bindings.dotLocal)
   let rhsRead := bindings.invariant.chartCursor.read_rhs_symbol
     candidate.production productionBound candidate.dot dotBeforeEnd
     (.local 25) (.local 26) productionResult dotResult

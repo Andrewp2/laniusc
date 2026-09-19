@@ -101,6 +101,19 @@ theorem apply {termSignature : Signature}
     post completion afterWorld afterEnvironment :=
   wp completion afterWorld afterEnvironment evaluated
 
+private theorem terminal_iff
+    {post : Postcondition termMachine.World arity}
+    (evaluates : Stateful.Command.Evaluates termMachine machine world
+      environment command completion world environment) :
+    WP termMachine machine command post world environment ↔
+      post completion world environment := by
+  constructor
+  · exact fun wp => wp _ _ _ evaluates
+  · exact fun result _ _ _ evaluated => by
+      obtain ⟨rfl, rfl, rfl⟩ :=
+        Stateful.Command.Evaluates.deterministic evaluated evaluates
+      exact result
+
 @[simp] theorem skip {termSignature : Signature}
     {termMachine : FunctionalView.Machine termSignature}
     {actions : Stateful.ActionSignature termSignature}
@@ -109,13 +122,8 @@ theorem apply {termSignature : Signature}
     {world : termMachine.World} {environment : Env arity} :
     WP termMachine machine
       (.skip : Stateful.Command termSignature actions arity)
-      post world environment ↔ post .next world environment := by
-  constructor
-  · intro wp
-    exact wp _ _ _ Stateful.Command.Evaluates.skip
-  · intro result _ _ _ evaluated
-    cases evaluated
-    exact result
+      post world environment ↔ post .next world environment :=
+  terminal_iff Stateful.Command.Evaluates.skip
 
 theorem sequence {termSignature : Signature}
     {termMachine : FunctionalView.Machine termSignature}
@@ -286,15 +294,6 @@ theorem whileLoop {termSignature : Signature}
   generalize commandEq :
       (Stateful.Command.whileLoop condition body) = command at evaluated
   induction evaluated with
-  | skip => cases commandEq
-  | sequenceNext _ _ _ _ => cases commandEq
-  | sequenceStop _ _ _ => cases commandEq
-  | letValue _ _ _ => cases commandEq
-  | setLocal _ => cases commandEq
-  | updateLocal _ _ => cases commandEq
-  | action _ => cases commandEq
-  | ifTrue _ _ _ => cases commandEq
-  | ifFalse _ _ _ => cases commandEq
   | whileFalse conditionResult =>
       cases commandEq
       exact conditionFalse _ _ _ initial conditionResult
@@ -314,10 +313,7 @@ theorem whileLoop {termSignature : Signature}
   | whileReturn conditionResult bodyResult bodyIH =>
       cases commandEq
       exact conditionTrue _ _ _ initial conditionResult _ _ _ bodyResult
-  | returnNone => cases commandEq
-  | returnSome _ => cases commandEq
-  | breakLoop => cases commandEq
-  | continueLoop => cases commandEq
+  | _ => cases commandEq
 
 /-- Invariant-based partial correctness for a bounded cursor scan. Unlike
 `FunctionalView.Stateful.Loop.CursorScan.run`, this theorem does not construct
@@ -343,74 +339,20 @@ theorem cursorScan
         afterWorld = (runtime (finish initial)).world ∧
         afterEnvironment = (runtime (finish initial)).environment)
       (runtime initial).world (runtime initial).environment := by
-  apply whileLoop (termMachine := termMachine) (machine := machine)
-    (condition := condition) (body := body)
-    (post := fun completion afterWorld afterEnvironment =>
-      completion = .next ∧
-      afterWorld = (runtime (finish initial)).world ∧
-      afterEnvironment = (runtime (finish initial)).environment)
-    (world := (runtime initial).world)
-    (environment := (runtime initial).environment)
-    (invariant := fun world environment =>
-      ∃ cursor,
-        world = (runtime cursor).world ∧
-        environment = (runtime cursor).environment ∧
-        finish cursor = finish initial)
-  · exact ⟨initial, rfl, rfl, rfl⟩
-  · intro beforeWorld beforeEnvironment afterWorld invariant evaluated
-    obtain ⟨cursor, beforeWorldEq, beforeEnvironmentEq, finishEq⟩ := invariant
-    subst beforeWorld
-    subst beforeEnvironment
-    by_cases inBounds : cursor < limit
-    · have canonical := spec.conditionInBounds cursor inBounds
-      have same := evaluated.symm.trans canonical
-      injection same with pairEq
-      have rejected : accept cursor = false := by
-        have valueEq := congrArg Prod.fst pairEq
-        exact (Value.boolean.inj valueEq).symm
-      have afterWorldEq : afterWorld = (runtime cursor).world := by
-        exact congrArg Prod.snd pairEq
-      have cursorEq : cursor = finish initial := by
-        exact (recurrence.rejected cursor inBounds rejected).symm.trans finishEq
-      subst cursor
-      exact ⟨rfl, afterWorldEq, rfl⟩
-    · have canonical := spec.conditionOutOfBounds cursor inBounds
-      have same := evaluated.symm.trans canonical
-      injection same with pairEq
-      have afterWorldEq : afterWorld = (runtime cursor).world := by
-        exact congrArg Prod.snd pairEq
-      have cursorEq : cursor = finish initial := by
-        exact (recurrence.outOfBounds cursor inBounds).symm.trans finishEq
-      subst cursor
-      exact ⟨rfl, afterWorldEq, rfl⟩
-  · intro beforeWorld beforeEnvironment conditionWorld invariant evaluated
-    obtain ⟨cursor, beforeWorldEq, beforeEnvironmentEq, finishEq⟩ := invariant
-    subst beforeWorld
-    subst beforeEnvironment
-    by_cases inBounds : cursor < limit
-    · have canonical := spec.conditionInBounds cursor inBounds
-      have same := evaluated.symm.trans canonical
-      injection same with pairEq
-      have accepted : accept cursor = true := by
-        have valueEq := congrArg Prod.fst pairEq
-        exact (Value.boolean.inj valueEq).symm
-      have conditionWorldEq : conditionWorld = (runtime cursor).world := by
-        exact congrArg Prod.snd pairEq
-      subst conditionWorld
-      intro completion bodyWorld bodyEnvironment bodyEvaluated
-      have canonicalBody := spec.body cursor inBounds accepted
-      obtain ⟨completionEq, bodyWorldEq, bodyEnvironmentEq⟩ :=
-        Stateful.Command.Evaluates.deterministic bodyEvaluated canonicalBody
-      subst completion
-      subst bodyWorld
-      subst bodyEnvironment
-      exact ⟨cursor + 1, rfl, rfl,
-        (recurrence.accepted cursor inBounds accepted).symm.trans finishEq⟩
-    · have canonical := spec.conditionOutOfBounds cursor inBounds
-      have same := evaluated.symm.trans canonical
-      injection same with pairEq
-      have valueEq := congrArg Prod.fst pairEq
-      cases Value.boolean.inj valueEq
+  let run := Stateful.Loop.CursorScan.run spec recurrence initial
+  intro completion afterWorld afterEnvironment evaluated
+  obtain ⟨completionEq, finalCursor, finalEq, afterEq⟩ := run.result
+  obtain ⟨completionEq', afterWorldEq, afterEnvironmentEq⟩ :=
+    Stateful.Command.Evaluates.deterministic evaluated run.trace.evaluates
+  subst completion
+  subst afterWorld
+  subst afterEnvironment
+  have finalWorldEq : run.after.world = (runtime (finish initial)).world := by
+    rw [afterEq, finalEq]
+  have finalEnvironmentEq : run.after.environment =
+      (runtime (finish initial)).environment := by
+    rw [afterEq, finalEq]
+  exact ⟨completionEq, finalWorldEq, finalEnvironmentEq⟩
 
 @[simp] theorem returnNone {termSignature : Signature}
     {termMachine : FunctionalView.Machine termSignature}
@@ -421,13 +363,8 @@ theorem cursorScan
     WP termMachine machine
       (.returnValue none : Stateful.Command termSignature actions arity)
       post world environment ↔
-      post (.returned none) world environment := by
-  constructor
-  · intro wp
-    exact wp _ _ _ Stateful.Command.Evaluates.returnNone
-  · intro result _ _ _ evaluated
-    cases evaluated
-    exact result
+      post (.returned none) world environment :=
+  terminal_iff Stateful.Command.Evaluates.returnNone
 
 theorem returnSome {termSignature : Signature}
     {termMachine : FunctionalView.Machine termSignature}
@@ -455,13 +392,8 @@ theorem returnSome {termSignature : Signature}
     {world : termMachine.World} {environment : Env arity} :
     WP termMachine machine
       (.breakLoop : Stateful.Command termSignature actions arity)
-      post world environment ↔ post .breakLoop world environment := by
-  constructor
-  · intro wp
-    exact wp _ _ _ Stateful.Command.Evaluates.breakLoop
-  · intro result _ _ _ evaluated
-    cases evaluated
-    exact result
+      post world environment ↔ post .breakLoop world environment :=
+  terminal_iff Stateful.Command.Evaluates.breakLoop
 
 @[simp] theorem continueLoop {termSignature : Signature}
     {termMachine : FunctionalView.Machine termSignature}
@@ -471,13 +403,8 @@ theorem returnSome {termSignature : Signature}
     {world : termMachine.World} {environment : Env arity} :
     WP termMachine machine
       (.continueLoop : Stateful.Command termSignature actions arity)
-      post world environment ↔ post .continueLoop world environment := by
-  constructor
-  · intro wp
-    exact wp _ _ _ Stateful.Command.Evaluates.continueLoop
-  · intro result _ _ _ evaluated
-    cases evaluated
-    exact result
+      post world environment ↔ post .continueLoop world environment :=
+  terminal_iff Stateful.Command.Evaluates.continueLoop
 
 end Command
 

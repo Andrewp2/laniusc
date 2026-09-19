@@ -75,7 +75,6 @@ mutual
     | .array element _ => collectTypeReferences fuel unit scope element
     | .slice element => collectTypeReferences fuel unit scope element
     | .reference referent => collectTypeReferences fuel unit scope referent
-
   def collectPathArgumentReferences
       (fuel : Nat) (unit : Nat) (scope : ScopeId) :
       List SurfacePathSegment → BuildM Unit
@@ -127,7 +126,6 @@ mutual
         collectExprReferences fuel unit scope base
         collectExprReferences fuel unit scope index
     | .member base _ => collectExprReferences fuel unit scope base
-
   def collectExprListReferences
       (fuel : Nat) (unit : Nat) (scope : ScopeId) :
       List SurfaceExpr → BuildM Unit

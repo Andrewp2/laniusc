@@ -7,8 +7,7 @@ theorem collectPackImports_cons_of
     (headFound : collectUnitImports units head head.surface.items = some headImports)
     (restFound : collectPackImports units tail = some restImports) :
     collectPackImports units (head :: tail) = some (headImports ++ restImports) := by
-  simp only [collectPackImports, headFound, restFound, Option.bind_eq_bind]
-  rfl
+  simp [collectPackImports, headFound, restFound, Option.bind_eq_bind]
 
 def PackHeaders.append (head tail : PackHeaders) : PackHeaders := {
   symbols := head.symbols ++ tail.symbols
@@ -46,19 +45,16 @@ theorem buildPackHeaders_cons_of
     (tailFound : buildPackHeaders tail = some tailHeaders) :
     buildPackHeaders (allocation :: tail) =
       some (headHeaders.append tailHeaders) := by
-  unfold buildUnitHeaders at headFound
-  dsimp only at headFound
-  unfold buildPackHeaders
-  simp only [tailFound]
+  simp only [buildPackHeaders, tailFound]
   generalize nominalFound :
     buildNominalHeaders allocation.unit.moduleId
       allocation.structureDeclarationStart allocation.structureTypeStart
       (collectStructures allocation.unit.surface.items)
-      allocation.unit.core.structures = nominal at headFound ⊢
+      allocation.unit.core.structures = nominal
   cases nominal with
-  | none => simp_all
+  | none => simp_all [buildUnitHeaders, List.append_assoc]
   | some nominal =>
-      simp at headFound
+      simp [buildUnitHeaders, nominalFound] at headFound
       subst headHeaders
       simp [PackHeaders.append, List.append_assoc]
 
@@ -79,8 +75,7 @@ theorem buildPackStructDetails_cons_of
     (tailFound : buildPackStructDetails context tail = some tailDetails) :
     buildPackStructDetails context (allocation :: tail) =
       some (appendStructDetails headDetails tailDetails) := by
-  simp only [buildPackStructDetails, headFound, tailFound]
-  rfl
+  simp [buildPackStructDetails, headFound, tailFound, appendStructDetails]
 
 theorem buildPackConstants_cons_of
     (context : SurfaceElaboration.Context) (allocation : UnitAllocation)
@@ -94,8 +89,7 @@ theorem buildPackConstants_cons_of
     (tailFound : buildPackConstants context tail = some tailConstants) :
     buildPackConstants context (allocation :: tail) =
       some (headConstants ++ tailConstants) := by
-  simp only [buildPackConstants, headFound, tailFound]
-  rfl
+  simp [buildPackConstants, headFound, tailFound]
 
 def appendFunctionHeaders
     (head tail : ArtifactContextChecker.FunctionHeaders) :
@@ -114,6 +108,5 @@ theorem buildPackFunctions_cons_of
     (tailFound : buildPackFunctions context tail = some tailFunctions) :
     buildPackFunctions context (allocation :: tail) =
       some (appendFunctionHeaders headFunctions tailFunctions) := by
-  simp only [buildPackFunctions, headFound, tailFound]
-  rfl
+  simp [buildPackFunctions, headFound, tailFound, appendFunctionHeaders]
 end Lanius.Extraction.ArtifactPackContextChecker

@@ -10,7 +10,7 @@ open Lanius.FunctionalView.Core
 
 theorem local_evaluates (program : Program) {id : VarId} (found : before.local? id = some value) :
     Evaluates program before (read id) value before :=
-  ⟨1, evalLocal_of_local 0 program before id value found⟩
+  Lanius.Semantics.evaluatesLocal found
 
 theorem negativeOne_evaluates (program : Program) (state : State) :
     Evaluates program state negativeOne (.signed .i32 (-1)) state := by
@@ -54,7 +54,7 @@ theorem byte_body (program : Program) (position capacity value : Nat)
   have positionAfter := effect.preserves_local_of_distinct_value wellFormed positionRead backing
     (by intro same; cases same)
   have next := evaluatesNatI32Add (leftValue := position) (rightValue := 1) (local_evaluates program positionAfter)
-    (show Evaluates program after (number 1) (.signed .i32 1) after from ⟨1, rfl⟩) (by omega)
+    (show Evaluates program after (number 1) (.signed .i32 1) after from evaluatesValue) (by omega)
   exact ⟨after, by core_exec [], contents, effect, storeHeapFrame⟩
 
 def byteValues (output : Value) (capacity position value : Int) : List Value :=

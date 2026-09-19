@@ -6,8 +6,6 @@ namespace Lanius.Extraction
 
 set_option maxRecDepth 100000
 set_option maxHeartbeats 0
-set_option cbv.maxSteps 100000000
-set_option cbv.warning false
 
 theorem verifiedFrontendLexer_parse_tree_well_formed_kernel :
     verifiedFrontendLexerParseNodeTree.WellFormed 64 := by

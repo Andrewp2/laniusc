@@ -215,16 +215,17 @@ inductive CheckedPackUseGlobalEvidence
       (uniqueDeclaration :
         itemsForSymbol declarationSurface resolved.symbol = [declaration])
       (row : ResolutionEvidence)
-      (uniqueRow : rowsForUse artifact use.reference.node = [row])
+      (rowNode : row.use_node = use.reference.node)
       (sameUnit : row.declaration_unit = resolved.symbol.moduleId)
       (sameNode : row.declaration_node = declaration.id)
 
 def checkPackUse? (pack : ArtifactPack) (artifact : Artifact)
-    (context : SurfaceElaboration.Context) (use : CheckedUse graph) :
+    (context : SurfaceElaboration.Context)
+    (evidence : CheckedUseEvidence artifact graph use) :
     Option (CheckedPackUseGlobalEvidence pack artifact context graph use) :=
-  match outcome : use.resolution with
-  | .local checked => some (.lexical checked outcome)
-  | .global noLocal => do
+  match evidence with
+  | .local checked outcome _ _ _ _ _ _ => some (.lexical checked outcome)
+  | .global noLocal outcome _ _ row rowNode _ _ => do
       match pathDecoded :
           decodeSurfacePath (artifact.tokens.length + 1) use.sourcePath with
       | none => none
@@ -236,39 +237,38 @@ def checkPackUse? (pack : ArtifactPack) (artifact : Artifact)
               match uniqueDeclaration :
                   itemsForSymbol declarationSurface resolved.symbol with
               | [declaration] =>
-                  match uniqueRow : rowsForUse artifact use.reference.node with
-                  | [row] =>
-                      if sameUnit : row.declaration_unit = resolved.symbol.moduleId then
-                        if sameNode : row.declaration_node = declaration.id then
-                          some (.global noLocal outcome path pathDecoded resolved
-                            declarationSurface surfaceFound declaration
-                            uniqueDeclaration row uniqueRow sameUnit sameNode)
-                        else none
-                      else none
-                  | _ => none
+                  if sameUnit : row.declaration_unit = resolved.symbol.moduleId then
+                    if sameDeclarationNode : row.declaration_node = declaration.id then
+                      some (.global noLocal outcome path pathDecoded resolved
+                        declarationSurface surfaceFound declaration
+                        uniqueDeclaration row rowNode sameUnit
+                          sameDeclarationNode)
+                    else none
+                  else none
               | _ => none
 
 def checkPackUses? (pack : ArtifactPack) (artifact : Artifact)
     (context : SurfaceElaboration.Context) (graph : Graph) :
-    (uses : List (CheckedUse graph)) →
+    (uses : List (Sigma fun use => CheckedUseEvidence artifact graph use)) →
       Option (List (Sigma fun use =>
         CheckedPackUseGlobalEvidence pack artifact context graph use))
   | [] => some []
-  | use :: tail => do
-      let head ← checkPackUse? pack artifact context use
+  | ⟨use, evidence⟩ :: tail => do
+      let head ← checkPackUse? pack artifact context evidence
       let rest ← checkPackUses? pack artifact context graph tail
       pure (⟨use, head⟩ :: rest)
 
 def checkPackFunctions? (pack : ArtifactPack) (artifact : Artifact)
     (context : SurfaceElaboration.Context) :
-    (functions : List CheckedFunction) →
+    (functions : List (Sigma fun function =>
+      CheckedFunctionEvidence artifact function)) →
       Option (List (Sigma fun function : CheckedFunction =>
         List (Sigma fun use => CheckedPackUseGlobalEvidence pack artifact
           context function.graph use)))
   | [] => some []
-  | function :: tail => do
+  | ⟨function, evidence⟩ :: tail => do
       let uses ←
-        checkPackUses? pack artifact context function.graph function.uses
+        checkPackUses? pack artifact context function.graph evidence.uses
       let rest ← checkPackFunctions? pack artifact context tail
       pure (⟨function, uses⟩ :: rest)
 
@@ -286,13 +286,15 @@ structure CheckedPackModuleUseGlobalEvidence
   uniqueDeclaration :
     itemsForSymbol declarationSurface resolved.symbol = [declaration]
   row : ResolutionEvidence
-  uniqueRow : rowsForUse artifact use.node = [row]
+  rowNode : row.use_node = use.node
   sameUnit : row.declaration_unit = resolved.symbol.moduleId
   sameNode : row.declaration_node = declaration.id
 
 def checkPackModuleUse? (pack : ArtifactPack) (artifact : Artifact)
-    (context : SurfaceElaboration.Context) (use : ModuleUse) :
+    (context : SurfaceElaboration.Context)
+    (evidence : CheckedModuleUseEvidence artifact use) :
     Option (CheckedPackModuleUseGlobalEvidence pack artifact context use) := do
+  let row := evidence.row
   match pathDecoded :
       decodeSurfacePath (artifact.tokens.length + 1) use.sourcePath with
   | none => none
@@ -304,26 +306,23 @@ def checkPackModuleUse? (pack : ArtifactPack) (artifact : Artifact)
           match uniqueDeclaration :
               itemsForSymbol declarationSurface resolved.symbol with
           | [declaration] =>
-              match uniqueRow : rowsForUse artifact use.node with
-              | [row] =>
-                  if sameUnit : row.declaration_unit = resolved.symbol.moduleId then
-                    if sameNode : row.declaration_node = declaration.id then
-                      some ⟨path, pathDecoded, resolved, declarationSurface,
-                        surfaceFound, declaration, uniqueDeclaration, row,
-                        uniqueRow, sameUnit, sameNode⟩
-                    else none
-                  else none
-              | _ => none
+              if sameUnit : row.declaration_unit = resolved.symbol.moduleId then
+                if sameNode : row.declaration_node = declaration.id then
+                  some ⟨path, pathDecoded, resolved, declarationSurface,
+                    surfaceFound, declaration, uniqueDeclaration, row,
+                    evidence.sameNode, sameUnit, sameNode⟩
+                else none
+              else none
           | _ => none
 
 def checkPackModuleUses? (pack : ArtifactPack) (artifact : Artifact)
     (context : SurfaceElaboration.Context) :
-    (uses : List ModuleUse) →
+    (uses : List (Sigma fun use => CheckedModuleUseEvidence artifact use)) →
       Option (List (Sigma fun use =>
         CheckedPackModuleUseGlobalEvidence pack artifact context use))
   | [] => some []
-  | use :: tail => do
-      let head ← checkPackModuleUse? pack artifact context use
+  | ⟨use, evidence⟩ :: tail => do
+      let head ← checkPackModuleUse? pack artifact context evidence
       let rest ← checkPackModuleUses? pack artifact context tail
       pure (⟨use, head⟩ :: rest)
 
@@ -340,13 +339,13 @@ structure CheckedPackUnit (pack : ArtifactPack)
       (context.forModule moduleId) function.graph use))
   functionsAccepted :
     checkPackFunctions? pack artifact (context.forModule moduleId)
-      surface.functions = some functions
+      lexical.functions = some functions
   moduleUses : List (Sigma fun use =>
     CheckedPackModuleUseGlobalEvidence pack artifact
       (context.forModule moduleId) use)
   moduleUsesAccepted :
     checkPackModuleUses? pack artifact (context.forModule moduleId)
-      surface.moduleUses = some moduleUses
+      lexical.moduleUses = some moduleUses
 
 /-- A dependency-ready pack retains one checked resolution witness for every
     input unit, in the same module order as the artifact list. -/
@@ -368,11 +367,11 @@ def checkPackUnitsFrom? (pack : ArtifactPack)
       let lexical ←
         ResolutionEvidenceChecker.checkArtifact? artifact scopedSurface
       match functionsAccepted : checkPackFunctions? pack artifact
-          (context.forModule moduleId) scopedSurface.functions with
+          (context.forModule moduleId) lexical.functions with
       | none => none
       | some functions =>
           match moduleUsesAccepted : checkPackModuleUses? pack artifact
-              (context.forModule moduleId) scopedSurface.moduleUses with
+              (context.forModule moduleId) lexical.moduleUses with
           | none => none
           | some moduleUses => do
               let rest ←

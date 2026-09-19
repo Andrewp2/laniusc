@@ -19,7 +19,7 @@ theorem row_index (program : Program) (index count : Nat)
     Evaluates program before rowIndex (.signed .i32 (3 * index : Nat)) before := by
   have run := evaluatesNatI32Multiply (leftValue := index) (rightValue := 3)
     (local_evaluates program indexRead)
-    (show Evaluates program before (number 3) (.signed .i32 3) before from ⟨1, rfl⟩) (by omega)
+    (show Evaluates program before (number 3) (.signed .i32 3) before from evaluatesValue) (by omega)
   simpa only [rowIndex, binary, Nat.mul_comm index 3, Int.ofNat_eq_natCast] using run
 
 /-- Read the frontend's existing canonical token encoding through the actual
@@ -36,9 +36,9 @@ theorem read_row (program : Program) (tokens : List RawToken) (index : Nat)
   have thirdBound : 3 * index + 2 < (encodeTokens tokens).length := by rw [encoded_length]; omega
   have row := local_evaluates program rowRead
   have startIndex := evaluatesNatI32Add (leftValue := 3 * index) (rightValue := 1) row
-    (show Evaluates program before (number 1) (.signed .i32 1) before from ⟨1, rfl⟩) (by omega)
+    (show Evaluates program before (number 1) (.signed .i32 1) before from evaluatesValue) (by omega)
   have finishIndex := evaluatesNatI32Add (leftValue := 3 * index) (rightValue := 2) row
-    (show Evaluates program before (number 2) (.signed .i32 2) before from ⟨1, rfl⟩) (by omega)
+    (show Evaluates program before (number 2) (.signed .i32 2) before from evaluatesValue) (by omega)
   have kindRun := input.read program (read 9) (3 * index) firstBound row
   have startRun := input.read program (binary .add (read 9) (number 1)) (3 * index + 1) secondBound startIndex
   have finishRun := input.read program (binary .add (read 9) (number 2)) (3 * index + 2) thirdBound finishIndex

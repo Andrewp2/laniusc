@@ -822,6 +822,22 @@ inductive ParametersLower :
         (.reference receiverType :: groundTail)
         ((next, .reference referent) :: coreTail) result final
 
+private theorem instantiateTypes_cons_of_some
+    (substitution : Static.Substitution) (head : Static.Ty)
+    (tail : List Static.Ty) (grounds : List Static.GroundTy)
+    (found : Static.instantiateTypes substitution (head :: tail) = some grounds) :
+    ∃ headGround tailGround, grounds = headGround :: tailGround ∧
+      head.instantiate substitution = some headGround ∧
+      Static.instantiateTypes substitution tail = some tailGround := by
+  cases grounds <;>
+    rw [Static.instantiateTypes] at found
+  all_goals
+    cases headGrounded : head.instantiate substitution <;>
+      cases tailGrounded : Static.instantiateTypes substitution tail <;>
+      simp [headGrounded, tailGrounded] at found
+  rcases found with ⟨rfl, rfl⟩
+  exact ⟨_, _, rfl, rfl, rfl⟩
+
 /-- Symbolic parameter retention and concrete dense allocation extend one
     specializing context in lockstep. The theorem is lookup-order exact because
     `SymbolicParametersBind` and `ParametersLower` both retain newest bindings
@@ -844,74 +860,38 @@ theorem SymbolicParametersBind.specializes
       cases lowered
       simpa [SymbolicBodyContext.bindMany] using contexts
   | @named surfaceTail typeTail bindingTail name annotation type tail tailIH =>
-      cases headGrounded : type.instantiate substitution with
-      | none => simp [Static.instantiateTypes, headGrounded] at typesGround
-      | some groundType =>
-          cases tailGrounded : Static.instantiateTypes substitution typeTail with
-          | none =>
-              simp [Static.instantiateTypes, headGrounded, tailGrounded]
-                at typesGround
-          | some groundTail =>
-              simp [Static.instantiateTypes, headGrounded, tailGrounded]
-                at typesGround
-              subst groundTypes
-              cases lowered with
-              | named notShadowed typeLowered coreType loweredTail =>
-                  have tailContexts := tailIH
-                    (contexts.bind name next type groundType headGrounded)
-                    tailGrounded loweredTail
-                  simpa [SymbolicBodyContext.bindMany, List.foldr_append] using
-                    tailContexts
-              | namedReceiver notShadowed typeLowered coreType loweredTail =>
-                  have tailContexts := tailIH
-                    (contexts.bind name next type groundType headGrounded)
-                    tailGrounded loweredTail
-                  simpa [SymbolicBodyContext.bindMany, List.foldr_append] using
-                    tailContexts
+      obtain ⟨groundType, groundTail, rfl, headGrounded, tailGrounded⟩ :=
+        instantiateTypes_cons_of_some substitution type typeTail groundTypes
+          typesGround
+      cases lowered <;>
+        rename_i notShadowed typeLowered coreType loweredTail <;>
+        have tailContexts := tailIH
+          (contexts.bind name next type groundType headGrounded)
+          tailGrounded loweredTail <;>
+        simpa [SymbolicBodyContext.bindMany, List.foldr_append] using
+          tailContexts
   | @selfValue surfaceTail typeTail bindingTail annotation type tail tailIH =>
-      cases headGrounded : type.instantiate substitution with
-      | none => simp [Static.instantiateTypes, headGrounded] at typesGround
-      | some groundType =>
-          cases tailGrounded : Static.instantiateTypes substitution typeTail with
-          | none =>
-              simp [Static.instantiateTypes, headGrounded, tailGrounded]
-                at typesGround
-          | some groundTail =>
-              simp [Static.instantiateTypes, headGrounded, tailGrounded]
-                at typesGround
-              subst groundTypes
-              cases lowered with
-              | selfValue notShadowed loweredTail coreType =>
-                  have tailContexts := tailIH
-                    (contexts.bind "self" next type _ headGrounded)
-                    tailGrounded loweredTail
-                  simpa [SymbolicBodyContext.bindMany, List.foldr_append] using
-                    tailContexts
-              | selfValueTyped notShadowed annotationLowered loweredTail coreType =>
-                  have tailContexts := tailIH
-                    (contexts.bind "self" next type groundType headGrounded)
-                    tailGrounded loweredTail
-                  simpa [SymbolicBodyContext.bindMany, List.foldr_append] using
-                    tailContexts
+      obtain ⟨groundType, groundTail, rfl, headGrounded, tailGrounded⟩ :=
+        instantiateTypes_cons_of_some substitution type typeTail groundTypes
+          typesGround
+      cases lowered with
+      | selfValue notShadowed loweredTail coreType =>
+          simpa [SymbolicBodyContext.bindMany, List.foldr_append] using
+            tailIH (contexts.bind "self" next type _ headGrounded)
+              tailGrounded loweredTail
+      | selfValueTyped notShadowed annotationLowered loweredTail coreType =>
+          simpa [SymbolicBodyContext.bindMany, List.foldr_append] using
+            tailIH (contexts.bind "self" next type groundType headGrounded)
+              tailGrounded loweredTail
   | @selfReference surfaceTail typeTail bindingTail type tail tailIH =>
-      cases headGrounded : type.instantiate substitution with
-      | none => simp [Static.instantiateTypes, headGrounded] at typesGround
-      | some groundType =>
-          cases tailGrounded : Static.instantiateTypes substitution typeTail with
-          | none =>
-              simp [Static.instantiateTypes, headGrounded, tailGrounded]
-                at typesGround
-          | some groundTail =>
-              simp [Static.instantiateTypes, headGrounded, tailGrounded]
-                at typesGround
-              subst groundTypes
-              cases lowered with
-              | selfReference notShadowed coreReferent loweredTail =>
-                  have tailContexts := tailIH
-                    (contexts.bind "self" next type _ headGrounded)
-                    tailGrounded loweredTail
-                  simpa [SymbolicBodyContext.bindMany, List.foldr_append] using
-                    tailContexts
+      obtain ⟨groundType, groundTail, rfl, headGrounded, tailGrounded⟩ :=
+        instantiateTypes_cons_of_some substitution type typeTail groundTypes
+          typesGround
+      cases lowered with
+      | selfReference notShadowed coreReferent loweredTail =>
+          simpa [SymbolicBodyContext.bindMany, List.foldr_append] using
+            tailIH (contexts.bind "self" next type _ headGrounded)
+              tailGrounded loweredTail
 
 /-- One monomorphic function artifact is derived from one declaration-wide
     symbolic body derivation. Parameters, return interpretation, local-ID
@@ -4045,16 +4025,9 @@ theorem CompleteProgramElaboration.nominalEvidenceArtifact_unique
       cases right.artifact with
       | intro rightMember _rightDeclaration rightSourceType _rightKind
           rightTypeArguments rightConstArguments _rightUnique =>
-          have leftMemberGlobal :
-              leftResolved ∈ symbolic.globals.nominalInstances := by
-            rw [contexts.globals] at leftMember
-            exact leftMember
-          have rightMemberGlobal :
-              rightResolved ∈ symbolic.globals.nominalInstances := by
-            rw [contexts.globals] at rightMember
-            exact rightMember
+          rw [contexts.globals] at leftMember rightMember
           exact complete.artifacts.nominalInstancesUnique
-            leftResolved leftMemberGlobal rightResolved rightMemberGlobal
+            leftResolved leftMember rightResolved rightMember
             (leftSourceType.trans rightSourceType.symm)
             (leftTypeArguments.trans
               (groundTypesEquality.trans rightTypeArguments.symm))
@@ -4083,16 +4056,9 @@ theorem CompleteProgramElaboration.concreteNominalArtifact_unique
       cases right with
       | intro rightMember _rightDeclaration rightSourceType _rightKind
           rightTypeArguments rightConstArguments _rightUnique =>
-          have leftMemberGlobal :
-              leftResolved ∈ symbolic.globals.nominalInstances := by
-            rw [contexts.globals] at leftMember
-            exact leftMember
-          have rightMemberGlobal :
-              rightResolved ∈ symbolic.globals.nominalInstances := by
-            rw [contexts.globals] at rightMember
-            exact rightMember
+          rw [contexts.globals] at leftMember rightMember
           exact complete.artifacts.nominalInstancesUnique
-            leftResolved leftMemberGlobal rightResolved rightMemberGlobal
+            leftResolved leftMember rightResolved rightMember
             (leftSourceType.trans rightSourceType.symm)
             (leftTypeArguments.trans
               (typeArgumentsEquality.trans rightTypeArguments.symm))
@@ -4122,16 +4088,9 @@ theorem CompleteProgramElaboration.concreteFunctionArtifact_unique
       cases right with
       | intro rightMember rightDeclaration rightTypeArguments
           rightConstArguments _rightUnique =>
-          have leftMemberGlobal :
-              leftResolved ∈ symbolic.globals.functionInstances := by
-            rw [contexts.globals] at leftMember
-            exact leftMember
-          have rightMemberGlobal :
-              rightResolved ∈ symbolic.globals.functionInstances := by
-            rw [contexts.globals] at rightMember
-            exact rightMember
+          rw [contexts.globals] at leftMember rightMember
           apply complete.artifacts.functionSpecializationsUnique
-            leftResolved leftMemberGlobal rightResolved rightMemberGlobal
+            leftResolved leftMember rightResolved rightMember
           simp [Static.FunctionInstance.specializationKey, leftDeclaration,
             rightDeclaration, leftTypeArguments, rightTypeArguments,
             leftConstArguments, rightConstArguments, typeArgumentsEquality,
@@ -4161,16 +4120,9 @@ theorem CompleteProgramElaboration.concreteMethodArtifact_unique
       cases right with
       | intro rightMember rightDeclaration _rightName _rightReceiverMode
           rightTypeArguments rightConstArguments _rightUnique =>
-          have leftMemberGlobal :
-              leftResolved ∈ symbolic.globals.methodInstances := by
-            rw [contexts.globals] at leftMember
-            exact leftMember
-          have rightMemberGlobal :
-              rightResolved ∈ symbolic.globals.methodInstances := by
-            rw [contexts.globals] at rightMember
-            exact rightMember
+          rw [contexts.globals] at leftMember rightMember
           apply complete.artifacts.methodSpecializationsUnique
-            leftResolved leftMemberGlobal rightResolved rightMemberGlobal
+            leftResolved leftMember rightResolved rightMember
           simp [Static.MethodInstance.specializationKey, leftDeclaration,
             rightDeclaration, receiverEquality, leftTypeArguments,
             rightTypeArguments, leftConstArguments, rightConstArguments,
@@ -5654,6 +5606,54 @@ theorem StructFieldsCheckingDerivationSpecializes.unique_of_expr_and_arguments
                 leftTail rightTail
               rfl
 
+/-- Inferred field traversal is also a contextual traversal: each symbolic
+    field match supplies the substitution witness required by checking. -/
+private theorem symbolicStructFieldsInfer_asChecking
+    (specialized : SymbolicStructFieldsInfer symbolic inner fields
+      surfaceFields) :
+    SymbolicStructFieldsCheck symbolic inner fields surfaceFields := by
+  induction fields generalizing surfaceFields with
+  | nil =>
+      cases specialized
+      exact .nil
+  | cons field fieldTail induction =>
+      cases specialized with
+      | cons removed value matched tail =>
+          exact .cons removed matched.substitutes (.exact value)
+            (induction tail)
+
+private theorem structSchemeFieldsInfer_asChecking
+    (specialized : SurfaceElaboration.StructSchemeFieldsInfer concrete
+      substitution fields surfaceFields core) :
+    SurfaceElaboration.StructSchemeFieldsCheck concrete substitution fields
+      surfaceFields core := by
+  induction fields generalizing surfaceFields core with
+  | nil =>
+      cases specialized
+      exact .nil
+  | cons field fieldTail induction =>
+      cases specialized with
+      | cons removed value matched tail =>
+          exact .cons removed matched.instantiates (.exact value)
+            (induction tail)
+
+private theorem StructFieldsInferenceDerivationSpecializes.asChecking
+    (specialized : StructFieldsInferenceDerivationSpecializes outer
+      groundEnclosingReturn symbolic concrete contexts inner fields
+      surfaceFields core) :
+    StructFieldsCheckingDerivationSpecializes outer groundEnclosingReturn
+      symbolic concrete contexts inner fields surfaceFields core := by
+  induction fields generalizing surfaceFields core with
+  | nil =>
+      cases specialized
+      exact .nil
+  | cons field fieldTail induction =>
+      cases specialized with
+      | cons removed value matched tail tailSymbolic tailConcrete =>
+          exact .cons removed matched.substitutes value.asChecking
+            (induction tail) (symbolicStructFieldsInfer_asChecking tailSymbolic)
+            (structSchemeFieldsInfer_asChecking tailConcrete)
+
 /-- Named struct-field inference likewise reduces to functional first-match
     removal, functional expression inference, and the structural tail. -/
 theorem StructFieldsInferenceDerivationSpecializes.unique_of_expr
@@ -5721,35 +5721,9 @@ theorem StructFieldsInferenceDerivationSpecializes.core_unique_of_expr_and_check
       groundEnclosingReturn symbolic concrete contexts checkedInner fields
       surfaceFields checkedCore) :
     inferredCore = checkedCore := by
-  induction fields generalizing surfaceFields inferredCore checkedCore with
-  | nil =>
-      cases inferred
-      cases checked
-      rfl
-  | cons field fieldTail induction =>
-      cases inferred with
-      | cons inferredRemoved inferredValue inferredMatched inferredTail
-          _inferredSymbolic _inferredConcrete =>
-          cases checked with
-          | cons checkedRemoved checkedSubstituted checkedValue checkedTail
-              _checkedSymbolic _checkedConcrete =>
-              rcases inferredRemoved.unique checkedRemoved with ⟨rfl, rfl⟩
-              have expectedEquality :=
-                complete.structFieldSubstitute_unique constructorMember
-                  (fieldsBelong field (by simp)) inferredBound checkedBound
-                  inferredMatched.substitutes checkedSubstituted
-              cases expectedEquality
-              rcases exprUnique inferredRemoved.selected_mem
-                  inferredValue.asChecking checkedValue with ⟨rfl, rfl⟩
-              have tailBelongs : ∀ candidate,
-                  candidate ∈ fieldTail → candidate ∈ constructor.fields := by
-                intro candidate member
-                exact fieldsBelong candidate (by simp [member])
-              cases induction
-                (fun member => exprUnique
-                  (inferredRemoved.remainder_subset _ member))
-                tailBelongs inferredTail checkedTail
-              rfl
+  exact StructFieldsCheckingDerivationSpecializes.unique_of_expr_and_arguments
+    complete exprUnique constructorMember fieldsBelong inferredBound checkedBound
+    (StructFieldsInferenceDerivationSpecializes.asChecking inferred) checked
 
 /-- Two inferred field traversals expose matching derivations for the same
     declared field occurrence. This is the struct analogue of aligned list
@@ -6218,6 +6192,14 @@ theorem VariantInferenceEvidence.excludesNongeneric
   cases constructorEquality
   exact inferred.generic nongeneric.nongeneric
 
+private theorem optionSomeValue_eq_of_result_eq
+    {leftResult rightResult : Option α} {left right : α}
+    (leftFound : leftResult = some left)
+    (rightFound : rightResult = some right)
+    (resultEquality : leftResult = rightResult) :
+    left = right :=
+  Option.some.inj (leftFound.symm.trans (resultEquality.trans rightFound))
+
 /-- Two applications of the contextual struct rule to the same expected type
     select the same constructor arguments, artifact, and emitted fields. -/
 theorem contextualStructResults_unique
@@ -6276,10 +6258,12 @@ theorem contextualStructResults_unique
   cases sourceTypeEquality
   cases typeArgumentsEquality
   cases constArgumentsEquality
-  have groundTypeArgumentsEquality := Option.some.inj
-    (leftTypeArgumentsGround.symm.trans rightTypeArgumentsGround)
-  have groundConstArgumentsEquality := Option.some.inj
-    (leftConstArgumentsGround.symm.trans rightConstArgumentsGround)
+  have groundTypeArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq leftTypeArgumentsGround
+      rightTypeArgumentsGround rfl
+  have groundConstArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq leftConstArgumentsGround
+      rightConstArgumentsGround rfl
   have artifactEquality := complete.concreteNominalArtifact_unique contexts
     leftArtifact rightArtifact groundTypeArgumentsEquality
     groundConstArgumentsEquality
@@ -6344,10 +6328,12 @@ theorem contextualVariantResults_unique
   cases sourceTypeEquality
   cases typeArgumentsEquality
   cases constArgumentsEquality
-  have groundTypeArgumentsEquality := Option.some.inj
-    (leftTypeArgumentsGround.symm.trans rightTypeArgumentsGround)
-  have groundConstArgumentsEquality := Option.some.inj
-    (leftConstArgumentsGround.symm.trans rightConstArgumentsGround)
+  have groundTypeArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq leftTypeArgumentsGround
+      rightTypeArgumentsGround rfl
+  have groundConstArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq leftConstArgumentsGround
+      rightConstArgumentsGround rfl
   have artifactEquality := complete.concreteNominalArtifact_unique contexts
     leftArtifact rightArtifact groundTypeArgumentsEquality
     groundConstArgumentsEquality
@@ -6417,14 +6403,14 @@ theorem DirectCallInferenceEvidence.results_unique_of_arguments
       left.argumentMatches.substitutes right.argumentMatches.substitutes
       left.returnSubstitute right.returnSubstitute
   cases returnTypeEquality
-  have groundTypeArgumentsEquality := Option.some.inj
-    (left.typeArgumentsGround.symm.trans
-      ((congrArg (Static.instantiateTypes outer) typeArgumentsEquality).trans
-        right.typeArgumentsGround))
-  have groundConstArgumentsEquality := Option.some.inj
-    (left.constArgumentsGround.symm.trans
-      ((congrArg (Static.instantiateConstants outer)
-        constArgumentsEquality).trans right.constArgumentsGround))
+  have groundTypeArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq left.typeArgumentsGround
+      right.typeArgumentsGround
+      (congrArg (Static.instantiateTypes outer) typeArgumentsEquality)
+  have groundConstArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq left.constArgumentsGround
+      right.constArgumentsGround
+      (congrArg (Static.instantiateConstants outer) constArgumentsEquality)
   have artifactEquality := complete.concreteFunctionArtifact_unique contexts
     left.artifact right.artifact groundTypeArgumentsEquality
     groundConstArgumentsEquality
@@ -6472,14 +6458,14 @@ theorem DirectCallExplicitEvidence.results_unique_of_arguments
       right.parametersSubstitute left.returnSubstitute right.returnSubstitute
   cases parameterTypesEquality
   cases returnTypeEquality
-  have groundTypeArgumentsEquality := Option.some.inj
-    (left.typeArgumentsGround.symm.trans
-      ((congrArg (Static.instantiateTypes outer) typeArgumentsEquality).trans
-        right.typeArgumentsGround))
-  have groundConstArgumentsEquality := Option.some.inj
-    (left.constArgumentsGround.symm.trans
-      ((congrArg (Static.instantiateConstants outer)
-        constArgumentsEquality).trans right.constArgumentsGround))
+  have groundTypeArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq left.typeArgumentsGround
+      right.typeArgumentsGround
+      (congrArg (Static.instantiateTypes outer) typeArgumentsEquality)
+  have groundConstArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq left.constArgumentsGround
+      right.constArgumentsGround
+      (congrArg (Static.instantiateConstants outer) constArgumentsEquality)
   have artifactEquality := complete.concreteFunctionArtifact_unique contexts
     left.artifact right.artifact groundTypeArgumentsEquality
     groundConstArgumentsEquality
@@ -6721,14 +6707,14 @@ theorem AssociatedCallInferenceEvidence.results_unique_of_arguments
   have resolvedReceiverEquality : leftResolved.receiverType =
       rightResolved.receiverType :=
     Option.some.inj (left.ownerGrounds.symm.trans right.ownerGrounds)
-  have groundTypeArgumentsEquality := Option.some.inj
-    (left.typeArgumentsGround.symm.trans
-      ((congrArg (Static.instantiateTypes outer) typeArgumentsEquality).trans
-        right.typeArgumentsGround))
-  have groundConstArgumentsEquality := Option.some.inj
-    (left.constArgumentsGround.symm.trans
-      ((congrArg (Static.instantiateConstants outer)
-        constArgumentsEquality).trans right.constArgumentsGround))
+  have groundTypeArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq left.typeArgumentsGround
+      right.typeArgumentsGround
+      (congrArg (Static.instantiateTypes outer) typeArgumentsEquality)
+  have groundConstArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq left.constArgumentsGround
+      right.constArgumentsGround
+      (congrArg (Static.instantiateConstants outer) constArgumentsEquality)
   have resolvedEquality := complete.concreteMethodArtifact_unique contexts
     resolvedReceiverEquality left.artifact right.artifact
     groundTypeArgumentsEquality groundConstArgumentsEquality
@@ -6816,14 +6802,14 @@ theorem AssociatedCallContextualEvidence.results_unique_of_arguments
   have resolvedReceiverEquality : leftResolved.receiverType =
       rightResolved.receiverType :=
     Option.some.inj (left.ownerGrounds.symm.trans right.ownerGrounds)
-  have groundTypeArgumentsEquality := Option.some.inj
-    (left.typeArgumentsGround.symm.trans
-      ((congrArg (Static.instantiateTypes outer) typeArgumentsEquality).trans
-        right.typeArgumentsGround))
-  have groundConstArgumentsEquality := Option.some.inj
-    (left.constArgumentsGround.symm.trans
-      ((congrArg (Static.instantiateConstants outer)
-        constArgumentsEquality).trans right.constArgumentsGround))
+  have groundTypeArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq left.typeArgumentsGround
+      right.typeArgumentsGround
+      (congrArg (Static.instantiateTypes outer) typeArgumentsEquality)
+  have groundConstArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq left.constArgumentsGround
+      right.constArgumentsGround
+      (congrArg (Static.instantiateConstants outer) constArgumentsEquality)
   have resolvedEquality := complete.concreteMethodArtifact_unique contexts
     resolvedReceiverEquality left.artifact right.artifact
     groundTypeArgumentsEquality groundConstArgumentsEquality
@@ -6915,14 +6901,14 @@ theorem AssociatedCallInferenceEvidence.results_unique_of_contextual
   have resolvedReceiverEquality : inferredResolved.receiverType =
       contextualResolved.receiverType :=
     Option.some.inj (inferred.ownerGrounds.symm.trans contextual.ownerGrounds)
-  have groundTypeArgumentsEquality := Option.some.inj
-    (inferred.typeArgumentsGround.symm.trans
-      ((congrArg (Static.instantiateTypes outer) typeArgumentsEquality).trans
-        contextual.typeArgumentsGround))
-  have groundConstArgumentsEquality := Option.some.inj
-    (inferred.constArgumentsGround.symm.trans
-      ((congrArg (Static.instantiateConstants outer)
-        constArgumentsEquality).trans contextual.constArgumentsGround))
+  have groundTypeArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq inferred.typeArgumentsGround
+      contextual.typeArgumentsGround
+      (congrArg (Static.instantiateTypes outer) typeArgumentsEquality)
+  have groundConstArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq inferred.constArgumentsGround
+      contextual.constArgumentsGround
+      (congrArg (Static.instantiateConstants outer) constArgumentsEquality)
   have resolvedEquality := complete.concreteMethodArtifact_unique contexts
     resolvedReceiverEquality inferred.artifact contextual.artifact
     groundTypeArgumentsEquality groundConstArgumentsEquality
@@ -7014,18 +7000,11 @@ theorem MethodCallInferenceEvidence.results_unique_of_children
   rw [← resolvedReceiverEquality, ← resolvedArgumentsEquality] at rightResolves
   have sameFunction := leftResolves.2.2.2 rightScheme rightResolved
     rightResolves.1 rightResolves.2.1 rightResolves.2.2.1
-  have leftMemberGlobal : leftResolved ∈
-      symbolic.globals.methodInstances := by
-    have member := leftResolves.2.1.1.1
-    rw [contexts.globals] at member
-    exact member
-  have rightMemberGlobal : rightResolved ∈
-      symbolic.globals.methodInstances := by
-    have member := rightResolves.2.1.1.1
-    rw [contexts.globals] at member
-    exact member
+  have leftMember := leftResolves.2.1.1.1
+  have rightMember := rightResolves.2.1.1.1
+  rw [contexts.globals] at leftMember rightMember
   have resolvedEquality := complete.artifacts.methodInstanceIdsUnique
-    leftResolved leftMemberGlobal rightResolved rightMemberGlobal
+    leftResolved leftMember rightResolved rightMember
       sameFunction.symm
   have schemeEquality := left.coherent concrete.currentModule
     leftResolved.receiverType name leftScheme leftResolves.1
@@ -7161,14 +7140,14 @@ theorem MethodCallContextualEvidence.results_unique_of_children
   have resolvedReceiverEquality :
       leftResolved.receiverType = rightResolved.receiverType :=
     Option.some.inj (left.receiverGrounds.symm.trans right.receiverGrounds)
-  have groundTypeArgumentsEquality := Option.some.inj
-    (left.typeArgumentsGround.symm.trans
-      ((congrArg (Static.instantiateTypes outer) typeArgumentsEquality).trans
-        right.typeArgumentsGround))
-  have groundConstArgumentsEquality := Option.some.inj
-    (left.constArgumentsGround.symm.trans
-      ((congrArg (Static.instantiateConstants outer)
-        constArgumentsEquality).trans right.constArgumentsGround))
+  have groundTypeArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq left.typeArgumentsGround
+      right.typeArgumentsGround
+      (congrArg (Static.instantiateTypes outer) typeArgumentsEquality)
+  have groundConstArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq left.constArgumentsGround
+      right.constArgumentsGround
+      (congrArg (Static.instantiateConstants outer) constArgumentsEquality)
   have resolvedEquality := complete.concreteMethodArtifact_unique contexts
     resolvedReceiverEquality left.artifact right.artifact
     groundTypeArgumentsEquality groundConstArgumentsEquality
@@ -7288,14 +7267,14 @@ theorem MethodCallInferenceEvidence.results_unique_of_contextual
       inferredResolved.receiverType = contextualResolved.receiverType :=
     Option.some.inj
       (inferred.receiverGrounds.symm.trans contextual.receiverGrounds)
-  have groundTypeArgumentsEquality := Option.some.inj
-    (inferred.typeArgumentsGround.symm.trans
-      ((congrArg (Static.instantiateTypes outer) typeArgumentsEquality).trans
-        contextual.typeArgumentsGround))
-  have groundConstArgumentsEquality := Option.some.inj
-    (inferred.constArgumentsGround.symm.trans
-      ((congrArg (Static.instantiateConstants outer)
-        constArgumentsEquality).trans contextual.constArgumentsGround))
+  have groundTypeArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq inferred.typeArgumentsGround
+      contextual.typeArgumentsGround
+      (congrArg (Static.instantiateTypes outer) typeArgumentsEquality)
+  have groundConstArgumentsEquality :=
+    optionSomeValue_eq_of_result_eq inferred.constArgumentsGround
+      contextual.constArgumentsGround
+      (congrArg (Static.instantiateConstants outer) constArgumentsEquality)
   have resolvedEquality := complete.concreteMethodArtifact_unique contexts
     resolvedReceiverEquality inferred.artifact contextual.artifact
     groundTypeArgumentsEquality groundConstArgumentsEquality
@@ -7722,43 +7701,21 @@ theorem CompleteProgramElaboration.patternListSpecialization_unique
   · intro groundType symbolicCase concreteCase contextsCase nextCase symbolicType
       leftGrounds completeCase groundRight coreRight symbolicBindingsRight
       concreteBindingsRight finalRight rightCase
-    cases rightCase with
-    | wildcard rightGrounds =>
-        have groundEquality := Option.some.inj
-          (leftGrounds.symm.trans rightGrounds)
-        subst groundRight
-        exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+    exact completeCase.patternSpecialization_unique (.wildcard leftGrounds) rightCase
   · intro path name groundType concreteCase nextCase symbolicCase contextsCase
       symbolicType leftSingle leftNotVariant leftGrounds leftBounded completeCase
       groundRight coreRight symbolicBindingsRight concreteBindingsRight finalRight
       rightCase
-    cases rightCase with
-    | bind rightSingle rightNotVariant rightGrounds rightBounded =>
-        have nameEquality := Option.some.inj
-          (leftSingle.symm.trans rightSingle)
-        cases nameEquality
-        have groundEquality := Option.some.inj
-          (leftGrounds.symm.trans rightGrounds)
-        subst groundRight
-        exact ⟨rfl, rfl, rfl, rfl, rfl⟩
-    | variant rightReceiver rightSelected rightArguments
-        rightTypeArgumentsGround rightConstArgumentsGround
-        rightPayloadSubstitute rightPayload rightArtifact rightBounded =>
-        obtain ⟨symbol, resolved, _member, _declaration, _unique⟩ :=
-          rightSelected.2.2
-        exact (leftNotVariant symbol resolved).elim
+    exact completeCase.patternSpecialization_unique
+      (.bind leftSingle leftNotVariant leftGrounds leftBounded) rightCase
   · intro text scalar value symbolicCase concreteCase contextsCase nextCase
       leftLowered completeCase groundRight coreRight symbolicBindingsRight
       concreteBindingsRight finalRight rightCase
-    cases rightCase with
-    | integer rightLowered =>
-        cases leftLowered.core_unique rightLowered
-        exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+    exact completeCase.patternSpecialization_unique (.integer leftLowered) rightCase
   · intro symbolicCase concreteCase contextsCase nextCase value completeCase
       groundRight coreRight symbolicBindingsRight concreteBindingsRight finalRight
       rightCase
-    cases rightCase
-    exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+    exact completeCase.patternSpecialization_unique .boolean rightCase
   · intro symbolicType symbolicCase path constructor inner symbolicTypeArguments
       symbolicConstArguments groundTypeArguments groundConstArguments
       expectedPayload concreteCase contextsCase nextCase surfacePayload
@@ -7767,41 +7724,10 @@ theorem CompleteProgramElaboration.patternListSpecialization_unique
       leftConstArgumentsGround leftPayloadSubstitute leftPayload leftArtifact
       leftBounded payloadInduction completeCase groundRight coreRight
       symbolicBindingsRight concreteBindingsRight finalRight rightCase
-    cases rightCase with
-    | bind rightSingle rightNotVariant rightGrounds rightBounded =>
-        obtain ⟨symbol, resolved, _member, _declaration, _unique⟩ :=
-          leftSelected.2.2
-        exact (rightNotVariant symbol resolved).elim
-    | variant rightReceiver rightSelected rightArguments
-        rightTypeArgumentsGround rightConstArgumentsGround
-        rightPayloadSubstitute rightPayload rightArtifact rightBounded =>
-        cases completeCase.symbolicVariantConstructor_unique
-          leftSelected rightSelected
-        have receiverEquality := leftReceiver.symm.trans rightReceiver
-        injection receiverEquality with sourceTypeEquality
-          symbolicTypeArgumentsEquality symbolicConstArgumentsEquality
-        cases sourceTypeEquality
-        cases symbolicTypeArgumentsEquality
-        cases symbolicConstArgumentsEquality
-        obtain ⟨symbol, resolved, constructorMember, declaration, unique⟩ :=
-          leftSelected.2.2
-        have expectedPayloadEquality :=
-          completeCase.variantPayloadSubstitute_unique constructorMember
-            leftArguments rightArguments leftPayloadSubstitute
-            rightPayloadSubstitute
-        cases expectedPayloadEquality
-        rcases payloadInduction completeCase _ _ _ _ _ rightPayload with
-          ⟨rfl, rfl, rfl, rfl, rfl⟩
-        have typeArgumentsEquality := Option.some.inj
-          (leftTypeArgumentsGround.symm.trans rightTypeArgumentsGround)
-        have constArgumentsEquality := Option.some.inj
-          (leftConstArgumentsGround.symm.trans rightConstArgumentsGround)
-        cases typeArgumentsEquality
-        cases constArgumentsEquality
-        obtain ⟨coreTypeEquality, variantEquality, _payloadEquality⟩ :=
-          leftArtifact.agrees rightArtifact
-        exact ⟨rfl, by simp [coreTypeEquality, variantEquality],
-          rfl, rfl, rfl⟩
+    exact completeCase.patternSpecialization_unique
+      (.variant leftReceiver leftSelected leftArguments leftTypeArgumentsGround
+        leftConstArgumentsGround leftPayloadSubstitute leftPayload leftArtifact
+        leftBounded) rightCase
   · intro symbolicCase concreteCase contextsCase nextCase completeCase
       groundRight coreRight symbolicBindingsRight concreteBindingsRight finalRight
       rightCase

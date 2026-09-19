@@ -24,9 +24,9 @@ theorem executes_body (program : Program) (matcher fallback : Nat)
       (.returned (some (.signed .i32 (dispatched program source start width fallback groups)))) after ∧
       CellEffect CellSet.empty before after ∧ Host.MemoryFrame before after := by
   have startResult : Evaluates program before (.local 1) (.signed .i32 start) before :=
-    ⟨1, evalLocal_of_local 0 program before _ _ startLocal⟩
+    Lanius.Semantics.evaluatesLocal startLocal
   have endResult : Evaluates program before (.local 2) (.signed .i32 (start + width)) before :=
-    ⟨1, evalLocal_of_local 0 program before _ _ endLocal⟩
+    Lanius.Semantics.evaluatesLocal endLocal
   have difference : Evaluates program before (.binary .subtract (.local 2) (.local 1))
       (.signed .i32 width) before := by
     simpa only [Nat.add_sub_cancel_left, Int.ofNat_eq_natCast] using

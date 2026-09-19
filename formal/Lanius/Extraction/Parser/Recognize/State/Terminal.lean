@@ -142,6 +142,80 @@ theorem RecognizerStateSymbolBinding.to_terminal_ready
     originLocal := binding.originLocal
   }
 
+private theorem terminal_write_frame_disjoint
+    (bindings : RecognizerStateCandidateBindings grammarLayout grammar words
+      tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell cursorCell before position current remaining
+      beforeInvariant candidate found productionBound) :
+    CellSet.Disjoint
+      (localBindingFrameFootprint
+        (bindings.afterRhsLengthRead.bindLocal 28 (.signed .i32 (Int.ofNat
+          (grammar.productionAt ⟨candidate.production,
+            productionBound⟩).rhs.length)))
+        verifiedParserStateLoopPreservedBindings)
+      (CellSet.union (CellSet.singleton workspaceCell)
+        (CellSet.singleton stateCountCell)) := by
+  have writesMutable : CellSet.Subset
+      (CellSet.union (CellSet.singleton workspaceCell)
+        (CellSet.singleton stateCountCell))
+      (stateLoopMutableCells workspaceCell stateCountCell cursorCell) := by
+    intro cell written
+    exact written.elim Or.inl (fun count => Or.inr (Or.inl count))
+  exact CellSet.Disjoint.mono_right writesMutable
+    bindings.invariant.persistentSeparate
+
+private theorem terminal_cursor_not_written
+    (bindings : RecognizerStateCandidateBindings grammarLayout grammar words
+      tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell cursorCell before position current remaining
+      beforeInvariant candidate found productionBound) :
+    ¬ (CellSet.union (CellSet.singleton workspaceCell)
+      (CellSet.singleton stateCountCell)) cursorCell := by
+  simpa [CellSet.union, CellSet.singleton, not_or] using
+    ⟨bindings.invariant.chartCursor.cursorBackingDistinct.2.2,
+      bindings.invariant.cursorStateCountDistinct⟩
+
+private theorem terminal_bind_local_preserves_cell
+    (state : State) (value : Value) (id : VarId) (different : 29 ≠ id) :
+    (state.bindLocal 29 value).cellId? id = state.cellId? id := by
+  simp [State.bindLocal, State.bindCell, State.cellId?, different]
+
+private theorem terminal_bind_local_preserves_parameters
+    (state : State) (value : Value) :
+    ∀ id, id ∈ verifiedParserRecognizerParameterIds →
+      (state.bindLocal 29 value).cellId? id = state.cellId? id := by
+  intro id member
+  exact terminal_bind_local_preserves_cell state value id
+    (Nat.ne_of_gt (Nat.lt_of_le_of_lt
+      ((mem_verifiedParserRecognizerParameterIds_iff id).mp member)
+      (by decide : 5 < 29)))
+
+private theorem RecognizerStateSymbolBinding.terminal_test
+    (binding : RecognizerStateSymbolBinding grammarLayout grammar words tokens
+      workspaceLayout workspace workspaceValues grammarCell tokensCell
+      workspaceCell stateCountCell cursorCell runtime position current remaining
+      beforeInvariant candidate found productionBound dotBeforeEnd bindings)
+    (symbol : Nat) (isTerminal : symbol < grammar.grammar.n_kinds)
+    (symbolEq : symbol = (grammar.productionAt ⟨candidate.production,
+      productionBound⟩).rhs.get ⟨candidate.dot, dotBeforeEnd⟩) :
+    let bound := binding.afterRead.bindLocal 29
+      (.signed .i32 (Int.ofNat symbol))
+    Evaluates verifiedParserCore bound
+      (.binary .less (.local 29) (.local 11)) (.boolean true) bound := by
+  let bound := binding.afterRead.bindLocal 29
+    (.signed .i32 (Int.ofNat symbol))
+  have symbolResult : Evaluates verifiedParserCore bound (.local 29)
+      (.signed .i32 (Int.ofNat symbol)) bound :=
+    Lanius.Semantics.evaluatesLocal (by simpa [bound, symbolEq] using binding.symbolLocal)
+  have kindCountResult : Evaluates verifiedParserCore bound (.local 11)
+      (.signed .i32 (Int.ofNat grammar.grammar.n_kinds)) bound :=
+    Lanius.Semantics.evaluatesLocal
+      (by simpa [bound, symbolEq] using binding.invariant.kindCountLocal)
+  have compared := evaluatesNatLessThreaded bound bound bound
+    (.local 29) (.local 11) symbol grammar.grammar.n_kinds
+    symbolResult kindCountResult
+  simpa [bound, isTerminal] using compared
+
 /-- Functional execution of the exact incomplete-state branch when a terminal
     scanner misses.  The symbol binding and scanner binding are both closed,
     leaving the decoded-state environment unchanged. -/
@@ -181,19 +255,8 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_miss
   let world := stateWorld words tokens (unused := binding.invariant.chartCursor.recognizer.tokenStorage.unused) workspaceValues grammarCell tokensCell
     workspaceCell
   let afterSymbol := environment.push (.signed .i32 (Int.ofNat symbol))
-  have lift (index : Fin 17) (value : Value)
-      (valueEq : environment index = value) :
-      afterSymbol ⟨index.val, Nat.lt_succ_of_lt index.isLt⟩ = value := by
-    calc
-      afterSymbol ⟨index.val, Nat.lt_succ_of_lt index.isLt⟩ =
-          environment index := by
-        exact Lanius.FunctionalView.Env.push_before environment
-          (.signed .i32 (Int.ofNat symbol)) index
-      _ = value := valueEq
-  have symbolLocal : afterSymbol ⟨17, by omega⟩ =
-      .signed .i32 (Int.ofNat symbol) := by
-    exact Lanius.FunctionalView.Env.push_last environment
-      (.signed .i32 (Int.ofNat symbol))
+  have pushed := pushed_environment environment
+    (.signed .i32 (Int.ofNat symbol))
   have isTerminal' : symbol < grammar.grammar.n_kinds := by
     simpa [symbol] using isTerminal
   have miss' : scanTerminal grammar tokens position symbol = none := by
@@ -201,10 +264,10 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_miss
   let ready := binding.to_terminal_ready isTerminal'
   have terminalResult := stateTerminalCommand_evaluates_miss workspaceLayout
     grammar words tokens grammarCell tokensCell world afterSymbol position symbol
-    (lift ⟨0, by omega⟩ _ locals.grammarEq)
-    (lift ⟨1, by omega⟩ _ locals.tokensEq)
-    (lift ⟨2, by omega⟩ _ locals.tokenCountEq)
-    (lift ⟨11, by omega⟩ _ locals.positionEq) symbolLocal
+    (pushed.1 ⟨0, by omega⟩ _ locals.grammarEq)
+    (pushed.1 ⟨1, by omega⟩ _ locals.tokensEq)
+    (pushed.1 ⟨2, by omega⟩ _ locals.tokenCountEq)
+    (pushed.1 ⟨11, by omega⟩ _ locals.positionEq) pushed.2
     stateWorld_finds_grammar
     (stateWorld_finds_tokens ready.terminal.recognizer) miss'
   have terminalSelected : Lanius.FunctionalView.Stateful.Command.Evaluates
@@ -288,19 +351,8 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_ok
   let afterWorld := stateWorld words tokens (unused := binding.invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
     workspaceCell
   let afterSymbol := environment.push (.signed .i32 (Int.ofNat symbol))
-  have lift (index : Fin 17) (value : Value)
-      (valueEq : environment index = value) :
-      afterSymbol ⟨index.val, Nat.lt_succ_of_lt index.isLt⟩ = value := by
-    calc
-      afterSymbol ⟨index.val, Nat.lt_succ_of_lt index.isLt⟩ =
-          environment index := by
-        exact Lanius.FunctionalView.Env.push_before environment
-          (.signed .i32 (Int.ofNat symbol)) index
-      _ = value := valueEq
-  have symbolLocal : afterSymbol ⟨17, by omega⟩ =
-      .signed .i32 (Int.ofNat symbol) :=
-    Lanius.FunctionalView.Env.push_last environment
-      (.signed .i32 (Int.ofNat symbol))
+  have pushed := pushed_environment environment
+    (.signed .i32 (Int.ofNat symbol))
   have isTerminal' : symbol < grammar.grammar.n_kinds := by
     simpa [symbol] using isTerminal
   have scanResult' : scanTerminal grammar tokens position symbol =
@@ -319,18 +371,18 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_ok
       (StateWellFormed.cell_lt_next_of_entry matched.afterScanInvariant.wellFormed scanBacking)
       (by simp [CellSet.empty])).trans scanBacking
   have terminalResult := matched.invariant.functional_terminal_ok afterSymbol
-    (lift ⟨0, by omega⟩ _ locals.grammarEq)
-    (lift ⟨1, by omega⟩ _ (by simpa only [suffixEq] using locals.tokensEq))
-    (lift ⟨2, by omega⟩ _ locals.tokenCountEq)
-    (lift ⟨3, by omega⟩ _ locals.workspaceEq)
-    (lift ⟨4, by omega⟩ _ locals.stateBaseEq)
-    (lift ⟨5, by omega⟩ _ locals.capacityEq)
-    (lift ⟨10, by omega⟩ _ locals.stateCountEq)
-    (lift ⟨11, by omega⟩ _ locals.positionEq)
-    (lift ⟨12, by omega⟩ _ locals.currentEq)
-    (lift ⟨13, by omega⟩ _ locals.productionEq)
-    (lift ⟨14, by omega⟩ _ locals.dotEq)
-    (lift ⟨15, by omega⟩ _ locals.originEq) symbolLocal statusOk'
+    (pushed.1 ⟨0, by omega⟩ _ locals.grammarEq)
+    (pushed.1 ⟨1, by omega⟩ _ (by simpa only [suffixEq] using locals.tokensEq))
+    (pushed.1 ⟨2, by omega⟩ _ locals.tokenCountEq)
+    (pushed.1 ⟨3, by omega⟩ _ locals.workspaceEq)
+    (pushed.1 ⟨4, by omega⟩ _ locals.stateBaseEq)
+    (pushed.1 ⟨5, by omega⟩ _ locals.capacityEq)
+    (pushed.1 ⟨10, by omega⟩ _ locals.stateCountEq)
+    (pushed.1 ⟨11, by omega⟩ _ locals.positionEq)
+    (pushed.1 ⟨12, by omega⟩ _ locals.currentEq)
+    (pushed.1 ⟨13, by omega⟩ _ locals.productionEq)
+    (pushed.1 ⟨14, by omega⟩ _ locals.dotEq)
+    (pushed.1 ⟨15, by omega⟩ _ locals.originEq) pushed.2 statusOk'
   dsimp only at terminalResult
   simp only [suffixEq] at terminalResult
   have branchResult := stateIncompleteCommand_evaluates_of_symbol
@@ -420,19 +472,8 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_full
   let afterWorld := stateWorld words tokens (unused := binding.invariant.chartCursor.recognizer.tokenStorage.unused) nextValues grammarCell tokensCell
     workspaceCell
   let afterSymbol := environment.push (.signed .i32 (Int.ofNat symbol))
-  have lift (index : Fin 17) (value : Value)
-      (valueEq : environment index = value) :
-      afterSymbol ⟨index.val, Nat.lt_succ_of_lt index.isLt⟩ = value := by
-    calc
-      afterSymbol ⟨index.val, Nat.lt_succ_of_lt index.isLt⟩ =
-          environment index := by
-        exact Lanius.FunctionalView.Env.push_before environment
-          (.signed .i32 (Int.ofNat symbol)) index
-      _ = value := valueEq
-  have symbolLocal : afterSymbol ⟨17, by omega⟩ =
-      .signed .i32 (Int.ofNat symbol) :=
-    Lanius.FunctionalView.Env.push_last environment
-      (.signed .i32 (Int.ofNat symbol))
+  have pushed := pushed_environment environment
+    (.signed .i32 (Int.ofNat symbol))
   have isTerminal' : symbol < grammar.grammar.n_kinds := by
     simpa [symbol] using isTerminal
   have scanResult' : scanTerminal grammar tokens position symbol =
@@ -451,18 +492,18 @@ private theorem RecognizerStateSymbolBinding.functional_terminal_full
       (StateWellFormed.cell_lt_next_of_entry matched.afterScanInvariant.wellFormed scanBacking)
       (by simp [CellSet.empty])).trans scanBacking
   have terminalResult := matched.invariant.functional_terminal_full afterSymbol
-    (lift ⟨0, by omega⟩ _ locals.grammarEq)
-    (lift ⟨1, by omega⟩ _ (by simpa only [suffixEq] using locals.tokensEq))
-    (lift ⟨2, by omega⟩ _ locals.tokenCountEq)
-    (lift ⟨3, by omega⟩ _ locals.workspaceEq)
-    (lift ⟨4, by omega⟩ _ locals.stateBaseEq)
-    (lift ⟨5, by omega⟩ _ locals.capacityEq)
-    (lift ⟨10, by omega⟩ _ locals.stateCountEq)
-    (lift ⟨11, by omega⟩ _ locals.positionEq)
-    (lift ⟨12, by omega⟩ _ locals.currentEq)
-    (lift ⟨13, by omega⟩ _ locals.productionEq)
-    (lift ⟨14, by omega⟩ _ locals.dotEq)
-    (lift ⟨15, by omega⟩ _ locals.originEq) symbolLocal statusFull'
+    (pushed.1 ⟨0, by omega⟩ _ locals.grammarEq)
+    (pushed.1 ⟨1, by omega⟩ _ (by simpa only [suffixEq] using locals.tokensEq))
+    (pushed.1 ⟨2, by omega⟩ _ locals.tokenCountEq)
+    (pushed.1 ⟨3, by omega⟩ _ locals.workspaceEq)
+    (pushed.1 ⟨4, by omega⟩ _ locals.stateBaseEq)
+    (pushed.1 ⟨5, by omega⟩ _ locals.capacityEq)
+    (pushed.1 ⟨10, by omega⟩ _ locals.stateCountEq)
+    (pushed.1 ⟨11, by omega⟩ _ locals.positionEq)
+    (pushed.1 ⟨12, by omega⟩ _ locals.currentEq)
+    (pushed.1 ⟨13, by omega⟩ _ locals.productionEq)
+    (pushed.1 ⟨14, by omega⟩ _ locals.dotEq)
+    (pushed.1 ⟨15, by omega⟩ _ locals.originEq) pushed.2 statusFull'
   dsimp only at terminalResult
   simp only [suffixEq] at terminalResult
   have branchResult := stateIncompleteCommand_evaluates_of_symbol
@@ -546,37 +587,16 @@ noncomputable def RecognizerStateSymbolBinding.execute_terminal_miss
   have terminalExecution := terminalFacts.1
   have terminalEffect := terminalFacts.2.1
   have terminalWellFormed := terminalFacts.2.2.1
-  have symbolResult : Evaluates verifiedParserCore bound (.local 29)
-      (.signed .i32 (Int.ofNat symbol)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound 29 _
-      (by simpa [bound, symbol] using binding.symbolLocal)⟩
-  have kindCountResult : Evaluates verifiedParserCore bound (.local 11)
-      (.signed .i32 (Int.ofNat grammar.grammar.n_kinds)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound 11 _
-      (by simpa [bound, symbol] using binding.invariant.kindCountLocal)⟩
-  have terminalTest : Evaluates verifiedParserCore bound
-      (.binary .less (.local 29) (.local 11)) (.boolean true) bound := by
-    have compared := evaluatesNatLessThreaded bound bound bound
-      (.local 29) (.local 11) symbol grammar.grammar.n_kinds
-      symbolResult kindCountResult
-    simpa [isTerminal'] using compared
-  have selected : Executes verifiedParserCore bound
-      (.ifThenElse (.binary .less (.local 29) (.local 11))
-        parserRecognizeTerminalStatement parserRecognizeStateNonterminalBranch)
-      .next terminalAfter :=
-    executesIfTrue terminalTest terminalExecution
-  have body : Executes verifiedParserCore bound
-      (.sequence
-        (.ifThenElse (.binary .less (.local 29) (.local 11))
-          parserRecognizeTerminalStatement parserRecognizeStateNonterminalBranch)
-        .skip) .next terminalAfter :=
-    executesSequence selected (executesSkip verifiedParserCore terminalAfter)
+  have terminalTest := binding.terminal_test symbol isTerminal' rfl
   let after := restoreLocals binding.afterRead terminalAfter
   have execution : Executes verifiedParserCore source
       parserRecognizeStateIncompleteBranch .next after := by
     rw [extractedParserRecognize_state_incomplete_shape]
     simpa [source, bound, after, symbol] using
-      executesLetLocal (type := parserI32Type) binding.evaluation body
+      executesLetLocal (type := parserI32Type) binding.evaluation
+        (executesSequenceSkip (executesIfTrue
+          (elseBranch := parserRecognizeStateNonterminalBranch)
+          terminalTest terminalExecution))
   have entered : StoreEffect CellSet.empty binding.afterRead bound := by
     simpa [bound] using bindLocal_effect binding.afterRead 29
       (.signed .i32 (Int.ofNat symbol))
@@ -717,37 +737,16 @@ noncomputable def RecognizerStateSymbolBinding.execute_terminal_success
   let ready := binding.to_terminal_ready isTerminal'
   let matched := ready.execute_match nextPosition scanResult'
     nextPositionBound statusOk'
-  have symbolResult : Evaluates verifiedParserCore bound (.local 29)
-      (.signed .i32 (Int.ofNat symbol)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound 29 _
-      (by simpa [bound, symbol] using binding.symbolLocal)⟩
-  have kindCountResult : Evaluates verifiedParserCore bound (.local 11)
-      (.signed .i32 (Int.ofNat grammar.grammar.n_kinds)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound 11 _
-      (by simpa [bound, symbol] using binding.invariant.kindCountLocal)⟩
-  have terminalTest : Evaluates verifiedParserCore bound
-      (.binary .less (.local 29) (.local 11)) (.boolean true) bound := by
-    have compared := evaluatesNatLessThreaded bound bound bound
-      (.local 29) (.local 11) symbol grammar.grammar.n_kinds
-      symbolResult kindCountResult
-    simpa [isTerminal'] using compared
-  have selected : Executes verifiedParserCore bound
-      (.ifThenElse (.binary .less (.local 29) (.local 11))
-        parserRecognizeTerminalStatement parserRecognizeStateNonterminalBranch)
-      .next matched.after :=
-    executesIfTrue terminalTest matched.execution
-  have body : Executes verifiedParserCore bound
-      (.sequence
-        (.ifThenElse (.binary .less (.local 29) (.local 11))
-          parserRecognizeTerminalStatement parserRecognizeStateNonterminalBranch)
-        .skip) .next matched.after :=
-    executesSequence selected (executesSkip verifiedParserCore matched.after)
+  have terminalTest := binding.terminal_test symbol isTerminal' rfl
   let after := restoreLocals binding.afterRead matched.after
   have execution : Executes verifiedParserCore source
       parserRecognizeStateIncompleteBranch .next after := by
     rw [extractedParserRecognize_state_incomplete_shape]
     simpa [source, bound, after, symbol] using
-      executesLetLocal (type := parserI32Type) binding.evaluation body
+      executesLetLocal (type := parserI32Type) binding.evaluation
+        (executesSequenceSkip (executesIfTrue
+          (elseBranch := parserRecognizeStateNonterminalBranch)
+          terminalTest matched.execution))
   let writes := CellSet.union (CellSet.singleton workspaceCell)
     (CellSet.singleton stateCountCell)
   have entered : StoreEffect CellSet.empty binding.afterRead bound := by
@@ -759,15 +758,8 @@ noncomputable def RecognizerStateSymbolBinding.execute_terminal_success
     simpa [after] using scopedStore.restoreLocals
   have effect : ModifiesOnly writes source after :=
     (binding.effect.weaken CellSet.empty_subset).trans_same closed
-  have preservedCellId (id : VarId) (different : 29 ≠ id) :
-      bound.cellId? id = binding.afterRead.cellId? id := by
-    simp [bound, State.bindLocal, State.bindCell, State.cellId?, different]
-  have parameterCellId : ∀ id, id ∈ verifiedParserRecognizerParameterIds →
-      bound.cellId? id = binding.afterRead.cellId? id := by
-    intro id idBound
-    have idLe := (mem_verifiedParserRecognizerParameterIds_iff id).mp idBound
-    exact preservedCellId id
-      (Nat.ne_of_gt (Nat.lt_of_le_of_lt idLe (by decide : 5 < 29)))
+  have parameterCellId := terminal_bind_local_preserves_parameters binding.afterRead
+    (.signed .i32 (Int.ofNat symbol))
   have recognizer := RecognizerInvariant.restore_temporary
     binding.afterRead bound matched.after binding.afterReadWellFormed entered
     matched.effect parameterCellId matched.invariant
@@ -777,7 +769,8 @@ noncomputable def RecognizerStateSymbolBinding.execute_terminal_success
       (appendLogical workspaceLayout.capacity nextPosition
         (recognizerTerminalSeed candidate.production candidate.dot
           candidate.origin current position symbol) workspace).2.states.length)))
-    matched.effect (preservedCellId 18 (by decide)) matched.stateCountOwned
+    matched.effect (terminal_bind_local_preserves_cell binding.afterRead
+      (.signed .i32 (Int.ofNat symbol)) 18 (by decide)) matched.stateCountOwned
   let seed := recognizerTerminalSeed candidate.production candidate.dot
     candidate.origin current position symbol
   let logical := appendLogical workspaceLayout.capacity nextPosition seed
@@ -899,42 +892,7 @@ noncomputable def RecognizerStateSymbolBinding.execute_terminal_full
   let ready := binding.to_terminal_ready isTerminal'
   let full := ready.execute_match_full nextPosition scanResult'
     nextPositionBound statusFull'
-  have symbolResult : Evaluates verifiedParserCore bound (.local 29)
-      (.signed .i32 (Int.ofNat symbol)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound 29 _
-      (by simpa [bound, symbol] using binding.symbolLocal)⟩
-  have kindCountResult : Evaluates verifiedParserCore bound (.local 11)
-      (.signed .i32 (Int.ofNat grammar.grammar.n_kinds)) bound :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore bound 11 _
-      (by simpa [bound, symbol] using binding.invariant.kindCountLocal)⟩
-  have terminalTest : Evaluates verifiedParserCore bound
-      (.binary .less (.local 29) (.local 11)) (.boolean true) bound := by
-    have compared := evaluatesNatLessThreaded bound bound bound
-      (.local 29) (.local 11) symbol grammar.grammar.n_kinds
-      symbolResult kindCountResult
-    simpa [isTerminal'] using compared
-  have selected : Executes verifiedParserCore bound
-      (.ifThenElse (.binary .less (.local 29) (.local 11))
-        parserRecognizeTerminalStatement parserRecognizeStateNonterminalBranch)
-      (.returned (some (parseResultValue 2
-        (Int.ofNat
-          (appendLogical workspaceLayout.capacity nextPosition
-            (recognizerTerminalSeed candidate.production candidate.dot
-              candidate.origin current position symbol) workspace).1.stateCount)
-        (-1) (Int.ofNat position)))) full.after :=
-    executesIfTrue terminalTest full.execution
-  have body : Executes verifiedParserCore bound
-      (.sequence
-        (.ifThenElse (.binary .less (.local 29) (.local 11))
-          parserRecognizeTerminalStatement parserRecognizeStateNonterminalBranch)
-        .skip)
-      (.returned (some (parseResultValue 2
-        (Int.ofNat
-          (appendLogical workspaceLayout.capacity nextPosition
-            (recognizerTerminalSeed candidate.production candidate.dot
-              candidate.origin current position symbol) workspace).1.stateCount)
-        (-1) (Int.ofNat position)))) full.after :=
-    executesSequenceReturned selected
+  have terminalTest := binding.terminal_test symbol isTerminal' rfl
   let after := restoreLocals binding.afterRead full.after
   have execution : Executes verifiedParserCore source
       parserRecognizeStateIncompleteBranch
@@ -946,7 +904,10 @@ noncomputable def RecognizerStateSymbolBinding.execute_terminal_full
         (-1) (Int.ofNat position)))) after := by
     rw [extractedParserRecognize_state_incomplete_shape]
     simpa [source, bound, after, symbol] using
-      executesLetLocal (type := parserI32Type) binding.evaluation body
+      executesLetLocal (type := parserI32Type) binding.evaluation
+        (executesSequenceSkip (executesIfTrue
+          (elseBranch := parserRecognizeStateNonterminalBranch)
+          terminalTest full.execution))
   have entered : StoreEffect CellSet.empty binding.afterRead bound := by
     simpa [bound] using bindLocal_effect binding.afterRead 29
       (.signed .i32 (Int.ofNat symbol))
@@ -961,14 +922,8 @@ noncomputable def RecognizerStateSymbolBinding.execute_terminal_full
   have afterWellFormed : StateWellFormed after :=
     scopedStore.restoreLocals_wellFormed binding.afterReadWellFormed
       full.wellFormed
-  have parameterCellId : ∀ id,
-      id ∈ verifiedParserRecognizerParameterIds →
-      bound.cellId? id = binding.afterRead.cellId? id := by
-    intro id member
-    apply bindLocal_preserves_other_cellId
-    exact Nat.ne_of_gt (Nat.lt_of_le_of_lt
-      ((mem_verifiedParserRecognizerParameterIds_iff id).mp member)
-      (by decide : 5 < 29))
+  have parameterCellId := terminal_bind_local_preserves_parameters binding.afterRead
+    (.signed .i32 (Int.ofNat symbol))
   have restoredInvariant : RecognizerInvariant grammarLayout grammar words
       tokens workspaceLayout workspace workspaceValues grammarCell tokensCell
       workspaceCell after := by
@@ -1038,21 +993,8 @@ noncomputable def RecognizerStateSymbolBinding.execute_terminal
       beforeInvariant candidate found productionBound dotBeforeEnd bindings := by
   let writes := CellSet.union (CellSet.singleton workspaceCell)
     (CellSet.singleton stateCountCell)
-  have frameDisjoint : CellSet.Disjoint
-      (localBindingFrameFootprint
-        (bindings.afterRhsLengthRead.bindLocal 28 (.signed .i32 (Int.ofNat
-          (grammar.productionAt ⟨candidate.production,
-            productionBound⟩).rhs.length)))
-        verifiedParserStateLoopPreservedBindings) writes := by
-    intro cell framed written
-    apply bindings.invariant.persistentSeparate cell framed
-    rcases written with workspaceWritten | countWritten
-    · exact Or.inl workspaceWritten
-    · exact Or.inr (Or.inl countWritten)
-  have cursorNotWritten : ¬ writes cursorCell := by
-    simpa [writes, CellSet.union, CellSet.singleton, not_or] using
-      ⟨bindings.invariant.chartCursor.cursorBackingDistinct.2.2,
-        bindings.invariant.cursorStateCountDistinct⟩
+  have frameDisjoint := terminal_write_frame_disjoint bindings
+  have cursorNotWritten := terminal_cursor_not_written bindings
   let symbol := (grammar.productionAt ⟨candidate.production,
     productionBound⟩).rhs.get ⟨candidate.dot, dotBeforeEnd⟩
   have isTerminal' : symbol < grammar.grammar.n_kinds := by
@@ -1220,21 +1162,8 @@ noncomputable def
       environment := by
   let writes := CellSet.union (CellSet.singleton workspaceCell)
     (CellSet.singleton stateCountCell)
-  have frameDisjoint : CellSet.Disjoint
-      (localBindingFrameFootprint
-        (bindings.afterRhsLengthRead.bindLocal 28 (.signed .i32 (Int.ofNat
-          (grammar.productionAt ⟨candidate.production,
-            productionBound⟩).rhs.length)))
-        verifiedParserStateLoopPreservedBindings) writes := by
-    intro cell framed written
-    apply bindings.invariant.persistentSeparate cell framed
-    rcases written with workspaceWritten | countWritten
-    · exact Or.inl workspaceWritten
-    · exact Or.inr (Or.inl countWritten)
-  have cursorNotWritten : ¬ writes cursorCell := by
-    simpa [writes, CellSet.union, CellSet.singleton, not_or] using
-      ⟨bindings.invariant.chartCursor.cursorBackingDistinct.2.2,
-        bindings.invariant.cursorStateCountDistinct⟩
+  have frameDisjoint := terminal_write_frame_disjoint bindings
+  have cursorNotWritten := terminal_cursor_not_written bindings
   let symbol := (grammar.productionAt ⟨candidate.production,
     productionBound⟩).rhs.get ⟨candidate.dot, dotBeforeEnd⟩
   have isTerminal' : symbol < grammar.grammar.n_kinds := by

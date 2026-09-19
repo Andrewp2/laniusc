@@ -544,6 +544,42 @@ theorem CommandReflectsWhen.whileLoop
 /-- Structural inverse adequacy, deliberately independent of termination and
 determinism.  The induction is on the supplied successful Core proof tree, so
 recursive loop iterations are already finite. -/
+private theorem sequence_command_inversion
+    {command : Stateful.Command Core.signature Stateful.actions arity}
+    {layout : Layout arity} {nextLocal : VarId}
+    {firstStatement secondStatement : Stmt}
+    (leaves : CommandLeaves program registry command)
+    (statementEq : Stateful.toCoreStmt actionAdapter layout nextLocal command =
+      .sequence firstStatement secondStatement) :
+    ∃ first second,
+      command = .sequence first second ∧
+      Stateful.toCoreStmt actionAdapter layout nextLocal first = firstStatement ∧
+      Stateful.toCoreStmt actionAdapter layout
+        (nextLocal + Stateful.localCapacity actionAdapter first) second =
+        secondStatement := by
+  cases command <;> try simp [Stateful.toCoreStmt] at statementEq
+  all_goals try (cases ‹Option _› <;> simp [Stateful.toCoreStmt] at statementEq)
+  case action => cases leaves
+  case sequence first second =>
+      exact ⟨first, second, rfl, statementEq.1, statementEq.2⟩
+
+private theorem while_command_inversion
+    {command : Stateful.Command Core.signature Stateful.actions arity}
+    {layout : Layout arity} {nextLocal : VarId}
+    {conditionStatement : Expr} {bodyStatement : Stmt}
+    (leaves : CommandLeaves program registry command)
+    (statementEq : Stateful.toCoreStmt actionAdapter layout nextLocal command =
+      .whileLoop conditionStatement bodyStatement) :
+    ∃ condition body,
+      command = .whileLoop condition body ∧
+      Core.toCoreExpr layout condition = conditionStatement ∧
+      Stateful.toCoreStmt actionAdapter layout nextLocal body = bodyStatement := by
+  cases command <;> try simp [Stateful.toCoreStmt] at statementEq
+  all_goals try (cases ‹Option _› <;> simp [Stateful.toCoreStmt] at statementEq)
+  case action => cases leaves
+  case whileLoop condition body =>
+      exact ⟨condition, body, rfl, statementEq.1, statementEq.2⟩
+
 theorem command_reflects
     {command : Stateful.Command Core.signature Stateful.actions arity}
     (leaves : CommandLeaves program registry command)
@@ -564,24 +600,11 @@ theorem command_reflects
   induction executed generalizing arity command layout localCell nextLocal
       world environment leaves with
   | skip =>
-      cases command with
-      | skip =>
-          exact ⟨.next, world, environment, .skip, rfl, wellFormed,
-            represented, ModifiesOnly.reflAny _ _⟩
-      | sequence first second => simp [Stateful.toCoreStmt] at statementEq
-      | letValue type initializer body =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | setLocal target value => simp [Stateful.toCoreStmt] at statementEq
-      | updateLocal operation target value =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | action operation => cases leaves
-      | ifThenElse condition thenBranch elseBranch =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | whileLoop condition body => simp [Stateful.toCoreStmt] at statementEq
-      | returnValue value =>
-          cases value <;> simp [Stateful.toCoreStmt] at statementEq
-      | breakLoop => simp [Stateful.toCoreStmt] at statementEq
-      | continueLoop => simp [Stateful.toCoreStmt] at statementEq
+      cases command <;> try simp [Stateful.toCoreStmt] at statementEq
+      all_goals try (cases ‹Option _› <;> simp [Stateful.toCoreStmt] at statementEq)
+      case action => cases leaves
+      exact ⟨.next, world, environment, .skip, rfl, wellFormed,
+        represented, ModifiesOnly.reflAny _ _⟩
   | expression evaluated =>
       cases command with
       | skip => simp [Stateful.toCoreStmt] at statementEq
@@ -623,82 +646,54 @@ theorem command_reflects
       | breakLoop => simp [Stateful.toCoreStmt] at statementEq
       | continueLoop => simp [Stateful.toCoreStmt] at statementEq
   | sequenceNext firstResult secondResult firstIH secondIH =>
-      cases command with
-      | sequence first second =>
-          cases leaves
-          rename_i firstLeaves secondLeaves
-          simp only [Stateful.toCoreStmt] at statementEq
-          obtain ⟨rfl, rfl⟩ := Stmt.sequence.inj statementEq
-          simp only [FreshSimulation.actionFree, Bool.and_eq_true] at actionFree
-          obtain ⟨firstCompletion, middleWorld, middleEnvironment,
-              firstEvaluated, firstCompletionEq, middleWellFormed,
-              middleRepresented, firstEffect⟩ :=
-            firstIH firstLeaves actionFree.1 represented below wellFormed localsFresh
-              nextFresh rfl
-          have firstNext : firstCompletion = .next := by
-            cases firstCompletion <;>
-              simp_all [Stateful.toCoreCompletion]
-          subst firstCompletion
-          have secondBelow := below.mono
-            (Nat.le_add_right nextLocal
-              (localCapacity actionAdapter first))
-          obtain ⟨completion, afterWorld, afterEnvironment, secondEvaluated,
-              completionEq, afterWellFormed, afterRepresented, secondEffect⟩ :=
-            secondIH secondLeaves actionFree.2 middleRepresented secondBelow
-              middleWellFormed localsFresh
-              (Nat.le_trans nextFresh firstEffect.nextCell) rfl
-          exact ⟨completion, afterWorld, afterEnvironment,
-            .sequenceNext firstEvaluated secondEvaluated, completionEq,
-            afterWellFormed, afterRepresented,
-            firstEffect.trans_same secondEffect⟩
-      | skip => simp [Stateful.toCoreStmt] at statementEq
-      | letValue type initializer body =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | setLocal target value => simp [Stateful.toCoreStmt] at statementEq
-      | updateLocal operation target value =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | action operation => cases leaves
-      | ifThenElse condition thenBranch elseBranch =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | whileLoop condition body => simp [Stateful.toCoreStmt] at statementEq
-      | returnValue value =>
-          cases value <;> simp [Stateful.toCoreStmt] at statementEq
-      | breakLoop => simp [Stateful.toCoreStmt] at statementEq
-      | continueLoop => simp [Stateful.toCoreStmt] at statementEq
+      obtain ⟨first, second, rfl, firstEq, secondEq⟩ :=
+        sequence_command_inversion leaves statementEq
+      cases firstEq
+      cases secondEq
+      cases leaves
+      rename_i firstLeaves secondLeaves
+      simp only [FreshSimulation.actionFree, Bool.and_eq_true] at actionFree
+      obtain ⟨firstCompletion, middleWorld, middleEnvironment,
+          firstEvaluated, firstCompletionEq, middleWellFormed,
+          middleRepresented, firstEffect⟩ :=
+        firstIH firstLeaves actionFree.1 represented below wellFormed localsFresh
+          nextFresh rfl
+      have firstNext : firstCompletion = .next := by
+        cases firstCompletion <;>
+          simp_all [Stateful.toCoreCompletion]
+      subst firstCompletion
+      have secondBelow := below.mono
+        (Nat.le_add_right nextLocal
+          (localCapacity actionAdapter first))
+      obtain ⟨completion, afterWorld, afterEnvironment, secondEvaluated,
+          completionEq, afterWellFormed, afterRepresented, secondEffect⟩ :=
+        secondIH secondLeaves actionFree.2 middleRepresented secondBelow
+          middleWellFormed localsFresh
+          (Nat.le_trans nextFresh firstEffect.nextCell) rfl
+      exact ⟨completion, afterWorld, afterEnvironment,
+        .sequenceNext firstEvaluated secondEvaluated, completionEq,
+        afterWellFormed, afterRepresented,
+        firstEffect.trans_same secondEffect⟩
   | sequenceStop firstResult stops firstIH =>
-      cases command with
-      | sequence first second =>
-          cases leaves
-          rename_i firstLeaves secondLeaves
-          simp only [Stateful.toCoreStmt] at statementEq
-          obtain ⟨rfl, rfl⟩ := Stmt.sequence.inj statementEq
-          simp only [FreshSimulation.actionFree, Bool.and_eq_true] at actionFree
-          obtain ⟨completion, afterWorld, afterEnvironment, firstEvaluated,
-              completionEq, afterWellFormed, afterRepresented, effect⟩ :=
-            firstIH firstLeaves actionFree.1 represented below wellFormed localsFresh
-              nextFresh rfl
-          have completionStops : completion ≠ .next := by
-            intro same
-            subst completion
-            apply stops
-            simpa [Stateful.toCoreCompletion] using completionEq.symm
-          exact ⟨completion, afterWorld, afterEnvironment,
-            .sequenceStop firstEvaluated completionStops, completionEq,
-            afterWellFormed, afterRepresented, effect⟩
-      | skip => simp [Stateful.toCoreStmt] at statementEq
-      | letValue type initializer body =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | setLocal target value => simp [Stateful.toCoreStmt] at statementEq
-      | updateLocal operation target value =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | action operation => cases leaves
-      | ifThenElse condition thenBranch elseBranch =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | whileLoop condition body => simp [Stateful.toCoreStmt] at statementEq
-      | returnValue value =>
-          cases value <;> simp [Stateful.toCoreStmt] at statementEq
-      | breakLoop => simp [Stateful.toCoreStmt] at statementEq
-      | continueLoop => simp [Stateful.toCoreStmt] at statementEq
+      obtain ⟨first, second, rfl, firstEq, secondEq⟩ :=
+        sequence_command_inversion leaves statementEq
+      cases firstEq
+      cases secondEq
+      cases leaves
+      rename_i firstLeaves secondLeaves
+      simp only [FreshSimulation.actionFree, Bool.and_eq_true] at actionFree
+      obtain ⟨completion, afterWorld, afterEnvironment, firstEvaluated,
+          completionEq, afterWellFormed, afterRepresented, effect⟩ :=
+        firstIH firstLeaves actionFree.1 represented below wellFormed localsFresh
+          nextFresh rfl
+      have completionStops : completion ≠ .next := by
+        intro same
+        subst completion
+        apply stops
+        simpa [Stateful.toCoreCompletion] using completionEq.symm
+      exact ⟨completion, afterWorld, afterEnvironment,
+        .sequenceStop firstEvaluated completionStops, completionEq,
+        afterWellFormed, afterRepresented, effect⟩
   | letUninitialized _ _ =>
       cases command <;> simp_all [Stateful.toCoreStmt, FreshSimulation.actionFree]
       case returnValue value => cases value <;> simp [Stateful.toCoreStmt] at statementEq
@@ -798,12 +793,13 @@ theorem command_reflects
       | breakLoop => simp [Stateful.toCoreStmt] at statementEq
       | continueLoop => simp [Stateful.toCoreStmt] at statementEq
   | ifTrue conditionResult branchResult branchIH =>
-      cases command with
-      | ifThenElse condition thenBranch elseBranch =>
+      cases command <;> try simp [Stateful.toCoreStmt] at statementEq
+      all_goals try (cases ‹Option _› <;> simp [Stateful.toCoreStmt] at statementEq)
+      case action => cases leaves
+      case ifThenElse condition thenBranch elseBranch =>
           cases leaves
           rename_i conditionReflect thenLeaves elseLeaves
-          simp only [Stateful.toCoreStmt] at statementEq
-          obtain ⟨rfl, rfl, rfl⟩ := Stmt.ifThenElse.inj statementEq
+          obtain ⟨rfl, rfl, rfl⟩ := statementEq
           simp only [FreshSimulation.actionFree, Bool.and_eq_true] at actionFree
           obtain ⟨conditionWorld, conditionEvaluated, conditionWellFormed,
               conditionRepresented, conditionEffect⟩ :=
@@ -818,26 +814,14 @@ theorem command_reflects
             .ifTrue conditionEvaluated branchEvaluated, completionEq,
             afterWellFormed, afterRepresented,
             conditionEffect.trans_same branchEffect⟩
-      | skip => simp [Stateful.toCoreStmt] at statementEq
-      | sequence first second => simp [Stateful.toCoreStmt] at statementEq
-      | letValue type initializer body =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | setLocal target value => simp [Stateful.toCoreStmt] at statementEq
-      | updateLocal operation target value =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | action operation => cases leaves
-      | whileLoop condition body => simp [Stateful.toCoreStmt] at statementEq
-      | returnValue value =>
-          cases value <;> simp [Stateful.toCoreStmt] at statementEq
-      | breakLoop => simp [Stateful.toCoreStmt] at statementEq
-      | continueLoop => simp [Stateful.toCoreStmt] at statementEq
   | ifFalse conditionResult branchResult branchIH =>
-      cases command with
-      | ifThenElse condition thenBranch elseBranch =>
+      cases command <;> try simp [Stateful.toCoreStmt] at statementEq
+      all_goals try (cases ‹Option _› <;> simp [Stateful.toCoreStmt] at statementEq)
+      case action => cases leaves
+      case ifThenElse condition thenBranch elseBranch =>
           cases leaves
           rename_i conditionReflect thenLeaves elseLeaves
-          simp only [Stateful.toCoreStmt] at statementEq
-          obtain ⟨rfl, rfl, rfl⟩ := Stmt.ifThenElse.inj statementEq
+          obtain ⟨rfl, rfl, rfl⟩ := statementEq
           simp only [FreshSimulation.actionFree, Bool.and_eq_true] at actionFree
           obtain ⟨conditionWorld, conditionEvaluated, conditionWellFormed,
               conditionRepresented, conditionEffect⟩ :=
@@ -852,305 +836,169 @@ theorem command_reflects
             .ifFalse conditionEvaluated branchEvaluated, completionEq,
             afterWellFormed, afterRepresented,
             conditionEffect.trans_same branchEffect⟩
-      | skip => simp [Stateful.toCoreStmt] at statementEq
-      | sequence first second => simp [Stateful.toCoreStmt] at statementEq
-      | letValue type initializer body =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | setLocal target value => simp [Stateful.toCoreStmt] at statementEq
-      | updateLocal operation target value =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | action operation => cases leaves
-      | whileLoop condition body => simp [Stateful.toCoreStmt] at statementEq
-      | returnValue value =>
-          cases value <;> simp [Stateful.toCoreStmt] at statementEq
-      | breakLoop => simp [Stateful.toCoreStmt] at statementEq
-      | continueLoop => simp [Stateful.toCoreStmt] at statementEq
   | whileFalse conditionResult =>
-      cases command with
-      | whileLoop condition body =>
-          cases leaves
-          rename_i conditionReflect bodyLeaves
-          simp only [Stateful.toCoreStmt] at statementEq
-          obtain ⟨rfl, rfl⟩ := Stmt.whileLoop.inj statementEq
-          simp only [FreshSimulation.actionFree] at actionFree
-          obtain ⟨afterWorld, conditionEvaluated, afterWellFormed,
-              afterRepresented, effect⟩ :=
-            conditionReflect (frontier := frontier) wellFormed represented
-              trivial conditionResult
-          exact ⟨.next, afterWorld, environment,
-            .whileFalse conditionEvaluated, rfl, afterWellFormed,
-            afterRepresented, effect⟩
-      | skip => simp [Stateful.toCoreStmt] at statementEq
-      | sequence first second => simp [Stateful.toCoreStmt] at statementEq
-      | letValue type initializer body =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | setLocal target value => simp [Stateful.toCoreStmt] at statementEq
-      | updateLocal operation target value =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | action operation => cases leaves
-      | ifThenElse condition thenBranch elseBranch =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | returnValue value =>
-          cases value <;> simp [Stateful.toCoreStmt] at statementEq
-      | breakLoop => simp [Stateful.toCoreStmt] at statementEq
-      | continueLoop => simp [Stateful.toCoreStmt] at statementEq
+      obtain ⟨condition, body, rfl, conditionEq, bodyEq⟩ :=
+        while_command_inversion leaves statementEq
+      cases conditionEq
+      cases bodyEq
+      cases leaves
+      rename_i conditionReflect bodyLeaves
+      simp only [FreshSimulation.actionFree] at actionFree
+      obtain ⟨afterWorld, conditionEvaluated, afterWellFormed,
+          afterRepresented, effect⟩ :=
+        conditionReflect (frontier := frontier) wellFormed represented
+          trivial conditionResult
+      exact ⟨.next, afterWorld, environment,
+        .whileFalse conditionEvaluated, rfl, afterWellFormed,
+        afterRepresented, effect⟩
   | whileNext conditionResult bodyResult restResult bodyIH restIH =>
-      cases command with
-      | whileLoop condition body =>
-          cases leaves
-          rename_i conditionReflect bodyLeaves
-          simp only [Stateful.toCoreStmt] at statementEq
-          obtain ⟨rfl, rfl⟩ := Stmt.whileLoop.inj statementEq
-          simp only [FreshSimulation.actionFree] at actionFree
-          obtain ⟨conditionWorld, conditionEvaluated, conditionWellFormed,
-              conditionRepresented, conditionEffect⟩ :=
-            conditionReflect (frontier := frontier) wellFormed represented
-              trivial conditionResult
-          obtain ⟨bodyCompletion, bodyWorld, bodyEnvironment, bodyEvaluated,
-              bodyCompletionEq, bodyWellFormed, bodyRepresented, bodyEffect⟩ :=
-            bodyIH bodyLeaves actionFree conditionRepresented below conditionWellFormed
-              localsFresh (Nat.le_trans nextFresh conditionEffect.nextCell) rfl
-          have bodyNext : bodyCompletion = .next := by
-            cases bodyCompletion <;> simp_all [Stateful.toCoreCompletion]
-          subst bodyCompletion
-          obtain ⟨completion, afterWorld, afterEnvironment, restEvaluated,
-              completionEq, afterWellFormed, afterRepresented, restEffect⟩ :=
-            restIH (command := .whileLoop condition body)
-              (.whileLoop conditionReflect bodyLeaves)
-              (by simpa [FreshSimulation.actionFree] using actionFree)
-              bodyRepresented below bodyWellFormed localsFresh
-              (Nat.le_trans nextFresh
-                (Nat.le_trans conditionEffect.nextCell bodyEffect.nextCell)) rfl
-          exact ⟨completion, afterWorld, afterEnvironment,
-            .whileNext conditionEvaluated bodyEvaluated restEvaluated,
-            completionEq, afterWellFormed, afterRepresented,
-            conditionEffect.trans_same (bodyEffect.trans_same restEffect)⟩
-      | skip => simp [Stateful.toCoreStmt] at statementEq
-      | sequence first second => simp [Stateful.toCoreStmt] at statementEq
-      | letValue type initializer body =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | setLocal target value => simp [Stateful.toCoreStmt] at statementEq
-      | updateLocal operation target value =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | action operation => cases leaves
-      | ifThenElse condition thenBranch elseBranch =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | returnValue value =>
-          cases value <;> simp [Stateful.toCoreStmt] at statementEq
-      | breakLoop => simp [Stateful.toCoreStmt] at statementEq
-      | continueLoop => simp [Stateful.toCoreStmt] at statementEq
+      obtain ⟨condition, body, rfl, conditionEq, bodyEq⟩ :=
+        while_command_inversion leaves statementEq
+      cases conditionEq
+      cases bodyEq
+      cases leaves
+      rename_i conditionReflect bodyLeaves
+      simp only [FreshSimulation.actionFree] at actionFree
+      obtain ⟨conditionWorld, conditionEvaluated, conditionWellFormed,
+          conditionRepresented, conditionEffect⟩ :=
+        conditionReflect (frontier := frontier) wellFormed represented
+          trivial conditionResult
+      obtain ⟨bodyCompletion, bodyWorld, bodyEnvironment, bodyEvaluated,
+          bodyCompletionEq, bodyWellFormed, bodyRepresented, bodyEffect⟩ :=
+        bodyIH bodyLeaves actionFree conditionRepresented below conditionWellFormed
+          localsFresh (Nat.le_trans nextFresh conditionEffect.nextCell) rfl
+      have bodyNext : bodyCompletion = .next := by
+        cases bodyCompletion <;> simp_all [Stateful.toCoreCompletion]
+      subst bodyCompletion
+      obtain ⟨completion, afterWorld, afterEnvironment, restEvaluated,
+          completionEq, afterWellFormed, afterRepresented, restEffect⟩ :=
+        restIH (command := .whileLoop condition body)
+          (.whileLoop conditionReflect bodyLeaves)
+          (by simpa [FreshSimulation.actionFree] using actionFree)
+          bodyRepresented below bodyWellFormed localsFresh
+          (Nat.le_trans nextFresh
+            (Nat.le_trans conditionEffect.nextCell bodyEffect.nextCell)) rfl
+      exact ⟨completion, afterWorld, afterEnvironment,
+        .whileNext conditionEvaluated bodyEvaluated restEvaluated,
+        completionEq, afterWellFormed, afterRepresented,
+        conditionEffect.trans_same (bodyEffect.trans_same restEffect)⟩
   | whileContinue conditionResult bodyResult restResult bodyIH restIH =>
-      cases command with
-      | whileLoop condition body =>
-          cases leaves
-          rename_i conditionReflect bodyLeaves
-          simp only [Stateful.toCoreStmt] at statementEq
-          obtain ⟨rfl, rfl⟩ := Stmt.whileLoop.inj statementEq
-          simp only [FreshSimulation.actionFree] at actionFree
-          obtain ⟨conditionWorld, conditionEvaluated, conditionWellFormed,
-              conditionRepresented, conditionEffect⟩ :=
-            conditionReflect (frontier := frontier) wellFormed represented
-              trivial conditionResult
-          obtain ⟨bodyCompletion, bodyWorld, bodyEnvironment, bodyEvaluated,
-              bodyCompletionEq, bodyWellFormed, bodyRepresented, bodyEffect⟩ :=
-            bodyIH bodyLeaves actionFree conditionRepresented below conditionWellFormed
-              localsFresh (Nat.le_trans nextFresh conditionEffect.nextCell) rfl
-          have bodyContinue : bodyCompletion = .continueLoop := by
-            cases bodyCompletion <;> simp_all [Stateful.toCoreCompletion]
-          subst bodyCompletion
-          obtain ⟨completion, afterWorld, afterEnvironment, restEvaluated,
-              completionEq, afterWellFormed, afterRepresented, restEffect⟩ :=
-            restIH (command := .whileLoop condition body)
-              (.whileLoop conditionReflect bodyLeaves)
-              (by simpa [FreshSimulation.actionFree] using actionFree)
-              bodyRepresented below bodyWellFormed localsFresh
-              (Nat.le_trans nextFresh
-                (Nat.le_trans conditionEffect.nextCell bodyEffect.nextCell)) rfl
-          exact ⟨completion, afterWorld, afterEnvironment,
-            .whileContinue conditionEvaluated bodyEvaluated restEvaluated,
-            completionEq, afterWellFormed, afterRepresented,
-            conditionEffect.trans_same (bodyEffect.trans_same restEffect)⟩
-      | skip => simp [Stateful.toCoreStmt] at statementEq
-      | sequence first second => simp [Stateful.toCoreStmt] at statementEq
-      | letValue type initializer body =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | setLocal target value => simp [Stateful.toCoreStmt] at statementEq
-      | updateLocal operation target value =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | action operation => cases leaves
-      | ifThenElse condition thenBranch elseBranch =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | returnValue value =>
-          cases value <;> simp [Stateful.toCoreStmt] at statementEq
-      | breakLoop => simp [Stateful.toCoreStmt] at statementEq
-      | continueLoop => simp [Stateful.toCoreStmt] at statementEq
+      obtain ⟨condition, body, rfl, conditionEq, bodyEq⟩ :=
+        while_command_inversion leaves statementEq
+      cases conditionEq
+      cases bodyEq
+      cases leaves
+      rename_i conditionReflect bodyLeaves
+      simp only [FreshSimulation.actionFree] at actionFree
+      obtain ⟨conditionWorld, conditionEvaluated, conditionWellFormed,
+          conditionRepresented, conditionEffect⟩ :=
+        conditionReflect (frontier := frontier) wellFormed represented
+          trivial conditionResult
+      obtain ⟨bodyCompletion, bodyWorld, bodyEnvironment, bodyEvaluated,
+          bodyCompletionEq, bodyWellFormed, bodyRepresented, bodyEffect⟩ :=
+        bodyIH bodyLeaves actionFree conditionRepresented below conditionWellFormed
+          localsFresh (Nat.le_trans nextFresh conditionEffect.nextCell) rfl
+      have bodyContinue : bodyCompletion = .continueLoop := by
+        cases bodyCompletion <;> simp_all [Stateful.toCoreCompletion]
+      subst bodyCompletion
+      obtain ⟨completion, afterWorld, afterEnvironment, restEvaluated,
+          completionEq, afterWellFormed, afterRepresented, restEffect⟩ :=
+        restIH (command := .whileLoop condition body)
+          (.whileLoop conditionReflect bodyLeaves)
+          (by simpa [FreshSimulation.actionFree] using actionFree)
+          bodyRepresented below bodyWellFormed localsFresh
+          (Nat.le_trans nextFresh
+            (Nat.le_trans conditionEffect.nextCell bodyEffect.nextCell)) rfl
+      exact ⟨completion, afterWorld, afterEnvironment,
+        .whileContinue conditionEvaluated bodyEvaluated restEvaluated,
+        completionEq, afterWellFormed, afterRepresented,
+        conditionEffect.trans_same (bodyEffect.trans_same restEffect)⟩
   | whileBreak conditionResult bodyResult bodyIH =>
-      cases command with
-      | whileLoop condition body =>
-          cases leaves
-          rename_i conditionReflect bodyLeaves
-          simp only [Stateful.toCoreStmt] at statementEq
-          obtain ⟨rfl, rfl⟩ := Stmt.whileLoop.inj statementEq
-          simp only [FreshSimulation.actionFree] at actionFree
-          obtain ⟨conditionWorld, conditionEvaluated, conditionWellFormed,
-              conditionRepresented, conditionEffect⟩ :=
-            conditionReflect (frontier := frontier) wellFormed represented
-              trivial conditionResult
-          obtain ⟨bodyCompletion, afterWorld, afterEnvironment, bodyEvaluated,
-              bodyCompletionEq, afterWellFormed, afterRepresented, bodyEffect⟩ :=
-            bodyIH bodyLeaves actionFree conditionRepresented below conditionWellFormed
-              localsFresh (Nat.le_trans nextFresh conditionEffect.nextCell) rfl
-          have bodyBreak : bodyCompletion = .breakLoop := by
-            cases bodyCompletion <;> simp_all [Stateful.toCoreCompletion]
-          subst bodyCompletion
-          exact ⟨.next, afterWorld, afterEnvironment,
-            .whileBreak conditionEvaluated bodyEvaluated, rfl,
+      obtain ⟨condition, body, rfl, conditionEq, bodyEq⟩ :=
+        while_command_inversion leaves statementEq
+      cases conditionEq
+      cases bodyEq
+      cases leaves
+      rename_i conditionReflect bodyLeaves
+      simp only [FreshSimulation.actionFree] at actionFree
+      obtain ⟨conditionWorld, conditionEvaluated, conditionWellFormed,
+          conditionRepresented, conditionEffect⟩ :=
+        conditionReflect (frontier := frontier) wellFormed represented
+          trivial conditionResult
+      obtain ⟨bodyCompletion, afterWorld, afterEnvironment, bodyEvaluated,
+          bodyCompletionEq, afterWellFormed, afterRepresented, bodyEffect⟩ :=
+        bodyIH bodyLeaves actionFree conditionRepresented below conditionWellFormed
+          localsFresh (Nat.le_trans nextFresh conditionEffect.nextCell) rfl
+      have bodyBreak : bodyCompletion = .breakLoop := by
+        cases bodyCompletion <;> simp_all [Stateful.toCoreCompletion]
+      subst bodyCompletion
+      exact ⟨.next, afterWorld, afterEnvironment,
+        .whileBreak conditionEvaluated bodyEvaluated, rfl,
+        afterWellFormed, afterRepresented,
+        conditionEffect.trans_same bodyEffect⟩
+  | whileReturn conditionResult bodyResult bodyIH =>
+      obtain ⟨condition, body, rfl, conditionEq, bodyEq⟩ :=
+        while_command_inversion leaves statementEq
+      cases conditionEq
+      cases bodyEq
+      cases leaves
+      rename_i conditionReflect bodyLeaves
+      simp only [FreshSimulation.actionFree] at actionFree
+      obtain ⟨conditionWorld, conditionEvaluated, conditionWellFormed,
+          conditionRepresented, conditionEffect⟩ :=
+        conditionReflect (frontier := frontier) wellFormed represented
+          trivial conditionResult
+      obtain ⟨bodyCompletion, afterWorld, afterEnvironment, bodyEvaluated,
+          bodyCompletionEq, afterWellFormed, afterRepresented, bodyEffect⟩ :=
+        bodyIH bodyLeaves actionFree conditionRepresented below conditionWellFormed
+          localsFresh (Nat.le_trans nextFresh conditionEffect.nextCell) rfl
+      cases bodyCompletion with
+      | returned returnedValue =>
+          simp only [Stateful.toCoreCompletion] at bodyCompletionEq
+          injection bodyCompletionEq with valueEq
+          subst returnedValue
+          exact ⟨.returned _, afterWorld, afterEnvironment,
+            .whileReturn conditionEvaluated bodyEvaluated, rfl,
             afterWellFormed, afterRepresented,
             conditionEffect.trans_same bodyEffect⟩
-      | skip => simp [Stateful.toCoreStmt] at statementEq
-      | sequence first second => simp [Stateful.toCoreStmt] at statementEq
-      | letValue type initializer body =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | setLocal target value => simp [Stateful.toCoreStmt] at statementEq
-      | updateLocal operation target value =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | action operation => cases leaves
-      | ifThenElse condition thenBranch elseBranch =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | returnValue value =>
-          cases value <;> simp [Stateful.toCoreStmt] at statementEq
-      | breakLoop => simp [Stateful.toCoreStmt] at statementEq
-      | continueLoop => simp [Stateful.toCoreStmt] at statementEq
-  | whileReturn conditionResult bodyResult bodyIH =>
-      cases command with
-      | whileLoop condition body =>
-          cases leaves
-          rename_i conditionReflect bodyLeaves
-          simp only [Stateful.toCoreStmt] at statementEq
-          obtain ⟨rfl, rfl⟩ := Stmt.whileLoop.inj statementEq
-          simp only [FreshSimulation.actionFree] at actionFree
-          obtain ⟨conditionWorld, conditionEvaluated, conditionWellFormed,
-              conditionRepresented, conditionEffect⟩ :=
-            conditionReflect (frontier := frontier) wellFormed represented
-              trivial conditionResult
-          obtain ⟨bodyCompletion, afterWorld, afterEnvironment, bodyEvaluated,
-              bodyCompletionEq, afterWellFormed, afterRepresented, bodyEffect⟩ :=
-            bodyIH bodyLeaves actionFree conditionRepresented below conditionWellFormed
-              localsFresh (Nat.le_trans nextFresh conditionEffect.nextCell) rfl
-          cases bodyCompletion with
-          | returned returnedValue =>
-              simp only [Stateful.toCoreCompletion] at bodyCompletionEq
-              injection bodyCompletionEq with valueEq
-              subst returnedValue
-              exact ⟨.returned _, afterWorld, afterEnvironment,
-                .whileReturn conditionEvaluated bodyEvaluated, rfl,
-                afterWellFormed, afterRepresented,
-                conditionEffect.trans_same bodyEffect⟩
-          | next | breakLoop | continueLoop =>
-              simp [Stateful.toCoreCompletion] at bodyCompletionEq
-      | skip => simp [Stateful.toCoreStmt] at statementEq
-      | sequence first second => simp [Stateful.toCoreStmt] at statementEq
-      | letValue type initializer body =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | setLocal target value => simp [Stateful.toCoreStmt] at statementEq
-      | updateLocal operation target value =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | action operation => cases leaves
-      | ifThenElse condition thenBranch elseBranch =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | returnValue value =>
-          cases value <;> simp [Stateful.toCoreStmt] at statementEq
-      | breakLoop => simp [Stateful.toCoreStmt] at statementEq
-      | continueLoop => simp [Stateful.toCoreStmt] at statementEq
+      | next | breakLoop | continueLoop =>
+          simp [Stateful.toCoreCompletion] at bodyCompletionEq
   | returnNone =>
-      cases command with
-      | returnValue value =>
-          cases value with
-          | none =>
-              exact ⟨.returned none, world, environment, .returnNone, rfl,
-                wellFormed, represented, ModifiesOnly.reflAny _ _⟩
-          | some value => simp [Stateful.toCoreStmt] at statementEq
-      | skip => simp [Stateful.toCoreStmt] at statementEq
-      | sequence first second => simp [Stateful.toCoreStmt] at statementEq
-      | letValue type initializer body =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | setLocal target value => simp [Stateful.toCoreStmt] at statementEq
-      | updateLocal operation target value =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | action operation => cases leaves
-      | ifThenElse condition thenBranch elseBranch =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | whileLoop condition body => simp [Stateful.toCoreStmt] at statementEq
-      | breakLoop => simp [Stateful.toCoreStmt] at statementEq
-      | continueLoop => simp [Stateful.toCoreStmt] at statementEq
+      cases command <;> try simp [Stateful.toCoreStmt] at statementEq
+      all_goals try (cases ‹Option _› <;> simp [Stateful.toCoreStmt] at statementEq)
+      case action => cases leaves
+      case returnValue.none =>
+          exact ⟨.returned none, world, environment, .returnNone, rfl,
+            wellFormed, represented, ModifiesOnly.reflAny _ _⟩
   | returnSome evaluated =>
-      cases command with
-      | returnValue valueOption =>
-          cases valueOption with
-          | none => simp [Stateful.toCoreStmt] at statementEq
-          | some valueTerm =>
-              cases leaves
-              rename_i valueReflect
-              simp only [Stateful.toCoreStmt] at statementEq
-              obtain rfl := Option.some.inj (Stmt.returnValue.inj statementEq)
-              obtain ⟨afterWorld, valueEvaluated, afterWellFormed,
-                  afterRepresented, effect⟩ :=
-                valueReflect (frontier := frontier) wellFormed represented
-                  trivial evaluated
-              exact ⟨.returned (some _), afterWorld, environment,
-                .returnSome valueEvaluated, rfl, afterWellFormed,
-                afterRepresented, effect⟩
-      | skip => simp [Stateful.toCoreStmt] at statementEq
-      | sequence first second => simp [Stateful.toCoreStmt] at statementEq
-      | letValue type initializer body =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | setLocal target value => simp [Stateful.toCoreStmt] at statementEq
-      | updateLocal operation target value =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | action operation => cases leaves
-      | ifThenElse condition thenBranch elseBranch =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | whileLoop condition body => simp [Stateful.toCoreStmt] at statementEq
-      | breakLoop => simp [Stateful.toCoreStmt] at statementEq
-      | continueLoop => simp [Stateful.toCoreStmt] at statementEq
+      cases command <;> try simp [Stateful.toCoreStmt] at statementEq
+      all_goals try (cases ‹Option _› <;> simp [Stateful.toCoreStmt] at statementEq)
+      case action => cases leaves
+      case returnValue.some valueTerm =>
+          cases leaves
+          rename_i valueReflect
+          rw [← statementEq] at evaluated
+          obtain ⟨afterWorld, valueEvaluated, afterWellFormed,
+              afterRepresented, effect⟩ :=
+            valueReflect (frontier := frontier) wellFormed represented
+              trivial evaluated
+          exact ⟨.returned (some _), afterWorld, environment,
+            .returnSome valueEvaluated, rfl, afterWellFormed,
+            afterRepresented, effect⟩
   | breakLoop =>
-      cases command with
-      | breakLoop =>
+      cases command <;> try simp [Stateful.toCoreStmt] at statementEq
+      all_goals try (cases ‹Option _› <;> simp [Stateful.toCoreStmt] at statementEq)
+      case action => cases leaves
+      case breakLoop =>
           exact ⟨.breakLoop, world, environment, .breakLoop, rfl, wellFormed,
             represented, ModifiesOnly.reflAny _ _⟩
-      | skip => simp [Stateful.toCoreStmt] at statementEq
-      | sequence first second => simp [Stateful.toCoreStmt] at statementEq
-      | letValue type initializer body =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | setLocal target value => simp [Stateful.toCoreStmt] at statementEq
-      | updateLocal operation target value =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | action operation => cases leaves
-      | ifThenElse condition thenBranch elseBranch =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | whileLoop condition body => simp [Stateful.toCoreStmt] at statementEq
-      | returnValue value =>
-          cases value <;> simp [Stateful.toCoreStmt] at statementEq
-      | continueLoop => simp [Stateful.toCoreStmt] at statementEq
   | continueLoop =>
-      cases command with
-      | continueLoop =>
+      cases command <;> try simp [Stateful.toCoreStmt] at statementEq
+      all_goals try (cases ‹Option _› <;> simp [Stateful.toCoreStmt] at statementEq)
+      case action => cases leaves
+      case continueLoop =>
           exact ⟨.continueLoop, world, environment, .continueLoop, rfl,
             wellFormed, represented, ModifiesOnly.reflAny _ _⟩
-      | skip => simp [Stateful.toCoreStmt] at statementEq
-      | sequence first second => simp [Stateful.toCoreStmt] at statementEq
-      | letValue type initializer body =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | setLocal target value => simp [Stateful.toCoreStmt] at statementEq
-      | updateLocal operation target value =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | action operation => cases leaves
-      | ifThenElse condition thenBranch elseBranch =>
-          simp [Stateful.toCoreStmt] at statementEq
-      | whileLoop condition body => simp [Stateful.toCoreStmt] at statementEq
-      | returnValue value =>
-          cases value <;> simp [Stateful.toCoreStmt] at statementEq
-      | breakLoop => simp [Stateful.toCoreStmt] at statementEq
 
 /-- A total leaf certificate is the invariant-free special case of the
 invariant-aware boundary. -/

@@ -71,12 +71,12 @@ theorem executesIteration (program : Program) (reader : FunctionId)
   obtain ⟨after, run, done⟩ := continuation middle prepared
   have multiplied : Evaluates program before (binary .multiply (.constant words.id) (number 4)) (.signed .i32 65536) before :=
     evaluatesNatI32Multiply (leftValue := 16384) (rightValue := 4)
-      (wordsValue ▸ evaluatesConstant wordsFound) ⟨1, rfl⟩ (by decide)
+      (wordsValue ▸ evaluatesConstant wordsFound) Lanius.Semantics.evaluatesValue (by decide)
   have first := invariant.bindTemporary 6 (.signed .i32 65536) (by decide)
   have subtracted : Evaluates program (requestEntry before) (binary .subtract (read 2) (read 5))
       (.signed .i32 (Int.ofNat (memory.capacity - processed.length))) (requestEntry before) :=
-    evaluatesNatI32Subtract ⟨1, evalLocal_of_local 0 program _ 2 _ first.capacityLocal⟩
-      ⟨1, evalLocal_of_local 0 program _ 5 _ (Assertion.localPointsTo_local _ _ _ _ first.total)⟩
+    evaluatesNatI32Subtract (Lanius.Semantics.evaluatesLocal first.capacityLocal)
+      (Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ first.total))
       invariant.capacity (Nat.le_trans (Nat.sub_le _ _) (Nat.le_trans memory.capacityBound memory.outputBound))
   exact ⟨restoreLocals before (restoreLocals (requestEntry before) after),
     executesLetLocal multiplied (executesLetLocal subtracted (executesSequence adjustment run)), done⟩

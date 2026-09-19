@@ -30,9 +30,9 @@ theorem child_step {memory : ChildMemory} {record : RecordVisit} {child : ChildV
       (.signed .i32 (Int.ofNat slot)) before := by
     apply evaluatesNatI32Add (leftValue := record.offset + 4) (rightValue := index * 3)
     · exact evaluatesNatI32Add (leftValue := record.offset) (rightValue := 4)
-        (local_evaluates program held.offset) ⟨1, rfl⟩ (by omega)
+        (local_evaluates program held.offset) evaluatesValue (by omega)
     · exact evaluatesNatI32Multiply (leftValue := index) (rightValue := 3)
-        (local_evaluates program (Assertion.localPointsTo_local _ _ _ _ held.child)) ⟨1, rfl⟩ (by omega)
+        (local_evaluates program (Assertion.localPointsTo_local _ _ _ _ held.child)) evaluatesValue (by omega)
     · dsimp [slot] at slotBound; omega
   let first := before.bindLocal 18 (.signed .i32 (Int.ofNat slot))
   have firstHeld : ChildOwned memory record nodeIndex index child.start visited first :=

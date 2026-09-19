@@ -4,14 +4,12 @@ namespace Lanius.Extraction
 
 open Lanius.Compiler Lanius.Compiler.Lexer
 
-/-- A successful lexer trace passes the streaming artifact checker without
-requiring an independent checker-success assumption. -/
-theorem checkRawTokenTraceFrom_complete
-    (trace : RawTokenPrefix source offset tokens finish)
-    (atEnd : source.length ≤ finish) :
-    checkRawTokenTraceFrom (source.drop offset) offset tokens = true := by
+theorem scanRawTokenSegment_complete
+    (trace : RawTokenPrefix source offset tokens finish) :
+    scanRawTokenSegment (source.drop offset) offset tokens =
+      some (source.drop finish, finish) := by
   induction trace with
-  | empty => simp [checkRawTokenTraceFrom, List.drop_eq_nil_of_le atEnd]
+  | empty => simp [scanRawTokenSegment]
   | @accepted offset token tokens finish beforeEnd scanned tail ih =>
       unfold scanOne at scanned
       cases found : scanOneAt (source.drop offset) 0 with
@@ -19,7 +17,17 @@ theorem checkRawTokenTraceFrom_complete
       | token relative =>
           simp only [found, OneTokenResult.shift, OneTokenResult.token.injEq] at scanned
           subst token
-          simpa [checkRawTokenTraceFrom, found, List.drop_drop, RawToken.shift] using ih atEnd
+          simpa [scanRawTokenSegment, found, List.drop_drop, RawToken.shift] using ih
+
+/-- A successful lexer trace passes the streaming artifact checker without
+requiring an independent checker-success assumption. -/
+theorem checkRawTokenTraceFrom_complete
+    (trace : RawTokenPrefix source offset tokens finish)
+    (atEnd : source.length ≤ finish) :
+    checkRawTokenTraceFrom (source.drop offset) offset tokens = true := by
+  simp only [checkRawTokenTraceFrom]
+  rw [scanRawTokenSegment_complete trace]
+  simp [List.drop_eq_nil_of_le atEnd]
 
 theorem checkRawTokenTrace_complete
     (trace : RawLexes source 0 (.success tokens)) :

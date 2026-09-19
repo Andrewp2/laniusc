@@ -44,9 +44,7 @@ theorem evaluatesCallReturned_invert
       generalize argumentsResult : evalExprs fuel program before arguments =
         argumentOutcome at evaluated
       cases argumentOutcome with
-      | outOfFuel => simp at evaluated
-      | trapped reason state => simp at evaluated
-      | exited code state => simp at evaluated
+      | outOfFuel | trapped _ _ | exited _ _ => simp at evaluated
       | done values afterArguments =>
           simp only [functionFound] at evaluated
           rw [functionBody] at evaluated
@@ -60,23 +58,15 @@ theorem evaluatesCallReturned_invert
                 (({ afterArguments with locals := [] }).bindLocals bindings)
                 body = bodyOutcome at evaluated
               cases bodyOutcome with
-              | outOfFuel => simp at evaluated
-              | trapped reason state => simp at evaluated
-              | exited code state => simp at evaluated
+              | outOfFuel | trapped _ _ | exited _ _ => simp at evaluated
               | done completion completed =>
-                  cases completion with
-                  | next =>
-                      simp [returnsValue] at evaluated
-                  | breakLoop => simp at evaluated
-                  | continueLoop => simp at evaluated
-                  | returned value =>
-                      cases value with
-                      | none =>
-                          simp [returnsValue] at evaluated
-                      | some returned =>
-                          obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated
-                          refine ⟨values, afterArguments, bindings, completed,
-                            ⟨fuel, argumentsResult⟩, bindingResult, ?_, rfl⟩
-                          exact ⟨fuel, by simpa [enterCall] using bodyResult⟩
+                  cases completion <;> simp [returnsValue] at evaluated
+                  case returned value =>
+                    cases value with
+                    | none => simp at evaluated
+                    | some returned =>
+                      obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated
+                      refine ⟨values, afterArguments, bindings, completed, ⟨fuel, argumentsResult⟩,
+                        bindingResult, ⟨fuel, by simpa [enterCall] using bodyResult⟩, rfl⟩
 
 end Lanius.Relational

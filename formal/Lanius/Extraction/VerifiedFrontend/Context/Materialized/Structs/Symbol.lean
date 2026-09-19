@@ -1,11 +1,10 @@
 import Lanius.Extraction.VerifiedFrontend.Context.Materialized.Structs.Base
+import Lanius.Extraction.KernelReduction
 
 namespace Lanius.Extraction
 
 set_option maxRecDepth 100000
 set_option maxHeartbeats 0
-set_option cbv.maxSteps 100000000
-set_option cbv.warning false
 
 open ArtifactContextChecker
 
@@ -18,6 +17,6 @@ theorem verifiedFrontendSymbol_context_struct_details_materialized_found_kernel 
       (collectStructures verifiedFrontendSymbolAllocationKernel.unit.surface.items)
       verifiedFrontendSymbolAllocationKernel.unit.core.structures =
         some (verifiedFrontendPackMaterializedStructDetails 10 2 3) := by
-  cbv
+  kernel_rfl
 
 end Lanius.Extraction

@@ -86,10 +86,10 @@ theorem Stage.executes (stage : Stage) (supported : Supported stage framing)
     (by simpa only [bytes] using framingSupport.suffixPadded)
     (by simpa only [bytes] using framingSupport.suffixEmitted)
     (.cons (local_evaluates program.core outputReady)
-      (.cons (show Evaluates program.core ready (number stage.capacity) (.signed .i32 stage.capacity) ready from ⟨1, rfl⟩)
+      (.cons (show Evaluates program.core ready (number stage.capacity) (.signed .i32 stage.capacity) ready from evaluatesValue)
         (.cons (local_evaluates program.core positionReady)
           (.cons (local_evaluates program.core closingReady)
-            (.cons (show Evaluates program.core ready (number bytes.length) (.signed .i32 bytes.length) ready from ⟨1, rfl⟩)
+            (.cons (show Evaluates program.core ready (number bytes.length) (.signed .i32 bytes.length) ready from evaluatesValue)
               (.nil _ _))))))
   have stillOwned := effect.preserves_localPointsTo readyRegistry.wellFormed ownedReady
     (by simpa only [CellSet.singleton, eq_comm] using outputPosition)
@@ -118,7 +118,7 @@ theorem Stage.executes (stage : Stage) (supported : Supported stage framing)
   · rw [Text.finalPosition_of_fits room] at owned
     rw [Text.emitted_of_fits room] at outputMiddle
     have sum := evaluatesNatI32Add (local_evaluates program.core previousRead)
-      (show Evaluates program.core middle (number bytes.length) (.signed .i32 bytes.length) middle from ⟨1, rfl⟩)
+      (show Evaluates program.core middle (number bytes.length) (.signed .i32 bytes.length) middle from evaluatesValue)
       (by omega)
     have guard : Evaluates program.core middle
         (binary .notEqual (read stage.position) (binary .add (read stage.previous) (number bytes.length)))
@@ -146,7 +146,7 @@ theorem Stage.executes (stage : Stage) (supported : Supported stage framing)
           (Int.ofNat earlier.length + Int.ofNat bytes.length))) middle := by
       apply evaluatesEagerBinary (by decide) (by decide)
         (local_evaluates program.core previousRead)
-        (show Evaluates program.core middle (number bytes.length) (.signed .i32 bytes.length) middle from ⟨1, rfl⟩)
+        (show Evaluates program.core middle (number bytes.length) (.signed .i32 bytes.length) middle from evaluatesValue)
       rfl
     have different := sum_ne_error program.core.target earlier.length (by omega)
     have guard : Evaluates program.core middle
@@ -159,7 +159,7 @@ theorem Stage.executes (stage : Stage) (supported : Supported stage framing)
     have failed := executesSequence (executesExpression assigned)
       (executesSequenceReturned (second := stage.continuation) (executesIfTrue (elseBranch := .skip) guard
         (executesSequenceReturned (second := .skip)
-          (executesReturnValue (show Evaluates program.core middle (number 25) (.signed .i32 25) middle from ⟨1, rfl⟩)))))
+          (executesReturnValue (show Evaluates program.core middle (number 25) (.signed .i32 25) middle from evaluatesValue)))))
     exact ⟨_, restoreLocals before middle, executesLetLocal (local_evaluates program.core positionRead) failed,
       post.restore _ before middle
         (overflowPost middle positionCell overflow owned outputMiddle closed middleRegistry extendedViews)⟩

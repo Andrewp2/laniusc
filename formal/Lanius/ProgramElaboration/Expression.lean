@@ -933,6 +933,15 @@ theorem SymbolicBodyContext.Specializes.substitution
     concrete.substitution = substitution := by
   rw [specialized.globals]
 
+theorem SymbolicBodyContext.Specializes.target
+    {symbolic : SymbolicBodyContext}
+    {concrete : SurfaceElaboration.Context}
+    {substitution : Static.Substitution}
+    {groundReturn : Static.GroundTy}
+    (specialized : symbolic.Specializes substitution groundReturn concrete) :
+    concrete.target = symbolic.globals.target := by
+  rw [specialized.globals]
+
 theorem SymbolicBodyContext.Specializes.resolvesTypeParameter
     {symbolic : SymbolicBodyContext}
     {substitution : Static.Substitution}
@@ -3347,48 +3356,25 @@ theorem SymbolicBinaryHasType.specializes
     (operation : SymbolicBinaryHasType op leftType rightType outputType) :
     ExprSpecializes substitution concrete
       (.binary op surfaceLeft surfaceRight) outputType := by
-  cases operation with
-  | @exact _ leftScalar rightScalar outputScalar typed =>
-      cases left with
-      | intro leftGround coreLeft leftGrounds leftLowers =>
-          simp [Static.Ty.instantiate] at leftGrounds
-          subst leftGround
-          cases right with
-          | intro rightGround coreRight rightGrounds rightLowers =>
-              simp [Static.Ty.instantiate] at rightGrounds
-              subst rightGround
-              exact .intro (.scalar outputScalar)
-                (.binary (SurfaceElaboration.lowerBinaryOp op) coreLeft coreRight) rfl
-                (.binary leftLowers rightLowers rfl rfl rfl typed)
-  | @rightCast rightScalar leftScalar _ outputScalar different notPreferred
-      conversion typed =>
-      cases left with
-      | intro leftGround coreLeft leftGrounds leftLowers =>
-          simp [Static.Ty.instantiate] at leftGrounds
-          subst leftGround
-          cases right with
-          | intro rightGround coreRight rightGrounds rightLowers =>
-              simp [Static.Ty.instantiate] at rightGrounds
-              subst rightGround
-              exact .intro (.scalar outputScalar)
-                (.binary (SurfaceElaboration.lowerBinaryOp op) coreLeft
-                  (.cast leftScalar coreRight)) rfl
-                (.binaryRightCast leftLowers rightLowers different notPreferred
-                  conversion rfl typed)
-  | @leftCast leftScalar rightScalar _ outputScalar preferred conversion typed =>
-      cases left with
-      | intro leftGround coreLeft leftGrounds leftLowers =>
-          simp [Static.Ty.instantiate] at leftGrounds
-          subst leftGround
-          cases right with
-          | intro rightGround coreRight rightGrounds rightLowers =>
-              simp [Static.Ty.instantiate] at rightGrounds
-              subst rightGround
-              exact .intro (.scalar outputScalar)
-                (.binary (SurfaceElaboration.lowerBinaryOp op)
-                  (.cast rightScalar coreLeft) coreRight) rfl
-                (.binaryLeftCast leftLowers rightLowers preferred conversion
-                  rfl typed)
+  cases left with
+  | intro leftGround coreLeft leftGrounds leftLowers =>
+      cases right with
+      | intro rightGround coreRight rightGrounds rightLowers =>
+          cases operation <;>
+            simp [Static.Ty.instantiate] at leftGrounds rightGrounds <;>
+            subst leftGround <;>
+            subst rightGround
+          · exact .intro (.scalar _) (.binary
+              (SurfaceElaboration.lowerBinaryOp op) coreLeft coreRight) rfl
+              (.binary leftLowers rightLowers rfl rfl rfl (by assumption))
+          · exact .intro (.scalar _) (.binary
+              (SurfaceElaboration.lowerBinaryOp op) coreLeft (.cast _ coreRight)) rfl
+              (.binaryRightCast leftLowers rightLowers (by assumption) (by assumption)
+                (by assumption) rfl (by assumption))
+          · exact .intro (.scalar _) (.binary
+              (SurfaceElaboration.lowerBinaryOp op) (.cast _ coreLeft) coreRight) rfl
+              (.binaryLeftCast leftLowers rightLowers (by assumption) (by assumption)
+                rfl (by assumption))
 
 theorem SymbolicAssignOpHasType.specializes
     (operation : SymbolicAssignOpHasType op symbolicType)
@@ -3502,11 +3488,9 @@ theorem LiteralInfersSymbolic.specializes
     ExprSpecializes substitution concrete (.literal literal) type := by
   cases inferred with
   | @default coreExpression lowered =>
-      have targetEquality : concrete.target = symbolic.globals.target := by
-        rw [specialized.globals]
       have concreteLowered : Elaboration.LiteralElaborates concrete.target literal
           (Elaboration.literalDefaultType literal) coreExpression := by
-        rw [targetEquality]
+        rw [specialized.target]
         exact lowered
       exact .intro (.scalar (literalDefaultScalar literal)) coreExpression rfl
         (.literal concreteLowered (by
@@ -3521,11 +3505,9 @@ theorem LiteralChecksSymbolic.specializes
     (checked : LiteralChecksSymbolic symbolic.globals.target literal type) :
     ExprCheckSpecializes substitution concrete (.literal literal) type := by
   obtain ⟨scalar, coreExpression, rfl, lowered⟩ := checked
-  have targetEquality : concrete.target = symbolic.globals.target := by
-    rw [specialized.globals]
   have concreteLowered : Elaboration.LiteralElaborates concrete.target literal
       (.scalar scalar) coreExpression := by
-    rw [targetEquality]
+    rw [specialized.target]
     exact lowered
   exact .intro (.scalar scalar) coreExpression rfl
     (.literal (.scalar scalar) concreteLowered rfl)
@@ -3565,7 +3547,7 @@ theorem SymbolicPatternChecks.integerSpecializes
   obtain ⟨scalar, coreExpression, rfl, lowered⟩ := checked
   have concreteLowered : Elaboration.LiteralElaborates concrete.target
       (.integer text) (.scalar scalar) coreExpression := by
-    rw [show concrete.target = symbolic.globals.target by rw [contexts.globals]]
+    rw [contexts.target]
     exact lowered
   cases concreteLowered with
   | signedInteger parsed upper =>
@@ -3962,6 +3944,35 @@ theorem ExprCheckSpecializes.scalarCast
       exact .intro (.scalar targetType) (.cast targetType coreExpression) rfl
         (.scalarCast lowers notContextualLiteral different conversion)
 
+private theorem arrayTyGround_of_some
+    {substitution : Static.Substitution}
+    (elementType : Static.Ty) (length : Static.Const)
+    (groundType : Static.GroundTy)
+    (grounded : (Static.Ty.array elementType length).instantiate substitution =
+      some groundType) :
+    ∃ groundElement groundLength,
+      groundType = Static.GroundTy.array groundElement groundLength ∧
+      elementType.instantiate substitution = some groundElement ∧
+      length.instantiate substitution = some groundLength := by
+  cases elementGrounded : elementType.instantiate substitution <;>
+    cases lengthGrounded : length.instantiate substitution <;>
+    simp [Static.Ty.instantiate, elementGrounded, lengthGrounded] at grounded
+  cases grounded
+  exact ⟨_, _, rfl, rfl, rfl⟩
+
+private theorem sliceTyGround_of_some
+    {substitution : Static.Substitution}
+    (elementType : Static.Ty) (groundType : Static.GroundTy)
+    (grounded : (Static.Ty.slice elementType).instantiate substitution =
+      some groundType) :
+    ∃ groundElement,
+      groundType = Static.GroundTy.slice groundElement ∧
+      elementType.instantiate substitution = some groundElement := by
+  cases elementGrounded : elementType.instantiate substitution <;>
+    simp [Static.Ty.instantiate, elementGrounded] at grounded
+  cases grounded
+  exact ⟨_, rfl, rfl⟩
+
 theorem ExprCheckSpecializes.arrayToSlice
     (array : ExprSpecializes substitution concrete surface
       (.array elementType length))
@@ -3971,15 +3982,12 @@ theorem ExprCheckSpecializes.arrayToSlice
     ExprCheckSpecializes substitution concrete surface (.slice elementType) := by
   cases array with
   | intro groundType coreArray typeGrounds lowers =>
-      cases lengthGrounds : length.instantiate substitution with
-      | none =>
-          simp [Static.Ty.instantiate, elementGrounds, lengthGrounds] at typeGrounds
-      | some groundLength =>
-          simp [Static.Ty.instantiate, elementGrounds, lengthGrounds] at typeGrounds
-          subst groundType
-          exact .intro (.slice groundElement) (.arrayToSlice coreElement coreArray)
-            (by simp [Static.Ty.instantiate, elementGrounds])
-            (.arrayToSlice lowers elementCore)
+      obtain ⟨groundElement', _, rfl, elementGrounds', _⟩ :=
+        arrayTyGround_of_some elementType length groundType typeGrounds
+      cases Option.some.inj (elementGrounds'.symm.trans elementGrounds)
+      exact .intro (.slice groundElement) (.arrayToSlice coreElement coreArray)
+        (by simp [Static.Ty.instantiate, elementGrounds])
+        (.arrayToSlice lowers elementCore)
 
 theorem SymbolicExprInfers.signedMinimumLiteralSpecializes
     {symbolic : SymbolicBodyContext}
@@ -3994,11 +4002,9 @@ theorem SymbolicExprInfers.signedMinimumLiteralSpecializes
       (.unary .negative (.literal (.integer text)))
       (.scalar (.signed .i32)) := by
   obtain ⟨coreExpression, lowered⟩ := lowered
-  have targetEquality : concrete.target = symbolic.globals.target := by
-    rw [specialized.globals]
   have concreteLowered : Elaboration.SignedMinimumLiteralElaborates
       concrete.target text .i32 coreExpression := by
-    rw [targetEquality]
+    rw [specialized.target]
     exact lowered
   exact .intro (.scalar (.signed .i32)) coreExpression rfl
     (.signedMinimumLiteral concreteLowered (by
@@ -4018,11 +4024,9 @@ theorem SymbolicExprChecks.signedMinimumLiteralSpecializes
       (.unary .negative (.literal (.integer text))) type := by
   subst type
   obtain ⟨coreExpression, lowered⟩ := checked
-  have targetEquality : concrete.target = symbolic.globals.target := by
-    rw [specialized.globals]
   have concreteLowered : Elaboration.SignedMinimumLiteralElaborates
       concrete.target text signedType coreExpression := by
-    rw [targetEquality]
+    rw [specialized.target]
     exact lowered
   exact .intro (.scalar (.signed signedType)) coreExpression rfl
     (.signedMinimumLiteral concreteLowered rfl)
@@ -4043,11 +4047,9 @@ theorem SymbolicExprChecks.unaryLiteralSpecializes
       (.unary op (.literal surfaceLiteral)) type := by
   subst type
   obtain ⟨coreOperand, lowered⟩ := literal
-  have targetEquality : concrete.target = symbolic.globals.target := by
-    rw [specialized.globals]
   have concreteLowered : Elaboration.LiteralElaborates concrete.target
       surfaceLiteral (.scalar scalarType) coreOperand := by
-    rw [targetEquality]
+    rw [specialized.target]
     exact lowered
   exact .intro (.scalar scalarType)
     (.unary (SurfaceElaboration.lowerUnaryOp op) coreOperand) rfl
@@ -4071,7 +4073,7 @@ theorem SymbolicExprInfers.binaryNullPointerRightSpecializes
   subst scalar
   have concreteNull : Elaboration.LiteralElaborates concrete.target
       (.integer text) (.scalar .rawPtr) coreRight := by
-    rw [show concrete.target = symbolic.globals.target by rw [contexts.globals]]
+    rw [contexts.target]
     exact nullLowers
   cases operation with
   | @exact _ _ _ outputScalar typed =>
@@ -4103,7 +4105,7 @@ theorem SymbolicExprInfers.binaryNullPointerLeftSpecializes
   subst scalar
   have concreteNull : Elaboration.LiteralElaborates concrete.target
       (.integer text) (.scalar .rawPtr) coreLeft := by
-    rw [show concrete.target = symbolic.globals.target by rw [contexts.globals]]
+    rw [contexts.target]
     exact nullLowers
   cases operation with
   | @exact _ _ _ outputScalar typed =>
@@ -4200,6 +4202,21 @@ theorem SymbolicExprInfers.assertSpecializes
       subst argumentGround
       exact .intro .unit (.intrinsic .assert coreArgument) rfl
         (.assert rfl builtin argumentChecks)
+
+private theorem integerIndexSpecializes
+    (index : ExprSpecializes substitution concrete surfaceIndex indexType)
+    (integer : SymbolicIntegerType indexType) :
+    ∃ indexGround coreIndex coreType,
+      indexType.instantiate substitution = some indexGround ∧
+      SurfaceElaboration.ExprLowers concrete surfaceIndex indexGround coreIndex ∧
+      indexGround.toCore concrete.monomorphization = some coreType ∧
+      Typing.IntegerTy coreType := by
+  cases index with
+  | intro indexGround coreIndex indexGrounds indexLowers =>
+      obtain ⟨coreType, indexCore, coreInteger⟩ :=
+        integer.specializes indexGrounds
+      exact ⟨indexGround, coreIndex, coreType, indexGrounds, indexLowers,
+        indexCore, coreInteger⟩
 
 theorem SymbolicExprInfers.i32ArrayDataPtrSpecializes
     {substitution : Static.Substitution}
@@ -4565,6 +4582,40 @@ theorem DirectCallSpecializes.concrete
         arguments.concreteExpressions parameterGrounds returnGrounds artifact
         notIntrinsic
 
+private theorem nominalExprSpecializes
+    {outer : Static.Substitution}
+    {concrete : SurfaceElaboration.Context}
+    {source : Surface.Expr}
+    {sourceType : TypeId}
+    {symbolicTypeArguments : List Static.Ty}
+    {symbolicConstArguments : List Static.Const}
+    {groundTypeArguments : List Static.GroundTy}
+    {groundConstArguments : List Nat}
+    {resolved : Static.NominalInstance}
+    {core : Core.Expr}
+    (typeArgumentsGround : Static.instantiateTypes outer symbolicTypeArguments =
+      some groundTypeArguments)
+    (constArgumentsGround : Static.instantiateConstants outer
+      symbolicConstArguments = some groundConstArguments)
+    (artifact : NominalArtifactDemand concrete declaration sourceType kind
+      groundTypeArguments groundConstArguments resolved)
+    (lowered : SurfaceElaboration.ExprLowers concrete source
+      (.nominal sourceType resolved.typeArguments resolved.constArguments) core) :
+    ExprSpecializes outer concrete source
+      (.nominal sourceType symbolicTypeArguments symbolicConstArguments) := by
+  have resolvedTypesGround : Static.instantiateTypes outer symbolicTypeArguments =
+      some resolved.typeArguments := by
+    rw [artifact.typeArguments]
+    exact typeArgumentsGround
+  have resolvedConstantsGround : Static.instantiateConstants outer
+      symbolicConstArguments = some resolved.constArguments := by
+    rw [artifact.constArguments]
+    exact constArgumentsGround
+  exact .intro
+    (.nominal sourceType resolved.typeArguments resolved.constArguments) core
+    (by simp [Static.Ty.instantiate, resolvedTypesGround, resolvedConstantsGround])
+    lowered
+
 theorem SymbolicExprInfers.variantExplicitSpecializes
     {symbolic : SymbolicBodyContext}
     {outer : Static.Substitution}
@@ -4597,20 +4648,7 @@ theorem SymbolicExprInfers.variantExplicitSpecializes
   have instantiated := artifact.instantiates contexts arguments typeArgumentsGround
     constArgumentsGround requirements
   obtain ⟨coreArguments, payloadConcrete⟩ := payload.concrete
-  have resolvedTypesGround :
-      Static.instantiateTypes outer symbolicTypeArguments =
-        some resolved.typeArguments := by
-    rw [artifact.typeArguments]
-    exact typeArgumentsGround
-  have resolvedConstantsGround :
-      Static.instantiateConstants outer symbolicConstArguments =
-        some resolved.constArguments := by
-    rw [artifact.constArguments]
-    exact constArgumentsGround
-  exact .intro
-    (.nominal constructor.sourceType resolved.typeArguments resolved.constArguments)
-    (.enumValue resolved.coreType constructor.variant coreArguments)
-    (by simp [Static.Ty.instantiate, resolvedTypesGround, resolvedConstantsGround])
+  exact nominalExprSpecializes typeArgumentsGround constArgumentsGround artifact
     (.variantCallExplicit (contexts.selectsVariantConstructor selected) notIntrinsic
       concreteArguments instantiated payloadConcrete)
 
@@ -4645,20 +4683,7 @@ theorem SymbolicExprInfers.variantInferredSpecializes
   have instantiated := artifact.instantiates contexts arguments typeArgumentsGround
     constArgumentsGround requirements
   obtain ⟨coreArguments, payloadConcrete⟩ := payload.concrete
-  have resolvedTypesGround :
-      Static.instantiateTypes outer symbolicTypeArguments =
-        some resolved.typeArguments := by
-    rw [artifact.typeArguments]
-    exact typeArgumentsGround
-  have resolvedConstantsGround :
-      Static.instantiateConstants outer symbolicConstArguments =
-        some resolved.constArguments := by
-    rw [artifact.constArguments]
-    exact constArgumentsGround
-  exact .intro
-    (.nominal constructor.sourceType resolved.typeArguments resolved.constArguments)
-    (.enumValue resolved.coreType constructor.variant coreArguments)
-    (by simp [Static.Ty.instantiate, resolvedTypesGround, resolvedConstantsGround])
+  exact nominalExprSpecializes typeArgumentsGround constArgumentsGround artifact
     (.variantCallInferred (contexts.selectsVariantConstructor selected) notIntrinsic
       implicitArguments generic determined payloadConcrete instantiated)
 
@@ -4688,13 +4713,7 @@ theorem SymbolicExprInfers.variantNongenericSpecializes
   have instantiated := artifact.instantiates contexts noArguments
     (by rfl) (by rfl) requirements
   obtain ⟨coreArguments, payloadConcrete⟩ := payload.concrete
-  have resolvedTypes : resolved.typeArguments = [] := artifact.typeArguments
-  have resolvedConstants : resolved.constArguments = [] := artifact.constArguments
-  exact .intro
-    (.nominal constructor.sourceType resolved.typeArguments resolved.constArguments)
-    (.enumValue resolved.coreType constructor.variant coreArguments)
-    (by simp [Static.Ty.instantiate, Static.instantiateTypes,
-      Static.instantiateConstants, resolvedTypes, resolvedConstants])
+  exact nominalExprSpecializes (by rfl) (by rfl) artifact
     (.variantCallNongeneric (contexts.selectsVariantConstructor selected) notIntrinsic
       implicitArguments nongeneric instantiated payloadConcrete)
 
@@ -4730,20 +4749,7 @@ theorem SymbolicExprInfers.structExplicitSpecializes
   have instantiated := artifact.instantiates contexts arguments typeArgumentsGround
     constArgumentsGround requirements
   obtain ⟨coreFields, fieldsConcrete⟩ := fields.concrete
-  have resolvedTypesGround :
-      Static.instantiateTypes outer symbolicTypeArguments =
-        some resolved.typeArguments := by
-    rw [artifact.typeArguments]
-    exact typeArgumentsGround
-  have resolvedConstantsGround :
-      Static.instantiateConstants outer symbolicConstArguments =
-        some resolved.constArguments := by
-    rw [artifact.constArguments]
-    exact constArgumentsGround
-  exact .intro
-    (.nominal constructor.sourceType resolved.typeArguments resolved.constArguments)
-    (.structValue resolved.coreType coreFields)
-    (by simp [Static.Ty.instantiate, resolvedTypesGround, resolvedConstantsGround])
+  exact nominalExprSpecializes typeArgumentsGround constArgumentsGround artifact
     (.structValueExplicit (contexts.selectsStructConstructor selected)
       concreteArguments instantiated fieldsConcrete)
 
@@ -4778,20 +4784,7 @@ theorem SymbolicExprInfers.structInferredSpecializes
   have instantiated := artifact.instantiates contexts arguments typeArgumentsGround
     constArgumentsGround requirements
   obtain ⟨coreFields, fieldsConcrete⟩ := fields.concrete
-  have resolvedTypesGround :
-      Static.instantiateTypes outer symbolicTypeArguments =
-        some resolved.typeArguments := by
-    rw [artifact.typeArguments]
-    exact typeArgumentsGround
-  have resolvedConstantsGround :
-      Static.instantiateConstants outer symbolicConstArguments =
-        some resolved.constArguments := by
-    rw [artifact.constArguments]
-    exact constArgumentsGround
-  exact .intro
-    (.nominal constructor.sourceType resolved.typeArguments resolved.constArguments)
-    (.structValue resolved.coreType coreFields)
-    (by simp [Static.Ty.instantiate, resolvedTypesGround, resolvedConstantsGround])
+  exact nominalExprSpecializes typeArgumentsGround constArgumentsGround artifact
     (.structValueInferred (contexts.selectsStructConstructor selected)
       implicitArguments generic determined fieldsConcrete instantiated)
 
@@ -4821,13 +4814,7 @@ theorem SymbolicExprInfers.structNongenericSpecializes
   have instantiated := artifact.instantiates contexts noArguments
     (by rfl) (by rfl) requirements
   obtain ⟨coreFields, fieldsConcrete⟩ := fields.concrete
-  have resolvedTypes : resolved.typeArguments = [] := artifact.typeArguments
-  have resolvedConstants : resolved.constArguments = [] := artifact.constArguments
-  exact .intro
-    (.nominal constructor.sourceType resolved.typeArguments resolved.constArguments)
-    (.structValue resolved.coreType coreFields)
-    (by simp [Static.Ty.instantiate, Static.instantiateTypes,
-      Static.instantiateConstants, resolvedTypes, resolvedConstants])
+  exact nominalExprSpecializes (by rfl) (by rfl) artifact
     (.structValueNongeneric (contexts.selectsStructConstructor selected)
       implicitArguments nongeneric instantiated fieldsConcrete)
 
@@ -4944,25 +4931,12 @@ theorem SymbolicExprInfers.indexArraySpecializes
       (.index surfaceBase surfaceIndex) elementType := by
   cases base with
   | intro baseGround coreBase baseGrounds baseLowers =>
-      cases elementGrounds : elementType.instantiate substitution with
-      | none =>
-          simp [Static.Ty.instantiate, elementGrounds] at baseGrounds
-      | some groundElement =>
-          cases lengthGrounds : length.instantiate substitution with
-          | none =>
-              simp [Static.Ty.instantiate, elementGrounds, lengthGrounds]
-                at baseGrounds
-          | some groundLength =>
-              simp [Static.Ty.instantiate, elementGrounds, lengthGrounds]
-                at baseGrounds
-              subst baseGround
-              cases index with
-              | intro indexGround coreIndex indexGrounds indexLowers =>
-                  obtain ⟨coreIndexType, indexCore, coreInteger⟩ :=
-                    integer.specializes indexGrounds
-                  exact .intro groundElement (.index coreBase coreIndex)
-                    elementGrounds
-                    (.indexArray baseLowers indexLowers indexCore coreInteger)
+      obtain ⟨groundElement, groundLength, rfl, elementGrounds, lengthGrounds⟩ :=
+        arrayTyGround_of_some elementType length baseGround baseGrounds
+      obtain ⟨indexGround, coreIndex, indexCoreType, indexGrounds, indexLowers,
+          indexCore, coreInteger⟩ := integerIndexSpecializes index integer
+      exact .intro groundElement (.index coreBase coreIndex) elementGrounds
+        (.indexArray baseLowers indexLowers indexCore coreInteger)
 
 theorem SymbolicExprInfers.indexSliceSpecializes
     (base : ExprSpecializes substitution concrete surfaceBase
@@ -4973,19 +4947,12 @@ theorem SymbolicExprInfers.indexSliceSpecializes
       (.index surfaceBase surfaceIndex) elementType := by
   cases base with
   | intro baseGround coreBase baseGrounds baseLowers =>
-      cases elementGrounds : elementType.instantiate substitution with
-      | none =>
-          simp [Static.Ty.instantiate, elementGrounds] at baseGrounds
-      | some groundElement =>
-          simp [Static.Ty.instantiate, elementGrounds] at baseGrounds
-          subst baseGround
-          cases index with
-          | intro indexGround coreIndex indexGrounds indexLowers =>
-              obtain ⟨coreIndexType, indexCore, coreInteger⟩ :=
-                integer.specializes indexGrounds
-              exact .intro groundElement (.index coreBase coreIndex)
-                elementGrounds
-                (.indexSlice baseLowers indexLowers indexCore coreInteger)
+      obtain ⟨groundElement, rfl, elementGrounds⟩ :=
+        sliceTyGround_of_some elementType baseGround baseGrounds
+      obtain ⟨indexGround, coreIndex, indexCoreType, indexGrounds, indexLowers,
+          indexCore, coreInteger⟩ := integerIndexSpecializes index integer
+      exact .intro groundElement (.index coreBase coreIndex) elementGrounds
+        (.indexSlice baseLowers indexLowers indexCore coreInteger)
 
 theorem SymbolicPlaceHasType.localSpecializes
     {symbolic : SymbolicBodyContext}
@@ -5023,25 +4990,12 @@ theorem SymbolicPlaceHasType.indexArraySpecializes
       (.index surfaceBase surfaceIndex) elementType := by
   cases base with
   | intro baseGround coreBase baseGrounds baseLowers =>
-      cases elementGrounds : elementType.instantiate substitution with
-      | none =>
-          simp [Static.Ty.instantiate, elementGrounds] at baseGrounds
-      | some groundElement =>
-          cases lengthGrounds : length.instantiate substitution with
-          | none =>
-              simp [Static.Ty.instantiate, elementGrounds, lengthGrounds]
-                at baseGrounds
-          | some groundLength =>
-              simp [Static.Ty.instantiate, elementGrounds, lengthGrounds]
-                at baseGrounds
-              subst baseGround
-              cases index with
-              | intro indexGround coreIndex indexGrounds indexLowers =>
-                  obtain ⟨coreIndexType, indexCore, coreInteger⟩ :=
-                    integer.specializes indexGrounds
-                  exact .intro groundElement (.index coreBase coreIndex)
-                    elementGrounds
-                    (.indexArray baseLowers indexLowers indexCore coreInteger)
+      obtain ⟨groundElement, groundLength, rfl, elementGrounds, lengthGrounds⟩ :=
+        arrayTyGround_of_some elementType length baseGround baseGrounds
+      obtain ⟨indexGround, coreIndex, indexCoreType, indexGrounds, indexLowers,
+          indexCore, coreInteger⟩ := integerIndexSpecializes index integer
+      exact .intro groundElement (.index coreBase coreIndex) elementGrounds
+        (.indexArray baseLowers indexLowers indexCore coreInteger)
 
 theorem SymbolicPlaceHasType.indexSliceSpecializes
     (base : PlaceSpecializes substitution concrete surfaceBase
@@ -5052,19 +5006,12 @@ theorem SymbolicPlaceHasType.indexSliceSpecializes
       (.index surfaceBase surfaceIndex) elementType := by
   cases base with
   | intro baseGround coreBase baseGrounds baseLowers =>
-      cases elementGrounds : elementType.instantiate substitution with
-      | none =>
-          simp [Static.Ty.instantiate, elementGrounds] at baseGrounds
-      | some groundElement =>
-          simp [Static.Ty.instantiate, elementGrounds] at baseGrounds
-          subst baseGround
-          cases index with
-          | intro indexGround coreIndex indexGrounds indexLowers =>
-              obtain ⟨coreIndexType, indexCore, coreInteger⟩ :=
-                integer.specializes indexGrounds
-              exact .intro groundElement (.index coreBase coreIndex)
-                elementGrounds
-                (.indexSlice baseLowers indexLowers indexCore coreInteger)
+      obtain ⟨groundElement, rfl, elementGrounds⟩ :=
+        sliceTyGround_of_some elementType baseGround baseGrounds
+      obtain ⟨indexGround, coreIndex, indexCoreType, indexGrounds, indexLowers,
+          indexCore, coreInteger⟩ := integerIndexSpecializes index integer
+      exact .intro groundElement (.index coreBase coreIndex) elementGrounds
+        (.indexSlice baseLowers indexLowers indexCore coreInteger)
 
 /-- Specialization of the implicit member-access dereference. The symbolic
     judgment decides whether one immutable reference layer is removed; this
@@ -5086,6 +5033,19 @@ inductive MemberBaseSpecializes
       MemberBaseSpecializes substitution concrete surface sourceType receiverType
         receiverGround receiverCore
 
+private theorem memberBaseDirectSpecializes
+    (member : sourceType = receiverType)
+    (sourceGrounds : sourceType.instantiate substitution = some sourceGround)
+    (sourceLowers : SurfaceElaboration.ExprLowers concrete surface
+      sourceGround sourceCore) :
+    ∃ receiverGround receiverCore,
+      MemberBaseSpecializes substitution concrete surface sourceType receiverType
+        receiverGround receiverCore := by
+  subst receiverType
+  exact ⟨sourceGround, sourceCore,
+    .intro sourceGround sourceCore sourceGrounds sourceGrounds
+      sourceLowers .direct⟩
+
 theorem SymbolicMemberBase.specializes
     (base : ExprSpecializes substitution concrete surface sourceType)
     (member : SymbolicMemberBase sourceType receiverType) :
@@ -5095,36 +5055,9 @@ theorem SymbolicMemberBase.specializes
   cases base with
   | intro sourceGround sourceCore sourceGrounds sourceLowers =>
       cases sourceType with
-      | unit =>
+      | unit | scalar _ | parameter _ | array _ _ | slice _ | nominal _ _ _ =>
           simp [SymbolicMemberBase] at member
-          subst receiverType
-          exact ⟨sourceGround, sourceCore,
-            .intro sourceGround sourceCore sourceGrounds sourceGrounds
-              sourceLowers .direct⟩
-      | scalar scalarType =>
-          simp [SymbolicMemberBase] at member
-          subst receiverType
-          exact ⟨sourceGround, sourceCore,
-            .intro sourceGround sourceCore sourceGrounds sourceGrounds
-              sourceLowers .direct⟩
-      | parameter parameter =>
-          simp [SymbolicMemberBase] at member
-          subst receiverType
-          exact ⟨sourceGround, sourceCore,
-            .intro sourceGround sourceCore sourceGrounds sourceGrounds
-              sourceLowers .direct⟩
-      | array element length =>
-          simp [SymbolicMemberBase] at member
-          subst receiverType
-          exact ⟨sourceGround, sourceCore,
-            .intro sourceGround sourceCore sourceGrounds sourceGrounds
-              sourceLowers .direct⟩
-      | slice element =>
-          simp [SymbolicMemberBase] at member
-          subst receiverType
-          exact ⟨sourceGround, sourceCore,
-            .intro sourceGround sourceCore sourceGrounds sourceGrounds
-              sourceLowers .direct⟩
+          exact memberBaseDirectSpecializes member sourceGrounds sourceLowers
       | reference referent =>
           simp [SymbolicMemberBase] at member
           subst receiverType
@@ -5138,12 +5071,6 @@ theorem SymbolicMemberBase.specializes
                 .intro (.reference groundReferent) sourceCore
                   (by simp [Static.Ty.instantiate, referentGrounded])
                   referentGrounded sourceLowers (.reference .direct)⟩
-      | nominal typeId typeArguments constArguments =>
-          simp [SymbolicMemberBase] at member
-          subst receiverType
-          exact ⟨sourceGround, sourceCore,
-            .intro sourceGround sourceCore sourceGrounds sourceGrounds
-              sourceLowers .direct⟩
 
 /-- Field metadata is an occurrence-specific catalog obligation. Once the
     selected row is known to ground the symbolic result type, member-base
@@ -8067,15 +7994,6 @@ theorem MatchArmsInferenceDerivationSpecializes.symbolicArms
 set_option maxHeartbeats 200000
 
 
-theorem SymbolicBodyContext.Specializes.target
-    {symbolic : SymbolicBodyContext}
-    {concrete : SurfaceElaboration.Context}
-    {substitution : Static.Substitution}
-    {groundReturn : Static.GroundTy}
-    (specialized : symbolic.Specializes substitution groundReturn concrete) :
-    concrete.target = symbolic.globals.target := by
-  rw [specialized.globals]
-
 structure ExactInferenceConcreteProjection
     (outer : Static.Substitution)
     (concrete : SurfaceElaboration.Context)
@@ -9039,7 +8957,7 @@ local macro "deriveConcreteProjection" outerSubstitution:ident
             surfaceArms coreArms) <;>
       intros <;>
       (first
-        | solve_by_elim (maxDepth := 20) [
+        | solve_by_elim (maxDepth := 14) [
             ExactInferenceConcreteProjection.associatedCallInferred,
             ExactInferenceConcreteProjection.associatedCallContextual,
             ExactInferenceConcreteProjection.literal,

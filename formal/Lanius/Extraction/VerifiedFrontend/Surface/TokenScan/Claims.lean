@@ -11,7 +11,7 @@ theorem verifiedFrontendTokenScan_claims_found_kernel :
     collectSurfaceClaimsFrom verifiedFrontendTokenScanArtifact
       verifiedFrontendTokenScanReconstructedKernel =
         some verifiedFrontendTokenScanClaimsKernel := by
-  decide +kernel
+  kernel_rfl
 theorem verifiedFrontendTokenScan_claims_equal_kernel :
     verifiedFrontendTokenScanOrigins.claims =
       verifiedFrontendTokenScanClaimsKernel := by

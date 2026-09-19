@@ -42,8 +42,8 @@ theorem executes_branches (program : Program) (matcher fallback : Nat)
       have tailValid : ∀ group ∈ rest, ∀ rule ∈ group.rules, ValidRule program group.width rule :=
         fun group member => valid group (List.mem_cons_of_mem _ member)
       have lengthResult : Evaluates program before (.local 3) (.signed .i32 width) before :=
-        ⟨1, evalLocal_of_local 0 program before _ _ lengthLocal⟩
-      have literal : Evaluates program before (.value (.signed .i32 group.width)) (.signed .i32 group.width) before := ⟨1, rfl⟩
+        Lanius.Semantics.evaluatesLocal lengthLocal
+      have literal : Evaluates program before (.value (.signed .i32 group.width)) (.signed .i32 group.width) before := evaluatesValue
       have tested : Evaluates program before (.binary .equal (.local 3) (.value (.signed .i32 group.width)))
           (.boolean ((width : Int) == (group.width : Int))) before :=
         evaluatesEagerBinary (by decide) (by decide) lengthResult literal (by rfl)

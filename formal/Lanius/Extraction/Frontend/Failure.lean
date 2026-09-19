@@ -61,7 +61,7 @@ def checkEarly? (constructor : CheckedResult program) (tokenization : Tokenizati
   else none
 
 private theorem local_read {id : VarId} (found : before.local? id = some value) :
-    Evaluates program before (.local id) value before := ⟨1, evalLocal_of_local 0 _ _ _ _ found⟩
+    Evaluates program before (.local id) value before := Lanius.Semantics.evaluatesLocal found
 
 private theorem CheckedEarly.storage_return (checked : CheckedEarly program symbols)
     (wellFormed : StateWellFormed before) (detail : Int) (tokens : Expr)
@@ -71,8 +71,8 @@ private theorem CheckedEarly.storage_return (checked : CheckedEarly program symb
         (syntaxResult checked.constructor.typeId 3 detail rawCount tokenCount 0 0 0) after ∧
       CellEffect CellSet.empty before after ∧ HeapFrame before after := by
   apply checked.constructor.call wellFormed
-  exact .cons (evaluatesConstant checked.storage) (.cons ⟨1, rfl⟩ (.cons (local_read rawLocal)
-    (.cons tokenResult (.cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩ (.singleton ⟨1, rfl⟩))))))
+  exact .cons (evaluatesConstant checked.storage) (.cons evaluatesValue (.cons (local_read rawLocal)
+    (.cons tokenResult (.cons evaluatesValue (.cons evaluatesValue (.singleton evaluatesValue))))))
 
 /-- The lexer failure guard and actual return, including repeated status/error
 accessors. Later capacity checks and stages are unreachable on this branch. -/
@@ -105,7 +105,7 @@ theorem CheckedEarly.lexer_failure (checked : CheckedEarly program symbols)
         .signed .i32 0, .signed .i32 position] positioned := by
     refine .cons (evaluatesConstant checked.lexical) (.cons detailCall ?_)
     refine .cons (local_read (prefixEffect.empty_preserves_local wellFormed countLocal)) ?_
-    exact .cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩ (.singleton errorCall)))
+    exact .cons evaluatesValue (.cons evaluatesValue (.cons evaluatesValue (.singleton errorCall)))
   obtain ⟨after, returned, returnEffect, returnHeap⟩ := checked.constructor.call errorEffect.wellFormed arguments
   refine ⟨after, ?_, prefixEffect.trans (errorEffect.trans returnEffect),
     statusHeap.trans (detailHeap.trans (errorHeap.trans returnHeap))⟩
@@ -137,7 +137,7 @@ theorem CheckedEarly.canonical_full (checked : CheckedEarly program symbols)
   have rejected : ¬ count ≤ capacity / 3 := by omega
   simp only [rejected, decide_false, Bool.not_false] at capacityRun
   obtain ⟨after, returned, returnEffect, returnHeap⟩ := checked.storage_return statusEffect.wellFormed 0 (.value (.signed .i32 0))
-    (statusEffect.empty_preserves_local wellFormed countLocal) ⟨1, rfl⟩
+    (statusEffect.empty_preserves_local wellFormed countLocal) evaluatesValue
   refine ⟨after, ?_, statusEffect.trans returnEffect, statusHeap.trans returnHeap⟩
   intro lexicalFailure rest
   exact executesSequence (executesIfFalse statusRun (executesSkip _ _))

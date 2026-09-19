@@ -15,7 +15,7 @@ theorem guard_pass (program : Program) (pathLength sourceLength nodeCount : Nat)
   have path := Collect.lessEqual_evaluates (local_evaluates program pathRead) (negativeOne_evaluates program before)
   have source := Collect.lessEqual_evaluates (local_evaluates program sourceRead) (negativeOne_evaluates program before)
   have nodes := Collect.lessEqual_evaluates (local_evaluates program nodeRead)
-    (show Evaluates program before (number 0) (.signed .i32 0) before from ⟨1, rfl⟩)
+    (show Evaluates program before (number 0) (.signed .i32 0) before from evaluatesValue)
   have all := evaluatesPureLogicalOr (evaluatesPureLogicalOr path source) nodes
   have pathNonnegative : ¬ ((pathLength : Int) ≤ -1) := by omega
   have sourceNonnegative : ¬ ((sourceLength : Int) ≤ -1) := by omega

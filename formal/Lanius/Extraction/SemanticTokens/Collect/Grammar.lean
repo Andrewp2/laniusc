@@ -24,7 +24,7 @@ theorem GrammarData.header (data : GrammarData) (owned : data.Owns cell state)
     (program : Program) (index value : Nat) (header : HeaderWord data.words index value) :
     Evaluates program state (atIndex 0 (number index)) (.signed .i32 value) state := by
   have evaluated := owned.read program (number index) index header.index_in_bounds
-    (show Evaluates program state (number index) (.signed .i32 index) state from ⟨1, rfl⟩)
+    (show Evaluates program state (number index) (.signed .i32 index) state from evaluatesValue)
   simpa only [header.get, Int.ofNat_eq_natCast] using evaluated
 
 theorem GrammarData.canonical (data : GrammarData) (owned : data.Owns cell state)
@@ -60,9 +60,9 @@ theorem GrammarData.Loaded.guard {data : GrammarData} (loaded : data.Loaded cell
   have range := (data.encoded.validation_prelude data.wellFormed).canonicalKindsRange
   obtain ⟨_, offsetBound, tableBound⟩ := range
   have nonempty := lessEqual_evaluates kindRead
-    (show Evaluates program state (number 0) (.signed .i32 0) state from ⟨1, rfl⟩)
+    (show Evaluates program state (number 0) (.signed .i32 0) state from evaluatesValue)
   have bounded := greaterEqual_evaluates kindRead
-    (show Evaluates program state (number 32769) (.signed .i32 32769) state from ⟨1, rfl⟩)
+    (show Evaluates program state (number 32769) (.signed .i32 32769) state from evaluatesValue)
   have nonnegative := lessEqual_evaluates offsetRead (negativeOne_evaluates program state)
   have inside := negate_evaluates (lessEqual_evaluates offsetRead lengthRead)
   have subtraction := evaluatesNatI32Subtract (leftValue := data.words.length)

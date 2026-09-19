@@ -36,19 +36,6 @@ def decodeTokens (tokens : List Token) : Option (List RawToken) :=
   tokens.mapM decodeToken
 
 
-def checkRawTokenTraceFrom : List Byte → Nat → List RawToken → Bool
-  | remaining, _, [] => remaining.isEmpty
-  | remaining, offset, token :: tokens =>
-      match scanOneAt remaining 0 with
-      | .failure _ => false
-      | .token relative =>
-          relative.shift offset == token &&
-          checkRawTokenTraceFrom (remaining.drop relative.finish)
-            (offset + relative.finish) tokens
-
-def checkRawTokenTrace (source : List Byte) (tokens : List RawToken) : Bool :=
-  checkRawTokenTraceFrom source 0 tokens
-
 /-- Prefix scanner used to split large raw-token certificates.  Unlike
 `checkRawTokenTraceFrom`, it returns the unconsumed suffix instead of requiring
 the segment to reach end-of-file. -/
@@ -64,6 +51,15 @@ def scanRawTokenSegment : List Byte → Nat → List RawToken →
               (offset + relative.finish) tokens
           else none
 
+def checkRawTokenTraceFrom : List Byte → Nat → List RawToken → Bool
+  | remaining, offset, tokens =>
+      match scanRawTokenSegment remaining offset tokens with
+      | some (suffix, _) => suffix.isEmpty
+      | none => false
+
+def checkRawTokenTrace (source : List Byte) (tokens : List RawToken) : Bool :=
+  checkRawTokenTraceFrom source 0 tokens
+
 theorem scanRawTokenSegment_append (remaining : List Byte) (offset : Nat)
     (left right : List RawToken) :
     scanRawTokenSegment remaining offset (left ++ right) =
@@ -76,14 +72,12 @@ theorem scanRawTokenSegment_append (remaining : List Byte) (offset : Nat)
   | cons token tokens inductionHypothesis =>
       simp only [List.cons_append, scanRawTokenSegment]
       cases scanned : scanOneAt remaining 0 with
-      | failure error => simp only [scanned]
+      | failure => simp
       | token relative =>
-          simp only [scanned]
           cases matched : (relative.shift offset == token) with
-          | false => simp only [matched, Bool.false_eq_true, ↓reduceIte]
+          | false => simp [matched]
           | true =>
-              simp only [matched, ↓reduceIte]
-              exact inductionHypothesis _ _
+              simp [matched, inductionHypothesis]
 
 
 theorem checkRawTokenTraceFrom_eq_segment
@@ -92,63 +86,63 @@ theorem checkRawTokenTraceFrom_eq_segment
       match scanRawTokenSegment remaining offset tokens with
       | some (nextRemaining, _) => nextRemaining.isEmpty
       | none => false := by
+  rfl
+
+private theorem scanRawTokenSegment_sound
+    (remainingEquals : remaining = source.drop offset)
+    (accepted : scanRawTokenSegment remaining offset tokens = some ([], finish)) :
+    RawLexes source offset (.success tokens) := by
   induction tokens generalizing remaining offset with
-  | nil => rfl
+  | nil =>
+      obtain ⟨rfl, rfl⟩ := Option.some.inj (by
+        simpa only [scanRawTokenSegment] using accepted)
+      have lengths := congrArg List.length remainingEquals
+      simp at lengths
+      exact .done (by omega)
   | cons token tokens inductionHypothesis =>
-      simp only [checkRawTokenTraceFrom, scanRawTokenSegment]
-      cases scanned : scanOneAt remaining 0 with
-      | failure error => simp only [scanned]
+      simp only [scanRawTokenSegment] at accepted
+      cases relativeFound : scanOneAt remaining 0 with
+      | failure error => simp [relativeFound] at accepted
       | token relative =>
-          simp only [scanned]
+          simp only [relativeFound] at accepted
           cases matched : (relative.shift offset == token) with
-          | false =>
-              simp only [matched, Bool.false_and, Bool.false_eq_true,
-                ↓reduceIte]
+          | false => simp [matched] at accepted
           | true =>
-              simp only [matched, Bool.true_and, ↓reduceIte]
-              exact inductionHypothesis _ _
+              cases beq_iff_eq.mp matched
+              have scanned : scanOne source offset = .token (relative.shift offset) := by
+                unfold scanOne
+                rw [← remainingEquals, relativeFound]
+                rfl
+              have beforeEnd : offset < source.length := by
+                have sourceLengths := congrArg List.length remainingEquals; simp at sourceLengths
+                have remainingNonempty := scanOneAt_token_before_end relativeFound
+                omega
+              have tailEquals : remaining.drop relative.finish =
+                  source.drop (offset + relative.finish) := by
+                simpa [remainingEquals, List.drop_drop]
+              simp only [beq_self_eq_true, ↓reduceIte] at accepted
+              exact .accepted beforeEnd scanned
+                (inductionHypothesis tailEquals accepted)
 
 theorem checkRawTokenTraceFrom_sound
     (remainingEquals : remaining = source.drop offset)
     (accepted : checkRawTokenTraceFrom remaining offset tokens = true) :
     RawLexes source offset (.success tokens) := by
-  induction tokens generalizing remaining offset with
-  | nil =>
-      simp [checkRawTokenTraceFrom] at accepted
-      have lengths := congrArg List.length remainingEquals
-      simp [accepted] at lengths
-      exact .done (by omega)
-  | cons token tokens inductionHypothesis =>
-      unfold checkRawTokenTraceFrom at accepted
-      cases relativeFound : scanOneAt remaining 0 with
-      | failure error => simp [relativeFound] at accepted
-      | token relative =>
-          simp only [relativeFound, Bool.and_eq_true, beq_iff_eq] at accepted
-          have sameToken : relative.shift offset = token := accepted.1
-          subst token
-          have scanned :
-              scanOne source offset = .token (relative.shift offset) := by
-            unfold scanOne
-            rw [← remainingEquals, relativeFound]
-            rfl
-          have remainingNonempty : 0 < remaining.length :=
-            scanOneAt_token_before_end relativeFound
-          have sourceLengths := congrArg List.length remainingEquals
-          simp at sourceLengths
-          have beforeEnd : offset < source.length := by omega
-          have tailEquals :
-              remaining.drop relative.finish =
-                source.drop (offset + relative.finish) := by
-            rw [remainingEquals, List.drop_drop]
-          exact .accepted beforeEnd scanned
-            (inductionHypothesis tailEquals accepted.2)
+  unfold checkRawTokenTraceFrom at accepted
+  cases scanned : scanRawTokenSegment remaining offset tokens with
+  | none => simp [scanned] at accepted
+  | some result =>
+      cases result with
+      | mk suffix finish =>
+          have suffixEmpty : suffix = [] := by simpa [scanned] using accepted
+          subst suffix
+          exact scanRawTokenSegment_sound remainingEquals scanned
 
 theorem checkRawTokenTrace_sound
     (accepted : checkRawTokenTrace source tokens = true) :
     RawLexes source 0 (.success tokens) := by
-  apply checkRawTokenTraceFrom_sound (source := source) (remaining := source)
-  · simp
-  · exact accepted
+  exact checkRawTokenTraceFrom_sound (source := source) (remaining := source)
+    (by simp) accepted
 
 def tokenByteValuesFromRemaining
     (remaining : List Byte) (width : Nat) : List Nat :=
@@ -171,7 +165,6 @@ def filterRetagTokensFromTrace :
       if isTriviaKind token.kind then tail
       else { token with kind :=
         canonicalKindFromRemaining remaining width token } :: tail
-
 
 def canonicalizeTokensFromTrace
     (source : List Byte) (tokens : List RawToken) : List RawToken :=
@@ -196,18 +189,14 @@ theorem filterRetagTokensFromTrace_eq
       have tokenStarts : token.start = offset := scanOne_token_start scanned
       have advances : offset < token.finish := scanOne_token_advances scanned
       have kindEquals := canonicalKindFromRemaining_eq
-        (remaining := source.drop offset) (source := source)
-        (offset := offset) (token := token) rfl tokenStarts
+        (remaining := source.drop offset) (source := source) rfl tokenStarts
       have tailRemaining :
           (source.drop offset).drop (token.finish - offset) =
             source.drop token.finish := by
         rw [List.drop_drop]
-        congr 1
-        omega
-      by_cases trivia : isTriviaKind token.kind = true
-      · simp [filterRetagTokensFromTrace, filterRetagTokens,
-          canonicalizeToken, trivia, tailRemaining, inductionHypothesis]
-      · simp [filterRetagTokensFromTrace, filterRetagTokens,
+        congr 1 <;> omega
+      by_cases trivia : isTriviaKind token.kind = true <;>
+        simp [filterRetagTokensFromTrace, filterRetagTokens,
           canonicalizeToken, trivia, tailRemaining, inductionHypothesis,
           kindEquals]
 
@@ -216,9 +205,8 @@ theorem canonicalizeTokensFromTrace_eq
     canonicalizeTokensFromTrace source tokens =
       canonicalizeTokens source tokens := by
   unfold canonicalizeTokensFromTrace canonicalizeTokens
-  have filtered := filterRetagTokensFromTrace_eq trace
-  simp at filtered
-  rw [filtered]
+  simpa only [List.drop_zero] using
+    congrArg retagInclusiveRanges (filterRetagTokensFromTrace_eq trace)
 
 /-- The exact bytes have the claimed canonical stream. When raw token rows
 are supplied, retain their checked lexical meaning too: later resource proofs
@@ -263,28 +251,20 @@ theorem checkTokenArtifact_sound {artifact : Artifact}
       · rename_i rawTokens rawTokensDecoded
         simp only [Bool.and_eq_true, beq_iff_eq] at accepted
         have rawTrace := checkRawTokenTrace_sound accepted.1
-        have rawResult : lexRaw source = .success rawTokens :=
-          (lexRaw_sound source).functional rawTrace
+        have rawResult := (lexRaw_sound source).functional rawTrace
         obtain ⟨finish, rawPrefix, _⟩ := rawTrace.success_witness
         have canonicalized : canonicalizeTokens source rawTokens = tokens := by
-          rw [← canonicalizeTokensFromTrace_eq rawPrefix]
-          exact accepted.2
+          simpa [canonicalizeTokensFromTrace_eq rawPrefix] using accepted.2
         have canonical : lexCanonical source = .success tokens := by
-          unfold lexCanonical
-          rw [rawResult]
-          simp [canonicalizeRawResult, canonicalized]
+          simpa [lexCanonical, rawResult, canonicalizeRawResult, canonicalized]
         refine ⟨source, tokens, versionEqual, sourceDecoded, tokensDecoded, canonical, ?_⟩
         intro rows found
-        have same := Option.some.inj (rawRowsFound.symm.trans found)
-        subst rows
+        rcases Option.some.inj (rawRowsFound.symm.trans found) with rfl
         exact ⟨rawTokens, rawTokensDecoded, rawResult⟩
       · simp at accepted
     · rename_i source tokens sourceDecoded rawRowsMissing tokensDecoded
       exact ⟨source, tokens, versionEqual, sourceDecoded, tokensDecoded,
-        by simpa using accepted, by
-          intro rows found
-          rw [rawRowsMissing] at found
-          cases found⟩
+        by simpa using accepted, by simp [rawRowsMissing]⟩
     · simp at accepted
 
 private def emptyArtifact (sourceBytes : List Nat) (tokens : List Token) : Artifact :=

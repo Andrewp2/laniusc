@@ -75,7 +75,7 @@ theorem Stage.arguments_evaluate (stage : Stage) (program : Program) (data : Syn
       (.slice i32 data.sourceCell [] 0 sourceCapacity :: data.values.tail) before := by
   have readValue {id : VarId} {value : Value} (member : (id, value) ∈ stage.bufferBindings data sourceCapacity) :=
     local_evaluates program (reads _ member)
-  have literal (value : Nat) : Evaluates program before (number value) (.signed .i32 value) before := ⟨1, rfl⟩
+  have literal (value : Nat) : Evaluates program before (number value) (.signed .i32 value) before := evaluatesValue
   simp only [Stage.arguments, SyntaxData.values, List.tail_cons, RawLexer.LexInto.Structure.i32Type, i32,
     capacity.grammar, capacity.raw, capacity.canonical, capacity.kinds,
     capacity.workspace, capacity.records, capacity.offsets, capacity.depth]

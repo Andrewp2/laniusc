@@ -8,7 +8,7 @@ open Lanius.Compiler.Parser Lanius.Extraction.ParserTreeLayout Lanius.Extraction
 
 private theorem local_read {id : Lanius.VarId} (found : before.local? id = some value) :
     Evaluates program before (.local id) value before :=
-  ⟨1, evalLocal_of_local 0 program before id value found⟩
+  Lanius.Semantics.evaluatesLocal found
 
 /-- The precise smaller-state obligation shared by the loop and caller proof.
     This is a proposition to construct by induction, not a new trust axiom. -/

@@ -23,20 +23,6 @@ private def phase (message : String) : IO Unit :=
     handle.putStrLn s!"[{← IO.monoMsNow}] {message}"
     handle.flush
 
-private def proposedSurfaces : (units : List Artifact) →
-    Option (ArtifactPackChecker.CheckedUnitSurfaces units)
-  | [] => some .nil
-  | unit :: units => do
-    let bytes ← decodeSingleSource unit.sources
-    let cache : ArtifactCache := {
-      leafCapacity := 16
-      parseNodes := proposeSeqTree 16 unit.parse_nodes
-      tokens := proposeSeqTree 16 unit.tokens
-      primarySourceBytes := proposeSeqTree 16 bytes }
-    let view ← cache.checked? unit
-    let checked ← checkSurfaceArtifactView? unit view
-    return .cons checked (← proposedSurfaces units)
-
 elab "self_core%" : term => do
   IO.FS.writeFile "target/verified-compiler/self-core-phases.log" ""
   phase "proposing full Core program"
@@ -48,10 +34,10 @@ elab "self_core%" : term => do
   let sources ← paths.toList.mapM fun (path : String) => do
     let bytes ← IO.FS.readBinFile path
     return ({path, bytes := bytes.toList.map UInt8.toNat} : SourceFile)
-  let some pack := decodeCompactArtifactPack? encoded | throwError "compact proposal failed"
-  unless compactPackSources pack == sources do throwError "source bytes differ"
+  let some checked := checkCompactSurfaceArtifactPackSources? encoded sources
+    | throwError "Surface proposal failed"
   phase "source bytes checked; proposing indexed Surface data"
-  let some data := proposedSurfaces pack.units | throwError "Surface proposal failed"
+  let data := checked.surfaceData
   phase "Surface proposed; synthesizing Core"
   let some checked := CoreSynthesis.Program.synthesize? data | throwError "Core proposal failed"
   phase s!"quoting {checked.core.functions.length} functions"

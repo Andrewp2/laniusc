@@ -50,7 +50,7 @@ theorem CheckedResult.call (checked : CheckedResult program)
   let callee := enterCall afterArguments bindings
   have calleeWF : StateWellFormed callee := enterCall_preserves_wellFormed wellFormed
   have parameter (index : Fin 7) : Evaluates program.core callee (.local index.val) (values.get index) callee :=
-    ⟨1, evalLocal_of_local 0 _ _ _ _ (enterCall_parameterBindings_matches wellFormed index)⟩
+    Lanius.Semantics.evaluatesLocal (enterCall_parameterBindings_matches wellFormed index)
   have fields : ArgumentsEvaluateTo program.core callee
       [.local 0, .local 1, .local 2, .local 3, .local 4, .local 5, .local 6] values callee :=
     .cons (parameter ⟨0, by decide⟩) (.cons (parameter ⟨1, by decide⟩)
@@ -128,7 +128,7 @@ def extractionTreeStage (code : Int) : Int := if code = 0 then 0 else 5
 
 private theorem local_read {id : VarId} (found : before.local? id = some value) :
     Evaluates program before (.local id) value before :=
-  ⟨1, evalLocal_of_local 0 _ _ _ _ found⟩
+  Lanius.Semantics.evaluatesLocal found
 
 /-- Derive all seven returned fields, evaluating the actual accessor calls in
 source order. This covers both success and nonzero tree status without treating
@@ -193,7 +193,7 @@ theorem CheckedFinish.execute {visit : ParserTreeSource.CheckedVisit program}
     .cons (local_read stageLocal) (.cons detailCall
       (.cons (local_read (detailEffect.empty_preserves_local selectEffect.wellFormed (preserved (by decide) rawLocal)))
         (.cons (local_read (detailEffect.empty_preserves_local selectEffect.wellFormed (preserved (by decide) countLocal)))
-          (.cons nodesCall (.cons wordsCall (.singleton ⟨1, rfl⟩))))))
+          (.cons nodesCall (.cons wordsCall (.singleton evaluatesValue))))))
   obtain ⟨completed, returned, returnEffect, _⟩ := checked.constructor.call wordsEffect.wellFormed arguments
   have finalEffect := selectEffect.trans
     ((detailEffect.trans (nodesEffect.trans (wordsEffect.trans returnEffect))).weaken CellSet.empty_subset)

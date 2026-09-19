@@ -43,7 +43,7 @@ structure InitializeInvariant (memory : InitializeMemory) (position : Nat) (stat
 
 theorem negativeOne_evaluates (program : Program) (before : State) :
     Evaluates program before (negative 1) (.signed .i32 (-1)) before := by
-  apply evaluatesUnary (show Evaluates program before (number 1) (.signed .i32 1) before from ⟨1, rfl⟩)
+  apply evaluatesUnary (show Evaluates program before (number 1) (.signed .i32 1) before from evaluatesValue)
   simp [evalUnaryValue, wrapSigned, signedModulus, signedSignBit, SignedIntTy.bits]
 
 theorem initialize_step (program : Program) (memory : InitializeMemory)
@@ -53,7 +53,7 @@ theorem initialize_step (program : Program) (memory : InitializeMemory)
   have room : position < memory.original.length := Nat.lt_of_lt_of_le active memory.capacity
   have lengthEq := initialized_length (Nat.le_of_lt room)
   have indexResult : Evaluates program before (read 12) (.signed .i32 position) before :=
-    ⟨1, evalLocal_of_local 0 program before 12 _ (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)
   obtain ⟨written, assigned, contents, writeEffect, storeHeapFrame, _⟩ := evaluatesSliceStore program before before
     (initialized memory.original position) 8 (read 12) (negative 1) memory.outputCell position (-1)
     invariant.wellFormed (by simpa only [lengthEq] using room)
@@ -85,11 +85,11 @@ theorem initialize_loop (program : Program) (memory : InitializeMemory)
     ∃ after, Executes program before initializeLoop .next after ∧
       InitializeInvariant memory (memory.count * 2) after ∧ CellEffect memory.writes before after := by
   have cursorResult : Evaluates program before (read 12) (.signed .i32 position) before :=
-    ⟨1, evalLocal_of_local 0 program before 12 _ (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)
   have countResult : Evaluates program before (read 3) (.signed .i32 memory.count) before :=
-    ⟨1, evalLocal_of_local 0 program before 3 _ invariant.count⟩
+    Lanius.Semantics.evaluatesLocal invariant.count
   have limitResult := evaluatesNatI32Multiply countResult
-    (show Evaluates program before (number 2) (.signed .i32 2) before from ⟨1, rfl⟩) memory.bounded
+    (show Evaluates program before (number 2) (.signed .i32 2) before from evaluatesValue) memory.bounded
   have condition : Evaluates program before initializeCondition
       (.boolean (!(Int.ofNat position == Int.ofNat (memory.count * 2)))) before := by
     apply evaluatesEagerBinary (by decide) (by decide) cursorResult limitResult

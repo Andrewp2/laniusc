@@ -189,22 +189,12 @@ private def initialLoopCondition :
   initialBinary .less (initialSlot ⟨15, by omega⟩)
     (initialSlot ⟨13, by omega⟩)
 
-private def initialExpectedLoopCommand :
-    Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 16 :=
-  .whileLoop initialLoopCondition initialBodyCommand
-
 /-- Assemble the loop from its checked body; do not reify that body twice. -/
 def initialLoopCommand :
     Lanius.FunctionalView.Stateful.Command
-      Lanius.FunctionalView.Core.signature
-      Lanius.FunctionalView.Core.Stateful.actions 16 :=
-  initialExpectedLoopCommand
-
-private theorem initialLoopCommand_shape :
-    initialLoopCommand = initialExpectedLoopCommand := by
-  rfl
+    Lanius.FunctionalView.Core.signature
+    Lanius.FunctionalView.Core.Stateful.actions 16 :=
+  .whileLoop initialLoopCondition initialBodyCommand
 
 private theorem initialLoop_calls_supported :
     Lanius.FunctionalView.Core.Stateful.Command.callsSatisfy
@@ -251,7 +241,7 @@ theorem initialContinuationCommand_toCore :
       initialContinuationLayout 20 initialContinuationCommand =
       parserRecognizeAfterInitialIndexBinding := by
   have capacity : Stateful.localCapacity actionAdapter initialLoopCommand = 2 := by
-    simp only [initialLoopCommand, initialExpectedLoopCommand, Stateful.localCapacity,
+    simp only [initialLoopCommand, Stateful.localCapacity,
       initialBodyCommand_shape, initialExpectedBodyCommand]
     rfl
   change Stmt.sequence
@@ -308,6 +298,21 @@ theorem positionStatementEnvironment_extends_initialContinuation
         stateCount index) := by
   apply Lanius.FunctionalView.Env.Extends.ofFn
   rfl
+
+private theorem initial_call_free_agreement
+    {arity : Nat} (workspaceLayout : WorkspaceLayout) (words : List Int)
+    (grammarCell : CellId) (world : Lanius.FunctionalView.Core.ReadOnly.World)
+    (environment : Lanius.FunctionalView.Env arity)
+    (term : Lanius.FunctionalView.Term Lanius.FunctionalView.Core.signature arity)
+    (free : Lanius.FunctionalView.Core.Effectful.termCallFree term = true) :
+    Lanius.FunctionalView.Term.evaluate
+        (predictionTermMachine workspaceLayout words grammarCell)
+        world environment term =
+      Lanius.FunctionalView.Term.evaluate
+        (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
+        world environment term := by
+  exact Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
+    term free
 
 private theorem RecognizerInitialLoopInvariant.functional_read_production
     (invariant : RecognizerInitialLoopInvariant grammarLayout grammar words
@@ -380,12 +385,8 @@ private theorem RecognizerInitialLoopInvariant.functional_read_production
       (baseType := .slice parserI32Type) (indexType := parserI32Type)
       (elementType := parserI32Type) baseResult addressResult
       recognizerWorld_finds_grammar physicalBound' physical'
-  have agreement :=
-    Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
-      (program := verifiedParserCore)
-      (calls := RecognizerCallRegistry.calls workspaceLayout words grammarCell)
-      (world := world) (environment := environment) initialProductionTerm
-      (by decide +kernel)
+  have agreement := initial_call_free_agreement workspaceLayout words grammarCell
+    world environment initialProductionTerm (by decide +kernel)
   exact agreement.trans readOnlyResult
 
 private theorem RecognizerInitialLoopInvariant.functional_seed
@@ -424,35 +425,27 @@ private theorem RecognizerInitialLoopInvariant.functional_seed
       (program := verifiedParserCore) (world := world)
       (environment := environment) (inputType := parserI32Type)
       (outputType := parserI32Type)
-  have negativeOneAgreement :=
-    Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
-      (program := verifiedParserCore)
-      (calls := RecognizerCallRegistry.calls workspaceLayout words grammarCell)
-      (world := world) (environment := environment)
-      (initialNegativeOne : Lanius.FunctionalView.Term
-        Lanius.FunctionalView.Core.signature 17) (by decide +kernel)
   have negativeOneResult : Lanius.FunctionalView.Term.evaluate machine world
       environment (initialNegativeOne : Lanius.FunctionalView.Term
-        Lanius.FunctionalView.Core.signature 17) =
+      Lanius.FunctionalView.Core.signature 17) =
       .ok (.signed .i32 (-1), world) := by
-    exact negativeOneAgreement.trans negativeOneReadOnly
+    exact (initial_call_free_agreement workspaceLayout words grammarCell world
+      environment (initialNegativeOne : Lanius.FunctionalView.Term
+        Lanius.FunctionalView.Core.signature 17) (by decide +kernel)).trans
+      negativeOneReadOnly
   have childNoneReadOnly :=
     Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_constant
       (program := verifiedParserCore) (world := world)
       (environment := environment) (type := parserI32Type)
       verifiedParser_child_none_constant
-  have childNoneAgreement :=
-    Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
-      (program := verifiedParserCore)
-      (calls := RecognizerCallRegistry.calls workspaceLayout words grammarCell)
-      (world := world) (environment := environment)
-      (initialConstant 37 : Lanius.FunctionalView.Term
-        Lanius.FunctionalView.Core.signature 17) (by decide +kernel)
   have childNoneResult : Lanius.FunctionalView.Term.evaluate machine world
       environment (initialConstant 37 : Lanius.FunctionalView.Term
-        Lanius.FunctionalView.Core.signature 17) =
+      Lanius.FunctionalView.Core.signature 17) =
       .ok (.signed .i32 0, world) :=
-    childNoneAgreement.trans childNoneReadOnly
+    (initial_call_free_agreement workspaceLayout words grammarCell world
+      environment (initialConstant 37 : Lanius.FunctionalView.Term
+        Lanius.FunctionalView.Core.signature 17) (by decide +kernel)).trans
+      childNoneReadOnly
   have argumentsResult : Lanius.FunctionalView.evaluateTerms machine world
       environment [initialSlot ⟨16, by omega⟩, initialLiteral 0,
         initialLiteral 0, initialNegativeOne, initialConstant 37,
@@ -666,21 +659,12 @@ private theorem initialFullCondition_evaluates
       world (environment.push (appendOutcomeValue outcome))
       initialFullCondition =
       .ok (.boolean (decide (outcome.status = .full)), world) := by
-  have agreement :=
-    Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
-      (program := verifiedParserCore)
-      (calls := RecognizerCallRegistry.calls workspaceLayout words grammarCell)
-      (world := world)
-      (environment := environment.push (appendOutcomeValue outcome))
-      initialFullCondition (by decide +kernel)
-  have readOnlyResult : Lanius.FunctionalView.Term.evaluate
-      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      world (environment.push (appendOutcomeValue outcome))
-      initialFullCondition =
-      .ok (.boolean (decide (outcome.status = .full)), world) := by
+  have agreement := initial_call_free_agreement workspaceLayout words grammarCell
+    world (environment.push (appendOutcomeValue outcome)) initialFullCondition
+    (by decide +kernel)
+  exact agreement.trans (by
     rcases outcome with ⟨status, stateId, stateCount, inserted⟩
-    cases status <;> rfl
-  exact agreement.trans readOnlyResult
+    cases status <;> rfl)
 
 private theorem initialStateCount_evaluates
     (world : Lanius.FunctionalView.Core.ReadOnly.World)
@@ -692,21 +676,11 @@ private theorem initialStateCount_evaluates
       (.apply (.field (.structure 2) 2 parserI32Type)
         [initialSlot ⟨17, by omega⟩]) =
       .ok (.signed .i32 (Int.ofNat outcome.stateCount), world) := by
-  have agreement :=
-    Lanius.FunctionalView.Core.Effectful.Term.evaluate_eq_readOnly_of_callFree
-      (program := verifiedParserCore)
-      (calls := RecognizerCallRegistry.calls workspaceLayout words grammarCell)
-      (world := world)
-      (environment := environment.push (appendOutcomeValue outcome))
-      (.apply (.field (.structure 2) 2 parserI32Type)
-        [initialSlot ⟨17, by omega⟩]) (by decide +kernel)
-  have readOnlyResult : Lanius.FunctionalView.Term.evaluate
-      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      world (environment.push (appendOutcomeValue outcome))
-      (.apply (.field (.structure 2) 2 parserI32Type)
-        [initialSlot ⟨17, by omega⟩]) =
-      .ok (.signed .i32 (Int.ofNat outcome.stateCount), world) := by rfl
-  exact agreement.trans readOnlyResult
+  have agreement := initial_call_free_agreement workspaceLayout words grammarCell
+    world (environment.push (appendOutcomeValue outcome))
+    (.apply (.field (.structure 2) 2 parserI32Type)
+      [initialSlot ⟨17, by omega⟩]) (by decide +kernel)
+  exact agreement.trans (by rfl)
 
 private theorem initialFullResult_evaluates
     (world : Lanius.FunctionalView.Core.ReadOnly.World)
@@ -831,27 +805,18 @@ private theorem RecognizerInitialLoopInvariant.functional_ok_body
     (.signed .i32 (Int.ofNat production))
   let resultEnvironment := productionEnvironment.push
     (appendOutcomeValue outcome)
-  have productionResult : Lanius.FunctionalView.Term.evaluate
-      (predictionTermMachine workspaceLayout words grammarCell)
-      beforeWorld beforeEnvironment initialProductionTerm =
-      .ok (.signed .i32 (Int.ofNat production), beforeWorld) :=
-    invariant.functional_read_production rowBound
-  have appendResult : Lanius.FunctionalView.Term.evaluate
-      (predictionTermMachine workspaceLayout words grammarCell)
-      beforeWorld productionEnvironment initialAppendTerm =
-      .ok (appendOutcomeValue outcome, afterWorld) :=
-    invariant.functional_append indexBound rowBound
+  have productionResult := invariant.functional_read_production rowBound
+  have appendResult := invariant.functional_append indexBound rowBound
   have fullCondition : Lanius.FunctionalView.Term.evaluate
       (predictionTermMachine workspaceLayout words grammarCell)
       afterWorld resultEnvironment initialFullCondition =
       .ok (.boolean false, afterWorld) := by
-    have evaluated := initialFullCondition_evaluates
-      (workspaceLayout := workspaceLayout) (words := words)
-      (grammarCell := grammarCell) afterWorld productionEnvironment outcome
     have statusOk' : outcome.status = .ok := by
       simpa [outcome, seed, production] using statusOk
-    rw [statusOk'] at evaluated
-    simpa [resultEnvironment] using evaluated
+    simpa [statusOk', resultEnvironment] using
+      initialFullCondition_evaluates
+        (workspaceLayout := workspaceLayout) (words := words)
+        (grammarCell := grammarCell) afterWorld productionEnvironment outcome
   have countResult : Lanius.FunctionalView.Term.evaluate
       (predictionTermMachine workspaceLayout words grammarCell)
       afterWorld resultEnvironment
@@ -888,9 +853,9 @@ private theorem RecognizerInitialLoopInvariant.functional_ok_body
       Lanius.FunctionalView.Core.Stateful.machineWith] using updated
   rw [initialBodyCommand_shape, initialExpectedBodyCommand]
   exact .letValue productionResult (.letValue appendResult
-    (.sequenceNext (.ifFalse fullCondition .skip)
-      (.sequenceNext (.setLocal countResult)
-        (.sequenceNext (.updateLocal oneResult updateResult) .skip))))
+      (.sequenceNext (.ifFalse fullCondition .skip)
+        (.sequenceNext (.setLocal countResult)
+          (.sequenceNext (.updateLocal oneResult updateResult) .skip))))
 
 private theorem RecognizerInitialLoopInvariant.functional_full_body
     (invariant : RecognizerInitialLoopInvariant grammarLayout grammar words
@@ -938,27 +903,18 @@ private theorem RecognizerInitialLoopInvariant.functional_full_body
     (.signed .i32 (Int.ofNat production))
   let resultEnvironment := productionEnvironment.push
     (appendOutcomeValue outcome)
-  have productionResult : Lanius.FunctionalView.Term.evaluate
-      (predictionTermMachine workspaceLayout words grammarCell)
-      beforeWorld beforeEnvironment initialProductionTerm =
-      .ok (.signed .i32 (Int.ofNat production), beforeWorld) :=
-    invariant.functional_read_production rowBound
-  have appendResult : Lanius.FunctionalView.Term.evaluate
-      (predictionTermMachine workspaceLayout words grammarCell)
-      beforeWorld productionEnvironment initialAppendTerm =
-      .ok (appendOutcomeValue outcome, afterWorld) :=
-    invariant.functional_append indexBound rowBound
+  have productionResult := invariant.functional_read_production rowBound
+  have appendResult := invariant.functional_append indexBound rowBound
   have fullCondition : Lanius.FunctionalView.Term.evaluate
       (predictionTermMachine workspaceLayout words grammarCell)
       afterWorld resultEnvironment initialFullCondition =
       .ok (.boolean true, afterWorld) := by
-    have evaluated := initialFullCondition_evaluates
-      (workspaceLayout := workspaceLayout) (words := words)
-      (grammarCell := grammarCell) afterWorld productionEnvironment outcome
     have statusFull' : outcome.status = .full := by
       simpa [outcome, seed, production] using statusFull
-    rw [statusFull'] at evaluated
-    simpa [resultEnvironment] using evaluated
+    simpa [statusFull', resultEnvironment] using
+      initialFullCondition_evaluates
+        (workspaceLayout := workspaceLayout) (words := words)
+        (grammarCell := grammarCell) afterWorld productionEnvironment outcome
   have fullResult : Lanius.FunctionalView.Term.evaluate
       (predictionTermMachine workspaceLayout words grammarCell)
       afterWorld resultEnvironment initialFullResult =
@@ -1002,14 +958,11 @@ private theorem RecognizerInitialLoopInvariant.functional_full_body
   have assembled := Lanius.FunctionalView.Stateful.Command.Evaluates.letValue
     (type := parserI32Type) productionResult
     (Lanius.FunctionalView.Stateful.Command.Evaluates.letValue
-      (type := .structure 2) appendResult stopped)
-  have popped : Lanius.FunctionalView.Stateful.Env.pop
-      (Lanius.FunctionalView.Stateful.Env.pop resultEnvironment) =
-      beforeEnvironment := by
-    simp [resultEnvironment, productionEnvironment]
-  rw [popped] at assembled
-  rw [initialBodyCommand_shape, initialExpectedBodyCommand]
-  exact assembled
+      (type := .structure 2) appendResult
+      stopped)
+  simpa [initialBodyCommand_shape, initialExpectedBodyCommand, beforeWorld,
+    afterWorld, outcome, nextValues, seed, production, rowBound,
+    resultEnvironment, productionEnvironment] using assembled
 
 /-- Pure FunctionalView state corresponding to one start-production seeding
     configuration.  The physical runtime remains refinement evidence in the
@@ -1045,10 +998,7 @@ private theorem RecognizerInitialConfig.functional_condition
   simp only [initialLoopCondition, initialBinary, initialSlot,
     Lanius.FunctionalView.Term.evaluate,
     Lanius.FunctionalView.Ref.evaluate,
-    Lanius.FunctionalView.evaluateTerms,
-    Lanius.FunctionalView.Core.Effectful.machine,
-    Lanius.FunctionalView.Core.Effectful.evaluateOperation,
-    Lanius.FunctionalView.Core.ReadOnly.evaluateOperation]
+    Lanius.FunctionalView.evaluateTerms]
   rw [indexValue, countValue]
   simp [predictionTermMachine,
     Lanius.FunctionalView.Core.Effectful.machine,
@@ -1412,7 +1362,6 @@ theorem RecognizerInitialConfig.functional_run_evaluates
       config.functionalRuntime.world config.functionalRuntime.environment
       initialLoopCommand config.functional_run.completion
       config.functional_run.after.world config.functional_run.after.environment := by
-  rw [initialLoopCommand_shape, initialExpectedLoopCommand]
   exact config.functional_run.trace.evaluates
 
 /-- Public physical projection of the synchronized FunctionalView initial

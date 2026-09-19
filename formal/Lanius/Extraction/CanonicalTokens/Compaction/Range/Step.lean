@@ -29,19 +29,19 @@ theorem executes_body (table : Table program tokens)
   have readyStorage : Storage ready sourceCell recordsCell source records :=
     currentStorage.bind 12 _ (by decide) (by decide)
   have cursorResult : Evaluates program before (.local 10) (.signed .i32 index) before :=
-    ⟨1, evalLocal_of_local 0 program before 10 _ (Assertion.localPointsTo_local _ _ _ _ cursor)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ cursor)
   have currentRead : Evaluates program before (row (.local 10)) (.signed .i32 (3 * index : Nat)) before := by
     have multiplied := evaluatesNatI32Multiply (rightValue := 3) cursorResult
-      (show Evaluates program before (literal 3) (.signed .i32 3) before from ⟨1, rfl⟩)
+      (show Evaluates program before (literal 3) (.signed .i32 3) before from evaluatesValue)
       (by have := storage.recordsFit; omega)
     simpa [row, Int.ofNat_eq_natCast, Nat.mul_comm] using multiplied
   have currentLocal : withCurrent.local? 11 = some (.signed .i32 (3 * index : Nat)) :=
     bindLocal_finds_local before 11 _ storage.wellFormed
   have currentResult : Evaluates program withCurrent (.local 11) (.signed .i32 (3 * index : Nat)) withCurrent :=
-    ⟨1, evalLocal_of_local 0 program withCurrent 11 _ currentLocal⟩
+    Lanius.Semantics.evaluatesLocal currentLocal
   have nextRead : Evaluates program withCurrent (add (.local 11) (literal 3))
       (.signed .i32 (3 * index + 3 : Nat)) withCurrent :=
-    evaluatesNatI32Add currentResult (show Evaluates program withCurrent (literal 3) (.signed .i32 3) withCurrent from ⟨1, rfl⟩)
+    evaluatesNatI32Add currentResult (show Evaluates program withCurrent (literal 3) (.signed .i32 3) withCurrent from evaluatesValue)
       (by have := storage.recordsFit; omega)
   have currentReady : ready.local? 11 = some (.signed .i32 (3 * index : Nat)) :=
     (bindLocal_preserves_other_local currentStorage.wellFormed (show (12 : VarId) ≠ 11 by decide)).trans currentLocal

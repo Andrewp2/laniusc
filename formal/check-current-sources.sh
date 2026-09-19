@@ -42,7 +42,7 @@ language_table_hash="$({
   ' "$params"
 } | sha256sum | awk '{print $1}')"
 [[ "$language_table_hash" == \
-  13197728404607bab7536a85f5f63bc4b6545f0378c46f3f4daec3e836290556 ]] ||
+  f500d1c0b7bce0efe3acdd36a637c11edc13d514e80279b2a9be08fea38d554f ]] ||
   fail "the compiler language-symbol table changed; reconcile CurrentFeatureAudit"
 
 extern_snapshot="$(mktemp)"
@@ -65,4 +65,4 @@ extern_hash="$(sha256sum "$extern_snapshot" | awk '{print $1}')"
   d78c1b2e691a66334ffe79d8df03284886b272ba6f4376b1a14e254eed71cc77 ]] ||
   fail "the stdlib extern catalog changed; reconcile RuntimeBindings"
 
-printf 'formal source audit passed: 290 productions, 68 compiler symbols, 65 stdlib externs\n'
+printf 'formal source audit passed: 290 productions, 71 compiler symbols, 65 stdlib externs\n'

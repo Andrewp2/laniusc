@@ -59,10 +59,9 @@ private theorem clear_body_step (program : Program) (memory : ClearMemory) (loca
   have inBounds : position < memory.original.length := Nat.lt_of_lt_of_le bound memory.capacity
   have lengthEq := clearedPrefix_length memory.original position (Nat.le_of_lt inBounds)
   have cursorResult : Evaluates program before (.local locals.cursor) (.signed .i32 position) before :=
-    ⟨1, evalLocal_of_local 0 program before locals.cursor _
-      (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)
   have zeroResult : Evaluates program before (.value (.signed .i32 0)) (.signed .i32 0) before :=
-    ⟨1, rfl⟩
+    evaluatesValue
   obtain ⟨cleared, assignment, clearedWF, clearedContents, clearEffect⟩ :=
     evaluatesSetSignedI32SliceIndexFromEmpty program before before before
       (clearedPrefix position memory.original) locals.workspace (.local locals.cursor)
@@ -98,10 +97,9 @@ theorem executes_clear_loop (program : Program) (memory : ClearMemory) (locals :
       ClearInvariant memory locals memory.words after ∧
       ModifiesOnly memory.writes before after := by
   have cursorResult : Evaluates program before (.local locals.cursor) (.signed .i32 position) before :=
-    ⟨1, evalLocal_of_local 0 program before locals.cursor _
-      (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)
   have limitResult : Evaluates program before (.local locals.length) (.signed .i32 memory.words) before :=
-    ⟨1, evalLocal_of_local 0 program before locals.length _ invariant.limit⟩
+    Lanius.Semantics.evaluatesLocal invariant.limit
   by_cases complete : position = memory.words
   · subst position
     refine ⟨before, executesWhileFalse ?_, invariant, ModifiesOnly.reflAny _ _⟩

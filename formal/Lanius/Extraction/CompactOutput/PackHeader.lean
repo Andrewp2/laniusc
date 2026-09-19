@@ -39,7 +39,7 @@ theorem execute (word : Word.Checked program byte digit) (count capacity : Nat) 
     capacityBound capacityFit (by decide) backing
     (.cons (local_evaluates program.core outputRead) (.cons (local_evaluates program.core capacityRead)
       (.cons (local_evaluates program.core positionRead) (.cons
-        (show Evaluates program.core before (number 1) (.signed .i32 1) before from ⟨1, rfl⟩) (.nil _ _)))))
+        (show Evaluates program.core before (number 1) (.signed .i32 1) before from evaluatesValue) (.nil _ _)))))
   let next := (appendAll capacity (hexDigits 1 8) position original).position
   let entered := first.bindLocal 4 (.signed .i32 next)
   have enteredWF : StateWellFormed entered := bindLocal_preserves_well_formed _ _ _ firstEffect.wellFormed

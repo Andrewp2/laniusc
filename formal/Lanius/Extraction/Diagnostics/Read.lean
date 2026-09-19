@@ -38,7 +38,7 @@ theorem Checked.oversized (checked : Checked program argument count source)
       (negativeOne_evaluates program.core middle)
     simp [evalBinaryValue, evalSignedBinary]
   have detail : Evaluates program.core middle (binary .subtract (number 0) (read count)) (.signed .i32 2) middle := by
-    apply evaluatesEagerBinary (by decide) (by decide) ⟨1, rfl⟩ (local_evaluates program.core countAt)
+    apply evaluatesEagerBinary (by decide) (by decide) evaluatesValue (local_evaluates program.core countAt)
     rfl
   obtain ⟨_, after, second, finalRegistry, finalValues, finalEffect, secondWorld⟩ := checked.writer.write 2 (by decide)
     registered values (.cons detail (.nil _ _))
@@ -46,7 +46,7 @@ theorem Checked.oversized (checked : Checked program argument count source)
       (.returned (some (.signed .i32 6))) after :=
     executesSequence (executesExpression first)
       (executesSequence (executesIfTrue guard (executesSequence (executesExpression second) (executesSkip _ _)))
-        (executesSequenceReturned (executesReturnValue ⟨1, rfl⟩)))
+        (executesSequenceReturned (executesReturnValue evaluatesValue)))
   exact ⟨after, checked.exactSource.symm ▸ run, finalRegistry, finalValues, effect.trans finalEffect, firstWorld.trans secondWorld⟩
 
 end Lanius.Extraction.Diagnostics.Read

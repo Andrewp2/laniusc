@@ -91,7 +91,7 @@ theorem executesLoop (checked : Hex.Checked program) (locals : Locals) (memory :
       (.binary .notEqual (.local locals.cursor) (.value (.signed .i32 locals.count)))
       (.boolean (!(Int.ofNat processed.length == Int.ofNat memory.values.length))) before := by
     apply evaluatesEagerBinary (by decide) (by decide) cursorResult
-      (show Evaluates program.core before (.value (.signed .i32 locals.count)) (.signed .i32 locals.count) before from ⟨1, rfl⟩)
+      (show Evaluates program.core before (.value (.signed .i32 locals.count)) (.signed .i32 locals.count) before from evaluatesValue)
     simp [evalBinaryValue, scalarEqual, memory.count]
   cases remaining with
   | nil =>

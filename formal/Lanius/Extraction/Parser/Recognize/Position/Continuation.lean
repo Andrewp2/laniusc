@@ -122,7 +122,7 @@ private noncomputable def closeRecognizerPositionScopes
   let furthestState := before.bindLocal 22 (.signed .i32 0)
   let positionState := furthestState.bindLocal 23 (.signed .i32 0)
   have positionInitializer : Evaluates verifiedParserCore furthestState
-      (.value (.signed .i32 0)) (.signed .i32 0) furthestState := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) furthestState := Lanius.Semantics.evaluatesValue
   let positionRetained := CellSet.union
     (recognizerPositionStatementWrites workspaceCell stateCountCell)
     (CellSet.singleton before.nextCell)
@@ -157,7 +157,7 @@ private noncomputable def closeRecognizerPositionScopes
       invariant.frame.recognizer.wellFormed)
     positionInitializer bodyExecution positionBodyEffect bodyWellFormed
   have furthestInitializer : Evaluates verifiedParserCore before
-      (.value (.signed .i32 0)) (.signed .i32 0) before := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) before := Lanius.Semantics.evaluatesValue
   have furthestBodyEffect : ModifiesOnly
       (CellSet.union
         (recognizerPositionStatementWrites workspaceCell stateCountCell)

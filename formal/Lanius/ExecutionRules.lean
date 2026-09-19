@@ -6,6 +6,21 @@ open Lanius
 open Lanius.Core
 open Lanius.Fuel
 
+/-- Two sequential successful expression evaluations can be replayed at their
+    common maximum fuel.  This is the basic state-threaded composition step
+    shared by expression operators and structural execution rules. -/
+theorem evaluatesAtCommonFuel
+    (leftResult : Evaluates program before left leftValue afterLeft)
+    (rightResult : Evaluates program afterLeft right rightValue afterRight) :
+    ∃ fuel,
+      evalExpr fuel program before left = .done leftValue afterLeft ∧
+      evalExpr fuel program afterLeft right = .done rightValue afterRight := by
+  obtain ⟨leftFuel, leftResult⟩ := leftResult
+  obtain ⟨rightFuel, rightResult⟩ := rightResult
+  exact ⟨max leftFuel rightFuel,
+    evalExpr_done_at_larger_fuel (Nat.le_max_left _ _) leftResult,
+    evalExpr_done_at_larger_fuel (Nat.le_max_right _ _) rightResult⟩
+
 theorem evaluatesStringDataPtr
     (stringResult : Evaluates program before string (.string text) middle)
     (mapped : mapStringDataPtr middle text = .done (.pointer address) after) :
@@ -22,14 +37,14 @@ theorem evaluatesAlloc
     (alignmentResult : Evaluates program afterSize alignment (.unsigned .usize align) afterAlignment)
     (allocated : afterAlignment.heap.allocate bytes align = .allocated address heap) :
     Evaluates program before (.alloc size alignment) (.pointer address) { afterAlignment with heap } := by
-  obtain ⟨sizeFuel, sizeResult⟩ := sizeResult
-  obtain ⟨alignmentFuel, alignmentResult⟩ := alignmentResult
-  refine ⟨max sizeFuel alignmentFuel + 1, ?_⟩
+  obtain ⟨fuel, sizeResult, alignmentResult⟩ :=
+    evaluatesAtCommonFuel sizeResult alignmentResult
+  refine ⟨fuel + 1, ?_⟩
   rw [evalExpr.eq_def]
   simp only
-  rw [evalExpr_done_at_larger_fuel (Nat.le_max_left _ _) sizeResult]
+  rw [sizeResult]
   simp only
-  rw [evalExpr_done_at_larger_fuel (Nat.le_max_right _ _) alignmentResult]
+  rw [alignmentResult]
   simp only [allocated]
 
 theorem evaluatesI32SliceFromRawParts
@@ -37,14 +52,14 @@ theorem evaluatesI32SliceFromRawParts
     (lengthResult : Evaluates program afterPointer length (.signed .i32 count) afterLength)
     (mapped : mapRawI32Slice afterLength address count = .done value after) :
     Evaluates program before (.i32SliceFromRawParts pointer length) value after := by
-  obtain ⟨pointerFuel, pointerResult⟩ := pointerResult
-  obtain ⟨lengthFuel, lengthResult⟩ := lengthResult
-  refine ⟨max pointerFuel lengthFuel + 1, ?_⟩
+  obtain ⟨fuel, pointerResult, lengthResult⟩ :=
+    evaluatesAtCommonFuel pointerResult lengthResult
+  refine ⟨fuel + 1, ?_⟩
   rw [evalExpr.eq_def]
   simp only
-  rw [evalExpr_done_at_larger_fuel (Nat.le_max_left _ _) pointerResult]
+  rw [pointerResult]
   simp only
-  rw [evalExpr_done_at_larger_fuel (Nat.le_max_right _ _) lengthResult]
+  rw [lengthResult]
   exact mapped
 
 theorem evaluatesI32SliceDataPtr
@@ -66,6 +81,64 @@ control flow, leaving implementation proofs to reason in terms of `Evaluates`
 and `Executes`.
 -/
 
+private theorem executesWhileTrueBody
+    {bodyCompletion completion : Completion}
+    (conditionResult : Evaluates program state condition
+      (.boolean true) afterCondition)
+    (bodyResult : Executes program afterCondition body bodyCompletion afterBody)
+    (bodyFallsThrough : bodyCompletion = .next ∨ bodyCompletion = .continueLoop)
+    (restResult : Executes program afterBody
+      (.whileLoop condition body) completion finalState) :
+    Executes program state (.whileLoop condition body) completion finalState := by
+  obtain ⟨conditionFuel, conditionResult⟩ := conditionResult
+  obtain ⟨bodyFuel, bodyResult⟩ := bodyResult
+  obtain ⟨restFuel, restResult⟩ := restResult
+  let fuel := max conditionFuel (max bodyFuel restFuel)
+  have conditionAtFuel := evalExpr_done_at_larger_fuel
+    (Nat.le_max_left conditionFuel (max bodyFuel restFuel)) conditionResult
+  have bodyAtFuel := execStmt_done_at_larger_fuel
+    (Nat.le_trans (Nat.le_max_left bodyFuel restFuel)
+      (Nat.le_max_right conditionFuel (max bodyFuel restFuel))) bodyResult
+  have restAtFuel := execStmt_done_at_larger_fuel
+    (Nat.le_trans (Nat.le_max_right bodyFuel restFuel)
+      (Nat.le_max_right conditionFuel (max bodyFuel restFuel))) restResult
+  rcases bodyFallsThrough with rfl | rfl
+  all_goals
+    refine ⟨fuel + 1, ?_⟩
+    rw [execStmt.eq_def]
+    simp only
+    rw [conditionAtFuel]
+    simp only
+    rw [bodyAtFuel]
+    simp only
+    exact restAtFuel
+
+private theorem executesWhileTrueTerminal
+    {bodyCompletion completion : Completion}
+    (conditionResult : Evaluates program state condition
+      (.boolean true) afterCondition)
+    (bodyResult : Executes program afterCondition body bodyCompletion finalState)
+    (bodyTerminal :
+      bodyCompletion = .breakLoop ∧ completion = .next ∨
+      ∃ returnValue, bodyCompletion = .returned returnValue ∧
+        completion = .returned returnValue) :
+    Executes program state (.whileLoop condition body) completion finalState := by
+  obtain ⟨conditionFuel, conditionResult⟩ := conditionResult
+  obtain ⟨bodyFuel, bodyResult⟩ := bodyResult
+  let fuel := max conditionFuel bodyFuel
+  have conditionAtFuel := evalExpr_done_at_larger_fuel
+    (Nat.le_max_left conditionFuel bodyFuel) conditionResult
+  have bodyAtFuel := execStmt_done_at_larger_fuel
+    (Nat.le_max_right conditionFuel bodyFuel) bodyResult
+  rcases bodyTerminal with ⟨rfl, rfl⟩ | ⟨returnValue, rfl, rfl⟩ <;>
+    refine ⟨fuel + 1, ?_⟩
+  all_goals
+    rw [execStmt.eq_def]
+    simp only
+    rw [conditionAtFuel]
+    simp only
+    rw [bodyAtFuel]
+
 theorem executesWhileFalse
     (conditionResult : Evaluates program state condition (.boolean false) finalState) :
     Executes program state (.whileLoop condition body) .next finalState := by
@@ -81,27 +154,7 @@ theorem executesWhileTrue
     (restResult : Executes program afterBody
       (.whileLoop condition body) .next finalState) :
     Executes program state (.whileLoop condition body) .next finalState := by
-  obtain ⟨conditionFuel, conditionResult⟩ := conditionResult
-  obtain ⟨bodyFuel, bodyResult⟩ := bodyResult
-  obtain ⟨restFuel, restResult⟩ := restResult
-  let fuel := max conditionFuel (max bodyFuel restFuel)
-  have conditionEnough : conditionFuel ≤ fuel := Nat.le_max_left _ _
-  have bodyEnough : bodyFuel ≤ fuel :=
-    Nat.le_trans (Nat.le_max_left _ _) (Nat.le_max_right _ _)
-  have restEnough : restFuel ≤ fuel :=
-    Nat.le_trans (Nat.le_max_right _ _) (Nat.le_max_right _ _)
-  have conditionAtFuel := evalExpr_done_at_larger_fuel
-    conditionEnough conditionResult
-  have bodyAtFuel := execStmt_done_at_larger_fuel bodyEnough bodyResult
-  have restAtFuel := execStmt_done_at_larger_fuel restEnough restResult
-  refine ⟨fuel + 1, ?_⟩
-  rw [execStmt.eq_def]
-  simp only
-  rw [conditionAtFuel]
-  simp only
-  rw [bodyAtFuel]
-  simp only
-  exact restAtFuel
+  exact executesWhileTrueBody conditionResult bodyResult (Or.inl rfl) restResult
 
 theorem executesWhileTrueThen
     (conditionResult : Evaluates program state condition (.boolean true) afterCondition)
@@ -109,27 +162,7 @@ theorem executesWhileTrueThen
     (restResult : Executes program afterBody
       (.whileLoop condition body) completion finalState) :
     Executes program state (.whileLoop condition body) completion finalState := by
-  obtain ⟨conditionFuel, conditionResult⟩ := conditionResult
-  obtain ⟨bodyFuel, bodyResult⟩ := bodyResult
-  obtain ⟨restFuel, restResult⟩ := restResult
-  let fuel := max conditionFuel (max bodyFuel restFuel)
-  have conditionEnough : conditionFuel ≤ fuel := Nat.le_max_left _ _
-  have bodyEnough : bodyFuel ≤ fuel :=
-    Nat.le_trans (Nat.le_max_left _ _) (Nat.le_max_right _ _)
-  have restEnough : restFuel ≤ fuel :=
-    Nat.le_trans (Nat.le_max_right _ _) (Nat.le_max_right _ _)
-  have conditionAtFuel := evalExpr_done_at_larger_fuel
-    conditionEnough conditionResult
-  have bodyAtFuel := execStmt_done_at_larger_fuel bodyEnough bodyResult
-  have restAtFuel := execStmt_done_at_larger_fuel restEnough restResult
-  refine ⟨fuel + 1, ?_⟩
-  rw [execStmt.eq_def]
-  simp only
-  rw [conditionAtFuel]
-  simp only
-  rw [bodyAtFuel]
-  simp only
-  exact restAtFuel
+  exact executesWhileTrueBody conditionResult bodyResult (Or.inl rfl) restResult
 
 theorem executesWhileReturned
     (conditionResult :
@@ -138,19 +171,33 @@ theorem executesWhileReturned
       (.returned returnValue) finalState) :
     Executes program state (.whileLoop condition body)
       (.returned returnValue) finalState := by
+  exact executesWhileTrueTerminal conditionResult bodyResult
+    (Or.inr ⟨returnValue, rfl, rfl⟩)
+
+private theorem executesIfBranch
+    {flag : Bool}
+    (conditionResult : Evaluates program state condition
+      (.boolean flag) afterCondition)
+    (branchResult : Executes program afterCondition
+      (match flag with | true => thenBranch | false => elseBranch)
+      completion finalState) :
+    Executes program state (.ifThenElse condition thenBranch elseBranch)
+      completion finalState := by
   obtain ⟨conditionFuel, conditionResult⟩ := conditionResult
-  obtain ⟨bodyFuel, bodyResult⟩ := bodyResult
-  let fuel := max conditionFuel bodyFuel
+  obtain ⟨branchFuel, branchResult⟩ := branchResult
+  let fuel := max conditionFuel branchFuel
   have conditionAtFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_left conditionFuel bodyFuel) conditionResult
-  have bodyAtFuel := execStmt_done_at_larger_fuel
-    (Nat.le_max_right conditionFuel bodyFuel) bodyResult
-  refine ⟨fuel + 1, ?_⟩
-  rw [execStmt.eq_def]
-  simp only
-  rw [conditionAtFuel]
-  simp only
-  rw [bodyAtFuel]
+    (Nat.le_max_left conditionFuel branchFuel) conditionResult
+  have branchAtFuel := execStmt_done_at_larger_fuel
+    (Nat.le_max_right conditionFuel branchFuel) branchResult
+  cases flag <;>
+    refine ⟨fuel + 1, ?_⟩
+  all_goals
+    rw [execStmt.eq_def]
+    simp only
+    rw [conditionAtFuel]
+    simp only
+    exact branchAtFuel
 
 theorem executesIfTrue
     (conditionResult :
@@ -158,19 +205,7 @@ theorem executesIfTrue
     (branchResult : Executes program afterCondition thenBranch completion finalState) :
     Executes program state (.ifThenElse condition thenBranch elseBranch)
       completion finalState := by
-  obtain ⟨conditionFuel, conditionResult⟩ := conditionResult
-  obtain ⟨branchFuel, branchResult⟩ := branchResult
-  let fuel := max conditionFuel branchFuel
-  have conditionAtFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_left conditionFuel branchFuel) conditionResult
-  have branchAtFuel := execStmt_done_at_larger_fuel
-    (Nat.le_max_right conditionFuel branchFuel) branchResult
-  refine ⟨fuel + 1, ?_⟩
-  rw [execStmt.eq_def]
-  simp only
-  rw [conditionAtFuel]
-  simp only
-  exact branchAtFuel
+  exact executesIfBranch conditionResult branchResult
 
 theorem executesIfFalse
     (conditionResult :
@@ -178,19 +213,7 @@ theorem executesIfFalse
     (branchResult : Executes program afterCondition elseBranch completion finalState) :
     Executes program state (.ifThenElse condition thenBranch elseBranch)
       completion finalState := by
-  obtain ⟨conditionFuel, conditionResult⟩ := conditionResult
-  obtain ⟨branchFuel, branchResult⟩ := branchResult
-  let fuel := max conditionFuel branchFuel
-  have conditionAtFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_left conditionFuel branchFuel) conditionResult
-  have branchAtFuel := execStmt_done_at_larger_fuel
-    (Nat.le_max_right conditionFuel branchFuel) branchResult
-  refine ⟨fuel + 1, ?_⟩
-  rw [execStmt.eq_def]
-  simp only
-  rw [conditionAtFuel]
-  simp only
-  exact branchAtFuel
+  exact executesIfBranch conditionResult branchResult
 
 theorem executesSequence
     (firstResult : Executes program state first .next middle)
@@ -210,17 +233,6 @@ theorem executesSequence
   simp only
   exact secondAtFuel
 
-theorem executesSequenceReturned
-    (firstResult : Executes program state first
-      (.returned returnValue) finalState) :
-    Executes program state (.sequence first second)
-      (.returned returnValue) finalState := by
-  obtain ⟨fuel, firstResult⟩ := firstResult
-  refine ⟨fuel + 1, ?_⟩
-  rw [execStmt.eq_def]
-  simp only
-  rw [firstResult]
-
 /-- Sequencing propagates every non-fallthrough completion without executing
     its right-hand statement. -/
 theorem executesSequenceNonNext
@@ -233,6 +245,13 @@ theorem executesSequenceNonNext
   simp only
   rw [firstResult]
   cases completion <;> simp_all
+
+theorem executesSequenceReturned
+    (firstResult : Executes program state first
+      (.returned returnValue) finalState) :
+    Executes program state (.sequence first second)
+      (.returned returnValue) finalState := by
+  exact executesSequenceNonNext firstResult (by simp)
 
 theorem executesReturnValue
     (valueResult : Evaluates program state expression value finalState) :
@@ -307,45 +326,15 @@ theorem executesWhileContinueThen
     (restResult : Executes program afterBody
       (.whileLoop condition body) completion finalState) :
     Executes program state (.whileLoop condition body) completion finalState := by
-  obtain ⟨conditionFuel, conditionResult⟩ := conditionResult
-  obtain ⟨bodyFuel, bodyResult⟩ := bodyResult
-  obtain ⟨restFuel, restResult⟩ := restResult
-  let fuel := max conditionFuel (max bodyFuel restFuel)
-  have conditionAtFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_left conditionFuel (max bodyFuel restFuel)) conditionResult
-  have bodyAtFuel := execStmt_done_at_larger_fuel
-    (Nat.le_trans (Nat.le_max_left bodyFuel restFuel)
-      (Nat.le_max_right conditionFuel (max bodyFuel restFuel))) bodyResult
-  have restAtFuel := execStmt_done_at_larger_fuel
-    (Nat.le_trans (Nat.le_max_right bodyFuel restFuel)
-      (Nat.le_max_right conditionFuel (max bodyFuel restFuel))) restResult
-  refine ⟨fuel + 1, ?_⟩
-  rw [execStmt.eq_def]
-  simp only
-  rw [conditionAtFuel]
-  simp only
-  rw [bodyAtFuel]
-  simp only
-  exact restAtFuel
+  exact executesWhileTrueBody conditionResult bodyResult (Or.inr rfl) restResult
 
 theorem executesWhileBreak
     (conditionResult :
       Evaluates program state condition (.boolean true) afterCondition)
     (bodyResult : Executes program afterCondition body .breakLoop finalState) :
     Executes program state (.whileLoop condition body) .next finalState := by
-  obtain ⟨conditionFuel, conditionResult⟩ := conditionResult
-  obtain ⟨bodyFuel, bodyResult⟩ := bodyResult
-  let fuel := max conditionFuel bodyFuel
-  have conditionAtFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_left conditionFuel bodyFuel) conditionResult
-  have bodyAtFuel := execStmt_done_at_larger_fuel
-    (Nat.le_max_right conditionFuel bodyFuel) bodyResult
-  refine ⟨fuel + 1, ?_⟩
-  rw [execStmt.eq_def]
-  simp only
-  rw [conditionAtFuel]
-  simp only
-  rw [bodyAtFuel]
+  exact executesWhileTrueTerminal conditionResult bodyResult
+    (Or.inl ⟨rfl, rfl⟩)
 
 theorem executesSkip (program : Program) (state : State) :
     Executes program state .skip .next state := by
@@ -371,6 +360,18 @@ theorem evalLocal_of_local
           subst stored
           simp [evalExpr, cellId, cellEntry]
 
+/-- Reading an initialized local as an expression is pure. -/
+theorem evaluatesLocal
+    {program : Program} {state : State} {id : VarId} {value : Value}
+    (found : state.local? id = some value) :
+    Evaluates program state (.local id) value state := by
+  exact ⟨1, evalLocal_of_local 0 program state id value found⟩
+
+/-- A literal value expression evaluates without consuming state. -/
+theorem evaluatesValue {program : Program} {state : State} {value : Value} :
+    Evaluates program state (.value value) value state := by
+  exact ⟨1, rfl⟩
+
 /-- Reading a checked program constant is pure. Keeping this rule beside the
     local-read rule avoids re-unfolding the evaluator in every extracted
     implementation proof. -/
@@ -391,21 +392,11 @@ theorem evaluatesEagerBinary
     (operationResult :
       evalBinaryValue program.target op leftValue rightValue = .ok result) :
     Evaluates program before (.binary op left right) result afterRight := by
-  obtain ⟨leftFuel, leftResult⟩ := leftResult
-  obtain ⟨rightFuel, rightResult⟩ := rightResult
-  let fuel := max leftFuel rightFuel
-  have leftAtFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_left leftFuel rightFuel) leftResult
-  have rightAtFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_right leftFuel rightFuel) rightResult
+  obtain ⟨fuel, leftAtFuel, rightAtFuel⟩ :=
+    evaluatesAtCommonFuel leftResult rightResult
   refine ⟨fuel + 1, ?_⟩
   rw [evalExpr.eq_def]
-  simp only [notAnd, notOr]
-  rw [leftAtFuel]
-  simp only
-  rw [rightAtFuel]
-  simp only
-  rw [operationResult]
+  simp only [notAnd, notOr, leftAtFuel, rightAtFuel, operationResult]
 
 /-- Short-circuit a logical conjunction after a false left operand. -/
 theorem evaluatesLogicalAndFalse
@@ -427,17 +418,11 @@ theorem evaluatesLogicalAndTrue
     (rightResult : Evaluates program afterLeft right result afterRight) :
     Evaluates program before (.binary .logicalAnd left right)
       result afterRight := by
-  obtain ⟨leftFuel, leftResult⟩ := leftResult
-  obtain ⟨rightFuel, rightResult⟩ := rightResult
-  let fuel := max leftFuel rightFuel
-  have leftAtFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_left leftFuel rightFuel) leftResult
-  have rightAtFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_right leftFuel rightFuel) rightResult
+  obtain ⟨fuel, leftAtFuel, rightAtFuel⟩ :=
+    evaluatesAtCommonFuel leftResult rightResult
   refine ⟨fuel + 1, ?_⟩
   rw [evalExpr.eq_def]
-  simp only
-  rw [leftAtFuel]
+  simp only [leftAtFuel]
   exact rightAtFuel
 
 /-- Evaluate a conjunction whose operands are both pure. This packages the
@@ -475,17 +460,11 @@ theorem evaluatesLogicalOrFalse
     (rightResult : Evaluates program afterLeft right result afterRight) :
     Evaluates program before (.binary .logicalOr left right)
       result afterRight := by
-  obtain ⟨leftFuel, leftResult⟩ := leftResult
-  obtain ⟨rightFuel, rightResult⟩ := rightResult
-  let fuel := max leftFuel rightFuel
-  have leftAtFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_left leftFuel rightFuel) leftResult
-  have rightAtFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_right leftFuel rightFuel) rightResult
+  obtain ⟨fuel, leftAtFuel, rightAtFuel⟩ :=
+    evaluatesAtCommonFuel leftResult rightResult
   refine ⟨fuel + 1, ?_⟩
   rw [evalExpr.eq_def]
-  simp only
-  rw [leftAtFuel]
+  simp only [leftAtFuel]
   exact rightAtFuel
 
 /-- Evaluate a disjunction whose operands are both pure. -/
@@ -605,9 +584,8 @@ theorem evaluatesNatI32Add
   have wrapped := wrapSigned_i32_ofNat program.target
     (leftValue + rightValue) bounded
   apply evaluatesEagerBinary (by decide) (by decide) leftResult rightResult
-  simp only [evalBinaryValue, evalSignedBinary]
+  simp only [evalBinaryValue, evalSignedBinary, BEq.rfl, if_true]
   rw [cast, wrapped]
-  rfl
 
 /-- Multiplication of two nonnegative i32 values agrees with natural-number
     multiplication whenever the mathematical result remains in range. -/
@@ -624,9 +602,8 @@ theorem evaluatesNatI32Multiply
   have wrapped := wrapSigned_i32_ofNat program.target
     (leftValue * rightValue) bounded
   apply evaluatesEagerBinary (by decide) (by decide) leftResult rightResult
-  simp only [evalBinaryValue, evalSignedBinary]
+  simp only [evalBinaryValue, evalSignedBinary, BEq.rfl, if_true]
   rw [cast, wrapped]
-  rfl
 
 /-- Subtraction of ordered nonnegative i32 values agrees with truncated
     natural-number subtraction. -/
@@ -644,9 +621,8 @@ theorem evaluatesNatI32Subtract
   have wrapped := wrapSigned_i32_ofNat program.target
     (leftValue - rightValue) bounded
   apply evaluatesEagerBinary (by decide) (by decide) leftResult rightResult
-  simp only [evalBinaryValue, evalSignedBinary]
+  simp only [evalBinaryValue, evalSignedBinary, BEq.rfl, if_true]
   rw [cast, wrapped]
-  rfl
 
 /-- Division of nonnegative i32 values by a positive natural divisor agrees
     with Euclidean natural-number division. -/
@@ -672,18 +648,7 @@ theorem evaluatesNatI32Divide
         exact False.elim ((Int.not_lt.mpr (Int.natCast_nonneg _)) impossible)
     rw [if_pos signs]
     simp
-  have rightNonzero : Int.ofNat rightValue ≠ 0 := by
-    exact Int.ofNat_ne_zero.mpr (Nat.ne_of_gt positive)
-  have leftNotMinimum : Int.ofNat leftValue ≠
-      -signedSignBit program.target .i32 := by
-    have signBit : signedSignBit program.target .i32 = 2147483648 := by
-      cases program.target <;> rfl
-    rw [signBit]
-    exact Int.ne_of_gt
-      (Int.lt_of_lt_of_le (by decide : (-2147483648 : Int) < 0)
-        (Int.natCast_nonneg _))
-  have wrapped := wrapSigned_i32_ofNat program.target
-    (leftValue / rightValue) bounded
+  have wrapped := wrapSigned_i32_ofNat program.target (leftValue / rightValue) bounded
   apply evaluatesEagerBinary (by decide) (by decide) leftResult rightResult
   simp only [evalBinaryValue, evalSignedBinary]
   simp only [show (SignedIntTy.i32 == SignedIntTy.i32) = true by decide,
@@ -788,6 +753,28 @@ theorem setValue_signedI32Values
           exact congrArg ((.signed .i32 head) :: ·)
             (inductionHypothesis index)
 
+private theorem i32SliceReadFacts
+    (after : State) (values : List Int) (cell : CellId) (index : Nat)
+    (inBounds : index < values.length)
+    (backing : after.cellEntry? cell = some {
+      id := cell
+      value := some (.array (signedI32Values values))
+    }) :
+    integerIndex (.signed .i32 (Int.ofNat index)) = .ok index ∧
+      sliceValues after cell [] 0 values.length =
+        .ok (signedI32Values values) ∧
+      (signedI32Values values)[index]? =
+        some (.signed .i32 (values.get ⟨index, inBounds⟩)) := by
+  constructor
+  · simp [integerIndex]
+  constructor
+  · simp [sliceValues, readCellProjection, projectedValue, backing,
+      signedI32Values]
+    rw [show values.length = (signedI32Values values).length by
+      simp [signedI32Values]]
+    exact List.take_length
+  · simp [signedI32Values, inBounds]
+
 /-- Expression-parametric `i32` slice indexing. Base and index evaluation may
     perform calls and thread state; the backing-array premise is deliberately
     stated at the state where the actual memory read occurs. -/
@@ -806,13 +793,8 @@ theorem evaluatesSignedI32SliceIndex
     }) :
     Evaluates program before (.index base indexExpression)
       (.signed .i32 (values.get ⟨index, inBounds⟩)) afterIndex := by
-  obtain ⟨baseFuel, baseResult⟩ := baseResult
-  obtain ⟨indexFuel, indexResult⟩ := indexResult
-  let fuel := max baseFuel indexFuel
-  have baseAtFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_left baseFuel indexFuel) baseResult
-  have indexAtFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_right baseFuel indexFuel) indexResult
+  obtain ⟨fuel, baseAtFuel, indexAtFuel⟩ :=
+    evaluatesAtCommonFuel baseResult indexResult
   refine ⟨fuel + 1, ?_⟩
   rw [evalExpr.eq_def]
   simp only
@@ -820,26 +802,13 @@ theorem evaluatesSignedI32SliceIndex
   simp only
   rw [indexAtFuel]
   simp only
-  have integerResult :
-      integerIndex (.signed .i32 (Int.ofNat index)) = .ok index := by
-    simp [integerIndex]
-  rw [integerResult]
+  have readFacts := i32SliceReadFacts afterIndex values cell index inBounds backing
+  rw [readFacts.1]
   simp only
   rw [if_pos inBounds]
-  have sliceResult :
-      sliceValues afterIndex cell [] 0 values.length =
-        .ok (signedI32Values values) := by
-    simp [sliceValues, readCellProjection, projectedValue, backing,
-      signedI32Values]
-    rw [show values.length = (signedI32Values values).length by
-      simp [signedI32Values]]
-    exact List.take_length
-  rw [sliceResult]
+  rw [readFacts.2.1]
   simp only
-  have valueAt : (signedI32Values values)[index]? =
-      some (.signed .i32 (values.get ⟨index, inBounds⟩)) := by
-    simp [signedI32Values, inBounds]
-  rw [valueAt]
+  rw [readFacts.2.2]
 
 /-- Resolving a readable local as a place exposes the physical cell that owns
     the binding.  Most aggregate-place rules do not care which lexical cell
@@ -901,26 +870,13 @@ theorem evaluatesSignedI32SlicePlace
   simp only
   rw [indexAtCommonFuel]
   simp only
-  have integerResult :
-      integerIndex (.signed .i32 (Int.ofNat index)) = .ok index := by
-    simp [integerIndex]
-  rw [integerResult]
+  have readFacts := i32SliceReadFacts afterIndex values cell index inBounds backing
+  rw [readFacts.1]
   simp only
   rw [if_pos inBounds]
-  have sliceResult :
-      sliceValues afterIndex cell [] 0 values.length =
-        .ok (signedI32Values values) := by
-    simp [sliceValues, readCellProjection, projectedValue, backing,
-      signedI32Values]
-    rw [show values.length = (signedI32Values values).length by
-      simp [signedI32Values]]
-    exact List.take_length
-  rw [sliceResult]
+  rw [readFacts.2.1]
   simp only
-  have valueAt : (signedI32Values values)[index]? =
-      some (.signed .i32 (values.get ⟨index, inBounds⟩)) := by
-    simp [signedI32Values, inBounds]
-  rw [valueAt]
+  rw [readFacts.2.2]
   simp
 
 /-- Generic execution rule for indexing a zero-based `i32` slice.  The lexer

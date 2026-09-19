@@ -38,12 +38,11 @@ theorem executes_packing_body
         (CellSet.singleton cursorCell)) before after := by
   have cursorResult : Evaluates program before (.local locals.cursor)
       (.signed .i32 processed.length) before :=
-    ⟨1, evalLocal_of_local 0 program before locals.cursor _
-      (Assertion.localPointsTo_local _ _ _ _ cursor)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ cursor)
   have four : Evaluates program before (.value (.signed .i32 4)) (.signed .i32 4) before :=
-    ⟨1, rfl⟩
+    evaluatesValue
   have eight : Evaluates program before (.value (.signed .i32 8)) (.signed .i32 8) before :=
-    ⟨1, rfl⟩
+    evaluatesValue
   have indexResult := evaluatesNatI32Divide (leftValue := processed.length)
     (rightValue := 4) cursorResult four (by decide) (by omega)
   have laneResult := evaluatesNatI32Remainder (leftValue := processed.length)

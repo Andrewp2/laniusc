@@ -187,8 +187,7 @@ theorem verifiedParserChartClearPersistentBindings_core_ids :
         verifiedParserChartClearSharedFrameIds := by
   simp only [verifiedParserChartClearPersistentBindings,
     verifiedParserRecognizerParameterIds, verifiedParserChartClearSharedFrameIds,
-    LocalAccessFrame.ids, LocalBindingFrame.union, LocalBindingFrame.coreIds,
-    List.map_append]
+    LocalAccessFrame.ids, LocalBindingFrame.coreIds_union]
 
 @[simp] theorem mem_verifiedParserChartClearSharedFrameIds_iff
     (id : Nat) :
@@ -261,13 +260,12 @@ theorem RecognizerChartClearInvariant.condition_true
       (.binary .less (.local 10) (.local 8)) (.boolean true) runtime := by
   have left : Evaluates verifiedParserCore runtime (.local 10)
       (.signed .i32 (Int.ofNat index)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 10 _
+    Lanius.Semantics.evaluatesLocal
       (Assertion.localPointsTo_local 10 indexCell _ runtime
-        invariant.indexOwned)⟩
+        invariant.indexOwned)
   have right : Evaluates verifiedParserCore runtime (.local 8)
       (.signed .i32 (Int.ofNat (stateBase layout.tokenCount))) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 8 _
-      invariant.stateBaseLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.stateBaseLocal
   apply evaluatesEagerBinary (by decide) (by decide) left right
   simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt, bound]
 
@@ -279,13 +277,12 @@ theorem RecognizerChartClearInvariant.condition_false
       (.binary .less (.local 10) (.local 8)) (.boolean false) runtime := by
   have left : Evaluates verifiedParserCore runtime (.local 10)
       (.signed .i32 (Int.ofNat index)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 10 _
+    Lanius.Semantics.evaluatesLocal
       (Assertion.localPointsTo_local 10 indexCell _ runtime
-        invariant.indexOwned)⟩
+        invariant.indexOwned)
   have right : Evaluates verifiedParserCore runtime (.local 8)
       (.signed .i32 (Int.ofNat (stateBase layout.tokenCount))) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 8 _
-      invariant.stateBaseLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.stateBaseLocal
   apply evaluatesEagerBinary (by decide) (by decide) left right
   simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt]
   omega
@@ -364,30 +361,12 @@ private theorem ChartClearFunctionalConfig.advance_environment
     Lanius.FunctionalView.Stateful.Env.set config.runtime.environment
       ⟨1, by omega⟩ (.signed .i32 (Int.ofNat (config.index + 1))) =
       (config.advance bound).runtime.environment := by
-  funext slot
-  have cases : slot.val = 0 ∨ slot.val = 1 ∨ slot.val = 2 := by omega
-  rcases cases with zero | one | two
-  · have same : slot = ⟨0, by omega⟩ := Fin.ext zero
-    rw [same]
-    simp [ChartClearFunctionalConfig.runtime,
-      ChartClearFunctionalConfig.advance, chartClearEnvironment,
-      workspaceValue, Lanius.FunctionalView.Stateful.Env.set,
-      Lanius.FunctionalView.Env.push, pairEnvironment,
-      Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
-  · have same : slot = ⟨1, by omega⟩ := Fin.ext one
-    rw [same]
-    simp [ChartClearFunctionalConfig.runtime,
-      ChartClearFunctionalConfig.advance, chartClearEnvironment,
-      Lanius.FunctionalView.Stateful.Env.set,
-      Lanius.FunctionalView.Env.push, pairEnvironment,
-      Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
-  · have same : slot = ⟨2, by omega⟩ := Fin.ext two
-    rw [same]
-    simp [ChartClearFunctionalConfig.runtime,
-      ChartClearFunctionalConfig.advance, chartClearEnvironment,
-      Lanius.FunctionalView.Stateful.Env.set,
-      Lanius.FunctionalView.Env.push, pairEnvironment,
-      Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
+  apply Lanius.FunctionalView.Env.eq_ofFn
+  simp [ChartClearFunctionalConfig.runtime,
+    ChartClearFunctionalConfig.advance, chartClearEnvironment,
+    workspaceValue, Lanius.FunctionalView.Stateful.Env.set,
+    Lanius.FunctionalView.Env.push, pairEnvironment,
+    Lanius.FunctionalView.Stateful.Loop.Runtime.environment]
 
 private theorem ChartClearFunctionalConfig.condition
     (config : ChartClearFunctionalConfig layout workspaceCell) :
@@ -397,18 +376,7 @@ private theorem ChartClearFunctionalConfig.condition
       chartClearLoopCondition =
       .ok (.boolean (decide (config.index < stateBase layout.tokenCount)),
         config.runtime.world) := by
-  have left : Lanius.FunctionalView.Term.evaluate
-      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      config.runtime.world config.runtime.environment chartClearLoopIndexTerm =
-      .ok (.signed .i32 (Int.ofNat config.index), config.runtime.world) := by
-    rfl
-  have right : Lanius.FunctionalView.Term.evaluate
-      (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
-      config.runtime.world config.runtime.environment chartClearLoopBoundTerm =
-      .ok (.signed .i32 (Int.ofNat (stateBase layout.tokenCount)),
-        config.runtime.world) := by
-    rfl
-  exact Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_i32_less left right
+  apply Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_i32_less <;> rfl
 
 private theorem ChartClearFunctionalConfig.body
     (config : ChartClearFunctionalConfig layout workspaceCell)
@@ -420,18 +388,12 @@ private theorem ChartClearFunctionalConfig.body
       chartClearLoopBodyCommand .next
       (config.advance bound).runtime.world
       (config.advance bound).runtime.environment := by
-  have indexInValues : config.index < config.values.length := by
-    rw [config.valuesLength]
-    exact Nat.lt_of_lt_of_le bound layout.baseFits
   have negativeOne : Lanius.FunctionalView.Term.evaluate
       (Lanius.FunctionalView.Core.ReadOnly.machine verifiedParserCore)
       config.runtime.world config.runtime.environment
       chartClearLoopNegativeOneTerm =
       .ok (.signed .i32 (-1), config.runtime.world) :=
     Lanius.FunctionalView.Core.ReadOnly.Term.evaluate_i32_negate_one
-  have incrementBound : config.index + 1 ≤ 2147483647 :=
-    Nat.le_trans (Nat.succ_le_of_lt bound)
-      (stateBase_le_i32Max layout.tokenBound)
   have evaluated :=
     Lanius.FunctionalView.Core.Stateful.evaluatesSetI32AtCursorThenIncrementAndSkip
         (program := verifiedParserCore) (base := ⟨0, by omega⟩)
@@ -441,7 +403,10 @@ private theorem ChartClearFunctionalConfig.body
         (position := config.index) (replacementValue := -1)
         (by rfl) (by rfl) negativeOne
         Lanius.FunctionalView.Core.ReadOnly.World.singleton_finds
-        indexInValues incrementBound
+        (by simpa [config.valuesLength] using
+          Nat.lt_of_lt_of_le bound layout.baseFits)
+        (Nat.le_trans (Nat.succ_le_of_lt bound)
+          (stateBase_le_i32Max layout.tokenBound))
   rw [config.advance_world bound, config.advance_environment bound] at evaluated
   simpa [chartClearLoopBodyCommand, chartClearLoopIndexTerm] using evaluated
 
@@ -629,11 +594,8 @@ noncomputable def RecognizerChartClearInvariant.execute_loop
     rw [← result.afterEq]
     simpa [chartClearLoopCommand, localCells] using abstractSimulation
   let after := Classical.choose simulation
-  have simulationFacts := Classical.choose_spec simulation
-  have loopExecution := simulationFacts.1
-  have afterWellFormed := simulationFacts.2.1
-  have afterRepresented := simulationFacts.2.2.1
-  have effect := simulationFacts.2.2.2
+  obtain ⟨loopExecution, afterWellFormed, afterRepresented, effect⟩ :=
+    Classical.choose_spec simulation
   have frameDisjoint : CellSet.Disjoint
       (localBindingFrameFootprint runtime
         verifiedParserChartClearPersistentBindings)

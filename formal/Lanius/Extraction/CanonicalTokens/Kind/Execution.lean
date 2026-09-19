@@ -50,7 +50,7 @@ theorem Checked.executes_body (checked : Checked program functionId keywordId ma
       (.returned (some (.signed .i32 (result source rawKind start width)))) after ∧ CellEffect CellSet.empty before after ∧
       Host.MemoryFrame before after := by
   have rawResult : Evaluates program before (.local 1) (.signed .i32 rawKind) before :=
-    ⟨1, evalLocal_of_local 0 program before _ _ rawLocal⟩
+    Lanius.Semantics.evaluatesLocal rawLocal
   have identifierResult : Evaluates program before (.constant checked.identifier) (.signed .i32 1) before := by
     refine ⟨1, ?_⟩
     rw [evalExpr.eq_def]
@@ -62,11 +62,11 @@ theorem Checked.executes_body (checked : Checked program functionId keywordId ma
       simpa only [identifier, BEq.rfl] using tested
     have sourceResult : Evaluates program before (.local 0)
         (.slice (.scalar (.signed .i32)) sourceCell [] 0 source.length) before :=
-      ⟨1, evalLocal_of_local 0 program before _ _ sourceLocal⟩
+      Lanius.Semantics.evaluatesLocal sourceLocal
     have startResult : Evaluates program before (.local 2) (.signed .i32 start) before :=
-      ⟨1, evalLocal_of_local 0 program before _ _ startLocal⟩
+      Lanius.Semantics.evaluatesLocal startLocal
     have endResult : Evaluates program before (.local 3) (.signed .i32 (start + width)) before :=
-      ⟨1, evalLocal_of_local 0 program before _ _ endLocal⟩
+      Lanius.Semantics.evaluatesLocal endLocal
     have argumentsResult := ArgumentsEvaluateTo.cons sourceResult
       (ArgumentsEvaluateTo.cons startResult (ArgumentsEvaluateTo.singleton endResult))
     obtain ⟨after, called, frame, memory⟩ := checked.keyword.evaluates_call before sourceCell source start width arguments

@@ -118,7 +118,7 @@ theorem Stage.rejectsMissing (stage : Stage) (opener : Host.CheckedExternal prog
       (.returned (some (.signed .i32 5))) (restoreLocals called middle) :=
     executesLetLocal evaluated (executesSequenceReturned
       (executesIfTrue (elseBranch := .skip) guard (executesSequenceReturned (second := .skip)
-        (executesReturnValue (show Evaluates program middle (number 5) (.signed .i32 5) middle from ⟨1, rfl⟩)))))
+        (executesReturnValue (show Evaluates program middle (number 5) (.signed .i32 5) middle from evaluatesValue)))))
   have restored := CellEffect.closeLocal called stage.handle (.signed .i32 (-1))
     registered.wellFormed (CellEffect.refl (writes := CellSet.empty) entered.wellFormed)
   exact ⟨restoreLocals called middle, run, entered.restoreLocals called restored.wellFormed, frame.locals, world⟩

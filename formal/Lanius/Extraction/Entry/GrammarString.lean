@@ -30,10 +30,10 @@ theorem stringInitializer (program : Program) (before : State) (text : String)
     Except.ok.inj (actualDecoded.symm.trans decoded)
   rw [exactWords] at contents
   have textResult : Evaluates program before (.local binding) (.string text) before :=
-    ⟨1, evalLocal_of_local 0 program before binding _ found⟩
+    evaluatesLocal found
   exact ⟨after, evaluatesI32SliceFromRawParts (evaluatesStringDataPtr textResult pointer)
       (show Evaluates program pointed (.value (.signed .i32 words.length))
-        (.signed .i32 words.length) pointed from ⟨1, rfl⟩) raw,
+        (.signed .i32 words.length) pointed from evaluatesValue) raw,
     contents, afterWF, afterLocals, preserved, nextCell, world, domain, localValues, resources⟩
 
 end Lanius.Extraction.Entry.Grammar

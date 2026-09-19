@@ -94,68 +94,41 @@ def directChoices {arity : Nat} :
           (directReturned (directConstant kind)) .skip)
         (directChoices rest)
 
+private def directLoadFirst {n : Nat} (body : C (n + 3)) : C (n + 2) :=
+  .letValue i32
+    (directIndex (directSlot (⟨0, by omega⟩ : Fin (n + 2)))
+      (directSlot (⟨1, by omega⟩ : Fin (n + 2)))) body
+
+private def directLoadNext {n : Nat} (offset : Int) (body : C (n + 3)) : C (n + 2) :=
+  .letValue i32
+    (directIndex (directSlot (⟨0, by omega⟩ : Fin (n + 2)))
+      (directAdd (directSlot (⟨1, by omega⟩ : Fin (n + 2)))
+        (directLiteral offset))) body
+
 def directLoad2 (body : C 6) : C 4 :=
-  .letValue i32 (directIndex (directSlot 0) (directSlot 1))
-    (.letValue i32
-      (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 1)))
-      body)
+  directLoadFirst (n := 2) (directLoadNext (n := 3) 1 body)
 def directLoad3 (body : C 7) : C 4 :=
-  .letValue i32 (directIndex (directSlot 0) (directSlot 1))
-    (.letValue i32
-      (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 1)))
-      (.letValue i32
-        (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 2)))
-        body))
+  directLoadFirst (n := 2)
+    (directLoadNext (n := 3) 1 (directLoadNext (n := 4) 2 body))
 def directLoad4 (body : C 8) : C 4 :=
-  .letValue i32 (directIndex (directSlot 0) (directSlot 1))
-    (.letValue i32
-      (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 1)))
-      (.letValue i32
-        (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 2)))
-        (.letValue i32
-          (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 3)))
-          body)))
+  directLoadFirst (n := 2)
+    (directLoadNext (n := 3) 1 (directLoadNext (n := 4) 2
+      (directLoadNext (n := 5) 3 body)))
 def directLoad5 (body : C 9) : C 4 :=
-  .letValue i32 (directIndex (directSlot 0) (directSlot 1))
-    (.letValue i32
-      (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 1)))
-      (.letValue i32
-        (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 2)))
-        (.letValue i32
-          (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 3)))
-          (.letValue i32
-            (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 4)))
-            body))))
+  directLoadFirst (n := 2)
+    (directLoadNext (n := 3) 1 (directLoadNext (n := 4) 2
+      (directLoadNext (n := 5) 3 (directLoadNext (n := 6) 4 body))))
 def directLoad6 (body : C 10) : C 4 :=
-  .letValue i32 (directIndex (directSlot 0) (directSlot 1))
-    (.letValue i32
-      (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 1)))
-      (.letValue i32
-        (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 2)))
-        (.letValue i32
-          (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 3)))
-          (.letValue i32
-            (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 4)))
-            (.letValue i32
-              (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 5)))
-              body)))))
+  directLoadFirst (n := 2)
+    (directLoadNext (n := 3) 1 (directLoadNext (n := 4) 2
+      (directLoadNext (n := 5) 3 (directLoadNext (n := 6) 4
+        (directLoadNext (n := 7) 5 body)))))
 def directLoad8 (body : C 12) : C 4 :=
-  .letValue i32 (directIndex (directSlot 0) (directSlot 1))
-    (.letValue i32
-      (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 1)))
-      (.letValue i32
-        (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 2)))
-        (.letValue i32
-          (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 3)))
-          (.letValue i32
-            (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 4)))
-            (.letValue i32
-              (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 5)))
-              (.letValue i32
-                (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 6)))
-                (.letValue i32
-                  (directIndex (directSlot 0) (directAdd (directSlot 1) (directLiteral 7)))
-                  body)))))))
+  directLoadFirst (n := 2)
+    (directLoadNext (n := 3) 1 (directLoadNext (n := 4) 2
+      (directLoadNext (n := 5) 3 (directLoadNext (n := 6) 4
+        (directLoadNext (n := 7) 5 (directLoadNext (n := 8) 6
+          (directLoadNext (n := 9) 7 body)))))))
 
 def directLengthBranch (length : Int) (body : C 4) : C 4 :=
   .ifThenElse (directEqual (directSlot 3) (directLiteral length)) body .skip

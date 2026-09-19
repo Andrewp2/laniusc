@@ -1,5 +1,6 @@
 import Lanius.Extraction.VerifiedFrontend.Parser.Accessors
 import Lanius.Compiler.ParserLanguage
+import Lanius.FunctionalViewCoreSimulation
 
 namespace Lanius.Extraction.ParserScan
 
@@ -11,6 +12,8 @@ open Lanius.CallContracts
 open Lanius.Extraction
 open Lanius.Compiler.Parser
 open Lanius.Extraction.ParserAccessors
+open Lanius.FunctionalView
+open Lanius.FunctionalView.Core
 
 def extractedParserScanTerminalWire : CoreFunction :=
   artifact_function%
@@ -227,51 +230,21 @@ theorem parserScanTerminalCallee_entry
         (signedI32Values (tokens.map Int.ofNat)))
     } := ((enterCall_effect caller bindings).oldCells tokensCell tokensOld
       (by simp [CellSet.empty])).trans tokensBacking
-  have local0 : callee.local? 0 =
-      some (parserGrammarValue words grammarCell) := by
-    simpa [callee, bindings, parserScanTerminalBindings] using
-      (enterCall_local_of_binding caller [] [
-        (1, parserTokensValue tokens tokensCell),
-        (2, .signed .i32 (Int.ofNat tokens.length)),
-        (3, .signed .i32 (Int.ofNat position)),
-        (4, .signed .i32 (Int.ofNat semanticKind))]
-        0 (parserGrammarValue words grammarCell) wellFormed (by simp))
-  have local1 : callee.local? 1 =
-      some (parserTokensValue tokens tokensCell) := by
-    simpa [callee, bindings, parserScanTerminalBindings] using
-      (enterCall_local_of_binding caller [
-        (0, parserGrammarValue words grammarCell)] [
-        (2, .signed .i32 (Int.ofNat tokens.length)),
-        (3, .signed .i32 (Int.ofNat position)),
-        (4, .signed .i32 (Int.ofNat semanticKind))]
-        1 (parserTokensValue tokens tokensCell) wellFormed (by simp))
-  have local2 : callee.local? 2 =
-      some (.signed .i32 (Int.ofNat tokens.length)) := by
-    simpa [callee, bindings, parserScanTerminalBindings] using
-      (enterCall_local_of_binding caller [
-        (0, parserGrammarValue words grammarCell),
-        (1, parserTokensValue tokens tokensCell)] [
-        (3, .signed .i32 (Int.ofNat position)),
-        (4, .signed .i32 (Int.ofNat semanticKind))]
-        2 (.signed .i32 (Int.ofNat tokens.length)) wellFormed (by simp))
-  have local3 : callee.local? 3 =
-      some (.signed .i32 (Int.ofNat position)) := by
-    simpa [callee, bindings, parserScanTerminalBindings] using
-      (enterCall_local_of_binding caller [
-        (0, parserGrammarValue words grammarCell),
-        (1, parserTokensValue tokens tokensCell),
-        (2, .signed .i32 (Int.ofNat tokens.length))] [
-        (4, .signed .i32 (Int.ofNat semanticKind))]
-        3 (.signed .i32 (Int.ofNat position)) wellFormed (by simp))
-  have local4 : callee.local? 4 =
-      some (.signed .i32 (Int.ofNat semanticKind)) := by
-    simpa [callee, bindings, parserScanTerminalBindings] using
-      (enterCall_local_of_binding caller [
-        (0, parserGrammarValue words grammarCell),
-        (1, parserTokensValue tokens tokensCell),
-        (2, .signed .i32 (Int.ofNat tokens.length)),
-        (3, .signed .i32 (Int.ofNat position))] []
-        4 (.signed .i32 (Int.ofNat semanticKind)) wellFormed (by simp))
+  let environment : Env 5
+    | ⟨0, _⟩ => parserGrammarValue words grammarCell
+    | ⟨1, _⟩ => parserTokensValue tokens tokensCell
+    | ⟨2, _⟩ => .signed .i32 (Int.ofNat tokens.length)
+    | ⟨3, _⟩ => .signed .i32 (Int.ofNat position)
+    | ⟨4, _⟩ => .signed .i32 (Int.ofNat semanticKind)
+  have bindingsEq : parameterBindings environment = bindings := by
+    rfl
+  have locals := enterCall_parameterBindings_matches
+    (environment := environment) wellFormed
+  rw [bindingsEq] at locals
+  have localAt : ∀ index : Fin 5,
+      callee.local? index.val = some (environment index) := by
+    intro index
+    simpa [callee, identityLayout] using locals index
   simpa [parserScanTerminalCallee, bindings, callee] using
     (show ScanTerminalInvariant layout grammar words tokens grammarCell
       tokensCell position semanticKind callee from {
@@ -281,11 +254,11 @@ theorem parserScanTerminalCallee_entry
         positionAdvanceI32 := positionAdvanceI32
         semanticKindBound := semanticKindBound
         wellFormed := calleeWellFormed
-        grammarLocal := local0
-        tokensLocal := local1
-        tokenCountLocal := local2
-        positionLocal := local3
-        semanticKindLocal := local4
+        grammarLocal := by simpa [environment] using localAt ⟨0, by decide⟩
+        tokensLocal := by simpa [environment] using localAt ⟨1, by decide⟩
+        tokenCountLocal := by simpa [environment] using localAt ⟨2, by decide⟩
+        positionLocal := by simpa [environment] using localAt ⟨3, by decide⟩
+        semanticKindLocal := by simpa [environment] using localAt ⟨4, by decide⟩
         grammarBacking := calleeGrammarBacking
         tokensBacking := calleeTokensBacking })
 

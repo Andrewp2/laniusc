@@ -149,12 +149,8 @@ theorem Canonicalizes.executes
     {source : List Byte} {raw canonical : List RawToken}
     (derivation : Canonicalizes source raw canonical) :
     filterRetagTokens source raw = canonical := by
-  induction derivation with
-  | empty => rfl
-  | dropsTrivia trivia tail inductionHypothesis =>
-      simp [filterRetagTokens, canonicalizeToken, trivia, inductionHypothesis]
-  | keepsToken kept tail inductionHypothesis =>
-      simp [filterRetagTokens, canonicalizeToken, kept, inductionHypothesis]
+  induction derivation <;>
+    simp_all [filterRetagTokens, canonicalizeToken]
 
 theorem Canonicalizes.functional
     {source : List Byte} {raw left right : List RawToken}
@@ -223,13 +219,8 @@ theorem InclusiveRangeRetags.executes
     {input output : List RawToken}
     (derivation : InclusiveRangeRetags input output) :
     retagInclusiveRanges input = output := by
-  induction derivation with
-  | empty => rfl
-  | singleton => rfl
-  | inclusive pairMatches tail inductionHypothesis =>
-      simp [retagInclusiveRanges, pairMatches, inductionHypothesis]
-  | ordinary doesNotMatch tail inductionHypothesis =>
-      simp [retagInclusiveRanges, doesNotMatch, inductionHypothesis]
+  induction derivation <;>
+    simp_all [retagInclusiveRanges]
 
 theorem InclusiveRangeRetags.functional
     {input left right : List RawToken}

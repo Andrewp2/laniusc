@@ -77,7 +77,7 @@ theorem linkFrom_nodes (grammar : Grammar) (view : ParseArtifactView artifact)
         else none) = some forest at accepted
       split at accepted
       · rename_i nodeAccepted
-        simp only [checkNodesFromParseView, Bool.and_eq_true]
+        simp only [checkNodesFromParseView, checkNodesFromCore, Bool.and_eq_true]
         refine ⟨ParsePostorder.node_sound grammar view id value _
           (childrenEntriesValid view value.children children linked) nodeAccepted, ?_⟩
         apply ih (id + 1) (.node id value children :: tail)

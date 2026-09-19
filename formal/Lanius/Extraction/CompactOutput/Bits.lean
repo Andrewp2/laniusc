@@ -50,7 +50,7 @@ theorem nibble_evaluates (value shift : Nat) (bounded : value ≤ 2147483647) (s
     (show evalBinaryValue program.target .shiftRight (.signed .i32 value) (.signed .i32 shift) =
       .ok (.signed .i32 (value / 2 ^ shift : Nat)) from shift_right program.target value shift bounded shiftBound)
   exact evaluatesEagerBinary (by decide) (by decide) shifted
-    (show Evaluates program before (number 15) (.signed .i32 15) before from ⟨1, rfl⟩)
+    (show Evaluates program before (number 15) (.signed .i32 15) before from evaluatesValue)
     (mask_nibble program.target _ (Nat.le_trans (Nat.div_le_self _ _) bounded))
 
 end Lanius.Extraction.CompactOutput

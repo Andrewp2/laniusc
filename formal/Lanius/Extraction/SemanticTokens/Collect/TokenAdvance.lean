@@ -13,7 +13,7 @@ private theorem advance_by {position : Nat} (program : Program) (amount : Nat)
       (Assertion.localPointsTo 16 cell (some (.signed .i32 (Int.ofNat (position + amount))))).holds after ∧
       CellEffect (CellSet.singleton cell) before after := by
   obtain ⟨after, assigned, owned, effect, heapFrame⟩ := evaluatesOwnedLocalUpdate wellFormed cursor
-    (show Evaluates program before (number amount) (.signed .i32 amount) before from ⟨1, rfl⟩)
+    (show Evaluates program before (number amount) (.signed .i32 amount) before from evaluatesValue)
     (show evalAssignValue program.target .add (some (.signed .i32 position)) (.signed .i32 amount) =
       .ok (.signed .i32 (Int.ofNat (position + amount))) from by
       simp only [evalAssignValue, assignOpBinary?, evalBinaryValue, evalSignedBinary, BEq.rfl, if_true]
@@ -63,13 +63,13 @@ theorem token_advance_execute {use : Use} {raw canonical : Nat}
       CellEffect (CellSet.singleton cell) before after := by
   have remainder := evaluatesNatI32Remainder (leftValue := use.position) (rightValue := 2)
     (local_evaluates program (Assertion.localPointsTo_local _ _ _ _ cursor))
-    (show Evaluates program before (number 2) (.signed .i32 2) before from ⟨1, rfl⟩)
+    (show Evaluates program before (number 2) (.signed .i32 2) before from evaluatesValue)
     (by decide) (by have := Nat.mod_lt use.position (by decide : 0 < 2); omega)
   have parity : Evaluates program before
       (binary .equal (binary .remainder (read 16) (number 2)) (number 1))
       (.boolean (decide (use.position % 2 = 1))) before := by
     apply evaluatesEagerBinary (by decide) (by decide) remainder
-      (show Evaluates program before (number 1) (.signed .i32 1) before from ⟨1, rfl⟩)
+      (show Evaluates program before (number 1) (.signed .i32 1) before from evaluatesValue)
     simp only [evalBinaryValue, scalarEqual, BEq.rfl, if_true, Except.ok.injEq, Value.boolean.injEq]
     apply Bool.eq_iff_iff.mpr
     simp only [beq_iff_eq, decide_eq_true_eq, Int.ofNat_eq_natCast]

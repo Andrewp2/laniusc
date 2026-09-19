@@ -17,9 +17,7 @@ theorem castFrame (step : Step fuel program allowed)
     HeapFrame before after := by
   simp only [evalExpr] at evaluated
   repeat' first | split at evaluated | contradiction
-  all_goals
-    obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated
-    exact step.expression supported (by assumption)
+  all_goals (obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated; exact step.expression supported (by assumption))
 
 theorem unaryFrame (step : Step fuel program allowed)
     (supported : expression allowed input = true)
@@ -27,9 +25,7 @@ theorem unaryFrame (step : Step fuel program allowed)
     HeapFrame before after := by
   simp only [evalExpr] at evaluated
   repeat' first | split at evaluated | contradiction
-  all_goals
-    obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated
-    exact step.expression supported (by assumption)
+  all_goals (obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated; exact step.expression supported (by assumption))
 
 theorem binaryFrame (step : Step fuel program allowed)
     (leftSupported : expression allowed left = true) (rightSupported : expression allowed right = true)
@@ -49,30 +45,27 @@ theorem arrayFrame (step : Step fuel program allowed)
     (evaluated : evalExpr (fuel + 1) program before (.array type entries) = .done result after) :
     HeapFrame before after := by
   simp only [evalExpr] at evaluated
-  split at evaluated
-  · obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated
-    exact step.expressions supported (by assumption)
-  all_goals contradiction
+  split at evaluated <;> try contradiction
+  obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated
+  exact step.expressions supported (by assumption)
 
 theorem structFrame (step : Step fuel program allowed)
     (supported : expressions allowed entries = true)
     (evaluated : evalExpr (fuel + 1) program before (.structValue type entries) = .done result after) :
     HeapFrame before after := by
   simp only [evalExpr] at evaluated
-  split at evaluated
-  · obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated
-    exact step.expressions supported (by assumption)
-  all_goals contradiction
+  split at evaluated <;> try contradiction
+  obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated
+  exact step.expressions supported (by assumption)
 
 theorem enumFrame (step : Step fuel program allowed)
     (supported : expressions allowed entries = true)
     (evaluated : evalExpr (fuel + 1) program before (.enumValue type variant entries) = .done result after) :
     HeapFrame before after := by
   simp only [evalExpr] at evaluated
-  split at evaluated
-  · obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated
-    exact step.expressions supported (by assumption)
-  all_goals contradiction
+  split at evaluated <;> try contradiction
+  obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated
+  exact step.expressions supported (by assumption)
 
 theorem fieldFrame (step : Step fuel program allowed)
     (supported : expression allowed input = true)
@@ -80,9 +73,7 @@ theorem fieldFrame (step : Step fuel program allowed)
     HeapFrame before after := by
   simp only [evalExpr] at evaluated
   repeat' first | split at evaluated | contradiction
-  all_goals
-    obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated
-    exact step.expression supported (by assumption)
+  all_goals (obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated; exact step.expression supported (by assumption))
 
 theorem indexFrame (step : Step fuel program allowed)
     (baseSupported : expression allowed base = true) (indexSupported : expression allowed index = true)
@@ -100,9 +91,7 @@ theorem borrowFrame (step : Step fuel program allowed)
     HeapFrame before after := by
   simp only [evalExpr] at evaluated
   repeat' first | split at evaluated | contradiction
-  all_goals
-    obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated
-    exact step.place supported (by assumption)
+  all_goals (obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated; exact step.place supported (by assumption))
 
 theorem dereferenceFrame (step : Step fuel program allowed)
     (supported : expression allowed input = true)
@@ -110,9 +99,7 @@ theorem dereferenceFrame (step : Step fuel program allowed)
     HeapFrame before after := by
   simp only [evalExpr] at evaluated
   repeat' first | split at evaluated | contradiction
-  all_goals
-    obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated
-    exact step.expression supported (by assumption)
+  all_goals (obtain ⟨rfl, rfl⟩ := Outcome.done.inj evaluated; exact step.expression supported (by assumption))
 
 theorem assignmentFrame (step : Step fuel program allowed)
     (targetSupported : place allowed target = true) (valueSupported : expression allowed input = true)

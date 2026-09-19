@@ -140,9 +140,7 @@ theorem symbolPairCompatible_sound {left right : Names.Symbol}
     exact False.elim (incompatible ⟨sameModule, sameNamespace, sameName⟩)
 
 def symbolCompatibleWithAll (symbol : Names.Symbol) : List Names.Symbol → Bool
-  | [] => true
-  | head :: tail =>
-      symbolPairCompatible symbol head && symbolCompatibleWithAll symbol tail
+  := fun symbols => List.all symbols (symbolPairCompatible symbol)
 
 theorem symbolCompatibleWithAll_sound {symbol : Names.Symbol}
     {symbols : List Names.Symbol}
@@ -153,15 +151,9 @@ theorem symbolCompatibleWithAll_sound {symbol : Names.Symbol}
       symbol.name = candidate.name →
       symbol.declaration = candidate.declaration := by
   intro candidate member
-  induction symbols with
-  | nil => simp at member
-  | cons head tail induction =>
-      simp only [symbolCompatibleWithAll, Bool.and_eq_true] at accepted
-      simp only [List.mem_cons] at member
-      rcases accepted with ⟨headAccepted, tailAccepted⟩
-      rcases member with rfl | member
-      · exact symbolPairCompatible_sound headAccepted
-      · exact induction tailAccepted member
+  change List.all symbols (symbolPairCompatible symbol) = true at accepted
+  exact symbolPairCompatible_sound
+    (List.all_eq_true.mp accepted candidate member)
 
 def symbolsUniqueBool : List Names.Symbol → Bool
   | [] => true
@@ -171,27 +163,24 @@ def symbolsUniqueBool : List Names.Symbol → Bool
 theorem symbolsUniqueBool_sound {symbols : List Names.Symbol}
     (accepted : symbolsUniqueBool symbols = true) :
     ∀ left, left ∈ symbols →
-      ∀ right, right ∈ symbols →
-        left.moduleId = right.moduleId →
-        left.lookupNamespace = right.lookupNamespace →
-        left.name = right.name → left.declaration = right.declaration := by
+    ∀ right, right ∈ symbols →
+      left.moduleId = right.moduleId →
+      left.lookupNamespace = right.lookupNamespace →
+      left.name = right.name → left.declaration = right.declaration := by
   intro left leftMember
   induction symbols with
   | nil => simp at leftMember
   | cons head tail induction =>
-      simp only [symbolsUniqueBool, Bool.and_eq_true] at accepted
+      simp only [symbolsUniqueBool, Bool.and_eq_true, List.mem_cons] at accepted leftMember
       rcases accepted with ⟨headAccepted, tailAccepted⟩
-      simp only [List.mem_cons] at leftMember
       rcases leftMember with rfl | leftMember
-      · intro right rightMember
-        exact symbolCompatibleWithAll_sound headAccepted right rightMember
+      · exact fun right rightMember => symbolCompatibleWithAll_sound headAccepted right rightMember
       · intro right rightMember
         simp only [List.mem_cons] at rightMember
         rcases rightMember with rfl | rightMember
         · intro sameModule sameNamespace sameName
-          exact (symbolCompatibleWithAll_sound headAccepted left
-            (by simp [leftMember]) sameModule.symm sameNamespace.symm
-            sameName.symm).symm
+          exact (symbolCompatibleWithAll_sound headAccepted left (by simp [leftMember])
+            sameModule.symm sameNamespace.symm sameName.symm).symm
         · exact induction tailAccepted leftMember right rightMember
 
 def symbolsUnique? (environment : Names.Environment) :
@@ -365,25 +354,17 @@ theorem modulePairCompatible_sound {left right : Names.Module}
     exact False.elim (different samePath)
 
 def moduleCompatibleWithAll (module : Names.Module) : List Names.Module → Bool
-  | [] => true
-  | head :: tail =>
-      modulePairCompatible module head && moduleCompatibleWithAll module tail
+  := fun modules => List.all modules (modulePairCompatible module)
 
 theorem moduleCompatibleWithAll_sound {module : Names.Module}
     {modules : List Names.Module}
     (accepted : moduleCompatibleWithAll module modules = true) :
-    ∀ candidate, candidate ∈ modules → module.path = candidate.path →
+      ∀ candidate, candidate ∈ modules → module.path = candidate.path →
       module.id = candidate.id := by
-  intro candidate member
-  induction modules with
-  | nil => simp at member
-  | cons head tail induction =>
-      simp only [moduleCompatibleWithAll, Bool.and_eq_true] at accepted
-      rcases accepted with ⟨headAccepted, tailAccepted⟩
-      simp only [List.mem_cons] at member
-      rcases member with rfl | member
-      · exact modulePairCompatible_sound headAccepted
-      · exact induction tailAccepted member
+  intro candidate member samePath
+  change List.all modules (modulePairCompatible module) = true at accepted
+  exact modulePairCompatible_sound
+    (List.all_eq_true.mp accepted candidate member) samePath
 
 def modulesUniquePathsBool : List Names.Module → Bool
   | [] => true
@@ -398,18 +379,16 @@ theorem modulesUniquePathsBool_sound {modules : List Names.Module}
   induction modules with
   | nil => simp at leftMember
   | cons head tail induction =>
-      simp only [modulesUniquePathsBool, Bool.and_eq_true] at accepted
+      simp only [modulesUniquePathsBool, Bool.and_eq_true, List.mem_cons] at accepted leftMember
       rcases accepted with ⟨headAccepted, tailAccepted⟩
-      simp only [List.mem_cons] at leftMember
       rcases leftMember with rfl | leftMember
-      · intro right rightMember
-        exact moduleCompatibleWithAll_sound headAccepted right rightMember
+      · exact fun right rightMember => moduleCompatibleWithAll_sound headAccepted right rightMember
       · intro right rightMember
         simp only [List.mem_cons] at rightMember
         rcases rightMember with rfl | rightMember
         · intro samePath
-          exact (moduleCompatibleWithAll_sound headAccepted left
-            (by simp [leftMember]) samePath.symm).symm
+          exact (moduleCompatibleWithAll_sound headAccepted left (by simp [leftMember])
+            samePath.symm).symm
         · exact induction tailAccepted leftMember right rightMember
 
 def modulesUniquePaths? (environment : Names.Environment) :
@@ -677,9 +656,8 @@ def noLocalNamed? (context : Context) (name : Surface.Name) :
           pure ⟨by
             intro binding member
             simp only [List.mem_cons] at member
-            rcases member with rfl | member
-            · exact different
-            · exact rest.proof binding member⟩
+            exact member.elim (fun same => by simpa [same] using different)
+              (rest.proof binding)⟩
         else none
   visit context.locals
 
@@ -1084,10 +1062,8 @@ def functionInstanceCandidateCompatible (declaration : Nat)
 def functionInstancesCompatible (declaration : Nat)
     (argumentTypes : List Static.GroundTy) (function : FunctionId) :
     List Static.FunctionInstance → Bool
-  | [] => true
-  | head :: tail =>
-      functionInstanceCandidateCompatible declaration argumentTypes function head &&
-        functionInstancesCompatible declaration argumentTypes function tail
+  := fun instances =>
+    List.all instances (functionInstanceCandidateCompatible declaration argumentTypes function)
 
 theorem functionInstancesCompatible_sound {instances : List Static.FunctionInstance}
     {declaration : Nat} {argumentTypes : List Static.GroundTy}
@@ -1098,25 +1074,17 @@ theorem functionInstancesCompatible_sound {instances : List Static.FunctionInsta
       candidate.declaration = declaration →
       candidate.parameterTypes = argumentTypes →
       candidate.function = function := by
-  intro candidate member
-  induction instances with
-  | nil => simp at member
-  | cons head tail induction =>
-      simp only [functionInstancesCompatible, Bool.and_eq_true] at accepted
-      rcases accepted with ⟨headAccepted, tailAccepted⟩
-      simp only [List.mem_cons] at member
-      rcases member with rfl | member
-      · intro sameDeclaration sameParameters
-        unfold functionInstanceCandidateCompatible at headAccepted
-        have parameterCheck :
-            groundTypeListBEq candidate.parameterTypes argumentTypes = true := by
-          rw [sameParameters]
-          exact groundTypeListBEq_refl argumentTypes
-        split at headAccepted
-        · simpa [parameterCheck] using headAccepted
-        · rename_i rejected
-          exact False.elim (rejected sameDeclaration)
-      · exact induction tailAccepted member
+  intro candidate member sameDeclaration sameParameters
+  change List.all instances
+      (functionInstanceCandidateCompatible declaration argumentTypes function) = true at accepted
+  have checked : functionInstanceCandidateCompatible declaration argumentTypes function
+      candidate = true :=
+    List.all_eq_true.mp accepted candidate member
+  unfold functionInstanceCandidateCompatible at checked
+  split at checked
+  · simpa [sameParameters, groundTypeListBEq_refl] using checked
+  · rename_i rejected
+    exact False.elim (rejected sameDeclaration)
 
 theorem functionInstantiates_declaration
     (instantiated : Static.FunctionInstantiates implementations scheme
@@ -1232,10 +1200,7 @@ def fieldCandidateCompatible (receiver : Static.GroundTy)
 
 def fieldsCompatible (receiver : Static.GroundTy) (name : Surface.Name)
     (selected : FieldEntry) : List FieldEntry → Bool
-  | [] => true
-  | head :: tail =>
-      fieldCandidateCompatible receiver name selected head &&
-        fieldsCompatible receiver name selected tail
+  := fun fields => List.all fields (fieldCandidateCompatible receiver name selected)
 
 theorem fieldsCompatible_sound {fields : List FieldEntry}
     {receiver : Static.GroundTy} {name : Surface.Name} {selected : FieldEntry}
@@ -1243,27 +1208,21 @@ theorem fieldsCompatible_sound {fields : List FieldEntry}
     ∀ candidate, candidate ∈ fields → candidate.receiver = receiver →
       candidate.name = name →
       candidate.field = selected.field ∧ candidate.type = selected.type := by
-  intro candidate member
-  induction fields with
-  | nil => simp at member
-  | cons head tail induction =>
-      simp only [fieldsCompatible, Bool.and_eq_true] at accepted
-      rcases accepted with ⟨headAccepted, tailAccepted⟩
-      simp only [List.mem_cons] at member
-      rcases member with rfl | member
-      · intro sameReceiver sameName
-        have receiverCheck : groundTypeBEq candidate.receiver receiver = true := by
-          rw [sameReceiver]
-          exact groundTypeBEq_refl receiver
-        unfold fieldCandidateCompatible at headAccepted
-        split at headAccepted
-        · have checked : candidate.field = selected.field ∧
-              groundTypeBEq candidate.type selected.type = true := by
-            simpa [sameName] using headAccepted
-          exact ⟨checked.1, groundTypeBEq_sound checked.2⟩
-        · rename_i rejected
-          exact False.elim (rejected receiverCheck)
-      · exact induction tailAccepted member
+  intro candidate member sameReceiver sameName
+  change List.all fields (fieldCandidateCompatible receiver name selected) = true at accepted
+  have checked : fieldCandidateCompatible receiver name selected candidate = true :=
+    List.all_eq_true.mp accepted candidate member
+  have receiverCheck : groundTypeBEq candidate.receiver receiver = true := by
+    rw [sameReceiver]
+    exact groundTypeBEq_refl receiver
+  unfold fieldCandidateCompatible at checked
+  split at checked
+  · have fieldsChecked : candidate.field = selected.field ∧
+        groundTypeBEq candidate.type selected.type = true := by
+      simpa [sameName] using checked
+    exact ⟨fieldsChecked.1, groundTypeBEq_sound fieldsChecked.2⟩
+  · rename_i rejected
+    exact False.elim (rejected receiverCheck)
 
 structure SelectedField (context : Context) (receiver : Static.GroundTy)
     (name : Surface.Name) (field : FieldId) where
@@ -1405,10 +1364,8 @@ def structConstructorCandidateCompatible (declaration : Nat)
 
 def structConstructorsCompatible (declaration : Nat) (sourceType : TypeId)
     (fields : List StructFieldScheme) : List StructConstructorScheme → Bool
-  | [] => true
-  | head :: tail =>
-      structConstructorCandidateCompatible declaration sourceType fields head &&
-        structConstructorsCompatible declaration sourceType fields tail
+  := fun constructors =>
+    List.all constructors (structConstructorCandidateCompatible declaration sourceType fields)
 
 theorem structConstructorsCompatible_sound
     {constructors : List StructConstructorScheme} {declaration : Nat}
@@ -1419,25 +1376,21 @@ theorem structConstructorsCompatible_sound
       candidate.declaration = declaration →
       candidate.sourceType = sourceType ∧ candidate.genericParameters = [] ∧
         candidate.requirements = [] ∧ candidate.fields = fields := by
-  intro candidate member
-  induction constructors with
-  | nil => simp at member
-  | cons head tail induction =>
-      simp only [structConstructorsCompatible, Bool.and_eq_true] at accepted
-      rcases accepted with ⟨headAccepted, tailAccepted⟩
-      simp only [List.mem_cons] at member
-      rcases member with rfl | member
-      · intro sameDeclaration
-        unfold structConstructorCandidateCompatible at headAccepted
-        split at headAccepted
-        · simp only [Bool.and_eq_true, decide_eq_true_eq] at headAccepted
-          exact ⟨headAccepted.1.1.1,
-            listEmptyBool_sound headAccepted.1.1.2,
-            listEmptyBool_sound headAccepted.1.2,
-            structFieldSchemesBEq_sound headAccepted.2⟩
-        · rename_i rejected
-          exact False.elim (rejected sameDeclaration)
-      · exact induction tailAccepted member
+  intro candidate member sameDeclaration
+  change List.all constructors
+      (structConstructorCandidateCompatible declaration sourceType fields) = true at accepted
+  have checked : structConstructorCandidateCompatible declaration sourceType
+      fields candidate = true :=
+    List.all_eq_true.mp accepted candidate member
+  unfold structConstructorCandidateCompatible at checked
+  split at checked
+  · simp only [Bool.and_eq_true, decide_eq_true_eq] at checked
+    exact ⟨checked.1.1.1,
+      listEmptyBool_sound checked.1.1.2,
+      listEmptyBool_sound checked.1.2,
+      structFieldSchemesBEq_sound checked.2⟩
+  · rename_i rejected
+    exact False.elim (rejected sameDeclaration)
 
 structure SelectedStructConstructor (context : Context) (path : Surface.Path) where
   scheme : StructConstructorScheme
@@ -1494,10 +1447,8 @@ def nominalInstanceCandidateCompatible (sourceType coreType : TypeId)
 
 def nominalInstancesCompatible (sourceType coreType : TypeId) :
     List Static.NominalInstance → Bool
-  | [] => true
-  | head :: tail =>
-      nominalInstanceCandidateCompatible sourceType coreType head &&
-        nominalInstancesCompatible sourceType coreType tail
+  := fun instances =>
+    List.all instances (nominalInstanceCandidateCompatible sourceType coreType)
 
 theorem nominalInstancesCompatible_sound {instances : List Static.NominalInstance}
     {sourceType coreType : TypeId}
@@ -1505,22 +1456,13 @@ theorem nominalInstancesCompatible_sound {instances : List Static.NominalInstanc
     ∀ candidate, candidate ∈ instances → candidate.sourceType = sourceType →
       candidate.typeArguments = [] → candidate.constArguments = [] →
       candidate.coreType = coreType := by
-  intro candidate member
-  induction instances with
-  | nil => simp at member
-  | cons head tail induction =>
-      simp only [nominalInstancesCompatible, Bool.and_eq_true] at accepted
-      rcases accepted with ⟨headAccepted, tailAccepted⟩
-      simp only [List.mem_cons] at member
-      rcases member with rfl | member
-      · intro sameSource noTypes noConsts
-        unfold nominalInstanceCandidateCompatible at headAccepted
-        split at headAccepted
-        · simp [noTypes, noConsts] at headAccepted
-          exact headAccepted
-        · rename_i rejected
-          exact False.elim (rejected sameSource)
-      · exact induction tailAccepted member
+  intro candidate member sameSource noTypes noConsts
+  change List.all instances
+      (nominalInstanceCandidateCompatible sourceType coreType) = true at accepted
+  have checked : nominalInstanceCandidateCompatible sourceType coreType candidate = true :=
+    List.all_eq_true.mp accepted candidate member
+  unfold nominalInstanceCandidateCompatible at checked
+  split at checked <;> simp_all [noTypes, noConsts]
 
 structure InstantiatedStructConstructor (context : Context) (path : Surface.Path)
     (coreType : TypeId) where
@@ -1641,6 +1583,15 @@ private def checkPathCast (context : Context) (path : Surface.Path)
     | _ => none
   else none
 
+private def checkLiteral (context : Context) (literal : Surface.Literal)
+    (expected : Static.GroundTy) (core : Expr) :
+    Option (Evidence (ExprChecks context (.literal literal) expected core)) :=
+  match grounded : expected.toCore context.monomorphization with
+  | none => none
+  | some coreType => do
+      let lowered ← literalElaborates? context.target literal coreType core
+      pure ⟨.literal coreType lowered.proof grounded⟩
+
 private def checkInferredExpr (context : Context) (surface : Surface.Expr)
     (expected : Static.GroundTy) (core : Expr)
     (candidate : Option (InferredExprLowering context surface core)) :
@@ -1651,23 +1602,11 @@ private def checkInferredExpr (context : Context) (surface : Surface.Expr)
       | some same => some ⟨same.proof ▸ ExprChecks.exact inferred.lowered⟩
       | none =>
           match surface with
-          | .literal literal =>
-              match grounded : expected.toCore context.monomorphization with
-              | none => none
-              | some coreType => do
-                  let lowered ← literalElaborates? context.target literal
-                    coreType core
-                  pure ⟨.literal coreType lowered.proof grounded⟩
+          | .literal literal => checkLiteral context literal expected core
           | _ => none
   | none =>
       match surface with
-      | .literal literal =>
-          match grounded : expected.toCore context.monomorphization with
-          | none => none
-          | some coreType => do
-              let lowered ← literalElaborates? context.target literal
-                coreType core
-              pure ⟨.literal coreType lowered.proof grounded⟩
+      | .literal literal => checkLiteral context literal expected core
       | _ => none
 
 mutual
@@ -2100,11 +2039,7 @@ def checkContextualExpr? (context : Context)
     Option (Evidence (ExprChecks context surface expected core)) :=
   match surface with
   | .literal literal =>
-      match grounded : expected.toCore context.monomorphization with
-      | none => none
-      | some coreType => do
-          let lowered ← literalElaborates? context.target literal coreType core
-          pure ⟨.literal coreType lowered.proof grounded⟩
+      checkLiteral context literal expected core
   | _ => none
 
 def checkExpr (context : Context)

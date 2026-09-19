@@ -25,7 +25,7 @@ private theorem literal_arguments (program : Program) (state : State) (values : 
     ArgumentsEvaluateTo program state (values.map Expr.value) values state := by
   induction values with
   | nil => exact .nil _ _
-  | cons value values ih => exact .cons ⟨1, rfl⟩ ih
+  | cons value values ih => exact .cons evaluatesValue ih
 
 /-- The callable continuation after extract_syntax succeeds. Argument values
 use that call's returned counts, not independently supplied parser metadata. -/

@@ -37,19 +37,19 @@ theorem executes_input_body (trivia : Trivia.Checked program triviaId)
   have readyStorage : Storage ready sourceCell recordsCell source records :=
     rowStorage.bind 6 _ (by decide) (by decide)
   have inputResult : Evaluates program before (.local 3) (.signed .i32 input) before :=
-    ⟨1, evalLocal_of_local 0 program before 3 _ (Assertion.localPointsTo_local _ _ _ _ inputOwned)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ inputOwned)
   have rowRead : Evaluates program before (row (.local 3)) (.signed .i32 (3 * input : Nat)) before := by
     have multiplied := evaluatesNatI32Multiply (rightValue := 3) inputResult
-      (show Evaluates program before (literal 3) (.signed .i32 3) before from ⟨1, rfl⟩)
+      (show Evaluates program before (literal 3) (.signed .i32 3) before from evaluatesValue)
       (by have := storage.recordsFit; omega)
     simpa [row, Int.ofNat_eq_natCast, Nat.mul_comm] using multiplied
   have rowLocal : withRow.local? 5 = some (.signed .i32 (3 * input : Nat)) :=
     bindLocal_finds_local before 5 _ storage.wellFormed
   have sliceResult : Evaluates program withRow (.local 1)
       (.slice (.scalar (.signed .i32)) recordsCell [] 0 records.length) withRow :=
-    ⟨1, evalLocal_of_local 0 program withRow 1 _ rowStorage.recordsLocal⟩
+    Lanius.Semantics.evaluatesLocal rowStorage.recordsLocal
   have indexResult : Evaluates program withRow (.local 5) (.signed .i32 (3 * input : Nat)) withRow :=
-    ⟨1, evalLocal_of_local 0 program withRow 5 _ rowLocal⟩
+    Lanius.Semantics.evaluatesLocal rowLocal
   have kindRead : Evaluates program withRow (read (.local 5)) (.signed .i32 rawKind) withRow := by
     have bound : 3 * input < records.length := by omega
     have readResult := evaluatesSignedI32SliceIndex program withRow withRow withRow records

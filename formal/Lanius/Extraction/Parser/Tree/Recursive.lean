@@ -8,7 +8,7 @@ open Lanius.Compiler.Parser Lanius.Extraction.ParserTreeLayout
 
 private theorem local_read {id : Lanius.VarId} (found : before.local? id = some value) :
     Evaluates program before (.local id) value before :=
-  ⟨1, evalLocal_of_local 0 program before id value found⟩
+  Lanius.Semantics.evaluatesLocal found
 
 def TreeRuntime.slotState (runtime : TreeRuntime) (trees : List Lanius.Compiler.Parser.ParseTree)
     (before : State) : State :=
@@ -125,7 +125,7 @@ theorem TreeRuntime.At.recursive_arguments {runtime : TreeRuntime}
   rw [← held.record_length] at capacity
   have indexEvaluation : Evaluates program entered (.binary .add (.local 16) (.value (.signed .i32 1)))
       (.signed .i32 (Int.ofNat (slot + 1))) entered :=
-    evaluatesNatI32Add (local_read slotLocal) ⟨1, rfl⟩ (by omega)
+    evaluatesNatI32Add (local_read slotLocal) Lanius.Semantics.evaluatesValue (by omega)
   have recordsLocal := entry.recordsLocal
   rw [← held.record_length] at recordsLocal
   have selected : (runtime.recordValues trees (.state childId :: pending)).get ⟨slot + 1, bound⟩ = Int.ofNat childId :=
@@ -146,7 +146,7 @@ theorem TreeRuntime.At.recursive_arguments {runtime : TreeRuntime}
   refine .cons (local_read (Assertion.localPointsTo_local _ _ _ _ entry.nodesOwned)) ?_
   refine .cons (local_read (Assertion.localPointsTo_local _ _ _ _ entry.wordsOwned)) ?_
   exact .cons (evaluatesNatI32Subtract (local_read (preserve (by decide) depthLocal))
-    ⟨1, rfl⟩ (by omega) (by omega)) (.nil _ _)
+    Lanius.Semantics.evaluatesValue (by omega) (by omega)) (.nil _ _)
 
 /-- Enter the actual state-child branch. Both success and failure use the
     same bounded slot arithmetic and retained tag read. -/
@@ -177,9 +177,9 @@ theorem TreeRuntime.At.state_entry {runtime : TreeRuntime}
       (local_read recordsLocal) (local_read slotLocal) entry.recordsBacking
   refine ⟨?_, evaluatesEagerBinary (by decide) (by decide) tagRead (evaluatesConstant checked.childTag) rfl⟩
   apply evaluatesNatI32Add
-  · exact evaluatesNatI32Add (local_read held.parentLocal) ⟨1, rfl⟩ (by omega)
+  · exact evaluatesNatI32Add (local_read held.parentLocal) Lanius.Semantics.evaluatesValue (by omega)
   · exact evaluatesNatI32Multiply (local_read (Assertion.localPointsTo_local _ _ _ _ held.cursorOwned))
-      ⟨1, rfl⟩ (by omega)
+      Lanius.Semantics.evaluatesValue (by omega)
   · omega
 
 /-- Execute a complete state-child iteration from a proved recursive call.
@@ -266,7 +266,7 @@ theorem TreeRuntime.At.state_step {runtime : TreeRuntime}
     (show ¬ childResultWrites runtime.recordsCell runtime.nodesCell runtime.wordsCell runtime.offsetsCell by
       simp [childResultWrites, CellSet.union, CellSet.singleton, Ne.symm held.buffersDistinct, offsetsNotNodes, offsetsNotWords])
   obtain ⟨completed, increment, cursor, incrementEffect, incrementHeap⟩ := evaluatesOwnedLocalUpdate resumeEffect.wellFormed resumedCursor
-    (show Evaluates program.core resumed (.value (.signed .i32 1)) (.signed .i32 1) resumed from ⟨1, rfl⟩)
+    (show Evaluates program.core resumed (.value (.signed .i32 1)) (.signed .i32 1) resumed from Lanius.Semantics.evaluatesValue)
     (show evalAssignValue program.core.target .add (some (.signed .i32 (Int.ofNat trees.length))) (.signed .i32 1) =
         .ok (.signed .i32 (Int.ofNat (trees.length + 1))) from by
       simp only [evalAssignValue, assignOpBinary?, evalBinaryValue, evalSignedBinary]

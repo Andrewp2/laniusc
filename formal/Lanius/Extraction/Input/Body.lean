@@ -60,11 +60,10 @@ theorem executes_unpacking_body
         (CellSet.singleton cursorCell)) before after := by
   have cursorResult : Evaluates program before (.local locals.cursor)
       (.signed .i32 processed.length) before :=
-    ⟨1, evalLocal_of_local 0 program before locals.cursor _
-      (Assertion.localPointsTo_local _ _ _ _ cursor)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ cursor)
   have packedResult : Evaluates program before (.local locals.packed)
       (.slice (.scalar (.signed .i32)) packedCell [] 0 packedValues.length) before :=
-    ⟨1, evalLocal_of_local 0 program before locals.packed _ packedLocal⟩
+    Lanius.Semantics.evaluatesLocal packedLocal
   have byteResult := evaluates_encoded_byte program before (.local locals.packed)
     (.local locals.cursor) packedCell packedValues storage processed.length byte
     (by omega) packedResult cursorResult packedContents encoded byteSelected
@@ -76,7 +75,7 @@ theorem executes_unpacking_body
         simpa only [UnpackLocals.index, selected, zero, Nat.zero_add] using cursorResult
     | some id =>
         have totalResult : Evaluates program before (.local id) (.signed .i32 earlier.length) before :=
-          ⟨1, evalLocal_of_local 0 program before id _ (by simpa only [UnpackLocals.Offset, selected] using total)⟩
+          Lanius.Semantics.evaluatesLocal (by simpa only [UnpackLocals.Offset, selected] using total)
         simpa only [UnpackLocals.index, selected, Int.ofNat_eq_natCast] using
           evaluatesNatI32Add totalResult cursorResult (by omega)
   have outputLength := copiedBuffer_length earlier untouched processed (by omega)

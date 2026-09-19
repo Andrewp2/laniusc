@@ -80,7 +80,7 @@ theorem evaluates_unpacked_byte
     apply evaluatesEagerBinary (by decide) (by decide) wordResult shiftResult
     simpa only [evalBinaryValue, BEq.rfl, if_true] using shift_right_lane program.target word lane bound
   apply evaluatesEagerBinary (by decide) (by decide) shifted
-    (show Evaluates program afterShift (.value (.signed .i32 255)) (.signed .i32 255) afterShift from ⟨1, rfl⟩)
+    (show Evaluates program afterShift (.value (.signed .i32 255)) (.signed .i32 255) afterShift from Lanius.Semantics.evaluatesValue)
   simpa only [evalBinaryValue, BEq.rfl, if_true] using
     mask_low_byte program.target (word / (2 ^ (lane * 8) : Nat))
 

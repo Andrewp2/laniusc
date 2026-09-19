@@ -10,11 +10,11 @@ private theorem condition_result (program : Program) (request : Request) (comple
     Evaluates program before (.binary .less (add (.local 10) (literal 1)) (.local 4))
       (.boolean (decide (completed.length + 1 < request.count))) before := by
   have cursorResult : Evaluates program before (.local 10) (.signed .i32 completed.length) before :=
-    ⟨1, evalLocal_of_local 0 program before 10 _ (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ invariant.cursor)
   have countResult : Evaluates program before (.local 4) (.signed .i32 request.count) before :=
-    ⟨1, evalLocal_of_local 0 program before 4 _ invariant.count⟩
+    Lanius.Semantics.evaluatesLocal invariant.count
   have nextResult := evaluatesNatI32Add (rightValue := 1) cursorResult
-    (show Evaluates program before (literal 1) (.signed .i32 1) before from ⟨1, rfl⟩)
+    (show Evaluates program before (literal 1) (.signed .i32 1) before from evaluatesValue)
     (by have := invariant.length; have := request.recordsFit; omega)
   apply evaluatesEagerBinary (by decide) (by decide) nextResult countResult
   simp [evalBinaryValue, evalSignedBinary]

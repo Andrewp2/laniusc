@@ -47,6 +47,13 @@ def moduleSuffix : String :=
 def renderedModule (encoded : String) : String :=
   modulePrefix ++ encoded ++ moduleSuffix
 
+def stdoutWorld (world : Lanius.World.State) (bytes : List UInt8) :
+    Lanius.World.State := {
+  world with
+  standardOutput := world.standardOutput ++ bytes
+  calls := world.calls ++ [.writeStdout]
+}
+
 /-- Exact behavior of the modeled stdout service: append the loaded bytes,
 preserve the heap and all other world fields, and record one host call.
 This describes `World.call`, not a guarantee that an OS write cannot be short. -/
@@ -56,13 +63,9 @@ theorem writeStdout_exact
     (loaded : heap.loadBytes pointer length = .ok bytes) :
     Lanius.World.call heap world .writeStdout
         [.pointer pointer, .unsigned .usize length] =
-      .returned (Lanius.World.i32Result bytes.length) heap {
-        world with
-        standardOutput := world.standardOutput ++ bytes
-        calls := world.calls ++ [.writeStdout]
-      } := by
+      .returned (Lanius.World.i32Result bytes.length) heap (stdoutWorld world bytes) := by
   simp [Lanius.World.call, Lanius.World.callSimple, loaded,
-    Lanius.World.record]
+    Lanius.World.record, stdoutWorld]
 
 /-- An invalid output range traps without modifying output or memory. -/
 theorem writeStdout_invalidRange
@@ -84,11 +87,7 @@ theorem writeStdout_packed
     (loaded : heap.loadBytes pointer storage.length = .ok storage) :
     Lanius.World.call heap world .writeStdout
         [.pointer pointer, .unsigned .usize bytes.length] =
-      .returned (Lanius.World.i32Result bytes.length) heap {
-        world with
-        standardOutput := world.standardOutput ++ bytes
-        calls := world.calls ++ [.writeStdout]
-      } := by
+      .returned (Lanius.World.i32Result bytes.length) heap (stdoutWorld world bytes) := by
   have storageEq : storage =
       bytes ++ List.replicate (OutputPacking.padding bytes.length) 0 := by
     rw [OutputPacking.encode_pack] at encoded
@@ -107,11 +106,7 @@ theorem writeStdout_storedPacked
     (stored : heap.storeBytes pointer storage = .ok afterHeap) :
     Lanius.World.call afterHeap world .writeStdout
         [.pointer pointer, .unsigned .usize bytes.length] =
-      .returned (Lanius.World.i32Result bytes.length) afterHeap {
-        world with
-        standardOutput := world.standardOutput ++ bytes
-        calls := world.calls ++ [.writeStdout]
-      } :=
+      .returned (Lanius.World.i32Result bytes.length) afterHeap (stdoutWorld world bytes) :=
   writeStdout_packed afterHeap world pointer bytes storage encoded
     (Heap.loadBytes_after_store wellFormed stored)
 
@@ -133,11 +128,7 @@ theorem evaluates_packed_stdout
     (synchronized : syncI32ViewsToHeap afterArguments = .ok ready)
     (encoded : encodeI32Array (OutputPacking.pack bytes) = .ok storage)
     (loaded : ready.heap.loadBytes pointer storage.length = .ok storage)
-    (refreshed : syncI32ViewsFromHeap { ready with world := {
-        ready.world with
-        standardOutput := ready.world.standardOutput ++ bytes
-        calls := ready.world.calls ++ [.writeStdout]
-      } } = .ok after) :
+    (refreshed : syncI32ViewsFromHeap { ready with world := stdoutWorld ready.world bytes } = .ok after) :
     Evaluates program before (.call function.id arguments)
       (Lanius.World.i32Result bytes.length) after := by
   exact Lanius.CallContracts.evaluatesHostCallReturned argumentsResult
@@ -160,11 +151,8 @@ theorem synchronized_workspace_stdout
     (synchronized : syncI32ViewsToHeap before = .ok ready) :
     Lanius.World.call ready.heap ready.world .writeStdout
         [.pointer view.address, .unsigned .usize bytes.length] =
-      .returned (Lanius.World.i32Result bytes.length) ready.heap {
-        ready.world with
-        standardOutput := ready.world.standardOutput ++ bytes
-        calls := ready.world.calls ++ [.writeStdout]
-      } := by
+      .returned (Lanius.World.i32Result bytes.length) ready.heap
+        (stdoutWorld ready.world bytes) := by
   have loaded := syncI32ViewsToHeapFrom_reads_view wellFormed disjoint member
     packed encoded synchronized
   obtain ⟨within, exactPrefix⟩ :=
@@ -194,10 +182,7 @@ theorem evaluates_workspace_stdout
     (packed : readCellProjection afterArguments view.root view.projections =
       .ok (.array (OutputPacking.pack bytes ++ signedI32Values tail)))
     (synchronized : syncI32ViewsToHeap afterArguments = .ok ready)
-    (refreshed : syncI32ViewsFromHeap { ready with world := {
-      ready.world with
-        standardOutput := ready.world.standardOutput ++ bytes
-        calls := ready.world.calls ++ [.writeStdout] } } = .ok after) :
+    (refreshed : syncI32ViewsFromHeap { ready with world := stdoutWorld ready.world bytes } = .ok after) :
     Evaluates program before (.call function.id arguments) (Lanius.World.i32Result bytes.length) after := by
   have encoded : encodeI32Array (OutputPacking.pack bytes ++ signedI32Values tail) =
       .ok ((bytes ++ List.replicate (OutputPacking.padding bytes.length) 0) ++ tail.flatMap i32Bytes) := by
@@ -235,9 +220,7 @@ theorem workspace_stdout_exists
       ∀ element ∈ elements, ∃ value, element = .signed .i32 value) :
     ∃ after, Evaluates program before (.call function.id arguments)
       (Lanius.World.i32Result bytes.length) after ∧
-      after.world = { afterArguments.world with
-        standardOutput := afterArguments.world.standardOutput ++ bytes
-        calls := afterArguments.world.calls ++ [.writeStdout] } ∧
+      after.world = stdoutWorld afterArguments.world bytes ∧
       (∀ cell, (∀ other ∈ afterArguments.i32ArrayViews, cell ≠ other.root) →
         after.cellEntry? cell = afterArguments.cellEntry? cell) ∧
       after.locals = afterArguments.locals := by
@@ -245,9 +228,7 @@ theorem workspace_stdout_exists
   obtain ⟨readyValid, preserved, cells, registry, locals⟩ :=
     syncI32ViewsToHeapFrom_preserves_storage (views := afterArguments.i32ArrayViews)
       wellFormed synchronized
-  let written : Lanius.Semantics.State := { ready with world := { ready.world with
-    standardOutput := ready.world.standardOutput ++ bytes
-    calls := ready.world.calls ++ [.writeStdout] } }
+  let written : Lanius.Semantics.State := { ready with world := stdoutWorld ready.world bytes }
   have readyCells : ∀ other ∈ written.i32ArrayViews,
       ∃ cell, written.cellEntry? other.root = some cell := by
     intro other mem
@@ -266,7 +247,7 @@ theorem workspace_stdout_exists
     parametersBound noBody host wellFormed disjoint member packed synchronized refreshed, ?_, ?_, ?_⟩
   · have unchanged := Lanius.Properties.syncI32ViewsToHeap_preserves_world synchronized
     have finalWorld := syncI32ViewsFromHeapFrom_preserves_world refreshed
-    simpa only [written, unchanged] using finalWorld
+    simpa only [written, unchanged, stdoutWorld] using finalWorld
   · intro cell separate
     have kept := syncI32RootViewsFromHeapFrom_preserves_other_cell
       (fun other mem => roots other (by simpa only [written, registry] using mem))
@@ -301,11 +282,7 @@ theorem packed_stdout_call_sound
     (encoded : encodeI32Array (OutputPacking.pack bytes ++ tail) = .ok storage)
     (actual : Evaluates program before (.call function.id arguments) result after) :
     result = Lanius.World.i32Result bytes.length ∧
-      after.world = {
-        afterArguments.world with
-        standardOutput := afterArguments.world.standardOutput ++ bytes
-        calls := afterArguments.world.calls ++ [.writeStdout]
-      } := by
+      after.world = stdoutWorld afterArguments.world bytes := by
   obtain ⟨ready, heap, world, synced, called, refreshed⟩ :=
     Lanius.CallContracts.evaluatesHostCallReturned_invert argumentsResult functionFound
       parametersBound noBody host actual

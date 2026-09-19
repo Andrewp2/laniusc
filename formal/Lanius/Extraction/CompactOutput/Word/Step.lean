@@ -39,7 +39,7 @@ theorem Owned.decrement (owned : Owned memory (remaining + 1) position contents 
     ∃ after, Evaluates program before decrement .unit after ∧ Owned memory remaining position contents after ∧
       CellEffect memory.writes before after ∧ HeapFrame before after := by
   obtain ⟨after, run, shift, effect, heapFrame⟩ := evaluatesOwnedLocalUpdate owned.wellFormed owned.shift
-    (show Evaluates program before (number 4) (.signed .i32 4) before from ⟨1, rfl⟩)
+    (show Evaluates program before (number 4) (.signed .i32 4) before from evaluatesValue)
     (decrement_value program.target remaining bounded)
   have cursor := effect.preserves_localPointsTo owned.wellFormed owned.cursor
     (by simpa only [CellSet.singleton] using memory.distinct)
@@ -53,7 +53,7 @@ theorem Owned.condition (owned : Owned memory remaining position contents state)
     Evaluates program state condition (.boolean (decide (0 < remaining))) state := by
   apply evaluatesEagerBinary (by decide) (by decide)
     (local_evaluates program (Assertion.localPointsTo_local _ _ _ _ owned.shift))
-    (show Evaluates program state (number 0) (.signed .i32 0) state from ⟨1, rfl⟩)
+    (show Evaluates program state (number 0) (.signed .i32 0) state from evaluatesValue)
   simp [evalBinaryValue, evalSignedBinary, bitPosition]
   omega
 

@@ -10,6 +10,6 @@ set_option maxHeartbeats 0
 
 theorem verifiedFrontendTokenScan_token_trace_checked_kernel :
     checkTokenArtifact verifiedFrontendTokenScanArtifact = true := by
-  decide +kernel
+  kernel_rfl
 
 end Lanius.Extraction

@@ -81,7 +81,7 @@ theorem recordGuard_pass (program : Program) (id : VarId) (offset capacity : Nat
   have remaining := evaluatesNatI32Subtract (leftValue := capacity) (rightValue := offset)
     capacityResult offsetResult (by omega) (by omega)
   have header := lessEqual_evaluates remaining
-    (show Evaluates program state (number 3) (.signed .i32 3) state from ⟨1, rfl⟩)
+    (show Evaluates program state (number 3) (.signed .i32 3) state from evaluatesValue)
   have all := evaluatesPureLogicalOr (evaluatesPureLogicalOr nonnegative inside) header
   have notNegative : ¬ ((offset : Int) ≤ -1) := by omega
   have inRange : (offset : Int) ≤ capacity := by omega
@@ -102,7 +102,7 @@ theorem record_header_read {record : RecordVisit} (program : Program) (owned : I
       (found : words[record.offset + field]? = some (Int.ofNat value)) :
       Evaluates program state (atIndex 4 (binary .add base (number field))) (.signed .i32 value) state := by
     have address := evaluatesNatI32Add (leftValue := record.offset) (rightValue := field) baseRead
-      (show Evaluates program state (number field) (.signed .i32 field) state from ⟨1, rfl⟩) (by omega)
+      (show Evaluates program state (number field) (.signed .i32 field) state from evaluatesValue) (by omega)
     simpa only [Int.ofNat_eq_natCast] using read_word program owned _ _ found address
   exact ⟨selected 1 _ (by decide) start, selected 2 _ (by decide) finish, selected 3 _ (by decide) count⟩
 
@@ -122,7 +122,7 @@ theorem record_child_read {record : RecordVisit} {child : ChildVisit} {index : N
     have bound := (List.getElem?_eq_some_iff.mp found).1
     exact read_word program owned _ _ found
       (evaluatesNatI32Add (leftValue := record.offset + 4 + index * 3) (rightValue := field)
-        slotRead ⟨1, rfl⟩ (by omega))
+        slotRead evaluatesValue (by omega))
   exact ⟨read_word program owned _ _ tag slotRead, selected 1 _ payload, selected 2 _ kind⟩
 
 end Collect

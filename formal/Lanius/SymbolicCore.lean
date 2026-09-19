@@ -63,6 +63,10 @@ def ContainsCoreId (frame : LocalBindingFrame) (id : VarId) : Prop :=
 def union (left right : LocalBindingFrame) : LocalBindingFrame :=
   left ++ right
 
+theorem coreIds_union (left right : LocalBindingFrame) :
+    (union left right).coreIds = left.coreIds ++ right.coreIds := by
+  simp [union, coreIds]
+
 end LocalBindingFrame
 
 def LocalLayout.bindingsForId (layout : LocalLayout)

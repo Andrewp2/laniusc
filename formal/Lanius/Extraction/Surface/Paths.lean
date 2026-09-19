@@ -175,24 +175,41 @@ private theorem spellingClaimViaPath_sound (view : ArtifactView artifact)
     accepted.1 accepted.2.2
   simpa [spellingClaimValidView, exactText, rootEq, tokenEq] using contained
 
-private theorem all_of_zip {left : List α} {right : List β}
+private def checkPairs (check : α → β → Bool) : List α → List β → Bool
+  | [], [] => true
+  | left :: lefts, right :: rights => check left right && checkPairs check lefts rights
+  | _, _ => false
+
+private theorem all_of_pairs {left : List α} {right : List β}
     {check : α → β → Bool} {property : α → Bool}
     (count : left.length = right.length)
     (sound : ∀ a b, check a b = true → property a = true)
-    (accepted : (left.zip right).all (fun (a, b) => check a b) = true) :
+    (accepted : checkPairs check left right = true) :
     left.all property = true := by
-  rw [← List.map_fst_zip (l₁ := left) (l₂ := right) (by omega), List.all_map]
-  exact List.all_eq_true.mpr fun (a, b) member =>
-    sound a b (List.all_eq_true.mp accepted (a, b) member)
+  induction left generalizing right with
+  | nil =>
+      have : right = [] := List.eq_nil_of_length_eq_zero count.symm
+      subst right
+      simp [checkPairs] at accepted ⊢
+  | cons left lefts inductionHypothesis =>
+      cases right with
+      | nil => simp at count
+      | cons right rights =>
+          simp only [List.length_cons] at count
+          have tailCount : lefts.length = rights.length := by omega
+          simp only [checkPairs, Bool.and_eq_true] at accepted
+          simp only [List.all, Bool.and_eq_true]
+          exact ⟨sound left right accepted.1,
+            inductionHypothesis tailCount accepted.2⟩
 
 /-- Validate compact path witnesses and retain exactly the public claim-checker
 result. Count checks prevent zip truncation from dropping any obligation. -/
 def SurfaceOrigins.checkReference (view : ArtifactView artifact) (origins : SurfaceOrigins) : Bool :=
   origins.claims.nodes.map (·.id) == List.range origins.claims.nodes.length &&
   origins.claims.nodes.length == origins.nodePaths.length &&
-  (origins.claims.nodes.zip origins.nodePaths).all (fun (claim, path) => nodeClaimViaPath view claim path) &&
-  origins.claims.spellings.length == origins.spellingPaths.length &&
-  (origins.claims.spellings.zip origins.spellingPaths).all (fun (claim, path) => spellingClaimViaPath view claim path) &&
+    checkPairs (nodeClaimViaPath view) origins.claims.nodes origins.nodePaths &&
+    origins.claims.spellings.length == origins.spellingPaths.length &&
+    checkPairs (spellingClaimViaPath view) origins.claims.spellings origins.spellingPaths &&
   spellingCoverageValid artifact origins.claims
 
 theorem SurfaceOrigins.checkReference_sound (view : ArtifactView artifact) (origins : SurfaceOrigins)
@@ -202,7 +219,7 @@ theorem SurfaceOrigins.checkReference_sound (view : ArtifactView artifact) (orig
   rcases accepted with ⟨⟨⟨⟨⟨dense, nodeCount⟩, nodes⟩, spellingCount⟩, spellings⟩, coverage⟩
   simp only [surfaceClaimsValidIndexed, nodeClaimsValidIndexed_eq view,
     spellingClaimsValidIndexed_eq view, Bool.and_eq_true]
-  exact ⟨⟨⟨dense, all_of_zip (eq_of_beq nodeCount) (nodeClaimViaPath_sound view) nodes⟩,
-    all_of_zip (eq_of_beq spellingCount) (spellingClaimViaPath_sound view) spellings⟩, coverage⟩
+  exact ⟨⟨⟨dense, all_of_pairs (eq_of_beq nodeCount) (nodeClaimViaPath_sound view) nodes⟩,
+    all_of_pairs (eq_of_beq spellingCount) (spellingClaimViaPath_sound view) spellings⟩, coverage⟩
 
 end Lanius.Extraction

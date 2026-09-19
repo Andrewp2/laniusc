@@ -149,8 +149,7 @@ theorem verifiedParserPredictionLoopPersistentBindings_core_ids :
         verifiedParserPredictionLoopSharedFrameIds := by
   simp only [verifiedParserPredictionLoopPersistentBindings,
     verifiedParserRecognizerParameterIds, verifiedParserPredictionLoopSharedFrameIds,
-    LocalAccessFrame.ids, LocalBindingFrame.union, LocalBindingFrame.coreIds,
-    List.map_append]
+    LocalAccessFrame.ids, LocalBindingFrame.coreIds_union]
 
 theorem verifiedParserPredictionLoopPreservedBindings_core_ids :
     verifiedParserPredictionLoopPreservedBindings.coreIds =
@@ -158,8 +157,7 @@ theorem verifiedParserPredictionLoopPreservedBindings_core_ids :
         verifiedParserPredictionLoopPreservedFrameIds := by
   simp only [verifiedParserPredictionLoopPreservedBindings,
     verifiedParserRecognizerParameterIds, verifiedParserPredictionLoopPreservedFrameIds,
-    LocalAccessFrame.ids, LocalBindingFrame.union, LocalBindingFrame.coreIds,
-    List.map_append]
+    LocalAccessFrame.ids, LocalBindingFrame.coreIds_union]
 
 @[simp] theorem mem_verifiedParserPredictionLoopPreservedFrameIds_iff
     (id : Nat) :
@@ -622,13 +620,11 @@ theorem RecognizerPredictionLoopInvariant.condition_true
       (.binary .less (.local 33) (.local 32)) (.boolean true) runtime := by
   have left : Evaluates verifiedParserCore runtime (.local 33)
       (.signed .i32 (Int.ofNat index)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 33 _
-      (Assertion.localPointsTo_local 33 indexCell _ runtime
-        invariant.indexOwned)⟩
+    Lanius.Semantics.evaluatesLocal
+      (Assertion.localPointsTo_local 33 indexCell _ runtime invariant.indexOwned)
   have right : Evaluates verifiedParserCore runtime (.local 32)
       (.signed .i32 (Int.ofNat count)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 32 _
-      invariant.countLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.countLocal
   apply evaluatesEagerBinary (by decide) (by decide) left right
   simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt, indexBound]
 
@@ -642,13 +638,11 @@ theorem RecognizerPredictionLoopInvariant.condition_false
       (.binary .less (.local 33) (.local 32)) (.boolean false) runtime := by
   have left : Evaluates verifiedParserCore runtime (.local 33)
       (.signed .i32 (Int.ofNat index)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 33 _
-      (Assertion.localPointsTo_local 33 indexCell _ runtime
-        invariant.indexOwned)⟩
+    Lanius.Semantics.evaluatesLocal
+      (Assertion.localPointsTo_local 33 indexCell _ runtime invariant.indexOwned)
   have right : Evaluates verifiedParserCore runtime (.local 32)
       (.signed .i32 (Int.ofNat count)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 32 _
-      invariant.countLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.countLocal
   apply evaluatesEagerBinary (by decide) (by decide) left right
   simp [evalBinaryValue, evalSignedBinary, Int.ofNat_lt]
   omega
@@ -679,21 +673,17 @@ theorem RecognizerPredictionLoopInvariant.read_production
     simpa [Nat.add_assoc] using physicalBound
   have grammarResult : Evaluates verifiedParserCore runtime (.local 0)
       (parserGrammarValue words grammarCell) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 0 _
-      invariant.frame.recognizer.grammarLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.frame.recognizer.grammarLocal
   have tableOffset : Evaluates verifiedParserCore runtime (.local 15)
       (.signed .i32 (Int.ofNat grammarLayout.lhsProductionsOffset)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 15 _
-      invariant.lhsProductionsOffsetLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.lhsProductionsOffsetLocal
   have firstResult : Evaluates verifiedParserCore runtime (.local 31)
       (.signed .i32 (Int.ofNat first)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 31 _
-      invariant.firstLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.firstLocal
   have indexResult : Evaluates verifiedParserCore runtime (.local 33)
       (.signed .i32 (Int.ofNat index)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 33 _
-      (Assertion.localPointsTo_local 33 indexCell _ runtime
-        invariant.indexOwned)⟩
+    Lanius.Semantics.evaluatesLocal
+      (Assertion.localPointsTo_local 33 indexCell _ runtime invariant.indexOwned)
   have partialBound : grammarLayout.lhsProductionsOffset + first ≤
       2147483647 := Nat.le_trans
     (Nat.le_of_lt (Nat.lt_of_le_of_lt (Nat.le_add_right _ _) physicalBound'))
@@ -2318,72 +2308,19 @@ private theorem predictionOkEnvironment_eq_next
         nextWorkspace.states.length := by
   dsimp only
   funext slot
-  have cases : slot.val = 0 ∨ slot.val = 1 ∨ slot.val = 2 ∨
-      slot.val = 3 ∨ slot.val = 4 ∨ slot.val = 5 ∨ slot.val = 6 ∨
-      slot.val = 7 ∨ slot.val = 8 ∨ slot.val = 9 := by
+  rcases slot with ⟨slot, slotLt⟩
+  have cases : slot = 0 ∨ slot = 1 ∨ slot = 2 ∨
+      slot = 3 ∨ slot = 4 ∨ slot = 5 ∨ slot = 6 ∨
+      slot = 7 ∨ slot = 8 ∨ slot = 9 := by
     omega
-  rcases cases with zero | one | two | three | four | five | six | seven |
-      eight | nine
-  · have same : slot = ⟨0, by omega⟩ := Fin.ext zero
-    rw [same]
-    simp [predictionOkEnvironment, predictionEnvironment,
-      Lanius.FunctionalView.Stateful.Env.pop,
-      Lanius.FunctionalView.Stateful.Env.set,
-      Lanius.FunctionalView.Env.push]
-  · have same : slot = ⟨1, by omega⟩ := Fin.ext one
-    rw [same]
+  rcases cases with h | h | h | h | h | h | h | h | h | h <;>
+    subst slot <;>
     simp [predictionOkEnvironment, predictionEnvironment, workspaceValue,
+      valuesLengthEq, stateCountEq,
       Lanius.FunctionalView.Stateful.Env.pop,
       Lanius.FunctionalView.Stateful.Env.set,
-      Lanius.FunctionalView.Env.push, valuesLengthEq]
-  · have same : slot = ⟨2, by omega⟩ := Fin.ext two
-    rw [same]
-    simp [predictionOkEnvironment, predictionEnvironment,
-      Lanius.FunctionalView.Stateful.Env.pop,
-      Lanius.FunctionalView.Stateful.Env.set,
-      Lanius.FunctionalView.Env.push]
-  · have same : slot = ⟨3, by omega⟩ := Fin.ext three
-    rw [same]
-    simp [predictionOkEnvironment, predictionEnvironment,
-      Lanius.FunctionalView.Stateful.Env.pop,
-      Lanius.FunctionalView.Stateful.Env.set,
-      Lanius.FunctionalView.Env.push]
-  · have same : slot = ⟨4, by omega⟩ := Fin.ext four
-    rw [same]
-    simp [predictionOkEnvironment, predictionEnvironment,
-      Lanius.FunctionalView.Stateful.Env.pop,
-      Lanius.FunctionalView.Stateful.Env.set,
-      Lanius.FunctionalView.Env.push]
-  · have same : slot = ⟨5, by omega⟩ := Fin.ext five
-    rw [same]
-    simp [predictionOkEnvironment, predictionEnvironment,
-      Lanius.FunctionalView.Stateful.Env.pop,
-      Lanius.FunctionalView.Stateful.Env.set,
-      Lanius.FunctionalView.Env.push, stateCountEq]
-  · have same : slot = ⟨6, by omega⟩ := Fin.ext six
-    rw [same]
-    simp [predictionOkEnvironment, predictionEnvironment,
-      Lanius.FunctionalView.Stateful.Env.pop,
-      Lanius.FunctionalView.Stateful.Env.set,
-      Lanius.FunctionalView.Env.push]
-  · have same : slot = ⟨7, by omega⟩ := Fin.ext seven
-    rw [same]
-    simp [predictionOkEnvironment, predictionEnvironment,
-      Lanius.FunctionalView.Stateful.Env.pop,
-      Lanius.FunctionalView.Stateful.Env.set,
-      Lanius.FunctionalView.Env.push]
-  · have same : slot = ⟨8, by omega⟩ := Fin.ext eight
-    rw [same]
-    simp [predictionOkEnvironment, predictionEnvironment,
-      Lanius.FunctionalView.Stateful.Env.pop,
-      Lanius.FunctionalView.Stateful.Env.set,
-      Lanius.FunctionalView.Env.push]
-  · have same : slot = ⟨9, by omega⟩ := Fin.ext nine
-    rw [same]
-    simp [predictionOkEnvironment, predictionEnvironment,
-      Lanius.FunctionalView.Stateful.Env.pop,
-      Lanius.FunctionalView.Stateful.Env.set,
-      Lanius.FunctionalView.Env.push]
+      Lanius.FunctionalView.Env.push] <;>
+    first | omega | (split <;> first | omega | rfl)
 
 /-- Result transported by the FunctionalView prediction loop.  The abstract
     trace determines control flow and logical workspace evolution; these

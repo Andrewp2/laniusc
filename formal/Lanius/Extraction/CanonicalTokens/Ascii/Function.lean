@@ -98,7 +98,7 @@ theorem executes_sourceBody (program : Program) (before : State)
   have body : Executes program before sourceBody
       (.returned (some (.boolean (matchesBytes source start spelling)))) after :=
     executesLetLocal initializer (executesLetLocal
-      (show Evaluates program packed (.value (.signed .i32 0)) (.signed .i32 0) packed from ⟨1, rfl⟩) run)
+      (show Evaluates program packed (.value (.signed .i32 0)) (.signed .i32 0) packed from evaluatesValue) run)
   have domain : CellDomainExtension before completed := readyDomain.trans
     ((bindLocal_domainExtension ready 4 view).trans
       ((bindLocal_domainExtension packed 5 (.signed .i32 0)).trans effect.domain))

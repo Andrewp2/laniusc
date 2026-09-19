@@ -27,14 +27,14 @@ def DecodedPackUnits.prepend
 }
 
 theorem decodePackUnitsFromCached_cons_of
-    (nextModule : ModuleId) (artifact : Artifact) (tail : List Artifact)
-    (checkedSurface : CheckedSurfaceArtifact artifact)
-    (checkedTail : ArtifactPackChecker.CheckedUnitSurfaces tail)
-    (modulePath : Names.ModulePath)
-    (moduleFound : declaredModulePath? checkedSurface.surface = some modulePath)
-    (core : Core.Program)
-    (coreFound : artifact.core_program.map CoreDecode.program = some core)
-    (rest : DecodedPackUnits tail)
+    {nextModule : ModuleId} {artifact : Artifact} {tail : List Artifact}
+    {checkedSurface : CheckedSurfaceArtifact artifact}
+    {checkedTail : ArtifactPackChecker.CheckedUnitSurfaces tail}
+    {modulePath : Names.ModulePath}
+    {moduleFound : declaredModulePath? checkedSurface.surface = some modulePath}
+    {core : Core.Program}
+    {coreFound : artifact.core_program.map CoreDecode.program = some core}
+    {rest : DecodedPackUnits tail}
     (restFound : decodePackUnitsFromCached (nextModule + 1) tail checkedTail =
       some rest) :
     decodePackUnitsFromCached nextModule (artifact :: tail)

@@ -289,18 +289,16 @@ noncomputable def RecognizerChartCursorInvariant.read_state_field
     (Int.ofNat field)
   have workspaceArgument : Evaluates verifiedParserCore runtime (.local 4)
       value runtime := by
-    refine ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 4 value ?_⟩
-    simpa [value] using invariant.recognizer.workspaceLocal
+    simpa [value] using
+      (Lanius.Semantics.evaluatesLocal invariant.recognizer.workspaceLocal)
   have baseArgument : Evaluates verifiedParserCore runtime (.local 8)
       (.signed .i32 (Int.ofNat (stateBase workspaceLayout.tokenCount)))
       runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 8 _
-      invariant.stateBaseLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.stateBaseLocal
   have currentArgument : Evaluates verifiedParserCore runtime
       (.local cursorLocal) (.signed .i32 (Int.ofNat current)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime cursorLocal _
-      (Assertion.localPointsTo_local cursorLocal cursorCell _ runtime
-        invariant.cursorOwned)⟩
+    Lanius.Semantics.evaluatesLocal
+      (Assertion.localPointsTo_local cursorLocal cursorCell _ runtime invariant.cursorOwned)
   have fieldArgument : Evaluates verifiedParserCore runtime
       (.constant constantId) (.signed .i32 (Int.ofNat field)) runtime := by
     refine ⟨2, ?_⟩
@@ -361,8 +359,7 @@ noncomputable def RecognizerChartCursorInvariant.read_rhs_length
   let after := restoreLocals runtime callee
   have grammarEvaluation : Evaluates verifiedParserCore runtime (.local 0)
       (parserGrammarValue words grammarCell) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 0 _
-      invariant.recognizer.grammarLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.recognizer.grammarLocal
   have argumentsEvaluation : ArgumentsEvaluateTo verifiedParserCore runtime
       arguments [parserGrammarValue words grammarCell,
         .signed .i32 (Int.ofNat production)] runtime := by
@@ -436,8 +433,7 @@ noncomputable def RecognizerChartCursorInvariant.read_rhs_symbol
   let after := restoreLocals runtime completed
   have grammarEvaluation : Evaluates verifiedParserCore runtime (.local 0)
       (parserGrammarValue words grammarCell) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 0 _
-      invariant.recognizer.grammarLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.recognizer.grammarLocal
   have argumentsEvaluation : ArgumentsEvaluateTo verifiedParserCore runtime
       arguments [parserGrammarValue words grammarCell,
         .signed .i32 (Int.ofNat production),
@@ -501,8 +497,7 @@ noncomputable def RecognizerChartCursorInvariant.read_lhs
   let after := restoreLocals runtime callee
   have grammarEvaluation : Evaluates verifiedParserCore runtime (.local 0)
       (parserGrammarValue words grammarCell) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime 0 _
-      invariant.recognizer.grammarLocal⟩
+    Lanius.Semantics.evaluatesLocal invariant.recognizer.grammarLocal
   have argumentsEvaluation : ArgumentsEvaluateTo verifiedParserCore runtime
       arguments [parserGrammarValue words grammarCell,
         .signed .i32 (Int.ofNat production)] runtime := by
@@ -542,11 +537,10 @@ theorem RecognizerChartCursorInvariant.condition_nonnegative
         (.value (.signed .i32 0))) (.boolean true) runtime := by
   have left : Evaluates verifiedParserCore runtime (.local cursorLocal)
       (.signed .i32 (Int.ofNat current)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime cursorLocal _
-      (Assertion.localPointsTo_local cursorLocal cursorCell _ runtime
-        invariant.cursorOwned)⟩
+    Lanius.Semantics.evaluatesLocal
+      (Assertion.localPointsTo_local cursorLocal cursorCell _ runtime invariant.cursorOwned)
   have right : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 0)) (.signed .i32 0) runtime := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) runtime := Lanius.Semantics.evaluatesValue
   apply evaluatesEagerBinary (by decide) (by decide) left right
   simp [evalBinaryValue, evalSignedBinary]
 
@@ -709,11 +703,10 @@ theorem RecognizerChartCursorFinished.condition_negative
         (.value (.signed .i32 0))) (.boolean false) runtime := by
   have left : Evaluates verifiedParserCore runtime (.local cursorLocal)
       (.signed .i32 (-1)) runtime :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore runtime cursorLocal _
-      (Assertion.localPointsTo_local cursorLocal cursorCell _ runtime
-        finished.cursorOwned)⟩
+    Lanius.Semantics.evaluatesLocal
+      (Assertion.localPointsTo_local cursorLocal cursorCell _ runtime finished.cursorOwned)
   have right : Evaluates verifiedParserCore runtime
-      (.value (.signed .i32 0)) (.signed .i32 0) runtime := ⟨1, rfl⟩
+      (.value (.signed .i32 0)) (.signed .i32 0) runtime := Lanius.Semantics.evaluatesValue
   apply evaluatesEagerBinary (by decide) (by decide) left right
   simp [evalBinaryValue, evalSignedBinary]
 

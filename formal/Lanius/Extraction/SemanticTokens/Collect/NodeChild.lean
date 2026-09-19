@@ -79,7 +79,7 @@ theorem node_child_execute {record : RecordVisit} {nodeIndex childIndex childId 
     evaluatesEagerBinary (by decide) (by decide) startRead cursorRead (by simp [evalBinaryValue, scalarEqual])
   have orderedCheck := negate_evaluates (lessEqual_evaluates cursorRead finishRead)
   have totalRead := evaluatesNatI32Multiply (leftValue := tokens.length) (rightValue := 2)
-    (local_evaluates program countStill) (show Evaluates program entered (number 2) (.signed .i32 2) entered from ⟨1, rfl⟩) tokensFit
+    (local_evaluates program countStill) (show Evaluates program entered (number 2) (.signed .i32 2) entered from evaluatesValue) tokensFit
   have boundedCheck := negate_evaluates (lessEqual_evaluates finishRead totalRead)
   have spanGuard := evaluatesPureLogicalOr (evaluatesPureLogicalOr sameCheck orderedCheck) boundedCheck
   have orderedInt : (start : Int) ≤ finish := by omega

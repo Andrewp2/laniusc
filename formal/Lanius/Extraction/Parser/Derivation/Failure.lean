@@ -50,7 +50,7 @@ theorem ReaderRuntime.BeforeCursor.count_full {reader : ReaderRuntime}
           (initialized.bindLocal countId (.signed .i32 (Int.ofNat root.dot)))
           (.unary .negate (.value (.signed .i32 2))) (.signed .i32 (-2))
           (initialized.bindLocal countId (.signed .i32 (Int.ofNat root.dot))) := by
-        apply evaluatesUnary (show Evaluates verifiedParserCore _ (.value (.signed .i32 2)) (.signed .i32 2) _ from ⟨1, rfl⟩)
+        apply evaluatesUnary (show Evaluates verifiedParserCore _ (.value (.signed .i32 2)) (.signed .i32 2) _ from Lanius.Semantics.evaluatesValue)
         simp [evalUnaryValue, wrapSigned, signedModulus, signedSignBit, SignedIntTy.bits]
       exact ⟨_, executesSequence (executesIfFalse countGuard (executesSkip _ _))
         (executesSequence (executesIfFalse offsetGuard (executesSkip _ _))

@@ -32,7 +32,7 @@ theorem RecognizerWorkspaceArtifact.update_cursor
       CellEffect (CellSet.union (CellSet.singleton currentCell)
         (CellSet.singleton remainingCell)) before after := by
   have previousRead : Evaluates program before (.local previousId) (.signed .i32 previous) before :=
-    ⟨1, evalLocal_of_local 0 program before previousId _ previousLocal⟩
+    Lanius.Semantics.evaluatesLocal previousLocal
   obtain ⟨middle, assigned, currentAfter, assignEffect, assignHeap⟩ :=
     evaluatesOwnedLocalUpdate wellFormed currentOwned previousRead (show
       evalAssignValue program.target .set (some (.signed .i32 current))

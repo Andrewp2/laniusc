@@ -85,7 +85,7 @@ theorem token_child_execute {use : Use} {record : RecordVisit} {childIndex : Nat
   have indexCheck := greaterEqual_evaluates tokenRead countResult
   have quotient := evaluatesNatI32Divide (leftValue := use.position) (rightValue := 2)
     (local_evaluates program (Assertion.localPointsTo_local _ _ _ _ firstHeld.cursor))
-    (show Evaluates program first (number 2) (.signed .i32 2) first from ⟨1, rfl⟩)
+    (show Evaluates program first (number 2) (.signed .i32 2) first from evaluatesValue)
     (by decide) (by have := valid.tokenEq; omega)
   have positionCheck : Evaluates program first
       (binary .notEqual (read 19) (binary .divide (read 16) (number 2))) (.boolean false) first := by
@@ -121,11 +121,11 @@ theorem token_child_execute {use : Use} {record : RecordVisit} {childIndex : Nat
   have canonicalLocal : third.local? 22 = some (.signed .i32 canonical) := bindLocal_finds_local _ _ _ secondHeld.wellFormed
   have payloadThird := thirdLocal (by decide) (secondLocal (by decide) (firstLocal (by decide) payloadRead))
   have doubled := evaluatesNatI32Multiply (leftValue := use.token) (rightValue := 2)
-    (local_evaluates program payloadThird) (show Evaluates program third (number 2) (.signed .i32 2) third from ⟨1, rfl⟩)
+      (local_evaluates program payloadThird) (show Evaluates program third (number 2) (.signed .i32 2) third from evaluatesValue)
     (by omega)
   have remainder := evaluatesNatI32Remainder (leftValue := use.position) (rightValue := 2)
     (local_evaluates program (Assertion.localPointsTo_local _ _ _ _ thirdHeld.cursor))
-    (show Evaluates program third (number 2) (.signed .i32 2) third from ⟨1, rfl⟩)
+    (show Evaluates program third (number 2) (.signed .i32 2) third from evaluatesValue)
     (by decide) (by have := Nat.mod_lt use.position (by decide : 0 < 2); omega)
   have assignmentRead := evaluatesNatI32Add (leftValue := use.token * 2) (rightValue := use.position % 2)
     doubled remainder (by change use.slot ≤ 2147483647; omega)

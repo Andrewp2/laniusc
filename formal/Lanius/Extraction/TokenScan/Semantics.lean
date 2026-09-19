@@ -55,7 +55,7 @@ theorem accessorBody_executes
         wellFormed (by simp)
   have localEvaluation : Evaluates verifiedFrontendCore callee (.local 0)
       (.structure 1 fields) callee :=
-    ⟨1, evalLocal_of_local 1 verifiedFrontendCore callee 0 _ localFound⟩
+    evaluatesLocal localFound
   have fieldEvaluation : Evaluates verifiedFrontendCore callee
       (.field (.local 0) field) result callee :=
     evaluatesStructureField localEvaluation found
@@ -215,11 +215,11 @@ private theorem localEvaluation
     (state : State) (id : VarId) (localValue : Value)
     (found : state.local? id = some localValue) :
     Evaluates verifiedFrontendCore state (.local id) localValue state :=
-  ⟨1, evalLocal_of_local 1 verifiedFrontendCore state id localValue found⟩
+  evaluatesLocal found
 
 private theorem literalEvaluation (state : State) (literalValue : Value) :
     Evaluates verifiedFrontendCore state (.value literalValue)
-      literalValue state := ⟨1, rfl⟩
+      literalValue state := evaluatesValue
 
 private theorem constructorExpression_evaluates
     (state : State)
@@ -414,81 +414,23 @@ private theorem preserveRepresentation
   worldLocalsDisjoint := represented.worldLocalsDisjoint
 }
 
-theorem successfulCall_soundness :
-    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
-      verifiedFrontendCore successfulCalls := by
-  constructor
-  · intro arity layout localCell beforeWorld afterWorld environment before
-      afterArguments function arguments argumentsValues result argumentWrites
-      afterArgumentsWellFormed represented argumentsExecution argumentsEffect
-      evaluated
-    simp only [successfulCalls] at evaluated
-    split at evaluated
-    next functionEq =>
-      split at evaluated
-      next kind endOffset =>
-        obtain ⟨rfl, rfl⟩ := evaluated
-        subst function
-        obtain ⟨callExecution, callEffect, afterWellFormed⟩ :=
-          successfulCall_executes before afterArguments
-            (toCoreExprs layout arguments) kind endOffset
-            afterArgumentsWellFormed argumentsExecution
-        exact ⟨_, CellSet.union argumentWrites CellSet.empty, callExecution,
-          afterWellFormed,
-          preserveRepresentation afterArgumentsWellFormed represented
-            callEffect,
-          argumentsEffect.trans callEffect⟩
-      next => contradiction
-    next => contradiction
-  · intro beforeWorld afterWorld function arguments result evaluated cell
-    simp only [successfulCalls] at evaluated
-    split at evaluated
-    next =>
-      split at evaluated
-      next =>
-        obtain ⟨rfl, rfl⟩ := evaluated
-        rfl
-      next => contradiction
-    next => contradiction
+private theorem successfulWorldPreserving :
+    Lanius.FunctionalView.FreshSimulation.WorldPreserving successfulCalls := by
+  intro beforeWorld afterWorld function arguments result evaluated
+  simp only [successfulCalls] at evaluated
+  split at evaluated
+  · split at evaluated <;> simp_all
+  · contradiction
 
-theorem failedCall_soundness :
-    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
-      verifiedFrontendCore failedCalls := by
-  constructor
-  · intro arity layout localCell beforeWorld afterWorld environment before
-      afterArguments function arguments argumentsValues result argumentWrites
-      afterArgumentsWellFormed represented argumentsExecution argumentsEffect
-      evaluated
-    simp only [failedCalls] at evaluated
-    split at evaluated
-    next functionEq =>
-      split at evaluated
-      next errorOffset =>
-        obtain ⟨rfl, rfl⟩ := evaluated
-        subst function
-        obtain ⟨callExecution, callEffect, afterWellFormed⟩ :=
-          failedCall_executes before afterArguments
-            (toCoreExprs layout arguments) errorOffset
-            afterArgumentsWellFormed argumentsExecution
-        exact ⟨_, CellSet.union argumentWrites CellSet.empty, callExecution,
-          afterWellFormed,
-          preserveRepresentation afterArgumentsWellFormed represented
-            callEffect,
-          argumentsEffect.trans callEffect⟩
-      next => contradiction
-    next => contradiction
-  · intro beforeWorld afterWorld function arguments result evaluated cell
-    simp only [failedCalls] at evaluated
-    split at evaluated
-    next =>
-      split at evaluated
-      next =>
-        obtain ⟨rfl, rfl⟩ := evaluated
-        rfl
-      next => contradiction
-    next => contradiction
+private theorem failedWorldPreserving :
+    Lanius.FunctionalView.FreshSimulation.WorldPreserving failedCalls := by
+  intro beforeWorld afterWorld function arguments result evaluated
+  simp only [failedCalls] at evaluated
+  split at evaluated
+  · split at evaluated <;> simp_all
+  · contradiction
 
-theorem successfulFramePreservingCallSoundness :
+private theorem successfulFramePreservingCallSoundnessCore :
     Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness
       verifiedFrontendCore successfulCalls := by
   constructor
@@ -514,7 +456,7 @@ theorem successfulFramePreservingCallSoundness :
     next => contradiction
   next => contradiction
 
-theorem failedFramePreservingCallSoundness :
+private theorem failedFramePreservingCallSoundnessCore :
     Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness
       verifiedFrontendCore failedCalls := by
   constructor
@@ -539,6 +481,28 @@ theorem failedFramePreservingCallSoundness :
           (callEffect.weaken CellSet.empty_subset)⟩
     next => contradiction
   next => contradiction
+
+theorem successfulCall_soundness :
+    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
+      verifiedFrontendCore successfulCalls :=
+  successfulFramePreservingCallSoundnessCore.toCallSoundness
+    successfulWorldPreserving
+
+theorem failedCall_soundness :
+    Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness
+      verifiedFrontendCore failedCalls :=
+  failedFramePreservingCallSoundnessCore.toCallSoundness
+    failedWorldPreserving
+
+theorem successfulFramePreservingCallSoundness :
+    Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness
+      verifiedFrontendCore successfulCalls :=
+  successfulFramePreservingCallSoundnessCore
+
+theorem failedFramePreservingCallSoundness :
+    Lanius.FunctionalView.FreshSimulation.FramePreservingCallSoundness
+      verifiedFrontendCore failedCalls :=
+  failedFramePreservingCallSoundnessCore
 
 def constructorCallModel : CallModel :=
   CallModel.route (fun function => function == successfulFunction.id)

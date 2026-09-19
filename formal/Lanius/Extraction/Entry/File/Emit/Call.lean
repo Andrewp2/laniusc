@@ -102,7 +102,7 @@ theorem Stage.executes (stage : Stage)
   by_cases failed : outcome.position ≤ -1
   · have satisfied := failure positionCell middle failed owned outputMiddle combined heap
     have returnedRun : Executes program.core middle (returned (number 21)) (.returned (some (.signed .i32 21))) middle :=
-      executesSequenceReturned (executesReturnValue (show Evaluates program.core middle (number 21) (.signed .i32 21) middle from ⟨1, rfl⟩))
+      executesSequenceReturned (executesReturnValue (show Evaluates program.core middle (number 21) (.signed .i32 21) middle from evaluatesValue))
     refine ⟨.returned (some (.signed .i32 21)), middle, ?_, satisfied⟩
     exact executesSequence (executesExpression assigned)
       (executesSequenceNonNext (executesIfTrue (by simpa only [failed, decide_true] using guard) returnedRun) (by simp))

@@ -517,7 +517,7 @@ theorem extracted_identifierContinueExpr_executes
     unaryCallState_well_formed outer outerWellFormed byte
   have afterStartLocal : afterStart.local? 0 =
       some (.signed .i32 byte.val) :=
-    (unaryCallState_extends outer byte).preserves_local
+    (unaryCallState_extends outer byte).empty_preserves_local
       outerWellFormed outerLocal
   have afterStartArgument := evalLocal_of_local 8 verifiedFrontendLexerCore
     afterStart 0 (.signed .i32 byte.val) afterStartLocal

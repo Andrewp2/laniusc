@@ -43,13 +43,16 @@ theorem artifactOfData_eq (data : UnitData) : artifactOfData data = data.artifac
   unfold UnitData.artifact
   rw [byteArray_toList]
 
-elab "surface_proposal% " index:num : term => do
+private def readSurfacePack : TermElabM ArtifactPack := do
   let emitted ← IO.FS.readFile "target/verified-compiler/SelfCompactRequirements.lean"
   let some first := (emitted.splitOn "def encodedPack : String := \"")[1]?
     | throwError "missing compact literal"
   let some encoded := (first.splitOn "\"").head? | throwError "missing literal end"
   let some pack := decodeCompactArtifactPack? encoded | throwError "invalid compact input"
-  let some proposed := pack.units[index.getNat]? | throwError "missing requested unit"
+  pure pack
+
+private def quoteSurfaceProposal (pack : ArtifactPack) (index : Nat) : TermElabM Expr := do
+  let some proposed := pack.units[index]? | throwError "missing requested unit"
   let some bytes := decodeSingleSource proposed.sources | throwError "invalid source bytes"
   let cache : ArtifactCache := {
     leafCapacity := 16
@@ -69,6 +72,23 @@ elab "surface_proposal% " index:num : term => do
   quoteBounded (cache, proposeSeqTree 16 proposed.semantic_token_kinds, tree, origins,
     Reconstruction.Plan.propose proposed.parse_nodes 2) (compile := false)
 
+run_elab do
+  let pack ← readSurfacePack
+  for (name, index) in #[(
+      `Lanius.Extraction.Self.Surface.Host.surfaceProposal, 17),
+      (`Lanius.Extraction.Self.Surface.TokenScan.surfaceProposal, 14),
+      (`Lanius.Extraction.Self.Surface.ByteIO.surfaceProposal, 2)] do
+    let value ← quoteSurfaceProposal pack index
+    let type ← Meta.inferType value
+    addDecl <| .defnDecl {
+      name
+      levelParams := []
+      type
+      value
+      hints := .regular 0
+      safety := .safe }
+  phase "all surface proposals quoted as direct constants"
+
 set_option hygiene false in
 macro "certify_surface_unit " name:ident " at " index:num " for " path:str : command =>
   `(namespace $name
@@ -78,7 +98,7 @@ macro "certify_surface_unit " name:ident " at " index:num " for " path:str : com
     theorem source_path : unit.path = $path := by rfl
 
     noncomputable def proposal : ArtifactCache × Lanius.Data.SeqTree Nat × SurfaceFile × SurfaceOrigins ×
-      List Reconstruction.Plan.Segment := surface_proposal% $index
+      List Reconstruction.Plan.Segment := surfaceProposal
     noncomputable def tree := proposal.2.2.1
     noncomputable def origins := proposal.2.2.2.1
     noncomputable def plan := proposal.2.2.2.2

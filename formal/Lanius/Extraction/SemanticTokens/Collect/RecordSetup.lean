@@ -25,9 +25,9 @@ theorem record_count_guard_pass {record : RecordVisit} {recordsLimit : Nat} (pro
   have leftover := evaluatesNatI32Subtract (leftValue := recordsLimit) (rightValue := record.offset)
     (local_evaluates program lengthRead) (local_evaluates program offsetRead) (by omega) (by omega)
   have payload := evaluatesNatI32Subtract (leftValue := recordsLimit - record.offset) (rightValue := 4)
-    leftover (show Evaluates program before (number 4) (.signed .i32 4) before from ⟨1, rfl⟩) (by omega) (by omega)
+    leftover (show Evaluates program before (number 4) (.signed .i32 4) before from evaluatesValue) (by omega) (by omega)
   have slots := evaluatesNatI32Divide (leftValue := recordsLimit - record.offset - 4) (rightValue := 3)
-    payload (show Evaluates program before (number 3) (.signed .i32 3) before from ⟨1, rfl⟩)
+    payload (show Evaluates program before (number 3) (.signed .i32 3) before from evaluatesValue)
     (by decide) (by have := Nat.div_le_self (recordsLimit - record.offset - 4) 3; omega)
   have count := local_evaluates program childrenRead
   have position := local_evaluates program startRead
@@ -35,7 +35,7 @@ theorem record_count_guard_pass {record : RecordVisit} {recordsLimit : Nat} (pro
   have enough := negate_evaluates (lessEqual_evaluates count slots)
   have negativeStart := lessEqual_evaluates position (negativeOne_evaluates program before)
   have limit := evaluatesNatI32Multiply (leftValue := tokenCount) (rightValue := 2)
-    (local_evaluates program tokensRead) (show Evaluates program before (number 2) (.signed .i32 2) before from ⟨1, rfl⟩) tokensFit
+    (local_evaluates program tokensRead) (show Evaluates program before (number 2) (.signed .i32 2) before from evaluatesValue) tokensFit
   have inRange := negate_evaluates (lessEqual_evaluates position limit)
   have all := evaluatesPureLogicalOr (evaluatesPureLogicalOr (evaluatesPureLogicalOr negativeCount enough) negativeStart) inRange
   have countNonnegative : ¬ ((record.children.length : Int) ≤ -1) := by omega

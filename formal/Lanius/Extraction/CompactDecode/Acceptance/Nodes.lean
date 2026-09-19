@@ -12,23 +12,27 @@ theorem children_match_accepted
   induction matched with
   | empty => rfl
   | terminal terminal tokenPosition advanced tail ih =>
-      simp [checkChildren, terminal, tokenPosition, advanced, ih]
+      simp [checkChildren, checkChildrenCore, terminal, tokenPosition, advanced]
+      simpa only [checkChildren] using ih
   | nonterminal nonterminal inRange earlier lookup childKind childStart tail ih =>
-      simp [checkChildren, Nat.not_lt.mpr nonterminal, inRange, earlier, lookup,
-        childKind, childStart, ih]
+      simp [checkChildren, checkChildrenCore, Nat.not_lt.mpr nonterminal, inRange, earlier, lookup,
+        childKind, childStart]
+      simpa only [checkChildren] using ih
 
 theorem node_match_accepted {id : Nat} (matched : NodeMatches grammar kinds nodes id node) :
     checkNode grammar kinds nodes id node = true := by
   cases matched with
   | intro production lookup nonterminal ordered bounded children =>
-      simp [checkNode, lookup, nonterminal, ordered, bounded, children_match_accepted children]
+      simp [checkNode, checkNodeCore, lookup, nonterminal, ordered, bounded,
+        children_match_accepted children]
 
 theorem nodes_match_accepted {id : Nat} (matched : NodesMatchFrom grammar kinds nodes id remaining) :
     checkNodesFrom grammar kinds nodes id remaining = true := by
   induction matched with
   | empty => rfl
   | cons head tail ih =>
-      simp only [checkNodesFrom, node_match_accepted head, ih, Bool.true_and]
+      simp only [checkNodesFrom, checkNodesFromCore, node_match_accepted head, Bool.true_and]
+      simpa only [checkNodesFrom] using ih
 
 /-- Production identity and both span bounds survive decoding for every
 collected node, not just the selected root. -/

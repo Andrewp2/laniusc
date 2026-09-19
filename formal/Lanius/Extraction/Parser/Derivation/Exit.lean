@@ -41,22 +41,22 @@ theorem ReaderRuntime.At.exit_guard {reader : ReaderRuntime} {root : EarleyState
     (by simp [stateFieldValue, dot])
     (show ∀ runtime, CellEffect CellSet.empty before runtime →
       Evaluates verifiedParserCore runtime (.value (.signed .i32 0)) (.signed .i32 0) runtime
-      from fun _ _ => ⟨1, rfl⟩)
+      from fun _ _ => Lanius.Semantics.evaluatesValue)
   obtain ⟨afterProduction, productionRead, heldProduction, productionEffect⟩ := compare_field heldDot found
     (field := 0) (selectorId := 28) (by decide) (by rfl)
     (show stateFieldValue reader.workspace stateId state 0 = Int.ofNat root.production by
       simp [stateFieldValue, production]) (by
       intro runtime effect
-      exact ⟨1, evalLocal_of_local 0 verifiedParserCore runtime productionId _
-        ((dotEffect.trans effect).empty_preserves_local held.wellFormed productionLocal)⟩)
+      exact Lanius.Semantics.evaluatesLocal
+        ((dotEffect.trans effect).empty_preserves_local held.wellFormed productionLocal))
   have firstTwo := dotEffect.trans productionEffect
   obtain ⟨afterOrigin, originRead, heldOrigin, originEffect⟩ := compare_field heldProduction found
     (field := 2) (selectorId := 30) (by decide) (by rfl)
     (show stateFieldValue reader.workspace stateId state 2 = Int.ofNat root.origin by
       simp [stateFieldValue, origin]) (by
       intro runtime effect
-      exact ⟨1, evalLocal_of_local 0 verifiedParserCore runtime originId _
-        ((firstTwo.trans effect).empty_preserves_local held.wellFormed originLocal)⟩)
+      exact Lanius.Semantics.evaluatesLocal
+        ((firstTwo.trans effect).empty_preserves_local held.wellFormed originLocal))
   have firstThree := firstTwo.trans originEffect
   obtain ⟨afterTag, tagRead, heldTag, tagEffect⟩ := compare_field heldOrigin found
     (field := 6) (selectorId := 34) (by decide) (by rfl)
@@ -72,7 +72,7 @@ theorem ReaderRuntime.At.exit_guard {reader : ReaderRuntime} {root : EarleyState
       simp [stateFieldValue, previous, previousValue, encodeStateId]) (by
       intro runtime _
       apply evaluatesUnary (op := .negate)
-        (show Evaluates verifiedParserCore runtime (.value (.signed .i32 1)) (.signed .i32 1) runtime from ⟨1, rfl⟩)
+        (show Evaluates verifiedParserCore runtime (.value (.signed .i32 1)) (.signed .i32 1) runtime from Lanius.Semantics.evaluatesValue)
       simp [evalUnaryValue, wrapSigned, signedModulus, signedSignBit, Core.SignedIntTy.bits])
   refine ⟨afterPrevious, ?_, heldPrevious, firstFour.trans previousEffect⟩
   simpa only [readerExitCondition, accessor] using
@@ -95,8 +95,8 @@ theorem ReaderRuntime.At.execute_exit {reader : ReaderRuntime} {root : EarleySta
   obtain ⟨after, guard, finalHeld, effect⟩ := held.exit_guard accessor found dot production origin previous child
     productionLocal originLocal
   have countRead : Evaluates verifiedParserCore after (.local countId) (.signed .i32 count) after :=
-    ⟨1, evalLocal_of_local 0 verifiedParserCore after countId _
-      (effect.empty_preserves_local held.wellFormed countLocal)⟩
+    Lanius.Semantics.evaluatesLocal
+      (effect.empty_preserves_local held.wellFormed countLocal)
   exact ⟨after, executesSequence (executesIfFalse guard (executesSkip verifiedParserCore after))
     (executesSequenceNonNext (executesReturnValue countRead) (by simp)), finalHeld, effect⟩
 

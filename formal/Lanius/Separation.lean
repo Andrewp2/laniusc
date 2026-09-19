@@ -31,6 +31,11 @@ theorem subset_union_right : Subset right (union left right) :=
 theorem empty_subset : Subset empty cells :=
   fun _ member => False.elim member
 
+theorem empty_union (cells : CellSet) : union empty cells = cells := by
+  funext cell
+  simp [union, empty]
+theorem union_self (cells : CellSet) : union cells cells = cells := by funext cell; simp [union]
+
 theorem Disjoint.symm (disjoint : Disjoint left right) : Disjoint right left :=
   fun cell rightMember leftMember => disjoint cell leftMember rightMember
 
@@ -332,6 +337,16 @@ theorem StateWellFormed.cell_lt_next_of_local_binding
   rw [← bindingCell, ← entryId]
   exact wellFormed.cellIdsBelowNext entry entryMember
 
+/- Binding a different variable leaves an existing local-to-cell mapping
+   unchanged.  This identity-level rule complements the value-level local
+   preservation lemmas below. -/
+theorem bindLocal_preserves_other_cellId
+    (state : State) (boundId queriedId : VarId) (value : Value)
+    (different : boundId ≠ queriedId) :
+    (state.bindLocal boundId value).cellId? queriedId =
+      state.cellId? queriedId := by
+  simp [State.bindLocal, State.bindCell, State.cellId?, different]
+
 theorem bindLocal_preserves_other_local
     (wellFormed : StateWellFormed state)
     (different : boundId ≠ queriedId) :
@@ -339,8 +354,8 @@ theorem bindLocal_preserves_other_local
       state.local? queriedId := by
   have cellIdPreserved :
       (state.bindLocal boundId value).cellId? queriedId =
-        state.cellId? queriedId := by
-    simp [State.bindLocal, State.bindCell, State.cellId?, different]
+        state.cellId? queriedId :=
+    bindLocal_preserves_other_cellId state boundId queriedId value different
   unfold State.local?
   rw [cellIdPreserved]
   cases found : state.cellId? queriedId with
@@ -353,25 +368,8 @@ theorem bindLocal_preserves_other_local
       (Lanius.Separation.StateWellFormed.cell_lt_next_of_local_binding
           queriedId cell wellFormed found)]
 
-/-- A freshly bound temporary immediately reads back as the bound value.
-    This is the local-variable introduction rule used by extracted `let`
-    proofs; the allocated cell identity remains available separately when a
-    proof must hide that temporary at scope exit. -/
-theorem bindLocal_finds_local
-    (state : State) (id : VarId) (value : Value)
-    (wellFormed : StateWellFormed state) :
-    (state.bindLocal id value).local? id = some value := by
-  have owned : (Assertion.localPointsTo id state.nextCell
-      (some value)).holds (state.bindLocal id value) := by
-    constructor
-    · simp [State.bindLocal, State.bindCell, State.cellId?]
-    · simpa [State.bindLocal] using
-        bindCell_finds_fresh_cell state id (some value) wellFormed
-  exact Assertion.localPointsTo_local id state.nextCell value
-    (state.bindLocal id value) owned
-
 /-- Binding a local allocates and owns exactly the caller's next fresh cell.
-    Exposing the ownership fact directly lets loop invariants name their
+    Exposing the ownership fact directly lets loop invariants name the
     induction-variable cell without reconstructing it from a value read. -/
 theorem bindLocal_owns_fresh
     (state : State) (id : VarId) (value : Value)
@@ -382,6 +380,18 @@ theorem bindLocal_owns_fresh
   · simp [State.bindLocal, State.bindCell, State.cellId?]
   · simpa [State.bindLocal] using
       bindCell_finds_fresh_cell state id (some value) wellFormed
+
+/-- A freshly bound temporary immediately reads back as the bound value.
+    This is the local-variable introduction rule used by extracted `let`
+    proofs; the allocated cell identity remains available separately when a
+    proof must hide that temporary at scope exit. -/
+theorem bindLocal_finds_local
+    (state : State) (id : VarId) (value : Value)
+    (wellFormed : StateWellFormed state) :
+    (state.bindLocal id value).local? id = some value := by
+  exact Assertion.localPointsTo_local id state.nextCell value
+    (state.bindLocal id value)
+    (bindLocal_owns_fresh state id value wellFormed)
 
 /-- A freshly allocated local cell cannot alias any different local that was
     already live in the caller. -/
@@ -418,16 +428,6 @@ theorem bindLocal_fresh_disjoint_from_frame
   intro same
   exact boundNotInFrame (same ▸ member)
 
-/-- Binding a different variable leaves an existing local-to-cell mapping
-    unchanged.  This identity-level rule complements the value-level local
-    preservation lemmas below. -/
-theorem bindLocal_preserves_other_cellId
-    (state : State) (boundId queriedId : VarId) (value : Value)
-    (different : boundId ≠ queriedId) :
-    (state.bindLocal boundId value).cellId? queriedId =
-      state.cellId? queriedId := by
-  simp [State.bindLocal, State.bindCell, State.cellId?, different]
-
 /-- A fresh-cell identity is also distinct from every cell already present in
     the caller's physical store. -/
 theorem StateWellFormed.nextCell_ne_of_entry
@@ -450,11 +450,8 @@ theorem bindLocal_preserves_localPointsTo_of_ne
     (Assertion.localPointsTo queriedId cell value).holds
       (state.bindLocal boundId boundValue) := by
   constructor
-  · have preserved :
-        (state.bindLocal boundId boundValue).cellId? queriedId =
-          state.cellId? queriedId := by
-      simp [State.bindLocal, State.bindCell, State.cellId?, different]
-    exact preserved.trans owned.1
+  · exact (bindLocal_preserves_other_cellId state boundId queriedId
+      boundValue different).trans owned.1
   · have old :=
       StateWellFormed.cell_lt_next_of_entry wellFormed owned.2
     exact (by
@@ -683,7 +680,6 @@ theorem ModifiesOnly.singleton_preserves_local_of_ne
     after.local? id = some localValue := by
   apply effect.preserves_local beforeWellFormed found
   intro cell cellId writtenCell
-  have sameCell : cell = written := writtenCell
   subst cell
   rw [State.local?, cellId] at found
   simp only [Option.bind_some, State.cell?, backing, Cell.value,
@@ -696,24 +692,9 @@ theorem ModifiesOnly.empty_preserves_local
     (beforeWellFormed : StateWellFormed before)
     (found : before.local? id = some value) :
     after.local? id = some value := by
-  rw [State.local?, Option.bind_eq_some_iff] at found
-  obtain ⟨cell, cellId, cellValue⟩ := found
-  rw [State.cell?, Option.bind_eq_some_iff] at cellValue
-  obtain ⟨entry, cellEntry, initialized⟩ := cellValue
-  have member : entry ∈ before.cells := List.mem_of_find?_eq_some cellEntry
-  have entryId : entry.id = cell := by
-    simpa using List.find?_some cellEntry
-  have old : cell < before.nextCell := by
-    rw [← entryId]
-    exact beforeWellFormed.cellIdsBelowNext entry member
-  have afterCellId : after.cellId? id = some cell := by
-    unfold State.cellId?
-    rw [effect.locals]
-    exact cellId
-  rw [State.local?, afterCellId]
-  simp only [Option.bind_some, State.cell?, Option.bind_eq_some_iff]
-  refine ⟨entry, ?_, initialized⟩
-  exact (effect.oldCells cell old (by simp [CellSet.empty])).trans cellEntry
+  apply effect.preserves_local beforeWellFormed found
+  intro cell _ written
+  exact written.elim
 
 theorem StoreEffect.refl (state : State) :
     StoreEffect CellSet.empty state state := by
@@ -759,36 +740,12 @@ theorem ModifiesOnly.trans
 theorem ModifiesOnly.trans_same
     (first : ModifiesOnly writes before middle)
     (second : ModifiesOnly writes middle after) :
-    ModifiesOnly writes before after := by
-  have combined := first.trans second
-  constructor
-  · constructor
-    · intro cell old notWritten
-      exact combined.oldCells cell old (by
-        intro written
-        exact written.elim notWritten notWritten)
-    · exact combined.nextCell
-    · exact combined.heap
-    · exact combined.world
-    · exact combined.views
-    · exact combined.domain
-  · exact combined.locals
+    ModifiesOnly writes before after := by simpa [CellSet.union_self] using first.trans second
 
 theorem StoreEffect.trans_same
     (first : StoreEffect writes before middle)
     (second : StoreEffect writes middle after) :
-    StoreEffect writes before after := by
-  have combined := first.trans second
-  constructor
-  · intro cell old notWritten
-    exact combined.oldCells cell old (by
-      intro written
-      exact written.elim notWritten notWritten)
-  · exact combined.nextCell
-  · exact combined.heap
-  · exact combined.world
-  · exact combined.views
-  · exact combined.domain
+    StoreEffect writes before after := by simpa [CellSet.union_self] using first.trans second
 
 theorem StoreEffect.weaken
     (effect : StoreEffect smaller before after)
@@ -1061,36 +1018,37 @@ theorem bindLocals_local_of_binding
     Assertion.localPointsTo_local id before.nextCell value bound owned
   rw [bindLocals_append]
   change (bound.bindLocals following).local? id = some value
-  have preserveFollowing : ∀ (current : State)
-      (bindings : List (VarId × Value)),
-      StateWellFormed current →
-      current.local? id = some value →
-      (∀ binding, binding ∈ bindings → binding.1 ≠ id) →
-      (current.bindLocals bindings).local? id = some value := by
-    intro current bindings
-    induction bindings generalizing current with
-    | nil =>
-        intro _ found _
-        simpa [State.bindLocals] using found
-    | cons binding rest inductionHypothesis =>
-        intro currentWellFormed found distinct
-        simp only [State.bindLocals, List.foldl_cons]
-        have bindingDifferent : binding.1 ≠ id :=
-          distinct binding (by simp)
-        have afterBindingWellFormed := bindLocal_preserves_well_formed current
-          binding.1 binding.2 currentWellFormed
-        have afterBindingFound :
-            (current.bindLocal binding.1 binding.2).local? id = some value :=
-          (bindLocal_preserves_other_local currentWellFormed
-            bindingDifferent).trans found
-        exact inductionHypothesis
-          (current.bindLocal binding.1 binding.2)
-          afterBindingWellFormed afterBindingFound
-          (fun later laterMember =>
-            distinct later (List.mem_cons_of_mem binding laterMember))
-  exact preserveFollowing bound following
+  exact bindLocals_preserves_local bound following id value
     (bindLocal_preserves_well_formed before id value beforeWellFormed)
     initiallyFound notRebound
+
+/- Binding at a finite list index is the common form used by checked
+   source-derived environments.  Splitting at the selected index reduces it
+   to the lexical binding rule above without making callers reconstruct the
+   prefix and suffix. -/
+theorem bindLocals_local_of_index
+    (state : State) (bindings : List (VarId × Value))
+    (index : Fin bindings.length) (wellFormed : StateWellFormed state)
+    (notRebound : ∀ binding, binding ∈ bindings.drop (index.val + 1) →
+      binding.1 ≠ bindings[index.val].1) :
+    (state.bindLocals bindings).local? (bindings[index.val]).1 =
+      some (bindings[index.val]).2 := by
+  have split : bindings = bindings.take index.val ++
+      (bindings[index.val]) :: bindings.drop (index.val + 1) := by
+    calc
+      bindings = bindings.take (index.val + 1) ++ bindings.drop (index.val + 1) :=
+        (List.take_append_drop (index.val + 1) bindings).symm
+      _ = (bindings.take index.val ++ [bindings[index.val]]) ++
+          bindings.drop (index.val + 1) := by
+        rw [List.take_succ_eq_append_getElem index.isLt]
+      _ = bindings.take index.val ++
+          (bindings[index.val] :: bindings.drop (index.val + 1)) := by
+        simp
+  have selected := bindLocals_local_of_binding state
+    (bindings.take index.val) (bindings.drop (index.val + 1))
+    (bindings[index.val]).1 (bindings[index.val]).2 wellFormed notRebound
+  rw [congrArg (fun current => state.bindLocals current) split]
+  exact selected
 
 /-- The state used to execute a function body. Calls retain the physical cell
 store but replace the caller's lexical environment with parameter bindings. -/
@@ -1421,6 +1379,59 @@ theorem ExecTriple.continueLoop (pre : Assertion) :
   exact ⟨before, executesContinue program before, beforeWellFormed, held,
     ModifiesOnly.refl before⟩
 
+private theorem evaluatesAssignOwnedLocal
+    (id : VarId) (cell : CellId) (operation : AssignOp)
+    (ownedBefore : (Assertion.localPointsTo id cell current).holds before)
+    (rightResult : Evaluates program before right rightValue afterRight)
+    (rightWellFormed : StateWellFormed afterRight)
+    (ownedAfter :
+      (Assertion.localPointsTo id cell current).holds afterRight)
+    (rightEffect : ModifiesOnly rightWrites before afterRight)
+    (updated : evalAssignValue program.target operation current rightValue =
+      .ok result) :
+    ∃ after,
+      Evaluates program before (.assign operation (.local id) right) .unit after ∧
+      StateWellFormed after ∧
+      (Assertion.localPointsTo id cell (some result)).holds after ∧
+      ModifiesOnly (CellSet.union rightWrites (CellSet.singleton cell))
+        before after ∧
+      ModifiesOnly (CellSet.singleton cell) afterRight after := by
+  let after : State :=
+    { afterRight with cells := replaceCell afterRight.cells cell result }
+  have assigned : afterRight.assignCell cell result = some after := by
+    simp [State.assignCell, ownedAfter.2, after]
+  have placeBase : evalPlace 1 program before (.local id) =
+      .done { root := cell, projections := [], value := current } before := by
+    rw [Lanius.Semantics.evalPlace.eq_def]
+    simp [ownedBefore.1, ownedBefore.2]
+  obtain ⟨rightFuel, rightAtFuel⟩ := rightResult
+  let fuel := max 1 rightFuel
+  have placeAtFuel := evalPlace_done_at_larger_fuel
+    (Nat.le_max_left 1 rightFuel) placeBase
+  have rightAtCommonFuel := evalExpr_done_at_larger_fuel
+    (Nat.le_max_right 1 rightFuel) rightAtFuel
+  have writeResult : writeResolvedPlace afterRight
+      { root := cell, projections := [], value := current } result =
+      .ok after := by
+    simp [writeResolvedPlace, assigned]
+  have execution : Evaluates program before
+      (.assign operation (.local id) right) .unit after := by
+    refine ⟨fuel + 1, ?_⟩
+    rw [Lanius.Semantics.evalExpr.eq_def]
+    simp only
+    rw [placeAtFuel]
+    simp only
+    rw [rightAtCommonFuel]
+    simp only
+    rw [updated]
+    simp only
+    rw [writeResult]
+  have assignmentEffect := assignCell_effect assigned
+  exact ⟨after, execution,
+    assignCell_preserves_well_formed rightWellFormed assigned,
+    assignCell_localPointsTo ownedAfter assigned,
+    rightEffect.trans assignmentEffect, assignmentEffect⟩
+
 /-- Primitive mutation rule for assignment to an owned local cell. The rule
     applies equally to initialized and uninitialized locals because `.set`
     does not inspect the old value. -/
@@ -1432,35 +1443,16 @@ theorem EvalTriple.setLocal
       (Assertion.localPointsTo id cell (some value))
       (CellSet.singleton cell) := by
   intro before beforeWellFormed held
-  let after : State :=
-    { before with cells := replaceCell before.cells cell value }
-  have assigned : before.assignCell cell value = some after := by
-    simp [State.assignCell, held.2, after]
-  have placeResult :
-      evalPlace 1 program before (.local id) =
-        .done { root := cell, projections := [], value := current } before := by
-    rw [Lanius.Semantics.evalPlace.eq_def]
-    simp [held.1, held.2]
-  have valueResult : evalExpr 1 program before (.value value) =
-      .done value before := by rfl
-  have writeResult : writeResolvedPlace before
-      { root := cell, projections := [], value := current } value =
-      .ok after := by
-    simp [writeResolvedPlace, assigned]
-  have execution : Evaluates program before
-      (.assign .set (.local id) (.value value)) .unit after := by
-    refine ⟨2, ?_⟩
-    rw [Lanius.Semantics.evalExpr.eq_def]
-    simp only
-    rw [placeResult]
-    simp only
-    rw [valueResult]
-    simp only [evalAssignValue, assignOpBinary?]
-    rw [writeResult]
-  exact ⟨after, execution,
-    assignCell_preserves_well_formed beforeWellFormed assigned,
-    assignCell_localPointsTo held assigned,
-    assignCell_effect assigned⟩
+  have rightResult : Evaluates program before (.value value) value before :=
+    ⟨1, rfl⟩
+  have updated : evalAssignValue program.target .set current value =
+      .ok value := by
+    simp [evalAssignValue, assignOpBinary?]
+  obtain ⟨after, execution, afterWellFormed, afterOwned, effect, _⟩ :=
+    evaluatesAssignOwnedLocal id cell .set held rightResult beforeWellFormed
+      held (ModifiesOnly.refl before) updated
+  exact ⟨after, execution, afterWellFormed, afterOwned, by
+    simpa only [CellSet.empty_union] using effect⟩
 
 /-- General local assignment rule. The right-hand expression may itself have
 effects, provided its postcondition retains ownership of the destination cell.
@@ -1478,42 +1470,17 @@ theorem EvalTriple.setLocalFrom
   intro before beforeWellFormed held
   obtain ⟨afterRight, rightExecution, afterRightWellFormed, rightPostHeld,
       rightEffect⟩ := rightTriple before beforeWellFormed held
-  let assignedState : State :=
-    { afterRight with cells := replaceCell afterRight.cells cell value }
-  have assigned : afterRight.assignCell cell value = some assignedState := by
-    simp [State.assignCell, rightPostHeld.2.2.2, assignedState]
-  have placeBase : evalPlace 1 program before (.local id) =
-      .done { root := cell, projections := [], value := current } before := by
-    rw [Lanius.Semantics.evalPlace.eq_def]
-    simp [held.2.2.1, held.2.2.2]
-  obtain ⟨rightFuel, rightAtFuel⟩ := rightExecution
-  let fuel := max 1 rightFuel
-  have placeAtFuel := evalPlace_done_at_larger_fuel
-    (Nat.le_max_left 1 rightFuel) placeBase
-  have rightAtCommonFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_right 1 rightFuel) rightAtFuel
-  have writeResult : writeResolvedPlace afterRight
-      { root := cell, projections := [], value := current } value =
-      .ok assignedState := by
-    simp [writeResolvedPlace, assigned]
-  have execution : Evaluates program before
-      (.assign .set (.local id) right) .unit assignedState := by
-    refine ⟨fuel + 1, ?_⟩
-    rw [Lanius.Semantics.evalExpr.eq_def]
-    simp only
-    rw [placeAtFuel]
-    simp only
-    rw [rightAtCommonFuel]
-    simp only [evalAssignValue, assignOpBinary?]
-    rw [writeResult]
-  have assignmentEffect := assignCell_effect assigned
+  have updated : evalAssignValue program.target .set current value =
+      .ok value := by
+    simp [evalAssignValue, assignOpBinary?]
+  obtain ⟨after, execution, afterWellFormed, destinationHeld, effect,
+      assignmentEffect⟩ :=
+    evaluatesAssignOwnedLocal id cell .set held.2.2 rightExecution
+      afterRightWellFormed rightPostHeld.2.2 rightEffect updated
   have postHeld := assignmentEffect.preserve afterRightWellFormed post
     rightPostHeld.2.1 rightPostHeld.1
-  have destinationHeld := assignCell_localPointsTo rightPostHeld.2.2 assigned
-  exact ⟨assignedState, execution,
-    assignCell_preserves_well_formed afterRightWellFormed assigned,
-    ⟨rightPostHeld.1, postHeld, destinationHeld⟩,
-    rightEffect.trans assignmentEffect⟩
+  exact ⟨after, execution, afterWellFormed,
+    ⟨rightPostHeld.1, postHeld, destinationHeld⟩, effect⟩
 
 /-- Pointwise form of `EvalTriple.setLocalFrom`.  The right-hand expression
     may modify an arbitrary framed footprint; retaining ownership of the
@@ -1534,40 +1501,11 @@ theorem evaluatesSetOwnedLocal
       ModifiesOnly (CellSet.union rightWrites (CellSet.singleton cell))
         before after ∧
       ModifiesOnly (CellSet.singleton cell) afterRight after := by
-  let after : State :=
-    { afterRight with cells := replaceCell afterRight.cells cell value }
-  have assigned : afterRight.assignCell cell value = some after := by
-    simp [State.assignCell, ownedAfter.2, after]
-  have placeBase : evalPlace 1 program before (.local id) =
-      .done { root := cell, projections := [], value := some current }
-        before := by
-    rw [Lanius.Semantics.evalPlace.eq_def]
-    simp [ownedBefore.1, ownedBefore.2]
-  obtain ⟨rightFuel, rightAtFuel⟩ := rightResult
-  let fuel := max 1 rightFuel
-  have placeAtFuel := evalPlace_done_at_larger_fuel
-    (Nat.le_max_left 1 rightFuel) placeBase
-  have rightAtCommonFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_right 1 rightFuel) rightAtFuel
-  have writeResult : writeResolvedPlace afterRight
-      { root := cell, projections := [], value := some current } value =
-      .ok after := by
-    simp [writeResolvedPlace, assigned]
-  have execution : Evaluates program before
-      (.assign .set (.local id) right) .unit after := by
-    refine ⟨fuel + 1, ?_⟩
-    rw [Lanius.Semantics.evalExpr.eq_def]
-    simp only
-    rw [placeAtFuel]
-    simp only
-    rw [rightAtCommonFuel]
-    simp only [evalAssignValue, assignOpBinary?]
-    rw [writeResult]
-  have assignmentEffect := assignCell_effect assigned
-  exact ⟨after, execution,
-    assignCell_preserves_well_formed rightWellFormed assigned,
-    assignCell_localPointsTo ownedAfter assigned,
-    rightEffect.trans assignmentEffect, assignmentEffect⟩
+  have updated : evalAssignValue program.target .set current value =
+      .ok value := by
+    simp [evalAssignValue, assignOpBinary?]
+  exact evaluatesAssignOwnedLocal id cell .set ownedBefore rightResult
+    rightWellFormed ownedAfter rightEffect updated
 
 /-- Execute an effectful right-hand side followed by assignment to an owned
     local when the right-hand side itself is store-pure.  This pointwise rule
@@ -1588,48 +1526,11 @@ theorem evaluatesSetOwnedLocalFromEmpty
       ModifiesOnly (CellSet.singleton cell) before after := by
   have afterOwned := rightEffect.empty_preserves_assertion beforeWellFormed
     (Assertion.localPointsTo id cell (some current)) owned
-  let after : State :=
-    { afterRight with cells := replaceCell afterRight.cells cell value }
-  have assigned : afterRight.assignCell cell value = some after := by
-    simp [State.assignCell, afterOwned.2, after]
-  have placeBase : evalPlace 1 program before (.local id) =
-      .done { root := cell, projections := [], value := some current }
-        before := by
-    rw [Lanius.Semantics.evalPlace.eq_def]
-    simp [owned.1, owned.2]
-  obtain ⟨rightFuel, rightAtFuel⟩ := rightResult
-  let fuel := max 1 rightFuel
-  have placeAtFuel := evalPlace_done_at_larger_fuel
-    (Nat.le_max_left 1 rightFuel) placeBase
-  have rightAtCommonFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_right 1 rightFuel) rightAtFuel
-  have writeResult : writeResolvedPlace afterRight
-      { root := cell, projections := [], value := some current } value =
-      .ok after := by
-    simp [writeResolvedPlace, assigned]
-  have execution : Evaluates program before
-      (.assign .set (.local id) right) .unit after := by
-    refine ⟨fuel + 1, ?_⟩
-    rw [Lanius.Semantics.evalExpr.eq_def]
-    simp only
-    rw [placeAtFuel]
-    simp only
-    rw [rightAtCommonFuel]
-    simp only [evalAssignValue, assignOpBinary?]
-    rw [writeResult]
-  have assignmentEffect := assignCell_effect assigned
-  have completeEffect : ModifiesOnly (CellSet.singleton cell) before after := by
-    have writesEqual :
-        CellSet.union CellSet.empty (CellSet.singleton cell) =
-          CellSet.singleton cell := by
-      funext queried
-      simp [CellSet.union, CellSet.empty]
-    have combined := rightEffect.trans assignmentEffect
-    rw [writesEqual] at combined
-    exact combined
-  exact ⟨after, execution,
-    assignCell_preserves_well_formed rightWellFormed assigned,
-    assignCell_localPointsTo afterOwned assigned, completeEffect⟩
+  obtain ⟨after, execution, afterWellFormed, finalOwned, effect, _⟩ :=
+    evaluatesSetOwnedLocal id cell owned rightResult rightWellFormed afterOwned
+      rightEffect
+  exact ⟨after, execution, afterWellFormed, finalOwned, by
+    simpa only [CellSet.empty_union] using effect⟩
 
 /-- Effectful pointwise compound assignment.  It composes the complete RHS
     footprint with the destination-cell write while retaining the framed
@@ -1651,42 +1552,8 @@ theorem evaluatesUpdateOwnedLocal
       ModifiesOnly (CellSet.union rightWrites (CellSet.singleton cell))
         before after ∧
       ModifiesOnly (CellSet.singleton cell) afterRight after := by
-  let after : State :=
-    { afterRight with cells := replaceCell afterRight.cells cell result }
-  have assigned : afterRight.assignCell cell result = some after := by
-    simp [State.assignCell, ownedAfter.2, after]
-  have placeBase : evalPlace 1 program before (.local id) =
-      .done { root := cell, projections := [], value := some current }
-        before := by
-    rw [Lanius.Semantics.evalPlace.eq_def]
-    simp [ownedBefore.1, ownedBefore.2]
-  obtain ⟨rightFuel, rightAtFuel⟩ := rightResult
-  let fuel := max 1 rightFuel
-  have placeAtFuel := evalPlace_done_at_larger_fuel
-    (Nat.le_max_left 1 rightFuel) placeBase
-  have rightAtCommonFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_right 1 rightFuel) rightAtFuel
-  have writeResult : writeResolvedPlace afterRight
-      { root := cell, projections := [], value := some current } result =
-      .ok after := by
-    simp [writeResolvedPlace, assigned]
-  have execution : Evaluates program before
-      (.assign operation (.local id) right) .unit after := by
-    refine ⟨fuel + 1, ?_⟩
-    rw [Lanius.Semantics.evalExpr.eq_def]
-    simp only
-    rw [placeAtFuel]
-    simp only
-    rw [rightAtCommonFuel]
-    simp only
-    rw [updated]
-    simp only
-    rw [writeResult]
-  have assignmentEffect := assignCell_effect assigned
-  exact ⟨after, execution,
-    assignCell_preserves_well_formed rightWellFormed assigned,
-    assignCell_localPointsTo ownedAfter assigned,
-    rightEffect.trans assignmentEffect, assignmentEffect⟩
+  exact evaluatesAssignOwnedLocal id cell operation ownedBefore rightResult
+    rightWellFormed ownedAfter rightEffect updated
 
 /-- General compound-assignment rule for an owned initialized local.  The
     caller proves the pure value operation once; separation logic handles the
@@ -1707,50 +1574,11 @@ theorem evaluatesUpdateOwnedLocalFromEmpty
       ModifiesOnly (CellSet.singleton cell) before after := by
   have afterOwned := rightEffect.empty_preserves_assertion beforeWellFormed
     (Assertion.localPointsTo id cell (some current)) owned
-  let after : State :=
-    { afterRight with cells := replaceCell afterRight.cells cell result }
-  have assigned : afterRight.assignCell cell result = some after := by
-    simp [State.assignCell, afterOwned.2, after]
-  have placeBase : evalPlace 1 program before (.local id) =
-      .done { root := cell, projections := [], value := some current }
-        before := by
-    rw [Lanius.Semantics.evalPlace.eq_def]
-    simp [owned.1, owned.2]
-  obtain ⟨rightFuel, rightAtFuel⟩ := rightResult
-  let fuel := max 1 rightFuel
-  have placeAtFuel := evalPlace_done_at_larger_fuel
-    (Nat.le_max_left 1 rightFuel) placeBase
-  have rightAtCommonFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_right 1 rightFuel) rightAtFuel
-  have writeResult : writeResolvedPlace afterRight
-      { root := cell, projections := [], value := some current } result =
-      .ok after := by
-    simp [writeResolvedPlace, assigned]
-  have execution : Evaluates program before
-      (.assign operation (.local id) right) .unit after := by
-    refine ⟨fuel + 1, ?_⟩
-    rw [Lanius.Semantics.evalExpr.eq_def]
-    simp only
-    rw [placeAtFuel]
-    simp only
-    rw [rightAtCommonFuel]
-    simp only
-    rw [updated]
-    simp only
-    rw [writeResult]
-  have assignmentEffect := assignCell_effect assigned
-  have completeEffect : ModifiesOnly (CellSet.singleton cell) before after := by
-    have writesEqual :
-        CellSet.union CellSet.empty (CellSet.singleton cell) =
-          CellSet.singleton cell := by
-      funext queried
-      simp [CellSet.union, CellSet.empty]
-    have combined := rightEffect.trans assignmentEffect
-    rw [writesEqual] at combined
-    exact combined
-  exact ⟨after, execution,
-    assignCell_preserves_well_formed rightWellFormed assigned,
-    assignCell_localPointsTo afterOwned assigned, completeEffect⟩
+  obtain ⟨after, execution, afterWellFormed, finalOwned, effect, _⟩ :=
+    evaluatesUpdateOwnedLocal id cell operation owned rightResult rightWellFormed
+      afterOwned rightEffect updated
+  exact ⟨after, execution, afterWellFormed, finalOwned, by
+    simpa only [CellSet.empty_union] using effect⟩
 
 /-- Increment an owned nonnegative `i32` local. This is the common mutation
     rule for extracted counting loops: it exposes the updated ownership and
@@ -1771,61 +1599,24 @@ theorem evaluatesIncrementOwnedI32Local
       (Assertion.localPointsTo id cell
         (some (.signed .i32 (Int.ofNat (current + 1))))).holds after ∧
       ModifiesOnly (CellSet.singleton cell) before after := by
-  let after : State :=
-    { before with
-      cells := replaceCell before.cells cell
-        (.signed .i32 (Int.ofNat (current + 1))) }
-  have assigned : before.assignCell cell
-      (.signed .i32 (Int.ofNat (current + 1))) = some after := by
-    simp [State.assignCell, owned.2, after]
-  have placeResult : evalPlace 1 program before (.local id) =
-      .done {
-        root := cell
-        projections := []
-        value := some (.signed .i32 (Int.ofNat current))
-      } before := by
-    rw [Lanius.Semantics.evalPlace.eq_def]
-    simp [owned.1, owned.2]
-  have rightResult : evalExpr 1 program before
-      (.value (.signed .i32 1)) = .done (.signed .i32 1) before := by
-    rfl
+  have rightResult : Evaluates program before
+      (.value (.signed .i32 1)) (.signed .i32 1) before :=
+    ⟨1, rfl⟩
   have wrapped := wrapSigned_i32_ofNat program.target
     (current + 1) bounded
   have addition : Int.ofNat current + 1 = Int.ofNat (current + 1) := by
     simpa using (Int.natCast_add current 1).symm
-  have assignedCoerced : before.assignCell cell
-      (.signed .i32 (Int.ofNat current + 1)) = some after := by
-    rw [addition]
-    exact assigned
-  have arithmeticResult : evalAssignValue program.target .add
+  have updated : evalAssignValue program.target .add
       (some (.signed .i32 (Int.ofNat current))) (.signed .i32 1) =
       .ok (.signed .i32 (Int.ofNat (current + 1))) := by
     simp only [evalAssignValue, assignOpBinary?, evalBinaryValue,
       beq_self_eq_true, if_true, evalSignedBinary]
     rw [addition, wrapped]
-  have writeResult : writeResolvedPlace before {
-      root := cell
-      projections := []
-      value := some (.signed .i32 (Int.ofNat current))
-    } (.signed .i32 (Int.ofNat (current + 1))) = .ok after := by
-    simp only [writeResolvedPlace]
-    rw [← addition]
-    rw [assignedCoerced]
-  have evaluation : Evaluates program before
-      (.assign .add (.local id) (.value (.signed .i32 1))) .unit after := by
-    refine ⟨2, ?_⟩
-    rw [Lanius.Semantics.evalExpr.eq_def]
-    simp only
-    rw [placeResult]
-    simp only
-    rw [rightResult]
-    simp only
-    rw [arithmeticResult]
-    simpa only [writeResult]
-  exact ⟨after, evaluation,
-    assignCell_preserves_well_formed beforeWellFormed assigned,
-    assignCell_localPointsTo owned assigned,
-    assignCell_effect assigned⟩
+  obtain ⟨after, evaluation, afterWellFormed, afterOwned, effect, _⟩ :=
+    evaluatesAssignOwnedLocal id cell .add owned rightResult beforeWellFormed
+      owned (ModifiesOnly.refl before) updated
+  exact ⟨after, evaluation, afterWellFormed, afterOwned, by
+    simpa only [CellSet.empty_union] using effect⟩
 
 /-- Statement-level companion to `evaluatesIncrementOwnedI32Local`, matching
     the normalized Core block generated for `local += 1`. -/
@@ -1978,66 +1769,17 @@ theorem evaluatesSetSignedI32SliceIndexFromEmpty
           (signedI32Values (setI32Value values index replacement)))
       } ∧
       ModifiesOnly (CellSet.singleton cell) before after := by
-  have backingAtWrite : afterRight.cellEntry? cell = some {
+  have backingAtRight : afterRight.cellEntry? cell = some {
       id := cell
       value := some (.array (signedI32Values values))
     } := rightEffect.empty_preserves_entry indexWellFormed backingAtIndex
-  obtain ⟨placeFuel, placeResult⟩ := evaluatesSignedI32SlicePlace program
-    before afterIndex values sliceId indexExpression cell index inBounds
-    sliceLocal indexResult backingAtIndex
-  obtain ⟨rightFuel, rightAtFuel⟩ := rightResult
-  let updated := setI32Value values index replacement
-  let after : State := { afterRight with
-    cells := replaceCell afterRight.cells cell
-      (.array (signedI32Values updated)) }
-  have assigned : afterRight.assignCell cell
-      (.array (signedI32Values updated)) = some after := by
-    simp [State.assignCell, backingAtWrite, after]
-  have valueAt : (signedI32Values values)[index]? =
-      some (.signed .i32 (values.get ⟨index, inBounds⟩)) := by
-    simp [signedI32Values, inBounds]
-  have written : writeResolvedPlace afterRight {
-      root := cell
-      projections := [.index index]
-      value := some (.signed .i32 (values.get ⟨index, inBounds⟩))
-    } (.signed .i32 replacement) = .ok after := by
-    simp [writeResolvedPlace, backingAtWrite, replaceProjectedValue, valueAt,
-      setValue_signedI32Values, updated, assigned]
-  let fuel := max placeFuel rightFuel
-  have placeAtFuel := evalPlace_done_at_larger_fuel
-    (Nat.le_max_left placeFuel rightFuel) placeResult
-  have rightAtCommonFuel := evalExpr_done_at_larger_fuel
-    (Nat.le_max_right placeFuel rightFuel) rightAtFuel
-  have execution : Evaluates program before
-      (.assign .set (.index (.local sliceId) indexExpression) right)
-      .unit after := by
-    refine ⟨fuel + 1, ?_⟩
-    rw [Lanius.Semantics.evalExpr.eq_def]
-    simp only
-    rw [placeAtFuel]
-    simp only
-    rw [rightAtCommonFuel]
-    simp only [evalAssignValue, assignOpBinary?]
-    rw [written]
-  have afterBacking : after.cellEntry? cell = some {
-      id := cell
-      value := some (.array (signedI32Values updated))
-    } := assignCell_finds_assigned assigned
-  have prefixEffect : ModifiesOnly CellSet.empty before afterRight :=
-    indexEffect.trans_same rightEffect
-  have assignmentEffect := assignCell_effect assigned
-  have combined := prefixEffect.trans assignmentEffect
-  have completeEffect : ModifiesOnly (CellSet.singleton cell) before after := by
-    have writesEqual :
-        CellSet.union CellSet.empty (CellSet.singleton cell) =
-          CellSet.singleton cell := by
-      funext queried
-      simp [CellSet.union, CellSet.empty]
-    rw [writesEqual] at combined
-    exact combined
-  exact ⟨after, execution,
-    assignCell_preserves_well_formed rightWellFormed assigned,
-    by simpa [updated] using afterBacking, completeEffect⟩
+  obtain ⟨after, execution, afterWellFormed, afterBacking, effect, _⟩ :=
+    evaluatesSetSignedI32SliceIndex program before afterIndex afterRight values
+      values sliceId indexExpression right cell index replacement rfl inBounds
+      sliceLocal indexResult indexEffect rightResult rightWellFormed rightEffect
+      backingAtIndex backingAtRight
+  exact ⟨after, execution, afterWellFormed, by simpa using afterBacking, by
+    simpa only [CellSet.empty_union] using effect⟩
 
 theorem EvalTriple.ifTrue
     (conditionTriple :

@@ -184,6 +184,38 @@ theorem calls_success
 
 end ParseResultCallProof
 
+/-! Caller-boundary composition for checked parser-result calls; nested body
+    effects remain hidden behind local restoration. -/
+theorem parserResultCall_contract_of_body
+    {before afterArguments : State} {arguments : List Expr}
+    {function : Function} {body : Stmt} {values : List Value}
+    {bindings : List (VarId × Value)} {result : Value}
+    {completedState : State}
+    (afterArgumentsWellFormed : StateWellFormed afterArguments)
+    (argumentsResult : ArgumentsEvaluateTo verifiedParserCore before arguments
+      values afterArguments)
+    (functionFound : verifiedParserCore.function? function.id = some function)
+    (parametersBound : bindParameters function.parameters values = some bindings)
+    (functionBody : function.body = some body)
+    (bodyResult : Executes verifiedParserCore
+      (enterCall afterArguments bindings) body
+      (.returned (some result)) completedState)
+    (bodyEffect : StoreEffect CellSet.empty
+      (enterCall afterArguments bindings) completedState)
+    (completedWellFormed : StateWellFormed completedState) :
+    Evaluates verifiedParserCore before (.call function.id arguments) result
+        (restoreLocals afterArguments completedState) ∧
+      ModifiesOnly CellSet.empty afterArguments
+        (restoreLocals afterArguments completedState) ∧
+      StateWellFormed (restoreLocals afterArguments completedState) := by
+  have evaluation := evaluatesCallReturned argumentsResult functionFound
+    parametersBound functionBody bodyResult
+  have combined : StoreEffect CellSet.empty afterArguments completedState :=
+    (enterCall_effect afterArguments bindings).trans_same bodyEffect
+  exact ⟨evaluation, combined.restoreLocals,
+    combined.restoreLocals_wellFormed afterArgumentsWellFormed
+      completedWellFormed⟩
+
 /-- Store-pure contract for the extracted four-field `parse_result`
     constructor. Every recognizer exit uses this one checked constructor. -/
 theorem extractedParserParseResultCall_contract
@@ -205,53 +237,32 @@ theorem extractedParserParseResultCall_contract
     errorPosition
   let callee := parserParseResultCallee afterArguments status stateCount
     rootState errorPosition
-  let after := restoreLocals afterArguments callee
-  have calleeWellFormed : StateWellFormed callee := by
-    simpa [callee, parserParseResultCallee, bindings,
-      parserParseResultBindings] using
-      (enterCall_preserves_wellFormed
-        (bindings := bindings) afterArgumentsWellFormed)
-  have bodyResult : Executes verifiedParserCore callee parserParseResultBody
-      (.returned (some
-        (parseResultValue status stateCount rootState errorPosition)))
-      callee := by
-    have environmentMatches :
-        Lanius.FunctionalView.Core.EnvironmentMatches
-          (Lanius.FunctionalView.Core.identityLayout (arity := 4))
-          (ParseResultProof.environment status stateCount rootState
-            errorPosition) callee := by
-      simpa [callee, parserParseResultCallee, parserParseResultBindings,
-        ParseResultProof.parameterBindings_eq] using
-        (Lanius.FunctionalView.Core.enterCall_parameterBindings_matches
-          (environment := ParseResultProof.environment status stateCount
-            rootState errorPosition)
-          afterArgumentsWellFormed)
-    have sound := Lanius.FunctionalView.Core.block_executes_without_locals
-      (nextLocal := 4)
-      (Lanius.FunctionalView.Core.ReadOnly.bridge verifiedParserCore)
-      (ParseResultProof.world_represents callee) environmentMatches
-      ParseResultProof.localCapacity_eq_zero
-      (ParseResultProof.evaluates status stateCount rootState errorPosition)
-    rw [ParseResultProof.body_toCore_exactly] at sound
-    exact sound.1
-  have evaluation : Evaluates verifiedParserCore before
-      (.call extractedParserParseResultFunction.id arguments)
-      (parseResultValue status stateCount rootState errorPosition) after := by
-    apply evaluatesCallReturned (body := parserParseResultBody)
-      argumentsResult verifiedParserCore_finds_parseResult
-    · rw [extractedParserParseResult_function_shape.2.1]
-      rfl
-    · exact extractedParserParseResult_function_shape.2.2.2.1
-    · simpa [after, callee, parserParseResultCallee, bindings,
-        parserParseResultBindings] using bodyResult
-  have entered : StoreEffect CellSet.empty afterArguments callee := by
-    simpa [callee, parserParseResultCallee, bindings,
-      parserParseResultBindings] using enterCall_effect afterArguments bindings
-  have effect : ModifiesOnly CellSet.empty afterArguments after := by
-    simpa [after] using entered.restoreLocals
-  have afterWellFormed : StateWellFormed after :=
-    entered.restoreLocals_wellFormed afterArgumentsWellFormed calleeWellFormed
-  exact ⟨evaluation, effect, afterWellFormed⟩
+  have calleeWellFormed := enterCall_preserves_wellFormed
+    (bindings := bindings) afterArgumentsWellFormed
+  have environmentMatches := by
+    simpa [callee, parserParseResultCallee, parserParseResultBindings,
+      ParseResultProof.parameterBindings_eq] using
+      (Lanius.FunctionalView.Core.enterCall_parameterBindings_matches
+        (environment := ParseResultProof.environment status stateCount
+          rootState errorPosition) afterArgumentsWellFormed)
+  have sound := Lanius.FunctionalView.Core.block_executes_without_locals
+    (nextLocal := 4)
+    (Lanius.FunctionalView.Core.ReadOnly.bridge verifiedParserCore)
+    (ParseResultProof.world_represents callee) environmentMatches
+    ParseResultProof.localCapacity_eq_zero
+    (ParseResultProof.evaluates status stateCount rootState errorPosition)
+  rw [ParseResultProof.body_toCore_exactly] at sound
+  have bodyResult := sound.1
+  simpa [callee, parserParseResultCallee, bindings,
+    parserParseResultBindings] using
+    (parserResultCall_contract_of_body afterArgumentsWellFormed argumentsResult
+      verifiedParserCore_finds_parseResult (by
+        rw [extractedParserParseResult_function_shape.2.1]
+        rfl) extractedParserParseResult_function_shape.2.2.2.1
+      (by simpa [Lanius.FunctionalView.Core.toCoreCompletion, callee,
+        parserParseResultCallee, bindings, parserParseResultBindings]
+        using bodyResult)
+      (StoreEffect.refl callee) calleeWellFormed)
 
 namespace ParseResultCallProof
 
@@ -479,37 +490,19 @@ theorem extractedParserAppendOrFullCall_contract
       StateWellFormed after := by
   let bindings := parserAppendOrFullBindings appended errorPosition
   let callee := parserAppendOrFullCallee afterArguments appended errorPosition
-  have calleeWellFormed : StateWellFormed callee := by
-    simpa [callee, parserAppendOrFullCallee, bindings,
-      parserAppendOrFullBindings] using
-      (enterCall_preserves_wellFormed
-        (bindings := bindings) afterArgumentsWellFormed)
-  have environmentMatches :
-      Lanius.FunctionalView.Core.EnvironmentMatches
-        (Lanius.FunctionalView.Core.identityLayout (arity := 2))
-        (AppendOrFullProof.environment appended errorPosition) callee := by
+  have calleeWellFormed := enterCall_preserves_wellFormed
+    (bindings := bindings) afterArgumentsWellFormed
+  have environmentMatches := by
     simpa [callee, parserAppendOrFullCallee, parserAppendOrFullBindings,
       AppendOrFullProof.parameterBindings_eq] using
       (Lanius.FunctionalView.Core.enterCall_parameterBindings_matches
         (environment := AppendOrFullProof.environment appended errorPosition)
         afterArgumentsWellFormed)
-  have functionalArguments :=
-    Lanius.FunctionalView.Core.terms_evaluate
+  have resultArguments :=
+    (Lanius.FunctionalView.Core.terms_evaluate
       (Lanius.FunctionalView.Core.ReadOnly.bridge verifiedParserCore)
       (AppendOrFullProof.world_represents callee) environmentMatches
-      (AppendOrFullProof.arguments_evaluate appended errorPosition)
-  have resultArguments : ArgumentsEvaluateTo verifiedParserCore callee
-      [.constant 2, .field (.local 0) 2,
-        .unary .negate (.value (.signed .i32 1)), .local 1]
-      [.signed .i32 2, .signed .i32 (Int.ofNat appended.stateCount),
-        .signed .i32 (-1), .signed .i32 errorPosition] callee := by
-    simpa [AppendOrFullProof.resultArguments,
-      Lanius.FunctionalView.Core.toCoreExprs,
-      Lanius.FunctionalView.Core.toCoreExpr,
-      Lanius.FunctionalView.Core.refToCoreExpr,
-      Lanius.FunctionalView.Core.Operation.toCoreExpr,
-      Lanius.FunctionalView.Core.identityLayout] using
-      functionalArguments.1.toArgumentsEvaluateTo
+      (AppendOrFullProof.arguments_evaluate appended errorPosition)).1.toArgumentsEvaluateTo
   let afterResult := restoreLocals callee
     (parserParseResultCallee callee 2 (Int.ofNat appended.stateCount) (-1)
       errorPosition)
@@ -517,39 +510,25 @@ theorem extractedParserAppendOrFullCall_contract
     [.constant 2, .field (.local 0) 2,
       .unary .negate (.value (.signed .i32 1)), .local 1]
     2 (Int.ofNat appended.stateCount) (-1) errorPosition calleeWellFormed
-    resultArguments
-  have bodyResult : Executes verifiedParserCore callee parserAppendOrFullBody
-      (.returned (some (parseResultValue 2
-        (Int.ofNat appended.stateCount) (-1) errorPosition))) afterResult := by
-    simpa [parserAppendOrFullBody, parserAppendOrFullResultCall, afterResult]
-      using
-        (executesSequenceReturned (second := Stmt.skip)
-          (executesReturnValue resultContract.1))
-  let after := restoreLocals afterArguments afterResult
-  have evaluation : Evaluates verifiedParserCore before
-      (.call extractedParserAppendOrFullFunction.id arguments)
-      (parseResultValue 2 (Int.ofNat appended.stateCount) (-1)
-        errorPosition) after := by
-    apply evaluatesCallReturned (body := parserAppendOrFullBody)
-      argumentsResult verifiedParserCore_finds_appendOrFull
-    · rw [extractedParserAppendOrFull_function_shape.2.1]
-      rfl
-    · exact extractedParserAppendOrFull_function_shape.2.2.2.1
-    · simpa [after, callee, parserAppendOrFullCallee, bindings,
-        parserAppendOrFullBindings] using bodyResult
-  have entered : StoreEffect CellSet.empty afterArguments callee := by
-    simpa [callee, parserAppendOrFullCallee, bindings,
-      parserAppendOrFullBindings] using enterCall_effect afterArguments bindings
-  have bodyEffect : ModifiesOnly CellSet.empty callee afterResult := by
-    simpa [afterResult] using resultContract.2.1
-  have combined : StoreEffect CellSet.empty afterArguments afterResult :=
-    entered.trans_same bodyEffect.toStoreEffect
-  have effect : ModifiesOnly CellSet.empty afterArguments after := by
-    simpa [after] using combined.restoreLocals
-  have afterWellFormed : StateWellFormed after :=
-    combined.restoreLocals_wellFormed afterArgumentsWellFormed
-      resultContract.2.2
-  exact ⟨after, evaluation, effect, afterWellFormed⟩
+    (by simpa [AppendOrFullProof.resultArguments,
+      Lanius.FunctionalView.Core.toCoreExprs,
+      Lanius.FunctionalView.Core.toCoreExpr,
+      Lanius.FunctionalView.Core.refToCoreExpr,
+      Lanius.FunctionalView.Core.Operation.toCoreExpr,
+      Lanius.FunctionalView.Core.identityLayout] using resultArguments)
+  have bodyResult := executesSequenceReturned (second := Stmt.skip)
+    (executesReturnValue resultContract.1)
+  refine ⟨restoreLocals afterArguments afterResult, ?_⟩
+  simpa [afterResult, callee, parserAppendOrFullCallee, bindings,
+    parserAppendOrFullBindings] using
+    (parserResultCall_contract_of_body afterArgumentsWellFormed argumentsResult
+      verifiedParserCore_finds_appendOrFull (by
+        rw [extractedParserAppendOrFull_function_shape.2.1]
+        rfl) extractedParserAppendOrFull_function_shape.2.2.2.1
+      (by simpa [parserAppendOrFullBody, parserAppendOrFullResultCall,
+        afterResult, callee, parserAppendOrFullCallee, bindings,
+        parserAppendOrFullBindings] using bodyResult)
+      resultContract.2.1.toStoreEffect resultContract.2.2)
 
 def parserAppendOutcomeFullCall
     (resultLocal : VarId) (errorPosition : Expr) : Expr :=
@@ -597,6 +576,23 @@ structure AppendOutcomeFullControlThenResult
   effect : ModifiesOnly CellSet.empty before after
   wellFormed : StateWellFormed after
 
+theorem evaluatesAppendOutcomeStatusGuard
+    (before : State) (resultLocal : VarId) (outcome : AppendOutcome)
+    (expectedStatus : AppendStatus)
+    (statusEq : outcome.status = expectedStatus)
+    (localResult : Evaluates verifiedParserCore before (.local resultLocal)
+      (appendOutcomeValue outcome) before) :
+    Evaluates verifiedParserCore before
+      (.binary .equal (.field (.local resultLocal) 0) (.constant 41))
+      (.boolean (if expectedStatus = .full then true else false)) before := by
+  have statusResult := evaluatesStructureField localResult (field := 0)
+    (value := .signed .i32 (appendStatusValue outcome.status)) (by
+      simp [appendStatusValue])
+  refine evaluatesEagerBinary (by decide) (by decide) statusResult
+    (evaluatesConstant verifiedParser_append_status_constants.2) ?_
+  cases expectedStatus <;>
+    simp [evalBinaryValue, scalarEqual, appendStatusValue, statusEq]
+
 /-- The capacity return is independent of the successful continuation tail:
     return propagation skips that tail for every extracted append site. -/
 noncomputable def executeAppendOutcomeFullThen
@@ -611,24 +607,10 @@ noncomputable def executeAppendOutcomeFullThen
     (statusFull : outcome.status = .full) :
     AppendOutcomeFullControlThenResult before resultLocal stateCountLocal
       errorPosition tail outcome errorValue := by
-  have localResult : Evaluates verifiedParserCore before (.local resultLocal)
-      (appendOutcomeValue outcome) before :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore before resultLocal _
-      resultFound⟩
-  have statusResult : Evaluates verifiedParserCore before
-      (.field (.local resultLocal) 0) (.signed .i32 1) before := by
-    apply evaluatesStructureField localResult
-    rw [statusFull]
-    simp [appendOutcomeValue, appendResultValue, appendStatusValue]
-  have fullConstant : Evaluates verifiedParserCore before (.constant 41)
-      (.signed .i32 1) before :=
-    evaluatesConstant verifiedParser_append_status_constants.2
-  have fullCondition : Evaluates verifiedParserCore before
-      (.binary .equal (.field (.local resultLocal) 0) (.constant 41))
-      (.boolean true) before := by
-    apply evaluatesEagerBinary (by decide) (by decide) statusResult
-      fullConstant
-    simp [evalBinaryValue, scalarEqual]
+  have localResult := evaluatesLocal (program := verifiedParserCore) resultFound
+  have fullCondition :=
+    evaluatesAppendOutcomeStatusGuard before resultLocal outcome .full
+      statusFull localResult
   have callArguments : ArgumentsEvaluateTo verifiedParserCore before
       [.local resultLocal, errorPosition]
       [appendOutcomeValue outcome, .signed .i32 errorValue] before :=
@@ -660,17 +642,12 @@ noncomputable def executeAppendOutcomeFullThen
     wellFormed := callFacts.2.2
   }
 
-structure AppendOutcomeFullControlResult
+abbrev AppendOutcomeFullControlResult
     (before : State) (resultLocal stateCountLocal : VarId)
     (errorPosition : Expr)
-    (outcome : AppendOutcome) (errorValue : Int) where
-  after : State
-  execution : Executes verifiedParserCore before
-    (parserAppendOutcomeContinuation resultLocal stateCountLocal errorPosition)
-    (.returned (some (parseResultValue 2
-      (Int.ofNat outcome.stateCount) (-1) errorValue))) after
-  effect : ModifiesOnly CellSet.empty before after
-  wellFormed : StateWellFormed after
+    (outcome : AppendOutcome) (errorValue : Int) :=
+  AppendOutcomeFullControlThenResult before resultLocal stateCountLocal
+    errorPosition .skip outcome errorValue
 
 /-- Generic full arm for all extracted recognizer append sites. -/
 noncomputable def executeAppendOutcomeFull
@@ -687,13 +664,7 @@ noncomputable def executeAppendOutcomeFull
   let result := executeAppendOutcomeFullThen before resultLocal
     stateCountLocal errorPosition .skip outcome errorValue wellFormed
     resultFound errorResult statusFull
-  exact {
-    after := result.after
-    execution := by
-      simpa [parserAppendOutcomeContinuation] using result.execution
-    effect := result.effect
-    wellFormed := result.wellFormed
-  }
+  exact result
 
 structure AppendOutcomeOkControlResult
     (before : State) (resultLocal stateCountLocal : VarId)
@@ -729,24 +700,10 @@ noncomputable def executeAppendOutcomeOk
     (statusOk : outcome.status = .ok) :
     AppendOutcomeOkControlResult before resultLocal stateCountLocal
       stateCountCell errorPosition outcome := by
-  have localResult : Evaluates verifiedParserCore before (.local resultLocal)
-      (appendOutcomeValue outcome) before :=
-    ⟨1, evalLocal_of_local 1 verifiedParserCore before resultLocal _
-      resultFound⟩
-  have statusResult : Evaluates verifiedParserCore before
-      (.field (.local resultLocal) 0) (.signed .i32 0) before := by
-    apply evaluatesStructureField localResult
-    rw [statusOk]
-    simp [appendOutcomeValue, appendResultValue, appendStatusValue]
-  have fullConstant : Evaluates verifiedParserCore before (.constant 41)
-      (.signed .i32 1) before :=
-    evaluatesConstant verifiedParser_append_status_constants.2
-  have notFull : Evaluates verifiedParserCore before
-      (.binary .equal (.field (.local resultLocal) 0) (.constant 41))
-      (.boolean false) before := by
-    apply evaluatesEagerBinary (by decide) (by decide) statusResult
-      fullConstant
-    simp [evalBinaryValue, scalarEqual]
+  have localResult := evaluatesLocal (program := verifiedParserCore) resultFound
+  have notFull :=
+    evaluatesAppendOutcomeStatusGuard before resultLocal outcome .ok statusOk
+      localResult
   have skipped : Executes verifiedParserCore before
       (.ifThenElse
         (.binary .equal (.field (.local resultLocal) 0) (.constant 41))
@@ -757,7 +714,7 @@ noncomputable def executeAppendOutcomeOk
       (.field (.local resultLocal) 2)
       (.signed .i32 (Int.ofNat outcome.stateCount)) before := by
     apply evaluatesStructureField localResult
-    simp [appendOutcomeValue, appendResultValue]
+    simp
   let assignmentResult := evaluatesSetOwnedLocalFromEmpty
     (program := verifiedParserCore) stateCountLocal stateCountCell wellFormed
     stateCountOwned countField wellFormed (ModifiesOnly.refl before)

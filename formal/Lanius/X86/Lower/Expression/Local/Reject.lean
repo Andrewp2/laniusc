@@ -175,45 +175,6 @@ theorem emitter_rejects {literal : Source.Expression.Literal.Checked emitters} (
 
 
 
-private theorem wrapper_body {literal : Source.Expression.Literal.Checked emitters} (checked : Source.Expression.Local.Checked literal)
-    (length position depth capacity start active : Nat) (key top : Int) (context contextLength : Value)
-    (ready : Ready before
-      (inputValues input work output transport.length workspace.length values.length length capacity depth (.signed .i32 active) context contextLength)
-      frontier input output work transport values workspace)
-    (current : workspace[0]? = some (position : Int)) (cursor : workspace[1]? = some (start : Int))
-    (healthy : workspace[4]? = some 0) (topFound : workspace[6]? = some top)
-    (depthBound : depth < 512) (readable : position + 2 ≤ length)
-    (storage : length ≤ transport.length) (bounded : length ≤ 2147483647)
-    (tagWord : transport[position]? = some 1) (keyWord : transport[position + 1]? = some key)
-    (lookupRoom : 16 + active ≤ workspace.length) (lookupBound : 16 + active ≤ 2147483647)
-    (missing : Frame.Lookup.Correct workspace active key none) :
-    ∃ after, Executes emitters.pack.program.core before
-        (Source.Expression.Literal.body literal.layout literal.constants literal.emitter.source.function.id)
-        (.returned (some (.signed .i32 (-1)))) after ∧
-      after.cellEntry? output = some { id := output, value := some (.array (signedI32Values values)) } ∧
-      after.cellEntry? work = some { id := work, value := some (.array (signedI32Values (workspace.set 0 (position + 2 : Nat)))) } ∧
-      CellEffect (writes output work) before after ∧ HeapFrame before after := by
-  let c : Context := {
-    input := input, output := output, work := work, transport := transport, values := values, workspace := workspace,
-    length := length, position := position, depth := depth, active := .signed .i32 active, capacity := capacity,
-    start := start, top := top, context := context, contextLength := contextLength }
-  obtain ⟨after, run, ⟨emitted, finalOutput, finalWork, rfl⟩, effect, heap⟩ :=
-    Wrapper.body literal c (-1)
-      (fun emitted => emitted = values) (workspace.set 0 (position + 2 : Nat))
-      ready topFound (by simp [c]) (by
-        constructor
-        intro caller arguments before wellFormed evaluated memory
-        obtain ⟨completed, emittedRun, outputContents, workContents, effect, heap⟩ :=
-          emitter_rejects checked length position depth capacity start active key context contextLength wellFormed
-            memory.plain memory.inputBacking memory.outputBacking memory.workBacking
-            memory.inputOutput memory.inputWork memory.outputWork current cursor healthy depthBound readable storage bounded
-            tagWord keyWord lookupRoom lookupBound missing evaluated
-        exact ⟨completed, emittedRun, ⟨_, outputContents, workContents, rfl⟩, effect, heap⟩)
-  have retained : (workspace.set 0 (position + 2 : Nat))[6]? = some top := by
-    simpa only [List.getElem?_set_ne (by decide : 0 ≠ 6)] using topFound
-  rw [Wrapper.finish_eq retained] at finalWork
-  exact ⟨after, run, finalOutput, finalWork, effect, heap⟩
-
 /-- The complete expression call propagates the missing-local sentinel,
 classifies -1 as nonaggregate and restores TOP. Only INPUT advances by two;
 output, CODE, FAILED, and the binding tables remain unchanged. -/
@@ -240,16 +201,31 @@ theorem wrapper_rejects {literal : Source.Expression.Literal.Checked emitters} (
       after.cellEntry? output = some { id := output, value := some (.array (signedI32Values values)) } ∧
       after.cellEntry? work = some { id := work, value := some (.array (signedI32Values (workspace.set 0 (position + 2 : Nat)))) } ∧
       CellEffect (writes output work) before after ∧ HeapFrame before after := by
-  let bindings := inputValues input work output transport.length workspace.length values.length length capacity depth
-    (.signed .i32 active) context contextLength
-  let params := parameterBindings (fun index : Fin 9 => bindings.get index)
-  have ready := Literal.Ready.enterCall (bindings := bindings) wellFormed plain
-    inputBacking outputBacking workBacking inputOutput inputWork outputWork
-  obtain ⟨completed, run, finalOutput, finalWork, effect, heap⟩ := wrapper_body checked
-    length position depth capacity start active key top context contextLength ready current cursor healthy topFound
-    depthBound readable storage bounded tagWord keyWord lookupRoom lookupBound missing
-  have called := literal.wrapper.call wellFormed argumentsResult (bindings := params) rfl run effect
-  exact ⟨restoreLocals before completed, called.1, finalOutput, finalWork, called.2, HeapFrame.closeCall before params heap⟩
+  let c : Context := {
+    input := input, output := output, work := work, transport := transport, values := values, workspace := workspace,
+    length := length, position := position, depth := depth, active := .signed .i32 active, capacity := capacity,
+    start := start, top := top, context := context, contextLength := contextLength }
+  have emits : c.Call emitters.pack.program.core literal.emitter.source.function.id (-1)
+      (workspace.set 0 (position + 2 : Nat)) (fun emitted => emitted = values) := by
+    constructor
+    intro caller arguments before wellFormed evaluated memory
+    obtain ⟨completed, run, finalOutput, finalWork, effect, heap⟩ :=
+      emitter_rejects checked length position depth capacity start active key context contextLength wellFormed
+        memory.plain memory.inputBacking memory.outputBacking memory.workBacking
+        memory.inputOutput memory.inputWork memory.outputWork current cursor healthy depthBound readable storage bounded
+        tagWord keyWord lookupRoom lookupBound missing evaluated
+    exact ⟨completed, run, ⟨values, finalOutput, finalWork, rfl⟩, effect, heap⟩
+  have wrapped := Wrapper.call literal c (-1) (fun emitted => emitted = values)
+    (workspace.set 0 (position + 2 : Nat)) topFound (by simp [c]) emits
+  have memory : c.Memory before :=
+    ⟨plain, inputBacking, outputBacking, workBacking, inputOutput, inputWork, outputWork⟩
+  obtain ⟨after, run, ⟨emitted, outputContents, workContents, emittedEq⟩, effect, heap⟩ :=
+    wrapped.call wellFormed argumentsResult memory
+  have retained : (workspace.set 0 (position + 2 : Nat))[6]? = some top := by
+    simpa only [List.getElem?_set_ne (by decide : 0 ≠ 6)] using topFound
+  rw [Wrapper.finish_eq retained] at workContents
+  subst emitted
+  exact ⟨after, run, outputContents, workContents, effect, heap⟩
 
 
 end Lanius.X86.Lower.Expression.Local.Reject

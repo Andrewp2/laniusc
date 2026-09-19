@@ -65,12 +65,12 @@ theorem negativeLength_evaluates (program : Program) {id : VarId}
     (read : before.local? id = some (.signed .i32 length)) :
     Evaluates program before (negativeLength id) (.boolean (decide (length < 0))) before := by
   have negativeOne : Evaluates program before (.unary .negate (.value (.signed .i32 1))) (.signed .i32 (-1)) before := by
-    apply evaluatesUnary (show Evaluates program before (.value (.signed .i32 1)) (.signed .i32 1) before from ⟨1, rfl⟩)
+    apply evaluatesUnary (show Evaluates program before (.value (.signed .i32 1)) (.signed .i32 1) before from evaluatesValue)
     simp [evalUnaryValue, wrapSigned, signedModulus, signedSignBit, SignedIntTy.bits]
   have same : decide (length ≤ -1) = decide (length < 0) := by
     simp only [show length ≤ -1 ↔ length < 0 from by omega]
   exact evaluatesEagerBinary (by decide) (by decide)
-    ⟨1, evalLocal_of_local 0 _ _ _ _ read⟩ negativeOne (by simp [evalBinaryValue, evalSignedBinary, same])
+    (@Lanius.Semantics.evaluatesLocal program before id (.signed .i32 length) read) negativeOne (by simp [evalBinaryValue, evalSignedBinary, same])
 
 /-- Passing all length guards leaves the state unchanged before the real body. -/
 theorem inputGuards.pass (program : Program) (result : FunctionId) (badInput : ConstantId)
@@ -103,8 +103,8 @@ theorem CheckedInput.reject {constructor : CheckedResult program} (checked : Che
             .value (.signed .i32 0), .value (.signed .i32 0), .value (.signed .i32 0), .value (.signed .i32 0)]
           [.signed .i32 1, .signed .i32 detail, .signed .i32 0, .signed .i32 0,
             .signed .i32 0, .signed .i32 0, .signed .i32 0] before :=
-        .cons (evaluatesConstant checked.badValue) (.cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩
-          (.cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩ (.cons ⟨1, rfl⟩ (.singleton ⟨1, rfl⟩))))))
+        .cons (evaluatesConstant checked.badValue) (.cons evaluatesValue (.cons evaluatesValue
+          (.cons evaluatesValue (.cons evaluatesValue (.cons evaluatesValue (.singleton evaluatesValue))))))
       obtain ⟨after, returned, effect, _⟩ := constructor.call wellFormed arguments
       exact ⟨after, fun _ => executesSequenceReturned
         (executesIfTrue guardRun (executesSequenceReturned (executesReturnValue returned))), effect⟩

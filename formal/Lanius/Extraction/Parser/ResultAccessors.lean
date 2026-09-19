@@ -1,4 +1,5 @@
 import Lanius.Extraction.VerifiedFrontend.Parser.Result
+import Lanius.FunctionalViewCoreCallFrame
 import Lanius.FunctionalViewCoreReification
 
 namespace Lanius.Extraction.Parser.ResultAccessors
@@ -84,27 +85,19 @@ theorem function_shapes :
 
 theorem core_finds_parseStatus :
     verifiedParserCore.function? parseStatusFunction.id =
-      some parseStatusFunction := by
-  unfold verifiedParserCore parseStatusFunction parseStatusWire
-  rfl
+      some parseStatusFunction := by rfl
 
 theorem core_finds_parseStateCount :
     verifiedParserCore.function? parseStateCountFunction.id =
-      some parseStateCountFunction := by
-  unfold verifiedParserCore parseStateCountFunction parseStateCountWire
-  rfl
+      some parseStateCountFunction := by rfl
 
 theorem core_finds_parseRootState :
     verifiedParserCore.function? parseRootStateFunction.id =
-      some parseRootStateFunction := by
-  unfold verifiedParserCore parseRootStateFunction parseRootStateWire
-  rfl
+      some parseRootStateFunction := by rfl
 
 theorem core_finds_parseErrorPosition :
     verifiedParserCore.function? parseErrorPositionFunction.id =
-      some parseErrorPositionFunction := by
-  unfold verifiedParserCore parseErrorPositionFunction parseErrorPositionWire
-  rfl
+      some parseErrorPositionFunction := by rfl
 
 def reification? (function : Function) :=
   reifyBlock? verifiedParserCore function.returnType
@@ -290,7 +283,6 @@ theorem callSoundnessFor
     subst values
     subst afterWorld
     let callee := enterCall afterArguments (accessorBindings fields)
-    let after := restoreLocals afterArguments callee
     have calleeWellFormed : StateWellFormed callee := by
       simpa [callee] using
         (enterCall_preserves_wellFormed
@@ -301,43 +293,22 @@ theorem callSoundnessFor
           (.structure 0 fields) afterArgumentsWellFormed (by simp)
     have localEvaluation : Evaluates verifiedParserCore callee (.local 0)
         (.structure 0 fields) callee :=
-      ⟨1, evalLocal_of_local 1 verifiedParserCore callee 0 _ resultLocal⟩
+      Lanius.Semantics.evaluatesLocal resultLocal
     have fieldEvaluation : Evaluates verifiedParserCore callee
         (.field (.local 0) field) value callee :=
       evaluatesStructureField localEvaluation fieldFound
     have bodyExecution : Executes verifiedParserCore callee
-        (accessorBody field) (.returned (some value)) callee := by
-      exact executesSequenceReturned
-        (executesReturnValue fieldEvaluation)
-    have callExecution : Evaluates verifiedParserCore before
-        (.call function.id (toCoreExprs layout arguments)) value after := by
-      apply evaluatesCallReturned argumentsExecution foundFunction
-      · rw [parameters]
-        rfl
-      · exact body
-      · simpa [callee, after, accessorBindings] using bodyExecution
-    have entered : StoreEffect CellSet.empty afterArguments callee := by
-      simpa [callee] using
-        enterCall_effect afterArguments (accessorBindings fields)
-    have callEffect : ModifiesOnly CellSet.empty afterArguments after := by
-      simpa [after] using entered.restoreLocals
-    have afterWellFormed : StateWellFormed after := by
-      exact entered.restoreLocals_wellFormed afterArgumentsWellFormed
-        calleeWellFormed
-    have afterRepresented : Representation layout localCell beforeWorld
-        callerEnvironment after := {
-      worldOwned := callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed (World.owns beforeWorld)
-        represented.worldOwned
-      localOwned := fun index => callEffect.empty_preserves_assertion
-        afterArgumentsWellFormed
-        (Assertion.localPointsTo (layout index) (localCell index)
-          (some (callerEnvironment index))) (represented.localOwned index)
-      localCellsInjective := represented.localCellsInjective
-      worldLocalsDisjoint := represented.worldLocalsDisjoint
-    }
-    exact ⟨after, CellSet.union argumentWrites CellSet.empty, callExecution,
-      afterWellFormed, afterRepresented, argumentsEffect.trans callEffect⟩
+        (accessorBody field) (.returned (some value)) callee :=
+      executesSequenceReturned (executesReturnValue fieldEvaluation)
+    obtain ⟨after, callExecution, afterWellFormed, afterRepresented, callEffect⟩ :=
+      Representation.callReturned (represented := represented)
+        argumentsExecution argumentsEffect foundFunction
+        (by rw [parameters]; rfl) body
+        (by simpa [callee, accessorBindings] using bodyExecution)
+        afterArgumentsWellFormed calleeWellFormed (ModifiesOnly.refl callee)
+        (by intro cell member; exact False.elim member)
+    exact ⟨after, argumentWrites, callExecution, afterWellFormed,
+      afterRepresented, callEffect⟩
   · intro beforeWorld afterWorld calledFunction values value evaluated cell
     obtain ⟨fields, functionEq, valuesEq, fieldFound, worldEq⟩ :=
       callsFor_success (expectedFunction := function.id) (field := field)
@@ -355,26 +326,22 @@ def parseErrorPositionCalls : CallModel :=
 theorem parseStatusCalls_at_result :
     parseStatusCalls.evaluate worldValue parseStatusFunction.id
         [parseResultValue status stateCount rootState errorPosition] =
-      .ok (.signed .i32 status, worldValue) := by
-  rfl
+      .ok (.signed .i32 status, worldValue) := by rfl
 
 theorem parseStateCountCalls_at_result :
     parseStateCountCalls.evaluate worldValue parseStateCountFunction.id
         [parseResultValue status stateCount rootState errorPosition] =
-      .ok (.signed .i32 stateCount, worldValue) := by
-  rfl
+      .ok (.signed .i32 stateCount, worldValue) := by rfl
 
 theorem parseRootStateCalls_at_result :
     parseRootStateCalls.evaluate worldValue parseRootStateFunction.id
         [parseResultValue status stateCount rootState errorPosition] =
-      .ok (.signed .i32 rootState, worldValue) := by
-  rfl
+      .ok (.signed .i32 rootState, worldValue) := by rfl
 
 theorem parseErrorPositionCalls_at_result :
     parseErrorPositionCalls.evaluate worldValue parseErrorPositionFunction.id
         [parseResultValue status stateCount rootState errorPosition] =
-      .ok (.signed .i32 errorPosition, worldValue) := by
-  rfl
+      .ok (.signed .i32 errorPosition, worldValue) := by rfl
 
 theorem parseStatusCall_soundness :
     Lanius.FunctionalView.Core.EffectfulStateful.CallSoundness

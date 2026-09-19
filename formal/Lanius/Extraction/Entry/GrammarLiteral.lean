@@ -131,11 +131,11 @@ theorem LiteralStage.executes (stage : LiteralStage) (checked : Hex.Checked prog
       · exact views
       · simpa only [LiteralStage.statement, SetupStage.statement, CursorStage.statement, supported.count] using
           (Prefix.Reaches.letLocal (type := .scalar .string)
-            (show Evaluates program.core before (.value (.string stage.text)) (.string stage.text) before from ⟨1, rfl⟩)
+            (show Evaluates program.core before (.value (.string stage.text)) (.string stage.text) before from evaluatesValue)
             reached))
   refine ⟨restoreLocals before after, ?_, satisfied⟩
   apply executesLetLocal (show Evaluates program.core before (.value (.string stage.text))
-    (.string stage.text) before from ⟨1, rfl⟩)
+    (.string stage.text) before from evaluatesValue)
   simpa only [LiteralStage.statement, SetupStage.statement, CursorStage.statement, supported.count] using ran
 
 end Lanius.Extraction.Entry.Grammar

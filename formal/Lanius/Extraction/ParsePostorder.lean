@@ -71,7 +71,8 @@ theorem children_sound (grammar : Grammar) (view : ParseArtifactView artifact)
     checkChildrenParseView grammar artifact view current symbols values position = some finish := by
   induction symbols generalizing values position entries with
   | nil =>
-    cases values <;> cases entries <;> simp_all [children, checkChildrenParseView]
+    cases values <;> cases entries <;>
+      simp_all [children, checkChildrenParseView, checkChildrenCore]
   | cons symbol symbols ih =>
     cases values with
     | nil => simp [children] at accepted
@@ -81,7 +82,7 @@ theorem children_sound (grammar : Grammar) (view : ParseArtifactView artifact)
         simp only [children] at accepted
         split at accepted
         · rename_i terminal
-          simp only [checkChildrenParseView, if_pos terminal]
+          simp only [checkChildrenParseView, checkChildrenCore, if_pos terminal]
           split at accepted
           · simp at accepted
           · rename_i tokenOk
@@ -90,7 +91,8 @@ theorem children_sound (grammar : Grammar) (view : ParseArtifactView artifact)
             | none => simp [nextEq] at accepted
             | some next =>
               simp only [nextEq] at accepted ⊢
-              simpa [terminal] using ih values next entries valid accepted
+              simpa [terminal, checkChildrenParseView, checkChildrenCore] using
+                ih values next entries valid accepted
         · simp_all
       | node child =>
         simp only [children] at accepted
@@ -114,9 +116,11 @@ theorem children_sound (grammar : Grammar) (view : ParseArtifactView artifact)
                     entry.2.position_start = position := by
                   simpa [Bool.or_eq_true, Nat.not_le, and_assoc] using checks
                 have idBound : entry.1 < current := bounds.2.1 ▸ bounds.1
-                simp only [checkChildrenParseView, if_neg terminal, if_neg range]
-                simp [bounds.2.1, Nat.not_le.mpr idBound, found, bounds.2.2.1,
-                  bounds.2.2.2, ih values entry.2.position_end entries tailValid accepted]
+                simp only [checkChildrenParseView, checkChildrenCore,
+                  if_neg terminal, if_neg range]
+                simpa [bounds.2.1, Nat.not_le.mpr idBound, found, bounds.2.2.1,
+                  bounds.2.2.2, checkChildrenParseView, checkChildrenCore] using
+                  (ih values entry.2.position_end entries tailValid accepted)
 
 theorem node_sound (grammar : Grammar) (view : ParseArtifactView artifact)
     (id : Nat) (value : ParseNode) (entries : List Entry)
@@ -130,7 +134,8 @@ theorem node_sound (grammar : Grammar) (view : ParseArtifactView artifact)
     simp only [node, nodeWithLookup, production, Bool.and_eq_true, beq_iff_eq,
       Nat.ble_eq] at accepted
     rcases accepted with ⟨⟨⟨lhs, ordered⟩, bounded⟩, accepted⟩
-    simp only [checkNodeParseView, production, Bool.and_eq_true, decide_eq_true_eq]
+    simp only [checkNodeParseView, checkNodeCore, production, Bool.and_eq_true,
+      decide_eq_true_eq]
     exact ⟨⟨⟨lhs, ordered⟩, bounded⟩,
       children_sound grammar view id rule.rhs values start
         finish entries valid accepted⟩
@@ -146,7 +151,7 @@ theorem check_sound (grammar : Grammar) (view : ParseArtifactView artifact)
   | nil => rfl
   | cons value rest ih =>
     simp only [check, Bool.and_eq_true] at accepted
-    simp only [checkNodesFromParseView, Bool.and_eq_true]
+    simp only [checkNodesFromParseView, checkNodesFromCore, Bool.and_eq_true]
     have childrenValid : EntriesValid view (stack.take (childCount value)).reverse := by
       intro entry member
       exact stackValid entry (List.mem_of_mem_take (List.mem_reverse.mp member))

@@ -1,4 +1,5 @@
 import Lanius.Extraction.KernelReduction
+import Lanius.Extraction.Surface.Views
 import Lanius.Extraction.VerifiedFrontend.Artifact.Lexer.Origins
 import Lanius.Extraction.VerifiedFrontend.Surface.Lexer.Claims
 
@@ -13,6 +14,8 @@ theorem verifiedFrontendLexer_origin_trace_claims_equal_kernel :
 theorem verifiedFrontendLexer_origins_trace_checked_kernel :
     verifiedFrontendLexerOrigins.valid verifiedFrontendLexerArtifact
       verifiedFrontendLexerView = true := by
+  apply SurfaceOrigins.valid_of_components <;> try kernel_rfl
+  apply spellingCoverageValid_of_multiset
   kernel_rfl
 
 end Lanius.Extraction

@@ -7,7 +7,7 @@ open Lanius.Core Lanius.Semantics Lanius.Properties Lanius.Separation
 
 private theorem local_read {id : Lanius.VarId} (found : before.local? id = some value) :
     Evaluates program before (.local id) value before :=
-  ⟨1, evalLocal_of_local 0 program before id value found⟩
+  Lanius.Semantics.evaluatesLocal found
 
 /-- A terminal occurrence makes no recursive call and does not rewrite its
     triple. It advances only the owned child cursor, including the actual slot
@@ -32,8 +32,8 @@ theorem CheckedVisit.token_iteration (checked : CheckedVisit program)
   have cursorLocal := Assertion.localPointsTo_local _ _ _ _ cursorOwned
   have slotEvaluation : Evaluates program.core before childSlot (.signed .i32 (Int.ofNat slot)) before := by
     apply evaluatesNatI32Add
-    · exact evaluatesNatI32Add (local_read parentLocal) ⟨1, rfl⟩ (by dsimp [slot] at slotBound; omega)
-    · exact evaluatesNatI32Multiply (local_read cursorLocal) ⟨1, rfl⟩ (by dsimp [slot] at slotBound; omega)
+    · exact evaluatesNatI32Add (local_read parentLocal) Lanius.Semantics.evaluatesValue (by dsimp [slot] at slotBound; omega)
+    · exact evaluatesNatI32Multiply (local_read cursorLocal) Lanius.Semantics.evaluatesValue (by dsimp [slot] at slotBound; omega)
     · omega
   let entered := before.bindLocal 16 (.signed .i32 (Int.ofNat slot))
   have scopedWF : StateWellFormed entered := bindLocal_preserves_well_formed before 16 _ wellFormed
@@ -58,7 +58,7 @@ theorem CheckedVisit.token_iteration (checked : CheckedVisit program)
       (.boolean false) entered :=
     evaluatesEagerBinary (by decide) (by decide) tagRead (evaluatesConstant checked.childTag) rfl
   obtain ⟨completed, increment, cursorAfter, incrementEffect, incrementHeap⟩ := evaluatesOwnedLocalUpdate scopedWF scopedCursor
-    (show Evaluates program.core entered (.value (.signed .i32 1)) (.signed .i32 1) entered from ⟨1, rfl⟩)
+    (show Evaluates program.core entered (.value (.signed .i32 1)) (.signed .i32 1) entered from Lanius.Semantics.evaluatesValue)
     (show evalAssignValue program.core.target .add (some (.signed .i32 (Int.ofNat index))) (.signed .i32 1) =
         .ok (.signed .i32 (Int.ofNat (index + 1))) from by
       simp only [evalAssignValue, assignOpBinary?, evalBinaryValue, evalSignedBinary]

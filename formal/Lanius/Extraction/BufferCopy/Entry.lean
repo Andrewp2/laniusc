@@ -86,7 +86,7 @@ theorem executes_scoped_loop (program : Program) (locals : Locals) (memory : Mem
   obtain ⟨completed, ran, complete, effect, heap⟩ := executes_loop program locals memory [] memory.values
     (before.bindLocal locals.cursor (.signed .i32 0)) rfl entry.initialize
   have scopedRun := executesLetLocal (type := .scalar (.signed .i32))
-    (show Evaluates program before (.value (.signed .i32 0)) (.signed .i32 0) before from ⟨1, rfl⟩) ran
+    (show Evaluates program before (.value (.signed .i32 0)) (.signed .i32 0) before from evaluatesValue) ran
   have closed := CellEffect.closeLocal before locals.cursor (.signed .i32 0) entry.wellFormed effect
   refine ⟨restoreLocals before completed, scopedRun, complete.sourceContents, complete.destinationContents, ?_,
     heap.closeLocal before locals.cursor (.signed .i32 0)⟩

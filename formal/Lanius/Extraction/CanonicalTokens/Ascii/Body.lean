@@ -50,18 +50,18 @@ theorem executes_body (program : Program) (before : State) (locals : Locals)
       sourceContents
   have sourceResult : Evaluates program entered (.local locals.source)
       (.slice (.scalar (.signed .i32)) sourceCell [] 0 source.length) entered :=
-    ⟨1, evalLocal_of_local 0 program entered _ _ sourceStill⟩
+    Lanius.Semantics.evaluatesLocal sourceStill
   have startResult : Evaluates program entered (.local locals.start) (.signed .i32 start) entered :=
-    ⟨1, evalLocal_of_local 0 program entered _ _ startStill⟩
+    Lanius.Semantics.evaluatesLocal startStill
   have cursorResult : Evaluates program entered (.local locals.cursor) (.signed .i32 index) entered :=
-    ⟨1, evalLocal_of_local 0 program entered _ _ (Assertion.localPointsTo_local _ _ _ _ cursorStill)⟩
+    Lanius.Semantics.evaluatesLocal (Assertion.localPointsTo_local _ _ _ _ cursorStill)
   have indexResult := evaluatesNatI32Add startResult cursorResult (by omega)
   have actualResult := evaluatesSignedI32SliceIndex program entered entered entered source
     (.local locals.source) _ sourceCell (start + index) inBounds sourceResult indexResult contentsStill
   have expectedLocal : entered.local? locals.expected = some (.signed .i32 byte.toNat) :=
     bindLocal_finds_local before locals.expected _ wellFormed
   have expectedResult : Evaluates program entered (.local locals.expected) (.signed .i32 byte.toNat) entered :=
-    ⟨1, evalLocal_of_local 0 program entered _ _ expectedLocal⟩
+    Lanius.Semantics.evaluatesLocal expectedLocal
   have different : Evaluates program entered locals.different
       (.boolean (source.get ⟨start + index, inBounds⟩ != (byte.toNat : Int))) entered :=
     evaluatesEagerBinary (by decide) (by decide) actualResult expectedResult (by rfl)
@@ -90,7 +90,7 @@ theorem executes_body (program : Program) (before : State) (locals : Locals)
       rw [unequal] at different
       exact different
     have returned := executesReturnValue (program := program) (state := entered)
-      (expression := Expr.value (.boolean false)) (by exact ⟨1, rfl⟩)
+      (expression := Expr.value (.boolean false)) (by exact evaluatesValue)
     have sequence : Executes program entered locals.continuation (.returned (some (.boolean false))) entered :=
       executesSequenceReturned (executesIfTrue comparison (executesSequenceReturned returned))
     refine ⟨restoreLocals before entered, executesLetLocal expectedByte sequence,

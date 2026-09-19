@@ -33,7 +33,7 @@ theorem executes_filter (trivia : Trivia.Checked program triviaId)
       CellEffect (CellSet.union (CellSet.singleton recordsCell) (CellSet.singleton outputCell)) before after ∧
       Host.MemoryFrame before after := by
   have argument : Evaluates program before (.local 6) (.signed .i32 rawKind) before :=
-    ⟨1, evalLocal_of_local 0 program before 6 _ kindLocal⟩
+    Lanius.Semantics.evaluatesLocal kindLocal
   obtain ⟨tested, called, callEffect, callMemory⟩ := trivia.evaluates_call before rawKind (.local 6) storage.wellFormed argument
   have guardResult : Evaluates program before (.unary .logicalNot (.call triviaId [.local 6]))
       (.boolean (!(Trivia.result rawKind))) tested := evaluatesUnary called (by rfl)

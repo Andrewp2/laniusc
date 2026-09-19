@@ -1,4 +1,5 @@
 import Lanius.Extraction.KernelReduction
+import Lanius.Extraction.Surface.Views
 import Lanius.Extraction.VerifiedFrontend.Artifact.Digits.Origins
 import Lanius.Extraction.VerifiedFrontend.Surface.Digits.Claims
 
@@ -9,6 +10,8 @@ set_option maxHeartbeats 0
 theorem verifiedFrontendDigits_origins_checked_kernel :
     verifiedFrontendDigitsOrigins.valid verifiedFrontendDigitsArtifact
       verifiedFrontendDigitsView = true := by
+  apply SurfaceOrigins.valid_of_components <;> try kernel_rfl
+  apply spellingCoverageValid_of_multiset
   kernel_rfl
 
 end Lanius.Extraction

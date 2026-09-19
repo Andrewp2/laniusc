@@ -113,56 +113,49 @@ theorem writeTokens_word_after (records : List Int) (tokenIndex word : Nat)
         omega
       · omega
 
-theorem encoded_kind_at (leading trailing : List RawToken)
-    (token : RawToken) :
+private theorem encoded_word_at (leading trailing : List RawToken)
+    (token : RawToken) (field : Nat) (fieldBound : field < 3) :
     getElem! (CanonicalizeModel.encodeTokens (leading ++ token :: trailing))
-        (3 * leading.length) = Int.ofNat token.kind.gpuCode := by
+        (3 * leading.length + field) =
+      getElem! (CanonicalizeModel.encodeToken token) field := by
   rw [encodeTokens_append]
   rw [show CanonicalizeModel.encodeTokens (token :: trailing) =
     CanonicalizeModel.encodeToken token ++
       CanonicalizeModel.encodeTokens trailing by rfl]
   change getElem! (CanonicalizeModel.encodeTokens leading ++
     (CanonicalizeModel.encodeToken token ++
-      CanonicalizeModel.encodeTokens trailing)) (3 * leading.length) = _
+      CanonicalizeModel.encodeTokens trailing)) (3 * leading.length + field) = _
   rw [show 3 * leading.length =
     (CanonicalizeModel.encodeTokens leading).length by
       exact (encodeTokens_length leading).symm]
-  simp [CanonicalizeModel.encodeToken,
-    List.getElem!_eq_getElem?_getD]
+  have fields : field = 0 ∨ field = 1 ∨ field = 2 := by omega
+  rcases fields with rfl | rfl | rfl <;>
+    simp [CanonicalizeModel.encodeToken,
+      List.getElem!_eq_getElem?_getD]
+
+theorem encoded_kind_at (leading trailing : List RawToken)
+    (token : RawToken) :
+    getElem! (CanonicalizeModel.encodeTokens (leading ++ token :: trailing))
+        (3 * leading.length) = Int.ofNat token.kind.gpuCode := by
+  simpa [CanonicalizeModel.encodeToken,
+    List.getElem!_eq_getElem?_getD] using
+    encoded_word_at leading trailing token 0 (by decide)
 
 theorem encoded_start_at (leading trailing : List RawToken)
     (token : RawToken) :
     getElem! (CanonicalizeModel.encodeTokens (leading ++ token :: trailing))
         (3 * leading.length + 1) = Int.ofNat token.start := by
-  rw [encodeTokens_append]
-  rw [show CanonicalizeModel.encodeTokens (token :: trailing) =
-    CanonicalizeModel.encodeToken token ++
-      CanonicalizeModel.encodeTokens trailing by rfl]
-  change getElem! (CanonicalizeModel.encodeTokens leading ++
-    (CanonicalizeModel.encodeToken token ++
-      CanonicalizeModel.encodeTokens trailing)) (3 * leading.length + 1) = _
-  rw [show 3 * leading.length =
-    (CanonicalizeModel.encodeTokens leading).length by
-      exact (encodeTokens_length leading).symm]
-  simp [CanonicalizeModel.encodeToken,
-    List.getElem!_eq_getElem?_getD]
+  simpa [CanonicalizeModel.encodeToken,
+    List.getElem!_eq_getElem?_getD] using
+    encoded_word_at leading trailing token 1 (by decide)
 
 theorem encoded_finish_at (leading trailing : List RawToken)
     (token : RawToken) :
     getElem! (CanonicalizeModel.encodeTokens (leading ++ token :: trailing))
         (3 * leading.length + 2) = Int.ofNat token.finish := by
-  rw [encodeTokens_append]
-  rw [show CanonicalizeModel.encodeTokens (token :: trailing) =
-    CanonicalizeModel.encodeToken token ++
-      CanonicalizeModel.encodeTokens trailing by rfl]
-  change getElem! (CanonicalizeModel.encodeTokens leading ++
-    (CanonicalizeModel.encodeToken token ++
-      CanonicalizeModel.encodeTokens trailing)) (3 * leading.length + 2) = _
-  rw [show 3 * leading.length =
-    (CanonicalizeModel.encodeTokens leading).length by
-      exact (encodeTokens_length leading).symm]
-  simp [CanonicalizeModel.encodeToken,
-    List.getElem!_eq_getElem?_getD]
+  simpa [CanonicalizeModel.encodeToken,
+    List.getElem!_eq_getElem?_getD] using
+    encoded_word_at leading trailing token 2 (by decide)
 
 theorem written_kind_at_unread (sourcePrefix sourceSuffix accepted : List RawToken)
     (token : RawToken) (acceptedBound : accepted.length ≤ sourcePrefix.length) :
@@ -313,19 +306,10 @@ theorem writeToken_set_before (records : List Int) (tokenIndex word : Nat)
   change (((records.set word value).set row
       (Int.ofNat token.kind.gpuCode)).set (row + 1)
       (Int.ofNat token.start)).set (row + 2) (Int.ofNat token.finish) = _
-  calc
-    _ = (((records.set row (Int.ofNat token.kind.gpuCode)).set word value).set
-          (row + 1) (Int.ofNat token.start)).set
-          (row + 2) (Int.ofNat token.finish) := by
-      rw [List.set_comm value (Int.ofNat token.kind.gpuCode) (by omega)]
-    _ = (((records.set row (Int.ofNat token.kind.gpuCode)).set
-          (row + 1) (Int.ofNat token.start)).set word value).set
-          (row + 2) (Int.ofNat token.finish) := by
-      rw [List.set_comm value (Int.ofNat token.start) (by omega)]
-    _ = ((((records.set row (Int.ofNat token.kind.gpuCode)).set
-          (row + 1) (Int.ofNat token.start)).set
-          (row + 2) (Int.ofNat token.finish)).set word value) := by
-      rw [List.set_comm value (Int.ofNat token.finish) (by omega)]
+  rw [List.set_comm value (Int.ofNat token.kind.gpuCode) (by omega),
+    List.set_comm value (Int.ofNat token.start) (by omega),
+    List.set_comm value (Int.ofNat token.finish) (by omega)]
+  rfl
 
 theorem writeTokens_set_before (records : List Int) (tokenIndex word : Nat)
     (tokens : List RawToken) (value : Int) (before : word < 3 * tokenIndex) :
@@ -353,16 +337,10 @@ theorem writeToken_withKind (records : List Int) (tokenIndex : Nat)
       (row + 1) (Int.ofNat token.start)).set
       (row + 2) (Int.ofNat token.finish) = _
   symm
-  calc
-    _ = ((((records.set row (Int.ofNat token.kind.gpuCode)).set row
-          (Int.ofNat kind.gpuCode)).set (row + 1)
-          (Int.ofNat token.start)).set (row + 2)
-          (Int.ofNat token.finish)) := by
-      rw [List.set_comm (Int.ofNat token.finish) (Int.ofNat kind.gpuCode)
-        (by omega)]
-      rw [List.set_comm (Int.ofNat token.start) (Int.ofNat kind.gpuCode)
-        (by omega)]
-    _ = _ := by rw [List.set_set]
+  rw [List.set_comm (Int.ofNat token.finish) (Int.ofNat kind.gpuCode)
+      (by omega),
+    List.set_comm (Int.ofNat token.start) (Int.ofNat kind.gpuCode)
+      (by omega), List.set_set]
 
 theorem writeTokens_withKind (records : List Int) (start : Nat)
     (processed remaining : List RawToken) (token : RawToken)
@@ -393,6 +371,10 @@ theorem gpuCode_eq_dotDot_prop (kind : TokenKind) :
 theorem gpuCode_eq_assign_prop (kind : TokenKind) :
     Int.ofNat kind.gpuCode = (8 : Int) ↔ kind = .assign := by
   cases kind <;> native_decide
+
+private theorem int_ofNat_eq_iff (left right : Nat) :
+    Int.ofNat left = Int.ofNat right ↔ left = right :=
+  ⟨Int.ofNat_inj.mp, congrArg Int.ofNat⟩
 
 def inclusiveHead (current next : RawToken) : RawToken :=
   if isInclusiveRangePair current next then
@@ -518,29 +500,10 @@ theorem secondMatches_written (records : List Int)
     (next :: rest) current (by omega)
   simp only [Nat.zero_add] at currentKind nextKind nextStart currentFinish
   rw [currentKind, nextKind, nextStart, currentFinish]
-  have currentDecision :
-      decide (Int.ofNat current.kind.gpuCode = (182 : Int)) =
-        decide (current.kind = .dotDot) := by
-    apply Bool.eq_iff_iff.mpr
-    simpa using gpuCode_eq_dotDot_prop current.kind
-  have nextDecision :
-      decide (Int.ofNat next.kind.gpuCode = (8 : Int)) =
-        decide (next.kind = .assign) := by
-    apply Bool.eq_iff_iff.mpr
-    simpa using gpuCode_eq_assign_prop next.kind
-  rw [currentDecision, nextDecision]
-  have positionDecision :
-      decide (Int.ofNat next.start = Int.ofNat current.finish) =
-        decide (next.start = current.finish) := by
-    apply Bool.eq_iff_iff.mpr
-    simp only [decide_eq_true_eq]
-    constructor
-    · intro equal
-      apply Int.ofNat_inj.mp
-      simpa using equal
-    · intro equal
-      simpa using congrArg Int.ofNat equal
-  rw [positionDecision]
+  apply Bool.eq_iff_iff.mpr
+  simp only [Bool.and_eq_true, decide_eq_true_eq]
+  rw [gpuCode_eq_dotDot_prop, gpuCode_eq_assign_prop]
+  simp only [int_ofNat_eq_iff]
 
 theorem secondStepRecords_written (records : List Int)
     (processed rest : List RawToken) (current next : RawToken)

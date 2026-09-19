@@ -88,7 +88,7 @@ theorem sequence (writer : Natural.Checked program) (items : List (Argument prog
       Host.StderrOnly before.world after.world := by
   induction items generalizing before with
   | nil => exact ⟨before, executesSequenceReturned (executesReturnValue (show
-      Evaluates program.core before (number code) (.signed .i32 code) before from ⟨1, rfl⟩)),
+      Evaluates program.core before (number code) (.signed .i32 code) before from evaluatesValue)),
       initial, representable, Host.Effect.refl initial.wellFormed, Host.StderrOnly.refl before.world⟩
   | cons item rest ih =>
       obtain ⟨argumentsState, evaluated, argumentEffect, argumentHeap⟩ := item.1.evaluate (readable item (by simp)) initial.wellFormed

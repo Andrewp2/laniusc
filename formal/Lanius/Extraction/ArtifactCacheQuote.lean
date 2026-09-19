@@ -30,6 +30,19 @@ private def cacheElabPack (stx : Syntax) : TermElabM ArtifactPack := do
   | .ok pack => pure pack
   | .error message => throwError "invalid extraction artifact pack: {message}"
 
+private def cacheElabUnitAtPath (json : Syntax) (expectedPath : String)
+    (leafSize : Syntax) : TermElabM (Artifact × Nat) := do
+  let leafSize ← cacheElabNatLiteral leafSize
+  let pack ← cacheElabPack json
+  let some artifact := pack.units.find? fun artifact =>
+      artifact.sources.any fun source => source.path == expectedPath
+    | throwError "artifact pack has no unit for source {expectedPath}"
+  pure (artifact, leafSize)
+
+private def cacheElabUnit (json path leafSize : Syntax) : TermElabM (Artifact × Nat) := do
+  let expectedPath ← cacheElabStringLiteral path
+  cacheElabUnitAtPath json expectedPath leafSize
+
 private def checkedByte (value : Nat) : Option (Fin 256) :=
   if inRange : value < 256 then some ⟨value, inRange⟩ else none
 
@@ -158,32 +171,17 @@ def buildParentTables (artifact : Artifact) :
 
 elab "artifact_pack_unit_token_tree% " json:term ", " path:term ", "
     leafSize:term : term => do
-  let expectedPath ← cacheElabStringLiteral path
-  let leafSize ← cacheElabNatLiteral leafSize
-  let pack ← cacheElabPack json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
+  let (artifact, leafSize) ← cacheElabUnit json path leafSize
   pure (toExpr (proposeSeqTree leafSize artifact.tokens))
 
 elab "artifact_pack_unit_semantic_kind_tree% " json:term ", " path:term ", "
     leafSize:term : term => do
-  let expectedPath ← cacheElabStringLiteral path
-  let leafSize ← cacheElabNatLiteral leafSize
-  let pack ← cacheElabPack json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
+  let (artifact, leafSize) ← cacheElabUnit json path leafSize
   pure (toExpr (proposeSeqTree leafSize artifact.semantic_token_kinds))
 
 elab "artifact_pack_unit_parse_node_tree% " json:term ", " path:term ", "
     leafSize:term : term => do
-  let expectedPath ← cacheElabStringLiteral path
-  let leafSize ← cacheElabNatLiteral leafSize
-  let pack ← cacheElabPack json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
+  let (artifact, leafSize) ← cacheElabUnit json path leafSize
   pure (toExpr (proposeSeqTree leafSize artifact.parse_nodes))
 
 /-- Quote one balanced range of a unit's parse-node cache.  Large cache trees
@@ -194,11 +192,7 @@ elab "artifact_pack_unit_parse_node_tree_range% " json:term ", " path:term ", "
   let expectedPath ← cacheElabStringLiteral path
   let start ← cacheElabNatLiteral start
   let count ← cacheElabNatLiteral count
-  let leafSize ← cacheElabNatLiteral leafSize
-  let pack ← cacheElabPack json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
+  let (artifact, leafSize) ← cacheElabUnitAtPath json expectedPath leafSize
   unless start + count ≤ artifact.parse_nodes.length do
     throwError "parse-node tree range exceeds unit {expectedPath}"
   pure (toExpr (proposeSeqTree leafSize
@@ -208,11 +202,7 @@ elab "artifact_pack_unit_source_byte_tree% " json:term ", " path:term ", "
     sourceIndex:term ", " leafSize:term : term => do
   let expectedPath ← cacheElabStringLiteral path
   let sourceIndex ← cacheElabNatLiteral sourceIndex
-  let leafSize ← cacheElabNatLiteral leafSize
-  let pack ← cacheElabPack json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
+  let (artifact, leafSize) ← cacheElabUnitAtPath json expectedPath leafSize
   let some source := artifact.sources[sourceIndex]?
     | throwError "source index is absent in unit {expectedPath}"
   let some bytes := source.bytes.mapM checkedByte
@@ -224,11 +214,7 @@ elab "artifact_pack_unit_cache_trees% " json:term ", " path:term ", "
     sourceIndex:term ", " leafSize:term : term => do
   let expectedPath ← cacheElabStringLiteral path
   let sourceIndex ← cacheElabNatLiteral sourceIndex
-  let leafSize ← cacheElabNatLiteral leafSize
-  let pack ← cacheElabPack json
-  let some artifact := pack.units.find? fun artifact =>
-      artifact.sources.any fun source => source.path == expectedPath
-    | throwError "artifact pack has no unit for source {expectedPath}"
+  let (artifact, leafSize) ← cacheElabUnitAtPath json expectedPath leafSize
   let some source := artifact.sources[sourceIndex]?
     | throwError "source index is absent in unit {expectedPath}"
   let some bytes := source.bytes.mapM checkedByte

@@ -123,23 +123,12 @@ theorem evalExprs_fuel_stable_succ
       | done value next =>
           have headStable := previous.expr_eq extra headResult (by simp [Terminal])
           cases tailResult : evalExprs fuel program next expressions with
-          | done values completed =>
-              have tailStable := previous.exprs_eq extra tailResult
-                (by simp [Terminal])
-              simp [headResult, headStable, tailResult, tailStable]
-          | trapped reason completed =>
-              have tailStable := previous.exprs_eq extra tailResult
-                (by simp [Terminal])
-              simp [headResult, headStable, tailResult, tailStable]
-          | exited code exitedState =>
+          | done _ _ | trapped _ _ | exited _ _ =>
               have tailStable := previous.exprs_eq extra tailResult
                 (by simp [Terminal])
               simp [headResult, headStable, tailResult, tailStable]
           | outOfFuel => simp [headResult, tailResult, Terminal] at terminal
-      | trapped reason next =>
-          have headStable := previous.expr_eq extra headResult (by simp [Terminal])
-          simp [headResult, headStable]
-      | exited code exitedState =>
+      | trapped _ _ | exited _ _ =>
           have headStable := previous.expr_eq extra headResult (by simp [Terminal])
           simp [headResult, headStable]
       | outOfFuel => simp [headResult, Terminal] at terminal
@@ -159,28 +148,14 @@ theorem evalMatchArms_fuel_stable_succ
       cases matched : matchPattern pattern value with
       | none =>
           cases armsResult : evalMatchArms fuel program state value arms with
-          | done result next =>
-              have stable := previous.matchArms_eq extra armsResult
-                (by simp [Terminal])
-              simp [matched, armsResult, stable]
-          | trapped reason next =>
-              have stable := previous.matchArms_eq extra armsResult
-                (by simp [Terminal])
-              simp [matched, armsResult, stable]
-          | exited code next =>
+          | done _ _ | trapped _ _ | exited _ _ =>
               have stable := previous.matchArms_eq extra armsResult
                 (by simp [Terminal])
               simp [matched, armsResult, stable]
           | outOfFuel => simp [matched, armsResult, Terminal] at terminal
       | some bindings =>
           cases bodyResult : evalExpr fuel program (state.bindLocals bindings) body with
-          | done result next =>
-              have stable := previous.expr_eq extra bodyResult (by simp [Terminal])
-              simp [matched, bodyResult, stable, restoreOutcomeLocals]
-          | trapped reason next =>
-              have stable := previous.expr_eq extra bodyResult (by simp [Terminal])
-              simp [matched, bodyResult, stable, restoreOutcomeLocals]
-          | exited code next =>
+          | done _ _ | trapped _ _ | exited _ _ =>
               have stable := previous.expr_eq extra bodyResult (by simp [Terminal])
               simp [matched, bodyResult, stable, restoreOutcomeLocals]
           | outOfFuel =>
@@ -204,15 +179,7 @@ theorem execForValues_fuel_stable_succ
           | next | continueLoop =>
               cases restResult : execForValues fuel program
                   (restoreLocals state completed) id values body with
-              | done result next =>
-                  have restStable := previous.forValues_eq extra id restResult
-                    (by simp [Terminal])
-                  simp [bodyResult, bodyStable, restResult, restStable]
-              | trapped reason next =>
-                  have restStable := previous.forValues_eq extra id restResult
-                    (by simp [Terminal])
-                  simp [bodyResult, bodyStable, restResult, restStable]
-              | exited code next =>
+              | done _ _ | trapped _ _ | exited _ _ =>
                   have restStable := previous.forValues_eq extra id restResult
                     (by simp [Terminal])
                   simp [bodyResult, bodyStable, restResult, restStable]
@@ -255,17 +222,7 @@ theorem execForRange_fuel_stable_succ
               let next := wrapSigned program.target .i32 (current + 1)
               cases restResult : execForRange fuel program unbound id next stop
                   inclusive body with
-              | done result nextState =>
-                  have restStable := previous.forRange_eq extra id restResult
-                    (by simp [Terminal])
-                  simp [bodyResult, bodyStable, unbound, atInclusiveEnd, notAtEnd,
-                    next, restResult, restStable]
-              | trapped reason nextState =>
-                  have restStable := previous.forRange_eq extra id restResult
-                    (by simp [Terminal])
-                  simp [bodyResult, bodyStable, unbound, atInclusiveEnd, notAtEnd,
-                    next, restResult, restStable]
-              | exited code nextState =>
+              | done _ _ | trapped _ _ | exited _ _ =>
                   have restStable := previous.forRange_eq extra id restResult
                     (by simp [Terminal])
                   simp [bodyResult, bodyStable, unbound, atInclusiveEnd, notAtEnd,
@@ -295,15 +252,7 @@ theorem evalPlace_fuel_stable_succ
   | field base field =>
       simp only [evalPlace, Nat.add_succ] at terminal ⊢
       cases baseResult : evalPlace fuel program state base with
-      | done resolved next =>
-          have baseStable := previous.place_eq extra base baseResult
-            (by simp [Terminal])
-          simp [baseResult, baseStable]
-      | trapped reason next =>
-          have baseStable := previous.place_eq extra base baseResult
-            (by simp [Terminal])
-          simp [baseResult, baseStable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have baseStable := previous.place_eq extra base baseResult
             (by simp [Terminal])
           simp [baseResult, baseStable]
@@ -321,17 +270,7 @@ theorem evalPlace_fuel_stable_succ
               | array elements =>
                   cases indexResult : evalExpr fuel program afterBase
                       indexExpression with
-                  | done indexValue afterIndex =>
-                      have indexStable := previous.expr_eq extra indexResult
-                        (by simp [Terminal])
-                      simp [baseResult, baseStable, valueResult, indexResult,
-                        indexStable]
-                  | trapped reason next =>
-                      have indexStable := previous.expr_eq extra indexResult
-                        (by simp [Terminal])
-                      simp [baseResult, baseStable, valueResult, indexResult,
-                        indexStable]
-                  | exited code next =>
+                  | done _ _ | trapped _ _ | exited _ _ =>
                       have indexStable := previous.expr_eq extra indexResult
                         (by simp [Terminal])
                       simp [baseResult, baseStable, valueResult, indexResult,
@@ -341,17 +280,7 @@ theorem evalPlace_fuel_stable_succ
               | slice elementType cell projections start length =>
                   cases indexResult : evalExpr fuel program afterBase
                       indexExpression with
-                  | done indexValue afterIndex =>
-                      have indexStable := previous.expr_eq extra indexResult
-                        (by simp [Terminal])
-                      simp [baseResult, baseStable, valueResult, indexResult,
-                        indexStable]
-                  | trapped reason next =>
-                      have indexStable := previous.expr_eq extra indexResult
-                        (by simp [Terminal])
-                      simp [baseResult, baseStable, valueResult, indexResult,
-                        indexStable]
-                  | exited code next =>
+                  | done _ _ | trapped _ _ | exited _ _ =>
                       have indexStable := previous.expr_eq extra indexResult
                         (by simp [Terminal])
                       simp [baseResult, baseStable, valueResult, indexResult,
@@ -381,13 +310,7 @@ theorem execStmt_fuel_stable_succ
   | expression expression =>
       simp only [execStmt, Nat.add_succ] at terminal ⊢
       cases expressionResult : evalExpr fuel program state expression with
-      | done value next =>
-          have stable := previous.expr_eq extra expressionResult (by simp [Terminal])
-          simp [expressionResult, stable]
-      | trapped reason next =>
-          have stable := previous.expr_eq extra expressionResult (by simp [Terminal])
-          simp [expressionResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.expr_eq extra expressionResult (by simp [Terminal])
           simp [expressionResult, stable]
       | outOfFuel => simp [expressionResult, Terminal] at terminal
@@ -399,15 +322,7 @@ theorem execStmt_fuel_stable_succ
           cases completion with
           | next =>
               cases secondResult : execStmt fuel program next second with
-              | done completion completed =>
-                  have secondStable := previous.stmt_eq extra secondResult
-                    (by simp [Terminal])
-                  simp [firstResult, firstStable, secondResult, secondStable]
-              | trapped reason completed =>
-                  have secondStable := previous.stmt_eq extra secondResult
-                    (by simp [Terminal])
-                  simp [firstResult, firstStable, secondResult, secondStable]
-              | exited code completed =>
+              | done _ _ | trapped _ _ | exited _ _ =>
                   have secondStable := previous.stmt_eq extra secondResult
                     (by simp [Terminal])
                   simp [firstResult, firstStable, secondResult, secondStable]
@@ -430,15 +345,7 @@ theorem execStmt_fuel_stable_succ
           have initializerStable := previous.expr_eq extra initializerResult
             (by simp [Terminal])
           cases bodyResult : execStmt fuel program (next.bindLocal id value) body with
-          | done completion completed =>
-              have bodyStable := previous.stmt_eq extra bodyResult (by simp [Terminal])
-              simp [initializerResult, initializerStable, bodyResult, bodyStable,
-                restoreOutcomeLocals]
-          | trapped reason completed =>
-              have bodyStable := previous.stmt_eq extra bodyResult (by simp [Terminal])
-              simp [initializerResult, initializerStable, bodyResult, bodyStable,
-                restoreOutcomeLocals]
-          | exited code completed =>
+          | done _ _ | trapped _ _ | exited _ _ =>
               have bodyStable := previous.stmt_eq extra bodyResult (by simp [Terminal])
               simp [initializerResult, initializerStable, bodyResult, bodyStable,
                 restoreOutcomeLocals]
@@ -457,13 +364,7 @@ theorem execStmt_fuel_stable_succ
   | letUninitialized id type body =>
       simp only [execStmt, Nat.add_succ] at terminal ⊢
       cases bodyResult : execStmt fuel program (state.bindUninitialized id) body with
-      | done completion completed =>
-          have bodyStable := previous.stmt_eq extra bodyResult (by simp [Terminal])
-          simp [bodyResult, bodyStable, restoreOutcomeLocals]
-      | trapped reason completed =>
-          have bodyStable := previous.stmt_eq extra bodyResult (by simp [Terminal])
-          simp [bodyResult, bodyStable, restoreOutcomeLocals]
-      | exited code completed =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have bodyStable := previous.stmt_eq extra bodyResult (by simp [Terminal])
           simp [bodyResult, bodyStable, restoreOutcomeLocals]
       | outOfFuel =>
@@ -746,13 +647,7 @@ theorem evalExpr_fuel_stable_succ
   | cast target operand =>
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases operandResult : evalExpr fuel program state operand with
-      | done value next =>
-          have stable := previous.expr_eq extra operandResult (by simp [Terminal])
-          simp [operandResult, stable]
-      | trapped reason next =>
-          have stable := previous.expr_eq extra operandResult (by simp [Terminal])
-          simp [operandResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.expr_eq extra operandResult (by simp [Terminal])
           simp [operandResult, stable]
       | outOfFuel => simp [operandResult, Terminal] at terminal
@@ -782,25 +677,14 @@ theorem evalExpr_fuel_stable_succ
                   | false => simp [leftResult, leftStable]
                   | true =>
                       cases rightResult : evalExpr fuel program next right with
-                      | done result completed =>
-                          have rightStable := previous.expr_eq extra rightResult
-                            (by simp [Terminal])
-                          simp [leftResult, leftStable, rightResult, rightStable]
-                      | trapped reason completed =>
-                          have rightStable := previous.expr_eq extra rightResult
-                            (by simp [Terminal])
-                          simp [leftResult, leftStable, rightResult, rightStable]
-                      | exited code completed =>
+                      | done _ _ | trapped _ _ | exited _ _ =>
                           have rightStable := previous.expr_eq extra rightResult
                             (by simp [Terminal])
                           simp [leftResult, leftStable, rightResult, rightStable]
                       | outOfFuel =>
                           simp [leftResult, rightResult, Terminal] at terminal
               | _ => simp [leftResult, leftStable]
-          | trapped reason next =>
-              have leftStable := previous.expr_eq extra leftResult (by simp [Terminal])
-              simp [leftResult, leftStable]
-          | exited code next =>
+          | trapped _ _ | exited _ _ =>
               have leftStable := previous.expr_eq extra leftResult (by simp [Terminal])
               simp [leftResult, leftStable]
           | outOfFuel => simp [leftResult, Terminal] at terminal
@@ -815,25 +699,14 @@ theorem evalExpr_fuel_stable_succ
                   | true => simp [leftResult, leftStable]
                   | false =>
                       cases rightResult : evalExpr fuel program next right with
-                      | done result completed =>
-                          have rightStable := previous.expr_eq extra rightResult
-                            (by simp [Terminal])
-                          simp [leftResult, leftStable, rightResult, rightStable]
-                      | trapped reason completed =>
-                          have rightStable := previous.expr_eq extra rightResult
-                            (by simp [Terminal])
-                          simp [leftResult, leftStable, rightResult, rightStable]
-                      | exited code completed =>
+                      | done _ _ | trapped _ _ | exited _ _ =>
                           have rightStable := previous.expr_eq extra rightResult
                             (by simp [Terminal])
                           simp [leftResult, leftStable, rightResult, rightStable]
                       | outOfFuel =>
                           simp [leftResult, rightResult, Terminal] at terminal
               | _ => simp [leftResult, leftStable]
-          | trapped reason next =>
-              have leftStable := previous.expr_eq extra leftResult (by simp [Terminal])
-              simp [leftResult, leftStable]
-          | exited code next =>
+          | trapped _ _ | exited _ _ =>
               have leftStable := previous.expr_eq extra leftResult (by simp [Terminal])
               simp [leftResult, leftStable]
           | outOfFuel => simp [leftResult, Terminal] at terminal
@@ -843,62 +716,33 @@ theorem evalExpr_fuel_stable_succ
           | done leftValue afterLeft =>
               have leftStable := previous.expr_eq extra leftResult (by simp [Terminal])
               cases rightResult : evalExpr fuel program afterLeft right with
-              | done rightValue afterRight =>
-                  have rightStable := previous.expr_eq extra rightResult
-                    (by simp [Terminal])
-                  simp [leftResult, leftStable, rightResult, rightStable]
-              | trapped reason next =>
-                  have rightStable := previous.expr_eq extra rightResult
-                    (by simp [Terminal])
-                  simp [leftResult, leftStable, rightResult, rightStable]
-              | exited code next =>
+              | done _ _ | trapped _ _ | exited _ _ =>
                   have rightStable := previous.expr_eq extra rightResult
                     (by simp [Terminal])
                   simp [leftResult, leftStable, rightResult, rightStable]
               | outOfFuel => simp [leftResult, rightResult, Terminal] at terminal
-          | trapped reason next =>
-              have leftStable := previous.expr_eq extra leftResult (by simp [Terminal])
-              simp [leftResult, leftStable]
-          | exited code next =>
+          | trapped _ _ | exited _ _ =>
               have leftStable := previous.expr_eq extra leftResult (by simp [Terminal])
               simp [leftResult, leftStable]
           | outOfFuel => simp [leftResult, Terminal] at terminal
   | array elementType elements =>
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases elementsResult : evalExprs fuel program state elements with
-      | done values next =>
-          have stable := previous.exprs_eq extra elementsResult (by simp [Terminal])
-          simp [elementsResult, stable]
-      | trapped reason next =>
-          have stable := previous.exprs_eq extra elementsResult (by simp [Terminal])
-          simp [elementsResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.exprs_eq extra elementsResult (by simp [Terminal])
           simp [elementsResult, stable]
       | outOfFuel => simp [elementsResult, Terminal] at terminal
   | structValue id fields =>
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases fieldsResult : evalExprs fuel program state fields with
-      | done values next =>
-          have stable := previous.exprs_eq extra fieldsResult (by simp [Terminal])
-          simp [fieldsResult, stable]
-      | trapped reason next =>
-          have stable := previous.exprs_eq extra fieldsResult (by simp [Terminal])
-          simp [fieldsResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.exprs_eq extra fieldsResult (by simp [Terminal])
           simp [fieldsResult, stable]
       | outOfFuel => simp [fieldsResult, Terminal] at terminal
   | enumValue id variant payload =>
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases payloadResult : evalExprs fuel program state payload with
-      | done values next =>
-          have stable := previous.exprs_eq extra payloadResult (by simp [Terminal])
-          simp [payloadResult, stable]
-      | trapped reason next =>
-          have stable := previous.exprs_eq extra payloadResult (by simp [Terminal])
-          simp [payloadResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.exprs_eq extra payloadResult (by simp [Terminal])
           simp [payloadResult, stable]
       | outOfFuel => simp [payloadResult, Terminal] at terminal
@@ -907,25 +751,13 @@ theorem evalExpr_fuel_stable_succ
       cases placeResult : expressionPlace? array with
       | none =>
           cases arrayResult : evalExpr fuel program state array with
-          | done value next =>
-              have stable := previous.expr_eq extra arrayResult (by simp [Terminal])
-              simp [placeResult, arrayResult, stable]
-          | trapped reason next =>
-              have stable := previous.expr_eq extra arrayResult (by simp [Terminal])
-              simp [placeResult, arrayResult, stable]
-          | exited code next =>
+          | done _ _ | trapped _ _ | exited _ _ =>
               have stable := previous.expr_eq extra arrayResult (by simp [Terminal])
               simp [placeResult, arrayResult, stable]
           | outOfFuel => simp [placeResult, arrayResult, Terminal] at terminal
       | some place =>
           cases evaluated : evalPlace fuel program state place with
-          | done resolved next =>
-              have stable := previous.place_eq extra place evaluated (by simp [Terminal])
-              simp [placeResult, evaluated, stable]
-          | trapped reason next =>
-              have stable := previous.place_eq extra place evaluated (by simp [Terminal])
-              simp [placeResult, evaluated, stable]
-          | exited code next =>
+          | done _ _ | trapped _ _ | exited _ _ =>
               have stable := previous.place_eq extra place evaluated (by simp [Terminal])
               simp [placeResult, evaluated, stable]
           | outOfFuel => simp [placeResult, evaluated, Terminal] at terminal
@@ -937,37 +769,20 @@ theorem evalExpr_fuel_stable_succ
           cases value with
           | array elements | slice _ _ _ _ _ =>
               cases indexResult : evalExpr fuel program afterBase index with
-              | done indexValue afterIndex =>
-                  have indexStable := previous.expr_eq extra indexResult
-                    (by simp [Terminal])
-                  simp [baseResult, baseStable, indexResult, indexStable]
-              | trapped reason next =>
-                  have indexStable := previous.expr_eq extra indexResult
-                    (by simp [Terminal])
-                  simp [baseResult, baseStable, indexResult, indexStable]
-              | exited code next =>
+              | done _ _ | trapped _ _ | exited _ _ =>
                   have indexStable := previous.expr_eq extra indexResult
                     (by simp [Terminal])
                   simp [baseResult, baseStable, indexResult, indexStable]
               | outOfFuel => simp [baseResult, indexResult, Terminal] at terminal
           | _ => simp [baseResult, baseStable]
-      | trapped reason next =>
-          have baseStable := previous.expr_eq extra baseResult (by simp [Terminal])
-          simp [baseResult, baseStable]
-      | exited code next =>
+      | trapped _ _ | exited _ _ =>
           have baseStable := previous.expr_eq extra baseResult (by simp [Terminal])
           simp [baseResult, baseStable]
       | outOfFuel => simp [baseResult, Terminal] at terminal
   | field base field =>
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases baseResult : evalExpr fuel program state base with
-      | done value next =>
-          have stable := previous.expr_eq extra baseResult (by simp [Terminal])
-          simp [baseResult, stable]
-      | trapped reason next =>
-          have stable := previous.expr_eq extra baseResult (by simp [Terminal])
-          simp [baseResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.expr_eq extra baseResult (by simp [Terminal])
           simp [baseResult, stable]
       | outOfFuel => simp [baseResult, Terminal] at terminal
@@ -978,24 +793,13 @@ theorem evalExpr_fuel_stable_succ
           have scrutineeStable := previous.expr_eq extra scrutineeResult
             (by simp [Terminal])
           cases armsResult : evalMatchArms fuel program next value arms with
-          | done result completed =>
-              have armsStable := previous.matchArms_eq extra armsResult
-                (by simp [Terminal])
-              simp [scrutineeResult, scrutineeStable, armsResult, armsStable]
-          | trapped reason completed =>
-              have armsStable := previous.matchArms_eq extra armsResult
-                (by simp [Terminal])
-              simp [scrutineeResult, scrutineeStable, armsResult, armsStable]
-          | exited code completed =>
+          | done _ _ | trapped _ _ | exited _ _ =>
               have armsStable := previous.matchArms_eq extra armsResult
                 (by simp [Terminal])
               simp [scrutineeResult, scrutineeStable, armsResult, armsStable]
           | outOfFuel =>
               simp [scrutineeResult, armsResult, Terminal] at terminal
-      | trapped reason next =>
-          have stable := previous.expr_eq extra scrutineeResult (by simp [Terminal])
-          simp [scrutineeResult, stable]
-      | exited code next =>
+      | trapped _ _ | exited _ _ =>
           have stable := previous.expr_eq extra scrutineeResult (by simp [Terminal])
           simp [scrutineeResult, stable]
       | outOfFuel => simp [scrutineeResult, Terminal] at terminal
@@ -1006,21 +810,11 @@ theorem evalExpr_fuel_stable_succ
           have placeStable := previous.place_eq extra place placeResult
             (by simp [Terminal])
           cases valueResult : evalExpr fuel program afterPlace valueExpression with
-          | done value afterValue =>
-              have valueStable := previous.expr_eq extra valueResult (by simp [Terminal])
-              simp [placeResult, placeStable, valueResult, valueStable]
-          | trapped reason next =>
-              have valueStable := previous.expr_eq extra valueResult (by simp [Terminal])
-              simp [placeResult, placeStable, valueResult, valueStable]
-          | exited code next =>
+          | done _ _ | trapped _ _ | exited _ _ =>
               have valueStable := previous.expr_eq extra valueResult (by simp [Terminal])
               simp [placeResult, placeStable, valueResult, valueStable]
           | outOfFuel => simp [placeResult, valueResult, Terminal] at terminal
-      | trapped reason next =>
-          have placeStable := previous.place_eq extra place placeResult
-            (by simp [Terminal])
-          simp [placeResult, placeStable]
-      | exited code next =>
+      | trapped _ _ | exited _ _ =>
           have placeStable := previous.place_eq extra place placeResult
             (by simp [Terminal])
           simp [placeResult, placeStable]
@@ -1028,26 +822,14 @@ theorem evalExpr_fuel_stable_succ
   | borrow referent place =>
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases placeResult : evalPlace fuel program state place with
-      | done resolved next =>
-          have stable := previous.place_eq extra place placeResult (by simp [Terminal])
-          simp [placeResult, stable]
-      | trapped reason next =>
-          have stable := previous.place_eq extra place placeResult (by simp [Terminal])
-          simp [placeResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.place_eq extra place placeResult (by simp [Terminal])
           simp [placeResult, stable]
       | outOfFuel => simp [placeResult, Terminal] at terminal
   | dereference reference =>
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases referenceResult : evalExpr fuel program state reference with
-      | done value next =>
-          have stable := previous.expr_eq extra referenceResult (by simp [Terminal])
-          simp [referenceResult, stable]
-      | trapped reason next =>
-          have stable := previous.expr_eq extra referenceResult (by simp [Terminal])
-          simp [referenceResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.expr_eq extra referenceResult (by simp [Terminal])
           simp [referenceResult, stable]
       | outOfFuel => simp [referenceResult, Terminal] at terminal
@@ -1078,17 +860,7 @@ theorem evalExpr_fuel_stable_succ
                       let callee :=
                         ({ afterArguments with locals := [] }).bindLocals locals
                       cases bodyResult : execStmt fuel program callee body with
-                      | done completion completed =>
-                          have bodyStable := previous.stmt_eq extra bodyResult
-                            (by simp [Terminal])
-                          simp [argumentsResult, argumentsStable, functionFound, bodyFound,
-                            parametersBound, callee, bodyResult, bodyStable]
-                      | trapped reason completed =>
-                          have bodyStable := previous.stmt_eq extra bodyResult
-                            (by simp [Terminal])
-                          simp [argumentsResult, argumentsStable, functionFound, bodyFound,
-                            parametersBound, callee, bodyResult, bodyStable]
-                      | exited code completed =>
+                      | done _ _ | trapped _ _ | exited _ _ =>
                           have bodyStable := previous.stmt_eq extra bodyResult
                             (by simp [Terminal])
                           simp [argumentsResult, argumentsStable, functionFound, bodyFound,
@@ -1096,11 +868,7 @@ theorem evalExpr_fuel_stable_succ
                       | outOfFuel =>
                           simp [argumentsResult, functionFound, bodyFound, parametersBound,
                             callee, bodyResult, Terminal] at terminal
-      | trapped reason next =>
-          have argumentsStable := previous.exprs_eq extra argumentsResult
-            (by simp [Terminal])
-          simp [argumentsResult, argumentsStable]
-      | exited code next =>
+      | trapped _ _ | exited _ _ =>
           have argumentsStable := previous.exprs_eq extra argumentsResult
             (by simp [Terminal])
           simp [argumentsResult, argumentsStable]
@@ -1108,13 +876,7 @@ theorem evalExpr_fuel_stable_succ
   | intrinsic operation argument =>
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases argumentResult : evalExpr fuel program state argument with
-      | done value next =>
-          have stable := previous.expr_eq extra argumentResult (by simp [Terminal])
-          simp [argumentResult, stable]
-      | trapped reason next =>
-          have stable := previous.expr_eq extra argumentResult (by simp [Terminal])
-          simp [argumentResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.expr_eq extra argumentResult (by simp [Terminal])
           simp [argumentResult, stable]
       | outOfFuel => simp [argumentResult, Terminal] at terminal
@@ -1123,25 +885,13 @@ theorem evalExpr_fuel_stable_succ
       cases placeResult : expressionPlace? array with
       | none =>
           cases arrayResult : evalExpr fuel program state array with
-          | done value next =>
-              have stable := previous.expr_eq extra arrayResult (by simp [Terminal])
-              simp [placeResult, arrayResult, stable]
-          | trapped reason next =>
-              have stable := previous.expr_eq extra arrayResult (by simp [Terminal])
-              simp [placeResult, arrayResult, stable]
-          | exited code next =>
+          | done _ _ | trapped _ _ | exited _ _ =>
               have stable := previous.expr_eq extra arrayResult (by simp [Terminal])
               simp [placeResult, arrayResult, stable]
           | outOfFuel => simp [placeResult, arrayResult, Terminal] at terminal
       | some place =>
           cases evaluated : evalPlace fuel program state place with
-          | done resolved next =>
-              have stable := previous.place_eq extra place evaluated (by simp [Terminal])
-              simp [placeResult, evaluated, stable]
-          | trapped reason next =>
-              have stable := previous.place_eq extra place evaluated (by simp [Terminal])
-              simp [placeResult, evaluated, stable]
-          | exited code next =>
+          | done _ _ | trapped _ _ | exited _ _ =>
               have stable := previous.place_eq extra place evaluated (by simp [Terminal])
               simp [placeResult, evaluated, stable]
           | outOfFuel => simp [placeResult, evaluated, Terminal] at terminal
@@ -1153,51 +903,28 @@ theorem evalExpr_fuel_stable_succ
           cases pointerValue with
           | pointer address =>
               cases lengthResult : evalExpr fuel program afterPointer length with
-              | done lengthValue afterLength =>
-                  have lengthStable := previous.expr_eq extra lengthResult
-                    (by simp [Terminal])
-                  simp [pointerResult, pointerStable, lengthResult, lengthStable]
-              | trapped reason next =>
-                  have lengthStable := previous.expr_eq extra lengthResult
-                    (by simp [Terminal])
-                  simp [pointerResult, pointerStable, lengthResult, lengthStable]
-              | exited code next =>
+              | done _ _ | trapped _ _ | exited _ _ =>
                   have lengthStable := previous.expr_eq extra lengthResult
                     (by simp [Terminal])
                   simp [pointerResult, pointerStable, lengthResult, lengthStable]
               | outOfFuel =>
                   simp [pointerResult, lengthResult, Terminal] at terminal
           | _ => simp [pointerResult, pointerStable]
-      | trapped reason next =>
-          have pointerStable := previous.expr_eq extra pointerResult (by simp [Terminal])
-          simp [pointerResult, pointerStable]
-      | exited code next =>
+      | trapped _ _ | exited _ _ =>
           have pointerStable := previous.expr_eq extra pointerResult (by simp [Terminal])
           simp [pointerResult, pointerStable]
       | outOfFuel => simp [pointerResult, Terminal] at terminal
   | i32SliceDataPtr slice =>
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases sliceResult : evalExpr fuel program state slice with
-      | done value next =>
-          have stable := previous.expr_eq extra sliceResult (by simp [Terminal])
-          simp [sliceResult, stable]
-      | trapped reason next =>
-          have stable := previous.expr_eq extra sliceResult (by simp [Terminal])
-          simp [sliceResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.expr_eq extra sliceResult (by simp [Terminal])
           simp [sliceResult, stable]
       | outOfFuel => simp [sliceResult, Terminal] at terminal
   | stringDataPtr string =>
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases stringResult : evalExpr fuel program state string with
-      | done value next =>
-          have stable := previous.expr_eq extra stringResult (by simp [Terminal])
-          simp [stringResult, stable]
-      | trapped reason next =>
-          have stable := previous.expr_eq extra stringResult (by simp [Terminal])
-          simp [stringResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.expr_eq extra stringResult (by simp [Terminal])
           simp [stringResult, stable]
       | outOfFuel => simp [stringResult, Terminal] at terminal
@@ -1211,15 +938,7 @@ theorem evalExpr_fuel_stable_succ
               cases sizeType with
               | usize =>
                   cases alignmentResult : evalExpr fuel program afterSize alignment with
-                  | done alignmentValue afterAlignment =>
-                      have alignmentStable := previous.expr_eq extra alignmentResult
-                        (by simp [Terminal])
-                      simp [sizeResult, sizeStable, alignmentResult, alignmentStable]
-                  | trapped reason next =>
-                      have alignmentStable := previous.expr_eq extra alignmentResult
-                        (by simp [Terminal])
-                      simp [sizeResult, sizeStable, alignmentResult, alignmentStable]
-                  | exited code next =>
+                  | done _ _ | trapped _ _ | exited _ _ =>
                       have alignmentStable := previous.expr_eq extra alignmentResult
                         (by simp [Terminal])
                       simp [sizeResult, sizeStable, alignmentResult, alignmentStable]
@@ -1227,10 +946,7 @@ theorem evalExpr_fuel_stable_succ
                       simp [sizeResult, alignmentResult, Terminal] at terminal
               | _ => simp [sizeResult, sizeStable]
           | _ => simp [sizeResult, sizeStable]
-      | trapped reason next =>
-          have sizeStable := previous.expr_eq extra sizeResult (by simp [Terminal])
-          simp [sizeResult, sizeStable]
-      | exited code next =>
+      | trapped _ _ | exited _ _ =>
           have sizeStable := previous.expr_eq extra sizeResult (by simp [Terminal])
           simp [sizeResult, sizeStable]
       | outOfFuel => simp [sizeResult, Terminal] at terminal
@@ -1238,13 +954,7 @@ theorem evalExpr_fuel_stable_succ
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases argumentsResult : evalExprs fuel program state
           [pointer, oldSize, newSize, alignment] with
-      | done values next =>
-          have stable := previous.exprs_eq extra argumentsResult (by simp [Terminal])
-          simp [argumentsResult, stable]
-      | trapped reason next =>
-          have stable := previous.exprs_eq extra argumentsResult (by simp [Terminal])
-          simp [argumentsResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.exprs_eq extra argumentsResult (by simp [Terminal])
           simp [argumentsResult, stable]
       | outOfFuel => simp [argumentsResult, Terminal] at terminal
@@ -1252,39 +962,21 @@ theorem evalExpr_fuel_stable_succ
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases argumentsResult : evalExprs fuel program state
           [pointer, size, alignment] with
-      | done values next =>
-          have stable := previous.exprs_eq extra argumentsResult (by simp [Terminal])
-          simp [argumentsResult, stable]
-      | trapped reason next =>
-          have stable := previous.exprs_eq extra argumentsResult (by simp [Terminal])
-          simp [argumentsResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.exprs_eq extra argumentsResult (by simp [Terminal])
           simp [argumentsResult, stable]
       | outOfFuel => simp [argumentsResult, Terminal] at terminal
   | loadByte pointer offset =>
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases argumentsResult : evalExprs fuel program state [pointer, offset] with
-      | done values next =>
-          have stable := previous.exprs_eq extra argumentsResult (by simp [Terminal])
-          simp [argumentsResult, stable]
-      | trapped reason next =>
-          have stable := previous.exprs_eq extra argumentsResult (by simp [Terminal])
-          simp [argumentsResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.exprs_eq extra argumentsResult (by simp [Terminal])
           simp [argumentsResult, stable]
       | outOfFuel => simp [argumentsResult, Terminal] at terminal
   | storeByte pointer offset value =>
       simp only [evalExpr, Nat.add_succ] at terminal ⊢
       cases argumentsResult : evalExprs fuel program state [pointer, offset, value] with
-      | done values next =>
-          have stable := previous.exprs_eq extra argumentsResult (by simp [Terminal])
-          simp [argumentsResult, stable]
-      | trapped reason next =>
-          have stable := previous.exprs_eq extra argumentsResult (by simp [Terminal])
-          simp [argumentsResult, stable]
-      | exited code next =>
+      | done _ _ | trapped _ _ | exited _ _ =>
           have stable := previous.exprs_eq extra argumentsResult (by simp [Terminal])
           simp [argumentsResult, stable]
       | outOfFuel => simp [argumentsResult, Terminal] at terminal
@@ -1325,6 +1017,19 @@ theorem execStmt_more_fuel
       execStmt fuel program state statement :=
   (evaluatorFuelStableAt fuel).stmt extra program state statement terminal
 
+private theorem done_at_larger_fuel
+    {α : Type} {evaluate : Nat → Outcome α} {small large : Nat}
+    (enough : small ≤ large)
+    (more : ∀ extra, Terminal (evaluate small) →
+      evaluate (extra + small) = evaluate small)
+    {value : α} {finalState : State}
+    (result : evaluate small = .done value finalState) :
+    evaluate large = .done value finalState := by
+  have terminal : Terminal (evaluate small) := by simp [result, Terminal]
+  have stable := more (large - small) terminal
+  rw [Nat.sub_add_cancel enough] at stable
+  exact stable.trans result
+
 /-- A successful expression evaluation remains successful at any larger fuel
     bound. This packages the subtraction arithmetic needed to use
     `evalExpr_more_fuel` with an ordered pair of fuel bounds. -/
@@ -1332,12 +1037,8 @@ theorem evalExpr_done_at_larger_fuel
     {small large : Nat} (enough : small ≤ large)
     (result : evalExpr small program state expression = .done value finalState) :
     evalExpr large program state expression = .done value finalState := by
-  have terminal : Terminal (evalExpr small program state expression) := by
-    rw [result]
-    trivial
-  have stable := evalExpr_more_fuel (extra := large - small) terminal
-  rw [Nat.sub_add_cancel enough] at stable
-  exact stable.trans result
+  exact done_at_larger_fuel (evaluate := fun fuel => evalExpr fuel program state expression)
+    enough ((evaluatorFuelStableAt small).expr · program state expression) result
 
 /-- A successful argument-list evaluation remains successful at any larger
     fuel bound. -/
@@ -1346,26 +1047,16 @@ theorem evalExprs_done_at_larger_fuel
     (result : evalExprs small program state expressions =
       .done values finalState) :
     evalExprs large program state expressions = .done values finalState := by
-  have terminal : Terminal (evalExprs small program state expressions) := by
-    rw [result]
-    trivial
-  have stable := (evaluatorFuelStableAt small).exprs
-    (large - small) program state expressions terminal
-  rw [Nat.sub_add_cancel enough] at stable
-  exact stable.trans result
+  exact done_at_larger_fuel (evaluate := fun fuel => evalExprs fuel program state expressions)
+    enough ((evaluatorFuelStableAt small).exprs · program state expressions) result
 
 /-- A successfully resolved place remains resolved at any larger fuel bound. -/
 theorem evalPlace_done_at_larger_fuel
     {small large : Nat} (enough : small ≤ large)
     (result : evalPlace small program state place = .done resolved finalState) :
     evalPlace large program state place = .done resolved finalState := by
-  have terminal : Terminal (evalPlace small program state place) := by
-    rw [result]
-    trivial
-  have stable := (evaluatorFuelStableAt small).place
-    (large - small) program state place terminal
-  rw [Nat.sub_add_cancel enough] at stable
-  exact stable.trans result
+  exact done_at_larger_fuel (evaluate := fun fuel => evalPlace fuel program state place)
+    enough ((evaluatorFuelStableAt small).place · program state place) result
 
 /-- A successfully completed statement remains completed at any larger fuel
     bound. -/
@@ -1374,12 +1065,8 @@ theorem execStmt_done_at_larger_fuel
     (result : execStmt small program state statement =
       .done completion finalState) :
     execStmt large program state statement = .done completion finalState := by
-  have terminal : Terminal (execStmt small program state statement) := by
-    rw [result]
-    trivial
-  have stable := execStmt_more_fuel (extra := large - small) terminal
-  rw [Nat.sub_add_cancel enough] at stable
-  exact stable.trans result
+  exact done_at_larger_fuel (evaluate := fun fuel => execStmt fuel program state statement)
+    enough ((evaluatorFuelStableAt small).stmt · program state statement) result
 
 /-- Successful structural expression evaluation is functional even when two
     proofs use different fuel witnesses.  Both observations are replayed at

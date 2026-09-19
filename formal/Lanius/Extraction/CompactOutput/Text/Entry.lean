@@ -118,7 +118,7 @@ theorem executes (byte : CheckedByte program) (before : State) (text : String)
   have scopedRun := executesLetLocal (id := 5) (type := .slice i32) initializer
     (executesLetLocal (id := 6) (type := i32) positionInitializer
       (executesLetLocal (id := 7) (type := i32)
-        (show Evaluates program.core positioned (number 0) (.signed .i32 0) positioned from ⟨1, rfl⟩) finished))
+        (show Evaluates program.core positioned (number 0) (.signed .i32 0) positioned from evaluatesValue) finished))
   have guard : Evaluates program.core before (binary .lessEqual (read 4) negativeOne)
       (.boolean false) before := by
     apply evaluatesEagerBinary (by decide) (by decide) (local_evaluates program.core lengthRead)

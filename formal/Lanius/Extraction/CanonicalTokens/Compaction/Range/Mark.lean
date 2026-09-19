@@ -34,7 +34,7 @@ theorem executes_mark (table : Table program tokens)
       have yes : Evaluates program before (rangeCondition tokens) (.boolean true) before := by
         simpa only [selected] using condition
       have indexResult : Evaluates program before (.local 11) (.signed .i32 currentRow) before :=
-        ⟨1, evalLocal_of_local 0 program before 11 _ currentLocal⟩
+        Lanius.Semantics.evaluatesLocal currentLocal
       obtain ⟨after, assignment, contents, effect, storeHeapFrame, _⟩ := evaluatesSliceStore program before before records
         1 (.local 11) (.constant tokens.inclusive) recordsCell currentRow 189 storage.wellFormed (by omega)
         storage.recordsLocal indexResult (constantResult program before tokens.inclusive 189 table.inclusiveFound)

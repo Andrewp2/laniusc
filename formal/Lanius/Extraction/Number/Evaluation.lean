@@ -131,6 +131,11 @@ abbrev commandMachine (calls : CallModel) :=
   machineWith verifiedFrontendCore
     (Effectful.evaluateOperation verifiedFrontendCore calls)
 
+private abbrev Returns (calls : CallModel) (world : World)
+    (environment : Env arity) (term : Term signature arity) (value : Value) : Prop :=
+  Term.evaluate (Effectful.machine verifiedFrontendCore calls)
+    world environment term = .ok (value, world)
+
 @[simp] private theorem setLast_push
     (environment : Env arity) (oldValue newValue : Value) :
     Stateful.Env.set (environment.push oldValue) ⟨arity, by omega⟩ newValue =
@@ -167,23 +172,17 @@ private theorem digitCall_evaluates
     (start base : Nat)
     (startBound : start ≤ 2147483647)
     (baseBound : base ≤ 2147483647)
-    (sourceEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment sourceTerm =
-        .ok (Model.sourceSlice source, world))
-    (boundEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment boundTerm =
-        .ok (.signed .i32 source.length, world))
-    (startEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment startTerm =
-        .ok (.signed .i32 start, world))
-    (baseEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment baseTerm =
-        .ok (.signed .i32 base, world)) :
-    Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-        world currentEnvironment
-        (Commands.digitCall sourceTerm boundTerm startTerm baseTerm) =
-      .ok (digitScanValue (scanDigitRun source start base),
-        world) := by
+    (sourceEvaluation : Returns calls world currentEnvironment sourceTerm
+      (Model.sourceSlice source))
+    (boundEvaluation : Returns calls world currentEnvironment boundTerm
+      (.signed .i32 source.length))
+    (startEvaluation : Returns calls world currentEnvironment startTerm
+      (.signed .i32 start))
+    (baseEvaluation : Returns calls world currentEnvironment baseTerm
+      (.signed .i32 base)) :
+    Returns calls world currentEnvironment
+      (Commands.digitCall sourceTerm boundTerm startTerm baseTerm)
+      (digitScanValue (scanDigitRun source start base)) := by
   unfold Commands.digitCall Commands.call
   apply Term.evaluate_apply
   · exact evaluateTerms_cons sourceEvaluation
@@ -200,13 +199,11 @@ private theorem leadingDigitCall_evaluates
     (contract : HelperContract calls source world)
     (sourceBound : source.length ≤ 2147483647)
     (startInBounds : start < source.length) :
-    Term.evaluate (Effectful.machine verifiedFrontendCore calls) world
-        (Model.environment source start)
+    Returns calls world (Model.environment source start)
         (Commands.digitCall (Commands.slot 0) (Commands.slot 1)
           (Commands.add (Commands.slot 2) (Commands.i32 1))
-          (Commands.i32 10)) =
-      .ok (digitScanValue (scanDigitRun source (start + 1) 10),
-        world) := by
+          (Commands.i32 10))
+        (digitScanValue (scanDigitRun source (start + 1) 10)) := by
   have sumBound : start + 1 ≤ 2147483647 := by omega
   have startPlusOne : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
       world (Model.environment source start)
@@ -233,14 +230,12 @@ private theorem digitSucceeded_evaluates
     (result : DigitScanResult)
     (resultBound : match result with
       | .success offset | .failure offset => offset ≤ 2147483647)
-    (resultEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment resultTerm =
-        .ok (digitScanValue result, world)) :
-    Term.evaluate (Effectful.machine verifiedFrontendCore calls) world
-        currentEnvironment (Commands.digitSucceeded resultTerm) =
-      .ok (.boolean (match result with
+    (resultEvaluation : Returns calls world currentEnvironment resultTerm
+      (digitScanValue result)) :
+    Returns calls world currentEnvironment (Commands.digitSucceeded resultTerm)
+      (.boolean (match result with
         | .success _ => true
-        | .failure _ => false), world) := by
+        | .failure _ => false)) := by
   unfold Commands.digitSucceeded Commands.call
   apply Term.evaluate_apply1 resultEvaluation
   change calls.evaluate world
@@ -252,12 +247,10 @@ private theorem digitEnd_evaluates
     (currentEnvironment : Env arity) (resultTerm : Term signature arity)
     (finish : Nat)
     (finishBound : finish ≤ 2147483647)
-    (resultEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment resultTerm =
-        .ok (digitScanValue (.success finish), world)) :
-    Term.evaluate (Effectful.machine verifiedFrontendCore calls) world
-        currentEnvironment (Commands.digitEnd resultTerm) =
-      .ok (.signed .i32 finish, world) := by
+    (resultEvaluation : Returns calls world currentEnvironment resultTerm
+      (digitScanValue (.success finish))) :
+    Returns calls world currentEnvironment (Commands.digitEnd resultTerm)
+      (.signed .i32 finish) := by
   unfold Commands.digitEnd Commands.call
   exact Term.evaluate_apply1 resultEvaluation
     (contract.digitEnd finish finishBound)
@@ -267,12 +260,10 @@ private theorem digitError_evaluates
     (currentEnvironment : Env arity) (resultTerm : Term signature arity)
     (error : Nat)
     (errorBound : error ≤ 2147483647)
-    (resultEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment resultTerm =
-        .ok (digitScanValue (.failure error), world)) :
-    Term.evaluate (Effectful.machine verifiedFrontendCore calls) world
-        currentEnvironment (Commands.digitError resultTerm) =
-      .ok (.signed .i32 error, world) := by
+    (resultEvaluation : Returns calls world currentEnvironment resultTerm
+      (digitScanValue (.failure error))) :
+    Returns calls world currentEnvironment (Commands.digitError resultTerm)
+      (.signed .i32 error) := by
   unfold Commands.digitError Commands.call
   exact Term.evaluate_apply1 resultEvaluation
     (contract.digitError error errorBound)
@@ -282,12 +273,10 @@ private theorem numberFailure_evaluates
     (currentEnvironment : Env arity) (offsetTerm : Term signature arity)
     (error : Nat)
     (errorBound : error ≤ 2147483647)
-    (offsetEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment offsetTerm =
-        .ok (.signed .i32 error, world)) :
-    Term.evaluate (Effectful.machine verifiedFrontendCore calls) world
-        currentEnvironment (Commands.numberFailure offsetTerm) =
-      .ok (Model.encoded (.failure error), world) := by
+    (offsetEvaluation : Returns calls world currentEnvironment offsetTerm
+      (.signed .i32 error)) :
+    Returns calls world currentEnvironment (Commands.numberFailure offsetTerm)
+      (Model.encoded (.failure error)) := by
   unfold Commands.numberFailure Commands.call
   exact Term.evaluate_apply1 offsetEvaluation
     (contract.numberFailure error errorBound)
@@ -297,12 +286,10 @@ private theorem floatScan_evaluates
     (currentEnvironment : Env arity) (offsetTerm : Term signature arity)
     (finish : Nat)
     (finishBound : finish ≤ 2147483647)
-    (offsetEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment offsetTerm =
-        .ok (.signed .i32 finish, world)) :
-    Term.evaluate (Effectful.machine verifiedFrontendCore calls) world
-        currentEnvironment (Commands.floatScan offsetTerm) =
-      .ok (Model.encoded (.success .float finish), world) := by
+    (offsetEvaluation : Returns calls world currentEnvironment offsetTerm
+      (.signed .i32 finish)) :
+    Returns calls world currentEnvironment (Commands.floatScan offsetTerm)
+      (Model.encoded (.success .float finish)) := by
   unfold Commands.floatScan Commands.call
   exact Term.evaluate_apply1 offsetEvaluation
     (contract.floatScan finish finishBound)
@@ -312,12 +299,10 @@ private theorem integerScan_evaluates
     (currentEnvironment : Env arity) (offsetTerm : Term signature arity)
     (finish : Nat)
     (finishBound : finish ≤ 2147483647)
-    (offsetEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment offsetTerm =
-        .ok (.signed .i32 finish, world)) :
-    Term.evaluate (Effectful.machine verifiedFrontendCore calls) world
-        currentEnvironment (Commands.integerScan offsetTerm) =
-      .ok (Model.encoded (.success .integer finish), world) := by
+    (offsetEvaluation : Returns calls world currentEnvironment offsetTerm
+      (.signed .i32 finish)) :
+    Returns calls world currentEnvironment (Commands.integerScan offsetTerm)
+      (Model.encoded (.success .integer finish)) := by
   unfold Commands.integerScan Commands.call
   exact Term.evaluate_apply1 offsetEvaluation
     (contract.integerScan finish finishBound)
@@ -328,18 +313,15 @@ private theorem finishDecimal_evaluates
     (sourceTerm boundTerm startTerm : Term signature arity)
     (start : Nat)
     (startBound : start ≤ source.length)
-    (sourceEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment sourceTerm =
-        .ok (Model.sourceSlice source, world))
-    (boundEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment boundTerm =
-        .ok (.signed .i32 source.length, world))
-    (startEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment startTerm =
-        .ok (.signed .i32 start, world)) :
-    Term.evaluate (Effectful.machine verifiedFrontendCore calls) world
-        currentEnvironment (Commands.finishDecimal sourceTerm boundTerm startTerm) =
-      .ok (Model.encoded (finishDecimal source start), world) := by
+    (sourceEvaluation : Returns calls world currentEnvironment sourceTerm
+      (Model.sourceSlice source))
+    (boundEvaluation : Returns calls world currentEnvironment boundTerm
+      (.signed .i32 source.length))
+    (startEvaluation : Returns calls world currentEnvironment startTerm
+      (.signed .i32 start)) :
+    Returns calls world currentEnvironment
+      (Commands.finishDecimal sourceTerm boundTerm startTerm)
+      (Model.encoded (finishDecimal source start)) := by
   unfold Commands.finishDecimal Commands.call
   apply Term.evaluate_apply
   · exact evaluateTerms_cons sourceEvaluation
@@ -357,20 +339,15 @@ private theorem scanExponent_evaluates
     (sourceTerm boundTerm startTerm : Term signature arity)
     (start : Nat)
     (startBound : start < source.length)
-    (sourceEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment sourceTerm =
-        .ok (Model.sourceSlice source, world))
-    (boundEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment boundTerm =
-        .ok (.signed .i32 source.length, world))
-    (startEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment startTerm =
-        .ok (.signed .i32 start, world)) :
-    Term.evaluate (Effectful.machine verifiedFrontendCore calls) world
-        currentEnvironment
-        (Commands.scanExponent sourceTerm boundTerm startTerm) =
-      .ok (Model.encoded (scanExponent source start),
-        world) := by
+    (sourceEvaluation : Returns calls world currentEnvironment sourceTerm
+      (Model.sourceSlice source))
+    (boundEvaluation : Returns calls world currentEnvironment boundTerm
+      (.signed .i32 source.length))
+    (startEvaluation : Returns calls world currentEnvironment startTerm
+      (.signed .i32 start)) :
+    Returns calls world currentEnvironment
+      (Commands.scanExponent sourceTerm boundTerm startTerm)
+      (Model.encoded (scanExponent source start)) := by
   unfold Commands.scanExponent Commands.call
   apply Term.evaluate_apply
   · exact evaluateTerms_cons sourceEvaluation
@@ -387,13 +364,11 @@ private theorem failedDigitCondition_evaluates
     (currentEnvironment : Env arity) (resultTerm : Term signature arity)
     (error : Nat)
     (errorBound : error ≤ 2147483647)
-    (resultEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment resultTerm =
-        .ok (digitScanValue (.failure error), world)) :
-    Term.evaluate (Effectful.machine verifiedFrontendCore calls) world
-        currentEnvironment
-        (Commands.unary .logicalNot (Commands.digitSucceeded resultTerm)) =
-      .ok (.boolean true, world) := by
+    (resultEvaluation : Returns calls world currentEnvironment resultTerm
+      (digitScanValue (.failure error))) :
+    Returns calls world currentEnvironment
+      (Commands.unary .logicalNot (Commands.digitSucceeded resultTerm))
+      (.boolean true) := by
   unfold Commands.unary
   apply Term.evaluate_apply1
     (digitSucceeded_evaluates contract currentEnvironment resultTerm
@@ -405,13 +380,11 @@ private theorem successfulDigitCondition_evaluates
     (currentEnvironment : Env arity) (resultTerm : Term signature arity)
     (finish : Nat)
     (finishBound : finish ≤ 2147483647)
-    (resultEvaluation : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-      world currentEnvironment resultTerm =
-        .ok (digitScanValue (.success finish), world)) :
-    Term.evaluate (Effectful.machine verifiedFrontendCore calls) world
-        currentEnvironment
-        (Commands.unary .logicalNot (Commands.digitSucceeded resultTerm)) =
-      .ok (.boolean false, world) := by
+    (resultEvaluation : Returns calls world currentEnvironment resultTerm
+      (digitScanValue (.success finish))) :
+    Returns calls world currentEnvironment
+      (Commands.unary .logicalNot (Commands.digitSucceeded resultTerm))
+      (.boolean false) := by
   unfold Commands.unary
   apply Term.evaluate_apply1
     (digitSucceeded_evaluates contract currentEnvironment resultTerm
@@ -643,12 +616,11 @@ theorem scanLeadingDotNumber_run
       simp only [passedCondition, Stateful.Acyclic.run?,
         finishEvaluation]
       by_cases finishInBounds : finish < source.length
-      · have boundCondition : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-            world
+      · have boundCondition : Returns calls world
             (((Model.environment source start).push
               (digitScanValue (.success finish))).push (.signed .i32 finish))
-            (Commands.comparison .less (Commands.slot 4) (Commands.slot 1)) =
-          .ok (.boolean true, world) := by
+            (Commands.comparison .less (Commands.slot 4) (Commands.slot 1))
+            (.boolean true) := by
           simpa [finishInBounds] using
             (lessNat_evaluates calls world
               (((Model.environment source start).push
@@ -668,16 +640,14 @@ theorem scanLeadingDotNumber_run
         by_cases exponent : source[finish].val = 101 ∨ source[finish].val = 69
         · have byteExponent : byte.val = 101 ∨ byte.val = 69 := by
             simpa [byte] using exponent
-          have exponentCondition : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-              world
+          have exponentCondition : Returns calls world
               ((((Model.environment source start).push
                 (digitScanValue (.success finish))).push
                   (.signed .i32 finish)).push (.signed .i32 byte.val))
               ((Commands.comparison .equal (Commands.slot 5)
                   (Commands.i32 101)).logicalOr
                 (Commands.comparison .equal (Commands.slot 5)
-                  (Commands.i32 69))) =
-            .ok (.boolean true, world) := by
+                  (Commands.i32 69))) (.boolean true) := by
             rcases byteExponent with left | right
             · rw [left]
               rfl
@@ -712,16 +682,14 @@ theorem scanLeadingDotNumber_run
             exponent]
         · have byteNotExponent : ¬(byte.val = 101 ∨ byte.val = 69) := by
             simpa [byte] using exponent
-          have exponentCondition : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-              world
+          have exponentCondition : Returns calls world
               ((((Model.environment source start).push
                 (digitScanValue (.success finish))).push
                   (.signed .i32 finish)).push (.signed .i32 byte.val))
               ((Commands.comparison .equal (Commands.slot 5)
                   (Commands.i32 101)).logicalOr
                 (Commands.comparison .equal (Commands.slot 5)
-                  (Commands.i32 69))) =
-            .ok (.boolean false, world) := by
+                  (Commands.i32 69))) (.boolean false) := by
             have notFirst : byte.val ≠ 101 := fun equal =>
               byteNotExponent (Or.inl equal)
             have notSecond : byte.val ≠ 69 := fun equal =>
@@ -750,12 +718,11 @@ theorem scanLeadingDotNumber_run
             floatEvaluation]
           simp [scanLeadingDotNumber, digits, byteValueAt, finishInBounds,
             exponent]
-      · have boundCondition : Term.evaluate (Effectful.machine verifiedFrontendCore calls)
-            world
+      · have boundCondition : Returns calls world
             (((Model.environment source start).push
               (digitScanValue (.success finish))).push (.signed .i32 finish))
-            (Commands.comparison .less (Commands.slot 4) (Commands.slot 1)) =
-          .ok (.boolean false, world) := by
+            (Commands.comparison .less (Commands.slot 4) (Commands.slot 1))
+            (.boolean false) := by
           simpa [finishInBounds] using
             (lessNat_evaluates calls world
               (((Model.environment source start).push

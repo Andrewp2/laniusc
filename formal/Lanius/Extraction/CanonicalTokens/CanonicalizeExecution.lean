@@ -4,6 +4,7 @@ import Lanius.Extraction.CanonicalTokens.CanonicalizeModel
 import Lanius.Extraction.CanonicalTokens.CanonicalizeStructure
 import Lanius.FunctionalViewLoop
 import Lanius.FunctionalViewCoreEffectfulStateful
+import Lanius.FunctionalViewRenaming
 
 namespace Lanius.Extraction.CanonicalTokens.CanonicalizeExecution
 
@@ -109,50 +110,16 @@ theorem firstEnvironment_set_input (source records : List Int)
     Env.set (firstEnvironment source records rawCount input output)
         ⟨3, by omega⟩ (.signed .i32 nextInput) =
       firstEnvironment source records rawCount nextInput output := by
-  funext index
-  have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-      index.val = 3 ∨ index.val = 4 := by omega
-  rcases cases with h | h | h | h | h
-  · have same : index = ⟨0, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [Env.set, firstEnvironment, initialEnvironment, Env.push]
-  · have same : index = ⟨1, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [Env.set, firstEnvironment, initialEnvironment, Env.push]
-  · have same : index = ⟨2, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [Env.set, firstEnvironment, initialEnvironment, Env.push]
-  · have same : index = ⟨3, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [Env.set, firstEnvironment, initialEnvironment, Env.push]
-  · have same : index = ⟨4, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [Env.set, firstEnvironment, initialEnvironment, Env.push]
+  apply Env.eq_ofFn
+  simp [Env.set, firstEnvironment, initialEnvironment, Env.push]
 
 theorem firstEnvironment_set_output (source records : List Int)
     (rawCount input output nextOutput : Nat) :
     Env.set (firstEnvironment source records rawCount input output)
         ⟨4, by omega⟩ (.signed .i32 nextOutput) =
       firstEnvironment source records rawCount input nextOutput := by
-  funext index
-  have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-      index.val = 3 ∨ index.val = 4 := by omega
-  rcases cases with h | h | h | h | h
-  · have same : index = ⟨0, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [Env.set, firstEnvironment, initialEnvironment, Env.push]
-  · have same : index = ⟨1, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [Env.set, firstEnvironment, initialEnvironment, Env.push]
-  · have same : index = ⟨2, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [Env.set, firstEnvironment, initialEnvironment, Env.push]
-  · have same : index = ⟨3, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [Env.set, firstEnvironment, initialEnvironment, Env.push]
-  · have same : index = ⟨4, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [Env.set, firstEnvironment, initialEnvironment, Env.push]
+  apply Env.eq_ofFn
+  simp [Env.set, firstEnvironment, initialEnvironment, Env.push]
 
 theorem firstEnvironment_records_length_congr (source before after : List Int)
     (rawCount input output : Nat) (sameLength : before.length = after.length) :
@@ -190,30 +157,8 @@ theorem secondEnvironment_set_range (source records : List Int)
     Env.set (secondEnvironment source records rawCount output range)
         ⟨5, by omega⟩ (.signed .i32 nextRange) =
       secondEnvironment source records rawCount output nextRange := by
-  funext index
-  have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-      index.val = 3 ∨ index.val = 4 ∨ index.val = 5 := by omega
-  rcases cases with h | h | h | h | h | h
-  all_goals
-    first
-    | have same : index = ⟨0, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.set, secondEnvironment, initialEnvironment, Env.push]
-    | have same : index = ⟨1, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.set, secondEnvironment, initialEnvironment, Env.push]
-    | have same : index = ⟨2, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.set, secondEnvironment, initialEnvironment, Env.push]
-    | have same : index = ⟨3, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.set, secondEnvironment, initialEnvironment, Env.push]
-    | have same : index = ⟨4, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.set, secondEnvironment, initialEnvironment, Env.push]
-    | have same : index = ⟨5, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.set, secondEnvironment, initialEnvironment, Env.push]
+  apply Env.eq_ofFn
+  simp [Env.set, secondEnvironment, initialEnvironment, Env.push]
 
 theorem secondEnvironment_records_length_congr (source before after : List Int)
     (rawCount output range : Nat) (sameLength : before.length = after.length) :
@@ -471,6 +416,43 @@ def afterRowEnvironment (source records : List Int)
       .signed .i32 (3 * input) := by
   exact Env.push_last _ _
 
+theorem recordsIndex_evaluates {arity : Nat} (source records : List Int)
+    (environment : Env arity) (base : Fin arity) (position : Nat)
+    (indexTerm : Term Core.signature arity)
+    (baseValue : environment base =
+      .slice CanonicalizeStructure.i32 1 [] 0 records.length)
+    (indexValue : Term.evaluate TM (world source records) environment indexTerm =
+      .ok (.signed .i32 (Int.ofNat position), world source records))
+    (positionBound : position < records.length) :
+    Term.evaluate TM (world source records) environment
+        (CanonicalizeStructure.index
+          (CanonicalizeStructure.slot base) indexTerm) =
+      .ok (.signed .i32 (records.get ⟨position, positionBound⟩),
+        world source records) := by
+  unfold CanonicalizeStructure.index
+  apply Term.evaluate_apply2
+      (leftValue := .slice CanonicalizeStructure.i32 1 [] 0 records.length)
+      (rightValue := .signed .i32 (Int.ofNat position))
+      (afterLeft := world source records) (afterRight := world source records)
+  · simp only [CanonicalizeStructure.slot, Term.evaluate, Ref.evaluate]
+    rw [baseValue]
+  · exact indexValue
+  · change Lanius.FunctionalView.Core.Effectful.evaluateOperation
+        verifiedFrontendCore calls (world source records)
+        (.index CanonicalizeStructure.sliceI32 CanonicalizeStructure.i32
+          CanonicalizeStructure.i32)
+        [.slice CanonicalizeStructure.i32 1 [] 0 records.length,
+          .signed .i32 (Int.ofNat position)] = _
+    rw [Lanius.FunctionalView.Core.Effectful.evaluateOperation_eq_readOnly_of_callFree
+      (by rfl)]
+    exact ReadOnly.evaluateOperation_i32_index
+      (program := verifiedFrontendCore) (world := world source records)
+      (cell := 1) (values := records) (position := position)
+      (baseType := CanonicalizeStructure.sliceI32)
+      (indexType := CanonicalizeStructure.i32)
+      (elementType := CanonicalizeStructure.i32)
+      (world_records source records) positionBound
+
 theorem firstKind_evaluates (source records : List Int)
     (rawCount input output : Nat)
     (rowBound : 3 * input < records.length) :
@@ -481,37 +463,14 @@ theorem firstKind_evaluates (source records : List Int)
       .ok (.signed .i32 (records.get ⟨3 * input, rowBound⟩),
         world source records) := by
   unfold CanonicalizeStructure.firstKind CanonicalizeStructure.index
-  apply Term.evaluate_apply2
-    (leftValue := .slice CanonicalizeStructure.i32 1 [] 0 records.length)
-    (rightValue := .signed .i32 (3 * input))
-    (afterLeft := world source records)
-    (afterRight := world source records)
+  apply recordsIndex_evaluates source records _ _ (3 * input) _
+  · simp [Env.push, firstEnvironment, initialEnvironment]
   · simp only [CanonicalizeStructure.slot, Term.evaluate, Ref.evaluate]
-    simp [Env.push, firstEnvironment, initialEnvironment]
-  · simp only [CanonicalizeStructure.slot, Term.evaluate, Ref.evaluate]
-    simp [Env.push]
-  · change Lanius.FunctionalView.Core.Effectful.evaluateOperation
-        verifiedFrontendCore calls (world source records)
-        (.index CanonicalizeStructure.sliceI32 CanonicalizeStructure.i32
-          CanonicalizeStructure.i32)
-        [.slice CanonicalizeStructure.i32 1 [] 0 records.length,
-          .signed .i32 (3 * input)] = _
-    rw [Lanius.FunctionalView.Core.Effectful.evaluateOperation_eq_readOnly_of_callFree
-      (by rfl)]
-    have indexed := ReadOnly.evaluateOperation_i32_index
-      (program := verifiedFrontendCore) (world := world source records)
-      (cell := 1) (values := records) (position := 3 * input)
-      (baseType := CanonicalizeStructure.sliceI32)
-      (indexType := CanonicalizeStructure.i32)
-      (elementType := CanonicalizeStructure.i32)
-      (world_records source records) rowBound
-    change ReadOnly.evaluateOperation verifiedFrontendCore
-      (world source records)
-      (.index CanonicalizeStructure.sliceI32
-        (.scalar (.signed .i32)) (.scalar (.signed .i32)))
-      [.slice (.scalar (.signed .i32)) 1 [] 0 records.length,
-        .signed .i32 (Int.ofNat (3 * input))] = _
-    exact indexed
+    change Term.evaluate TM (world source records)
+      ((firstEnvironment source records rawCount input output).push
+        (.signed .i32 (3 * (input : Int))))
+      (CanonicalizeStructure.signed (Int.ofNat (3 * input))) = _
+    simp [CanonicalizeStructure.signed, Term.evaluate, Ref.evaluate, Env.push]
 
 theorem firstIsKept_evaluates (source records : List Int)
     (rawCount input output : Nat) (kind : Int) :
@@ -583,34 +542,17 @@ theorem firstStart_evaluates (source records : List Int)
         (((firstEnvironment source records rawCount input output).push
           (.signed .i32 (3 * (input : Int)))).push (.signed .i32 kind))
         CanonicalizeStructure.firstStart =
-      .ok (.signed .i32 (records.get ⟨3 * input + 1, startBound⟩),
+        .ok (.signed .i32 (records.get ⟨3 * input + 1, startBound⟩),
         world source records) := by
-  change Term.evaluate
-      (Lanius.FunctionalView.Core.Effectful.machine verifiedFrontendCore calls)
-      (world source records)
-      (((firstEnvironment source records rawCount input output).push
-        (.signed .i32 (3 * (input : Int)))).push (.signed .i32 kind))
-      CanonicalizeStructure.firstStart = _
   have leftEq : Int.ofNat (3 * input) = 3 * (input : Int) := by
-    calc
-      _ = Int.ofNat 3 * Int.ofNat input := Int.natCast_mul 3 input
-      _ = _ := rfl
+    exact Int.natCast_mul 3 input
   have resultEq : Int.ofNat (3 * input + 1) =
       3 * (input : Int) + 1 := by
-    calc
-      _ = Int.ofNat (3 * input) + Int.ofNat 1 :=
-        Int.natCast_add (3 * input) 1
-      _ = _ := by
-        rw [leftEq]
-        have one : Int.ofNat 1 = (1 : Int) := by decide
-        rw [one]
+    simp only [Int.ofNat_eq_natCast, Int.natCast_add, Int.natCast_mul]
+    rfl
   unfold CanonicalizeStructure.firstStart CanonicalizeStructure.index
-  apply Term.evaluate_apply2
-    (leftValue := .slice CanonicalizeStructure.i32 1 [] 0 records.length)
-    (rightValue := .signed .i32 (3 * input + 1))
-    (afterLeft := world source records) (afterRight := world source records)
-  · simp only [CanonicalizeStructure.slot, Term.evaluate, Ref.evaluate]
-    rw [afterKind_records source records rawCount input output kind _ (by rfl)]
+  apply recordsIndex_evaluates source records _ _ (3 * input + 1) _
+  · rw [afterKind_records source records rawCount input output kind _ (by rfl)]
   · unfold CanonicalizeStructure.add
     apply Term.evaluate_apply2
       (leftValue := .signed .i32 (3 * (input : Int)))
@@ -637,26 +579,6 @@ theorem firstStart_evaluates (source records : List Int)
         (rightType := CanonicalizeStructure.i32)
         (outputType := CanonicalizeStructure.i32)
         (left := 3 * input) (right := 1) startFitsI32
-  · change Lanius.FunctionalView.Core.Effectful.evaluateOperation
-        verifiedFrontendCore calls (world source records)
-        (.index CanonicalizeStructure.sliceI32 CanonicalizeStructure.i32
-          CanonicalizeStructure.i32)
-        [.slice CanonicalizeStructure.i32 1 [] 0 records.length,
-          .signed .i32 (3 * input + 1)] = _
-    change ReadOnly.evaluateOperation verifiedFrontendCore
-        (world source records)
-        (.index CanonicalizeStructure.sliceI32 CanonicalizeStructure.i32
-          CanonicalizeStructure.i32)
-        [.slice CanonicalizeStructure.i32 1 [] 0 records.length,
-          .signed .i32 (3 * (input : Int) + 1)] = _
-    rw [← resultEq]
-    exact ReadOnly.evaluateOperation_i32_index
-      (program := verifiedFrontendCore) (world := world source records)
-      (cell := 1) (values := records) (position := 3 * input + 1)
-      (baseType := CanonicalizeStructure.sliceI32)
-      (indexType := CanonicalizeStructure.i32)
-      (elementType := CanonicalizeStructure.i32)
-      (world_records source records) startBound
 
 theorem firstEnd_evaluates (source records : List Int)
     (rawCount input output : Nat) (kind start : Int)
@@ -670,23 +592,13 @@ theorem firstEnd_evaluates (source records : List Int)
       .ok (.signed .i32 (records.get ⟨3 * input + 2, finishBound⟩),
         world source records) := by
   have leftEq : Int.ofNat (3 * input) = 3 * (input : Int) := by
-    calc
-      _ = Int.ofNat 3 * Int.ofNat input := Int.natCast_mul 3 input
-      _ = _ := rfl
+    exact Int.natCast_mul 3 input
   have resultEq : Int.ofNat (3 * input + 2) =
       3 * (input : Int) + 2 := by
-    calc
-      _ = Int.ofNat (3 * input) + Int.ofNat 2 :=
-        Int.natCast_add (3 * input) 2
-      _ = _ := by
-        rw [leftEq]
-        have two : Int.ofNat 2 = (2 : Int) := by decide
-        rw [two]
+    simp only [Int.ofNat_eq_natCast, Int.natCast_add, Int.natCast_mul]
+    rfl
   unfold CanonicalizeStructure.firstEnd CanonicalizeStructure.index
-  apply Term.evaluate_apply2
-    (leftValue := .slice CanonicalizeStructure.i32 1 [] 0 records.length)
-    (rightValue := .signed .i32 (3 * input + 2))
-    (afterLeft := world source records) (afterRight := world source records)
+  apply recordsIndex_evaluates source records _ _ (3 * input + 2) _
   · simp [CanonicalizeStructure.slot, Term.evaluate, Ref.evaluate,
       Env.push, firstEnvironment, initialEnvironment]
   · unfold CanonicalizeStructure.add
@@ -711,20 +623,6 @@ theorem firstEnd_evaluates (source records : List Int)
         (rightType := CanonicalizeStructure.i32)
         (outputType := CanonicalizeStructure.i32)
         (left := 3 * input) (right := 2) finishFitsI32
-  · change ReadOnly.evaluateOperation verifiedFrontendCore
-        (world source records)
-        (.index CanonicalizeStructure.sliceI32 CanonicalizeStructure.i32
-          CanonicalizeStructure.i32)
-        [.slice CanonicalizeStructure.i32 1 [] 0 records.length,
-          .signed .i32 (3 * (input : Int) + 2)] = _
-    rw [← resultEq]
-    exact ReadOnly.evaluateOperation_i32_index
-      (program := verifiedFrontendCore) (world := world source records)
-      (cell := 1) (values := records) (position := 3 * input + 2)
-      (baseType := CanonicalizeStructure.sliceI32)
-      (indexType := CanonicalizeStructure.i32)
-      (elementType := CanonicalizeStructure.i32)
-      (world_records source records) finishBound
 
 theorem afterEnd_output (source records : List Int)
     (rawCount input output : Nat) (kind start finish : Int) (index : Fin 9)
@@ -1154,36 +1052,12 @@ theorem firstBody_runs (source records : List Int)
       recordWordsFitI32, sourceFitsI32, machineWith,
       Lanius.Semantics.evalAssignValue, Lanius.Semantics.assignOpBinary?,
       inputWrapped]
-    funext index
-    have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-        index.val = 3 ∨ index.val = 4 := by omega
-    rcases cases with h | h | h | h | h
-    · have same : index = ⟨0, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.pop, Env.set, Env.push, firstEnvironment, initialEnvironment,
-        firstStepOutput, trivia]
-    · have same : index = ⟨1, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.pop, Env.set, Env.push, firstEnvironment, initialEnvironment,
-        firstStepOutput, trivia]
-    · have same : index = ⟨2, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.pop, Env.set, Env.push, firstEnvironment, initialEnvironment,
-        firstStepOutput, trivia]
-    · have same : index = ⟨3, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.pop, Env.set, Env.push, firstEnvironment, initialEnvironment,
-        firstStepOutput, trivia]
-    · have same : index = ⟨4, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.pop, Env.set, Env.push, firstEnvironment, initialEnvironment,
-        firstStepOutput, trivia]
-      split
-      · rfl
-      · rename_i notTriviaAtRow
-        exfalso
-        apply notTriviaAtRow
-        simpa [getElem!_pos, rowBound] using trivia
+    have trivia' : isTriviaCode records[3 * input] = true := by
+      simpa [getElem!_pos, rowBound] using trivia
+    rw [if_pos trivia']
+    simpa [firstEnvironment, firstStepOutput, getElem!_pos, rowBound] using
+      (popAfterKind_set_input source records rawCount input output (input + 1)
+        (3 * (input : Int)) records[3 * input]!)
   · have triviaFalse : isTriviaCode records[3 * input]! = false := by
       cases found : isTriviaCode records[3 * input]! <;> simp_all
     have triviaGetFalse :
@@ -1306,33 +1180,14 @@ theorem firstBody_runs (source records : List Int)
       inputWrapped, writeRecord, firstStepOutput, triviaFalse,
       firstWritesEnvironment, firstEnvironment, initialEnvironment, Env.push,
       Env.pop, Env.set]
+    have triviaIndexFalse : isTriviaCode records[3 * input] = false := by simpa [getElem!_pos, rowBound] using triviaFalse
     funext index
-    have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-        index.val = 3 ∨ index.val = 4 := by omega
-    rcases cases with h | h | h | h | h
-    · have same : index = ⟨0, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.pop, Env.set, Env.push, firstEnvironment, initialEnvironment,
-        firstStepOutput, triviaFalse]
-    · have same : index = ⟨1, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.pop, Env.set, Env.push, firstEnvironment, initialEnvironment,
-        firstStepOutput, triviaFalse]
-    · have same : index = ⟨2, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.pop, Env.set, Env.push, firstEnvironment, initialEnvironment,
-        firstStepOutput, triviaFalse]
-    · have same : index = ⟨3, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.pop, Env.set, Env.push, firstEnvironment, initialEnvironment,
-        firstStepOutput, triviaFalse]
-    · have same : index = ⟨4, by omega⟩ := Fin.ext h
-      rw [same]
-      simp [Env.pop, Env.set, Env.push, firstEnvironment, initialEnvironment,
-        firstStepOutput, triviaFalse]
-      rw [show isTriviaCode (records[3 * input]?.getD 0) = false by
-        simpa [getElem!_pos, rowBound] using triviaFalse]
-      rfl
+    refine Fin.cases ?_ (fun second => Fin.cases ?_ (fun third => Fin.cases ?_
+      (fun fourth => Fin.cases ?_ (fun fifth => Fin.cases ?_
+        (fun impossible => Fin.elim0 impossible) fifth) fourth) third) second) index <;>
+      simp (config := {decide := true}) (disch := omega)
+        [Env.pop, Env.set, Env.push, firstEnvironment, initialEnvironment,
+        triviaIndexFalse, getElem!_pos, rowBound]
 
 def firstPass (source : List Int) (rawCount input : Nat)
     (records : List Int) (output : Nat) : List Int × Nat :=
@@ -1488,34 +1343,9 @@ theorem afterNext_set_range_pop (source before after : List Int)
       (afterNextEnvironment source before rawCount output range)
       ⟨5, by omega⟩ (.signed .i32 nextRange))) =
       secondEnvironment source after rawCount output nextRange := by
-  funext index
-  have cases : index.val = 0 ∨ index.val = 1 ∨ index.val = 2 ∨
-      index.val = 3 ∨ index.val = 4 ∨ index.val = 5 := by omega
-  rcases cases with h | h | h | h | h | h
-  · have same : index = ⟨0, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [afterNextEnvironment, afterCurrentEnvironment, secondEnvironment,
-      initialEnvironment, Env.push, Env.pop, Env.set, sameLength]
-  · have same : index = ⟨1, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [afterNextEnvironment, afterCurrentEnvironment, secondEnvironment,
-      initialEnvironment, Env.push, Env.pop, Env.set, sameLength]
-  · have same : index = ⟨2, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [afterNextEnvironment, afterCurrentEnvironment, secondEnvironment,
-      initialEnvironment, Env.push, Env.pop, Env.set, sameLength]
-  · have same : index = ⟨3, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [afterNextEnvironment, afterCurrentEnvironment, secondEnvironment,
-      initialEnvironment, Env.push, Env.pop, Env.set, sameLength]
-  · have same : index = ⟨4, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [afterNextEnvironment, afterCurrentEnvironment, secondEnvironment,
-      initialEnvironment, Env.push, Env.pop, Env.set, sameLength]
-  · have same : index = ⟨5, by omega⟩ := Fin.ext h
-    rw [same]
-    simp [afterNextEnvironment, afterCurrentEnvironment, secondEnvironment,
-      initialEnvironment, Env.push, Env.pop, Env.set, sameLength]
+  apply Env.eq_ofFn
+  simp [afterNextEnvironment, afterCurrentEnvironment, secondEnvironment,
+    initialEnvironment, Env.push, Env.pop, Env.set, sameLength]
 
 theorem secondCurrentRow_evaluates (source records : List Int)
     (rawCount output range : Nat) (rowFits : 3 * range ≤ 2147483647) :
@@ -1548,57 +1378,12 @@ theorem secondNextRow_evaluates (source records : List Int)
           (CanonicalizeStructure.slot ⟨6, by omega⟩)
           (CanonicalizeStructure.signed 3)) =
       .ok (.signed .i32 (3 * (range + 1)), world source records) := by
-  have addition : (3 * range : Int) + 3 = ((3 * (range + 1) : Nat) : Int) := by
-    omega
-  have wrapped :
-      Lanius.Semantics.wrapSigned verifiedFrontendCore.target .i32
-          ((3 * range : Int) + 3) = ((3 * (range + 1) : Nat) : Int) := by
-    rw [addition]
-    exact Lanius.Semantics.wrapSigned_i32_ofNat _ _ nextFits
-  simp only [CanonicalizeStructure.add, CanonicalizeStructure.slot,
-    CanonicalizeStructure.signed, Term.evaluate, Ref.evaluate, evaluateTerms]
-  simp only [afterCurrentEnvironment, Env.push_last]
-  simp [TM, Lanius.FunctionalView.Core.Effectful.machine,
-    Lanius.FunctionalView.Core.Effectful.evaluateOperation,
-    ReadOnly.evaluateOperation, Lanius.Semantics.evalBinaryValue,
-    Lanius.Semantics.evalSignedBinary, bind, Except.bind, wrapped]
-
-theorem recordsIndex_evaluates {arity : Nat} (source records : List Int)
-    (environment : Env arity) (base : Fin arity) (position : Nat)
-    (indexTerm : Term Core.signature arity)
-    (baseValue : environment base =
-      .slice CanonicalizeStructure.i32 1 [] 0 records.length)
-    (indexValue : Term.evaluate TM (world source records) environment indexTerm =
-      .ok (.signed .i32 (Int.ofNat position), world source records))
-    (positionBound : position < records.length) :
-    Term.evaluate TM (world source records) environment
-        (CanonicalizeStructure.index
-          (CanonicalizeStructure.slot base) indexTerm) =
-      .ok (.signed .i32 (records.get ⟨position, positionBound⟩),
-        world source records) := by
-  unfold CanonicalizeStructure.index
-  apply Term.evaluate_apply2
-      (leftValue := .slice CanonicalizeStructure.i32 1 [] 0 records.length)
-      (rightValue := .signed .i32 (Int.ofNat position))
-      (afterLeft := world source records) (afterRight := world source records)
+  rw [Effectful.Term.evaluate_eq_readOnly_of_callFree _ (by rfl)]
+  apply ReadOnly.Term.evaluate_i32_add (leftValue := 3 * range) (rightValue := 3)
   · simp only [CanonicalizeStructure.slot, Term.evaluate, Ref.evaluate]
-    rw [baseValue]
-  · exact indexValue
-  · change Lanius.FunctionalView.Core.Effectful.evaluateOperation
-        verifiedFrontendCore calls (world source records)
-        (.index CanonicalizeStructure.sliceI32 CanonicalizeStructure.i32
-          CanonicalizeStructure.i32)
-        [.slice CanonicalizeStructure.i32 1 [] 0 records.length,
-          .signed .i32 (Int.ofNat position)] = _
-    rw [Lanius.FunctionalView.Core.Effectful.evaluateOperation_eq_readOnly_of_callFree
-      (by rfl)]
-    exact ReadOnly.evaluateOperation_i32_index
-      (program := verifiedFrontendCore) (world := world source records)
-      (cell := 1) (values := records) (position := position)
-      (baseType := CanonicalizeStructure.sliceI32)
-      (indexType := CanonicalizeStructure.i32)
-      (elementType := CanonicalizeStructure.i32)
-      (world_records source records) positionBound
+    rw [afterCurrentEnvironment, Env.push_last]
+    congr 2 <;> omega
+  all_goals simp [CanonicalizeStructure.signed, Term.evaluate, Ref.evaluate] <;> omega
 
 theorem afterNext_currentIndex_evaluates (source records : List Int)
     (rawCount output range : Nat) (bound : 3 * range < records.length) :
@@ -1732,25 +1517,12 @@ theorem afterNext_addPosition_evaluates (source records : List Int)
           (CanonicalizeStructure.signed (Int.ofNat amount))) =
       .ok (.signed .i32 (Int.ofNat (position + amount)),
         world source records) := by
-  apply Term.evaluate_apply2
-      (leftValue := .signed .i32 (Int.ofNat position))
-      (rightValue := .signed .i32 (Int.ofNat amount))
-      (afterLeft := world source records) (afterRight := world source records)
+  rw [Effectful.Term.evaluate_eq_readOnly_of_callFree _ (by rfl)]
+  apply ReadOnly.Term.evaluate_i32_add (leftValue := position) (rightValue := amount)
   · simp only [CanonicalizeStructure.slot, Term.evaluate, Ref.evaluate]
     rw [slotValue]
   · simp [CanonicalizeStructure.signed, Term.evaluate, Ref.evaluate]
-  · change ReadOnly.evaluateOperation verifiedFrontendCore
-        (world source records)
-        (.binary .add CanonicalizeStructure.i32 CanonicalizeStructure.i32
-          CanonicalizeStructure.i32)
-        [.signed .i32 (Int.ofNat position),
-          .signed .i32 (Int.ofNat amount)] = _
-    exact ReadOnly.evaluateOperation_i32_add
-      (program := verifiedFrontendCore) (world := world source records)
-      (leftType := CanonicalizeStructure.i32)
-      (rightType := CanonicalizeStructure.i32)
-      (outputType := CanonicalizeStructure.i32)
-      (left := position) (right := amount) resultFits
+  · exact resultFits
 
 theorem afterNext_nextStartIndex_evaluates (source records : List Int)
     (rawCount output range : Nat)

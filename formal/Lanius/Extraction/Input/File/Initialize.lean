@@ -87,7 +87,7 @@ theorem body_returns (reader : Host.CheckedExternal program .read 3)
     (bindLocal_preserves_other_local pointerRegistry.wellFormed (show (5 : Lanius.VarId) ≠ 4 by decide)).trans pointerLocal
   have pointerGuard : Evaluates program pointerReady (binary .equal (read 4) (.value (.pointer 0))) (.boolean false) pointerReady := by
     apply evaluatesEagerBinary (by decide) (by decide) (local_evaluates program pointerLocal)
-      (show Evaluates program pointerReady (.value (.pointer 0)) (.pointer 0) pointerReady from ⟨1, rfl⟩)
+      (show Evaluates program pointerReady (.value (.pointer 0)) (.pointer 0) pointerReady from Lanius.Semantics.evaluatesValue)
     simpa only [evalBinaryValue, scalarEqual, Except.ok.injEq, Value.boolean.injEq, beq_eq_false_iff_ne, Lanius.Memory.null] using nonnull
   have allocated := (bindLocal_effect called 4 (.pointer resources.packed.address)).trans (bindLocal_effect pointerReady 5 (.signed .i32 0))
   have readyContents : ready.cellEntry? resources.output.root = some {
@@ -140,7 +140,7 @@ theorem body_returns (reader : Host.CheckedExternal program .read 3)
   refine ⟨restoreLocals called (restoreLocals pointerReady completed),
     executesSequence (executesIfFalse capacityGuard (executesSkip _ _))
       (executesLetLocal pointer (executesSequence (executesIfFalse pointerGuard (executesSkip _ _))
-        (executesLetLocal (show Evaluates program pointerReady (number 0) (.signed .i32 0) pointerReady from ⟨1, rfl⟩)
+        (executesLetLocal (show Evaluates program pointerReady (number 0) (.signed .i32 0) pointerReady from Lanius.Semantics.evaluatesValue)
           (executesSequenceReturned runLoop)))), ?_⟩
   exact ⟨done.registry.restoreLocals called fullEffect.wellFormed, done.representable,
     ⟨copied, sourcePrefix, done.capacity, complete, done.outputContents⟩, ⟨reads, positive, finalWorld⟩, fullEffect⟩

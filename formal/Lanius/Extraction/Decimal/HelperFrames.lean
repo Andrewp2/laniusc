@@ -32,7 +32,7 @@ private theorem accessorExecutes
       (.returned (some value)) state := by
   have localEvaluation : Evaluates verifiedFrontendDigitsCore state (.local 0)
       (.structure 2 fields) state :=
-    ⟨1, evalLocal_of_local 1 verifiedFrontendDigitsCore state 0 _ resultLocal⟩
+    Lanius.Semantics.evaluatesLocal resultLocal
   have fieldEvaluation : Evaluates verifiedFrontendDigitsCore state
       (.field (.local 0) field) value state :=
     evaluatesStructureField localEvaluation fieldFound

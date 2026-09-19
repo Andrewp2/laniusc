@@ -12,10 +12,10 @@ theorem digit_evaluates (program : Program) (value divisor : Nat)
     (divisorRead : before.local? 1 = some (.signed .i32 divisor)) :
     Evaluates program before digit (.signed .i32 (48 + (value / divisor) % 10 : Nat)) before := by
   have remainderBound := Nat.mod_lt (value / divisor) (by decide : 0 < 10)
-  exact evaluatesNatI32Add ⟨1, rfl⟩
+  exact evaluatesNatI32Add evaluatesValue
     (evaluatesNatI32Remainder
       (evaluatesNatI32Divide (local_evaluates program input) (local_evaluates program divisorRead)
-        positive (Nat.le_trans (Nat.div_le_self _ _) bounded)) ⟨1, rfl⟩ (by decide) (by omega)) (by omega)
+        positive (Nat.le_trans (Nat.div_le_self _ _) bounded)) evaluatesValue (by decide) (by omega)) (by omega)
 
 /-- Each digit writes one byte and divides a positive divisor by ten. The
 counter is modeled with its actual i32 wrapping semantics; its numeric value
@@ -41,7 +41,7 @@ theorem digits (writer : Host.CheckedExternal program .writeByte 2) (value divis
         (.boolean (decide (divisor ≠ 0))) before := by
       apply evaluatesEagerBinary (by decide) (by decide)
         (local_evaluates program (Assertion.localPointsTo_local _ _ _ _ divisorOwned))
-        (show Evaluates program before (number 0) (.signed .i32 0) before from ⟨1, rfl⟩)
+        (show Evaluates program before (number 0) (.signed .i32 0) before from evaluatesValue)
       by_cases zero : divisor = 0
       · simp [evalBinaryValue, scalarEqual, zero]
       · have nonzero : (divisor : Int) ≠ 0 := by omega
@@ -53,18 +53,18 @@ theorem digits (writer : Host.CheckedExternal program .writeByte 2) (value divis
     · have positive : 0 < divisor := by omega
       obtain ⟨called, wrote, registered, hostFrame, hostEffect, world⟩ := Host.evaluatesStderr writer initial representable
         (48 + (value / divisor) % 10 : Nat)
-        (.cons (show Evaluates program before (number 2) (.signed .i32 2) before from ⟨1, rfl⟩)
+        (.cons (show Evaluates program before (number 2) (.signed .i32 2) before from evaluatesValue)
           (.cons (digit_evaluates program value divisor bounded positive
             (Assertion.localPointsTo_local _ _ _ _ input) (Assertion.localPointsTo_local _ _ _ _ divisorOwned)) (.nil _ _)))
       have guard : Evaluates program before (writeGuard writer.function.id digit) (.boolean false) called :=
         evaluatesEagerBinary (by decide) (by decide) wrote
-          (show Evaluates program called (number 1) (.signed .i32 1) called from ⟨1, rfl⟩) rfl
+          (show Evaluates program called (number 1) (.signed .i32 1) called from evaluatesValue) rfl
       have inputCalled := hostEffect.preservesLocalPointsTo initial.wellFormed input (by simp [CellSet.empty])
       have divisorCalled := hostEffect.preservesLocalPointsTo initial.wellFormed divisorOwned (by simp [CellSet.empty])
       have writtenCalled := hostEffect.preservesLocalPointsTo initial.wellFormed writtenOwned (by simp [CellSet.empty])
       let nextWritten := wrapSigned program.target .i32 (written + 1)
       obtain ⟨counted, increment, writtenCounted, countEffect, countHeap⟩ := evaluatesOwnedLocalUpdate registered.wellFormed writtenCalled
-        (show Evaluates program called (number 1) (.signed .i32 1) called from ⟨1, rfl⟩)
+        (show Evaluates program called (number 1) (.signed .i32 1) called from evaluatesValue)
         (op := .add) (replacement := .signed .i32 nextWritten) (by
           simp only [evalAssignValue, assignOpBinary?, evalBinaryValue, BEq.rfl, if_true, evalSignedBinary, nextWritten])
       have countMemory := Host.MemoryFrame.scalar countEffect countHeap writtenCalled.2
@@ -74,7 +74,7 @@ theorem digits (writer : Host.CheckedExternal program .writeByte 2) (value divis
       have divisorCounted := countEffect.preserves_localPointsTo registered.wellFormed divisorCalled divisorWritten
       have quotient : truncDiv (divisor : Int) 10 = (divisor / 10 : Nat) := by simp [truncDiv]
       obtain ⟨lowered, divide, divisorLowered, divideEffect, divideHeap⟩ := evaluatesOwnedLocalUpdate countedRegistry.wellFormed divisorCounted
-        (show Evaluates program counted (number 10) (.signed .i32 10) counted from ⟨1, rfl⟩)
+        (show Evaluates program counted (number 10) (.signed .i32 10) counted from evaluatesValue)
         (op := .divide) (replacement := .signed .i32 (divisor / 10 : Nat)) (by
           simp only [evalAssignValue, assignOpBinary?, evalBinaryValue, BEq.rfl, if_true, evalSignedBinary]
           simp only [show ((10 : Int) == 0) = false from rfl, show ((10 : Int) == -1) = false from rfl,

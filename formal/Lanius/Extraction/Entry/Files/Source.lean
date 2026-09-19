@@ -28,7 +28,7 @@ theorem CheckedSource.reaches (checked : CheckedSource argument countId body sou
     Prefix.Reaches program ready source (ready.bindLocal argument (.signed .i32 1))
       (.whileLoop (condition argument countId) body) := by
   rw [checked.exactSource]
-  exact .letLocal (show Evaluates program ready (.value (.signed .i32 1)) (.signed .i32 1) ready from ⟨1, rfl⟩)
+  exact .letLocal (show Evaluates program ready (.value (.signed .i32 1)) (.signed .i32 1) ready from evaluatesValue)
     (.sequenceHead .here)
 
 /-- A normally completed loop reaches its actual source tail while the
@@ -43,7 +43,7 @@ theorem CheckedSource.afterLoop {argument countId : VarId} {body source : Stmt}
   apply startup.trans
   apply (congrArg (fun statement => Prefix.Reaches program ready statement after checked.continuation)
     checked.exactSource).mpr
-  exact .letLocal (show Evaluates program ready (.value (.signed .i32 1)) (.signed .i32 1) ready from ⟨1, rfl⟩)
+  exact .letLocal (show Evaluates program ready (.value (.signed .i32 1)) (.signed .i32 1) ready from evaluatesValue)
     (.sequence run .here)
 
 end Lanius.Extraction.Entry.Files

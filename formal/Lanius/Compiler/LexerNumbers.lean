@@ -266,19 +266,6 @@ theorem scanExponent_deterministic
     left = right := by
   exact leftResult.symm.trans rightResult
 
-theorem scanExponent_success_end_after_start
-    {source : List Byte} {exponentStart finish : Nat}
-    (result : scanExponent source exponentStart = .success .float finish) :
-    exponentStart < finish := by
-  unfold scanExponent at result
-  cases digits : scanDigitRun source (exponentDigitsStart source exponentStart) 10 with
-  | success digitEnd =>
-      simp [digits] at result
-      subst digitEnd
-      exact Nat.lt_trans (exponentDigitsStart_after_exponent source exponentStart)
-        (scanDigitRun_success_end_after_start digits)
-  | failure error => simp [digits] at result
-
 theorem scanExponent_any_success_end_after_start
     {source : List Byte} {exponentStart finish : Nat} {kind : TokenKind}
     (result : scanExponent source exponentStart = .success kind finish) :
@@ -291,6 +278,12 @@ theorem scanExponent_any_success_end_after_start
       exact Nat.lt_trans (exponentDigitsStart_after_exponent source exponentStart)
         (scanDigitRun_success_end_after_start digits)
   | failure error => simp [digits] at result
+
+theorem scanExponent_success_end_after_start
+    {source : List Byte} {exponentStart finish : Nat}
+    (result : scanExponent source exponentStart = .success .float finish) :
+    exponentStart < finish := by
+  exact scanExponent_any_success_end_after_start result
 
 def finishDecimal
     (source : List Byte) (integerEnd : Nat) : NumberScanResult :=

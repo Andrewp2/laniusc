@@ -7,7 +7,7 @@ set_option maxHeartbeats 0
 theorem verifiedFrontendTokenScan_decoded_surface_present_kernel :
     (decodeSurfaceFile (verifiedFrontendTokenScanView.nodeCount + 1)
       verifiedFrontendTokenScanReconstructedKernel).isSome = true := by
-  decide +kernel
+  kernel_rfl
 def verifiedFrontendTokenScanDecodedSurfaceKernel :=
   (decodeSurfaceFile (verifiedFrontendTokenScanView.nodeCount + 1)
     verifiedFrontendTokenScanReconstructedKernel).get

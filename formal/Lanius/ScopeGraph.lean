@@ -183,41 +183,23 @@ theorem resolveFrom?_sound
       cases scopeFound : graph.scope? scopeId with
       | none => simp [scopeFound] at accepted
       | some scope =>
-          rw [scopeFound] at accepted
-          change (match scope.declaration? lookupNamespace name with
-            | some selected => some (selected, [scopeId])
-            | none => do
-                let parentId ← scope.parent
-                let (outerDeclaration, outerPath) ←
-                  resolveFrom? graph fuel parentId lookupNamespace name
-                some (outerDeclaration, scopeId :: outerPath)) =
-              some (declaration, path) at accepted
+          simp only [scopeFound] at accepted
           cases declarationFound : scope.declaration? lookupNamespace name with
           | some selected =>
-              have pairEquality :
-                  (selected, [scopeId]) = (declaration, path) :=
-                Option.some.inj (by
-                  simpa [declarationFound] using accepted)
-              cases pairEquality
+              simp [declarationFound] at accepted
+              obtain ⟨rfl, rfl⟩ := accepted
               exact .here scopeFound declarationFound
           | none =>
               cases parentFound : scope.parent with
-              | none => simp [declarationFound, parentFound] at accepted
+              | none => simp_all
               | some parentId =>
                   cases recursiveFound :
                       resolveFrom? graph fuel parentId lookupNamespace name with
-                  | none =>
-                      simp [declarationFound, parentFound, recursiveFound]
-                        at accepted
+                  | none => simp_all
                   | some result =>
                       obtain ⟨outerDeclaration, outerPath⟩ := result
-                      have pairEquality :
-                          (outerDeclaration, scopeId :: outerPath) =
-                            (declaration, path) :=
-                        Option.some.inj (by
-                          simpa [declarationFound, parentFound, recursiveFound]
-                            using accepted)
-                      cases pairEquality
+                      simp [declarationFound, parentFound, recursiveFound] at accepted
+                      obtain ⟨rfl, rfl⟩ := accepted
                       exact .parent scopeFound declarationFound parentFound
                         (inductionHypothesis recursiveFound)
 
@@ -236,11 +218,7 @@ theorem resolveFrom?_complete
     (resolved : ResolvesFrom graph lookupNamespace name scopeId declaration path) :
     resolveFrom? graph path.length scopeId lookupNamespace name =
       some (declaration, path) := by
-  induction resolved with
-  | here scopeFound selected => simp [resolveFrom?, scopeFound, selected]
-  | parent scopeFound absent parentFound outer inductionHypothesis =>
-      simp [resolveFrom?, scopeFound, absent, parentFound,
-        inductionHypothesis]
+  induction resolved <;> simp_all [resolveFrom?]
 
 /-- A checked reference is the proof-producing result consumed by later
     frontend phases. -/

@@ -1,5 +1,6 @@
 import Lanius.Extraction.VerifiedFrontend.Parser.Program
 import Lanius.Extraction.VerifiedFrontend.Parser.Symbolic.Data
+import Lanius.Extraction.KernelReduction
 
 namespace Lanius.Extraction
 
@@ -151,7 +152,7 @@ theorem verifiedParserRangeValid_root_frame :
         .read),
       ("length", verifiedParserRangeValidLength.identity.declaration, 2,
         .read)] := by
-  decide +kernel
+  kernel_rfl
 
 def verifiedParserFindStateSymbolic : DerivedFunction :=
   (verifiedParserSymbolicFunction? "find_state").get (by decide)
@@ -182,11 +183,11 @@ theorem verifiedParserFindState_caller_frame :
       ("position", 2, .read),
       ("state_base", 1, .read),
       ("seed", 3, .read)] := by
-  decide +kernel
+  kernel_rfl
 
 theorem verifiedParserFindState_caller_frame_ids :
     verifiedParserFindStateCallerFrameIds = [0, 2, 1, 3] := by
-  decide +kernel
+  kernel_rfl
 
 def verifiedParserScanTerminalSymbolic : DerivedFunction :=
   (verifiedParserSymbolicFunction? "scan_terminal").get (by decide)
@@ -209,16 +210,16 @@ theorem verifiedParserScanTerminal_caller_frame :
       ("tokens", 1, .read),
       ("grammar", 0, .read),
       ("semantic_kind", 4, .read)] := by
-  decide +kernel
+  kernel_rfl
 
 theorem verifiedParserScanTerminal_caller_frame_ids :
     verifiedParserScanTerminalCallerFrameIds = [3, 2, 1, 0, 4] := by
-  decide +kernel
+  kernel_rfl
 
 theorem verifiedParserRecognizerSymbolic_matches_extracted :
     (verifiedParserRecognizerSymbolic.view.erase ==
       extractedParserRecognizeFunction) = true := by
-  decide +kernel
+  kernel_rfl
 
 
 end Lanius.Extraction

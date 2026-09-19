@@ -44,7 +44,7 @@ theorem CheckedRoot.call {visit : CheckedVisit program} (checked : CheckedRoot v
     enterCall_local_of_binding afterArguments [] [] 0 _ wellFormed (by simp)
   have localRead : Evaluates program.core callee (.local 0)
       (resultValue visit.symbols.resultType status nodes words) callee :=
-    ⟨1, evalLocal_of_local 0 program.core callee 0 _ found⟩
+    Lanius.Semantics.evaluatesLocal found
   have statusRead := evaluatesStructureField localRead (show
     [Value.signed .i32 status, .signed .i32 nodes, .signed .i32 words][0]? = some (.signed .i32 status) from rfl)
   have nodesRead := evaluatesStructureField localRead (show
@@ -59,7 +59,7 @@ theorem CheckedRoot.call {visit : CheckedVisit program} (checked : CheckedRoot v
       have subtract : Evaluates program.core callee
           (.binary .subtract (.field (.local 0) 1) (.value (.signed .i32 1)))
           (.signed .i32 (wrapSigned program.core.target .i32 (nodes - 1))) callee :=
-        evaluatesEagerBinary (by decide) (by decide) nodesRead ⟨1, rfl⟩ rfl
+        evaluatesEagerBinary (by decide) (by decide) nodesRead Lanius.Semantics.evaluatesValue rfl
       simpa only [rootBody, if_pos success] using
         executesSequence (executesIfFalse condition (executesSkip _ _))
           (executesSequenceReturned (executesReturnValue subtract))
@@ -70,7 +70,7 @@ theorem CheckedRoot.call {visit : CheckedVisit program} (checked : CheckedRoot v
       have sentinel : Evaluates program.core callee (.unary .negate (.value (.signed .i32 1)))
           (.signed .i32 (-1)) callee := by
         apply evaluatesUnary (show Evaluates program.core callee (.value (.signed .i32 1))
-          (.signed .i32 1) callee from ⟨1, rfl⟩)
+          (.signed .i32 1) callee from Lanius.Semantics.evaluatesValue)
         simp [evalUnaryValue, wrapSigned, signedModulus, signedSignBit, SignedIntTy.bits]
       simpa only [rootBody, if_neg success] using executesSequenceReturned
         (executesIfTrue condition (executesSequenceReturned (executesReturnValue sentinel)))

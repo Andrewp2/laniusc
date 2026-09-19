@@ -83,7 +83,7 @@ theorem writes_packed_byte
       } ∧ ModifiesOnly (CellSet.singleton workspaceCell) before after := by
   have baseResult : Evaluates program before (.local workspaceId)
       (.slice (.scalar (.signed .i32)) workspaceCell [] 0 values.length) before :=
-    ⟨1, evalLocal_of_local 0 program before workspaceId _ workspaceLocal⟩
+    Lanius.Semantics.evaluatesLocal workspaceLocal
   have readWord := evaluatesSignedI32SliceIndex program before before before values
     (.local workspaceId) indexExpr workspaceCell position inBounds baseResult
     indexResult backing

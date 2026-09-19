@@ -265,6 +265,15 @@ theorem Command.Evaluates.whileNextSequence
   | sequenceStop loopResult stops =>
       exact .sequenceStop (.whileNext conditionResult bodyResult loopResult) stops
 
+private theorem conditionWorld_eq
+    (left : Term.evaluate termMachine beforeWorld beforeEnvironment condition =
+      .ok (.boolean true, leftWorld))
+    (right : Term.evaluate termMachine beforeWorld beforeEnvironment condition =
+      .ok (.boolean true, rightWorld)) :
+    leftWorld = rightWorld := by
+  cases left.symm.trans right
+  rfl
+
 /-- Stateful FunctionalView commands have at most one successful result.
     This lets simulation proofs construct the canonical functional execution
     and identify any supplied derivation with it, instead of repeatedly
@@ -304,25 +313,11 @@ theorem Command.Evaluates.deterministic
           obtain ⟨completionEq, worldEq, environmentEq⟩ := bodyIH rightBody
           exact ⟨completionEq, worldEq, congrArg Env.pop environmentEq⟩
   | setLocal valueResult =>
-      cases right with
-      | setLocal rightValue =>
-          have resultEq := valueResult.symm.trans rightValue
-          cases resultEq
-          exact ⟨rfl, rfl, rfl⟩
+      cases right <;> simp_all
   | updateLocal valueResult updateResult =>
-      cases right with
-      | updateLocal rightValue rightUpdate =>
-          have valueEq := valueResult.symm.trans rightValue
-          cases valueEq
-          have updateEq := updateResult.symm.trans rightUpdate
-          cases updateEq
-          exact ⟨rfl, rfl, rfl⟩
+      cases right <;> simp_all
   | action actionResult =>
-      cases right with
-      | action rightAction =>
-          have resultEq := actionResult.symm.trans rightAction
-          cases resultEq
-          exact ⟨rfl, rfl, rfl⟩
+      cases right <;> simp_all
   | ifTrue conditionResult branchResult branchIH =>
       cases right with
       | ifTrue rightCondition rightBranch =>
@@ -342,139 +337,84 @@ theorem Command.Evaluates.deterministic
           cases conditionEq
           exact branchIH rightBranch
   | whileFalse conditionResult =>
-      cases right with
-      | whileFalse rightCondition =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          exact ⟨rfl, rfl, rfl⟩
-      | whileNext rightCondition _ _ =>
-          have impossible := conditionResult.symm.trans rightCondition
-          simp at impossible
-      | whileContinue rightCondition _ _ =>
-          have impossible := conditionResult.symm.trans rightCondition
-          simp at impossible
-      | whileBreak rightCondition _ =>
-          have impossible := conditionResult.symm.trans rightCondition
-          simp at impossible
-      | whileReturn rightCondition _ =>
-          have impossible := conditionResult.symm.trans rightCondition
-          simp at impossible
+      cases right <;> simp_all
   | whileNext conditionResult bodyResult restResult bodyIH restIH =>
       cases right with
       | whileFalse rightCondition =>
           have impossible := conditionResult.symm.trans rightCondition
           simp at impossible
       | whileNext rightCondition rightBody rightRest =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, bodyWorldEq, bodyEnvironmentEq⟩ :=
-            bodyIH rightBody
+          cases conditionWorld_eq conditionResult rightCondition
+          obtain ⟨bodyCompletionEq, rfl, rfl⟩ := bodyIH rightBody
           cases bodyCompletionEq
-          cases bodyWorldEq
-          cases bodyEnvironmentEq
           exact restIH rightRest
       | whileContinue rightCondition rightBody rightRest =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, _, _⟩ := bodyIH rightBody
-          cases bodyCompletionEq
+          cases conditionWorld_eq conditionResult rightCondition
+          cases (bodyIH rightBody).1
       | whileBreak rightCondition rightBody =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, _, _⟩ := bodyIH rightBody
-          cases bodyCompletionEq
+          cases conditionWorld_eq conditionResult rightCondition
+          cases (bodyIH rightBody).1
       | whileReturn rightCondition rightBody =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, _, _⟩ := bodyIH rightBody
-          cases bodyCompletionEq
+          cases conditionWorld_eq conditionResult rightCondition
+          cases (bodyIH rightBody).1
   | whileContinue conditionResult bodyResult restResult bodyIH restIH =>
       cases right with
       | whileFalse rightCondition =>
           have impossible := conditionResult.symm.trans rightCondition
           simp at impossible
       | whileNext rightCondition rightBody rightRest =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, _, _⟩ := bodyIH rightBody
-          cases bodyCompletionEq
+          cases conditionWorld_eq conditionResult rightCondition
+          cases (bodyIH rightBody).1
       | whileContinue rightCondition rightBody rightRest =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, bodyWorldEq, bodyEnvironmentEq⟩ :=
-            bodyIH rightBody
+          cases conditionWorld_eq conditionResult rightCondition
+          obtain ⟨bodyCompletionEq, rfl, rfl⟩ := bodyIH rightBody
           cases bodyCompletionEq
-          cases bodyWorldEq
-          cases bodyEnvironmentEq
           exact restIH rightRest
       | whileBreak rightCondition rightBody =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, _, _⟩ := bodyIH rightBody
-          cases bodyCompletionEq
+          cases conditionWorld_eq conditionResult rightCondition
+          cases (bodyIH rightBody).1
       | whileReturn rightCondition rightBody =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, _, _⟩ := bodyIH rightBody
-          cases bodyCompletionEq
+          cases conditionWorld_eq conditionResult rightCondition
+          cases (bodyIH rightBody).1
   | whileBreak conditionResult bodyResult bodyIH =>
       cases right with
       | whileFalse rightCondition =>
           have impossible := conditionResult.symm.trans rightCondition
           simp at impossible
       | whileNext rightCondition rightBody _ =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, _, _⟩ := bodyIH rightBody
-          cases bodyCompletionEq
+          cases conditionWorld_eq conditionResult rightCondition
+          cases (bodyIH rightBody).1
       | whileContinue rightCondition rightBody _ =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, _, _⟩ := bodyIH rightBody
-          cases bodyCompletionEq
+          cases conditionWorld_eq conditionResult rightCondition
+          cases (bodyIH rightBody).1
       | whileBreak rightCondition rightBody =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, bodyWorldEq, bodyEnvironmentEq⟩ :=
-            bodyIH rightBody
+          cases conditionWorld_eq conditionResult rightCondition
+          obtain ⟨bodyCompletionEq, bodyWorldEq, bodyEnvironmentEq⟩ := bodyIH rightBody
           cases bodyCompletionEq
           exact ⟨rfl, bodyWorldEq, bodyEnvironmentEq⟩
       | whileReturn rightCondition rightBody =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, _, _⟩ := bodyIH rightBody
-          cases bodyCompletionEq
+          cases conditionWorld_eq conditionResult rightCondition
+          cases (bodyIH rightBody).1
   | whileReturn conditionResult bodyResult bodyIH =>
       cases right with
       | whileFalse rightCondition =>
           have impossible := conditionResult.symm.trans rightCondition
           simp at impossible
       | whileNext rightCondition rightBody _ =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, _, _⟩ := bodyIH rightBody
-          cases bodyCompletionEq
+          cases conditionWorld_eq conditionResult rightCondition
+          cases (bodyIH rightBody).1
       | whileContinue rightCondition rightBody _ =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, _, _⟩ := bodyIH rightBody
-          cases bodyCompletionEq
+          cases conditionWorld_eq conditionResult rightCondition
+          cases (bodyIH rightBody).1
       | whileBreak rightCondition rightBody =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
-          obtain ⟨bodyCompletionEq, _, _⟩ := bodyIH rightBody
-          cases bodyCompletionEq
+          cases conditionWorld_eq conditionResult rightCondition
+          cases (bodyIH rightBody).1
       | whileReturn rightCondition rightBody =>
-          have conditionEq := conditionResult.symm.trans rightCondition
-          cases conditionEq
+          cases conditionWorld_eq conditionResult rightCondition
           exact bodyIH rightBody
   | returnNone => cases right; exact ⟨rfl, rfl, rfl⟩
   | returnSome valueResult =>
-      cases right with
-      | returnSome rightValue =>
-          have resultEq := valueResult.symm.trans rightValue
-          cases resultEq
-          exact ⟨rfl, rfl, rfl⟩
+      cases right <;> simp_all
   | breakLoop => cases right; exact ⟨rfl, rfl, rfl⟩
   | continueLoop => cases right; exact ⟨rfl, rfl, rfl⟩
 

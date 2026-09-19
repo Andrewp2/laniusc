@@ -21,14 +21,14 @@ theorem evaluates_output_words (program : Program) (state : State)
       (.signed .i32 (length + 3 : Nat)) state := by
     apply evaluatesEagerBinary (by decide) (by decide)
       (show Evaluates program state (.local lengthId) (.signed .i32 length) state from
-        ⟨1, evalLocal_of_local 0 program state lengthId _ read⟩)
-      (show Evaluates program state (.value (.signed .i32 3)) (.signed .i32 3) state from ⟨1, rfl⟩)
+        Lanius.Semantics.evaluatesLocal read)
+      (show Evaluates program state (.value (.signed .i32 3)) (.signed .i32 3) state from evaluatesValue)
     simp only [evalBinaryValue, beq_self_eq_true, ↓reduceIte, evalSignedBinary]
     have wrapped := wrapSigned_i32_ofNat program.target _ (output_word_bounds length bounded).1
     simpa [Int.ofNat_eq_natCast, Int.natCast_add] using
       congrArg (fun value => Except.ok (Value.signed .i32 value) : Int → Except Trap Value) wrapped
   apply evaluatesEagerBinary (by decide) (by decide) addition
-    (show Evaluates program state (.value (.signed .i32 4)) (.signed .i32 4) state from ⟨1, rfl⟩)
+    (show Evaluates program state (.value (.signed .i32 4)) (.signed .i32 4) state from evaluatesValue)
   have divided : truncDiv (length + 3 : Nat) 4 = ((length + 3) / 4 : Nat) := by
     simp only [truncDiv, Int.natCast_nonneg, Int.natAbs_natCast]
     rfl

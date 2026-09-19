@@ -38,10 +38,10 @@ theorem read_pair (program : Program) (assignments : List Assignment) (index : N
     omega
   have firstAddress : Evaluates program before firstIndex (.signed .i32 (index * 2 : Nat)) before :=
     evaluatesNatI32Multiply (leftValue := index) (rightValue := 2) (local_evaluates program indexRead)
-      (show Evaluates program before (number 2) (.signed .i32 2) before from ⟨1, rfl⟩) (by omega)
+      (show Evaluates program before (number 2) (.signed .i32 2) before from evaluatesValue) (by omega)
   have secondAddress : Evaluates program before secondIndex (.signed .i32 (index * 2 + 1 : Nat)) before :=
     evaluatesNatI32Add (leftValue := index * 2) (rightValue := 1) firstAddress
-      (show Evaluates program before (number 1) (.signed .i32 1) before from ⟨1, rfl⟩) (by omega)
+      (show Evaluates program before (number 1) (.signed .i32 1) before from evaluatesValue) (by omega)
   have firstRun := input.read program firstIndex (index * 2) firstBound firstAddress
   have secondRun := input.read program secondIndex (index * 2 + 1) secondBound secondAddress
   have selected := stored_pair assignments index bound
