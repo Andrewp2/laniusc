@@ -134,13 +134,6 @@ theorem StartsAs.functional
   rw [← classifyStart_spec] at leftMatches rightMatches
   exact leftMatches.symm.trans rightMatches
 
-theorem classifyStart_deterministic
-    (byte : Byte) {left right : StartClass}
-    (leftResult : classifyStart byte = left)
-    (rightResult : classifyStart byte = right) :
-    left = right := by
-  exact leftResult.symm.trans rightResult
-
 theorem classifyStart_invalid_iff (byte : Byte) :
     classifyStart byte = .invalid ↔
       isIdentifierStart byte = false ∧
@@ -222,75 +215,73 @@ theorem splitPrefix_length_le (accept : Byte → Bool) (input : List Byte) :
   simp only [List.length_append] at lengths
   omega
 
+/-! A maximal-prefix scanner consumes the required first byte, then accepts the
+    longest remaining prefix. -/
+def scanEnd (accept : Byte → Bool) (source : List Byte) (start : Nat)
+    (prefixWidth : Nat := 1) : Nat :=
+  start + prefixWidth + (splitPrefix accept (source.drop (start + prefixWidth))).1.length
+
+def ScanEndSpec (accept : Byte → Bool) (source : List Byte) (start finish : Nat)
+    (prefixWidth : Nat := 1) : Prop :=
+  let split := splitPrefix accept (source.drop (start + prefixWidth))
+  finish = start + prefixWidth + split.1.length ∧
+    MaximalPrefix accept (source.drop (start + prefixWidth)) split.1 split.2
+
+theorem scanEnd_spec (accept : Byte → Bool) (source : List Byte) (start : Nat)
+    (prefixWidth : Nat := 1) :
+    ScanEndSpec accept source start (scanEnd accept source start prefixWidth) prefixWidth :=
+  ⟨rfl, splitPrefix_spec accept (source.drop (start + prefixWidth))⟩
+
+theorem ScanEndSpec.functional {accept : Byte → Bool} {source : List Byte}
+    {start left right : Nat} (prefixWidth : Nat := 1)
+    (leftResult : ScanEndSpec accept source start left prefixWidth)
+    (rightResult : ScanEndSpec accept source start right prefixWidth) :
+    left = right :=
+  leftResult.1.trans rightResult.1.symm
+
+theorem scanEnd_after_start (accept : Byte → Bool) (source : List Byte) (start : Nat) :
+    start < scanEnd accept source start 1 := by
+  unfold scanEnd
+  omega
+
+theorem scanEnd_le_source_length
+    (accept : Byte → Bool) (source : List Byte) (start : Nat)
+    (startInBounds : start < source.length) :
+    scanEnd accept source start 1 ≤ source.length := by
+  have prefixBound := splitPrefix_length_le accept (source.drop (start + 1))
+  simp only [List.length_drop] at prefixBound
+  unfold scanEnd
+  omega
+
 def scanIdentifierEnd (source : List Byte) (start : Nat) : Nat :=
-  start + 1 +
-    (splitPrefix isIdentifierContinue (source.drop (start + 1))).1.length
+  scanEnd isIdentifierContinue source start 1
 
 def IdentifierEndSpec
     (source : List Byte) (start finish : Nat) : Prop :=
-  let split := splitPrefix isIdentifierContinue (source.drop (start + 1))
-  finish = start + 1 + split.1.length ∧
-    MaximalPrefix isIdentifierContinue (source.drop (start + 1)) split.1 split.2
+  ScanEndSpec isIdentifierContinue source start finish
 
 theorem scanIdentifierEnd_spec (source : List Byte) (start : Nat) :
-    IdentifierEndSpec source start (scanIdentifierEnd source start) := by
-  exact ⟨rfl, splitPrefix_spec isIdentifierContinue (source.drop (start + 1))⟩
-
-theorem IdentifierEndSpec.functional
-    {source : List Byte} {start left right : Nat}
-    (leftResult : IdentifierEndSpec source start left)
-    (rightResult : IdentifierEndSpec source start right) :
-    left = right := by
-  exact leftResult.1.trans rightResult.1.symm
+    IdentifierEndSpec source start (scanIdentifierEnd source start) :=
+  scanEnd_spec isIdentifierContinue source start
 
 theorem scanIdentifierEnd_after_start (source : List Byte) (start : Nat) :
-    start < scanIdentifierEnd source start := by
-  unfold scanIdentifierEnd
-  omega
-
-theorem scanIdentifierEnd_le_source_length
-    (source : List Byte) (start : Nat) (startInBounds : start < source.length) :
-    scanIdentifierEnd source start ≤ source.length := by
-  have prefixBound := splitPrefix_length_le isIdentifierContinue
-    (source.drop (start + 1))
-  simp only [List.length_drop] at prefixBound
-  unfold scanIdentifierEnd
-  omega
+    start < scanIdentifierEnd source start :=
+  scanEnd_after_start isIdentifierContinue source start
 
 def scanWhitespaceEnd (source : List Byte) (start : Nat) : Nat :=
-  start + 1 +
-    (splitPrefix isWhitespace (source.drop (start + 1))).1.length
+  scanEnd isWhitespace source start 1
 
 def WhitespaceEndSpec
     (source : List Byte) (start finish : Nat) : Prop :=
-  let split := splitPrefix isWhitespace (source.drop (start + 1))
-  finish = start + 1 + split.1.length ∧
-    MaximalPrefix isWhitespace (source.drop (start + 1)) split.1 split.2
+  ScanEndSpec isWhitespace source start finish
 
 theorem scanWhitespaceEnd_spec (source : List Byte) (start : Nat) :
-    WhitespaceEndSpec source start (scanWhitespaceEnd source start) := by
-  exact ⟨rfl, splitPrefix_spec isWhitespace (source.drop (start + 1))⟩
-
-theorem WhitespaceEndSpec.functional
-    {source : List Byte} {start left right : Nat}
-    (leftResult : WhitespaceEndSpec source start left)
-    (rightResult : WhitespaceEndSpec source start right) :
-    left = right := by
-  exact leftResult.1.trans rightResult.1.symm
+    WhitespaceEndSpec source start (scanWhitespaceEnd source start) :=
+  scanEnd_spec isWhitespace source start
 
 theorem scanWhitespaceEnd_after_start (source : List Byte) (start : Nat) :
-    start < scanWhitespaceEnd source start := by
-  unfold scanWhitespaceEnd
-  omega
-
-theorem scanWhitespaceEnd_le_source_length
-    (source : List Byte) (start : Nat) (startInBounds : start < source.length) :
-    scanWhitespaceEnd source start ≤ source.length := by
-  have prefixBound := splitPrefix_length_le isWhitespace
-    (source.drop (start + 1))
-  simp only [List.length_drop] at prefixBound
-  unfold scanWhitespaceEnd
-  omega
+    start < scanWhitespaceEnd source start :=
+  scanEnd_after_start isWhitespace source start
 
 /-! ## Delimited tokens and first-failure positions -/
 
@@ -442,26 +433,21 @@ theorem QuotedBodyScan.failure_offset_unique
   exact ScanEnd.failure.inj resultsEqual
 
 def scanLineCommentEnd (source : List Byte) (start : Nat) : Nat :=
-  start + 2 +
-    (splitPrefix (fun byte => byte.val != 10) (source.drop (start + 2))).1.length
+  scanEnd (fun byte => byte.val != 10) source start 2
 
 def LineCommentEndSpec (source : List Byte) (start finish : Nat) : Prop :=
-  let accept := fun byte : Byte => byte.val != 10
-  let split := splitPrefix accept (source.drop (start + 2))
-  finish = start + 2 + split.1.length ∧
-    MaximalPrefix accept (source.drop (start + 2)) split.1 split.2
+  ScanEndSpec (fun byte : Byte => byte.val != 10) source start finish 2
 
 theorem scanLineCommentEnd_spec (source : List Byte) (start : Nat) :
-    LineCommentEndSpec source start (scanLineCommentEnd source start) := by
-  exact ⟨rfl, splitPrefix_spec (fun byte : Byte => byte.val != 10)
-    (source.drop (start + 2))⟩
+    LineCommentEndSpec source start (scanLineCommentEnd source start) :=
+  scanEnd_spec (fun byte : Byte => byte.val != 10) source start 2
 
 theorem LineCommentEndSpec.functional
     {source : List Byte} {start left right : Nat}
     (leftResult : LineCommentEndSpec source start left)
     (rightResult : LineCommentEndSpec source start right) :
-    left = right := by
-  exact leftResult.1.trans rightResult.1.symm
+    left = right :=
+  ScanEndSpec.functional 2 leftResult rightResult
 
 def scanBlockBody : List Byte → Nat → ScanEnd
   | [], offset => .failure offset

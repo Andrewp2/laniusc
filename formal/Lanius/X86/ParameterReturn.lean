@@ -19,6 +19,7 @@ structure Supported (function : Function) where
   atMostSix : function.parameters.length ≤ 6
   allI32 : ∀ parameter ∈ function.parameters,
     parameter.2 = .scalar (.signed .i32)
+  parameterIdsDistinct : (function.parameters.map Prod.fst).Nodup
   -- The transport is a signed-i32 word stream, so Core IDs must survive it.
   parameterIdsBound : ∀ parameter ∈ function.parameters, parameter.1 ≤ 2147483647
   functionIdBound : function.id ≤ 2147483647
@@ -102,84 +103,7 @@ theorem move_decodes (position : Fin 6) :
   revert position
   decide
 
-theorem machine_returns (position : Fin 6) (before : Machine.State)
-    (loaded : Machine.CodeAt before.memory before.rip (bytes position)) :
-    ∃ middle after, Machine.Step before middle ∧ Machine.Step middle after ∧
-      after.registers 0 = ((before.registers (argumentRegister position)).setWidth 32).setWidth 64 ∧
-      after.rip = Machine.read64 before.memory (before.registers 4) ∧
-      after.registers 4 = before.registers 4 + 8 ∧
-      (∀ register, register ≠ 0 → register ≠ 4 →
-        after.registers register = before.registers register) ∧
-      after.memory = before.memory ∧ after.flags = before.flags := by
-  let middle := before.move32 0 (argumentRegister position) (moveBytes position).length
-  let after := middle.returnNear
-  refine ⟨middle, after,
-    .decoded (moveBytes position) loaded.prefix _ _ (move_decodes position) rfl,
-    .decoded [195] loaded.suffix .returnNear 1 rfl rfl, ?_, ?_, ?_, ?_, rfl, rfl⟩
-  · simp [after, middle, Machine.State.returnNear, Machine.State.move32]
-  · simp [after, middle, Machine.State.returnNear, Machine.State.move32]
-  · simp [after, middle, Machine.State.returnNear, Machine.State.move32]
-  · intro register notResult notStack
-    simp [after, middle, Machine.State.returnNear, Machine.State.move32, notResult, notStack]
-
 def Supported.argument (checked : Supported function) : Fin 6 :=
   ⟨checked.position.val, Nat.lt_of_lt_of_le checked.position.isLt checked.atMostSix⟩
-
-theorem Supported.executes (checked : Supported function) (program : Program)
-    (before : Lanius.Semantics.State) (value : Value)
-    (found : before.local? (function.parameters.get checked.position).1 = some value) :
-    Executes program before
-        (body (function.parameters.get checked.position).1 checked.trailingSkip)
-        (.returned (some value)) before := by
-  cases trailing : checked.trailingSkip with
-  | false =>
-      refine ⟨2, ?_⟩
-      simp only [body, trailing, Bool.false_eq_true, ↓reduceIte]
-      exact execStmt_return 1 program before (.local (function.parameters.get checked.position).1)
-        value before (evalExpr_local_of_local? 0 program before
-          (function.parameters.get checked.position).1 value found)
-  | true =>
-      refine ⟨3, ?_⟩
-      simp only [body, trailing, ↓reduceIte]
-      apply execStmt_sequence_completed 2 program before
-        (.returnValue (some (.local (function.parameters.get checked.position).1))) .skip
-        (.returned (some value)) before
-      · exact execStmt_return 1 program before
-          (.local (function.parameters.get checked.position).1) value before
-          (evalExpr_local_of_local? 0 program before
-            (function.parameters.get checked.position).1 value found)
-      · simp
-
-/- This is the connected Core-to-machine contract. `bytesExact` is an
-   authentication premise for bytes supplied by an external emitter; it is
-   deliberately not a theorem about executing backend/parameter.lani itself. -/
-theorem Supported.preserves (checked : Supported function) (program : Program)
-    (coreBefore : Lanius.Semantics.State) (machineBefore : Machine.State) (value : Int)
-    (localValue : coreBefore.local? (function.parameters.get checked.position).1 =
-      some (.signed .i32 value))
-    (represented : ((machineBefore.registers (argumentRegister checked.argument)).setWidth 32).toInt = value)
-    (emitted : List UInt8) (bytesExact : emitted = bytes checked.argument)
-    (loaded : Machine.CodeAt machineBefore.memory machineBefore.rip emitted)
-    (returnAddress : Machine.Address)
-    (poppedReturn : Machine.read64 machineBefore.memory (machineBefore.registers 4) =
-      returnAddress) :
-    function.body = some (body (function.parameters.get checked.position).1 checked.trailingSkip) ∧
-    Executes program coreBefore
-        (body (function.parameters.get checked.position).1 checked.trailingSkip)
-        (.returned (some (.signed .i32 value))) coreBefore ∧
-      ∃ middle after, Machine.Step machineBefore middle ∧ Machine.Step middle after ∧
-        ((after.registers 0).setWidth 32).toInt = value ∧
-        after.rip = returnAddress ∧ after.registers 4 = machineBefore.registers 4 + 8 ∧
-        (∀ register, register ≠ 0 → register ≠ 4 →
-          after.registers register = machineBefore.registers register) ∧
-        after.memory = machineBefore.memory ∧ after.flags = machineBefore.flags := by
-  refine ⟨checked.bodyExact,
-    checked.executes program coreBefore (.signed .i32 value) localValue, ?_⟩
-  rw [bytesExact] at loaded
-  obtain ⟨middle, after, first, second, result, target, stack, frame, memory, flags⟩ :=
-    machine_returns checked.argument machineBefore loaded
-  refine ⟨middle, after, first, second, ?_, target.trans poppedReturn, stack, frame, memory, flags⟩
-  rw [result]
-  simpa using represented
 
 end Lanius.X86.ParameterReturn

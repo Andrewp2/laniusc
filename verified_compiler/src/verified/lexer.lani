@@ -19,6 +19,7 @@ pub fn is_identifier_start(byte: i32) -> bool {
         || byte == 95;
 }
 
+
 pub fn is_identifier_continue(byte: i32) -> bool {
     return is_identifier_start(byte) || is_decimal_digit(byte);
 }
@@ -113,7 +114,7 @@ pub fn classify_start(byte: i32) -> StartClass {
 // The caller establishes that `start` is in bounds and starts an identifier.
 pub fn scan_identifier_end(source: [i32], source_length: i32, start: i32) -> i32 {
     let end: i32 = start + 1;
-    while (end < source_length && is_identifier_continue(source[end])) {
+    while (end <= source_length - 1 && is_identifier_continue(source[end])) {
         end += 1;
     }
     return end;
@@ -123,7 +124,7 @@ pub fn scan_identifier_end(source: [i32], source_length: i32, start: i32) -> i32
 // `start`. The caller establishes that the first byte is whitespace.
 pub fn scan_whitespace_end(source: [i32], source_length: i32, start: i32) -> i32 {
     let end: i32 = start + 1;
-    while (end < source_length && is_whitespace(source[end])) {
+    while (end <= source_length - 1 && is_whitespace(source[end])) {
         end += 1;
     }
     return end;
@@ -165,7 +166,7 @@ fn scan_quoted_end(
 ) -> ScanEnd {
     let offset: i32 = start + 1;
     let escaping: bool = false;
-    while (offset < source_length) {
+    while (offset <= source_length - 1) {
         let byte: i32 = source[offset];
         if (escaping) {
             escaping = false;
@@ -186,6 +187,7 @@ fn scan_quoted_end(
     return failed_scan(source_length);
 }
 
+
 pub fn scan_string_end(source: [i32], source_length: i32, start: i32) -> ScanEnd {
     return scan_quoted_end(source, source_length, start, 34);
 }
@@ -196,7 +198,7 @@ pub fn scan_character_end(source: [i32], source_length: i32, start: i32) -> Scan
 
 pub fn scan_line_comment_end(source: [i32], source_length: i32, start: i32) -> i32 {
     let end: i32 = start + 2;
-    while (end < source_length && source[end] != 10) {
+    while (end <= source_length - 1 && source[end] != 10) {
         end += 1;
     }
     return end;
@@ -204,12 +206,11 @@ pub fn scan_line_comment_end(source: [i32], source_length: i32, start: i32) -> i
 
 pub fn scan_block_comment_end(source: [i32], source_length: i32, start: i32) -> ScanEnd {
     let offset: i32 = start + 2;
-    while (offset < source_length) {
-        if (source[offset] == 42 && offset + 1 < source_length && source[offset + 1] == 47) {
+    while (offset <= source_length - 1) {
+        if (source[offset] == 42 && offset + 1 <= source_length - 1 && source[offset + 1] == 47) {
             return successful_scan(offset + 2);
         }
         offset += 1;
     }
     return failed_scan(source_length);
 }
-

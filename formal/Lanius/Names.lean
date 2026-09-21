@@ -41,6 +41,7 @@ structure Environment where
   modules : List Module := []
   symbols : List Symbol := []
   imports : List Import := []
+deriving DecidableEq
 
 def Environment.module? (environment : Environment) (id : ModuleId) : Option Module :=
   environment.modules.find? (fun declaration => declaration.id == id)

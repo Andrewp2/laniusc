@@ -1,0 +1,57 @@
+module app::main;
+
+import lowering::transport;
+
+// The two signature/body slices are deliberately catalogued in reverse
+// offset order. Transport uses global allocation rows for stable metadata
+// order, and emits the authenticated entrypoint before remaining bodies.
+fn main() -> i32 {
+    let sources: [i32; 10] = [104,101,108,112,101,114,109,97,105,110];
+    let tokens: [i32; 6] = [1,0,6, 1,0,4];
+    let descriptors: [i32; 16] = [
+        0,6,0,1,14,14,12,12,
+        6,4,3,1,0,14,0,12,
+    ];
+    let declarations: [i32; 24] = [
+        2,0,0,0,2,0,0,2,
+        0,4,0,0,1,0,-1,0,
+        1,4,0,0,1,0,-1,0,
+    ];
+    let allocated: [i32; 28] = [
+        2,2,0,0,0,2,0,2,
+        0,4,0,0,1,0,-1,0,0,0,
+        1,4,0,0,1,0,-1,0,1,1,
+    ];
+    // Unit 0's signature is at catalog offset 14; unit 1's is at zero.
+    let signatures: [i32; 28] = [
+        1,1,14,0,1,0,0,0, 1,4,1,0,1,0,
+        1,1,14,0,1,0,0,0, 0,4,1,0,1,0,
+    ];
+    // Likewise, unit 0's body is at offset 12 and unit 1's at zero.
+    let bodies: [i32; 24] = [
+        1,64,1,12, 7,1,64,1,1,0,1,0,
+        1,64,1,12, 7,1,64,0,1,0,1,0,
+    ];
+    let output: [i32; 32] = [
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    ];
+    let words: i32 = lowering::transport::lower_multi(
+        sources, 10, tokens, 6, descriptors, 16, 2,
+        declarations, 24, allocated, 28, signatures, 28,
+        bodies, 24, output, 32);
+    if (words != 22) { return 1; }
+    if (output[0] != 2 || output[1] != 64 || output[2] != 1
+        || output[3] != 0 || output[4] != 0 || output[5] != 2) { return 2; }
+    // The entrypoint is emitted first for the backend's authenticated direct
+    // call boundary; the remaining function keeps allocation-row order.
+    if (output[6] != 7 || output[9] != 1 || output[14] != 7
+        || output[17] != 0) { return 3; }
+    // A descriptor catalog that is not exactly one descriptor per unit fails
+    // before any partial transport can be mistaken for a valid program.
+    if (lowering::transport::lower_multi(
+        sources, 10, tokens, 6, descriptors, 15, 2,
+        declarations, 24, allocated, 28, signatures, 28,
+        bodies, 24, output, 32) != -1) { return 4; }
+    return 0;
+}

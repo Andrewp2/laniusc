@@ -1,0 +1,124 @@
+module verified::certificate_output;
+
+import verified::output;
+import backend::frame;
+
+// The certificate envelope is an ASCII transport around the existing compact
+// pack, canonical Core transport, and the exact emitted ELF.  Version 3 adds
+// an ELF byte count and ordered start/length pairs for every backend function.
+const VERSION: i32 = 3;
+
+fn hex_digit(value: i32) -> i32 {
+    if (value < 10) { return 48 + value; }
+    return 87 + value;
+}
+
+fn hex_word(output:[i32], capacity: i32, position: i32, value: i32) -> i32 {
+    if (position <= -1 || position > capacity - 8) { return -1; }
+    let first: i32 = hex_byte(output, capacity, position, (value >> 24) & 255);
+    if (first <= -1) { return -1; }
+    let second: i32 = hex_byte(output, capacity, first, (value >> 16) & 255);
+    if (second <= -1) { return -1; }
+    let third: i32 = hex_byte(output, capacity, second, (value >> 8) & 255);
+    if (third <= -1) { return -1; }
+    return hex_byte(output, capacity, third, value & 255);
+}
+
+fn hex_byte(output:[i32], capacity: i32, position: i32, value: i32) -> i32 {
+    if (value <= -1 || value > 255) { return -1; }
+    let next: i32 = verified::output::byte(output, capacity, position,
+        hex_digit((value >> 4) & 15));
+    return verified::output::byte(output, capacity, next, hex_digit(value & 15));
+}
+
+// Reserve/write the two outer fields.  The compact payload is emitted at
+// position 16 first, so callers can provide its exact byte length here after
+// extraction has completed.
+pub fn emit_header(compact_length: i32, output:[i32], capacity: i32, position: i32) -> i32 {
+    if (compact_length <= -1) { return -1; }
+    let next: i32 = hex_word(output, capacity, position, VERSION);
+    return hex_word(output, capacity, next, compact_length);
+}
+
+pub fn emit_transport(words:[i32], words_length: i32, count: i32,
+    output:[i32], capacity: i32, position: i32,) -> i32 {
+    if (words_length <= -1 || count <= -1 || count > words_length) { return -1; }
+    let next: i32 = hex_word(output, capacity, position, count);
+    if (next <= -1) { return -1; }
+    let index: i32 = 0;
+    while (index != count) {
+        next = hex_word(output, capacity, next, words[index]);
+        if (next <= -1) { return -1; }
+        index += 1;
+    }
+    return next;
+}
+
+// Emit the complete ELF as canonical lower-case hex.  The source image is
+// kept separate from the certificate workspace until every backend pass has
+// succeeded, so the certificate cannot contain a partial executable.
+pub fn emit_image(image:[i32], image_length: i32,
+    output:[i32], capacity: i32, position: i32) -> i32 {
+    if (image_length <= -1) { return -1; }
+    let next: i32 = hex_word(output, capacity, position, image_length);
+    if (next <= -1) { return -1; }
+    let index: i32 = 0;
+    while (index != image_length) {
+        next = hex_byte(output, capacity, next, image[index]);
+        if (next <= -1) { return -1; }
+        index += 1;
+    }
+    return next;
+}
+
+// Work-table function starts are absolute output offsets.  The explicit
+// FUNCTION_END header slot is captured before runtime data is appended, so
+// the final length ends exactly at the last function byte.
+pub fn emit_functions(work:[i32], work_length: i32, stride: i32, count: i32,
+    output:[i32], capacity: i32, position: i32) -> i32 {
+    if (work_length <= backend::frame::HEADER - 1 || stride <= -1 || count <= -1 ||
+        backend::frame::HEADER + stride * 8 > work_length ||
+        count > stride ||
+        backend::frame::HEADER + stride * 7 + count > work_length) { return -1; }
+    let end: i32 = work[backend::frame::FUNCTION_END];
+    if (end <= -1) { return -1; }
+    let next: i32 = hex_word(output, capacity, position, count);
+    if (next <= -1) { return -1; }
+    let index: i32 = 0;
+    while (index != count) {
+        let start: i32 = work[backend::frame::HEADER + stride * 7 + index];
+        let finish: i32 = end;
+        if (index + 1 < count) {
+            finish = work[backend::frame::HEADER + stride * 7 + index + 1];
+        }
+        if (start <= -1 || finish <= start) { return -1; }
+        next = hex_word(output, capacity, next, start);
+        next = hex_word(output, capacity, next, finish - start);
+        if (next <= -1) { return -1; }
+        index += 1;
+    }
+    return next;
+}
+
+// Compact output occupies one i32 slot per byte until the whole pipeline has
+// succeeded.  Pack those bytes in place, reading each four-byte group before
+// overwriting its destination word.  This keeps certificate mode single-store
+// and avoids a second large output allocation.
+pub fn pack_in_place(output:[i32], length: i32) -> i32 {
+    if (length <= -1) { return -1; }
+    let word_count: i32 = (length + 3) / 4;
+    let word: i32 = 0;
+    while (word != word_count) {
+        let base: i32 = word * 4;
+        let first: i32 = output[base];
+        let second: i32 = 0;
+        let third: i32 = 0;
+        let fourth: i32 = 0;
+        if (base + 1 < length) { second = output[base + 1]; }
+        if (base + 2 < length) { third = output[base + 2]; }
+        if (base + 3 < length) { fourth = output[base + 3]; }
+        output[word] = first | (second << 8) | (third << 16) | (fourth << 24);
+        word += 1;
+    }
+    return word_count;
+}

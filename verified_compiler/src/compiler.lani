@@ -1,0 +1,560 @@
+module app::main;
+
+import verified::byte_io;
+import verified::certificate_output;
+import verified::certificate_output_native;
+import verified::compact_artifact_output;
+import verified::extraction;
+import verified::grammar;
+import verified::host;
+import verified::semantic_tokens;
+import lowering::program;
+import lowering::program_transport;
+import lowering::transport;
+import backend::image_boundary;
+import backend::frame;
+
+// The compiler entrypoint accepts one or more source paths. All paths are
+// parsed into one owned lowering bundle before any backend image is emitted;
+// one-unit input therefore uses the same aggregate namespace as N>1.
+fn main() -> i32 {
+    let argument_count: i32 = verified::host::argc();
+    if (argument_count < 2) { return 1; }
+    let certificate_mode: i32 = 0;
+
+    let packed_path:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(1024, 4);
+        if (allocation == 0) { return 3; }
+        packed_path = verified::host::i32_slice_from_raw_parts(allocation, 256);
+    }
+    let source:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        source = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let grammar:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(8716, 4);
+        if (allocation == 0) { return 3; }
+        grammar = verified::host::i32_slice_from_raw_parts(allocation, 2179);
+    }
+    let raw:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        raw = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let canonical:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        canonical = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let kinds:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        kinds = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let extraction_workspace:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(67108864, 4);
+        if (allocation == 0) { return 3; }
+        extraction_workspace = verified::host::i32_slice_from_raw_parts(allocation, 16777216);
+    }
+    let records:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(4194304, 4);
+        if (allocation == 0) { return 3; }
+        records = verified::host::i32_slice_from_raw_parts(allocation, 1048576);
+    }
+    let offsets:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(524288, 4);
+        if (allocation == 0) { return 3; }
+        offsets = verified::host::i32_slice_from_raw_parts(allocation, 131072);
+    }
+    let type_arena:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(1048576, 4);
+        if (allocation == 0) { return 3; }
+        type_arena = verified::host::i32_slice_from_raw_parts(allocation, 262144);
+    }
+    let type_output:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        type_output = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let alias_catalog:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        alias_catalog = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let alias_work:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        alias_work = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let alias_stack:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        alias_stack = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let alias_scratch:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        alias_scratch = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let alias_result:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(16, 4);
+        if (allocation == 0) { return 3; }
+        alias_result = verified::host::i32_slice_from_raw_parts(allocation, 4);
+    }
+    let declarations:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        declarations = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let modules:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        modules = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let allocated:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        allocated = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let signatures:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(1048576, 4);
+        if (allocation == 0) { return 3; }
+        signatures = verified::host::i32_slice_from_raw_parts(allocation, 262144);
+    }
+    let bodies:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(4194304, 4);
+        if (allocation == 0) { return 3; }
+        bodies = verified::host::i32_slice_from_raw_parts(allocation, 1048576);
+    }
+    let transport:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(1048576, 4);
+        if (allocation == 0) { return 3; }
+        transport = verified::host::i32_slice_from_raw_parts(allocation, 262144);
+    }
+    let compact_bundle:[i32];
+    {
+        // The compact payload is concatenated once per source unit.  The
+        // former one-unit-sized allocation silently made a second large unit
+        // overwrite the following certificate state even though lowering and
+        // the v1 reader already supported a unit count greater than one.
+        let allocation: ptr = verified::host::alloc(
+            lowering::program_transport::bundle_words(
+                lowering::program_transport::BUNDLE_UNIT_LIMIT) * 4, 4);
+        if (allocation == 0) { return 3; }
+        compact_bundle = verified::host::i32_slice_from_raw_parts(
+            allocation, lowering::program_transport::bundle_words(
+                lowering::program_transport::BUNDLE_UNIT_LIMIT));
+    }
+    let function_input:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(262144, 4);
+        if (allocation == 0) { return 3; }
+        function_input = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+    }
+    let backend_work:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(2097216, 4);
+        if (allocation == 0) { return 3; }
+        backend_work = verified::host::i32_slice_from_raw_parts(allocation, 524304);
+    }
+    let code:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(8388608, 4);
+        if (allocation == 0) { return 3; }
+        code = verified::host::i32_slice_from_raw_parts(allocation, 2097152);
+    }
+    let packed_io:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(65536, 4);
+        if (allocation == 0) { return 3; }
+        packed_io = verified::host::i32_slice_from_raw_parts(allocation, 16384);
+    }
+    let syntax_result:[i32];
+    {
+        let allocation: ptr = verified::host::alloc(28, 4);
+        if (allocation == 0) { return 3; }
+        syntax_result = verified::host::i32_slice_from_raw_parts(allocation, 7);
+    }
+
+    let path_pointer: ptr = verified::host::i32_slice_data_ptr(packed_path);
+    let path_index: i32 = 1;
+    if (verified::host::arg_len(1) == 13
+        && verified::host::arg_read(1, path_pointer, 13) == 13
+        && packed_path[0] == 1700998445 && packed_path[1] == 1718187122
+        && packed_path[2] == 1952539497 && packed_path[3] == 101) {
+        certificate_mode = 1;
+        if (verified::host::arg_len(1) != 13 ||
+            verified::host::arg_read(1, path_pointer, 13) != 13) { return 1; }
+        if (packed_path[0] != 1700998445 || packed_path[1] != 1718187122 ||
+            packed_path[2] != 1952539497 || packed_path[3] != 101) { return 1; }
+        path_index = 2;
+    }
+    let unit_count: i32 = argument_count - path_index;
+    if (unit_count <= 0 || unit_count > lowering::program_transport::BUNDLE_UNIT_LIMIT) {
+        return 1;
+    }
+    let bundle_word_count: i32 = lowering::program_transport::bundle_words(unit_count);
+    if (bundle_word_count <= 0) { return 3; }
+    let bundle_memory: ptr = verified::host::alloc(bundle_word_count * 4, 4);
+    if (bundle_memory == 0) { return 3; }
+    let bundle:[i32] = verified::host::i32_slice_from_raw_parts(
+        bundle_memory, bundle_word_count);
+    bundle[0] = lowering::program_transport::BUNDLE_MAGIC;
+    bundle[1] = unit_count;
+    let bundle_header: i32 = 2;
+    let header_word: i32 = 0;
+    while (header_word < 14) {
+        bundle[bundle_header + header_word] = 0;
+        header_word += 1;
+    }
+    if (certificate_mode == 0 || unit_count > 0) {
+        if (verified::grammar::load(grammar, 2179) != 2179) { return 7; }
+        let compact_position: i32 = 16;
+        let unit: i32 = 0;
+        while (unit < unit_count) {
+            let path_length: i32 = verified::host::arg_len(path_index + unit);
+            if (path_length <= 0 || path_length >= 1025) { return 2; }
+            if (verified::host::arg_read(path_index + unit, path_pointer, path_length)
+                != path_length) { return 4; }
+            let path_word: i32 = 0;
+            while (path_word < path_length) {
+                packed_io[path_word] = (packed_path[path_word / 4]
+                    >> ((path_word % 4) * 8)) & 255;
+                path_word += 1;
+            }
+            let handle: i32 = verified::host::open_read(path_pointer, path_length);
+            if (handle < 0) { return 5; }
+            let source_length: i32 = verified::byte_io::read_file(
+                handle, source, 65536, packed_io);
+            if (verified::host::close(handle) < 0 || source_length < 0) { return 6; }
+            path_word = 0;
+            while (path_word < path_length) {
+                packed_io[path_word] = (packed_path[path_word / 4]
+                    >> ((path_word % 4) * 8)) & 255;
+                path_word += 1;
+            }
+            let lex_metadata: i32 = verified::extraction::lex_syntax_raw(
+                verified::host::i32_slice_data_ptr(source), source_length,
+                verified::host::i32_slice_data_ptr(grammar),
+                verified::host::i32_slice_data_ptr(raw),
+                verified::host::i32_slice_data_ptr(canonical),
+                verified::host::i32_slice_data_ptr(kinds));
+            if (lex_metadata <= -1) { return 8; }
+            let raw_count: i32 = lex_metadata / 65536;
+            let token_count: i32 = lex_metadata % 65536;
+            let node_count: i32 = verified::extraction::parse_syntax_raw(
+                verified::host::i32_slice_data_ptr(grammar),
+                verified::host::i32_slice_data_ptr(kinds), token_count,
+                verified::host::i32_slice_data_ptr(extraction_workspace),
+                verified::host::i32_slice_data_ptr(records),
+                verified::host::i32_slice_data_ptr(offsets));
+            if (node_count <= 0) { return 8; }
+            let source_base: i32 = lowering::program_transport::bundle_sources_offset(unit_count)
+                + unit * lowering::program_transport::BUNDLE_SOURCE_CAP;
+            let token_base: i32 = lowering::program_transport::bundle_tokens_offset(unit_count)
+                + unit * lowering::program_transport::BUNDLE_TOKEN_CAP;
+            let record_base: i32 = lowering::program_transport::bundle_records_offset(unit_count)
+                + unit * lowering::program_transport::BUNDLE_RECORD_CAP;
+            let offsets_base: i32 = lowering::program_transport::bundle_offsets_offset(unit_count)
+                + unit * lowering::program_transport::BUNDLE_OFFSETS_CAP;
+            let copy: i32 = 0;
+            while (copy < source_length) { bundle[source_base + copy] = source[copy]; copy += 1; }
+            copy = 0;
+            while (copy < token_count * 3) { bundle[token_base + copy] = canonical[copy]; copy += 1; }
+            copy = 0;
+            while (copy < 1048576) { bundle[record_base + copy] = records[copy]; copy += 1; }
+            copy = 0;
+            while (copy < node_count) { bundle[offsets_base + copy] = offsets[copy]; copy += 1; }
+            let metadata_base: i32 = lowering::program_transport::bundle_metadata_offset(unit_count)
+                + unit * lowering::program_transport::BUNDLE_METADATA_WORDS;
+            bundle[metadata_base] = source_length;
+            bundle[metadata_base + 1] = token_count;
+            bundle[metadata_base + 2] = node_count;
+            bundle[metadata_base + 3] = raw_count;
+            bundle[metadata_base + 4] = path_length;
+            if (certificate_mode == 1) {
+                if (verified::semantic_tokens::collect_raw(
+                    verified::host::i32_slice_data_ptr(grammar),
+                    verified::host::i32_slice_data_ptr(kinds),
+                    token_count, node_count,
+                    verified::host::i32_slice_data_ptr(records),
+                    verified::host::i32_slice_data_ptr(offsets),
+                    verified::host::i32_slice_data_ptr(backend_work)) != 0) {
+                    return 13;
+                }
+                let next_compact: i32 = verified::compact_artifact_output::emit_unit(
+                    packed_io, path_length, source, source_length, raw, 65536,
+                    raw_count, canonical, 65536, token_count, backend_work,
+                    524304, records, 1048576, offsets, node_count,
+                    compact_bundle,
+                    lowering::program_transport::bundle_words(
+                        lowering::program_transport::BUNDLE_UNIT_LIMIT),
+                    compact_position);
+                if (next_compact <= -1) { return 14; }
+                compact_position = next_compact;
+            }
+            unit += 1;
+        }
+        if (certificate_mode == 1) {
+            if (verified::compact_artifact_output::emit_header(
+                unit_count, compact_bundle,
+                lowering::program_transport::bundle_words(
+                    lowering::program_transport::BUNDLE_UNIT_LIMIT), 0) <= -1) { return 14; }
+            let compact_copy: i32 = 0;
+            while (compact_copy < compact_position) {
+                extraction_workspace[16 + compact_copy] = compact_bundle[compact_copy];
+                compact_copy += 1;
+            }
+        }
+        let transport_words: i32 = lowering::program_transport::lower_units_raw(
+            verified::host::i32_slice_data_ptr(bundle), unit_count,
+            verified::host::i32_slice_data_ptr(transport));
+        if (transport_words <= lowering::transport::HEADER - 1) {
+            verified::byte_io::write_stderr_natural(lowering::program::TRANSPORT);
+            return 10;
+        }
+        let emitted: i32 = backend::image_boundary::compile_raw(
+            verified::host::i32_slice_data_ptr(transport), transport_words,
+            verified::host::i32_slice_data_ptr(function_input),
+            verified::host::i32_slice_data_ptr(backend_work),
+            verified::host::i32_slice_data_ptr(code));
+        if (emitted <= 0) { return 11; }
+        if (certificate_mode == 1) {
+            let certificate_length: i32 = 16 + compact_position;
+            let compact_length: i32 = compact_position;
+            let header_end: i32 = verified::certificate_output_native::emit_header_raw(
+                compact_length, verified::host::i32_slice_data_ptr(extraction_workspace),
+                16777216, 0);
+            if (header_end <= -1) { return 15; }
+            certificate_length = verified::certificate_output_native::emit_transport_raw(
+                verified::host::i32_slice_data_ptr(transport), 262144,
+                transport_words, verified::host::i32_slice_data_ptr(extraction_workspace),
+                16777216, certificate_length);
+            if (certificate_length <= -1) { return 16; }
+            certificate_length = verified::certificate_output_native::emit_image_raw(
+                verified::host::i32_slice_data_ptr(code), emitted,
+                verified::host::i32_slice_data_ptr(extraction_workspace),
+                16777216, certificate_length);
+            if (certificate_length <= -1) { return 17; }
+            let function_count: i32 = backend_work[backend::frame::FUNCTION_COUNT];
+            certificate_length = verified::certificate_output_native::emit_functions_compiler_raw(
+                verified::host::i32_slice_data_ptr(backend_work), transport_words,
+                function_count, verified::host::i32_slice_data_ptr(extraction_workspace),
+                certificate_length);
+            if (certificate_length <= -1) { return 18; }
+            if (verified::certificate_output_native::pack_in_place_raw(
+                verified::host::i32_slice_data_ptr(extraction_workspace),
+                certificate_length) <= -1) { return 19; }
+            let certificate_size: usize = certificate_length;
+            if (verified::host::write_stdout(
+                verified::host::i32_slice_data_ptr(extraction_workspace),
+                certificate_size) != certificate_length) { return 20; }
+            return 0;
+        }
+        let word_count: i32 = (emitted + 3) / 4;
+        let word: i32 = 0;
+        while (word < word_count) { extraction_workspace[word] = 0; word += 1; }
+        let byte: i32 = 0;
+        while (byte < emitted) {
+            extraction_workspace[byte / 4] = extraction_workspace[byte / 4]
+                | (code[byte] << ((byte % 4) * 8));
+            byte += 1;
+        }
+        let output_size: usize = emitted;
+        if (verified::host::write_stdout(
+            verified::host::i32_slice_data_ptr(extraction_workspace), output_size)
+            != emitted) { return 12; }
+        return 0;
+    }
+    let path_length: i32 = verified::host::arg_len(path_index);
+    if (path_length <= 0 || path_length >= 1025) { return 2; }
+    if (verified::host::arg_read(path_index, path_pointer, path_length) != path_length) { return 4; }
+    let handle: i32 = verified::host::open_read(path_pointer, path_length);
+    if (handle < 0) { return 5; }
+    let source_length: i32 = verified::byte_io::read_file(handle, source, 65536, packed_io);
+    if (verified::host::close(handle) < 0 || source_length < 0) { return 6; }
+    if (verified::grammar::load(grammar, 2179) != 2179) { return 7; }
+
+    let lex_metadata: i32 = verified::extraction::lex_syntax_raw(
+        verified::host::i32_slice_data_ptr(source), source_length,
+        verified::host::i32_slice_data_ptr(grammar),
+        verified::host::i32_slice_data_ptr(raw),
+        verified::host::i32_slice_data_ptr(canonical),
+        verified::host::i32_slice_data_ptr(kinds));
+    if (lex_metadata <= -1) { return 8; }
+    let raw_count: i32 = lex_metadata / 65536;
+    let token_count: i32 = lex_metadata % 65536;
+    let node_count: i32 = verified::extraction::parse_syntax_raw(
+        verified::host::i32_slice_data_ptr(grammar),
+        verified::host::i32_slice_data_ptr(kinds), token_count,
+        verified::host::i32_slice_data_ptr(extraction_workspace),
+        verified::host::i32_slice_data_ptr(records),
+        verified::host::i32_slice_data_ptr(offsets));
+    if (node_count <= -1) { return 8; }
+    syntax_result[0] = 0;
+    syntax_result[1] = 0;
+    syntax_result[2] = raw_count;
+    syntax_result[3] = token_count;
+    syntax_result[4] = node_count;
+    syntax_result[5] = 0;
+    syntax_result[6] = 0;
+    let root: i32 = node_count - 1;
+    let certificate_output_length: i32 = 0;
+    if (certificate_mode == 1) {
+        // `packed_path` is host ABI storage; compact output expects one byte
+        // per i32 slot, so unpack the already-authenticated argument once.
+        let path_byte: i32 = 0;
+        while (path_byte != path_length) {
+            packed_io[path_byte] =
+                (packed_path[path_byte / 4] >> ((path_byte % 4) * 8)) & 255;
+            path_byte += 1;
+        }
+        compact_bundle[0] = path_length;
+        compact_bundle[1] = source_length;
+        compact_bundle[2] = raw_count;
+        compact_bundle[3] = token_count;
+        compact_bundle[4] = node_count;
+        let bundle_copy: i32 = 0;
+        while (bundle_copy != path_length) {
+            compact_bundle[8 + bundle_copy] = packed_io[bundle_copy];
+            bundle_copy += 1;
+        }
+        bundle_copy = 0;
+        while (bundle_copy != source_length) {
+            compact_bundle[1032 + bundle_copy] = source[bundle_copy];
+            bundle_copy += 1;
+        }
+        bundle_copy = 0;
+        while (bundle_copy != raw_count * 3) {
+            compact_bundle[66568 + bundle_copy] = raw[bundle_copy];
+            bundle_copy += 1;
+        }
+        bundle_copy = 0;
+        while (bundle_copy != token_count * 3) {
+            compact_bundle[132104 + bundle_copy] = canonical[bundle_copy];
+            bundle_copy += 1;
+        }
+        bundle_copy = 0;
+        while (bundle_copy != token_count * 2) {
+            compact_bundle[197640 + bundle_copy] = backend_work[bundle_copy];
+            bundle_copy += 1;
+        }
+        bundle_copy = 0;
+        while (bundle_copy != 1048576) {
+            compact_bundle[328712 + bundle_copy] = records[bundle_copy];
+            bundle_copy += 1;
+        }
+        bundle_copy = 0;
+        while (bundle_copy != node_count) {
+            compact_bundle[1377288 + bundle_copy] = offsets[bundle_copy];
+            bundle_copy += 1;
+        }
+        certificate_output_length = verified::compact_artifact_output::emit_header(
+            1, extraction_workspace, 16777216, 16);
+        if (verified::semantic_tokens::collect_raw(
+            verified::host::i32_slice_data_ptr(grammar),
+            verified::host::i32_slice_data_ptr(kinds),
+            token_count, node_count,
+            verified::host::i32_slice_data_ptr(records),
+            verified::host::i32_slice_data_ptr(offsets),
+            verified::host::i32_slice_data_ptr(backend_work)) != 0) {
+            return 13;
+        }
+        certificate_output_length = verified::compact_artifact_output::emit_unit_compiler_raw(
+            verified::host::i32_slice_data_ptr(compact_bundle),
+            verified::host::i32_slice_data_ptr(extraction_workspace),
+            certificate_output_length);
+        if (certificate_output_length <= -1) { return 14; }
+    }
+    let transport_words: i32 = lowering::program_transport::lower_owned_raw(
+        verified::host::i32_slice_data_ptr(source),
+        verified::host::i32_slice_data_ptr(canonical),
+        verified::host::i32_slice_data_ptr(records),
+        verified::host::i32_slice_data_ptr(offsets),
+        verified::host::i32_slice_data_ptr(syntax_result),
+        verified::host::i32_slice_data_ptr(transport));
+    if (transport_words <= lowering::transport::HEADER - 1) {
+        verified::byte_io::write_stderr_natural(lowering::program::TRANSPORT);
+        verified::byte_io::write_stderr_natural(transport_words);
+        return 10;
+    }
+    let emitted: i32 = backend::image_boundary::compile_raw(
+        verified::host::i32_slice_data_ptr(transport), transport_words,
+        verified::host::i32_slice_data_ptr(function_input),
+        verified::host::i32_slice_data_ptr(backend_work),
+        verified::host::i32_slice_data_ptr(code));
+    if (emitted <= 0) { return 11; }
+
+    if (certificate_mode == 1) {
+        let function_count: i32 = backend_work[backend::frame::FUNCTION_COUNT];
+        let compact_length: i32 = certificate_output_length - 16;
+        let header_end: i32 = verified::certificate_output_native::emit_header_raw(
+            compact_length, verified::host::i32_slice_data_ptr(extraction_workspace),
+            16777216, 0);
+        if (header_end <= -1) { return 15; }
+        certificate_output_length = verified::certificate_output_native::emit_transport_raw(
+            verified::host::i32_slice_data_ptr(transport), 262144, transport_words,
+            verified::host::i32_slice_data_ptr(extraction_workspace), 16777216,
+            certificate_output_length);
+        if (certificate_output_length <= -1) { return 16; }
+        certificate_output_length = verified::certificate_output_native::emit_image_raw(
+            verified::host::i32_slice_data_ptr(code), emitted,
+            verified::host::i32_slice_data_ptr(extraction_workspace), 16777216,
+            certificate_output_length);
+        if (certificate_output_length <= -1) { return 17; }
+        certificate_output_length = verified::certificate_output_native::emit_functions_compiler_raw(
+            verified::host::i32_slice_data_ptr(backend_work), transport_words, function_count,
+            verified::host::i32_slice_data_ptr(extraction_workspace),
+            certificate_output_length);
+        if (certificate_output_length <= -1) { return 18; }
+        if (verified::certificate_output_native::pack_in_place_raw(
+            verified::host::i32_slice_data_ptr(extraction_workspace),
+            certificate_output_length) <= -1) { return 19; }
+        let certificate_size: usize = certificate_output_length;
+        if (verified::host::write_stdout(
+            verified::host::i32_slice_data_ptr(extraction_workspace), certificate_size)
+            != certificate_output_length) { return 20; }
+        return 0;
+    }
+
+    // The extraction workspace is now a packed byte buffer. Nothing has
+    // touched stdout before this point, so failed passes cannot leave a
+    // partial artifact behind.
+    let word_count: i32 = (emitted + 3) / 4;
+    let word: i32 = 0;
+    while (word < word_count) { extraction_workspace[word] = 0; word += 1; }
+    let byte: i32 = 0;
+    while (byte < emitted) {
+        extraction_workspace[byte / 4] = extraction_workspace[byte / 4]
+            | (code[byte] << ((byte % 4) * 8));
+        byte += 1;
+    }
+    let output_size: usize = emitted;
+    if (verified::host::write_stdout(
+        verified::host::i32_slice_data_ptr(extraction_workspace), output_size)
+        != emitted) { return 12; }
+    return 0;
+}

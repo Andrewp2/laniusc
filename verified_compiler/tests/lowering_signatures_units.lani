@@ -1,0 +1,189 @@
+module app::main;
+import lowering::declarations;
+import lowering::signatures;
+import lowering::units;
+import verified::parser;
+import verified::host;
+fn record(records:[i32], base: i32, node: i32, production: i32, children: i32) {
+    let offset: i32 = base + node * 28;
+    records[offset] = production;
+    records[offset + 3] = children;
+}
+fn state(records:[i32], base: i32, node: i32, index: i32, child: i32) {
+    let offset: i32 = base + node * 28 + 4 + index * 3;
+    records[offset] = verified::parser::CHILD_STATE;
+    records[offset + 1] = child;
+}
+fn token(records:[i32], base: i32, node: i32, index: i32, value: i32) {
+    let offset: i32 = base + node * 28 + 4 + index * 3;
+    records[offset] = verified::parser::CHILD_TOKEN;
+    records[offset + 1] = value;
+}
+fn make_tree(records:[i32], offsets:[i32], record_base: i32, offset_base: i32) {
+    let node: i32 = 0;
+    while (node <= 9) {
+        offsets[offset_base + node] = node * 28;
+        node += 1;
+    }
+    // i32 path type: segment, path tail, path, empty arguments, type.
+    record(records, record_base, 0, 57, 1);
+    token(records, record_base, 0, 0, 0);
+    record(records, record_base, 1, 59, 0);
+    record(records, record_base, 2, 56, 2);
+    state(records, record_base, 2, 0, 0);
+    state(records, record_base, 2, 1, 1);
+    record(records, record_base, 3, 226, 0);
+    record(records, record_base, 4, 69, 2);
+    state(records, record_base, 4, 0, 2);
+    state(records, record_base, 4, 1, 3); // The function declaration only needs the children read by signatures.
+    record(records, record_base, 5, 232, 0);
+    record(records, record_base, 6, 60, 0);
+    record(records, record_base, 7, 36, 0);
+    record(records, record_base, 8, 34, 2);
+    state(records, record_base, 8, 0, 4);
+    state(records, record_base, 8, 1, 4);
+    record(records, record_base, 9, 11, 8);
+    state(records, record_base, 9, 0, 5);
+    token(records, record_base, 9, 1, 1);
+    state(records, record_base, 9, 2, 5);
+    state(records, record_base, 9, 3, 5);
+    state(records, record_base, 9, 4, 6);
+    state(records, record_base, 9, 5, 5);
+    state(records, record_base, 9, 6, 8);
+    state(records, record_base, 9, 7, 7);
+}
+fn main() -> i32 {
+    let descriptor_memory: ptr = verified::host::alloc(32, 4);
+    let context_memory: ptr = verified::host::alloc(96, 4);
+    let declaration_memory: ptr = verified::host::alloc(192, 4);
+    let module_memory: ptr = verified::host::alloc(32, 4);
+    let declarations_memory: ptr = verified::host::alloc(192, 4);
+    let modules_memory: ptr = verified::host::alloc(32, 4);
+    let allocated_memory: ptr = verified::host::alloc(192, 4);
+    let source_memory: ptr = verified::host::alloc(72, 4);
+    let token_memory: ptr = verified::host::alloc(48, 4);
+    let record_memory: ptr = verified::host::alloc(2240, 4);
+    let offsets_memory: ptr = verified::host::alloc(80, 4);
+    let arena_memory: ptr = verified::host::alloc(512, 4);
+    let resolution_memory: ptr = verified::host::alloc(4, 4);
+    let type_output_memory: ptr = verified::host::alloc(256, 4);
+    let source_scratch_memory: ptr = verified::host::alloc(64, 4);
+    let token_scratch_memory: ptr = verified::host::alloc(48, 4);
+    let record_scratch_memory: ptr = verified::host::alloc(1120, 4);
+    let offsets_scratch_memory: ptr = verified::host::alloc(48, 4);
+    let arena_scratch_memory: ptr = verified::host::alloc(256, 4);
+    let resolution_scratch_memory: ptr = verified::host::alloc(4, 4);
+    let declaration_scratch_memory: ptr = verified::host::alloc(96, 4);
+    let allocation_scratch_memory: ptr = verified::host::alloc(112, 4);
+    let signature_scratch_memory: ptr = verified::host::alloc(256, 4);
+    let output_memory: ptr = verified::host::alloc(512, 4);
+    if (descriptor_memory == 0 || context_memory == 0 || declaration_memory == 0 || module_memory == 0 || declarations_memory == 0 || modules_memory == 0 || allocated_memory == 0 || source_memory == 0 || token_memory == 0 || record_memory == 0 || offsets_memory == 0 || arena_memory == 0 || resolution_memory == 0 || type_output_memory == 0 || source_scratch_memory == 0 || token_scratch_memory == 0 || record_scratch_memory == 0 || offsets_scratch_memory == 0 || arena_scratch_memory == 0 || resolution_scratch_memory == 0 || declaration_scratch_memory == 0 || allocation_scratch_memory == 0 || signature_scratch_memory == 0 || output_memory == 0) {
+        return 1;
+    }
+    let descriptors:[i32] = verified::host::i32_slice_from_raw_parts(descriptor_memory, 8);
+    let contexts:[i32] = verified::host::i32_slice_from_raw_parts(context_memory, 24);
+    let declaration_catalog:[i32] = verified::host::i32_slice_from_raw_parts(declaration_memory, 48);
+    let module_catalog:[i32] = verified::host::i32_slice_from_raw_parts(module_memory, 8);
+    let declarations:[i32] = verified::host::i32_slice_from_raw_parts(declarations_memory, 48);
+    let modules:[i32] = verified::host::i32_slice_from_raw_parts(modules_memory, 8);
+    let allocated:[i32] = verified::host::i32_slice_from_raw_parts(allocated_memory, 48);
+    let source_catalog:[i32] = verified::host::i32_slice_from_raw_parts(source_memory, 18);
+    let token_catalog:[i32] = verified::host::i32_slice_from_raw_parts(token_memory, 12);
+    let record_catalog:[i32] = verified::host::i32_slice_from_raw_parts(record_memory, 560);
+    let offsets_catalog:[i32] = verified::host::i32_slice_from_raw_parts(offsets_memory, 20);
+    let type_arena_catalog:[i32] = verified::host::i32_slice_from_raw_parts(arena_memory, 128);
+    let resolution_catalog:[i32] = verified::host::i32_slice_from_raw_parts(resolution_memory, 1);
+    let type_output:[i32] = verified::host::i32_slice_from_raw_parts(type_output_memory, 64);
+    let source_scratch:[i32] = verified::host::i32_slice_from_raw_parts(source_scratch_memory, 16);
+    let token_scratch:[i32] = verified::host::i32_slice_from_raw_parts(token_scratch_memory, 12);
+    let record_scratch:[i32] = verified::host::i32_slice_from_raw_parts(record_scratch_memory, 280);
+    let offsets_scratch:[i32] = verified::host::i32_slice_from_raw_parts(offsets_scratch_memory, 12);
+    let type_arena_scratch:[i32] = verified::host::i32_slice_from_raw_parts(arena_scratch_memory, 64);
+    let resolution_scratch:[i32] = verified::host::i32_slice_from_raw_parts(resolution_scratch_memory, 1);
+    let declaration_scratch:[i32] = verified::host::i32_slice_from_raw_parts(declaration_scratch_memory, 24);
+    let allocation_scratch:[i32] = verified::host::i32_slice_from_raw_parts(allocation_scratch_memory, 28);
+    let signature_scratch:[i32] = verified::host::i32_slice_from_raw_parts(signature_scratch_memory, 64);
+    let output:[i32] = verified::host::i32_slice_from_raw_parts(output_memory, 128);
+    descriptors[0] = 0;
+    descriptors[1] = 24;
+    descriptors[2] = 0;
+    descriptors[3] = 4;
+    descriptors[4] = 24;
+    descriptors[5] = 24;
+    descriptors[6] = 4;
+    descriptors[7] = 4;
+    let unit: i32 = 0;
+    while (unit <= 1) {
+        let declaration_base: i32 = unit * 24;
+        declaration_catalog[declaration_base] = 2;
+        declaration_catalog[declaration_base + 4] = 1;
+        declaration_catalog[declaration_base + 6] = 1;
+        let module_slot: i32 = declaration_base + 8;
+        declaration_catalog[module_slot] = unit;
+        declaration_catalog[module_slot + 1] = lowering::declarations::MODULE;
+        declaration_catalog[module_slot + 3] = 2;
+        declaration_catalog[module_slot + 4] = 1;
+        declaration_catalog[module_slot + 5] = -1;
+        declaration_catalog[module_slot + 6] = 0;
+        let function_slot: i32 = module_slot + 8;
+        declaration_catalog[function_slot] = unit;
+        declaration_catalog[function_slot + 1] = lowering::declarations::FUNCTION;
+        declaration_catalog[function_slot + 3] = 10;
+        declaration_catalog[function_slot + 4] = 9;
+        declaration_catalog[function_slot + 5] = 1;
+        declaration_catalog[function_slot + 6] = -1;
+        let source_base: i32 = unit * 9;
+        source_catalog[source_base] = 105;
+        source_catalog[source_base + 1] = 51;
+        source_catalog[source_base + 2] = 50;
+        source_catalog[source_base + 3] = 32;
+        source_catalog[source_base + 4] = 97;
+        source_catalog[source_base + 5] = 108;
+        source_catalog[source_base + 6] = 112;
+        source_catalog[source_base + 7] = 104;
+        source_catalog[source_base + 8] = 97;
+        let token_base: i32 = unit * 6;
+        token_catalog[token_base] = 1;
+        token_catalog[token_base + 1] = 0;
+        token_catalog[token_base + 2] = 3;
+        token_catalog[token_base + 3] = 1;
+        token_catalog[token_base + 4] = 4;
+        token_catalog[token_base + 5] = 9;
+        make_tree(record_catalog, offsets_catalog, unit * 280, unit * 10);
+        contexts[unit * 12] = source_base;
+        contexts[unit * 12 + 1] = 9;
+        contexts[unit * 12 + 2] = token_base;
+        contexts[unit * 12 + 3] = 2;
+        contexts[unit * 12 + 4] = unit * 280;
+        contexts[unit * 12 + 5] = 280;
+        contexts[unit * 12 + 6] = unit * 10;
+        contexts[unit * 12 + 7] = 10;
+        contexts[unit * 12 + 8] = unit * 64;
+        contexts[unit * 12 + 9] = 64;
+        contexts[unit * 12 + 10] = 0;
+        contexts[unit * 12 + 11] = 0;
+        unit += 1;
+    }
+    module_catalog[0] = 0;
+    module_catalog[1] = 0;
+    module_catalog[2] = 0;
+    module_catalog[3] = 4;
+    module_catalog[4] = 1;
+    module_catalog[5] = 0;
+    module_catalog[6] = 0;
+    module_catalog[7] = 4;
+    let collected = lowering::units::accumulate(descriptors, 8, 2, declaration_catalog, 48, module_catalog, 8, declarations, 48, modules, 8, allocated, 48);
+    if (lowering::units::units_stage(collected) != lowering::units::SUCCESS || allocated[18 + 9] != 0 || allocated[38 + 9] != 1) {
+        return 2;
+    }
+    let words: i32 = lowering::signatures::lower_units(descriptors, 8, 2, contexts, 24, declaration_catalog, 48, source_catalog, 18, token_catalog, 12, record_catalog, 560, offsets_catalog, 20, type_arena_catalog, 128, resolution_catalog, 0, type_arena_catalog, 0, 0, type_arena_scratch, 64, allocated, 48, 48, type_output, 64, source_scratch, 16, token_scratch, 12, record_scratch, 280, offsets_scratch, 12, type_arena_scratch, 64, resolution_scratch, 1, declaration_scratch, 24, allocation_scratch, 28, signature_scratch, 64, output, 128);
+    if (words != 20 || output[1] != 2 || output[4] != 2 || output[8] != 0 || output[10] != lowering::signatures::INTERNAL_SHAPE || output[14] != 1 || output[16] != lowering::signatures::INTERNAL_SHAPE) {
+        return 3;
+    }
+    // Reusing one unit's context range is rejected instead of compiling it twice.
+    contexts[12] = 0;
+    if (lowering::signatures::lower_units(descriptors, 8, 2, contexts, 24, declaration_catalog, 48, source_catalog, 18, token_catalog, 12, record_catalog, 560, offsets_catalog, 20, type_arena_catalog, 128, resolution_catalog, 0, type_arena_catalog, 0, 0, type_arena_scratch, 64, allocated, 48, 48, type_output, 64, source_scratch, 16, token_scratch, 12, record_scratch, 280, offsets_scratch, 12, type_arena_scratch, 64, resolution_scratch, 1, declaration_scratch, 24, allocation_scratch, 28, signature_scratch, 64, output, 128) != -1) {
+        return 4;
+    }
+    return 0;
+}

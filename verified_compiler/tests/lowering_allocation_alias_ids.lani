@@ -1,0 +1,37 @@
+module app::main;
+
+import lowering::allocation;
+
+// A compile-time alias occupies the declaration-ID hole between the structure
+// and constant groups. Runtime IDs preserve that authenticated space instead
+// of silently renumbering the hole; the check covers every Core-backed kind.
+fn main() -> i32 {
+    let input: [i32; 56] = [
+        6,1,1,1,1,1,1,0,
+        0,6,0,2,1,-1,0,0,
+        0,1,1,4,3,5,-1,0,
+        0,2,1,6,5,7,4,0,
+        0,3,0,8,7,9,-1,0,
+        0,4,0,10,9,11,-1,0,
+        0,5,0,12,11,13,-1,0,
+    ];
+    let output: [i32; 68] = [
+        0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,
+    ];
+    let words: i32 = lowering::allocation::allocate(input, 56, 1, output, 68);
+    if (words != 68 || output[0] != 1 || output[1] != 6
+        || output[2] != 1 || output[3] != 1 || output[4] != 1
+        || output[5] != 1 || output[6] != 1 || output[7] != 5) { return 1; }
+    if (output[18 + 8] != 0 || output[18 + 9] != 0) { return 2; }
+    if (output[28 + 8] != 1 || output[28 + 9] != -1) { return 3; }
+    if (output[38 + 8] != 2 || output[38 + 9] != 2) { return 4; }
+    if (output[48 + 8] != 3 || output[48 + 9] != 3) { return 5; }
+    if (output[48 + 18] != 4 || output[48 + 19] != 4) { return 6; }
+    return 0;
+}

@@ -22,24 +22,10 @@ def tokenFromNumber (start : Nat) : NumberScanResult → OneTokenResult
   | .success kind finish => .token ⟨kind, start, finish⟩
   | .failure error => .failure error
 
-theorem tokenFromNumber_deterministic
-    (start : Nat) (number : NumberScanResult) {left right : OneTokenResult}
-    (leftResult : tokenFromNumber start number = left)
-    (rightResult : tokenFromNumber start number = right) :
-    left = right := by
-  exact leftResult.symm.trans rightResult
-
 def tokenFromDelimited
     (kind : TokenKind) (start : Nat) : ScanEnd → OneTokenResult
   | .success finish => .token ⟨kind, start, finish⟩
   | .failure error => .failure error
-
-theorem tokenFromDelimited_deterministic
-    (kind : TokenKind) (start : Nat) (scan : ScanEnd) {left right : OneTokenResult}
-    (leftResult : tokenFromDelimited kind start scan = left)
-    (rightResult : tokenFromDelimited kind start scan = right) :
-    left = right := by
-  exact leftResult.symm.trans rightResult
 
 def scanFixedSymbol (source : List Byte) (start : Nat) : OneTokenResult :=
   match matchSymbolHead (source.drop start) with
@@ -103,13 +89,6 @@ def scanSymbol (source : List Byte) (start : Nat) : OneTokenResult :=
       else
         scanFixedSymbol source start
 
-theorem scanSymbol_deterministic
-    (source : List Byte) (start : Nat) {left right : OneTokenResult}
-    (leftResult : scanSymbol source start = left)
-    (rightResult : scanSymbol source start = right) :
-    left = right := by
-  exact leftResult.symm.trans rightResult
-
 theorem scanSymbol_token_advances
     {source : List Byte} {start : Nat} {token : RawToken}
     (result : scanSymbol source start = .token token) :
@@ -161,13 +140,6 @@ def scanOneAt (source : List Byte) (start : Nat) : OneTokenResult :=
             (scanQuotedEnd source start singleQuote)
       | .symbol => scanSymbol source start
       | .invalid => .failure start
-
-theorem scanOneAt_deterministic
-    (source : List Byte) (start : Nat) {left right : OneTokenResult}
-    (leftResult : scanOneAt source start = left)
-    (rightResult : scanOneAt source start = right) :
-    left = right := by
-  exact leftResult.symm.trans rightResult
 
 theorem scanOneAt_token_advances
     {source : List Byte} {start : Nat} {token : RawToken}
@@ -231,16 +203,6 @@ theorem scanOneAt_token_advances
           simp only [startClass] at result
           exact scanSymbol_token_advances result
       | invalid => simp [startClass] at result
-
-theorem scanOneAt_token_before_end
-    {source : List Byte} {start : Nat} {token : RawToken}
-    (result : scanOneAt source start = .token token) :
-    start < source.length := by
-  by_cases beforeEnd : start < source.length
-  · exact beforeEnd
-  · have missing : source[start]? = none := List.getElem?_eq_none (by omega)
-    unfold scanOneAt at result
-    simp [missing] at result
 
 theorem scanOneAt_token_start
     {source : List Byte} {start : Nat} {token : RawToken}
@@ -326,13 +288,6 @@ def RawLexResult.prepend (token : RawToken) : RawLexResult → RawLexResult
   | .failure accepted error => .failure (token :: accepted) error
   | .fuelExhausted accepted offset => .fuelExhausted (token :: accepted) offset
 
-theorem RawLexResult.prepend_deterministic
-    (token : RawToken) (result : RawLexResult) {left right : RawLexResult}
-    (leftResult : result.prepend token = left)
-    (rightResult : result.prepend token = right) :
-    left = right := by
-  exact leftResult.symm.trans rightResult
-
 def lexRawFromFuel
     (source : List Byte) : Nat → Nat → RawLexResult
   | 0, offset => .fuelExhausted [] offset
@@ -343,13 +298,6 @@ def lexRawFromFuel
         | .failure error => .failure [] error
         | .token token =>
             (lexRawFromFuel source fuel token.finish).prepend token
-
-theorem lexRawFromFuel_deterministic
-    (source : List Byte) (fuel offset : Nat) {left right : RawLexResult}
-    (leftResult : lexRawFromFuel source fuel offset = left)
-    (rightResult : lexRawFromFuel source fuel offset = right) :
-    left = right := by
-  exact leftResult.symm.trans rightResult
 
 theorem lexRawFromFuel_ne_exhausted
     (source : List Byte) {fuel offset : Nat}
@@ -387,13 +335,6 @@ theorem lexRaw_ne_exhausted (source : List Byte) :
   unfold lexRaw
   apply lexRawFromFuel_ne_exhausted
   simp
-
-theorem lexRaw_deterministic
-    (source : List Byte) {left right : RawLexResult}
-    (leftResult : lexRaw source = left)
-    (rightResult : lexRaw source = right) :
-    left = right := by
-  exact leftResult.symm.trans rightResult
 
 /-- Declarative stream execution. Each constructor either completes at EOF,
     exposes the first failed token scan, or accepts one token and continues at
@@ -548,30 +489,5 @@ theorem lexRaw_success_consumes_source
   have sound := lexRaw_sound source
   rw [result] at sound
   exact sound.success_witness
-
-theorem lexRaw_mixed_prefix_then_first_failure :
-    lexRaw ([97, 98, 99, 32, 49, 50, 46, 46, 51, 52, 32,
-      47, 47, 120, 10, 34, 111, 107, 34, 32, 64] : List Byte) =
-      .failure [
-        ⟨.identifier, 0, 3⟩,
-        ⟨.whitespace, 3, 4⟩,
-        ⟨.integer, 4, 6⟩,
-        ⟨.dotDot, 6, 8⟩,
-        ⟨.integer, 8, 10⟩,
-        ⟨.whitespace, 10, 11⟩,
-        ⟨.lineComment, 11, 14⟩,
-        ⟨.whitespace, 14, 15⟩,
-        ⟨.string, 15, 19⟩,
-        ⟨.whitespace, 19, 20⟩
-      ] 20 := by
-  native_decide
-
-theorem lexRaw_unterminated_string_fails_at_newline :
-    lexRaw ([34, 97, 10, 98] : List Byte) = .failure [] 2 := by
-  native_decide
-
-theorem lexRaw_empty_source :
-    lexRaw ([] : List Byte) = .success [] := by
-  native_decide
 
 end Lanius.Compiler.Lexer

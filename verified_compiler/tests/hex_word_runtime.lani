@@ -1,0 +1,33 @@
+module app::main;
+
+import verified::certificate_output;
+import verified::host;
+
+fn check_word(output: [i32], words: [i32], position: i32, value: i32,
+    first: i32, second: i32, third: i32, fourth: i32,
+    fifth: i32, sixth: i32, seventh: i32, eighth: i32) -> i32 {
+    words[0] = value;
+    let base: i32 = position + 8;
+    let end: i32 = verified::certificate_output::emit_transport(words, 1, 1,
+        output, 64, position);
+    if (end != position + 16) { return 1; }
+    if (output[base] != first || output[base + 1] != second ||
+        output[base + 2] != third || output[base + 3] != fourth ||
+        output[base + 4] != fifth || output[base + 5] != sixth ||
+        output[base + 6] != seventh || output[base + 7] != eighth) { return 2; }
+    return 0;
+}
+
+fn main() -> i32 {
+    let output_memory: ptr = verified::host::alloc(64 * 4, 4);
+    let words_memory: ptr = verified::host::alloc(4, 4);
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(output_memory, 64);
+    let words: [i32] = verified::host::i32_slice_from_raw_parts(words_memory, 1);
+    if (output_memory == 0 || words_memory == 0) { return 3; }
+    let zero: i32 = check_word(output, words, 0, 0, 48, 48, 48, 48, 48, 48, 48, 48);
+    if (zero != 0) { return 4; }
+    if (check_word(output, words, 16, 305419896, 49, 50, 51, 52, 53, 54, 55, 56) != 0) { return 5; }
+    if (check_word(output, words, 32, -1, 102, 102, 102, 102, 102, 102, 102, 102) != 0) { return 6; }
+    if (check_word(output, words, 48, -2147483648, 56, 48, 48, 48, 48, 48, 48, 48) != 0) { return 7; }
+    return 0;
+}

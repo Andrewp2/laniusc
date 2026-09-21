@@ -31,6 +31,58 @@ inductive GroundTy where
   | nominal (id : TypeId) (typeArguments : List GroundTy) (constArguments : List Nat)
 
 mutual
+  def GroundTy.decEq : (left right : GroundTy) → Decidable (left = right)
+    | .unit, .unit => isTrue rfl
+    | .scalar left, .scalar right =>
+        match (inferInstance : Decidable (left = right)) with
+        | isTrue equal => isTrue (by simp [equal])
+        | isFalse unequal => isFalse (by simp [unequal])
+    | .array left length, .array right length' =>
+        match GroundTy.decEq left right,
+            (inferInstance : Decidable (length = length')) with
+        | isTrue element, isTrue length => isTrue (by simp [element, length])
+        | isFalse unequal, _ => isFalse (by simp [unequal])
+        | _, isFalse unequal => isFalse (by simp [unequal])
+    | .slice left, .slice right | .reference left, .reference right =>
+        match GroundTy.decEq left right with
+        | isTrue equal => isTrue (by simp [equal])
+        | isFalse unequal => isFalse (by simp [unequal])
+    | .nominal left leftTypes leftConstants, .nominal right rightTypes rightConstants =>
+        match (inferInstance : Decidable (left = right)),
+            GroundTy.listDecEq leftTypes rightTypes,
+            (inferInstance : Decidable (leftConstants = rightConstants)) with
+        | isTrue idEqual, isTrue typesEqual, isTrue constantsEqual =>
+            isTrue (by simp [idEqual, typesEqual, constantsEqual])
+        | isFalse unequal, _, _ => isFalse (by simp [unequal])
+        | _, isFalse unequal, _ => isFalse (by simp [unequal])
+        | _, _, isFalse unequal => isFalse (by simp [unequal])
+    | .unit, .scalar _ | .unit, .array _ _ | .unit, .slice _ |
+      .unit, .reference _ | .unit, .nominal _ _ _ => isFalse (by simp)
+    | .scalar _, .unit | .array _ _, .unit | .slice _, .unit |
+      .reference _, .unit | .nominal _ _ _, .unit => isFalse (by simp)
+    | .scalar _, .array _ _ | .scalar _, .slice _ | .scalar _, .reference _ |
+      .scalar _, .nominal _ _ _ => isFalse (by simp)
+    | .array _ _, .scalar _ | .slice _, .scalar _ | .reference _, .scalar _ |
+      .nominal _ _ _, .scalar _ => isFalse (by simp)
+    | .array _ _, .slice _ | .array _ _, .reference _ | .array _ _, .nominal _ _ _ |
+      .slice _, .array _ _ | .slice _, .reference _ | .slice _, .nominal _ _ _ |
+      .reference _, .array _ _ | .reference _, .slice _ | .reference _, .nominal _ _ _ |
+      .nominal _ _ _, .array _ _ | .nominal _ _ _, .slice _ |
+      .nominal _ _ _, .reference _ => isFalse (by simp)
+
+  def GroundTy.listDecEq : (left right : List GroundTy) → Decidable (left = right)
+    | [], [] => isTrue rfl
+    | [], _ :: _ | _ :: _, [] => isFalse (by simp)
+    | left :: leftTail, right :: rightTail =>
+        match GroundTy.decEq left right, GroundTy.listDecEq leftTail rightTail with
+        | isTrue head, isTrue tail => isTrue (by simp [head, tail])
+        | isFalse unequal, _ => isFalse (by simp [unequal])
+        | _, isFalse unequal => isFalse (by simp [unequal])
+end
+
+instance : DecidableEq GroundTy := GroundTy.decEq
+
+mutual
   def GroundTy.toTy : GroundTy → Ty
     | .unit => .unit
     | .scalar type => .scalar type

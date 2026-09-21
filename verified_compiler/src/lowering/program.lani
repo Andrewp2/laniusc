@@ -1,0 +1,339 @@
+module lowering::program;
+import lowering::declarations;
+import lowering::modules;
+import lowering::allocation;
+import lowering::types;
+import lowering::aliases;
+import lowering::signatures;
+import lowering::bodies;
+import lowering::transport;
+import lowering::units;
+import lowering::resolutions;
+import verified::host;
+pub const SUCCESS: i32 = 0;
+pub const BAD_INPUT: i32 = 1;
+pub const DECLARATIONS: i32 = 2;
+pub const MODULES: i32 = 3;
+pub const TYPES: i32 = 4;
+pub const ALLOCATION: i32 = 5;
+pub const SIGNATURES: i32 = 6;
+pub const BODIES: i32 = 7;
+pub const TRANSPORT: i32 = 8;
+pub struct ProgramResult {
+    stage: i32,
+    detail: i32,
+    declaration_words: i32,
+    module_words: i32,
+    type_root: i32,
+    allocation_words: i32,
+    signature_words: i32,
+    body_words: i32,
+    transport_words: i32,
+    entrypoint: i32,
+}
+pub fn program_stage(result: ProgramResult) -> i32 {
+    return result.stage;
+}
+pub fn program_detail(result: ProgramResult) -> i32 {
+    return result.detail;
+}
+pub fn declaration_words(result: ProgramResult) -> i32 {
+    return result.declaration_words;
+}
+pub fn module_words(result: ProgramResult) -> i32 {
+    return result.module_words;
+}
+pub fn type_root(result: ProgramResult) -> i32 {
+    return result.type_root;
+}
+pub fn allocation_words(result: ProgramResult) -> i32 {
+    return result.allocation_words;
+}
+pub fn signature_words(result: ProgramResult) -> i32 {
+    return result.signature_words;
+}
+pub fn body_words(result: ProgramResult) -> i32 {
+    return result.body_words;
+}
+pub fn transport_words(result: ProgramResult) -> i32 {
+    return result.transport_words;
+}
+pub fn entrypoint(result: ProgramResult) -> i32 {
+    return result.entrypoint;
+}
+fn result(stage: i32, detail: i32, declarations: i32, modules: i32, types: i32, allocation: i32, signatures: i32, bodies: i32, transport: i32, entry: i32) -> ProgramResult {
+    return ProgramResult {
+        stage: stage,
+        detail: detail,
+        declaration_words: declarations,
+        module_words: modules,
+        type_root: types,
+        allocation_words: allocation,
+        signature_words: signatures,
+        body_words: bodies,
+        transport_words: transport,
+        entrypoint: entry,
+    };
+}
+// Multi-unit callers enter through lowering::units::accumulate.  Its flat
+// descriptor/catalog boundary collects every unit's declaration and module
+// metadata and allocates one deterministic global ID namespace.  The complete
+// program below remains the compatibility-preserving one-unit composition;
+// signatures, bodies, and transport still need per-unit context widening.
+pub fn accumulate_units(descriptors: [i32], descriptor_length: i32,
+    unit_count: i32, declaration_catalog: [i32],
+    declaration_catalog_length: i32, module_catalog: [i32],
+    module_catalog_length: i32, declarations: [i32],
+    declaration_capacity: i32, modules: [i32], module_capacity: i32,
+    allocated: [i32], allocation_capacity: i32) -> lowering::units::UnitsResult {
+    return lowering::units::accumulate(descriptors, descriptor_length,
+        unit_count, declaration_catalog, declaration_catalog_length,
+        module_catalog, module_catalog_length, declarations,
+        declaration_capacity, modules, module_capacity, allocated,
+        allocation_capacity);
+}
+// Compose the currently materialized lowering passes for one parsed source
+// unit (the single unit must have ID zero). Buffers are disjoint and every supplied length is the actual slice
+// length. Success means only that these seven projections accepted their
+// inputs, in this order:
+//   declarations.collect, modules.materialize, types.lower, allocation.allocate,
+//   signatures.lower, bodies.lower, transport.lower.
+// The initial `resolutions` slice is retained for the pre-allocation entry
+// return check; post-allocation nominal rows are rebuilt into private scratch
+// because the caller's type-output buffer is also used as lowering output.
+// Function bodies are published as backend-compatible Core function records in
+// the final body buffer; unsupported Surface forms fail at BODIES.
+// Any negative pass result returns the successful prefix and the failing
+// stage/detail. Partial output after that failure is not a result.
+pub fn program(source:[i32], source_length: i32, tokens:[i32], token_count: i32, records:[i32], record_length: i32, offsets:[i32], offsets_length: i32, node_count: i32, root: i32, unit: i32, type_arena:[i32], type_arena_length: i32, type_root_node: i32, resolutions:[i32], resolution_length: i32, alias_catalog:[i32], alias_catalog_capacity: i32, alias_work:[i32], alias_work_capacity: i32, alias_stack:[i32], alias_stack_capacity: i32, alias_scratch:[i32], alias_scratch_capacity: i32, alias_result:[i32], alias_result_capacity: i32, declaration_table:[i32], declaration_capacity: i32, module_table:[i32], module_capacity: i32, type_output:[i32], type_capacity: i32, allocated:[i32], allocation_capacity: i32, signatures:[i32], signature_capacity: i32, bodies:[i32], body_capacity: i32, transport_output:[i32], transport_capacity: i32) -> ProgramResult {
+    if (source_length <= -1 || token_count <= -1 || token_count > 715827882 || record_length <= -1 || offsets_length <= -1 || node_count <= 0 || node_count > offsets_length || root <= -1 || root >= node_count || unit != 0 || type_arena_length <= 0 || resolution_length <= -1 || resolution_length % 2 != 0 || alias_catalog_capacity <= lowering::aliases::HEADER - 1 || alias_work_capacity <= 0 || alias_stack_capacity <= 0 || alias_scratch_capacity <= 0 || alias_result_capacity <= 1 || declaration_capacity <= 7 || module_capacity <= 3 || type_capacity <= 0 || allocation_capacity <= 7 || signature_capacity <= 7 || body_capacity <= lowering::bodies::HEADER || transport_capacity <= lowering::transport::HEADER) {
+        return result(BAD_INPUT, 0, 0, 0, -1, 0, 0, 0, 0, -1);
+    }
+    let declaration_words: i32 = lowering::declarations::collect(
+        records, record_length, offsets, node_count, token_count, root, unit,
+        declaration_table, declaration_capacity,);
+    if (declaration_words <= -1) {
+        return result(DECLARATIONS, declaration_words, 0, 0, -1, 0, 0, 0, 0, -1);
+    }
+    let alias_words: i32 = lowering::aliases::build(source, source_length,
+        tokens, token_count, records, record_length, offsets, node_count,
+        declaration_table, declaration_words, type_output, type_capacity,
+        alias_work, alias_work_capacity, alias_stack, alias_stack_capacity,
+        alias_scratch, alias_scratch_capacity, alias_result,
+        alias_result_capacity, alias_catalog, alias_catalog_capacity,
+        node_count);
+    if (alias_words <= -1) {
+        return result(TYPES, alias_words, declaration_words, 0, -1, 0, 0, 0, 0, -1);
+    }
+    let module_words: i32 = lowering::modules::materialize(
+        tokens, token_count, source_length, records, record_length, offsets,
+        node_count, declaration_table, declaration_words, module_table,
+        module_capacity);
+    if (module_words <= -1) {
+        return result(MODULES, module_words, declaration_words, 0, -1, 0, 0, 0, 0, -1);
+    }
+    let lowered_type: i32 = lowering::types::lower(
+        source, source_length, tokens, token_count, type_arena,
+        type_arena_length, type_root_node, resolutions, resolution_length,
+        alias_catalog, alias_words, alias_scratch, alias_scratch_capacity,
+        type_output, type_capacity);
+    if (lowered_type <= -1) {
+        return result(TYPES, lowered_type, declaration_words, module_words, -1, 0, 0, 0, 0, -1);
+    }
+    let allocation_words: i32 = lowering::allocation::allocate(
+        declaration_table, declaration_words, 1, allocated, allocation_capacity);
+    if (allocation_words <= -1) {
+        return result(ALLOCATION, allocation_words, declaration_words, module_words, lowered_type, 0, 0, 0, 0, -1);
+    }
+    // Type arenas are reset for each signature/body type. Build one
+    // allocation-authenticated name table and keep it separate from the
+    // per-arena type output, which is also caller-owned scratch.
+    if (type_capacity > 536870911) {
+        return result(ALLOCATION, -1, declaration_words, module_words,
+            lowered_type, allocation_words, 0, 0, 0, -1);
+    }
+    let resolution_memory: ptr = verified::host::alloc(type_capacity * 4, 4);
+    if (resolution_memory == 0) {
+        return result(ALLOCATION, -1, declaration_words, module_words,
+            lowered_type, allocation_words, 0, 0, 0, -1);
+    }
+    let resolution_rows:[i32] = verified::host::i32_slice_from_raw_parts(
+        resolution_memory, type_capacity);
+    let resolution_words: i32 = lowering::resolutions::build(source,
+        source_length, tokens, token_count, declaration_table, declaration_words,
+        allocated, allocation_words, resolution_rows, type_capacity);
+    if (resolution_words <= -1) {
+        return result(TYPES, resolution_words, declaration_words, module_words,
+            lowered_type, allocation_words, 0, 0, 0, -1);
+    }
+    let signature_words: i32 = lowering::signatures::lower(
+        source, source_length, tokens, token_count, records, record_length,
+        offsets, node_count, declaration_table, declaration_words, type_arena,
+        type_arena_length, resolution_rows, resolution_words, alias_catalog,
+        alias_words, alias_scratch, alias_scratch_capacity, type_output,
+        type_capacity, allocated, allocation_words, signatures,
+        signature_capacity);
+    if (signature_words <= -1) {
+        return result(SIGNATURES, signature_words, declaration_words,
+            module_words, lowered_type, allocation_words, 0, 0, 0, -1);
+    }
+    let body_words: i32 = lowering::bodies::lower(
+        source, source_length, tokens, token_count, records, record_length,
+        offsets, node_count, declaration_table, declaration_words, allocated,
+        allocation_words, signatures, signature_words, type_arena,
+        type_arena_length, type_arena, type_arena_length, resolution_rows,
+        resolution_words, alias_catalog, alias_words, alias_scratch,
+        alias_scratch_capacity, type_output, type_capacity, bodies,
+        body_capacity);
+    if (body_words <= -1) {
+        return result(BODIES, body_words, declaration_words, module_words,
+            lowered_type, allocation_words, signature_words, 0, 0, -1);
+    }
+    // Aliases are source/type-only declarations and produce no backend
+    // records.  The existing one-unit transport header has no alias section;
+    // consume the authenticated alias count only after signatures and bodies
+    // have used the full allocation table (which still reserves their IDs).
+    allocated[3] = 0;
+    let transport_words: i32 = lowering::transport::lower(
+        source, source_length, tokens, token_count, declaration_table,
+        declaration_words, allocated, allocation_words, signatures,
+        signature_words, bodies, body_words, transport_output,
+        transport_capacity);
+    if (transport_words <= -1) {
+        return result(TRANSPORT, transport_words, declaration_words,
+            module_words, lowered_type, allocation_words, signature_words,
+            body_words, 0, -1);
+    }
+    return result(SUCCESS, 0, declaration_words, module_words, lowered_type,
+        allocation_words, signature_words, body_words, transport_words,
+        transport_output[2]);
+}
+
+// Scalar-result companion for native entrypoints.  The legacy aggregate API
+// above remains available to proof fixtures, while production callers use a
+// caller-owned ten-word result table and cross only scalar/slice boundaries.
+fn write_result(output:[i32], capacity:i32, stage:i32, detail:i32,
+    declarations:i32, modules:i32, types:i32, allocation:i32,
+    signatures:i32, bodies:i32, transport:i32, entry:i32) -> i32 {
+    if (capacity < 10) { return -1; }
+    output[0] = stage;
+    output[1] = detail;
+    output[2] = declarations;
+    output[3] = modules;
+    output[4] = types;
+    output[5] = allocation;
+    output[6] = signatures;
+    output[7] = bodies;
+    output[8] = transport;
+    output[9] = entry;
+    return stage;
+}
+
+pub fn program_into(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
+    records:[i32], record_length: i32, offsets:[i32], offsets_length: i32,
+    node_count: i32, root: i32, unit: i32, type_arena:[i32], type_arena_length: i32,
+    type_root_node: i32, resolutions:[i32], resolution_length: i32,
+    alias_catalog:[i32], alias_catalog_capacity: i32, alias_work:[i32], alias_work_capacity: i32,
+    alias_stack:[i32], alias_stack_capacity: i32, alias_scratch:[i32], alias_scratch_capacity: i32,
+    alias_result:[i32], alias_result_capacity: i32, declaration_table:[i32], declaration_capacity: i32,
+    module_table:[i32], module_capacity: i32, type_output:[i32], type_capacity: i32,
+    allocated:[i32], allocation_capacity: i32, signatures:[i32], signature_capacity: i32,
+    bodies:[i32], body_capacity: i32, transport_output:[i32], transport_capacity: i32,
+    output:[i32], output_capacity:i32) -> i32 {
+    if (source_length <= -1 || token_count <= -1 || token_count > 715827882
+        || record_length <= -1 || offsets_length <= -1 || node_count <= 0
+        || node_count > offsets_length || root <= -1 || root >= node_count || unit != 0
+        || type_arena_length <= 0 || resolution_length <= -1 || resolution_length % 2 != 0
+        || alias_catalog_capacity <= lowering::aliases::HEADER - 1 || alias_work_capacity <= 0
+        || alias_stack_capacity <= 0 || alias_scratch_capacity <= 0 || alias_result_capacity <= 1
+        || declaration_capacity <= 7 || module_capacity <= 3 || type_capacity <= 0
+        || allocation_capacity <= 7 || signature_capacity <= 7
+        || body_capacity <= lowering::bodies::HEADER || transport_capacity <= lowering::transport::HEADER) {
+        return write_result(output, output_capacity, BAD_INPUT, 0, 0, 0, -1, 0, 0, 0, 0, -1);
+    }
+    let declaration_words: i32 = lowering::declarations::collect(
+        records, record_length, offsets, node_count, token_count, root, unit,
+        declaration_table, declaration_capacity,);
+    if (declaration_words <= -1) {
+        return write_result(output, output_capacity, DECLARATIONS, declaration_words,
+            0, 0, -1, 0, 0, 0, 0, -1);
+    }
+    let alias_words: i32 = lowering::aliases::build(source, source_length, tokens, token_count,
+        records, record_length, offsets, node_count, declaration_table, declaration_words,
+        type_output, type_capacity, alias_work, alias_work_capacity, alias_stack,
+        alias_stack_capacity, alias_scratch, alias_scratch_capacity, alias_result,
+        alias_result_capacity, alias_catalog, alias_catalog_capacity, node_count);
+    if (alias_words <= -1) {
+        return write_result(output, output_capacity, TYPES, alias_words,
+            declaration_words, 0, -1, 0, 0, 0, 0, -1);
+    }
+    let module_words: i32 = lowering::modules::materialize(tokens, token_count, source_length,
+        records, record_length, offsets, node_count, declaration_table, declaration_words,
+        module_table, module_capacity);
+    if (module_words <= -1) {
+        return write_result(output, output_capacity, MODULES, module_words,
+            declaration_words, 0, -1, 0, 0, 0, 0, -1);
+    }
+    let lowered_type: i32 = lowering::types::lower(source, source_length, tokens, token_count,
+        type_arena, type_arena_length, type_root_node, resolutions, resolution_length,
+        alias_catalog, alias_words, alias_scratch, alias_scratch_capacity,
+        type_output, type_capacity);
+    if (lowered_type <= -1) {
+        return write_result(output, output_capacity, TYPES, lowered_type,
+            declaration_words, module_words, -1, 0, 0, 0, 0, -1);
+    }
+    let allocation_words: i32 = lowering::allocation::allocate(
+        declaration_table, declaration_words, 1, allocated, allocation_capacity);
+    if (allocation_words <= -1) {
+        return write_result(output, output_capacity, ALLOCATION, allocation_words,
+            declaration_words, module_words, lowered_type, 0, 0, 0, 0, -1);
+    }
+    if (type_capacity > 536870911) {
+        return write_result(output, output_capacity, ALLOCATION, -1,
+            declaration_words, module_words, lowered_type, allocation_words, 0, 0, 0, -1);
+    }
+    let resolution_memory: ptr = verified::host::alloc(type_capacity * 4, 4);
+    if (resolution_memory == 0) {
+        return write_result(output, output_capacity, ALLOCATION, -1,
+            declaration_words, module_words, lowered_type, allocation_words, 0, 0, 0, -1);
+    }
+    let resolution_rows:[i32] = verified::host::i32_slice_from_raw_parts(resolution_memory, type_capacity);
+    let resolution_words: i32 = lowering::resolutions::build(source, source_length, tokens,
+        token_count, declaration_table, declaration_words, allocated, allocation_words,
+        resolution_rows, type_capacity);
+    if (resolution_words <= -1) {
+        return write_result(output, output_capacity, TYPES, resolution_words,
+            declaration_words, module_words, lowered_type, allocation_words, 0, 0, 0, -1);
+    }
+    let signature_words: i32 = lowering::signatures::lower(source, source_length, tokens,
+        token_count, records, record_length, offsets, node_count, declaration_table,
+        declaration_words, type_arena, type_arena_length, resolution_rows, resolution_words,
+        alias_catalog, alias_words, alias_scratch, alias_scratch_capacity, type_output,
+        type_capacity, allocated, allocation_words, signatures, signature_capacity);
+    if (signature_words <= -1) {
+        return write_result(output, output_capacity, SIGNATURES, signature_words,
+            declaration_words, module_words, lowered_type, allocation_words, 0, 0, 0, -1);
+    }
+    let body_words: i32 = lowering::bodies::lower(source, source_length, tokens, token_count,
+        records, record_length, offsets, node_count, declaration_table, declaration_words,
+        allocated, allocation_words, signatures, signature_words, type_arena, type_arena_length,
+        type_arena, type_arena_length, resolution_rows, resolution_words, alias_catalog,
+        alias_words, alias_scratch, alias_scratch_capacity, type_output, type_capacity,
+        bodies, body_capacity);
+    if (body_words <= -1) {
+        return write_result(output, output_capacity, BODIES, body_words,
+            declaration_words, module_words, lowered_type, allocation_words, signature_words, 0, 0, -1);
+    }
+    allocated[3] = 0;
+    let transport_words: i32 = lowering::transport::lower(source, source_length, tokens,
+        token_count, declaration_table, declaration_words, allocated, allocation_words,
+        signatures, signature_words, bodies, body_words, transport_output, transport_capacity);
+    if (transport_words <= -1) {
+        return write_result(output, output_capacity, TRANSPORT, transport_words,
+            declaration_words, module_words, lowered_type, allocation_words, signature_words,
+            body_words, 0, -1);
+    }
+    return write_result(output, output_capacity, SUCCESS, 0, declaration_words, module_words,
+        lowered_type, allocation_words, signature_words, body_words, transport_words,
+        transport_output[2]);
+}

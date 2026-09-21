@@ -53,6 +53,13 @@ def readBytes (count : Nat) : DecodeM ByteArray := do
     bytes := bytes.push (← readByte)
   pure bytes
 
+def readRawBytes (count : Nat) : DecodeM ByteArray := do
+  ensureRemaining count
+  let state ← get
+  let bytes := state.bytes.extract state.offset (state.offset + count)
+  set { state with offset := state.offset + count }
+  pure bytes
+
 def readToken : DecodeM Token := do
   let kind ← readU32
   let start ← readU32
@@ -115,16 +122,19 @@ def readArtifact : DecodeM Artifact := do
     parse_root := some (nodes.length - 1)
   }
 
-def readPack : DecodeM ArtifactPack := do
+def readPackPrefix : DecodeM ArtifactPack := do
   let formatVersion ← readU32
   if formatVersion != 1 then failure
   let unitCount ← readU32
   ensureRemaining (unitCount * 40)
   let units ← readMany unitCount readArtifact
   if units.isEmpty then failure
-  let state ← get
-  if state.offset != state.bytes.size then failure
   pure ⟨schemaVersion, units⟩
 
-end Lanius.Extraction.CompactDecode
+def readPack : DecodeM ArtifactPack := do
+  let pack ← readPackPrefix
+  let state ← get
+  if state.offset != state.bytes.size then failure
+  pure pack
 
+end Lanius.Extraction.CompactDecode

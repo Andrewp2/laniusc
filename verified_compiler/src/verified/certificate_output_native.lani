@@ -1,0 +1,58 @@
+module verified::certificate_output_native;
+
+import verified::certificate_output;
+import verified::host;
+
+// Native entrypoints cross this module through raw pointers because the x86
+// backend does not yet lower imported slice parameters.  Rebuild bounded
+// views here and keep all certificate validation in certificate_output.
+pub fn emit_header_raw(compact_length: i32, output_pointer: ptr,
+    capacity: i32, position: i32) -> i32 {
+    let output:[i32] = verified::host::i32_slice_from_raw_parts(output_pointer, capacity);
+    return verified::certificate_output::emit_header(compact_length, output, capacity, position);
+}
+
+pub fn emit_transport_raw(words_pointer: ptr, words_length: i32, count: i32,
+    output_pointer: ptr, capacity: i32, position: i32) -> i32 {
+    let words:[i32] = verified::host::i32_slice_from_raw_parts(words_pointer, words_length);
+    let output:[i32] = verified::host::i32_slice_from_raw_parts(output_pointer, capacity);
+    return verified::certificate_output::emit_transport(words, words_length, count,
+        output, capacity, position);
+}
+
+pub fn emit_image_raw(image_pointer: ptr, image_length: i32,
+    output_pointer: ptr, capacity: i32, position: i32) -> i32 {
+    let image:[i32] = verified::host::i32_slice_from_raw_parts(image_pointer, image_length);
+    let output:[i32] = verified::host::i32_slice_from_raw_parts(output_pointer, capacity);
+    return verified::certificate_output::emit_image(image, image_length, output,
+        capacity, position);
+}
+
+pub fn emit_functions_raw(work_pointer: ptr, work_length: i32, stride: i32,
+    count: i32, output_pointer: ptr, capacity: i32, position: i32) -> i32 {
+    let work:[i32] = verified::host::i32_slice_from_raw_parts(work_pointer, work_length);
+    let output:[i32] = verified::host::i32_slice_from_raw_parts(output_pointer, capacity);
+    return verified::certificate_output::emit_functions(work, work_length, stride,
+        count, output, capacity, position);
+}
+
+pub fn emit_functions_compiler_raw(work_pointer: ptr, stride: i32, count: i32,
+    output_pointer: ptr, position: i32) -> i32 {
+    let work:[i32] = verified::host::i32_slice_from_raw_parts(work_pointer, 524304);
+    let output:[i32] = verified::host::i32_slice_from_raw_parts(output_pointer, 16777216);
+    return verified::certificate_output::emit_functions(work, 524304, stride, count,
+        output, 16777216, position);
+}
+
+pub fn emit_functions_extractor_raw(work_pointer: ptr, stride: i32, count: i32,
+    output_pointer: ptr, position: i32) -> i32 {
+    let work:[i32] = verified::host::i32_slice_from_raw_parts(work_pointer, 16384);
+    let output:[i32] = verified::host::i32_slice_from_raw_parts(output_pointer, 67108864);
+    return verified::certificate_output::emit_functions(work, 16384, stride, count,
+        output, 67108864, position);
+}
+
+pub fn pack_in_place_raw(output_pointer: ptr, length: i32) -> i32 {
+    let output:[i32] = verified::host::i32_slice_from_raw_parts(output_pointer, length);
+    return verified::certificate_output::pack_in_place(output, length);
+}

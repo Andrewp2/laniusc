@@ -1,1104 +1,267 @@
-# Proof architecture for verified compiler code
+# Verified compiler proof architecture
 
-Status: scanner pilot implemented; kernel-clean context, semantics, and
-evidence aggregation are practical; global resolution remains an engineering
-follow-up
-Scope: compiler code written in Lanius  
-First pilot: `verified::lexer::scan_identifier_end`
+Status: active, incomplete. This file describes the current proof boundary,
+not the history of the proof reset.
 
-## Frontend certificate infrastructure checkpoint (September 1, 2026)
+## What the proof is meant to establish
 
-### Fresh-check scope and postorder validation (September 4, 2026)
-
-The current performance goal counts every program-specific artifact, cache,
-and proof module fresh, with only reusable shared infrastructure prebuilt.
-The small incremental-module timings below are historical measurements, not
-the end-to-end time for that goal. `PERFORMANCE_PROFILE.md` records full runs.
-
-Parse-node validation now uses `ParsePostorder.lean`. It scans the original
-node list once, takes completed child nodes from a stack in grammar order,
-checks their identities and spans, and pushes the parent. This removes global
-node-index lookups during this phase. Semantic-token lookups still use the
-authenticated view. A shared kernel-checked soundness theorem proves that
-acceptance implies the original `checkNodesFromParseView` result; no new
-assumption or native-evaluation axiom is introduced.
-
-The stack invariant ties every entry's ID and node to the original artifact.
-The remaining-list invariant ties each upcoming node to its original index.
-These invariants are proved generically, not authenticated by a second
-program-specific trace. The postorder checker may reject DAG layouts accepted
-by the general checker, but all nine current frontend units pass.
-
-Each unit now has one node-validation module. The 43 old node-check chunk
-files and their composition proofs are removed, without forwarding modules.
-That checkpoint had 306 program-specific modules.
-
-### Checked-reference reconstruction (September 4, 2026)
-
-Reconstruction now follows checked child references instead of repeatedly
-looking up parse-node IDs. `Reconstruction/References.lean` defines indexed and
-checked-tree interpretations. `SurfaceReconstruct.lean` contains the single
-grammar implementation; both interpretations still emit ordinary parse-node
-IDs in the same Surface types.
-
-`Reconstruction/Transport.lean` proves exact agreement for every reconstruction
-function, for arbitrary fuel and state counters, when primitive navigation
-agrees. `Reconstruction/Checked.lean` links the artifact's original node list,
-selects its declared root, and transports a successful linked reconstruction
-to the existing `reconstructArtifactSurfaceView` contract. Failed linking does
-not imply indexed failure and cannot produce an acceptance certificate.
-
-All nine units now use this shared entry point. The four formerly sharded
-units each have one reconstruction certificate; 43 reconstruction shard files
-and their obsolete composition helper are removed without forwarding files.
-The complete frontend dependency graph now has 263 program-specific modules.
-The soundness theorem's axiom audit contains only `propext`, `Classical.choice`,
-and `Quot.sound`. Full fresh-check measurements remain in `PERFORMANCE_PROFILE.md`.
-
-Artifact, cache-tree, and origin quotation also share a process-local decoded
-pack cache. It starts empty, retains one successful input, and compares the
-complete input string before reuse. This caches only untrusted JSON decoding;
-quoted constructor terms, executable-code generation, and kernel certificates
-are still processed normally. No program-specific result becomes shared
-prebuilt infrastructure.
-
-Raw-token validation now checks each unit's whole raw trace directly. The
-Symbol and CanonicalTokens split chains no longer provide a needed memory
-boundary; their 16 intermediate files are removed. The predicate and scanner
-are unchanged. Eight units use `kernel_parse_token_raw`; the small TokenScan
-unit retains its whole combined token check.
-That checkpoint had 247 program-specific modules.
-
-Origin checking now reduces each unit's complete `SurfaceOrigins.valid`
-predicate in one certificate. This preserves dense IDs, node ancestry and
-production constraints, exact spelling and token ancestry, and spelling
-coverage. Lexer also retains its independently checked claims-equality
-obligation in the same module. The other units already check claims equality
-in their claims modules. No new origin algorithm or trust assumption is used.
-
-The eight split origin chains, including Lexer's four remaining node-origin
-chunks, are removed without forwarding imports: 37 fewer files. All nine
-units now have one origin-checking module. The full fresh graph contains 210
-program-specific modules and passed in 504.457 seconds, versus 522.790 seconds
-before consolidation. Peak RSS increased from 8.34 to 8.85 GiB. The final
-aggregate theorem still uses only `propext`, `Classical.choice`, and `Quot.sound`.
-
-CanonicalTokens now shares the parse-node data between its artifact and lookup
-view. The artifact's node list is the quoted tree's `flatten`; that tree is
-still generated fresh as program-specific data, and its metadata invariants
-are still checked. The representation proof is reflexive, rather than a
-second reduction comparing duplicated node literals. Exact equality with the
-previous artifact was checked without axioms before migration. The eleven
-duplicate list quotations and their assembly module are removed. This
-checkpoint applied only to CanonicalTokens.
-
-The fresh graph now has 198 modules and passed in 485.476 seconds with the
-same final theorem and axiom audit, using 8.41 GiB peak RSS. This run also
-includes removal of seven unused Lexer node-slice declarations. See
-`PERFORMANCE_PROFILE.md` for the comparison and its limits.
-
-All nine units now share parse-node data between artifact and view.
-`artifact_pack_unit_reusing_nodes%` quotes the other fields once and embeds
-an explicit node-list expression without evaluating Lean code. All eight
-newly migrated artifacts passed exact kernel equality and native comparisons
-of every field against their JSON inputs.
-
-For compact caches, `ArtifactCache.matches_of_sharedNodes` derives the original
-full cache-check result from a representation proof plus the remaining checks.
-It avoids comparing the shared list against itself, but still checks metadata,
-tokens, and source bytes. Focused tests demonstrate that its representation
-premise is necessary and reject corrupted remaining fields.
-
-The full extension passed in 484.393 seconds at 8.53 GiB peak RSS: effectively
-unchanged from 485.476 seconds. Quotation and view checking improved, but other
-checking costs increased. The representation is implemented and verified;
-a meaningful overall speedup from this extension has not yet been demonstrated.
-
-Reconstruction and decoding now obtain their fuel from `ArtifactView.nodeCount`,
-the authenticated tree size. `nodeCount_eq` proves this is exactly the original
-list length. `Reconstruction.checkedView_eq` proves full functional agreement
-with the original length-based computation, including failures. A symbolic
-decoding lemma transports each result back to the original public certificate
-statement without counting the concrete node list during proof assembly.
-All nine units use this path. The fresh check passed in 474.821 seconds with
-198 modules and the same final axiom audit; peak RSS was 8.36 GiB.
-
-Root-shape checking now uses the authenticated view's indexed node lookup and
-cached node/token counts. `rootShapeValidView_eq` proves exact equivalence to
-the original list-based Boolean, including missing roots and the requirement
-that the root be the final node. All nine units still publish certificates
-for the original predicate. The fresh check passed in 469.157 seconds with
-198 modules and the standard axiom audit; peak RSS was 8.63 GiB.
-
-### Reduction-performance checkpoint (September 2, 2026)
-
-The normal public and incremental target is approximately three seconds, not
-thirty seconds. Cold regeneration of every leaf certificate is measured
-separately and is not allowed to leak into downstream proof rebuilds.
-
-The semantic context now has a materialized finite-table representation tied
-by kernel equalities to the original proof-producing builder. Module names,
-symbols, imports, nominal headers, aliases, fields, constructors, constants,
-function schemes, and function instances are concrete data; cached uniqueness
-proofs remain opaque. Struct and function-table equality is checked in unit
-shards and assembled structurally. Semantic body checking is likewise checked
-per unit and assembled without rerunning any unit checker.
-
-Focused rebuild measurements on the development host are:
-
-- public context: 0.94 s;
-- checked semantic units aggregate: 1.00 s;
-- checked semantics assembly: 1.01 s;
-- artifact evidence units aggregate: 1.01 s;
-- artifact evidence assembly: 1.03 s.
-
-The two quadratic cross-table evidence checks retain balanced `TreeSet`
-implementations as a simple runtime fallback, but generated certificates no
-longer authenticate global sets. Their untrusted sidecars now carry balanced
-canonical type/lowering tables and one direct witness-row index for each
-required relationship. The kernel checks each proposed row with a bounded
-`SeqTree` lookup; generic soundness theorems transport successful local lookups
-back to the original list-membership specifications. Bad indexes or malformed
-trees therefore fail without enlarging the trusted boundary.
-
-This removes the roughly 10 s CanonicalTokens index-authenticity leaves. Its
-type/lowering tree authenticity leaves are now under 0.9 s, direct witness
-leaves are about 3.0 s each, and final assembly is 0.9--1.0 s. The same path is
-used for Lexer, Digits, Decimal, Number, Symbol, and RawLexer. Lexer fell from a
-15.1 s monolith to a 3.0 s largest shard; Symbol's largest shard is 2.8 s and
-RawLexer's is 2.6 s. The tiny TokenScan and empty Token unit retain the simpler
-indexed fallback. CanonicalTokens' remaining local invariant leaves are
-separate; the largest measured leaf is 3.1 s. Declaration collection,
-qualified type grounding, ordered-reference validation, and lowering coverage
-have similar opportunities.
-
-Proof-module sharding is measured rather than inferred from theorem count or
-source size. Lean 4.33's `decide +kernel` reduces a closed decision problem once
-in the kernel. It introduces no native-evaluation axiom and is substantially
-faster than `with_unfolding_all rfl` for the generated Surface checks. The
-initial September 3 TokenScan migration used one module per semantic phase: token
-validation 1.0 s, all 651 parse nodes 2.6 s, reconstruction 2.3 s, decoding
-2.3 s, claims 2.6 s, origins 1.7 s, and final assembly under 1.0 s. This
-removed its raw-token reduction module and all three parse-node chunk modules.
-
-The September 4 pass addresses two distinct costs. `kernel_rfl` checks a
-closed `Eq.refl` proof through Lean's ordinary kernel and caches the resulting
-auxiliary theorem, following the mechanism used by `decide +kernel`. It also
-works for exact Surface-tree equalities without a `DecidableEq` instance.
-This avoids performing the same large reduction in both the elaborator and
-the kernel. Negative tests require the tactic to reject false equalities.
-
-Reconstructed output is now the quoted `artifact.surface` value, with a kernel
-equality proving that grammar-directed reconstruction returns exactly that
-value. Previously, five units defined their reconstructed output as
-`(reconstructArtifactSurfaceView artifact view).get proof`. Inspecting that
-definition in claims or decoding reran reconstruction; an opaque success
-proof did not cache its data. Materializing the output reduced Token's claims
-and decoding modules from roughly 20 s and 18 s to 1.3 s and 1.1 s in the first
-focused build. TokenScan's corresponding modules dropped below one second.
-
-The complete Surface rebuild confirmed Token's claims at 0.95 s and decoding
-at 0.85 s. Whole-phase experiments for claims and decoding together took
-2.73 s for CanonicalTokens, 1.76 s for Symbol, and 1.75 s for RawLexer, including
-Lean startup and imports. Their 62 per-item claims/decoding modules have been
-removed; each unit now checks those phases directly in `Claims.lean` and
-`Decode.lean`. This reduces the Surface subtree from 329 to 267 Lean files,
-without forwarding modules or weakened checks.
-
-After consolidation, production claims/decoding module build times were
-2.4/1.7 s for CanonicalTokens, 1.8/1.1 s for Symbol, and 1.7/1.2 s for
-RawLexer. The sequential validation passed all 386 remaining local dependencies
-of the test and Surface targets. The aggregate theorem's axiom audit reports
-only `propext`, `Classical.choice`, and `Quot.sound`; the tactic's closed-tree
-test theorem has no axioms.
-
-Reconstruction remains the largest measured bottleneck: CanonicalTokens has
-a 20 s item check and 26 s assembly, Symbol a 22 s item and 23 s assembly,
-and Lexer about 20 s assembly. Making Lexer's assembly arguments explicit did
-not improve that time and was not retained. These remaining costs are not
-hidden by the faster downstream phase measurements.
-
-These are phase measurements, not a three-second complete frontend rebuild.
-The largest recursive checks still need work. A separate grammar-tree lookup
-experiment changed a whole Token parse check from 8.5 s to 8.1 s and was not
-retained. Native evaluation completes representative large checks in about
-0.9 s, but adds a compiler-trust axiom and remains outside the kernel-clean
-default.
-
-Run `python3 formal/check-surface.py` from the repository root to rebuild the
-Surface aggregate in dependency order with one Lean process at a time. The
-helper reuses Lake's cache. `lake -Kjobs=1` does not constrain build concurrency
-in this project; it only sets an unused package configuration value. For normal
-cached use, the direct target remains
-`lake build Lanius.Extraction.VerifiedFrontend.Surface.Data` from `formal/`.
-
-Accordingly, generated data may retain numbered chunks when quotation size or
-elaboration memory requires them. Authored certificate modules instead group a
-coherent semantic phase up to the measured budget. A phase is split only when
-two independently reusable or independently expensive checks cross that
-budget; an atomic check that crosses it remains a named phase until its checker
-is improved. This prevents the three-second target from degenerating into one
-theorem per file.
-
-The corresponding source layout follows those ownership boundaries. Generic
-checker and quotation code live under `Lanius/Extraction/Evidence/`; all
-generated frontend and parser modules live under
-`Lanius/Extraction/VerifiedFrontend/`. Its first-level directories separate
-artifact quotation, surface certificates, parser certificates, semantic
-context, typing, decoding, resolution, assembly, and evidence. Unit-specific
-modules are nested below the phase that owns them, while aggregate entry points
-remain at the `VerifiedFrontend/` root. The `CanonicalTokens/Data/` subtree
-separates quoted sidecar data from kernel certificates. Numbered generated
-shards use valid `ChunkN` module names rather than anonymous numeric path
-segments. Module paths, rather than concatenated basenames, carry ownership and
-phase information: for example, parser functional views live under
-`Parser/FunctionalView/`, witness variants under `Evidence/<Unit>/Witnesses/`,
-and parse-node shards under `Surface/<Unit>/Parse/Nodes/`. Relocations are hard
-migrations: the defining contents move, all consumers import the new module,
-and no forwarding modules preserve old paths. Import-only files are reserved
-for genuine multi-module public aggregates, not compatibility aliases. This
-keeps `Lanius/Extraction/` itself limited to the handwritten shared
-infrastructure and legacy public entry points.
-
-The complete kernel-clean pack is not yet a three-second build because global
-resolution still uses one monolithic proof-producing reduction. Its next
-migration should mirror the completed phases: certify each source unit against
-the materialized context, assemble `CheckedPackUnits` structurally, and keep
-the public `CheckedPackResolution` module as an opaque sub-three-second
-wrapper. A clean rebuild of every leaf certificate is intentionally a distinct
-performance metric.
-
-The frontend Surface-certificate path now has one indexed-artifact boundary.
-The serialized `Artifact` keeps canonical lists as semantic authority;
-`ArtifactCache` is a derived sidecar containing parse-node, token, and decoded
-source-byte trees. `ArtifactView` accepts a sidecar only after proving that its
-trees represent the canonical lists. Parse checking, reconstruction, token-text
-comparison, and production Surface validation consume that view rather than
-choosing among checker-specific lookup representations.
-
-The generic tree is `Lanius.Data.SeqTree`. Its checked invariant covers cached
-subtree sizes and heights, bounded leaves, nonempty branches, and a one-level
-height-balance bound. Lookup correctness is proved once against `flatten`.
-Structural range traversal descends to the first intersecting leaf and walks
-adjacent subtrees; `rangeEq` streams the expected bytes across leaves without
-materializing the selected source slice. Spelling coverage is an ordered exact
-comparison, so missing, duplicate, or out-of-order claims are rejected in one
-linear scan.
-
-Surface reconstruction has a separate provenance result. Each node or spelling
-claim is paired with a compact sequence of child slots. Parent tables may be
-used outside the trusted boundary to propose those paths, but they are not
-stored in the checked view and carry no authority. The kernel validates every
-direct node and token edge against `ArtifactView`, then transports the resulting
-evidence to the canonical `SurfaceClaimsMatch` predicate. Repeated recursive
-`parseNodeContainsNode` and `parseNodeContainsToken` searches are no longer on
-the production certificate path.
-
-The kernel certificate is split at semantic phase boundaries for each source
-unit:
+The public result must be one connected implication about an actual compiler
+certificate:
 
 ```text
-checked parse view
-        -> reconstructed Surface
-        -> collected claims
-        -> checked compact origins
-        -> public CheckedSurfaceArtifact
+the certificate checker accepts exact source files and exact ELF bytes
+  -> the reconstructed Surface program is the program described by those files
+  -> the authenticated Core program is a well-typed lowering of that Surface program
+  -> the ELF function spans implement that Core program
+  -> execution from the ELF entry refines execution of the selected Core entrypoint
 ```
 
-These `.olean` boundaries control peak reduction memory without exposing
-evaluator-cell semantics. The largest unit, `canonical_tokens.lani`, builds as
-five such phases; the full lexer uses the same origin checker rather than its
-former family of parent-range and spelling shards. The migration removed the
-semantic `parse_node_chunks` field, all chunk/uniform-chunk lookup forks, stored
-parent-tree certificates, spelling-cache experiments, and the exact/fast/
-compact reconstruction-cell module families. Public validity statements still
-refer only to the canonical artifact and canonical declarative predicates.
+This is partial correctness of a successful compiler result. Compiler
+termination, helpful diagnostics, and acceptance of every valid Lanius program
+are separate completeness properties. They must not be smuggled into the
+semantic-preservation theorem, and semantic preservation must not be weakened
+to a claim that bytes merely decode.
 
-Implementation checkpoint (August 31, 2026): the scanner pilot is implemented
-end to end. The repository contains the checked-program facade,
-signature-indexed values and arguments, exact reification, relational function
-contracts, relational primitive-call semantics, structural term/command WP,
-successful-Core inversion, and an invariant-aware Core-reflection boundary.
-The public identifier and whitespace theorems invert actual successful calls
-to functions recovered from the completely checked frontend pack.
+The certificate payload may be produced by an untrusted executable. No
+decoded source tree, Core program, function span, or machine byte is trusted:
+the Lean checker reconstructs or authenticates each one. A native build of
+that checker is a performance optimization; the kernel-checked soundness
+theorem remains the trust boundary.
 
-`Relational.CoreSuccess` derives a structural successful-execution tree from a
-fuelled Core result. `Relational.CoreReflection` reflects that tree through
-sequence, scoped locals, assignment, branches, loops, returns, source
-representation, and fresh-cell framing. The bridge assumes neither termination
-nor determinism. `RelationalSuccessfulCoreRefinement.structuralWhen` transports
-the resulting conditional reflection through exact command reification.
+## Current connected spine
 
-The predicate leaves are also structural. The identifier-start, decimal-digit,
-identifier-continue, and whitespace contracts are proved directly for their
-checked Core terms; identifier-continue includes the actual short-circuit `||`
-shape. The public scanner path no longer imports `Lexer.Calls` or uses the
-legacy `ReturnsCorrectly.ofFramePreservingModel` adapter. The one retained
-`IdentifierEndBootstrap` module is an isolated migration comparison and is not
-reachable from either public theorem.
+`Compiler.EndToEndCheck.check` currently composes these concrete boundaries:
 
-`SemanticWP.Command` now has rules for every command constructor: skip,
-sequence, lexical let, local set/update, action, conditional, invariant-based
-while, both returns, break, and continue. The generic scanner WP consumes typed
-`SpecEntry` contracts and a cursor invariant; the identifier and whitespace
-proofs instantiate it without a `CallModel`, whole-loop trace, termination
-argument, or physical-frame reasoning.
+1. `Extraction.CertificateBoundary` decodes certificate version 3.
+   `CertificateRoundTrip` proves the actual encoder/decoder round trip under
+   explicit UTF-8, count, signed-word, and span representability bounds;
+   `CertificateBoundaryBridge` then recovers the exact encoded fields from an
+   accepted round trip.
+2. `FrontendBoundary` checks exact source identity, lexer evidence, grammar
+   derivations, Surface reconstruction, declarations, and imports.
+3. `CoreBoundary` and `CertificateLoweringCheck` authenticate a typed Core
+   program and reconstruct `ProgramLowering` evidence from the same source
+   pack, catalog, imports, declaration rows, and aliases.
+4. `X86.Transport` authenticates the canonical Core transport consumed by the
+   Lanius backend.
+5. `CertificateImageCheck` and `ImageCheck` derive ordered function slices
+   from the certificate-owned ELF and prove that those exact slices are loaded
+   by an ELF image.
+6. `ProgramCheck` applies `FunctionCheck` to every Core function and connects
+   the selected zero-argument entrypoint to its authenticated machine bytes.
+   The accepted backend fragment includes literal and parameter returns, the
+   checked two-function direct-call path, and one authoritative structural
+   path from recursive scalar expressions through next-completing statements,
+   a terminal return, the real function epilogue, and the uniform program
+   preservation theorem.  Supported recursive expressions include i32 and
+   boolean literals, i32 positive/negate, boolean logical-not, and nested i32
+   add/subtract/bitwise and/or/xor.  The old expression-only and
+   literal-binary whole-function preservation branches have been removed.
+7. `ELFExecutionCheck` derives the startup rel32 target and selected entry
+   slice from the certificate, executes the authenticated startup path, hands
+   the reached state to `ProgramCheck`, and composes the uniform returned state
+   with the authenticated return-to-syscall suffix. Runtime callers provide
+   only mapped-image, initial-RIP, compiler-state correspondence, and one
+   body-indexed image/stack-separation fact.  The bridge derives the ordinary
+   text/stack condition and every direct-call layout obligation from that
+   checker-owned layout.
 
-Optional availability properties are separate in
-`Relational.CorrectnessProperties`: `DoesNotTrap`, `Terminates`, and the
-three-field `TotalCorrect` bundle do not appear as premises of
-`ReturnsCorrectly`. `Lanius.Automation.VCGen` is the stable automation facade,
-with source-indexed loop annotations, four bounded simp sets, and diagnostics
-for missing specifications, representation facts, and invariants. Generated
-lexer handles and loop annotations carry concrete Lanius line/column spans.
+The v3 checker accepts the current generated return-42 certificate and the
+monomorphic type-alias regression. Cached certificate checking is around
+hundredths of a second; full compact self-extraction checking is around one
+second in the native checker. These timings are evidence about authentication
+cost, not substitutes for soundness.
 
-Measured checkpoint on the same date:
+The actual Lanius compiler's `--certificate` path also passes that checker.
+The focused two-function regression carries 34 canonical transport words, a
+529-byte x86 ELF image, and two ordered function spans, so the connected path
+is not relying on empty backend fields.  Both the one- and two-function
+certificates also pass `ELFExecutionCheck`, authenticating the startup jump and
+selected entry slice consumed by the public startup-to-exit theorem.  The
+executable that generated those bytes is still the bootstrap build; acceptance
+authenticates this output but does not yet prove universal generator
+correctness.
 
-- a warm focused build of both public scanners completed in 0.13 s with
-  131,920 KiB maximum RSS;
-- a focused build from an empty Lake cache completed all 115 required jobs in
-  3 min 43.71 s with 5,520,924 KiB maximum RSS;
-- renaming one harmless local binder in the identifier proof rebuilt only the
-  identifier direct proof and public wrapper, not the whitespace proof; that
-  rebuild completed in 1.73 s with 1,786,036 KiB maximum RSS;
-- generic relational and VCGen infrastructure is 4,698 lines; shared lexer
-  relational infrastructure is 2,348 lines; identifier-specific files are 497
-  lines and whitespace-specific files are 298 lines;
-- source audits find none of the forbidden abstraction vocabulary in either
-  `*Direct.lean` file, no authored proof escape in the new slice, no
-  `native_decide` in relational/VCGen/scanner proof modules, and no public-path
-  import of the retained bootstrap adapter;
-- the fast assurance gate records both public axiom sets and allowlists only
-  the isolated complete checked-pack native certificate;
-- the kernel-clean certificate is split into evidence, semantics, and global
-  resolution phases. `decide +kernel` was rejected for this full artifact after
-  reaching 27 GiB RSS plus 17 GiB swap; the proof-producing `cbv` build stays
-  near 1.7 GiB for evidence while semantics grows to roughly 10 GiB. A bounded
-  10 min 27 s run produced no proof failure but did not finish, so this gate is
-  implemented but not yet practical CI.
+A fresh nominal-structure/type-alias regression now passes source lowering,
+x86 execution, v3 certificate generation, and the independent Lean checker.
+This is connected evidence for that lowering path, not yet the general
+emitter-correctness theorem.
 
-The scanner implementation passes the semantic, abstraction, reuse, and fast
-trust criteria below. The kernel-clean trust criterion remains open as an
-explicitly measured checker-performance issue rather than being hidden behind
-another trusted shortcut.
+The Lanius extractor can self-extract its current 18-file, roughly 2,400-line
+source closure. The resulting singular compact embedding passes the
+independent source/lexer/grammar/Surface checker.  Its native `--core` mode
+also emits the same compact payload plus canonical Core transport in a strict
+version-3 phase certificate.  The Lean phase checker now reconstructs and
+checks the exact `ProgramLowering`; the intentionally empty ELF/span fields
+make no backend claim.  This proves facts about an accepted artifact, not yet
+that the extractor executable emits a valid artifact for every valid input.
 
-All Lean declarations below are interface sketches. The pilot must refine their
-universe, representation, and indexing parameters against the existing APIs;
-an illustrative name in this document is not a second source of truth.
+## Remaining semantic gaps
 
-## Decision
+The project is not yet a verified compiler. In particular:
 
-Keep Core as the authoritative executable semantics and keep exact artifact
-checking and exact FunctionalView reification. Add a relational specification
-and weakest-precondition layer over the existing
-`FunctionalView.Stateful.Command` syntax.
+- `FunctionCheck` is still a small backend fragment.  Its recursive
+  expression/statement path is now authoritative, but local reads and writes,
+  calls inside general expressions, conditionals, loops, heap operations, and
+  aggregate values still need to be added through a shared state relation.
+  Adding one top-level checker case per whole program shape remains explicitly
+  out of scope.
+- The actual ELF startup CALL and rel32 JMP, constructor-independent entrypoint
+  result, return instruction, and exit-register load are now one theorem. Its
+  image/stack separation is indexed by the authenticated body shape and the
+  structural checker exports recursive-expression allocation depth.  General
+  locals, control flow, and deeper calls are not yet in that accepted shape.
+- Multi-source lowering exists at the source/Core boundaries, but the current
+  Lanius orchestration still needs one concrete multi-unit path through body
+  lowering, transport, code generation, and certificate checking.
+- The extractor and compiler are written in Lanius and both currently pass
+  production x86 source checking in a few seconds, but their own successful
+  executions have not yet been connected to general emission-correctness
+  theorems.  The native extractor's Core phase is now consumed directly by the
+  certificate/lowering checker, while generated deep artifacts used for
+  function-level Lanius proofs remain untrusted inputs. Self-extraction is the
+  required bootstrap regression, not by itself a universal proof.
+- Runtime services, heap representation, calls, loops, control flow, and
+  aggregate values need one shared Core/machine state relation. Without that
+  relation, isolated instruction traces cannot compose into whole-program
+  semantic preservation.
 
-The public correctness contract for an ordinary compiler function will be
-partial correctness:
+## Backend proof shape
+
+The backend must be proved structurally, at the same granularity as the Core
+syntax and the Lanius emitter:
 
 ```text
-if the checked Core function returns successfully from a represented state,
-then its result and final state satisfy the function's specification.
+value representation + frame invariant
+  -> expression lowering theorem (structural recursion)
+  -> statement lowering theorem (structural recursion / CFG invariant)
+  -> call and function-frame theorem
+  -> all-functions/program theorem
+  -> ELF startup and observable-result theorem
 ```
 
-Termination, absence of traps, and constructive execution will be separate,
-stronger contracts. They must not be prerequisites for using a function's
-partial-correctness specification in a caller proof.
+Each layer consumes exact decoded instruction chunks and proves their effect in
+the existing x86 machine semantics. Literal, scalar-operation, frame-slot,
+call, and control-flow lemmas are reusable leaves of this proof; they are not
+parallel end-to-end proof systems.
 
-This design has one immediate goal: compiler proofs should state algorithmic
-preconditions, postconditions, data-representation predicates, and loop
-invariants. They should not reconstruct Core executions or manage physical
-locals.
+The structural checker should consume the authenticated function span from
+left to right. Its expression result carries the remaining bytes, represented
+value, and updated frame state; its statement result additionally carries the
+control-flow outcome. The public theorem quantifies over one dynamic frame and
+image/stack-separation invariant derived from the checked frame size. A fixed
+two-slot or forty-byte stack window is sufficient for the current scalar
+regressions but is not the invariant for the general backend.
 
-## Why this change is needed
+All accepted function cases should project to one public refinement contract:
+the authenticated Core body executes to a return outcome, and the machine
+executes to the matching ABI return state (result representation, return RIP,
+restored stack, and framed memory effect). Constructor-specific trace details
+stay private. This uniform result is what the ELF startup/exit theorem
+consumes; the exit proof must not split again on every `FunctionCheck` case.
 
-The checked frontend proves real execution of all 74 verified lexer and parser
-functions. That result is valuable, but the proof interface is too low-level
-for the rest of the compiler.
+Certificate version 3 already authenticates Core transport and exact function
+spans. Prefer recursively consuming those exact spans before extending the
+certificate format. Add instruction/chunk annotations only if measurement
+shows that reconstructing boundaries is materially expensive or makes the
+proof interface substantially larger; any such annotations remain untrusted
+and must be checked against both Core and bytes.
 
-Today, a successful abstract call is normally turned into an existential Core
-execution through `Effectful.CallSoundness` or
-`FreshSimulation.FramePreservingCallSoundness`. Composing calls requires
-routing by numeric `FunctionId`. Loop proofs commonly construct finite
-evaluation traces and then transport them through local-cell allocation,
-callee entry, restoration, and separation-logic framing.
+The certificate may carry instruction boundaries, frame layouts, relocation
+targets, and control-flow annotations so that the checker does not rediscover
+work already performed during compilation. Those annotations are untrusted
+and cheaply checked. They should be emitted by the Lanius compiler/extractor
+in the same traversal that emits code.
 
-Those mechanisms belong in the trusted semantic bridge. They should not be the
-normal vocabulary of lexer, parser, lowering, optimizer, or backend proofs.
+## Extractor proof shape
 
-The current `FunctionalView` work is not discarded. In particular, the design
-keeps:
-
-- `Core.Program`, Core typing, and Core execution as authoritative;
-- complete checked artifact packages;
-- exact recovery of a proof-facing command from the checked Core body;
-- `FunctionalView.Stateful.Command` and its scoped functional environment;
-- existing Core simulation, separation, call-frame, and loop lemmas as
-  implementation material for the generic bridge;
-- existing concrete execution theorems as regression oracles during the
-  migration.
-
-## Goals
-
-The new interface must provide:
-
-1. A checked-program facade with typed function references and typed argument
-   encoding.
-2. Relational function specifications over abstract inputs, outputs, and
-   state.
-3. A structural weakest-precondition calculation for existing FunctionalView
-   terms and commands.
-4. A relational call rule that consumes a callee specification rather than
-   constructing the callee's execution.
-5. One generic soundness theorem connecting the WP result for an exactly
-   reified command to successful Core execution.
-6. Separate optional contracts for no-trap safety and termination.
-7. Diagnostics that identify a missing function specification, representation
-   fact, or loop invariant at the corresponding Lanius source construct.
-
-## Non-goals
-
-This proposal does not:
-
-- replace Core semantics;
-- rewrite all existing FunctionalView syntax;
-- migrate the lexer or parser before the pilot passes;
-- reorganize the formal module tree before the API stabilizes;
-- prove termination of every compiler function in the first phase;
-- introduce the backend IR;
-- claim that a build-time artifact certificate validates parse results for
-  arbitrary future compiler inputs;
-- require immediate removal of every existing `native_decide` use.
-
-## Correctness properties
-
-The proof API should name three independent properties.
-
-### Returns correctly
-
-`ReturnsCorrectly` is the default compiler-soundness contract. It quantifies
-over an actual successful Core call:
-
-```lean
--- Schematic: names and representation parameters will be refined by the pilot.
-def ReturnsCorrectly
-    (program : CheckedProgram)
-    (function : program.FnRef signature)
-    (contract : FnContract program function) : Prop :=
-  forall args values abstractBefore concreteBefore value concreteAfter,
-    contract.Pre args abstractBefore ->
-    contract.ArgsRep args values ->
-    Represents abstractBefore concreteBefore ->
-    CoreCallEvaluates program.core function values concreteBefore
-      value concreteAfter ->
-    exists abstractAfter result,
-      contract.ResultRep result value /\
-      Represents abstractAfter concreteAfter /\
-      contract.Post args result abstractBefore abstractAfter /\
-      contract.Frame abstractBefore abstractAfter
-```
-
-This property prevents a successful compiler execution from silently
-producing a wrong result. It does not claim that execution succeeds.
-
-### Does not trap
-
-`DoesNotTrap` states that a represented input satisfying the precondition
-cannot reach a Core trap. It is useful for compiler availability and for
-proving that internal assumptions are not violated, but callers do not need it
-merely to use the postcondition of a successful call.
-
-### Terminates
-
-`Terminates` constructs a successful or explicitly rejected result for every
-represented input satisfying the precondition. A total-correctness theorem can
-combine all three properties:
+Extractor correctness should be factored into format and phase contracts:
 
 ```text
-TotalCorrect = ReturnsCorrectly + DoesNotTrap + Terminates
+source bytes
+  -> canonical token evidence
+  -> grammar derivation evidence
+  -> reconstructed Surface evidence
+  -> packed compact bytes
 ```
 
-Existing constructive call-soundness and loop-trace theorems can discharge
-`Terminates`; they need not remain the default composition interface.
-
-## Checked-program facade
-
-The repository already has the evidence needed for this package:
-
-- `CompleteChecker.CheckedArtifact` joins the complete source and Core checks;
-- `ArtifactPackContextChecker.CheckedArtifactPackSemantics` checks a pack;
-- `ArtifactContextChecker.FunctionHeaders` contains typed schemes and concrete
-  function instances;
-- `FunctionsChecked` connects Surface functions to Core functions.
-
-Do not create a parallel checker. Define a small opaque facade over
-`CompleteChecker.CheckedPack` and its existing projections.
-
-```lean
-structure CheckedProgram where
-  pack : ArtifactPack
-  checked : CompleteChecker.CheckedPack pack
-  core : Core.Program
-  coreFound :
-    ArtifactPackChecker.mergeCorePrograms? pack.units = some core
-
-structure FnSignature where
-  arguments : List Core.Ty
-  result : Core.Ty
-
-structure CheckedProgram.FnRef
-    (program : CheckedProgram) (signature : FnSignature) where
-  function : Core.Function
-  found : program.core.function? function.id = some function
-  parameterTypes : function.parameters.map Prod.snd = signature.arguments
-  resultType : function.returnType = signature.result
-  sourceIdentity : SourceFunctionIdentity
-```
-
-The facade should generate references from the checked function-instance
-table. A proof author names `LexerFn.scanIdentifierEnd`; numeric IDs remain an
-internal projection used only by Core and the generated registry.
-
-Arguments receive a signature-indexed representation:
-
-```lean
--- Schematic.
-def DenoteArgs : List Core.Ty -> Type
-def encodeArgs : DenoteArgs types -> List Core.Value
-
-theorem decode_encode_args (args : DenoteArgs types) :
-    decodeArgs types (encodeArgs args) = some args
-```
-
-The pilot may initially wrap existing argument encoders. It must not add a
-second handwritten account of function IDs or signatures. A typed function
-reference must also carry proof that the body is present; the pilot must not
-recover a missing body with a fallback such as `getD .skip`.
-
-## Function contracts and registry
-
-A function contract describes abstract behavior. It does not contain a Core
-execution proof and does not expose physical memory cells.
-
-```lean
--- Schematic.
-structure FnContract
-    (program : CheckedProgram)
-    (function : program.FnRef signature) where
-  Args : Type
-  Result : Type
-  AbstractState : Type
-  Pre : Args -> AbstractState -> Prop
-  Post : Args -> Result -> AbstractState -> AbstractState -> Prop
-  ArgsRep : Args -> List Core.Value -> Prop
-  ResultRep : Result -> Core.Value -> Prop
-  Frame : AbstractState -> AbstractState -> Prop
-```
-
-`ReturnsCorrectly program function contract` is proved separately. This keeps
-the specification usable without making the specification structure recursive
-through its own proof.
-
-A registry contains typed references, contracts, and their proved
-`ReturnsCorrectly` theorems. Registration must be source-identity based and
-must fail on duplicate or missing functions. The generated registry may use
-numeric IDs internally, but `FunctionId` must not occur in an algorithm proof.
-
-```lean
--- Schematic.
-structure SpecRegistry (program : CheckedProgram) where
-  contract : (function : program.AnyFnRef) ->
-    FnContract program function.ref
-  sound : (function : program.AnyFnRef) ->
-    ReturnsCorrectly program function.ref (contract function)
-```
-
-The first implementation does not need heterogeneous global inference. A
-generated lookup table plus typed projections is sufficient.
-
-## Weakest-precondition layer
-
-Reuse `FunctionalView.Term` and `FunctionalView.Stateful.Command`. Add a
-relational operation specification and a structural WP. Do not change the
-existing executable machines during the pilot.
-
-For a command with `arity` scoped locals, use:
-
-```lean
--- Schematic.
-abbrev Assertion (World : Type) (arity : Nat) :=
-  World -> FunctionalView.Env arity -> Prop
-
-abbrev Postcondition (World : Type) (arity : Nat) :=
-  Stateful.Completion -> World -> FunctionalView.Env arity -> Prop
-
-def Command.WP
-    (operations : OperationRegistry program registry)
-    (command : Stateful.Command signature actions arity)
-    (annotations : AnnotationRegistry program command)
-    (post : Postcondition World arity) : Assertion World arity
-```
-
-`AnnotationRegistry` supplies invariants and source identities for recursive
-control constructs. It is generated from the checked artifact plus explicit
-proof annotations; the command syntax itself does not need to be rewritten to
-store tactic metadata.
-
-The defining equations should follow command structure:
-
-```text
-skip:
-    post next world environment
-
-sequence first second:
-    WP first (fun completion world environment =>
-      if completion = next then WP second post world environment
-      else post completion world environment)
-
-let value := initializer; body:
-    TermWP initializer (fun value world =>
-      WP body
-        (fun completion world extended =>
-          post completion world (Env.pop extended))
-        world (Env.push environment value))
-
-set/update local:
-    evaluate the term and require the continuation on Env.set
-
-action:
-    use the registered relational action specification
-
-if:
-    evaluate the condition; require the selected branch
-
-while:
-    require a registered invariant; one condition/body step must preserve it;
-    condition false establishes the continuation; break exits; return escapes
-
-return/break/continue:
-    apply the postcondition to the corresponding Completion
-```
-
-`TermWP` must preserve left-to-right argument evaluation and short-circuiting.
-For ordinary operations it uses generic Core operation specifications. For a
-call it uses the call rule below.
-
-The initial WP is a partial-correctness WP: it constrains every successful
-result represented by the semantics. Trap freedom and termination use separate
-judgments. The API must not make a failed or diverging execution prove an
-arbitrary successful result.
-
-## Relational call rule
-
-The call rule consumes a proved callee contract. It does not evaluate an
-abstract `CallModel` and does not construct a callee trace.
-
-For a call to `f` with abstract arguments `args`, initial abstract state
-`before`, and continuation `Q`, the rule is:
-
-```text
-1. prove f.Pre args before;
-2. for every result and final abstract state allowed by f.Post,
-   prove Q result finalState;
-3. retain every caller resource included in the registered frame.
-```
-
-Schematically:
-
-```lean
-def callWP
-    (entry : registry.Entry function)
-    (args : entry.contract.Args)
-    (before : entry.contract.AbstractState)
-    (post : entry.contract.Result ->
-      entry.contract.AbstractState -> Prop) : Prop :=
-  entry.contract.Pre args before /\
-  forall result after,
-    entry.contract.Post args result before after ->
-    entry.contract.Frame before after ->
-    post result after
-```
-
-The generic Core soundness proof inverts the actual Core call execution,
-applies `entry.sound`, and feeds the resulting abstract postcondition to the
-continuation. No function-ID disequality proof appears at the call site.
-
-Calls without a registered contract must produce one explicit unresolved VC:
-
-```text
-missing Lanius specification for verified::lexer::is_identifier_continue
-at verified_compiler/src/verified/lexer.lani:<source span>
-```
-
-## Generic Core soundness theorem
-
-Exact reification and semantic adequacy remain separate obligations:
-
-```text
-exact reification:
-    toCoreStmt command = checkedFunction.body
-
-WP soundness:
-    WP command post + successful execution of toCoreStmt command
-    implies post
-```
-
-The target theorem is:
-
-```lean
--- Schematic.
-theorem wp_toCore_sound
-    (program : CheckedProgram)
-    (registry : SpecRegistry program)
-    (command : Stateful.Command signature actions arity)
-    (hwp : Command.WP registry command post abstractWorld environment)
-    (represented : Represents layout abstractWorld environment concreteBefore)
-    (executes : Core.Executes program.core concreteBefore
-      (Stateful.toCoreStmt actionAdapter layout nextLocal command)
-      coreCompletion concreteAfter) :
-    exists abstractAfter environmentAfter completion,
-      CompletionRep completion coreCompletion /\
-      Represents layout abstractAfter environmentAfter concreteAfter /\
-      post completion abstractAfter environmentAfter
-```
-
-It may be proved directly by structural inversion of the Core execution, or by
-introducing a small relational FunctionalView semantics and proving two
-lemmas. The pilot should choose the smaller proof. It must not duplicate the
-command syntax or replace the existing executable semantics merely to match a
-paper architecture.
-
-The call case uses `ReturnsCorrectly` from the registry. The local and action
-cases use the existing representation and separation lemmas. All physical-cell
-allocation, callee entry, local restoration, and write framing stay inside
-this theorem and its generic helpers.
-
-The final function theorem rewrites by exact reification:
-
-```lean
-theorem function_returns_correctly ... := by
-  intro ... actualCallExecution
-  obtain bodyExecution := invert_checked_call actualCallExecution
-  rw [functionView_toCore_exactly] at bodyExecution
-  exact wp_toCore_sound ... bodyExecution
-```
-
-This is the only algorithm-facing use of the Core bridge.
-
-## Loop rules
-
-The partial-correctness loop rule requires an invariant, not a decreasing
-measure. For a loop `while condition { body }`, the VCs are:
-
-1. The precondition establishes the invariant.
-2. When the invariant holds and the condition is true, normal or `continue`
-   completion of the body re-establishes the invariant.
-3. When the condition is false, the invariant establishes the loop
-   continuation.
-4. A `break` completion establishes the loop continuation.
-5. A returned completion establishes the enclosing function postcondition.
-6. All condition and body operations meet their registered preconditions.
-
-A separate termination rule adds a well-founded variant. Existing
-`FunctionalView.Stateful.Loop` and `LoopVerification` drivers remain available
-to prove that stronger property.
-
-## Abstract state and framing
-
-Contracts describe logical state. Physical cells and slice encodings live in
-representation predicates.
-
-For the lexer pilot, the logical state is read-only source data. For the parser
-pilot it will eventually include mathematical grammar, token lattice, chart,
-and error position objects.
-
-The frame interface should begin with the region classes already supported by
-the current proofs:
-
-```text
-immutable source region
-immutable grammar region
-writable workspace region
-writable output region
-untouched caller frame
-```
-
-Do not introduce a general concurrent separation logic. The initial region
-algebra should express only ownership and preservation properties required by
-single-threaded compiler semantics. More expressive framing must be justified
-by a concrete pilot obligation.
-
-## Pilot: `scan_identifier_end`
-
-### Checked source
-
-The source function initializes `end = start + 1`, advances `end` while it is
-in bounds and the next byte satisfies `is_identifier_continue`, then returns
-the exclusive end offset.
-
-The pilot must use:
-
-- `Scanners.scanIdentifierEndView`, recovered from the checked artifact;
-- `Scanners.scanIdentifierEndView_toCore_exactly`;
-- the checked typed reference for `scan_identifier_end`;
-- a registered relational specification for `is_identifier_continue`;
-- `Lanius.Compiler.Lexer.IdentifierEndSpec` as the algorithmic result.
-
-It must not use the existing concrete execution theorem as a proof premise.
-That theorem remains a regression oracle.
-
-### Contract
-
-The abstract arguments are `source : List Byte` and `start : Nat`. The encoded
-Core call also carries `source_length`; its representation requires that value
-to equal `source.length`.
-
-Precondition:
-
-```text
-source.length <= 2^31 - 1
-start < source.length
-the concrete source slice represents exactly source
-the encoded start and source length are signed i32 values
-```
-
-The function itself does not need to assume that `source[start]` begins an
-identifier. Its operational behavior is defined for every in-bounds `start`;
-the caller's classification establishes the stronger lexical fact.
-
-Postcondition for returned `finish`:
-
-```text
-IdentifierEndSpec source start finish
-start < finish
-finish <= source.length
-the returned Core value encodes finish as signed i32
-the abstract source is unchanged
-all caller-visible regions are unchanged
-```
-
-`IdentifierEndSpec.functional` then identifies the result with
-`scanIdentifierEnd source start` when an exact functional value is wanted.
-
-### Loop invariant
-
-At loop head with cursor `end`:
-
-```text
-start + 1 <= end
-end <= source.length
-end <= 2^31 - 1
-every byte in the half-open range source[start + 1 .. end) satisfies
-  is_identifier_continue
-the source region is unchanged
-the local environment represents source, source.length, start, and end
-```
-
-The in-bounds and accepted branch proves `end + 1` is representable as i32 and
-preserves the invariant. At exit, either `end = source.length` or the byte at
-`end` is the first rejected byte. Together with the accepted prefix, this
-establishes `IdentifierEndSpec` and maximality.
-
-### Callee specification
-
-The registered `is_identifier_continue` contract states:
-
-```text
-Pre:
-    the argument is an i32 encoding of one Byte
-
-Post:
-    the returned boolean equals Compiler.Lexer.isIdentifierContinue byte
-    the abstract and concrete caller-visible worlds are unchanged
-```
-
-The scanner proof refers to the typed function handle and this contract. It
-does not mention the callee's numeric ID, body, call frame, or execution fuel.
-
-### Required theorem
-
-The pilot is complete when it proves a premise-free theorem equivalent to:
-
-```lean
-theorem scanIdentifierEnd_returnsCorrectly :
-  ReturnsCorrectly checkedFrontend LexerFn.scanIdentifierEnd
-    scanIdentifierEndContract
-```
-
-The theorem must quantify over every represented caller state allowed by the
-contract, not only the canonical singleton source state used by some existing
-execution examples.
-
-## Pilot acceptance criteria
-
-The pilot passes only if all of the following hold.
-
-### Semantic criteria
-
-- The function reference and body come from the completely checked frontend
-  artifact.
-- Exact reification connects the proof command to that checked body.
-- Every successful checked Core call establishes `IdentifierEndSpec`.
-- The proof covers arbitrary valid source bytes and every in-bounds start.
-- The proof preserves arbitrary caller-owned frame regions.
-- The only function-specific logical inputs are the contract, loop invariant,
-  and ordinary list/arithmetic facts.
-- The existing constructive execution theorem is not imported by the pilot
-  proof.
-
-### Abstraction criteria
-
-The algorithm-specific proof file contains no reference to:
-
-```text
-CellId
-State.local?
-enterCall
-restoreLocals
-bindParameters
-ModifiesOnly
-CallModel.route
-numeric FunctionId literals or disequality proofs
-evaluator fuel
-Command.Evaluates constructors
-Core Executes/Evaluates constructors
-```
-
-These names may occur only in the checked-program facade, WP soundness,
-reification, representation, or other generic infrastructure.
-
-### Reuse criteria
-
-Without changing the WP, call, frame, or adequacy implementations, apply the
-same scanner rule to `scan_whitespace_end`. That second proof should require
-only:
-
-- the whitespace predicate contract;
-- the whitespace result specification;
-- the exact checked function handle and reification theorem.
-
-If the second scanner needs a new evaluator or frame lemma, the abstraction is
-still too low.
-
-### Trust criteria
-
-- The pilot introduces no `sorry`, `admit`, authored `axiom`, `unsafe`, or
-  `implemented_by` declaration.
-- `native_decide` may occur only in an isolated artifact or reification
-  certificate module.
-- `#print axioms scanIdentifierEnd_returnsCorrectly` is recorded in CI.
-- The repository maintains two explicit assurance profiles:
-  - a fast profile with an allowlist for isolated `native_decide` certificates;
-  - a kernel-clean profile that replaces them with `decide_cbv` or checked
-    proof-producing certificates.
-
-### Engineering criteria
-
-- Record focused clean-build and incremental-build times before and after the
-  pilot.
-- Count handwritten infrastructure separately from handwritten
-  function-specific proof.
-- Record which files rebuild after a harmless change to a Lanius local name or
-  administrative block shape.
-- Do not delete or migrate existing proofs until both identifier and whitespace
-  scanners pass the new interface.
-
-The decision to continue is based on these measurements. An order-of-magnitude
-reduction is a hypothesis, not an acceptance criterion that can be declared in
-advance.
-
-## Parser and certificate implications
-
-After the scanner pilot, `append_state` is the stateful pilot. Its public
-contract should speak about an abstract chart and three outcomes:
-
-```text
-duplicate: the abstract chart is unchanged
-inserted:  one valid item is added
-full:      no physical record remains
-```
-
-The caller must not know that the physical state uses fixed-width records or
-linked indices.
-
-Parser certificate checking remains a separate design. The current complete
-artifact checker validates the compiler's own extracted source artifact. It
-does not validate arbitrary parser output at compiler runtime. Removing the
-operational parser from the soundness-critical path requires a verified
-checker that runs on every produced token stream or parse derivation, or a
-pipeline type that downstream phases can construct only from an accepted
-certificate.
-
-A parse-tree checker can establish soundness of accepted trees. Parser
-completeness, termination, capacity behavior, and unambiguity remain separate
-theorems.
-
-## Automation policy
-
-Prototype the WP decomposition with Lean 4.33's `WP`/`vcgen` interfaces, but
-put all use behind `Lanius.Automation.VCGen`. The semantic definitions and
-soundness theorems must not depend on tactic implementation details.
-
-Use small, explicit automation sets for the remaining obligations:
-
-```text
-lanius_pure
-lanius_bounds
-lanius_rep
-lanius_frames
-```
-
-Prefer `grind only [...]` or another bounded discharger over unrestricted
-global simplification. Automation should close equations and arithmetic after
-the VCG has exposed the correct obligation; it should not discover the program
-logic by unfolding the evaluator.
-
-## Migration order
-
-1. Freeze and measure the existing `scan_identifier_end` proof slice.
-2. Add the checked-program facade and generated typed handles needed by the
-   pilot only.
-3. Define relational operation contracts and the structural WP over existing
-   FunctionalView syntax.
-4. Prove the generic Core soundness theorem for the constructs used by the
-   scanner.
-5. Register `is_identifier_continue` and prove the identifier scanner
-   contract.
-6. Instantiate the same infrastructure for `scan_whitespace_end`.
-7. Review proof size, rebuild behavior, diagnostics, and axiom dependencies.
-8. Only after the review, extend the WP to the constructs required by
-   `append_state`.
-9. Do not migrate `recognize` or design the backend proof IR until
-   `append_state` succeeds at the abstract-chart boundary.
-
-## Open questions resolved by the pilot
-
-The pilot should answer these questions rather than settling them by design
-fiat:
-
-- Are the existing `TermHasType` judgments and the Core typing evidence
-  retained by stateful reification sufficient, or would intrinsically typed
-  expressions materially simplify the user proof?
-- Is direct WP-to-Core soundness smaller than introducing a relational
-  FunctionalView execution judgment?
-- Can Lean 4.33 `vcgen` express our call and frame rules with stable,
-  source-oriented diagnostics?
-- Is a simple finite region algebra sufficient for arbitrary caller frames?
-- Can typed function handles be generated entirely from existing checked
-  function instances?
-- Can the kernel-clean certificate profile handle the current artifact size at
-  acceptable build cost?
-
-## References
-
-- [CompCert manual: semantic preservation and pass composition](https://compcert.org/man/manual001.html)
-- [CakeML proof-producing translation of pure and stateful functions](https://cakeml.org/jfp14.pdf)
-- [CakeML verified compiler backend](https://cakeml.org/jfp19.pdf)
-- [Bedrock2 source semantics and weakest-precondition generator](https://github.com/mit-plv/bedrock2)
-- [Aeneas functional translation and Lean backend](https://github.com/AeneasVerif/aeneas)
-- [RefinedC and predictable Lithium proof search](https://plv.mpi-sws.org/refinedc/)
-- [Lean 4.33 `WP`, `vcgen`, and frame inference](https://lean-lang.org/doc/reference/latest/releases/v4.33.0/)
-- [Lean `grind`, `native_decide`, and `decide_cbv`](https://lean-lang.org/doc/reference/latest/Tactic-Proofs/Tactic-Reference/)
-- [Coqlex verified lexer generation](https://programming-journal.org/2024/8/3/)
-- [Validating LR(1) parsers](https://gallium.inria.fr/~fpottier/publis/jourdan-leroy-pottier-validating-parsers.pdf)
-- [Alive2 bounded translation validation](https://web.ist.utl.pt/nuno.lopes/pubs.php?id=alive2-pldi21)
+The existing checker already proves that accepted evidence denotes the exact
+source and reconstructed Surface tree. The remaining generator theorem is
+therefore a compositional claim that each Lanius extraction phase emits the
+evidence accepted by the corresponding checker. It must reuse the checked
+phase formats rather than re-proving the parser through a second semantics.
+
+## Size and performance gates
+
+The current tree has roughly 46,000 production Lean lines plus 2,700 focused
+test lines for roughly 14,000 Lanius lines under `verified_compiler/src`--about
+3.3 production proof lines per implementation line. This is within the broad
+five-times-source target, but only if the remaining proof reuses the current
+infrastructure. Moving repeated program traces into a "shared" file does not
+make them reusable.
+
+For every connected increment:
+
+- the public theorem states a semantic phase contract, not evaluator
+  bookkeeping;
+- program-specific proof code stays near five times the relevant source and
+  should normally be much smaller;
+- a focused changed-module check should take seconds;
+- cached whole-facade checking should take seconds;
+- no individual development command runs for more than 110 seconds;
+- normal per-program certificate generation and checking must not replay the
+  compiler or kernel-reduce a large extracted execution.
+
+## Unit of proof coverage
+
+Every function reachable on the trusted compiler/extractor path needs
+transitive semantic coverage, but it does not need its own public theorem.
+Pure selectors and short encoders should reduce through shared rules; related
+helpers should be covered by one parameterized phase invariant; orchestration
+functions should compose the phase theorems.  Named, function-specific proofs
+are reserved for real semantic boundaries or algorithms with distinct
+invariants.  This distinction is essential to cover the implementation without
+returning to hundreds of repetitive program traces.
+
+## Acceptance rules
+
+- Prove the actual reconstructed Core and exact emitted ELF bytes, never a
+  look-alike example.
+- A proof module is not progress until its evidence is consumed by the
+  authoritative certificate checker or is clearly reusable infrastructure on
+  that path.
+- Do not accept a callee postcondition, machine result, successful execution,
+  relocation target, or memory fact as an unexplained premise when it is the
+  property being proved.
+- Group unavoidable representation and separation facts behind one reusable
+  state/layout invariant; do not expose lists of instruction-local premises in
+  public theorems.
+- Reject unsupported source or machine forms explicitly. Never obtain a
+  shorter proof by silently broadening the theorem beyond what the checker
+  authenticates.
+- Use no `sorry`, `admit`, custom axioms, `native_decide`, or `unsafe` proof
+  shortcuts.
+- Keep the compiler and extractor implementation in Lanius and the native
+  target x86-64. Bootstrap tooling may compile Lanius, but it is not a second
+  implementation of the compiler.
+
+## Next gates
+
+In order:
+
+1. extend the shared structural expression/statement validator with the
+   local/call/control-flow state relation used by real compiler functions;
+2. pass a real two-unit cross-call certificate through the same end-to-end
+   checker;
+3. prove the Lanius certificate emitter phases generate evidence accepted by
+   the existing v3 decoder and boundaries;
+4. make the native Lanius extractor carry the typed Core evidence consumed by
+   the checker, eliminating the bootstrap exporter's role in new artifacts;
+5. scale the structural validator across the source constructs actually used
+   by the compiler and extractor, rejecting unsupported constructs explicitly;
+6. self-extract and compile the extractor with the verified x86 path, then
+   retain the independently checked self-embedding as the bootstrap anchor.
+
+Completion means the last successful compiler/extractor output is covered by
+this one proof spine. It does not mean that several disconnected examples all
+have true theorems.

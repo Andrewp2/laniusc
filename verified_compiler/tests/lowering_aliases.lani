@@ -1,0 +1,61 @@
+module app::main;
+
+import lowering::aliases;
+import lowering::types;
+import verified::host;
+
+// Focused catalog contract: a source-authenticated scalar alias row resolves
+// by its token spelling, while a malformed scalar payload is rejected before
+// the lowering path can consume it.
+fn main() -> i32 {
+    let source_memory: ptr = verified::host::alloc(32, 4);
+    let token_memory: ptr = verified::host::alloc(64, 4);
+    let arena_memory: ptr = verified::host::alloc(128, 4);
+    let catalog_memory: ptr = verified::host::alloc(64, 4);
+    let scratch_memory: ptr = verified::host::alloc(16, 4);
+    let output_memory: ptr = verified::host::alloc(64, 4);
+    if (source_memory == 0 || token_memory == 0 || arena_memory == 0
+        || catalog_memory == 0 || scratch_memory == 0 || output_memory == 0) { return 1; }
+    let source: [i32] = verified::host::i32_slice_from_raw_parts(source_memory, 8);
+    let tokens: [i32] = verified::host::i32_slice_from_raw_parts(token_memory, 16);
+    let arena: [i32] = verified::host::i32_slice_from_raw_parts(arena_memory, 32);
+    let catalog: [i32] = verified::host::i32_slice_from_raw_parts(catalog_memory, 16);
+    let scratch: [i32] = verified::host::i32_slice_from_raw_parts(scratch_memory, 4);
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(output_memory, 16);
+    source[0] = 65;
+    source[1] = 108;
+    source[2] = 105;
+    source[3] = 97;
+    source[4] = 115;
+    tokens[0] = 1;
+    tokens[1] = 0;
+    tokens[2] = 5;
+    catalog[0] = lowering::aliases::MAGIC;
+    catalog[1] = 1;
+    catalog[2] = 8;
+    catalog[3] = 0;
+    catalog[4] = 1;
+    catalog[5] = lowering::aliases::SCALAR;
+    catalog[6] = 1;
+    catalog[7] = 0;
+    if (!lowering::aliases::valid(catalog, 8, tokens, 1)) { return 2; }
+    arena[0] = 3;
+    arena[1] = 0;
+    arena[3] = -1;
+    arena[5] = 0;
+    arena[8] = -1;
+    arena[9] = 1;
+    arena[11] = 0;
+    arena[13] = -1;
+    arena[17] = 2;
+    arena[19] = 1;
+    arena[21] = -1;
+    if (lowering::aliases::scalar(source, 5, tokens, 1, catalog, 8,
+        arena, 2, scratch, 1) != 1) { return 3; }
+    if (lowering::types::lower(source, 5, tokens, 1, arena, 32, 2,
+        scratch, 0, catalog, 8, scratch, 4, output, 16)
+        != lowering::types::I32) { return 5; }
+    catalog[6] = 7;
+    if (lowering::aliases::valid(catalog, 8, tokens, 1)) { return 4; }
+    return 0;
+}

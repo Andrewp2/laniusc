@@ -1,9 +1,15 @@
 import Lanius.Data.SeqTree
-import Lanius.Extraction.TokenChecker
+import Lanius.Extraction.Artifact
 
 namespace Lanius.Extraction
 
 open Lanius.Data
+
+def decodeByte (value : Nat) : Option (Fin 256) :=
+  if inRange : value < 256 then some ⟨value, inRange⟩ else none
+
+def decodeBytes (values : List Nat) : Option (List (Fin 256)) :=
+  values.mapM decodeByte
 
 /-! ## Untrusted cache and checked view boundary
 

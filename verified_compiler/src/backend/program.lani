@@ -85,6 +85,9 @@ pub fn compile(input: [i32], length: i32, function_input: [i32], function_capaci
         index += 1;
     }
     if (next < 0) { return -1; }
+    // Keep the function region boundary before any runtime data is appended.
+    // Certificate mode derives ordered start/length pairs from these slots.
+    work[backend::frame::FUNCTION_END] = next;
     let string_pointer: i32 = -1;
     index = 0;
     while (index < work[backend::frame::FIXUP_COUNT]) {

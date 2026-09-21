@@ -113,7 +113,7 @@ fn range_valid(offset: i32, count: i32, length: i32) -> bool {
     return offset >= GRAMMAR_HEADER_WORDS && count >= 0 && offset <= length && count <= length - offset;
 }
 fn grammar_is_valid(grammar:[i32], grammar_length: i32) -> bool {
-    if (grammar_length<GRAMMAR_HEADER_WORDS) {
+    if (grammar_length <= GRAMMAR_HEADER_WORDS - 1) {
         return false;
     }
     if (grammar[HEADER_VERSION] != GRAMMAR_VERSION) {
@@ -125,7 +125,7 @@ fn grammar_is_valid(grammar:[i32], grammar_length: i32) -> bool {
     let start_nonterminal: i32 = grammar[HEADER_START_NONTERMINAL];
     let rhs_symbol_count: i32 = grammar[HEADER_RHS_SYMBOL_COUNT];
     let lhs_production_count: i32 = grammar[HEADER_LHS_PRODUCTION_COUNT];
-    if (kind_count <= 0 || production_count <= 0 || nonterminal_count <= 0 || start_nonterminal<0 || start_nonterminal >= nonterminal_count) {
+    if (kind_count <= 0 || production_count <= 0 || nonterminal_count <= 0 || start_nonterminal <= -1 || start_nonterminal >= nonterminal_count) {
         return false;
     }
     if (!range_valid(grammar[HEADER_CANONICAL_KINDS_OFFSET], kind_count, grammar_length) || !range_valid(grammar[HEADER_PRODUCTION_LHS_OFFSET], production_count, grammar_length) || !range_valid(grammar[HEADER_RHS_OFFSETS_OFFSET], production_count, grammar_length) || !range_valid(grammar[HEADER_RHS_LENGTHS_OFFSET], production_count, grammar_length) || !range_valid(grammar[HEADER_RHS_SYMBOLS_OFFSET], rhs_symbol_count, grammar_length) || !range_valid(grammar[HEADER_LHS_OFFSETS_OFFSET], nonterminal_count, grammar_length) || !range_valid(grammar[HEADER_LHS_COUNTS_OFFSET], nonterminal_count, grammar_length) || !range_valid(grammar[HEADER_LHS_PRODUCTIONS_OFFSET], lhs_production_count, grammar_length)) {
@@ -136,17 +136,17 @@ fn grammar_is_valid(grammar:[i32], grammar_length: i32) -> bool {
     let rhs_lengths_offset: i32 = grammar[HEADER_RHS_LENGTHS_OFFSET];
     let rhs_symbols_offset: i32 = grammar[HEADER_RHS_SYMBOLS_OFFSET];
     let production: i32 = 0;
-    while (production<production_count) {
+    while (production <= production_count - 1) {
         let lhs: i32 = grammar[production_lhs_offset + production];
         let rhs_offset: i32 = grammar[rhs_offsets_offset + production];
         let rhs_length: i32 = grammar[rhs_lengths_offset + production];
-        if (lhs<0 || lhs >= nonterminal_count || rhs_offset<0 || rhs_length<0 || rhs_offset>rhs_symbol_count || rhs_length>rhs_symbol_count - rhs_offset) {
+        if (lhs <= -1 || lhs >= nonterminal_count || rhs_offset <= -1 || rhs_length <= -1 || rhs_offset > rhs_symbol_count || rhs_length > rhs_symbol_count - rhs_offset) {
             return false;
         }
         let rhs_index: i32 = 0;
-        while (rhs_index<rhs_length) {
+        while (rhs_index <= rhs_length - 1) {
             let symbol: i32 = grammar[rhs_symbols_offset + rhs_offset + rhs_index];
-            if (symbol<0 || symbol >= kind_count + nonterminal_count) {
+            if (symbol <= -1 || symbol >= kind_count + nonterminal_count) {
                 return false;
             }
             rhs_index += 1;
@@ -157,16 +157,16 @@ fn grammar_is_valid(grammar:[i32], grammar_length: i32) -> bool {
     let lhs_counts_offset: i32 = grammar[HEADER_LHS_COUNTS_OFFSET];
     let lhs_productions_offset: i32 = grammar[HEADER_LHS_PRODUCTIONS_OFFSET];
     let nonterminal: i32 = 0;
-    while (nonterminal<nonterminal_count) {
+    while (nonterminal <= nonterminal_count - 1) {
         let first: i32 = grammar[lhs_offsets_offset + nonterminal];
         let count: i32 = grammar[lhs_counts_offset + nonterminal];
-        if (first<0 || count<0 || first>lhs_production_count || count>lhs_production_count - first) {
+        if (first <= -1 || count <= -1 || first > lhs_production_count || count > lhs_production_count - first) {
             return false;
         }
         let index: i32 = 0;
-        while (index<count) {
+        while (index <= count - 1) {
             let listed: i32 = grammar[lhs_productions_offset + first + index];
-            if (listed<0 || listed >= production_count || grammar[production_lhs_offset + listed] != nonterminal) {
+        if (listed <= -1 || listed >= production_count || grammar[production_lhs_offset + listed] != nonterminal) {
                 return false;
             }
             index += 1;
@@ -215,7 +215,7 @@ fn append_state(workspace:[i32], state_base: i32, state_capacity: i32, position:
     let head_word: i32 = chart_word(position, CHART_HEAD);
     let tail_word: i32 = chart_word(position, CHART_TAIL);
     let tail: i32 = workspace[tail_word];
-    if (tail<0) {
+    if (tail <= -1) {
         workspace[head_word] = state_id;
     } else {
         workspace[state_word(state_base, tail, STATE_NEXT)] = state_id;
@@ -270,18 +270,18 @@ pub fn recognize(grammar:[i32], grammar_length: i32, tokens:[i32], token_count: 
     }
     // `state_base = (token_count * 2 + 1) * CHART_WORDS` must remain a
     // nonnegative i32 before it is compared with the caller's workspace.
-    if (token_count<0 || token_count>536870911 || workspace_length<0) {
+    if (token_count <= -1 || token_count > 536870911 || workspace_length <= -1) {
         return parse_result(PARSE_BAD_INPUT, 0, -1, 0);
     }
     let final_position: i32 = token_count * 2;
     let chart_count: i32 = final_position + 1;
     let state_base: i32 = chart_count * CHART_WORDS;
-    if (workspace_length<state_base) {
+    if (workspace_length <= state_base - 1) {
         return parse_result(PARSE_OUTPUT_FULL, 0, -1, 0);
     }
     let state_capacity: i32 =(workspace_length - state_base) / STATE_WORDS;
     let chart_word_index: i32 = 0;
-    while (chart_word_index<state_base) {
+    while (chart_word_index <= state_base - 1) {
         workspace[chart_word_index] = -1;
         chart_word_index += 1;
     }
@@ -294,7 +294,7 @@ pub fn recognize(grammar:[i32], grammar_length: i32, tokens:[i32], token_count: 
     let start_count: i32 = grammar[lhs_counts_offset + start_nonterminal];
     let state_count: i32 = 0;
     let start_index: i32 = 0;
-    while (start_index<start_count) {
+    while (start_index <= start_count - 1) {
         let production: i32 = grammar[lhs_productions_offset + start_first + start_index];
         let appended: AppendResult = append_state(workspace, state_base, state_capacity, 0, state_seed(production, 0, 0, -1, CHILD_NONE, -1, -1), state_count,);
         if (appended.status == APPEND_FULL) {
@@ -315,9 +315,9 @@ pub fn recognize(grammar:[i32], grammar_length: i32, tokens:[i32], token_count: 
             let dot: i32 = state_value(workspace, state_base, state_id, STATE_DOT);
             let origin: i32 = state_value(workspace, state_base, state_id, STATE_ORIGIN);
             let rhs_length: i32 = production_rhs_length(grammar, production);
-            if (dot<rhs_length) {
+            if (dot <= rhs_length - 1) {
                 let symbol: i32 = production_rhs_symbol(grammar, production, dot);
-                if (symbol<kind_count) {
+                if (symbol <= kind_count - 1) {
                     let next_position: i32 = scan_terminal(grammar, tokens, token_count, position, symbol);
                     if (next_position >= 0) {
                         let appended: AppendResult = append_state(workspace, state_base, state_capacity, next_position, state_seed(production, dot + 1, origin, state_id, CHILD_TOKEN, position / 2, symbol,), state_count,);
@@ -331,7 +331,7 @@ pub fn recognize(grammar:[i32], grammar_length: i32, tokens:[i32], token_count: 
                     let first: i32 = grammar[lhs_offsets_offset + expected_nonterminal];
                     let count: i32 = grammar[lhs_counts_offset + expected_nonterminal];
                     let predicted_index: i32 = 0;
-                    while (predicted_index<count) {
+                    while (predicted_index <= count - 1) {
                         let predicted: i32 = grammar[lhs_productions_offset + first + predicted_index];
                         let appended: AppendResult = append_state(workspace, state_base, state_capacity, position, state_seed(predicted, 0, position, -1, CHILD_NONE, -1, -1), state_count,);
                         if (appended.status == APPEND_FULL) {
@@ -364,13 +364,15 @@ pub fn recognize(grammar:[i32], grammar_length: i32, tokens:[i32], token_count: 
                     let parent_production: i32 = state_value(workspace, state_base, parent, STATE_PRODUCTION);
                     let parent_dot: i32 = state_value(workspace, state_base, parent, STATE_DOT);
                     let parent_rhs_length: i32 = production_rhs_length(grammar, parent_production);
-                    if (parent_dot<parent_rhs_length && production_rhs_symbol(grammar, parent_production, parent_dot) == kind_count + completed_lhs) {
-                        let parent_origin: i32 = state_value(workspace, state_base, parent, STATE_ORIGIN);
-                        let appended: AppendResult = append_state(workspace, state_base, state_capacity, position, state_seed(parent_production, parent_dot + 1, parent_origin, parent, CHILD_STATE, state_id, -1,), state_count,);
-                        if (appended.status == APPEND_FULL) {
-                            return append_or_full(appended, position);
+                    if (parent_dot <= parent_rhs_length - 1) {
+                        if (production_rhs_symbol(grammar, parent_production, parent_dot) == kind_count + completed_lhs) {
+                            let parent_origin: i32 = state_value(workspace, state_base, parent, STATE_ORIGIN);
+                            let appended: AppendResult = append_state(workspace, state_base, state_capacity, position, state_seed(parent_production, parent_dot + 1, parent_origin, parent, CHILD_STATE, state_id, -1,), state_count,);
+                            if (appended.status == APPEND_FULL) {
+                                return append_or_full(appended, position);
+                            }
+                            state_count = appended.state_count;
                         }
-                        state_count = appended.state_count;
                     }
                     parent = state_value(workspace, state_base, parent, STATE_NEXT);
                 }

@@ -24,7 +24,7 @@ pub fn scan_exponent(
     exponent_start: i32,
 ) -> Scan {
     let digits_start: i32 = exponent_start + 1;
-    if (digits_start < source_length) {
+    if (digits_start <= source_length - 1) {
         let sign: i32 = source[digits_start];
         if (sign == 43 || sign == 45) {
             digits_start += 1;
@@ -55,14 +55,14 @@ pub fn finish_decimal(
         return integer_scan(integer_end);
     }
 
-    if (integer_end + 1 < source_length) {
+    if (integer_end + 1 <= source_length - 1) {
         if (source[integer_end + 1] == 46) {
             return integer_scan(integer_end);
         }
     }
 
     let fraction_start: i32 = integer_end + 1;
-    if (fraction_start < source_length) {
+    if (fraction_start <= source_length - 1) {
         if (verified::digits::is_digit_for_base(source[fraction_start], 10)) {
             let fraction = verified::digits::scan_digit_run(
                 source, source_length, fraction_start, 10);
@@ -70,7 +70,7 @@ pub fn finish_decimal(
                 return number_failure(verified::digits::digit_scan_error_offset(fraction));
             }
             let fraction_end: i32 = verified::digits::digit_scan_end_offset(fraction);
-            if (fraction_end < source_length) {
+            if (fraction_end <= source_length - 1) {
                 let exponent: i32 = source[fraction_end];
                 if (exponent == 101 || exponent == 69) {
                     return scan_exponent(source, source_length, fraction_end);

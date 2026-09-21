@@ -1,7 +1,6 @@
 module verified::canonical_tokens;
 
 import verified::token;
-import verified::host;
 
 pub fn is_trivia(kind: i32) -> bool {
     return kind == verified::token::WHITESPACE
@@ -9,23 +8,21 @@ pub fn is_trivia(kind: i32) -> bool {
         || kind == verified::token::BLOCK_COMMENT;
 }
 
-// Compare a source-byte span with one compact ASCII string literal. Native
-// word loads consume four bytes each. Callers explicitly pad spellings to a
-// whole number of words; `length` excludes that padding. Ordinary native
-// strings do not promise readable padding beyond their contents. Keeping
-// spellings compact avoids a separate expression for every character.
+// Compare a source-byte span with up to two little-endian packed ASCII words.
+// The packed values keep keyword dispatch compact while this helper owns the
+// byte extraction and avoids spelling each keyword as a numeric chain.
 fn matches_ascii(
     source: [i32],
     start: i32,
-    spelling: str,
     length: i32,
+    first: i32,
+    second: i32,
 ) -> bool {
-    let words: [i32] = verified::host::i32_slice_from_raw_parts(
-        verified::host::string_data_ptr(spelling), (length + 3) / 4);
     let index: i32 = 0;
     while (index != length) {
-        let expected: i32 =
-            (words[index / 4] >> ((index % 4) * 8)) & 255;
+        let word: i32 = first;
+        if (index >= 4) { word = second; }
+        let expected: i32 = (word >> ((index % 4) * 8)) & 255;
         if (source[start + index] != expected) { return false; }
         index += 1;
     }
@@ -42,41 +39,41 @@ pub fn keyword_kind(
 ) -> i32 {
     let length: i32 = end - start;
     if (length == 2) {
-        if (matches_ascii(source, start, "fn\0\0", 2)) { return verified::token::FN; }
-        if (matches_ascii(source, start, "if\0\0", 2)) { return verified::token::IF; }
-        if (matches_ascii(source, start, "in\0\0", 2)) { return verified::token::IN; }
+        if (matches_ascii(source, start, 2, 28262, 0)) { return verified::token::FN; } // fn
+        if (matches_ascii(source, start, 2, 26217, 0)) { return verified::token::IF; } // if
+        if (matches_ascii(source, start, 2, 28265, 0)) { return verified::token::IN; } // in
     }
     if (length == 3) {
-        if (matches_ascii(source, start, "pub\0", 3)) { return verified::token::PUB; }
-        if (matches_ascii(source, start, "let\0", 3)) { return verified::token::LET; }
-        if (matches_ascii(source, start, "for\0", 3)) { return verified::token::FOR; }
+        if (matches_ascii(source, start, 3, 6452592, 0)) { return verified::token::PUB; } // pub
+        if (matches_ascii(source, start, 3, 7628140, 0)) { return verified::token::LET; } // let
+        if (matches_ascii(source, start, 3, 7499622, 0)) { return verified::token::FOR; } // for
     }
     if (length == 4) {
-        if (matches_ascii(source, start, "else", 4)) { return verified::token::ELSE; }
-        if (matches_ascii(source, start, "true", 4)) { return verified::token::TRUE; }
-        if (matches_ascii(source, start, "enum", 4)) { return verified::token::ENUM; }
-        if (matches_ascii(source, start, "impl", 4)) { return verified::token::IMPL; }
-        if (matches_ascii(source, start, "self", 4)) { return verified::token::SELF_VALUE; }
-        if (matches_ascii(source, start, "type", 4)) { return verified::token::TYPE; }
+        if (matches_ascii(source, start, 4, 1702063205, 0)) { return verified::token::ELSE; } // else
+        if (matches_ascii(source, start, 4, 1702195828, 0)) { return verified::token::TRUE; } // true
+        if (matches_ascii(source, start, 4, 1836412517, 0)) { return verified::token::ENUM; } // enum
+        if (matches_ascii(source, start, 4, 1819307369, 0)) { return verified::token::IMPL; } // impl
+        if (matches_ascii(source, start, 4, 1718379891, 0)) { return verified::token::SELF_VALUE; } // self
+        if (matches_ascii(source, start, 4, 1701869940, 0)) { return verified::token::TYPE; } // type
     }
     if (length == 5) {
-        if (matches_ascii(source, start, "false\0\0\0", 5)) { return verified::token::FALSE; }
-        if (matches_ascii(source, start, "const\0\0\0", 5)) { return verified::token::CONST; }
-        if (matches_ascii(source, start, "match\0\0\0", 5)) { return verified::token::MATCH; }
-        if (matches_ascii(source, start, "trait\0\0\0", 5)) { return verified::token::TRAIT; }
-        if (matches_ascii(source, start, "where\0\0\0", 5)) { return verified::token::WHERE; }
-        if (matches_ascii(source, start, "while\0\0\0", 5)) { return verified::token::WHILE; }
-        if (matches_ascii(source, start, "break\0\0\0", 5)) { return verified::token::BREAK; }
+        if (matches_ascii(source, start, 5, 1936482662, 101)) { return verified::token::FALSE; } // false
+        if (matches_ascii(source, start, 5, 1936617315, 116)) { return verified::token::CONST; } // const
+        if (matches_ascii(source, start, 5, 1668571501, 104)) { return verified::token::MATCH; } // match
+        if (matches_ascii(source, start, 5, 1767993972, 116)) { return verified::token::TRAIT; } // trait
+        if (matches_ascii(source, start, 5, 1919248503, 101)) { return verified::token::WHERE; } // where
+        if (matches_ascii(source, start, 5, 1818847351, 101)) { return verified::token::WHILE; } // while
+        if (matches_ascii(source, start, 5, 1634038370, 107)) { return verified::token::BREAK; } // break
     }
     if (length == 6) {
-        if (matches_ascii(source, start, "return\0\0", 6)) { return verified::token::RETURN; }
-        if (matches_ascii(source, start, "struct\0\0", 6)) { return verified::token::STRUCT; }
-        if (matches_ascii(source, start, "extern\0\0", 6)) { return verified::token::EXTERN; }
-        if (matches_ascii(source, start, "import\0\0", 6)) { return verified::token::IMPORT; }
-        if (matches_ascii(source, start, "module\0\0", 6)) { return verified::token::MODULE; }
+        if (matches_ascii(source, start, 6, 1970562418, 28274)) { return verified::token::RETURN; } // return
+        if (matches_ascii(source, start, 6, 1970435187, 29795)) { return verified::token::STRUCT; } // struct
+        if (matches_ascii(source, start, 6, 1702131813, 28274)) { return verified::token::EXTERN; } // extern
+        if (matches_ascii(source, start, 6, 1869639017, 29810)) { return verified::token::IMPORT; } // import
+        if (matches_ascii(source, start, 6, 1969516397, 25964)) { return verified::token::MODULE; } // module
     }
     if (length == 8) {
-        if (matches_ascii(source, start, "continue", 8)) {
+        if (matches_ascii(source, start, 8, 1953394531, 1702194793)) { // continue
             return verified::token::CONTINUE;
         }
     }

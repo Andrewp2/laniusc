@@ -1,0 +1,178 @@
+module app::main;
+
+import lowering::aliases;
+import lowering::declarations;
+import verified::host;
+import verified::parser;
+
+fn record(records: [i32], offsets: [i32], node: i32,
+    production: i32, children: i32) {
+    offsets[node] = node * 16;
+    records[node * 16] = production;
+    records[node * 16 + 3] = children;
+}
+
+fn state(records: [i32], node: i32, index: i32, child: i32) {
+    records[node * 16 + 4 + index * 3] = verified::parser::CHILD_STATE;
+    records[node * 16 + 5 + index * 3] = child;
+}
+
+fn token(records: [i32], node: i32, index: i32, value: i32) {
+    records[node * 16 + 4 + index * 3] = verified::parser::CHILD_TOKEN;
+    records[node * 16 + 5 + index * 3] = value;
+}
+
+// One module path and one monomorphic alias declaration. The target token is
+// changed between calls to exercise success, cycle, and missing-target paths.
+fn make_tree(records: [i32], offsets: [i32], target: i32) {
+    let node: i32 = 0;
+    while (node <= 7) {
+        record(records, offsets, node, 0, 0);
+        node += 1;
+    }
+    record(records, offsets, 0, 48, 1);
+    token(records, 0, 0, 0);
+    record(records, offsets, 1, 51, 0);
+    record(records, offsets, 2, 47, 2);
+    state(records, 2, 0, 0);
+    state(records, 2, 1, 1);
+    record(records, offsets, 3, 57, 1);
+    token(records, 3, 0, target);
+    record(records, offsets, 4, 59, 0);
+    record(records, offsets, 5, 56, 2);
+    state(records, 5, 0, 3);
+    state(records, 5, 1, 4);
+    record(records, offsets, 6, 226, 0);
+    record(records, offsets, 7, 69, 2);
+    state(records, 7, 0, 5);
+    state(records, 7, 1, 6);
+}
+
+fn make_slice_tree(records: [i32], offsets: [i32], target: i32) {
+    make_tree(records, offsets, target);
+    record(records, offsets, 8, 284, 0);
+    record(records, offsets, 9, 70, 3);
+    state(records, 9, 1, 7);
+    state(records, 9, 2, 8);
+}
+
+fn declarations(output: [i32]) {
+    output[0] = 2;
+    output[1] = 0;
+    output[2] = 1;
+    output[3] = 0;
+    output[4] = 0;
+    output[5] = 0;
+    output[6] = 1;
+    output[7] = 0;
+    output[8] = 0;
+    output[9] = lowering::declarations::MODULE;
+    output[10] = 0;
+    output[11] = 1;
+    output[12] = 0;
+    output[13] = -1;
+    output[14] = 2;
+    output[15] = 0;
+    output[16] = 0;
+    output[17] = lowering::declarations::ALIAS;
+    output[18] = 0;
+    output[19] = 3;
+    output[20] = 3;
+    output[21] = 1;
+    output[22] = 7;
+    output[23] = 0;
+}
+
+fn main() -> i32 {
+    let source_memory: ptr = verified::host::alloc(64, 4);
+    let token_memory: ptr = verified::host::alloc(64, 4);
+    let record_memory: ptr = verified::host::alloc(640, 4);
+    let offset_memory: ptr = verified::host::alloc(40, 4);
+    let declaration_memory: ptr = verified::host::alloc(128, 4);
+    let arena_memory: ptr = verified::host::alloc(256, 4);
+    let work_memory: ptr = verified::host::alloc(64, 4);
+    let stack_memory: ptr = verified::host::alloc(16, 4);
+    let scratch_memory: ptr = verified::host::alloc(64, 4);
+    let result_memory: ptr = verified::host::alloc(16, 4);
+    let output_memory: ptr = verified::host::alloc(256, 4);
+    if (source_memory == 0 || token_memory == 0 || record_memory == 0
+        || offset_memory == 0 || declaration_memory == 0 || arena_memory == 0
+        || work_memory == 0 || stack_memory == 0 || scratch_memory == 0
+        || result_memory == 0 || output_memory == 0) { return 1; }
+    let source: [i32] = verified::host::i32_slice_from_raw_parts(source_memory, 16);
+    let tokens: [i32] = verified::host::i32_slice_from_raw_parts(token_memory, 16);
+    let records: [i32] = verified::host::i32_slice_from_raw_parts(record_memory, 160);
+    let offsets: [i32] = verified::host::i32_slice_from_raw_parts(offset_memory, 10);
+    let declaration_table: [i32] = verified::host::i32_slice_from_raw_parts(declaration_memory, 32);
+    let type_arena: [i32] = verified::host::i32_slice_from_raw_parts(arena_memory, 64);
+    let work: [i32] = verified::host::i32_slice_from_raw_parts(work_memory, 16);
+    let stack: [i32] = verified::host::i32_slice_from_raw_parts(stack_memory, 4);
+    let scratch: [i32] = verified::host::i32_slice_from_raw_parts(scratch_memory, 16);
+    let result: [i32] = verified::host::i32_slice_from_raw_parts(result_memory, 4);
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(output_memory, 64);
+    source[0] = 109;
+    source[1] = 65;
+    source[2] = 105;
+    source[3] = 51;
+    source[4] = 50;
+    source[5] = 77;
+    source[6] = 105;
+    source[7] = 115;
+    source[8] = 115;
+    source[9] = 105;
+    source[10] = 110;
+    source[11] = 103;
+    tokens[0] = 1;
+    tokens[1] = 0;
+    tokens[2] = 1;
+    tokens[3] = 1;
+    tokens[4] = 1;
+    tokens[5] = 2;
+    tokens[6] = 1;
+    tokens[7] = 2;
+    tokens[8] = 5;
+    tokens[9] = 1;
+    tokens[10] = 5;
+    tokens[11] = 12;
+    declarations(declaration_table);
+    make_tree(records, offsets, 2);
+    let words: i32 = lowering::aliases::build(source, 12, tokens, 4,
+        records, 128, offsets, 8, declaration_table, 24, type_arena, 64,
+        work, 16, stack, 4, scratch, 16, result, 4, output, 64, 16);
+    if (words != 10 || output[1] != 1 || output[5] != 2
+        || output[6] != lowering::aliases::SCALAR || output[7] != 1) { return 2; }
+    declaration_table[22] = 9;
+    make_slice_tree(records, offsets, 2);
+    let slice_words: i32 = lowering::aliases::build(source, 12, tokens, 4,
+        records, 160, offsets, 10, declaration_table, 24, type_arena, 64,
+        work, 16, stack, 4, scratch, 16, result, 4, output, 64, 16);
+    if (slice_words != 10 || output[7] != 6) { return 6; }
+    declaration_table[22] = 7;
+    make_tree(records, offsets, 1);
+    let cycle: i32 = lowering::aliases::build(source, 12, tokens, 4,
+        records, 128, offsets, 8, declaration_table, 24, type_arena, 64,
+        work, 16, stack, 4, scratch, 16, result, 4, output, 64, 16);
+    let expected_cycle: i32 = 0 - lowering::aliases::CYCLE;
+    if (cycle != expected_cycle) { return 3; }
+    make_tree(records, offsets, 3);
+    let missing: i32 = lowering::aliases::build(source, 12, tokens, 4,
+        records, 128, offsets, 8, declaration_table, 24, type_arena, 64,
+        work, 16, stack, 4, scratch, 16, result, 4, output, 64, 16);
+    if (missing != 0 - lowering::aliases::INVALID) { return 4; }
+    declaration_table[0] = 3;
+    declaration_table[2] = 2;
+    declaration_table[24] = 0;
+    declaration_table[25] = lowering::declarations::ALIAS;
+    declaration_table[26] = 0;
+    declaration_table[27] = 4;
+    declaration_table[28] = 4;
+    declaration_table[29] = 1;
+    declaration_table[30] = 7;
+    declaration_table[31] = 1;
+    make_tree(records, offsets, 2);
+    let ambiguous: i32 = lowering::aliases::build(source, 12, tokens, 4,
+        records, 128, offsets, 8, declaration_table, 32, type_arena, 64,
+        work, 16, stack, 4, scratch, 16, result, 4, output, 64, 16);
+    if (ambiguous != 0 - lowering::aliases::AMBIGUOUS) { return 5; }
+    return 0;
+}

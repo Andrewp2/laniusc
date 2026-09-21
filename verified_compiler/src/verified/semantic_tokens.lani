@@ -1,6 +1,7 @@
 module verified::semantic_tokens;
 import verified::parser;
 import verified::output;
+import verified::host;
 
 // Recover semantic token assignments from materialized records. Two slots
 // per physical token hold [ordinary_or_inner_kind, outer_kind_or_minus_one].
@@ -78,6 +79,19 @@ pub fn collect(grammar:[i32], grammar_length: i32, kinds:[i32], token_count: i32
         index += 1;
     }
     return 0;
+}
+
+// Native entry points pass frontend arenas by pointer; fixed capacities are
+// the same bounds used by compiler/extractor allocations.
+pub fn collect_raw(grammar: ptr, kinds: ptr, token_count: i32, node_count: i32,
+    records: ptr, offsets: ptr, assignments: ptr) -> i32 {
+    let grammar_view:[i32] = verified::host::i32_slice_from_raw_parts(grammar, 2179);
+    let kinds_view:[i32] = verified::host::i32_slice_from_raw_parts(kinds, 65536);
+    let records_view:[i32] = verified::host::i32_slice_from_raw_parts(records, 1048576);
+    let offsets_view:[i32] = verified::host::i32_slice_from_raw_parts(offsets, 131072);
+    let assignments_view:[i32] = verified::host::i32_slice_from_raw_parts(assignments, 131072);
+    return collect(grammar_view, 2179, kinds_view, token_count, records_view,
+        1048576, offsets_view, node_count, assignments_view, 131072);
 }
 
 // Emit packed semantic codes as List Nat. Split codes are expressed in Lean

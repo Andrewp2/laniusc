@@ -1,0 +1,544 @@
+module lowering::aliases;
+
+import lowering::declarations;
+import verified::host;
+import verified::parser;
+import verified::surface_tree;
+import verified::surface_type;
+import verified::token;
+
+// Alias catalogs are intentionally independent of the Core declaration-ID
+// allocator.  A catalog is one authenticated source unit and has this flat
+// layout:
+//
+//   [magic, rows, words, module_segments, module_token...]
+//   [path_segments, target_kind, target_value, path_token...]
+//
+// `target_kind = SCALAR` makes target_value a lowering::types tag.  A
+// `NOMINAL` target_value is a stable catalog-symbol ordinal, not a guessed
+// Core ID; the allocation pass can map it after global IDs exist.  Every key
+// is the complete module path followed by the declaration name.  Thus a
+// qualified lookup never falls back to its last spelling.
+pub const MAGIC: i32 = 1397316673; // little-endian ASCII "ALIS"
+pub const HEADER: i32 = 4;
+pub const SCALAR: i32 = 1;
+pub const NOMINAL: i32 = 2;
+pub const INVALID: i32 = 1;
+pub const UNSUPPORTED: i32 = 2;
+pub const AMBIGUOUS: i32 = 3;
+pub const CYCLE: i32 = 4;
+pub const WORK_ROW: i32 = 6;
+
+const KIND_SEGMENT: i32 = 0;
+const KIND_PATH: i32 = 1;
+const KIND_PATH_TYPE: i32 = 2;
+const KIND_ARRAY: i32 = 3;
+const KIND_SLICE: i32 = 4;
+const KIND_REFERENCE: i32 = 5;
+
+fn child(records: [i32], length: i32, offsets: [i32], count: i32,
+    node: i32, index: i32) -> i32 {
+    return verified::surface_tree::child(records, length, offsets, count,
+        node, index, verified::parser::CHILD_STATE, 0);
+}
+
+fn token_child(records: [i32], length: i32, offsets: [i32], count: i32,
+    token_count: i32, node: i32, index: i32) -> i32 {
+    return verified::surface_tree::child(records, length, offsets, count,
+        node, index, verified::parser::CHILD_TOKEN, token_count);
+}
+
+fn valid_token(source: [i32], source_length: i32, tokens: [i32],
+    token_count: i32, token: i32) -> bool {
+    if (token <= -1 || token >= token_count || tokens[token * 3] != verified::token::IDENTIFIER) {
+        return false;
+    }
+    let start: i32 = tokens[token * 3 + 1];
+    let finish: i32 = tokens[token * 3 + 2];
+    return start > -1 && finish > start && finish <= source_length;
+}
+
+fn same_token(source: [i32], source_length: i32, tokens: [i32],
+    token_count: i32, left: i32, right: i32) -> bool {
+    if (!valid_token(source, source_length, tokens, token_count, left)
+        || !valid_token(source, source_length, tokens, token_count, right)) {
+        return false;
+    }
+    let left_start: i32 = tokens[left * 3 + 1];
+    let left_finish: i32 = tokens[left * 3 + 2];
+    let right_start: i32 = tokens[right * 3 + 1];
+    let right_finish: i32 = tokens[right * 3 + 2];
+    if (left_finish - left_start != right_finish - right_start) { return false; }
+    let index: i32 = 0;
+    while (index <= left_finish - left_start - 1) {
+        if (source[left_start + index] != source[right_start + index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+// Return a supported builtin tag, -UNSUPPORTED for a known but non-transport
+// builtin, and -INVALID for an ordinary user spelling.
+fn builtin(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
+    token: i32) -> i32 {
+    if (!valid_token(source, source_length, tokens, token_count, token)) { return -INVALID; }
+    let start: i32 = tokens[token * 3 + 1];
+    let finish: i32 = tokens[token * 3 + 2];
+    let names: str = "i32 bool usize ptr str i8 i16 i64 isize u8 u16 u32 u64 f32 f64 char ";
+    let words: [i32] = verified::host::i32_slice_from_raw_parts(
+        verified::host::string_data_ptr(names), 17);
+    let position: i32 = 0;
+    let tag: i32 = 1;
+    while (position <= 67) {
+        let matched: bool = true;
+        let index: i32 = 0;
+        let byte: i32 = (words[position / 4] >> ((position % 4) * 8)) & 255;
+        while (byte != 32) {
+            if (index >= finish - start) { matched = false; }
+            else { if (source[start + index] != byte) { matched = false; } }
+            index += 1;
+            position += 1;
+            byte = (words[position / 4] >> ((position % 4) * 8)) & 255;
+        }
+        if (matched && index == finish - start) {
+            if (tag <= 5) { return tag; }
+            return -UNSUPPORTED;
+        }
+        tag += 1;
+        position += 1;
+    }
+    return -INVALID;
+}
+
+fn path_node(records: [i32], length: i32, offsets: [i32], count: i32,
+    root: i32) -> bool {
+    let offset: i32 = verified::surface_tree::record(records, length, offsets, count, root);
+    return offset > -1 && records[offset] == 47;
+}
+
+// Materialize a plain parse-tree path into token IDs. Generic path segments
+// are rejected: aliases are monomorphic and the catalog never erases args.
+fn parse_path(source: [i32], source_length: i32, records: [i32],
+    length: i32, offsets: [i32], count: i32, tokens: [i32], token_count: i32,
+    root: i32, output: [i32], capacity: i32) -> i32 {
+    if (!path_node(records, length, offsets, count, root) || capacity <= 0) { return -INVALID; }
+    let segment: i32 = child(records, length, offsets, count, root, 0);
+    let tail: i32 = child(records, length, offsets, count, root, 1);
+    let written: i32 = 0;
+    let previous: i32 = -1;
+    while (segment >= 0) {
+        let offset: i32 = verified::surface_tree::record(records, length, offsets, count, segment);
+        if (offset <= -1 || records[offset] != 48 || records[offset + 3] != 1) { return -INVALID; }
+        let name: i32 = token_child(records, length, offsets, count, token_count, segment, 0);
+        if (!valid_token(source, source_length, tokens, token_count, name)) {
+            return -INVALID;
+        }
+        if (written >= capacity || name <= previous) { return -INVALID; }
+        output[written] = name;
+        written += 1;
+        previous = name;
+        let tail_offset: i32 = verified::surface_tree::record(records, length, offsets, count, tail);
+        if (tail_offset <= -1) { return -INVALID; }
+        if (records[tail_offset] == 51) {
+            if (records[tail_offset + 3] != 0) { return -INVALID; }
+            return written;
+        }
+        if (records[tail_offset] != 50 || records[tail_offset + 3] != 4) { return -INVALID; }
+        segment = child(records, length, offsets, count, tail, 2);
+        tail = child(records, length, offsets, count, tail, 3);
+    }
+    return -INVALID;
+}
+
+fn segment_count(arena: [i32], count: i32, path: i32) -> i32 {
+    if (path <= -1 || path >= count || arena[1 + path * 8] != KIND_PATH) { return -INVALID; }
+    let segment: i32 = arena[1 + path * 8 + 2];
+    let segments: i32 = 0;
+    while (segment != -1) {
+        if (segment <= -1 || segment >= count || arena[1 + segment * 8] != KIND_SEGMENT) { return -INVALID; }
+        segments += 1;
+        segment = arena[1 + segment * 8 + 7];
+    }
+    return segments;
+}
+
+fn copy_arena_path(arena: [i32], count: i32, path: i32, output: [i32],
+    capacity: i32) -> i32 {
+    let segments: i32 = segment_count(arena, count, path);
+    if (segments <= 0 || capacity <= segments - 1) { return -INVALID; }
+    let segment: i32 = arena[1 + path * 8 + 2];
+    let written: i32 = 0;
+    while (segment != -1) {
+        output[written] = arena[1 + segment * 8 + 4];
+        written += 1;
+        segment = arena[1 + segment * 8 + 7];
+    }
+    return written;
+}
+
+fn row_matches(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
+    catalog: [i32], row: i32, path: [i32], path_count: i32,
+    module_count: i32) -> bool {
+    let row_count: i32 = catalog[row];
+    let canonical_count: i32 = module_count + 1;
+    if (path_count == 1) {
+        if (row_count != canonical_count) { return false; }
+        let index: i32 = 0;
+        while (index <= module_count - 1) {
+            if (!same_token(source, source_length, tokens, token_count,
+                catalog[HEADER + index], catalog[row + 3 + index])) { return false; }
+            index += 1;
+        }
+        return same_token(source, source_length, tokens, token_count,
+            path[0], catalog[row + 3 + module_count]);
+    }
+    if (row_count != path_count) { return false; }
+    let index: i32 = 0;
+    while (index <= path_count - 1) {
+        if (!same_token(source, source_length, tokens, token_count,
+            path[index], catalog[row + 3 + index])) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+fn lookup_symbol(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
+    catalog: [i32], words: i32, path: [i32], path_count: i32) -> i32 {
+    if (words <= HEADER - 1 || catalog[0] != MAGIC || path_count <= 0) { return -INVALID; }
+    let rows: i32 = catalog[1];
+    let module_count: i32 = catalog[3];
+    let position: i32 = HEADER + module_count;
+    let found: i32 = -1;
+    let row: i32 = 0;
+    while (row <= rows - 1) {
+        if (position > words - 3) { return -INVALID; }
+        if (row_matches(source, source_length, tokens, token_count,
+            catalog, position, path, path_count, module_count)) {
+            if (found != -1) { return -AMBIGUOUS; }
+            found = position;
+        }
+        position += 3 + catalog[position];
+        row += 1;
+    }
+    if (position != words) { return -INVALID; }
+    return found;
+}
+
+fn resolve_arena(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
+    records: [i32], record_length: i32, offsets: [i32], node_count: i32,
+    catalog: [i32], catalog_words: i32, work: [i32], work_capacity: i32,
+    stack: [i32], stack_capacity: i32, type_arena: [i32], type_capacity: i32,
+    scratch: [i32], scratch_capacity: i32, root: i32, stack_depth: i32,
+    depth: i32, result: [i32]) -> i32 {
+    if (depth <= 0 || root <= -1 || root >= type_arena[0]) { return -INVALID; }
+    let slot: i32 = 1 + root * 8;
+    let kind: i32 = type_arena[slot];
+    if (kind == KIND_PATH_TYPE) {
+        let path: i32 = type_arena[slot + 2];
+        if (path <= -1 || path >= root || type_arena[1 + path * 8] != KIND_PATH) { return -INVALID; }
+        let segments: i32 = type_arena[1 + path * 8 + 2];
+        let segment: i32 = segments;
+        while (segment != -1) {
+            if (segment <= -1 || segment >= root || type_arena[1 + segment * 8] != KIND_SEGMENT
+                || type_arena[1 + segment * 8 + 2] != -1) { return -UNSUPPORTED; }
+            segment = type_arena[1 + segment * 8 + 7];
+        }
+        let path_count: i32 = copy_arena_path(type_arena, type_arena[0], path,
+            scratch, scratch_capacity);
+        if (path_count <= 0) { return -INVALID; }
+        let builtin_tag: i32 = -INVALID;
+        if (path_count == 1) {
+            let token: i32 = scratch[0];
+            builtin_tag = builtin(source, source_length, tokens, token_count, token);
+            if (builtin_tag > 0) {
+                result[0] = SCALAR;
+                result[1] = builtin_tag;
+                return 0;
+            }
+            if (builtin_tag == -UNSUPPORTED) { return -UNSUPPORTED; }
+        }
+        let symbol_row: i32 = lookup_symbol(source, source_length, tokens, token_count,
+            catalog, catalog_words, scratch, path_count);
+        if (symbol_row == -AMBIGUOUS) { return -AMBIGUOUS; }
+        if (symbol_row <= -1) { return -INVALID; }
+        let row: i32 = HEADER + catalog[3];
+        let ordinal: i32 = 0;
+        while (row <= symbol_row - 1) {
+            row += 3 + catalog[row];
+            ordinal += 1;
+        }
+        if (row != symbol_row || ordinal <= -1 || ordinal >= work_capacity / WORK_ROW) { return -INVALID; }
+        let nested: i32 = resolve_symbol(source, source_length, tokens, token_count,
+            records, record_length, offsets, node_count, catalog, catalog_words,
+            work, work_capacity, stack, stack_capacity, type_arena, type_capacity,
+            scratch, scratch_capacity, ordinal, stack_depth, depth - 1, result);
+        if (nested <= -1) { return nested; }
+        return 0;
+    }
+    if (kind == KIND_SLICE) {
+        let child: i32 = type_arena[slot + 2];
+        if (child <= -1 || child >= root) { return -INVALID; }
+        let nested: i32 = resolve_arena(source, source_length, tokens, token_count,
+            records, record_length, offsets, node_count, catalog, catalog_words,
+            work, work_capacity, stack, stack_capacity, type_arena, type_capacity,
+            scratch, scratch_capacity, child, stack_depth, depth - 1, result);
+        if (nested <= -1) { return nested; }
+        if (result[0] != SCALAR || result[1] != 1) { return -UNSUPPORTED; }
+        result[1] = 6;
+        return 0;
+    }
+    if (kind == KIND_ARRAY || kind == KIND_REFERENCE) { return -UNSUPPORTED; }
+    return -INVALID;
+}
+
+fn resolve_symbol(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
+    records: [i32], record_length: i32, offsets: [i32], node_count: i32,
+    catalog: [i32], catalog_words: i32, work: [i32], work_capacity: i32,
+    stack: [i32], stack_capacity: i32, type_arena: [i32], type_capacity: i32,
+    scratch: [i32], scratch_capacity: i32, index: i32, stack_depth: i32,
+    depth: i32, result: [i32]) -> i32 {
+    if (index <= -1 || index >= work_capacity / WORK_ROW || depth <= 0
+        || stack_depth <= -1 || stack_depth >= stack_capacity) { return -INVALID; }
+    let slot: i32 = index * WORK_ROW;
+    if (work[slot + 2] == 2) {
+        result[0] = work[slot + 3];
+        result[1] = work[slot + 4];
+        return 0;
+    }
+    if (work[slot + 2] == 1) { return -CYCLE; }
+    work[slot + 2] = 1;
+    stack[stack_depth] = index;
+    if (work[slot + 1] == lowering::declarations::STRUCTURE) {
+        work[slot + 3] = NOMINAL;
+        work[slot + 4] = index;
+    } else {
+        let declaration: i32 = work[slot];
+        let root: i32 = verified::surface_type::extract(records, record_length, offsets,
+            node_count, token_count, declaration, type_arena, type_capacity, depth);
+        if (root <= -1 || type_arena[0] <= 0) { return -INVALID; }
+        let resolved: i32 = resolve_arena(source, source_length, tokens, token_count,
+            records, record_length, offsets, node_count, catalog, catalog_words,
+            work, work_capacity, stack, stack_capacity, type_arena, type_capacity,
+            scratch, scratch_capacity, root, stack_depth + 1, depth - 1, result);
+        if (resolved <= -1) { return resolved; }
+        work[slot + 3] = result[0];
+        work[slot + 4] = result[1];
+    }
+    work[slot + 2] = 2;
+    result[0] = work[slot + 3];
+    result[1] = work[slot + 4];
+    return 0;
+}
+
+fn duplicate_key(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
+    output: [i32], row: i32, prior: i32) -> bool {
+    let count: i32 = output[row];
+    if (count != output[prior]) { return false; }
+    let index: i32 = 0;
+    while (index <= count - 1) {
+        if (!same_token(source, source_length, tokens, token_count,
+            output[row + 3 + index], output[prior + 3 + index])) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+// Build one source-unit catalog. `work` is six words per alias/structure,
+// `result` is two words of descriptor scratch, and `stack` is the explicit
+// cycle bound. The caller chooses all capacities, so malformed or unexpectedly
+// deep input fails closed rather than relying on evaluator recursion.
+pub fn build(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
+    records: [i32], record_length: i32, offsets: [i32], node_count: i32,
+    declaration_table: [i32], declaration_words: i32, type_arena: [i32],
+    type_capacity: i32, work: [i32], work_capacity: i32, stack: [i32],
+    stack_capacity: i32, scratch: [i32], scratch_capacity: i32,
+    result: [i32], result_capacity: i32, output: [i32], capacity: i32,
+    depth: i32) -> i32 {
+    if (source_length <= -1 || token_count <= -1 || record_length <= -1
+        || node_count <= 0 || declaration_words <= lowering::declarations::HEADER - 1
+        || type_capacity <= 0 || work_capacity <= 0 || stack_capacity <= 0
+        || scratch_capacity <= 0 || result_capacity <= 1
+        || capacity <= HEADER - 1 || depth <= 0) {
+        return -INVALID;
+    }
+    let rows: i32 = declaration_table[0];
+    if (rows <= 0 || declaration_words != lowering::declarations::HEADER + rows * lowering::declarations::ROW) {
+        return -INVALID;
+    }
+    let module_row: i32 = -1;
+    let row: i32 = 0;
+    while (row <= rows - 1) {
+        let slot: i32 = lowering::declarations::HEADER + row * lowering::declarations::ROW;
+        if (declaration_table[slot + 1] == lowering::declarations::MODULE) {
+            if (module_row != -1) { return -AMBIGUOUS; }
+            module_row = slot;
+        }
+        row += 1;
+    }
+    if (module_row <= -1) { return -INVALID; }
+    let module_path: i32 = declaration_table[module_row + 6];
+    let module_segments: i32 = parse_path(source, source_length, records,
+        record_length, offsets, node_count, tokens, token_count, module_path,
+        scratch, scratch_capacity);
+    if (module_segments <= 0 || module_segments > scratch_capacity
+        || capacity - module_segments <= HEADER - 1) { return -INVALID; }
+    let module_token: i32 = 0;
+    while (module_token <= module_segments - 1) {
+        output[HEADER + module_token] = scratch[module_token];
+        module_token += 1;
+    }
+    output[0] = MAGIC;
+    output[1] = 0;
+    output[2] = 0;
+    output[3] = module_segments;
+    let written: i32 = HEADER + module_segments;
+    let symbol_count: i32 = 0;
+    let source_row: i32 = 0;
+    while (source_row <= rows - 1) {
+        let declaration_slot: i32 = lowering::declarations::HEADER + source_row * lowering::declarations::ROW;
+        let kind: i32 = declaration_table[declaration_slot + 1];
+        if (kind == lowering::declarations::ALIAS || kind == lowering::declarations::STRUCTURE) {
+            if (symbol_count >= stack_capacity || (symbol_count + 1) * WORK_ROW > work_capacity) {
+                return -INVALID;
+            }
+            let name: i32 = declaration_table[declaration_slot + 5];
+            if (!valid_token(source, source_length, tokens, token_count, name)) { return -INVALID; }
+            let builtin_name: i32 = builtin(source, source_length, tokens, token_count, name);
+            if (builtin_name != -INVALID) { return -AMBIGUOUS; }
+            if (capacity - written <= module_segments + 3) { return -INVALID; }
+            output[written] = module_segments + 1;
+            output[written + 1] = -1;
+            output[written + 2] = -1;
+            module_token = 0;
+            while (module_token <= module_segments - 1) {
+                output[written + 3 + module_token] = output[HEADER + module_token];
+                module_token += 1;
+            }
+            output[written + 3 + module_segments] = name;
+            let prior_row: i32 = HEADER + module_segments;
+            let prior: i32 = 0;
+            while (prior <= symbol_count - 1) {
+                if (duplicate_key(source, source_length, tokens, token_count,
+                    output, written, prior_row)) { return -AMBIGUOUS; }
+                prior_row += 3 + output[prior_row];
+                prior += 1;
+            }
+            let work_slot: i32 = symbol_count * WORK_ROW;
+            work[work_slot] = declaration_table[declaration_slot + 6];
+            work[work_slot + 1] = kind;
+            work[work_slot + 2] = 0;
+            work[work_slot + 3] = -1;
+            work[work_slot + 4] = -1;
+            work[work_slot + 5] = written;
+            written += 3 + module_segments + 1;
+            symbol_count += 1;
+        }
+        source_row += 1;
+    }
+    output[1] = symbol_count;
+    output[2] = written;
+    let symbol: i32 = 0;
+    while (symbol <= symbol_count - 1) {
+        let resolved: i32 = resolve_symbol(source, source_length, tokens, token_count,
+            records, record_length, offsets, node_count, output, written, work,
+            work_capacity, stack, stack_capacity, type_arena, type_capacity,
+            scratch, scratch_capacity, symbol, 0, depth, result);
+        // A qualified target may name a declaration from another source unit.
+        // Keep that row nominal until the aggregate allocator supplies the
+        // cross-unit type map; ambiguity, unsupported forms, and cycles still
+        // reject here.
+        if (resolved <= -1) {
+            if (resolved != -INVALID) { return resolved; }
+            let deferred_slot: i32 = symbol * WORK_ROW;
+            work[deferred_slot + 3] = NOMINAL;
+            work[deferred_slot + 4] = 0;
+        }
+        let work_slot: i32 = symbol * WORK_ROW;
+        let row_position: i32 = work[work_slot + 5];
+        output[row_position + 1] = work[work_slot + 3];
+        output[row_position + 2] = work[work_slot + 4];
+        symbol += 1;
+    }
+    return written;
+}
+
+// Validate the fixed/variable catalog shape before types.lower trusts it.
+pub fn valid(catalog: [i32], words: i32, tokens: [i32], token_count: i32) -> bool {
+    if (words <= HEADER - 1 || token_count <= -1 || token_count > 715827882
+        || catalog[0] != MAGIC || catalog[1] <= -1
+        || catalog[2] != words || catalog[3] <= -1 || HEADER + catalog[3] > words) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index <= catalog[3] - 1) {
+        let token: i32 = catalog[HEADER + index];
+        if (token <= -1 || token >= token_count
+            || tokens[token * 3] != verified::token::IDENTIFIER) { return false; }
+        index += 1;
+    }
+    let row: i32 = 0;
+    let position: i32 = HEADER + catalog[3];
+    while (row <= catalog[1] - 1) {
+        if (position > words - 3) { return false; }
+        let count: i32 = catalog[position];
+        let kind: i32 = catalog[position + 1];
+        let payload: i32 = catalog[position + 2];
+        if (count <= 0 || position + 3 + count > words
+            || (kind != SCALAR && kind != NOMINAL) || payload <= -1
+            || (kind == SCALAR && payload > 6)) { return false; }
+        index = 0;
+        while (index <= count - 1) {
+            let token: i32 = catalog[position + 3 + index];
+            if (token <= -1 || token >= token_count
+                || tokens[token * 3] != verified::token::IDENTIFIER) { return false; }
+            index += 1;
+        }
+        position += 3 + count;
+        row += 1;
+    }
+    return position == words;
+}
+
+// Resolve an arena path against a catalog. Nominal rows are left for the
+// allocation-authenticated resolution table; scalar() reports them as a
+// non-scalar miss so types.lower can continue to nominal resolution.
+pub fn scalar(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
+    catalog: [i32], words: i32, arena: [i32], root: i32, scratch: [i32],
+    scratch_capacity: i32) -> i32 {
+    if (!valid(catalog, words, tokens, token_count) || root <= -1
+        || root >= arena[0]) { return -INVALID; }
+    let path: i32 = root;
+    let root_kind: i32 = arena[1 + root * 8];
+    if (root_kind == KIND_PATH_TYPE) {
+        path = arena[1 + root * 8 + 2];
+        if (path <= -1 || path >= root) { return -INVALID; }
+    } else {
+        if (root_kind != KIND_PATH) { return -INVALID; }
+    }
+    if (arena[1 + path * 8] != KIND_PATH) { return -INVALID; }
+    let segment: i32 = arena[1 + path * 8 + 2];
+    while (segment != -1) {
+        if (segment <= -1 || segment >= root
+            || arena[1 + segment * 8] != KIND_SEGMENT
+            || arena[1 + segment * 8 + 2] != -1) { return -UNSUPPORTED; }
+        segment = arena[1 + segment * 8 + 7];
+    }
+    let count: i32 = copy_arena_path(arena, arena[0], path, scratch, scratch_capacity);
+    if (count <= 0) { return -INVALID; }
+    let module_count: i32 = catalog[3];
+    let position: i32 = HEADER + module_count;
+    let row: i32 = 0;
+    let answer: i32 = -INVALID;
+    while (row <= catalog[1] - 1) {
+        if (position > words - 3) { return -INVALID; }
+        if (row_matches(source, source_length, tokens, token_count, catalog,
+            position, scratch, count, module_count)) {
+            if (answer != -INVALID) { return -AMBIGUOUS; }
+            if (catalog[position + 1] == NOMINAL) { return -INVALID; }
+            answer = catalog[position + 2];
+        }
+        position += 3 + catalog[position];
+        row += 1;
+    }
+    return answer;
+}

@@ -1,0 +1,1091 @@
+module lowering::transport;
+
+import backend::syntax;
+import lowering::bodies;
+import lowering::declarations;
+import lowering::signatures;
+import runtime::service;
+import verified::token;
+
+// The only representation crossing from Core lowering into backend::program.
+// It is position independent: all IDs are Core IDs and all records are copied
+// in a fixed order (structures, constants, internal bodies, extern services).
+pub const VERSION: i32 = 2;
+pub const POINTER_BITS: i32 = 64;
+pub const HEADER: i32 = 6;
+pub const INVALID: i32 = 1;
+pub const UNSUPPORTED: i32 = 2;
+
+// A multi-unit caller supplies one descriptor per source unit, in unit order.
+// The descriptor points into flat source, token, signature, and body catalogs:
+//   [source_offset, source_length, token_offset, token_count,
+//    signature_offset, signature_words, body_offset, body_words]
+// Signature and body IDs in those slices are already the canonical IDs from
+// the global allocation pass.  Local IDs are deliberately not guessed here.
+pub const UNIT_DESCRIPTOR_WORDS: i32 = 8;
+pub const SOURCE_OFFSET: i32 = 0;
+pub const SOURCE_LENGTH: i32 = 1;
+pub const TOKEN_OFFSET: i32 = 2;
+pub const TOKEN_COUNT: i32 = 3;
+pub const SIGNATURE_OFFSET: i32 = 4;
+pub const SIGNATURE_WORDS: i32 = 5;
+pub const BODY_OFFSET: i32 = 6;
+pub const BODY_WORDS: i32 = 7;
+
+fn append(output: [i32], capacity: i32, position: i32, word: i32) -> i32 {
+    if (position <= -1 || position >= capacity) { return -1; }
+    output[position] = word;
+    return position + 1;
+}
+
+fn supported_type(tag: i32, structures: i32) -> bool {
+    if (tag >= backend::syntax::I32 && tag <= backend::syntax::SLICE) { return true; }
+    return tag >= backend::syntax::STRUCT_BASE
+        && tag <= backend::syntax::STRUCT_BASE + structures - 1;
+}
+
+fn spelling(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
+    token_index: i32, count: i32, a: i32, b: i32, c: i32, d: i32, e: i32,
+    f: i32, g: i32, h: i32, i: i32, j: i32, k: i32, l: i32) -> bool {
+    if (token_index <= -1 || token_index >= token_count || count <= 0 || count > 12) { return false; }
+    if (tokens[token_index * 3] != verified::token::IDENTIFIER) { return false; }
+    let start: i32 = tokens[token_index * 3 + 1];
+    let finish: i32 = tokens[token_index * 3 + 2];
+    if (start <= -1 || finish <= start || finish > source_length || finish - start != count) { return false; }
+    if (count >= 1 && source[start] != a) { return false; }
+    if (count >= 2 && source[start + 1] != b) { return false; }
+    if (count >= 3 && source[start + 2] != c) { return false; }
+    if (count >= 4 && source[start + 3] != d) { return false; }
+    if (count >= 5 && source[start + 4] != e) { return false; }
+    if (count >= 6 && source[start + 5] != f) { return false; }
+    if (count >= 7 && source[start + 6] != g) { return false; }
+    if (count >= 8 && source[start + 7] != h) { return false; }
+    if (count >= 9 && source[start + 8] != i) { return false; }
+    if (count >= 10 && source[start + 9] != j) { return false; }
+    if (count >= 11 && source[start + 10] != k) { return false; }
+    if (count >= 12 && source[start + 11] != l) { return false; }
+    return true;
+}
+
+fn service_id(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
+    name: i32) -> i32 {
+    if (spelling(source, source_length, tokens, token_count, name, 5,
+        97, 108, 108, 111, 99, 0, 0, 0, 0, 0, 0, 0)) {
+        return runtime::service::ALLOC;
+    }
+    if (spelling(source, source_length, tokens, token_count, name, 9,
+        111, 112, 101, 110, 95, 114, 101, 97, 100, 0, 0, 0)) {
+        return runtime::service::OPEN_READ;
+    }
+    if (spelling(source, source_length, tokens, token_count, name, 5,
+        99, 108, 111, 115, 101, 0, 0, 0, 0, 0, 0, 0)) {
+        return runtime::service::CLOSE;
+    }
+    if (spelling(source, source_length, tokens, token_count, name, 4,
+        114, 101, 97, 100, 0, 0, 0, 0, 0, 0, 0, 0)) {
+        return runtime::service::READ;
+    }
+    if (spelling(source, source_length, tokens, token_count, name, 12,
+        119, 114, 105, 116, 101, 95, 115, 116, 100, 111, 117, 116)) {
+        return runtime::service::WRITE_STDOUT;
+    }
+    if (spelling(source, source_length, tokens, token_count, name, 10,
+        119, 114, 105, 116, 101, 95, 98, 121, 116, 101, 0, 0)) {
+        return runtime::service::WRITE_BYTE;
+    }
+    if (spelling(source, source_length, tokens, token_count, name, 4,
+        97, 114, 103, 99, 0, 0, 0, 0, 0, 0, 0, 0)) {
+        return runtime::service::ARGC;
+    }
+    if (spelling(source, source_length, tokens, token_count, name, 7,
+        97, 114, 103, 95, 108, 101, 110, 0, 0, 0, 0, 0)) {
+        return runtime::service::ARG_LEN;
+    }
+    if (spelling(source, source_length, tokens, token_count, name, 8,
+        97, 114, 103, 95, 114, 101, 97, 100, 0, 0, 0, 0)) {
+        return runtime::service::ARG_READ;
+    }
+    return -UNSUPPORTED;
+}
+
+fn allocation_slot(allocated: [i32], allocation_words: i32, id: i32,
+    kind: i32) -> i32 {
+    if (allocation_words <= lowering::declarations::HEADER - 1 || allocated[1] <= 0) { return -1; }
+    let rows: i32 = allocated[1];
+    let row: i32 = 0;
+    while (row <= rows - 1) {
+        let slot: i32 = lowering::declarations::HEADER + row * 10;
+        if (allocated[slot + 1] == kind && allocated[slot + 8] == id) {
+            return slot;
+        }
+        row += 1;
+    }
+    return -1;
+}
+
+fn core_allocation_slot(allocated: [i32], allocation_words: i32, id: i32,
+    kind: i32) -> i32 {
+    if (allocation_words <= lowering::declarations::HEADER - 1 || allocated[1] <= 0) { return -1; }
+    let rows: i32 = allocated[1];
+    let row: i32 = 0;
+    while (row <= rows - 1) {
+        let slot: i32 = lowering::declarations::HEADER + row * 10;
+        if (allocated[slot + 1] == kind && allocated[slot + 9] == id) {
+            return slot;
+        }
+        row += 1;
+    }
+    return -1;
+}
+
+fn signature_position(signatures: [i32], signature_words: i32, id: i32,
+    shape: i32) -> i32 {
+    let position: i32 = lowering::signatures::HEADER;
+    while (position <= signature_words - 1) {
+        if (position > signature_words - lowering::signatures::RECORD) { return -1; }
+        let payload: i32 = signatures[position + 5];
+        if (payload <= -1 || payload > signature_words - position - lowering::signatures::RECORD) { return -1; }
+        if (signatures[position] == id && signatures[position + 2] == shape) { return position; }
+        position += lowering::signatures::RECORD + payload;
+    }
+    return -1;
+}
+
+fn valid_parameters(signatures: [i32], position: i32, signature_words: i32,
+    structures: i32) -> bool {
+    let parameters: i32 = signatures[position + 3];
+    let payload: i32 = signatures[position + 5];
+    if (parameters <= -1 || parameters > (signature_words - position - lowering::signatures::RECORD) / 2
+        || payload != parameters * 2
+        || payload > signature_words - position - lowering::signatures::RECORD) { return false; }
+    let index: i32 = 0;
+    while (index <= parameters - 1) {
+        let id: i32 = signatures[position + lowering::signatures::RECORD + index * 2];
+        let tag: i32 = signatures[position + lowering::signatures::RECORD + index * 2 + 1];
+        if (id <= -1 || !supported_type(tag, structures)) { return false; }
+        let earlier: i32 = 0;
+        while (earlier <= index - 1) {
+            if (signatures[position + lowering::signatures::RECORD + earlier * 2] == id) { return false; }
+            earlier += 1;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+fn valid_signature_table(signatures: [i32], signature_words: i32,
+    allocated: [i32], allocation_words: i32, structures: i32,
+    constants: i32, functions: i32, externs: i32) -> bool {
+    if (signature_words < lowering::signatures::HEADER || signatures[0] != lowering::signatures::VERSION
+        || signatures[2] != signature_words || signatures[1] != structures + constants + functions + externs
+        || signatures[3] != structures || signatures[4] != functions
+        || signatures[5] != externs || signatures[6] != constants || signatures[7] != 0) {
+        return false;
+    }
+    let position: i32 = lowering::signatures::HEADER;
+    let records: i32 = 0;
+    while (position <= signature_words - 1) {
+        if (position > signature_words - lowering::signatures::RECORD) { return false; }
+        let id: i32 = signatures[position];
+        let kind: i32 = signatures[position + 1];
+        let shape: i32 = signatures[position + 2];
+        let arity: i32 = signatures[position + 3];
+        let result: i32 = signatures[position + 4];
+        let payload: i32 = signatures[position + 5];
+        if (id <= -1 || payload <= -1 || payload > signature_words - position - lowering::signatures::RECORD) { return false; }
+        let previous: i32 = lowering::signatures::HEADER;
+        while (previous <= position - 1) {
+            if (signatures[previous] == id) { return false; }
+            previous += lowering::signatures::RECORD + signatures[previous + 5];
+        }
+        if (shape == lowering::signatures::STRUCTURE_SHAPE) {
+            if (kind != lowering::declarations::STRUCTURE || arity <= -1 || result != -1 || payload != arity
+                || allocation_slot(allocated, allocation_words, id, lowering::declarations::STRUCTURE) <= -1) { return false; }
+            let field: i32 = 0;
+            while (field <= arity - 1) {
+                if (!supported_type(signatures[position + lowering::signatures::RECORD + field], structures)) { return false; }
+                field += 1;
+            }
+        } else {
+            if (shape == lowering::signatures::CONSTANT_SHAPE) {
+                if (kind != lowering::declarations::CONSTANT || arity != 0 || result <= 0
+                    || !supported_type(result, structures)
+                    || allocation_slot(allocated, allocation_words, id, lowering::declarations::CONSTANT) <= -1) { return false; }
+                if (result == backend::syntax::STRING) {
+                    if (payload <= 0 || signatures[position + 6] != payload - 1) { return false; }
+                    let byte: i32 = 0;
+                    while (byte <= payload - 2) {
+                        let value: i32 = signatures[position + lowering::signatures::RECORD + 1 + byte];
+                        if (value <= -1 || value > 255) { return false; }
+                        byte += 1;
+                    }
+                } else {
+                    if ((result == backend::syntax::I32 || result == backend::syntax::BOOL
+                        || result == backend::syntax::USIZE || result == backend::syntax::POINTER)
+                        && payload == 2) {
+                        if (result == backend::syntax::BOOL
+                            && signatures[position + lowering::signatures::RECORD] != 0
+                            && signatures[position + lowering::signatures::RECORD] != 1) { return false; }
+                        if (result == backend::syntax::POINTER
+                            && (signatures[position + lowering::signatures::RECORD] != 0
+                                || signatures[position + lowering::signatures::RECORD + 1] != 0)) { return false; }
+                        if (result != backend::syntax::USIZE && result != backend::syntax::POINTER
+                            && signatures[position + lowering::signatures::RECORD + 1] != 0) { return false; }
+                    } else { return false; }
+                }
+            } else {
+                if (shape != lowering::signatures::INTERNAL_SHAPE && shape != lowering::signatures::EXTERNAL_SHAPE) { return false; }
+                if ((shape == lowering::signatures::INTERNAL_SHAPE && kind != lowering::declarations::FUNCTION)
+                    || (shape == lowering::signatures::EXTERNAL_SHAPE && kind != lowering::declarations::EXTERNAL)
+                    || result <= 0 || !supported_type(result, structures)
+                    || !valid_parameters(signatures, position, signature_words, structures)) { return false; }
+                if (core_allocation_slot(allocated, allocation_words, id, kind) <= -1) { return false; }
+            }
+        }
+        records += 1;
+        position += lowering::signatures::RECORD + payload;
+    }
+    return position == signature_words && records == signatures[1];
+}
+
+fn valid_bodies(bodies_buffer: [i32], body_words: i32, signatures: [i32],
+    signature_words: i32, allocated: [i32], allocation_words: i32,
+    structures: i32, functions: i32) -> bool {
+    if (body_words < lowering::bodies::HEADER || bodies_buffer[0] != lowering::bodies::VERSION
+        || bodies_buffer[1] != lowering::bodies::POINTER_BITS || bodies_buffer[2] != functions
+        || bodies_buffer[3] != body_words) { return false; }
+    let position: i32 = lowering::bodies::HEADER;
+    let count: i32 = 0;
+    while (position <= body_words - 1) {
+        let record_count: i32 = bodies_buffer[position];
+        if (record_count <= 5 || record_count > body_words - position - 1) { return false; }
+        let first: i32 = position + 1;
+        let id: i32 = bodies_buffer[first + 2];
+        let parameters: i32 = bodies_buffer[first + 4];
+        let body_length: i32 = bodies_buffer[first + 5];
+        if (bodies_buffer[first] != 1 || bodies_buffer[first + 1] != 64 || id <= -1
+            || parameters <= -1 || parameters > (record_count - 6) / 2 || body_length <= 0 || body_length != record_count - 6 - parameters * 2
+            || record_count != 6 + parameters * 2 + body_length
+            || core_allocation_slot(allocated, allocation_words, id, lowering::declarations::FUNCTION) <= -1
+            || signature_position(signatures, signature_words, id, lowering::signatures::INTERNAL_SHAPE) <= -1) { return false; }
+        let signature: i32 = signature_position(signatures, signature_words, id, lowering::signatures::INTERNAL_SHAPE);
+        if (signatures[signature + 3] != parameters || signatures[signature + 4] != bodies_buffer[first + 3]) { return false; }
+        let prior: i32 = lowering::bodies::HEADER;
+        while (prior <= position - 1) {
+            if (bodies_buffer[prior + 3] == id) { return false; }
+            prior += 1 + bodies_buffer[prior];
+        }
+        let parameter: i32 = 0;
+        while (parameter <= parameters - 1) {
+            let parameter_id: i32 = bodies_buffer[first + 6 + parameter * 2];
+            let parameter_type: i32 = bodies_buffer[first + 7 + parameter * 2];
+            if (parameter_id <= -1 || !supported_type(parameter_type, structures)) { return false; }
+            if (parameter_id != signatures[signature + lowering::signatures::RECORD + parameter * 2]
+                || parameter_type != signatures[signature + lowering::signatures::RECORD + parameter * 2 + 1]) { return false; }
+            let earlier: i32 = 0;
+            while (earlier <= parameter - 1) {
+                if (bodies_buffer[first + 6 + earlier * 2] == parameter_id) { return false; }
+                earlier += 1;
+            }
+            parameter += 1;
+        }
+        count += 1;
+        position += 1 + record_count;
+    }
+    return position == body_words && count == functions;
+}
+
+fn select_main(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
+    declaration_table: [i32], allocated: [i32], allocation_words: i32,
+    signatures: [i32], signature_words: i32) -> i32 {
+    let selected: i32 = -1;
+    let position: i32 = lowering::signatures::HEADER;
+    while (position <= signature_words - 1) {
+        if (signatures[position + 2] == lowering::signatures::INTERNAL_SHAPE
+            && signatures[position + 3] == 0) {
+            let id: i32 = signatures[position];
+            let slot: i32 = core_allocation_slot(allocated, allocation_words, id, lowering::declarations::FUNCTION);
+            if (slot <= -1) { return -1; }
+            let row: i32 = (slot - lowering::declarations::HEADER) / 10;
+            let name: i32 = declaration_table[lowering::declarations::HEADER + row * lowering::declarations::ROW + 5];
+            if (spelling(source, source_length, tokens, token_count, name, 4,
+                109, 97, 105, 110, 0, 0, 0, 0, 0, 0, 0, 0)) {
+                if (selected >= 0) { return -2; }
+                selected = id;
+            }
+        }
+        position += lowering::signatures::RECORD + signatures[position + 5];
+    }
+    return selected;
+}
+
+// Assemble and validate the complete input consumed by backend::program.
+// Return the exact word count; output is partial and must be discarded on any
+// negative result. Unsupported aliases, malformed records, non-service externs,
+// and missing or ambiguous zero-argument `main` all fail closed.
+pub fn lower(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
+    declaration_table: [i32], declaration_words: i32, allocated: [i32],
+    allocation_words: i32, signatures: [i32], signature_words: i32,
+    bodies_buffer: [i32], body_words: i32, output: [i32], capacity: i32) -> i32 {
+    if (source_length <= -1 || token_count <= -1 || declaration_words <= lowering::declarations::HEADER - 1
+        || allocation_words <= lowering::declarations::HEADER - 1 || signature_words <= lowering::signatures::HEADER - 1
+        || body_words <= lowering::bodies::HEADER - 1 || capacity <= HEADER - 1) { return -INVALID; }
+    let rows: i32 = declaration_table[0];
+    if (rows <= 0 || rows > (declaration_words - lowering::declarations::HEADER) / lowering::declarations::ROW
+        || declaration_words != lowering::declarations::HEADER + rows * lowering::declarations::ROW
+        || allocated[0] != 1 || allocated[1] != rows
+        || allocation_words != lowering::declarations::HEADER + rows * 10
+        || allocated[3] != 0) { return -INVALID; }
+    let structures: i32 = allocated[2];
+    let constants: i32 = allocated[4];
+    let functions: i32 = allocated[5];
+    let externs: i32 = allocated[6];
+    if (structures <= -1 || constants <= -1 || functions <= 0 || externs <= -1
+        || allocated[7] < functions + externs
+        || !valid_signature_table(signatures, signature_words, allocated, allocation_words,
+            structures, constants, functions, externs)
+        || !valid_bodies(bodies_buffer, body_words, signatures, signature_words,
+            allocated, allocation_words, structures, functions)) { return -INVALID; }
+
+    let entry: i32 = select_main(source, source_length, tokens, token_count,
+        declaration_table, allocated, allocation_words, signatures, signature_words);
+    if (entry <= -1) { return entry; }
+    output[0] = VERSION;
+    output[1] = POINTER_BITS;
+    output[2] = entry;
+    output[3] = structures;
+    output[4] = constants;
+    output[5] = functions + externs;
+    let written: i32 = HEADER;
+    let position: i32 = lowering::signatures::HEADER;
+    while (position <= signature_words - 1) {
+        if (signatures[position + 2] == lowering::signatures::STRUCTURE_SHAPE) {
+            let next: i32 = append(output, capacity, written, signatures[position]);
+            if (next <= -1) { return -INVALID; }
+            written = append(output, capacity, next, signatures[position + 3]);
+            if (written <= -1) { return -INVALID; }
+            let field: i32 = 0;
+            while (field <= signatures[position + 3] - 1) {
+                written = append(output, capacity, written,
+                    signatures[position + lowering::signatures::RECORD + field]);
+                if (written <= -1) { return -INVALID; }
+                field += 1;
+            }
+        }
+        position += lowering::signatures::RECORD + signatures[position + 5];
+    }
+    position = lowering::signatures::HEADER;
+    while (position <= signature_words - 1) {
+        if (signatures[position + 2] == lowering::signatures::CONSTANT_SHAPE) {
+            let result: i32 = signatures[position + 4];
+            written = append(output, capacity, written, signatures[position]);
+            written = append(output, capacity, written, result);
+            if (written <= -1) { return -INVALID; }
+            if (result == backend::syntax::STRING) {
+                let count: i32 = signatures[position + 6];
+                written = append(output, capacity, written, count);
+                let byte: i32 = 0;
+                    while (byte <= count - 1) {
+                    written = append(output, capacity, written,
+                        signatures[position + lowering::signatures::RECORD + 1 + byte]);
+                    if (written <= -1) { return -INVALID; }
+                    byte += 1;
+                }
+            } else {
+                written = append(output, capacity, written, signatures[position + lowering::signatures::RECORD]);
+                written = append(output, capacity, written, signatures[position + lowering::signatures::RECORD + 1]);
+            }
+            if (written <= -1) { return -INVALID; }
+        }
+        position += lowering::signatures::RECORD + signatures[position + 5];
+    }
+    position = lowering::bodies::HEADER;
+    while (position <= body_words - 1) {
+        let record_count: i32 = bodies_buffer[position];
+        let index: i32 = 0;
+        while (index <= record_count) {
+            written = append(output, capacity, written, bodies_buffer[position + index]);
+            if (written <= -1) { return -INVALID; }
+            index += 1;
+        }
+        position += 1 + record_count;
+    }
+    position = lowering::signatures::HEADER;
+    while (position <= signature_words - 1) {
+        if (signatures[position + 2] == lowering::signatures::EXTERNAL_SHAPE) {
+            let id: i32 = signatures[position];
+            let slot: i32 = core_allocation_slot(allocated, allocation_words, id, lowering::declarations::EXTERNAL);
+            if (slot <= -1) { return -INVALID; }
+            let row: i32 = (slot - lowering::declarations::HEADER) / 10;
+            let name: i32 = declaration_table[lowering::declarations::HEADER + row * lowering::declarations::ROW + 5];
+            let service: i32 = service_id(source, source_length, tokens, token_count, name);
+            if (service <= -1) { return -UNSUPPORTED; }
+            let parameters: i32 = signatures[position + 3];
+            if (parameters > (capacity - written - 8) / 2) { return -INVALID; }
+            let count: i32 = 7 + parameters * 2;
+            written = append(output, capacity, written, count);
+            written = append(output, capacity, written, 2);
+            written = append(output, capacity, written, POINTER_BITS);
+            written = append(output, capacity, written, id);
+            written = append(output, capacity, written, signatures[position + 4]);
+            written = append(output, capacity, written, parameters);
+            written = append(output, capacity, written, 1);
+            let parameter: i32 = 0;
+            while (parameter <= parameters - 1) {
+                written = append(output, capacity, written,
+                    signatures[position + lowering::signatures::RECORD + parameter * 2]);
+                written = append(output, capacity, written,
+                    signatures[position + lowering::signatures::RECORD + parameter * 2 + 1]);
+                if (written <= -1) { return -INVALID; }
+                parameter += 1;
+            }
+            written = append(output, capacity, written, service);
+            if (written <= -1 || !runtime::service::valid(output, written - count, count)) { return -INVALID; }
+        }
+        position += lowering::signatures::RECORD + signatures[position + 5];
+    }
+    output[2] = entry;
+    return written;
+}
+
+fn valid_range(offset: i32, words: i32, length: i32) -> bool {
+    if (offset <= -1 || words <= -1 || length <= -1 || offset > length
+        || words > length - offset) { return false; }
+    return true;
+}
+
+fn spelling_at(source: [i32], source_length: i32, source_offset: i32,
+    tokens: [i32], token_count: i32, token_offset: i32, token_index: i32,
+    count: i32, a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32,
+    h: i32, i: i32, j: i32, k: i32, l: i32) -> bool {
+    if (token_index <= -1 || token_index >= token_count || count <= 0 || count > 12) {
+        return false;
+    }
+    let token: i32 = token_offset + token_index * 3;
+    if (tokens[token] != verified::token::IDENTIFIER) { return false; }
+    let start: i32 = tokens[token + 1];
+    let finish: i32 = tokens[token + 2];
+    if (start <= -1 || finish <= start || finish > source_length
+        || finish - start != count) { return false; }
+    let absolute: i32 = source_offset + start;
+    if (count >= 1 && source[absolute] != a) { return false; }
+    if (count >= 2 && source[absolute + 1] != b) { return false; }
+    if (count >= 3 && source[absolute + 2] != c) { return false; }
+    if (count >= 4 && source[absolute + 3] != d) { return false; }
+    if (count >= 5 && source[absolute + 4] != e) { return false; }
+    if (count >= 6 && source[absolute + 5] != f) { return false; }
+    if (count >= 7 && source[absolute + 6] != g) { return false; }
+    if (count >= 8 && source[absolute + 7] != h) { return false; }
+    if (count >= 9 && source[absolute + 8] != i) { return false; }
+    if (count >= 10 && source[absolute + 9] != j) { return false; }
+    if (count >= 11 && source[absolute + 10] != k) { return false; }
+    if (count >= 12 && source[absolute + 11] != l) { return false; }
+    return true;
+}
+
+fn unit_allocation_slot(allocated: [i32], allocation_words: i32,
+    unit: i32, id: i32, kind: i32) -> i32 {
+    if (allocation_words <= lowering::declarations::HEADER - 1
+        || allocated[1] <= 0 || unit <= -1 || id <= -1) { return -1; }
+    let rows: i32 = allocated[1];
+    let row: i32 = 0;
+    while (row <= rows - 1) {
+        let slot: i32 = lowering::declarations::HEADER + row * 10;
+        if (allocated[slot] == unit && allocated[slot + 1] == kind) {
+            if ((kind == lowering::declarations::STRUCTURE
+                    || kind == lowering::declarations::CONSTANT)
+                && allocated[slot + 8] == id) { return slot; }
+            if ((kind == lowering::declarations::FUNCTION
+                    || kind == lowering::declarations::EXTERNAL)
+                && allocated[slot + 9] == id) { return slot; }
+        }
+        row += 1;
+    }
+    return -1;
+}
+
+fn unit_count_kind(allocated: [i32], allocation_words: i32,
+    unit: i32, kind: i32) -> i32 {
+    if (allocation_words <= lowering::declarations::HEADER - 1
+        || allocated[1] <= 0) { return -1; }
+    let count: i32 = 0;
+    let row: i32 = 0;
+    while (row <= allocated[1] - 1) {
+        let slot: i32 = lowering::declarations::HEADER + row * 10;
+        if (allocated[slot] == unit && allocated[slot + 1] == kind) { count += 1; }
+        row += 1;
+    }
+    return count;
+}
+
+fn unit_signature_position(signatures: [i32], begin: i32, finish: i32,
+    id: i32, kind: i32, shape: i32) -> i32 {
+    let position: i32 = begin;
+    while (position <= finish - 1) {
+        if (position > finish - lowering::signatures::RECORD) { return -1; }
+        let payload: i32 = signatures[position + 5];
+        if (payload <= -1 || payload > finish - position - lowering::signatures::RECORD) {
+            return -1;
+        }
+        if (signatures[position] == id && signatures[position + 1] == kind
+            && signatures[position + 2] == shape) { return position; }
+        position += lowering::signatures::RECORD + payload;
+    }
+    return -1;
+}
+
+fn unit_body_position(bodies_buffer: [i32], begin: i32, finish: i32,
+    id: i32) -> i32 {
+    let position: i32 = begin + lowering::bodies::HEADER;
+    while (position <= finish - 1) {
+        let record_count: i32 = bodies_buffer[position];
+        if (record_count <= 5 || record_count > finish - position - 1) { return -1; }
+        if (bodies_buffer[position + 3] == id) { return position; }
+        position += 1 + record_count;
+    }
+    return -1;
+}
+
+fn valid_unit_parameters(signatures: [i32], position: i32, finish: i32,
+    structures: i32, token_count: i32) -> bool {
+    let parameters: i32 = signatures[position + 3];
+    let payload: i32 = signatures[position + 5];
+    if (parameters <= -1 || parameters > (finish - position - lowering::signatures::RECORD) / 2
+        || payload != parameters * 2
+        || payload > finish - position - lowering::signatures::RECORD) { return false; }
+    let index: i32 = 0;
+    while (index <= parameters - 1) {
+        let id: i32 = signatures[position + lowering::signatures::RECORD + index * 2];
+        let tag: i32 = signatures[position + lowering::signatures::RECORD + index * 2 + 1];
+        if (id <= -1 || id >= token_count || !supported_type(tag, structures)) { return false; }
+        let earlier: i32 = 0;
+        while (earlier <= index - 1) {
+            if (signatures[position + lowering::signatures::RECORD + earlier * 2] == id) {
+                return false;
+            }
+            earlier += 1;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+fn valid_unit_signatures(signatures: [i32], begin: i32, words: i32,
+    unit: i32, allocated: [i32], allocation_words: i32, structures: i32,
+    token_count: i32) -> bool {
+    if (words <= lowering::signatures::HEADER - 1 || signatures[begin] != lowering::signatures::VERSION
+        || signatures[begin + 2] != words) { return false; }
+    let structures_in_unit: i32 = unit_count_kind(allocated, allocation_words, unit,
+        lowering::declarations::STRUCTURE);
+    let constants_in_unit: i32 = unit_count_kind(allocated, allocation_words, unit,
+        lowering::declarations::CONSTANT);
+    let functions_in_unit: i32 = unit_count_kind(allocated, allocation_words, unit,
+        lowering::declarations::FUNCTION);
+    let externs_in_unit: i32 = unit_count_kind(allocated, allocation_words, unit,
+        lowering::declarations::EXTERNAL);
+    if (structures_in_unit <= -1 || constants_in_unit <= -1 || functions_in_unit <= -1
+        || externs_in_unit <= -1 || signatures[begin + 1]
+            != structures_in_unit + constants_in_unit + functions_in_unit + externs_in_unit
+        || signatures[begin + 3] != structures_in_unit || signatures[begin + 4] != functions_in_unit
+        || signatures[begin + 5] != externs_in_unit || signatures[begin + 6] != constants_in_unit
+        || signatures[begin + 7] != 0) { return false; }
+    let finish: i32 = begin + words;
+    let position: i32 = begin + lowering::signatures::HEADER;
+    let records: i32 = 0;
+    while (position <= finish - 1) {
+        if (position > finish - lowering::signatures::RECORD) { return false; }
+        let id: i32 = signatures[position];
+        let kind: i32 = signatures[position + 1];
+        let shape: i32 = signatures[position + 2];
+        let arity: i32 = signatures[position + 3];
+        let result_type: i32 = signatures[position + 4];
+        let payload: i32 = signatures[position + 5];
+        if (id <= -1 || payload <= -1
+            || payload > finish - position - lowering::signatures::RECORD) { return false; }
+        let previous: i32 = begin + lowering::signatures::HEADER;
+        while (previous <= position - 1) {
+            if (signatures[previous] == id) { return false; }
+            previous += lowering::signatures::RECORD + signatures[previous + 5];
+        }
+        if (shape == lowering::signatures::STRUCTURE_SHAPE) {
+            if (kind != lowering::declarations::STRUCTURE || arity <= -1 || result_type != -1
+                || payload != arity || unit_allocation_slot(allocated, allocation_words,
+                    unit, id, lowering::declarations::STRUCTURE) <= -1) { return false; }
+            let field: i32 = 0;
+            while (field <= arity - 1) {
+                if (!supported_type(signatures[position + lowering::signatures::RECORD + field],
+                    structures)) { return false; }
+                field += 1;
+            }
+        } else {
+            if (shape == lowering::signatures::CONSTANT_SHAPE) {
+                if (kind != lowering::declarations::CONSTANT || arity != 0 || result_type <= 0
+                    || !supported_type(result_type, structures)
+                    || unit_allocation_slot(allocated, allocation_words, unit, id,
+                        lowering::declarations::CONSTANT) <= -1) { return false; }
+                if (result_type == backend::syntax::STRING) {
+                    if (payload <= 0 || signatures[position + 6] != payload - 1) { return false; }
+                    let byte: i32 = 0;
+                    while (byte <= payload - 2) {
+                        let value: i32 = signatures[position + lowering::signatures::RECORD + 1 + byte];
+                        if (value <= -1 || value > 255) { return false; }
+                        byte += 1;
+                    }
+                } else {
+                    if ((result_type == backend::syntax::I32 || result_type == backend::syntax::BOOL
+                        || result_type == backend::syntax::USIZE || result_type == backend::syntax::POINTER)
+                        && payload == 2) {
+                        if (result_type == backend::syntax::BOOL
+                            && signatures[position + lowering::signatures::RECORD] != 0
+                            && signatures[position + lowering::signatures::RECORD] != 1) { return false; }
+                        if (result_type == backend::syntax::POINTER
+                            && (signatures[position + lowering::signatures::RECORD] != 0
+                                || signatures[position + lowering::signatures::RECORD + 1] != 0)) {
+                            return false;
+                        }
+                        if (result_type != backend::syntax::USIZE && result_type != backend::syntax::POINTER
+                            && signatures[position + lowering::signatures::RECORD + 1] != 0) {
+                            return false;
+                        }
+                    } else { return false; }
+                }
+            } else {
+                if (shape != lowering::signatures::INTERNAL_SHAPE
+                    && shape != lowering::signatures::EXTERNAL_SHAPE) { return false; }
+                let expected_kind: i32 = lowering::declarations::FUNCTION;
+                if (shape == lowering::signatures::EXTERNAL_SHAPE) {
+                    expected_kind = lowering::declarations::EXTERNAL;
+                }
+                if (kind != expected_kind || result_type <= 0 || !supported_type(result_type, structures)
+                    || !valid_unit_parameters(signatures, position, finish, structures, token_count)
+                    || unit_allocation_slot(allocated, allocation_words, unit, id, kind) <= -1) {
+                    return false;
+                }
+            }
+        }
+        records += 1;
+        position += lowering::signatures::RECORD + payload;
+    }
+    return position == finish && records == signatures[begin + 1];
+}
+
+fn valid_unit_bodies(bodies_buffer: [i32], begin: i32, words: i32,
+    unit: i32, token_count: i32, signatures: [i32], signature_begin: i32,
+    signature_words: i32, allocated: [i32], allocation_words: i32,
+    structures: i32, functions: i32) -> bool {
+    if (words <= lowering::bodies::HEADER - 1 || bodies_buffer[begin] != lowering::bodies::VERSION
+        || bodies_buffer[begin + 1] != lowering::bodies::POINTER_BITS
+        || bodies_buffer[begin + 2] != functions || bodies_buffer[begin + 3] != words) {
+        return false;
+    }
+    let finish: i32 = begin + words;
+    let position: i32 = begin + lowering::bodies::HEADER;
+    let count: i32 = 0;
+    while (position <= finish - 1) {
+        let record_count: i32 = bodies_buffer[position];
+        if (record_count <= 5 || record_count > finish - position - 1) { return false; }
+        let first: i32 = position + 1;
+        let id: i32 = bodies_buffer[first + 2];
+        let parameters: i32 = bodies_buffer[first + 4];
+        let body_length: i32 = bodies_buffer[first + 5];
+        if (bodies_buffer[first] != 1 || bodies_buffer[first + 1] != 64 || id <= -1
+            || parameters <= -1 || parameters > (record_count - 6) / 2
+            || body_length <= 0 || body_length != record_count - 6 - parameters * 2
+            || record_count != 6 + parameters * 2 + body_length
+            || unit_allocation_slot(allocated, allocation_words, unit, id,
+                lowering::declarations::FUNCTION) <= -1) { return false; }
+        let signature: i32 = unit_signature_position(signatures,
+            signature_begin + lowering::signatures::HEADER,
+            signature_begin + signature_words, id,
+            lowering::declarations::FUNCTION, lowering::signatures::INTERNAL_SHAPE);
+        if (signature <= -1 || signatures[signature + 3] != parameters
+            || signatures[signature + 4] != bodies_buffer[first + 3]) { return false; }
+        let prior: i32 = begin + lowering::bodies::HEADER;
+        while (prior <= position - 1) {
+            if (bodies_buffer[prior + 3] == id) { return false; }
+            prior += 1 + bodies_buffer[prior];
+        }
+        let parameter: i32 = 0;
+        while (parameter <= parameters - 1) {
+            let parameter_id: i32 = bodies_buffer[first + 6 + parameter * 2];
+            let parameter_type: i32 = bodies_buffer[first + 7 + parameter * 2];
+            if (parameter_id <= -1 || parameter_id >= token_count
+                || !supported_type(parameter_type, structures)
+                || parameter_id != signatures[signature + lowering::signatures::RECORD + parameter * 2]
+                || parameter_type != signatures[signature + lowering::signatures::RECORD + parameter * 2 + 1]) {
+                return false;
+            }
+            let earlier: i32 = 0;
+            while (earlier <= parameter - 1) {
+                if (bodies_buffer[first + 6 + earlier * 2] == parameter_id) { return false; }
+                earlier += 1;
+            }
+            parameter += 1;
+        }
+        count += 1;
+        position += 1 + record_count;
+    }
+    return position == finish && count == functions;
+}
+
+fn append_unit_body(body_catalog: [i32], body_begin: i32, body_finish: i32,
+    id: i32, output: [i32], capacity: i32, position: i32) -> i32 {
+    let body: i32 = unit_body_position(body_catalog, body_begin, body_finish, id);
+    if (body <= -1) { return -INVALID; }
+    let record_count: i32 = body_catalog[body];
+    let index: i32 = 0;
+    let written: i32 = position;
+    while (index <= record_count) {
+        written = append(output, capacity, written, body_catalog[body + index]);
+        if (written <= -1) { return -INVALID; }
+        index += 1;
+    }
+    return written;
+}
+
+fn valid_unit_descriptor(descriptors: [i32], descriptor_length: i32, unit: i32,
+    source_length: i32, token_length: i32, signature_length: i32,
+    body_length: i32) -> bool {
+    if (unit <= -1 || descriptor_length <= -1
+        || descriptor_length <= (unit + 1) * UNIT_DESCRIPTOR_WORDS - 1) { return false; }
+    let descriptor: i32 = unit * UNIT_DESCRIPTOR_WORDS;
+    let source_offset: i32 = descriptors[descriptor + SOURCE_OFFSET];
+    let local_source_length: i32 = descriptors[descriptor + SOURCE_LENGTH];
+    let token_offset: i32 = descriptors[descriptor + TOKEN_OFFSET];
+    let token_count: i32 = descriptors[descriptor + TOKEN_COUNT];
+    let signature_offset: i32 = descriptors[descriptor + SIGNATURE_OFFSET];
+    let signature_words: i32 = descriptors[descriptor + SIGNATURE_WORDS];
+    let body_offset: i32 = descriptors[descriptor + BODY_OFFSET];
+    let body_words: i32 = descriptors[descriptor + BODY_WORDS];
+    if (token_count <= -1 || token_count > 715827882
+        || local_source_length <= -1) { return false; }
+    if (!valid_range(source_offset, local_source_length, source_length)
+        || !valid_range(token_offset, token_count * 3, token_length)
+        || !valid_range(signature_offset, signature_words, signature_length)
+        || !valid_range(body_offset, body_words, body_length)
+        || signature_words <= lowering::signatures::HEADER - 1
+        || body_words <= lowering::bodies::HEADER - 1) { return false; }
+    return true;
+}
+
+fn service_id_at(source: [i32], source_length: i32, source_offset: i32,
+    tokens: [i32], token_count: i32, token_offset: i32, name: i32) -> i32 {
+    if (spelling_at(source, source_length, source_offset, tokens, token_count,
+        token_offset, name, 5, 97, 108, 108, 111, 99, 0, 0, 0, 0, 0, 0, 0)) {
+        return runtime::service::ALLOC;
+    }
+    if (spelling_at(source, source_length, source_offset, tokens, token_count,
+        token_offset, name, 9, 111, 112, 101, 110, 95, 114, 101, 97, 100, 0, 0, 0)) {
+        return runtime::service::OPEN_READ;
+    }
+    if (spelling_at(source, source_length, source_offset, tokens, token_count,
+        token_offset, name, 5, 99, 108, 111, 115, 101, 0, 0, 0, 0, 0, 0, 0)) {
+        return runtime::service::CLOSE;
+    }
+    if (spelling_at(source, source_length, source_offset, tokens, token_count,
+        token_offset, name, 4, 114, 101, 97, 100, 0, 0, 0, 0, 0, 0, 0, 0)) {
+        return runtime::service::READ;
+    }
+    if (spelling_at(source, source_length, source_offset, tokens, token_count,
+        token_offset, name, 12, 119, 114, 105, 116, 101, 95, 115, 116, 100, 111, 117, 116)) {
+        return runtime::service::WRITE_STDOUT;
+    }
+    if (spelling_at(source, source_length, source_offset, tokens, token_count,
+        token_offset, name, 10, 119, 114, 105, 116, 101, 95, 98, 121, 116, 101, 0, 0)) {
+        return runtime::service::WRITE_BYTE;
+    }
+    if (spelling_at(source, source_length, source_offset, tokens, token_count,
+        token_offset, name, 4, 97, 114, 103, 99, 0, 0, 0, 0, 0, 0, 0, 0)) {
+        return runtime::service::ARGC;
+    }
+    if (spelling_at(source, source_length, source_offset, tokens, token_count,
+        token_offset, name, 7, 97, 114, 103, 95, 108, 101, 110, 0, 0, 0, 0, 0)) {
+        return runtime::service::ARG_LEN;
+    }
+    if (spelling_at(source, source_length, source_offset, tokens, token_count,
+        token_offset, name, 8, 97, 114, 103, 95, 114, 101, 97, 100, 0, 0, 0, 0)) {
+        return runtime::service::ARG_READ;
+    }
+    return -UNSUPPORTED;
+}
+
+// Assemble one backend program from globally allocated declarations and one
+// independently lowered signature/body table per source unit.  The per-unit
+// tables may be stored in arbitrary catalog locations, but their records must
+// carry the canonical IDs from `lowering::allocation::allocate`.  Emission
+// scans the global allocation rows for each backend category, so source order
+// and declaration order are deterministic even when catalog slices are not.
+// Return the exact backend transport word count; output is partial on error.
+pub fn lower_multi(source_catalog: [i32], source_catalog_length: i32,
+    token_catalog: [i32], token_catalog_length: i32, descriptors: [i32],
+    descriptor_length: i32, unit_count: i32, declaration_table: [i32],
+    declaration_words: i32, allocated: [i32], allocation_words: i32,
+    signature_catalog: [i32], signature_catalog_length: i32,
+    body_catalog: [i32], body_catalog_length: i32, output: [i32],
+    capacity: i32) -> i32 {
+    if (source_catalog_length <= -1 || token_catalog_length <= -1
+        || descriptor_length <= -1 || unit_count <= 0
+        || unit_count > descriptor_length / UNIT_DESCRIPTOR_WORDS
+        || descriptor_length != unit_count * UNIT_DESCRIPTOR_WORDS
+        || declaration_words <= lowering::declarations::HEADER - 1
+        || allocation_words <= lowering::declarations::HEADER - 1
+        || signature_catalog_length <= -1 || body_catalog_length <= -1
+        || capacity <= HEADER - 1) { return -INVALID; }
+    let rows: i32 = declaration_table[0];
+    if (rows <= 0 || rows > (declaration_words - lowering::declarations::HEADER)
+        / lowering::declarations::ROW
+        || rows > (2147483647 - lowering::declarations::HEADER) / 10
+        || declaration_words != lowering::declarations::HEADER
+            + rows * lowering::declarations::ROW
+        || allocated[0] != unit_count || allocated[1] != rows
+        || allocation_words != lowering::declarations::HEADER + rows * 10
+        || allocated[3] != 0 || allocated[2] <= -1 || allocated[4] <= -1
+        || allocated[5] <= 0 || allocated[6] <= -1
+        || allocated[2] > rows || allocated[4] > rows
+        || allocated[5] > rows || allocated[6] > rows) { return -INVALID; }
+
+    // The declaration and allocation rows are the shared source of truth.
+    // Check their copied source-origin fields and require descriptor order to
+    // agree with the allocator's unit order before touching any output.
+    let row: i32 = 0;
+    let previous_unit: i32 = -1;
+    while (row <= rows - 1) {
+        let declaration_slot: i32 = lowering::declarations::HEADER
+            + row * lowering::declarations::ROW;
+        let allocation_slot: i32 = lowering::declarations::HEADER + row * 10;
+        let field: i32 = 0;
+        while (field <= lowering::declarations::ROW - 1) {
+            if (declaration_table[declaration_slot + field]
+                != allocated[allocation_slot + field]) { return -INVALID; }
+            field += 1;
+        }
+        let unit: i32 = allocated[allocation_slot];
+        let kind: i32 = allocated[allocation_slot + 1];
+        if (unit <= -1 || unit >= unit_count || unit <= previous_unit - 1
+            || (unit != previous_unit && unit != previous_unit + 1)
+            || kind <= 0 || kind > lowering::declarations::IMPORT
+            || kind == lowering::declarations::ALIAS) { return -INVALID; }
+        previous_unit = unit;
+        row += 1;
+    }
+
+    let unit: i32 = 0;
+    while (unit <= unit_count - 1) {
+        if (!valid_unit_descriptor(descriptors, descriptor_length, unit,
+            source_catalog_length, token_catalog_length, signature_catalog_length,
+            body_catalog_length)) { return -INVALID; }
+        let descriptor: i32 = unit * UNIT_DESCRIPTOR_WORDS;
+        let signature_begin: i32 = descriptors[descriptor + SIGNATURE_OFFSET];
+        let signature_words: i32 = descriptors[descriptor + SIGNATURE_WORDS];
+        let body_begin: i32 = descriptors[descriptor + BODY_OFFSET];
+        let body_words: i32 = descriptors[descriptor + BODY_WORDS];
+        let token_count: i32 = descriptors[descriptor + TOKEN_COUNT];
+        if (!valid_unit_signatures(signature_catalog, signature_begin, signature_words,
+            unit, allocated, allocation_words, allocated[2], token_count)
+            || !valid_unit_bodies(body_catalog, body_begin, body_words, unit,
+                token_count, signature_catalog, signature_begin, signature_words,
+                allocated, allocation_words, allocated[2],
+                unit_count_kind(allocated, allocation_words, unit,
+                    lowering::declarations::FUNCTION))) { return -INVALID; }
+        unit += 1;
+    }
+
+    // Find the unique zero-argument `main` using the source/token slice named
+    // by its allocation row.  The backend entry is a canonical function ID,
+    // not a unit-local ordinal.
+    let entry: i32 = -1;
+    row = 0;
+    while (row <= rows - 1) {
+        let allocation_slot: i32 = lowering::declarations::HEADER + row * 10;
+        if (allocated[allocation_slot + 1] == lowering::declarations::FUNCTION) {
+            let unit: i32 = allocated[allocation_slot];
+            let descriptor: i32 = unit * UNIT_DESCRIPTOR_WORDS;
+            let token_count: i32 = descriptors[descriptor + TOKEN_COUNT];
+            let name: i32 = declaration_table[lowering::declarations::HEADER
+                + row * lowering::declarations::ROW + 5];
+            let signature: i32 = unit_signature_position(signature_catalog,
+                descriptors[descriptor + SIGNATURE_OFFSET] + lowering::signatures::HEADER,
+                descriptors[descriptor + SIGNATURE_OFFSET]
+                    + descriptors[descriptor + SIGNATURE_WORDS],
+                allocated[allocation_slot + 9], lowering::declarations::FUNCTION,
+                lowering::signatures::INTERNAL_SHAPE);
+            if (signature <= -1) { return -INVALID; }
+            if (signature_catalog[signature + 3] == 0
+                && spelling_at(source_catalog,
+                    descriptors[descriptor + SOURCE_LENGTH],
+                    descriptors[descriptor + SOURCE_OFFSET], token_catalog,
+                    token_count, descriptors[descriptor + TOKEN_OFFSET], name,
+                    4, 109, 97, 105, 110, 0, 0, 0, 0, 0, 0, 0, 0)) {
+                if (entry >= 0) { return -INVALID; }
+                entry = allocated[allocation_slot + 9];
+            }
+        }
+        row += 1;
+    }
+    if (entry <= -1) { return -INVALID; }
+
+    output[0] = VERSION;
+    output[1] = POINTER_BITS;
+    output[2] = entry;
+    output[3] = allocated[2];
+    output[4] = allocated[4];
+    output[5] = allocated[5] + allocated[6];
+    let written: i32 = HEADER;
+
+    // Structures, constants, internal bodies, and external services are the
+    // exact four sections expected by backend::program.  Each section walks
+    // global declaration rows, never catalog order.
+    row = 0;
+    while (row <= rows - 1) {
+        let allocation_slot: i32 = lowering::declarations::HEADER + row * 10;
+        if (allocated[allocation_slot + 1] == lowering::declarations::STRUCTURE) {
+            let unit: i32 = allocated[allocation_slot];
+            let descriptor: i32 = unit * UNIT_DESCRIPTOR_WORDS;
+            let signature: i32 = unit_signature_position(signature_catalog,
+                descriptors[descriptor + SIGNATURE_OFFSET] + lowering::signatures::HEADER,
+                descriptors[descriptor + SIGNATURE_OFFSET]
+                    + descriptors[descriptor + SIGNATURE_WORDS],
+                allocated[allocation_slot + 8], lowering::declarations::STRUCTURE,
+                lowering::signatures::STRUCTURE_SHAPE);
+            if (signature <= -1) { return -INVALID; }
+            written = append(output, capacity, written, signature_catalog[signature]);
+            written = append(output, capacity, written, signature_catalog[signature + 3]);
+            if (written <= -1) { return -INVALID; }
+            let field: i32 = 0;
+            while (field <= signature_catalog[signature + 3] - 1) {
+                written = append(output, capacity, written,
+                    signature_catalog[signature + lowering::signatures::RECORD + field]);
+                if (written <= -1) { return -INVALID; }
+                field += 1;
+            }
+        }
+        row += 1;
+    }
+    row = 0;
+    while (row <= rows - 1) {
+        let allocation_slot: i32 = lowering::declarations::HEADER + row * 10;
+        if (allocated[allocation_slot + 1] == lowering::declarations::CONSTANT) {
+            let unit: i32 = allocated[allocation_slot];
+            let descriptor: i32 = unit * UNIT_DESCRIPTOR_WORDS;
+            let signature: i32 = unit_signature_position(signature_catalog,
+                descriptors[descriptor + SIGNATURE_OFFSET] + lowering::signatures::HEADER,
+                descriptors[descriptor + SIGNATURE_OFFSET]
+                    + descriptors[descriptor + SIGNATURE_WORDS],
+                allocated[allocation_slot + 8], lowering::declarations::CONSTANT,
+                lowering::signatures::CONSTANT_SHAPE);
+            if (signature <= -1) { return -INVALID; }
+            let result_type: i32 = signature_catalog[signature + 4];
+            written = append(output, capacity, written, signature_catalog[signature]);
+            written = append(output, capacity, written, result_type);
+            if (written <= -1) { return -INVALID; }
+            if (result_type == backend::syntax::STRING) {
+                let count: i32 = signature_catalog[signature + 6];
+                written = append(output, capacity, written, count);
+                if (written <= -1) { return -INVALID; }
+                let byte: i32 = 0;
+                while (byte <= count - 1) {
+                    written = append(output, capacity, written,
+                        signature_catalog[signature + lowering::signatures::RECORD + 1 + byte]);
+                    if (written <= -1) { return -INVALID; }
+                    byte += 1;
+                }
+            } else {
+                written = append(output, capacity, written,
+                    signature_catalog[signature + lowering::signatures::RECORD]);
+                written = append(output, capacity, written,
+                    signature_catalog[signature + lowering::signatures::RECORD + 1]);
+                if (written <= -1) { return -INVALID; }
+            }
+        }
+        row += 1;
+    }
+    // The backend program and image use the entrypoint as their first
+    // function.  Keep the remaining functions in canonical allocation-row
+    // order; this is deterministic and lets the authenticated direct-call
+    // checker identify the caller before its callee.
+    let pass: i32 = 0;
+    while (pass <= 1) {
+        row = 0;
+        while (row <= rows - 1) {
+            let allocation_slot: i32 = lowering::declarations::HEADER + row * 10;
+            if (allocated[allocation_slot + 1] == lowering::declarations::FUNCTION
+                && ((pass == 0 && allocated[allocation_slot + 9] == entry)
+                    || (pass == 1 && allocated[allocation_slot + 9] != entry))) {
+                let unit: i32 = allocated[allocation_slot];
+                let descriptor: i32 = unit * UNIT_DESCRIPTOR_WORDS;
+                let body_begin: i32 = descriptors[descriptor + BODY_OFFSET];
+                let body_finish: i32 = body_begin + descriptors[descriptor + BODY_WORDS];
+                written = append_unit_body(body_catalog, body_begin, body_finish,
+                    allocated[allocation_slot + 9], output, capacity, written);
+                if (written <= -1) { return -INVALID; }
+            }
+            row += 1;
+        }
+        pass += 1;
+    }
+    row = 0;
+    while (row <= rows - 1) {
+        let allocation_slot: i32 = lowering::declarations::HEADER + row * 10;
+        if (allocated[allocation_slot + 1] == lowering::declarations::EXTERNAL) {
+            let unit: i32 = allocated[allocation_slot];
+            let descriptor: i32 = unit * UNIT_DESCRIPTOR_WORDS;
+            let signature: i32 = unit_signature_position(signature_catalog,
+                descriptors[descriptor + SIGNATURE_OFFSET] + lowering::signatures::HEADER,
+                descriptors[descriptor + SIGNATURE_OFFSET]
+                    + descriptors[descriptor + SIGNATURE_WORDS],
+                allocated[allocation_slot + 9], lowering::declarations::EXTERNAL,
+                lowering::signatures::EXTERNAL_SHAPE);
+            if (signature <= -1) { return -INVALID; }
+            let name: i32 = declaration_table[lowering::declarations::HEADER
+                + row * lowering::declarations::ROW + 5];
+            let service: i32 = service_id_at(source_catalog,
+                descriptors[descriptor + SOURCE_LENGTH],
+                descriptors[descriptor + SOURCE_OFFSET], token_catalog,
+                descriptors[descriptor + TOKEN_COUNT], descriptors[descriptor + TOKEN_OFFSET],
+                name);
+            if (service <= -1) { return -UNSUPPORTED; }
+            let parameters: i32 = signature_catalog[signature + 3];
+            if (parameters > (capacity - written - 8) / 2) { return -INVALID; }
+            let count: i32 = 7 + parameters * 2;
+            written = append(output, capacity, written, count);
+            written = append(output, capacity, written, 2);
+            written = append(output, capacity, written, POINTER_BITS);
+            written = append(output, capacity, written, signature_catalog[signature]);
+            written = append(output, capacity, written, signature_catalog[signature + 4]);
+            written = append(output, capacity, written, parameters);
+            written = append(output, capacity, written, 1);
+            let parameter: i32 = 0;
+            while (parameter <= parameters - 1) {
+                written = append(output, capacity, written,
+                    signature_catalog[signature + lowering::signatures::RECORD + parameter * 2]);
+                written = append(output, capacity, written,
+                    signature_catalog[signature + lowering::signatures::RECORD + parameter * 2 + 1]);
+                if (written <= -1) { return -INVALID; }
+                parameter += 1;
+            }
+            written = append(output, capacity, written, service);
+            if (written <= -1 || !runtime::service::valid(output, written - count, count)) {
+                return -INVALID;
+            }
+        }
+        row += 1;
+    }
+    output[2] = entry;
+    return written;
+}
+
+// Name the same boundary after its input shape: callers that already use
+// `lower_units` need not depend on the shorter historical `lower` API.
+pub fn lower_units(source_catalog: [i32], source_catalog_length: i32,
+    token_catalog: [i32], token_catalog_length: i32, descriptors: [i32],
+    descriptor_length: i32, unit_count: i32, declaration_table: [i32],
+    declaration_words: i32, allocated: [i32], allocation_words: i32,
+    signature_catalog: [i32], signature_catalog_length: i32,
+    body_catalog: [i32], body_catalog_length: i32, output: [i32],
+    capacity: i32) -> i32 {
+    return lower_multi(source_catalog, source_catalog_length, token_catalog,
+        token_catalog_length, descriptors, descriptor_length, unit_count,
+        declaration_table, declaration_words, allocated, allocation_words,
+        signature_catalog, signature_catalog_length, body_catalog,
+        body_catalog_length, output, capacity);
+}

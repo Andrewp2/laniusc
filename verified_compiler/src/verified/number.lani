@@ -62,7 +62,7 @@ pub fn scan_leading_dot_number(
             verified::digits::digit_scan_error_offset(fraction));
     }
     let fraction_end: i32 = verified::digits::digit_scan_end_offset(fraction);
-    if (fraction_end < source_length) {
+    if (fraction_end <= source_length - 1) {
         let exponent: i32 = source[fraction_end];
         if (exponent == 101 || exponent == 69) {
             return verified::decimal::scan_exponent(source, source_length, fraction_end);

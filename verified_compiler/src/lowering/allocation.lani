@@ -9,7 +9,7 @@ pub const ROW: i32 = 10;
 // claimed header. The eight scratch words belong to allocate's output buffer.
 fn validate_unit(input: [i32], length: i32, position: i32, unit: i32,
     scratch: [i32]) -> i32 {
-    if (position < 0 || position > length || length - position < 8) { return -1; }
+    if (position <= -1 || position > length || length - position <= 7) { return -1; }
     let rows: i32 = input[position];
     if (rows <= 0 || rows > (length - position - 8) / 8) { return -1; }
     let index: i32 = 0;
@@ -18,15 +18,15 @@ fn validate_unit(input: [i32], length: i32, position: i32, unit: i32,
     while (row < rows) {
         let slot: i32 = position + 8 + row * 8;
         let kind: i32 = input[slot + 1];
-        if (input[slot] != unit || kind < 1 || kind > 7
-            || input[slot + 2] < 0 || input[slot + 2] > 1
-            || input[slot + 3] < 0 || input[slot + 4] < 0
+        if (input[slot] != unit || kind <= 0 || kind > 7
+            || input[slot + 2] <= -1 || input[slot + 2] > 1
+            || input[slot + 3] <= -1 || input[slot + 4] <= -1
             || input[slot + 4] >= input[slot + 3]) { return -1; }
         if (kind >= lowering::declarations::MODULE) {
             if (input[slot + 2] != 0 || input[slot + 5] != -1) { return -1; }
-        } else { if (input[slot + 5] < 0) { return -1; } }
+        } else { if (input[slot + 5] <= -1) { return -1; } }
         if (kind == lowering::declarations::ALIAS || kind >= lowering::declarations::MODULE) {
-            if (input[slot + 6] < 0 || input[slot + 6] >= input[slot + 4]) { return -1; }
+            if (input[slot + 6] <= -1 || input[slot + 6] >= input[slot + 4]) { return -1; }
         } else { if (input[slot + 6] != -1) { return -1; } }
         if (input[slot + 7] != scratch[kind]) { return -1; }
         scratch[kind] += 1;
@@ -52,14 +52,16 @@ fn validate_unit(input: [i32], length: i32, position: i32, unit: i32,
 //   [declaration ID, Core ID].
 // Aliases have no Core ID; module/import rows have neither ID (marked -1).
 // Structures use their Core type ID, constants their constant ID, and both
-// callable kinds their function ID. Within each unit all functions precede
-// its externs in the ID namespace, irrespective of source-item order.
+// callable kinds their function ID. Runtime IDs are the corresponding global
+// declaration IDs, so compile-time-only aliases remain explicit holes in the
+// Core namespace. Within each unit all functions precede its externs in the
+// ID namespace, irrespective of source-item order.
 //
 // Returns the number of output words, or -1. Failure output is partial and
 // must be discarded. Buffers must be disjoint and lengths match real storage.
 pub fn allocate(input: [i32], length: i32, units: i32,
     output: [i32], capacity: i32) -> i32 {
-    if (length < 0 || units < 0 || units > length / 16 || capacity < HEADER) { return -1; }
+    if (length <= -1 || units <= -1 || units > length / 16 || capacity <= HEADER - 1) { return -1; }
     let position: i32 = 0;
     let unit: i32 = 0;
     let rows: i32 = 0;
@@ -68,9 +70,9 @@ pub fn allocate(input: [i32], length: i32, units: i32,
     let constants: i32 = 0;
     let functions: i32 = 0;
     let externs: i32 = 0;
-    while (unit < units) {
+    while (unit <= units - 1) {
         let next: i32 = validate_unit(input, length, position, unit, output);
-        if (next < 0) { return -1; }
+        if (next <= -1) { return -1; }
         if (input[position] > 2147483647 - rows
             || input[position + 1] > 2147483647 - structures
             || input[position + 2] > 2147483647 - aliases
@@ -101,7 +103,7 @@ pub fn allocate(input: [i32], length: i32, units: i32,
     let written: i32 = HEADER;
     position = 0;
     unit = 0;
-    while (unit < units) {
+    while (unit <= units - 1) {
         let row: i32 = 0;
         while (row < input[position]) {
             let slot: i32 = position + 8 + row * 8;
@@ -119,14 +121,17 @@ pub fn allocate(input: [i32], length: i32, units: i32,
             if (kind == lowering::declarations::CONSTANT) {
                 core = constant_cursor + ordinal;
                 declaration = constant_base + core;
+                core = declaration;
             }
             if (kind == lowering::declarations::FUNCTION) {
                 core = function_cursor + ordinal;
                 declaration = function_base + core;
+                core = declaration;
             }
             if (kind == lowering::declarations::EXTERNAL) {
                 core = function_cursor + input[position + 4] + ordinal;
                 declaration = function_base + core;
+                core = declaration;
             }
             output[written + 8] = declaration;
             output[written + 9] = core;

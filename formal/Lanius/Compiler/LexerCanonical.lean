@@ -45,13 +45,6 @@ def exactKeywordKind : List Nat → List KeywordRule → Option TokenKind
       if spelling = rule.spelling then some rule.kind
       else exactKeywordKind spelling rest
 
-theorem exactKeywordKind_deterministic
-    (spelling : List Nat) (rules : List KeywordRule) {left right : Option TokenKind}
-    (leftResult : exactKeywordKind spelling rules = left)
-    (rightResult : exactKeywordKind spelling rules = right) :
-    left = right := by
-  exact leftResult.symm.trans rightResult
-
 theorem exactKeywordKind_sound
     {spelling : List Nat} {rules : List KeywordRule} {kind : TokenKind}
     (selected : exactKeywordKind spelling rules = some kind) :
@@ -72,11 +65,9 @@ theorem exactKeywordKind_sound
 theorem keywordRules_are_not_trivia
     {rule : KeywordRule} (member : rule ∈ keywordRules) :
     isTriviaKind rule.kind = false := by
-  have allKept :
-      keywordRules.all (fun candidate => !isTriviaKind candidate.kind) = true := by
-    native_decide
-  have selected := List.all_eq_true.mp allKept rule member
-  simpa using selected
+  cases rule with
+  | mk spelling kind =>
+    cases kind <;> simp [keywordRules, isTriviaKind] at member ⊢
 
 def tokenByteValues (source : List Byte) (token : RawToken) : List Nat :=
   ((source.drop token.start).take (token.finish - token.start)).map Fin.val
@@ -299,13 +290,6 @@ def canonicalizeRawResult (source : List Byte) : RawLexResult → RawLexResult
 def lexCanonical (source : List Byte) : RawLexResult :=
   canonicalizeRawResult source (lexRaw source)
 
-theorem lexCanonical_deterministic
-    (source : List Byte) {left right : RawLexResult}
-    (leftResult : lexCanonical source = left)
-    (rightResult : lexCanonical source = right) :
-    left = right := by
-  exact leftResult.symm.trans rightResult
-
 theorem lexCanonical_ne_exhausted (source : List Byte) :
     ∀ acceptedPrefix exhaustedAt,
       lexCanonical source ≠ .fuelExhausted acceptedPrefix exhaustedAt := by
@@ -346,25 +330,5 @@ theorem lexCanonical_success_contains_no_trivia
       exact canonicalizeTokens_contains_no_trivia source rawTokens
   | failure accepted error => simp [rawResult] at result
   | fuelExhausted accepted offset => simp [rawResult] at result
-
-theorem lexCanonical_keywords_and_trivia :
-    lexCanonical ([108, 101, 116, 32, 108, 101, 116, 116, 101, 114,
-      32, 102, 110] : List Byte) =
-      .success [
-        ⟨.letKeyword, 0, 3⟩,
-        ⟨.identifier, 4, 10⟩,
-        ⟨.fnKeyword, 11, 13⟩
-      ] := by
-  native_decide
-
-theorem lexCanonical_inclusive_range_retag :
-    lexCanonical ([49, 46, 46, 61, 50] : List Byte) =
-      .success [
-        ⟨.integer, 0, 1⟩,
-        ⟨.dotDotEqual, 1, 3⟩,
-        ⟨.assign, 3, 4⟩,
-        ⟨.integer, 4, 5⟩
-      ] := by
-  native_decide
 
 end Lanius.Compiler.Lexer

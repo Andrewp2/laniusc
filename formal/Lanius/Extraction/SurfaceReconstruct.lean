@@ -1,5 +1,4 @@
 import Lanius.Extraction.SurfaceDecode
-import Lanius.Extraction.ParseChecker
 import Lanius.Extraction.Reconstruction.References
 
 namespace Lanius.Extraction
@@ -1091,7 +1090,7 @@ def reconstructArtifactSurfaceWithAccess
   pure surface
 
 def reconstructArtifactSurface (artifact : Artifact) : Option SurfaceFile :=
-  @reconstructArtifactSurfaceWithAccess (ArtifactAccess.canonicalFor artifact)
+  @reconstructArtifactSurfaceWithAccess (ArtifactAccess.indexedFor artifact)
     artifact
 
 def reconstructArtifactSurfaceView (artifact : Artifact)
@@ -1103,7 +1102,7 @@ omit [ArtifactAccess] in theorem reconstructArtifactSurfaceView_eq (artifact : A
     reconstructArtifactSurfaceView artifact view =
       reconstructArtifactSurface artifact := by
   unfold reconstructArtifactSurfaceView reconstructArtifactSurface
-  rw [ArtifactAccess.ofView_eq_canonicalFor view]
+  rw [ArtifactAccess.ofView_eq_canonicalFor view, ArtifactAccess.indexedFor_eq]
 
 private def reconstructArtifactSurfaceIndexed (artifact : Artifact)
     (_view : ArtifactView artifact) : Option SurfaceFile :=

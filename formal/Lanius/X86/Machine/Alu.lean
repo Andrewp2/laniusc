@@ -17,23 +17,23 @@ def opcode : Alu → Nat
 def ofOpcode? : Nat → Option Alu
   | 1 => some .add | 41 => some .subtract | 33 => some .and | 9 => some .or | 49 => some .xor | _ => none
 
-def result (operation : Alu) (left right : BitVec 32) : BitVec 32 :=
+def result (operation : Alu) (left right : BitVec width) : BitVec width :=
   match operation with
   | .add => left + right | .subtract => left - right
   | .and => left &&& right | .or => left ||| right | .xor => left ^^^ right
 
 /-- Logical operations permit either AF value. ADD/SUB determine all six
 arithmetic flags; other RFLAGS bits are retained in every case. -/
-def flags (operation : Alu) (before : BitVec 64) (left right : BitVec 32) (auxiliary : Bool) : BitVec 64 :=
+def flags (operation : Alu) (before : BitVec 64) (left right : BitVec width) (auxiliary : Bool) : BitVec 64 :=
   let value := operation.result left right
   match operation with
-  | .add => arithmeticFlags before (decide (2^32 ≤ left.toNat + right.toNat)) (evenParity value)
+  | .add => arithmeticFlags before (decide (2^width ≤ left.toNat + right.toNat)) (evenParity value)
       ((left ^^^ right ^^^ value).getLsbD 4) (value == 0) value.msb
       ((left.msb == right.msb) && (value.msb != left.msb))
   | .subtract => subtractFlags before left right
-  | _ => logical32Flags before value auxiliary
+  | _ => logicalFlags before value auxiliary
 
-theorem flags_direction (operation : Alu) (before : BitVec 64) (left right : BitVec 32) (auxiliary : Bool) :
+theorem flags_direction (operation : Alu) (before : BitVec 64) (left right : BitVec width) (auxiliary : Bool) :
     (operation.flags before left right auxiliary).getLsbD 10 = before.getLsbD 10 := by
   cases operation <;> exact arithmeticFlags_direction _ _ _ _ _ _ _
 

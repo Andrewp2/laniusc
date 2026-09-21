@@ -17,6 +17,8 @@ import Lanius.Semantics.MutableLocal
 import Lanius.Semantics.ReadOnlySlice
 import Lanius.Compiler.Lexer.UnaryI32Predicate
 import Lanius.Compiler.FrontendArtifact
+import Lanius.Compiler.FrontendArtifactBoundary
+import Lanius.Compiler.FrontendArtifactCheck
 import Lanius.Compiler.Phase
 import Lanius.Compiler.DeclarationCheck
 import Lanius.Compiler.EligibilityCheck
@@ -26,12 +28,25 @@ import Lanius.Compiler.FrontendCheck
 import Lanius.Compiler.CatalogSynthesis
 import Lanius.Compiler.FrontendBoundary
 import Lanius.Compiler.ProgramLowering
+import Lanius.Compiler.ProgramLoweringCheck
+import Lanius.Compiler.NameResolutionCheck
+import Lanius.Compiler.FunctionInstanceCheck
+import Lanius.Compiler.NamedTypeCheck
+import Lanius.Compiler.TypeLoweringCheck
+import Lanius.Compiler.ConstantCheck
+import Lanius.Compiler.StructureCheck
+import Lanius.Compiler.SignatureCheck
+import Lanius.Compiler.FunctionContextCheck
+import Lanius.Compiler.DirectCallCheck
 import Lanius.Compiler.BodyCheck
+import Lanius.Compiler.ExternalFunctionCheck
 import Lanius.Compiler.SourceCoreBoundary
 import Lanius.Compiler.CoreBoundary
 import Lanius.Compiler.ExecutableBoundary
 import Lanius.Compiler.EntrypointCheck
 import Lanius.Compiler.BackendInputCheck
+import Lanius.Compiler.BackendBoundary
+import Lanius.Compiler.CorrectnessBoundary
 import Lanius.Compiler.ImportCheck
 
 import Lanius.Compiler.LexerCanonical
@@ -58,6 +73,12 @@ import Lanius.Extraction.SurfaceCheck
 import Lanius.Extraction.SyntaxCheck.Pack
 import Lanius.Extraction.SyntaxCheck.Soundness
 import Lanius.Extraction.CompactBoundary
+import Lanius.Extraction.CompactFrontendBridge
+import Lanius.Extraction.Certificate
+import Lanius.Extraction.CorePhaseCertificate
+import Lanius.Extraction.CertificateBoundaryBridge
+import Lanius.Extraction.CertificateEncodingSize
+import Lanius.Extraction.CertificateEmitterPackedExecution
 
 import Lanius.Typing.Check
 
@@ -67,7 +88,27 @@ import Lanius.X86.Machine.Block
 import Lanius.X86.Machine.DecodeBlock
 import Lanius.X86.Machine.AluEncoding
 import Lanius.X86.Transport
+import Lanius.X86.TransportDecode
+import Lanius.X86.LiteralReturn
+import Lanius.X86.ExpressionCheck
+import Lanius.X86.EnvironmentExpressionCheck
+import Lanius.X86.ExpressionFunctionCheck
+import Lanius.X86.StatementCheck
 import Lanius.X86.ParameterReturn
+import Lanius.X86.LocalExpressionCheck
+import Lanius.X86.FunctionCheck
+import Lanius.X86.DirectCallCheck
+import Lanius.X86.ProgramCheck
+import Lanius.X86.ImageCheck
+import Lanius.X86.StartupCheck
+import Lanius.X86.ProcessLayoutCheck
+import Lanius.X86.StartupExitCheck
+import Lanius.Compiler.CertificateLoweringCheck
+import Lanius.Compiler.EndToEndCheck
+import Lanius.Compiler.CertificateEncodingBridge
+import Lanius.Compiler.ELFExecutionCheck
+import Lanius.Compiler.ELFExecutionBridge
+import Lanius.Compiler.VerifiedExecution
 
 /-!
 # Lanius formal foundation

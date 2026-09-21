@@ -203,7 +203,7 @@ structure SurfaceFunction where
   parameters : List SurfaceParameter
   return_type : Option SurfaceTypeExpr
   body : List SurfaceStmt
-deriving BEq, Repr, Lean.FromJson, Lean.ToExpr
+deriving BEq, Repr, Lean.ToExpr
 
 structure SurfaceExternFunction where
   name : SpelledName
@@ -212,7 +212,53 @@ structure SurfaceExternFunction where
   abi : Option SpelledName
   parameters : List SurfaceParameter
   return_type : Option SurfaceTypeExpr
-deriving BEq, Repr, Lean.FromJson, Lean.ToExpr
+deriving BEq, Repr, Lean.ToExpr
+
+/- The exporter historically omitted `generic_parameters` for non-generic
+   declarations, while some versions emitted it as `null`.  These declarations
+   have the semantic default `[]`; keep every present non-null value on the
+   ordinary strict list decoder so malformed values are still rejected. -/
+private def surfaceGenericParametersFromJson? (json : Lean.Json) : Except String (List SurfaceGenericParameter) :=
+  match json with
+  | Lean.Json.obj fields =>
+      match fields.get? "generic_parameters" with
+      | none | some Lean.Json.null => .ok []
+      | some value => Lean.fromJson? value
+  | _ => .error "object expected"
+
+private example :
+    surfaceGenericParametersFromJson? (Lean.Json.mkObj []) = .ok [] := by
+  rfl
+
+private example :
+    surfaceGenericParametersFromJson?
+      (Lean.Json.mkObj [("generic_parameters", Lean.Json.null)]) = .ok [] := by
+  rfl
+
+private example :
+    Except.isOk (surfaceGenericParametersFromJson?
+      (Lean.Json.mkObj [("generic_parameters", Lean.Json.obj ∅)])) = false := by
+  decide
+
+instance : Lean.FromJson SurfaceFunction where
+  fromJson? json := do
+    let name ← Lean.Json.getObjValAs? json _ "name"
+    let is_public ← Lean.Json.getObjValAs? json _ "is_public"
+    let generic_parameters ← surfaceGenericParametersFromJson? json
+    let parameters ← Lean.Json.getObjValAs? json _ "parameters"
+    let return_type ← Lean.Json.getObjValAs? json _ "return_type"
+    let body ← Lean.Json.getObjValAs? json _ "body"
+    return { name, is_public, generic_parameters, parameters, return_type, body }
+
+instance : Lean.FromJson SurfaceExternFunction where
+  fromJson? json := do
+    let name ← Lean.Json.getObjValAs? json _ "name"
+    let is_public ← Lean.Json.getObjValAs? json _ "is_public"
+    let generic_parameters ← surfaceGenericParametersFromJson? json
+    let abi ← Lean.Json.getObjValAs? json _ "abi"
+    let parameters ← Lean.Json.getObjValAs? json _ "parameters"
+    let return_type ← Lean.Json.getObjValAs? json _ "return_type"
+    return { name, is_public, generic_parameters, abi, parameters, return_type }
 
 structure SurfaceStructField where
   id : SurfaceNodeId

@@ -1,0 +1,7 @@
+module app::main;
+
+pub type Answer = i32;
+
+fn main() -> Answer {
+    return 42;
+}

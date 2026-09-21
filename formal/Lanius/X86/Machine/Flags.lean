@@ -18,13 +18,16 @@ def subtractFlags (before : BitVec 64) (left right : BitVec width) : BitVec 64 :
     ((left ^^^ right ^^^ result).getLsbD 4) (result == 0) result.msb
     ((left.msb != right.msb) && (result.msb != left.msb))
 
-/-- TEST32 discards its AND result; CF/OF are zero and SF/ZF/PF describe
-that 32-bit result. AF is architecturally undefined, so the caller supplies
-an arbitrary choice rather than this model prescribing its value.
+/-- TEST discards its AND result; CF/OF are zero and SF/ZF/PF describe the
+result at the operand width. AF is architecturally undefined, so the caller
+supplies an arbitrary choice rather than this model prescribing its value.
 Intel SDM Vol. 2B, TEST, 4-703–4-704:
 https://cdrdv2-public.intel.com/782151/253667-sdm-vol-2b.pdf -/
-def logical32Flags (before : BitVec 64) (result : BitVec 32) (auxiliary : Bool) : BitVec 64 :=
+def logicalFlags (before : BitVec 64) (result : BitVec width) (auxiliary : Bool) : BitVec 64 :=
   arithmeticFlags before false (evenParity result) auxiliary (result == 0) result.msb false
+
+def logical32Flags (before : BitVec 64) (result : BitVec 32) (auxiliary : Bool) : BitVec 64 :=
+  logicalFlags before result auxiliary
 
 /-- Intel condition-code order, shared by Jcc and future SETcc lowering. -/
 def condition (flags : BitVec 64) (code : Fin 16) : Bool :=
@@ -63,7 +66,7 @@ theorem logical32Flags_greaterEqual (before : BitVec 64) (result : BitVec 32) (a
     condition (logical32Flags before result auxiliary) 13 = !result.msb := by
   change ((logical32Flags before result auxiliary).getLsbD 7 ==
     (logical32Flags before result auxiliary).getLsbD 11) = !result.msb
-  unfold logical32Flags
+  unfold logical32Flags logicalFlags
   generalize evenParity result = parity
   generalize (result == 0) = zero
   generalize result.msb = sign
@@ -71,7 +74,7 @@ theorem logical32Flags_greaterEqual (before : BitVec 64) (result : BitVec 32) (a
     simp [arithmeticFlags]
 
 theorem logical32Flags_direction (before : BitVec 64) (result : BitVec 32) (auxiliary : Bool) :
-    (logical32Flags before result auxiliary).getLsbD 10 = before.getLsbD 10 :=
+  (logical32Flags before result auxiliary).getLsbD 10 = before.getLsbD 10 :=
   arithmeticFlags_direction _ _ _ _ _ _ _
 
 end Lanius.X86.Machine

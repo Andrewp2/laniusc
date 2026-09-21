@@ -1,0 +1,11 @@
+module app::main;
+
+// Certificate regression: two body-bearing functions exercise nonempty ELF
+// bytes and ordered v3 function spans, in addition to compact/transport data.
+fn helper() -> i32 {
+    return 7;
+}
+
+fn main() -> i32 {
+    return 42;
+}

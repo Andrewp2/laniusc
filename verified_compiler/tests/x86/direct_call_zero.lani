@@ -1,0 +1,4 @@
+module examples::direct_call_zero;
+
+pub fn main() -> i32 { return callee(); }
+fn callee() -> i32 { return 7; }

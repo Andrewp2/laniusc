@@ -24,7 +24,7 @@ structure I32ArrayView where
 deriving Repr
 
 /-- Structural validity of the heap block backing a registered native view.
-The place-typing half of view validity remains in `Lanius.Properties`. -/
+The place-typing half of view validity remains in the typing layer. -/
 def I32ArrayViewBlockWellFormed (heap : Heap) (view : I32ArrayView) : Prop :=
   ∃ block,
     heap.block? view.address = some block ∧
@@ -171,6 +171,58 @@ def wrapUnsignedInt (target : Target) (type : UnsignedIntTy) (value : Int) : Nat
 private def signedBits (target : Target) (type : SignedIntTy) (value : Int) : Nat :=
   Int.toNat (value % signedModulus target type)
 
+theorem signedBits_i32_nat (target : Target) (n : Nat) (bound : n < 2 ^ 32) :
+    signedBits target .i32 (Int.ofNat n) = n := by
+  change Int.toNat ((n : Int) % signedModulus target .i32) = n
+  have modulo : (n : Int) % signedModulus target .i32 = (n : Int) := by
+    apply Int.emod_eq_of_lt
+    · exact Int.natCast_nonneg n
+    · change (n : Int) < (2 : Int) ^ 32
+      omega
+  rw [modulo]
+  simp
+
+theorem signedBits_i32_bitvec_x86 (bits : BitVec 32) (value : Int)
+    (exact : bits.toInt = value) :
+    signedBits Target.x86_64 .i32 value = bits.toNat := by
+  change Int.toNat (value % (2 ^ 32 : Int)) = bits.toNat
+  have bound : bits.toNat < 2 ^ 32 := bits.isLt
+  have nonnegative : 0 ≤ (bits.toNat : Int) := Int.natCast_nonneg _
+  have valueForm : value =
+      if 2 * bits.toNat < 2 ^ 32 then (bits.toNat : Int)
+      else (bits.toNat : Int) - 2 ^ 32 := by
+    rw [← exact]
+    rfl
+  rw [valueForm]
+  by_cases small : 2 * bits.toNat < 2 ^ 32
+  · simp only [small, ↓reduceIte]
+    have modulo : (bits.toNat : Int) % (2 ^ 32 : Int) = bits.toNat := by
+      exact Int.emod_eq_of_lt nonnegative (by omega)
+    rw [modulo]
+    simp
+  · simp only [small, ↓reduceIte]
+    have modulo : ((bits.toNat : Int) - 2 ^ 32) % (2 ^ 32 : Int) = bits.toNat := by
+      rw [Int.sub_emod, Int.emod_self, Int.sub_zero]
+      have bound' : (bits.toNat : Int) < (2 ^ 32 : Int) := by omega
+      have inner : (bits.toNat : Int) % (2 ^ 32 : Int) = bits.toNat :=
+        Int.emod_eq_of_lt nonnegative bound'
+      simp only [inner]
+    rw [modulo]
+    simp
+
+/- The evaluator's bitwise representation is the unsigned i32 residue even
+   when the source operand is a signed Int.  Keep this projection public so
+   emitter proofs need not unfold the private `signedBits` definition. -/
+theorem signedBits_i32_x86_value (value : Int) :
+    signedBits Target.x86_64 .i32 value =
+      Int.toNat (value % 4294967296) := by
+  change Int.toNat (value % (2 ^ 32 : Int)) = Int.toNat (value % 4294967296)
+  rfl
+
+theorem signedBits_i32_x86_nat (n : Nat) (bound : n < 2 ^ 32) :
+    signedBits Target.x86_64 .i32 (Int.ofNat n) = n := by
+  exact signedBits_i32_nat Target.x86_64 n bound
+
 def truncDiv (left right : Int) : Int :=
   let quotient := left.natAbs / right.natAbs
   if (left < 0) = (right < 0) then Int.ofNat quotient else -Int.ofNat quotient
@@ -300,6 +352,63 @@ def evalSignedBinary
       if right < 0 || right >= Int.ofNat (type.bits target) then .error .invalidShift
       else .ok (result (arithmeticShiftRight left (Int.toNat right)))
   | _ => .error .typeMismatch
+
+theorem evalSignedBinary_shiftRight_i32_x86_word
+    (value : Int) (k : Nat) (hk : k < 8) :
+    evalSignedBinary Target.x86_64 .shiftRight .i32 value (Int.ofNat (4 * k)) =
+      .ok (.signed .i32
+        (wrapSigned Target.x86_64 .i32 (value >>> (4 * k)))) := by
+  have cases : k = 0 ∨ k = 1 ∨ k = 2 ∨ k = 3 ∨ k = 4 ∨ k = 5 ∨
+      k = 6 ∨ k = 7 := by omega
+  rcases cases with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp only [evalSignedBinary, SignedIntTy.bits]
+  all_goals simp [Nat.mul_comm, Nat.mul_left_comm, Nat.mul_assoc]
+  all_goals
+    change wrapSigned Target.x86_64 .i32
+      (if value >= 0 then value / _ else -((-value + _ - 1) / _)) = _
+    simp [show (2 ^ 4 : Nat) = 16 by decide,
+      show (2 ^ 8 : Nat) = 256 by decide,
+      show (2 ^ 12 : Nat) = 4096 by decide,
+      show (2 ^ 16 : Nat) = 65536 by decide,
+      show (2 ^ 20 : Nat) = 1048576 by decide,
+      show (2 ^ 24 : Nat) = 16777216 by decide,
+      show (2 ^ 28 : Nat) = 268435456 by decide,
+      show Int.ofNat 16 = (16 : Int) by decide,
+      show Int.ofNat 256 = (256 : Int) by decide,
+      show Int.ofNat 4096 = (4096 : Int) by decide,
+      show Int.ofNat 65536 = (65536 : Int) by decide,
+      show Int.ofNat 1048576 = (1048576 : Int) by decide,
+      show Int.ofNat 16777216 = (16777216 : Int) by decide,
+      show Int.ofNat 268435456 = (268435456 : Int) by decide]
+    try rw [Int.shiftRight_eq_div_pow]
+    try split <;> congr 2 <;> omega
+
+theorem evalSignedBinary_bitAnd_i32_nat (target : Target) (left right : Nat)
+    (leftBound : left < 2 ^ 32) (rightBound : right < 2 ^ 32) :
+    evalSignedBinary target .bitAnd .i32 (Int.ofNat left) (Int.ofNat right) =
+      .ok (.signed .i32
+        (wrapSigned target .i32 (Int.ofNat (Nat.land left right)))) := by
+  simp only [evalSignedBinary]
+  rw [signedBits_i32_nat target left leftBound,
+    signedBits_i32_nat target right rightBound]
+
+theorem evalSignedBinary_bitOr_i32_nat (target : Target) (left right : Nat)
+    (leftBound : left < 2 ^ 32) (rightBound : right < 2 ^ 32) :
+    evalSignedBinary target .bitOr .i32 (Int.ofNat left) (Int.ofNat right) =
+      .ok (.signed .i32
+        (wrapSigned target .i32 (Int.ofNat (Nat.lor left right)))) := by
+  simp only [evalSignedBinary]
+  rw [signedBits_i32_nat target left leftBound,
+    signedBits_i32_nat target right rightBound]
+
+theorem evalSignedBinary_bitXor_i32_nat (target : Target) (left right : Nat)
+    (leftBound : left < 2 ^ 32) (rightBound : right < 2 ^ 32) :
+    evalSignedBinary target .bitXor .i32 (Int.ofNat left) (Int.ofNat right) =
+      .ok (.signed .i32
+        (wrapSigned target .i32 (Int.ofNat (Nat.xor left right)))) := by
+  simp only [evalSignedBinary]
+  rw [signedBits_i32_nat target left leftBound,
+    signedBits_i32_nat target right rightBound]
 
 def evalUnsignedBinary
     (target : Target) (op : BinaryOp) (type : UnsignedIntTy)
@@ -566,6 +675,12 @@ def State.i32ArrayView?
   state.i32ArrayViews.find? fun view =>
     decide (view.root = root ∧ view.projections = projections)
 
+def State.rawI32ArrayView?
+    (state : State) (address : Address) (length : Nat)
+    (projections : List ValueProjection) : Option I32ArrayView :=
+  state.i32ArrayViews.find? fun view =>
+    decide (view.address = address ∧ view.length = length ∧ view.projections = projections)
+
 def syncI32ViewsToHeapFrom :
     List I32ArrayView → State → Except Trap State
   | [], state => .ok state
@@ -642,19 +757,37 @@ def mapRawI32Slice (state : State) (address : Address) (signedLength : Int) :
     match state.heap.protectAsBorrowed address (length * 4) 4 with
     | .error reason => .trapped reason state
     | .ok protectedHeap =>
-        match protectedHeap.loadBytes address (length * 4) with
-        | .error reason => .trapped reason { state with heap := protectedHeap }
-        | .ok bytes =>
-            match decodeI32Array length bytes with
+        match state.rawI32ArrayView? address length [] with
+        | some view =>
+            .done (.slice (.scalar (.signed .i32)) view.root view.projections 0 length)
+              { state with heap := protectedHeap }
+        | none =>
+            match protectedHeap.loadBytes address (length * 4) with
             | .error reason => .trapped reason { state with heap := protectedHeap }
-            | .ok elements =>
-                let (root, withTemporary) :=
-                  ({ state with heap := protectedHeap }).allocateTemporary (.array elements)
-                let view : I32ArrayView := { address, root, projections := [], length }
-                .done (.slice (.scalar (.signed .i32)) root [] 0 length) {
-                  withTemporary with
-                  i32ArrayViews := withTemporary.i32ArrayViews ++ [view]
-                }
+            | .ok bytes =>
+                match decodeI32Array length bytes with
+                | .error reason => .trapped reason { state with heap := protectedHeap }
+                | .ok elements =>
+                    let (root, withTemporary) :=
+                      ({ state with heap := protectedHeap }).allocateTemporary (.array elements)
+                    let view : I32ArrayView := { address, root, projections := [], length }
+                    .done (.slice (.scalar (.signed .i32)) root [] 0 length) {
+                      withTemporary with
+                      i32ArrayViews := withTemporary.i32ArrayViews ++ [view]
+                    }
+
+theorem mapRawI32Slice_reuses_registered_view
+    (state : State) (address : Address) (length : Nat)
+    (view : I32ArrayView) (protectedHeap : Heap)
+    (registered : state.rawI32ArrayView? address length [] = some view)
+    (protectedHeapOk : state.heap.protectAsBorrowed address (length * 4) 4 =
+      .ok protectedHeap) :
+    mapRawI32Slice state address (Int.ofNat length) =
+        .done (.slice (.scalar (.signed .i32)) view.root view.projections 0 length)
+          { state with heap := protectedHeap } ∧
+      ({ state with heap := protectedHeap }).cells = state.cells ∧
+      ({ state with heap := protectedHeap }).i32ArrayViews = state.i32ArrayViews := by
+  simp [mapRawI32Slice, registered, protectedHeapOk]
 
 def mapI32SliceDataPtr
     (state : State) (cell : CellId) (projections : List ValueProjection)

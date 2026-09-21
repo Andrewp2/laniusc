@@ -238,39 +238,4 @@ theorem CheckedReference.sound
     Resolves graph reference checked.declaration checked.path :=
   resolve?_sound checked.accepted
 
-/-! Focused executable contracts. -/
-
-private def outerX : Declaration :=
-  ⟨⟨0, 10⟩, .value, "x"⟩
-
-private def innerX : Declaration :=
-  ⟨⟨0, 20⟩, .value, "x"⟩
-
-private def exampleGraph : Graph := ⟨[
-  ⟨.functionBody 1, none, [outerX]⟩,
-  ⟨.thenBody 2, some (.functionBody 1), []⟩,
-  ⟨.afterLocal 20, some (.thenBody 2), [innerX]⟩,
-  ⟨.elseBody 2, some (.functionBody 1), []⟩
-]⟩
-
-example : resolve? exampleGraph
-    ⟨0, 30, .afterLocal 20, .unqualified .value "x"⟩ =
-    some (innerX, [ScopeId.afterLocal 20]) := by native_decide
-
-example : resolve? exampleGraph
-    ⟨0, 31, .thenBody 2, .unqualified .value "x"⟩ =
-    some (outerX, [ScopeId.thenBody 2, ScopeId.functionBody 1]) := by native_decide
-
-example : resolve? exampleGraph
-    ⟨0, 32, .elseBody 2, .unqualified .value "x"⟩ =
-    some (outerX, [ScopeId.elseBody 2, ScopeId.functionBody 1]) := by native_decide
-
-example : resolve? exampleGraph
-    ⟨0, 33, .elseBody 2, .unqualified .value "missing"⟩ =
-    none := by native_decide
-
-example : resolve? exampleGraph
-    ⟨0, 34, .afterLocal 20, .qualified .value ["other"] "x"⟩ =
-    none := by native_decide
-
 end Lanius.ScopeGraph

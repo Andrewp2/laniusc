@@ -1,0 +1,660 @@
+module lowering::signatures;
+import lowering::declarations;
+import lowering::aliases;
+import lowering::types;
+import verified::surface_tree;
+import verified::surface_type;
+import verified::surface_atoms;
+import verified::parser;
+import lowering::units; // Signature transport:
+//   [version, records, words, structures, functions, externs, constants, 0]
+// followed by variable records
+//   [id, declaration_kind, shape, arity, return_type, payload_words,
+//    ordered field/parameter type tags...].
+// Shape zero is a structure, one an internal function, and two an external
+// function, or three for a constant. A structure return_type is -1; a function
+// return_type is zero for `none` and otherwise a positive type tag. Constants
+// currently accept only nonnegative decimal i32/usize literals, bool literals,
+// and unescaped UTF-8 string literals. Aliases are rejected until their
+// Core-facing representation is defined; module/import rows produce no record.
+pub const HEADER: i32 = 8;
+pub const RECORD: i32 = 6;
+pub const VERSION: i32 = 1;
+pub const STRUCTURE_SHAPE: i32 = 0;
+pub const INTERNAL_SHAPE: i32 = 1;
+pub const EXTERNAL_SHAPE: i32 = 2;
+pub const CONSTANT_SHAPE: i32 = 3; // A signature unit context is ordered with lowering::units descriptors and
+// points into flat catalogs.  Source/token/tree/type data are copied into the
+// caller-owned scratch arrays before invoking the existing one-unit lowerer;
+// this keeps all tree indices local while retaining one global allocation
+// table and its IDs.
+//   [source offset, source length, token offset, token count,
+//    record offset, record length, offsets offset, node count,
+//    type arena offset, type arena length,
+//    resolution offset, resolution length]
+pub const CONTEXT_WORDS: i32 = 12;
+pub const SOURCE_OFFSET: i32 = 0;
+pub const SOURCE_LENGTH: i32 = 1;
+pub const TOKEN_OFFSET: i32 = 2;
+pub const TOKEN_COUNT: i32 = 3;
+pub const RECORD_OFFSET: i32 = 4;
+pub const RECORD_LENGTH: i32 = 5;
+pub const OFFSETS_OFFSET: i32 = 6;
+pub const NODE_COUNT: i32 = 7;
+pub const TYPE_ARENA_OFFSET: i32 = 8;
+pub const TYPE_ARENA_LENGTH: i32 = 9;
+pub const RESOLUTION_OFFSET: i32 = 10;
+pub const RESOLUTION_LENGTH: i32 = 11;
+fn child(records:[i32], length: i32, offsets:[i32], count: i32, node: i32, index: i32) -> i32 {
+    return verified::surface_tree::child(records, length, offsets, count, node, index, verified::parser::CHILD_STATE, 0);
+}
+fn lower_type(source:[i32], source_length: i32, tokens:[i32], token_count: i32, records:[i32], record_length: i32, offsets:[i32], node_count: i32, type_node: i32, type_arena:[i32], type_arena_length: i32, resolutions:[i32], resolution_length: i32, alias_catalog:[i32], alias_words: i32, alias_scratch:[i32], alias_scratch_capacity: i32, type_output:[i32], type_capacity: i32, depth: i32) -> i32 {
+    let root: i32 = verified::surface_type::extract(records, record_length, offsets, node_count, token_count, type_node, type_arena, type_arena_length, depth);
+    if (root <= -1) {
+        return -1;
+    }
+    return lowering::types::lower(source, source_length, tokens, token_count, type_arena, type_arena_length, root, resolutions, resolution_length, alias_catalog, alias_words, alias_scratch, alias_scratch_capacity, type_output, type_capacity);
+}
+fn result_type(source:[i32], source_length: i32, tokens:[i32], token_count: i32, records:[i32], record_length: i32, offsets:[i32], node_count: i32, declaration: i32, return_index: i32, type_arena:[i32], type_arena_length: i32, resolutions:[i32], resolution_length: i32, alias_catalog:[i32], alias_words: i32, alias_scratch:[i32], alias_scratch_capacity: i32, type_output:[i32], type_capacity: i32, depth: i32) -> i32 {
+    let return_node: i32 = child(records, record_length, offsets, node_count, declaration, return_index);
+    let return_offset: i32 = verified::surface_tree::record(records, record_length, offsets, node_count, return_node);
+    if (return_offset <= -1) {
+        return -1;
+    }
+    if (records[return_offset] == 35) {
+        return 0;
+    }
+    if (records[return_offset] != 34) {
+        return -1;
+    }
+    return lower_type(source, source_length, tokens, token_count, records, record_length, offsets, node_count, child(records, record_length, offsets, node_count, return_node, 1), type_arena, type_arena_length, resolutions, resolution_length, alias_catalog, alias_words, alias_scratch, alias_scratch_capacity, type_output, type_capacity, depth);
+}
+fn decimal_literal(source:[i32], source_length: i32, start: i32, finish: i32) -> i32 {
+    if (start <= -1 || finish <= start || finish>source_length) {
+        return -1;
+    }
+    let value: i32 = 0;
+    let index: i32 = start;
+    let digits: i32 = 0;
+    while (index <= finish - 1) {
+        let byte: i32 = source[index];
+        if (byte == 95) {
+            index += 1;
+        } else {
+            if (byte <= 47 || byte>57) {
+                return -1;
+            }
+            let digit: i32 = byte - 48;
+            if (value>(2147483647 - digit) / 10) {
+                return -1;
+            }
+            value = value * 10 + digit;
+            digits += 1;
+            index += 1;
+        }
+    }
+    if (digits <= 0) {
+        return -1;
+    }
+    return value;
+}
+fn literal_node(records:[i32], record_length: i32, offsets:[i32], node_count: i32, node: i32, depth: i32) -> i32 {
+    let current: i32 = node;
+    let remaining: i32 = depth;
+    while (remaining != 0) {
+        remaining -= 1;
+        let offset: i32 = verified::surface_tree::record(records, record_length, offsets, node_count, current);
+        if (offset <= -1) {
+            return -1;
+        }
+        let production: i32 = records[offset];
+        if ((production >= 175 && production <= 178) || production == 185 || production == 186) {
+            return current;
+        }
+        if (production >= 156 && production <= 158) {
+            current = child(records, record_length, offsets, node_count, current, 1);
+        } else {
+        if ((production >= 118 && production <= 155)
+                || production == 104 || production == 105
+                || production == 159 || production == 160) {
+            current = child(records, record_length, offsets, node_count, current, 0);
+        } else {
+            if (production == 172) {
+                current = child(records, record_length, offsets, node_count, current, 1);
+            } else {
+                return -1;
+            }
+        }
+        }
+    }
+    return -1;
+}
+fn append_constant(source:[i32], source_length: i32, tokens:[i32], token_count: i32, records:[i32], record_length: i32, offsets:[i32], node_count: i32, declaration: i32, id: i32, type_arena:[i32], type_arena_length: i32, resolutions:[i32], resolution_length: i32, alias_catalog:[i32], alias_words: i32, alias_scratch:[i32], alias_scratch_capacity: i32, type_output:[i32], type_capacity: i32, depth: i32, output:[i32], capacity: i32, position: i32) -> i32 {
+    if (id <= -1 || capacity - position <= RECORD - 1) {
+        return -1;
+    }
+    let type_tag: i32 = lower_type(source, source_length, tokens, token_count, records, record_length, offsets, node_count, child(records, record_length, offsets, node_count, declaration, 3), type_arena, type_arena_length, resolutions, resolution_length, alias_catalog, alias_words, alias_scratch, alias_scratch_capacity, type_output, type_capacity, depth);
+    if (type_tag <= -1) {
+        return type_tag;
+    }
+    let expression_node: i32 = literal_node(records, record_length, offsets, node_count, child(records, record_length, offsets, node_count, declaration, 5), depth);
+    if (expression_node <= -1) {
+        return -1;
+    }
+    let expression_offset: i32 = verified::surface_tree::record(records, record_length, offsets, node_count, expression_node);
+    let production: i32 = records[expression_offset];
+    let token: i32 = verified::surface_tree::child(records, record_length, offsets, node_count, expression_node, 0, verified::parser::CHILD_TOKEN, token_count);
+    let token_start: i32 = -1;
+    let token_finish: i32 = -1;
+    if (token <= -1 || token >= token_count) {
+        return -1;
+    }
+    token_start = tokens[token * 3 + 1];
+    token_finish = tokens[token * 3 + 2];
+    output[position] = id;
+    output[position + 1] = lowering::declarations::CONSTANT;
+    output[position + 2] = CONSTANT_SHAPE;
+    output[position + 3] = 0;
+    output[position + 4] = type_tag;
+    output[position + 5] = 0;
+    if (production == 185 || production == 186) {
+        if (type_tag != lowering::types::BOOL || capacity - position <= RECORD + 1) {
+            return -1;
+        }
+        output[position + 6] = 1;
+        if (production == 186) {
+            output[position + 6] = 0;
+        }
+        output[position + 7] = 0;
+        output[position + 5] = 2;
+        return position + RECORD + 2;
+    }
+    if (production == 175) {
+        if ((type_tag != lowering::types::I32 && type_tag != lowering::types::USIZE && type_tag != lowering::types::POINTER) || capacity - position <= RECORD + 1) {
+            return -1;
+        }
+        let value: i32 = decimal_literal(source, source_length, token_start, token_finish);
+        if (value <= -1) {
+            return -1;
+        }
+        if (type_tag == lowering::types::POINTER && value != 0) {
+            return -1;
+        }
+        output[position + 6] = value;
+        output[position + 7] = 0;
+        output[position + 5] = 2;
+        return position + RECORD + 2;
+    }
+    if (production == 177) {
+        if (type_tag != lowering::types::STRING || token_finish - token_start <= 1 || source[token_start] != 34 || source[token_finish - 1] != 34 || !verified::surface_atoms::valid_utf8(source, source_length, token_start + 1, token_finish - 1)) {
+            return -1;
+        }
+        let index: i32 = token_start + 1;
+        let count: i32 = token_finish - token_start - 2;
+        if (capacity - position <= RECORD + count) {
+            return -1;
+        }
+        while (index <= token_finish - 2) {
+            if (source[index] == 92) {
+                return -1;
+            }
+            output[position + RECORD + 1 + index - token_start - 1] = source[index];
+            index += 1;
+        }
+        output[position + 5] = count + 1;
+        output[position + 6] = count;
+        return position + RECORD + 1 + count;
+    }
+    return -1;
+}
+// Append one Surface field/parameter list. The two grammar families differ
+// only in their list productions and in the declaration's list child index.
+fn append_members(source:[i32], source_length: i32, tokens:[i32], token_count: i32, records:[i32], record_length: i32, offsets:[i32], node_count: i32, list: i32, mode: i32, type_arena:[i32], type_arena_length: i32, resolutions:[i32], resolution_length: i32, alias_catalog:[i32], alias_words: i32, alias_scratch:[i32], alias_scratch_capacity: i32, type_output:[i32], type_capacity: i32, depth: i32, output:[i32], capacity: i32, record: i32, position: i32) -> i32 {
+    let list_offset: i32 = verified::surface_tree::record(records, record_length, offsets, node_count, list);
+    if (list_offset <= -1) {
+        return -1;
+    }
+    if ((mode == 0 && records[list_offset] == 259) ||(mode == 1 && records[list_offset] == 60)) {
+        return position;
+    }
+    let current: i32 = list;
+    let tail: i32 = -1;
+    let remaining: i32 = depth;
+    let written: i32 = position;
+    while (remaining != 0) {
+        remaining -= 1;
+        let current_offset: i32 = verified::surface_tree::record(records, record_length, offsets, node_count, current);
+        if (current_offset <= -1) {
+            return -1;
+        }
+        if ((mode == 0 && records[current_offset] != 260
+                && records[current_offset] != 264)
+                || (mode == 1 && records[current_offset] != 61
+                && records[current_offset] != 288)) {
+            return -1;
+        }
+        let member: i32 = child(records, record_length, offsets, node_count, current, 0);
+        let member_offset: i32 = verified::surface_tree::record(records, record_length, offsets, node_count, member);
+        if (member_offset <= -1 ||(mode == 0 && records[member_offset] != 261) ||(mode == 1 && records[member_offset] != 62)) {
+            return -1;
+        }
+        let tag: i32 = lower_type(source, source_length, tokens, token_count, records, record_length, offsets, node_count, child(records, record_length, offsets, node_count, member, 2), type_arena, type_arena_length, resolutions, resolution_length, alias_catalog, alias_words, alias_scratch, alias_scratch_capacity, type_output, type_capacity, depth);
+        if (tag <= -1 || written >= capacity) {
+            return tag;
+        }
+        if (mode == 1) {
+            let parameter: i32 = verified::surface_tree::child(records, record_length, offsets, node_count, member, 0, verified::parser::CHILD_TOKEN, token_count);
+            if (parameter <= -1 || capacity - written <= 1) {
+                return -1;
+            }
+            // Core local IDs are source-token identities. The body lowering
+            // uses the same identity for parameter references.
+            output[written] = parameter;
+            output[written + 1] = tag;
+            written += 2;
+            output[record + 5] += 2;
+        } else {
+            output[written] = tag;
+            written += 1;
+            output[record + 5] += 1;
+        }
+        output[record + 3] += 1;
+        tail = child(records, record_length, offsets, node_count, current, 1);
+        let tail_offset: i32 = verified::surface_tree::record(records, record_length, offsets, node_count, tail);
+        if (tail_offset <= -1) {
+            return -1;
+        }
+        if ((mode == 0 && records[tail_offset] == 263) ||(mode == 1 && records[tail_offset] == 68)) {
+            return written;
+        }
+        if ((mode == 0 && records[tail_offset] != 262) ||(mode == 1 && records[tail_offset] != 67)) {
+            return -1;
+        }
+        let after: i32 = child(records, record_length, offsets, node_count, tail, 1);
+        let after_offset: i32 = verified::surface_tree::record(records, record_length, offsets, node_count, after);
+        if (after_offset <= -1) {
+            return -1;
+        }
+        if ((mode == 0 && records[after_offset] == 265) ||(mode == 1 && records[after_offset] == 289)) {
+            return written;
+        }
+        if ((mode == 0 && records[after_offset] != 264) ||(mode == 1 && records[after_offset] != 288)) {
+            return -1;
+        }
+        current = after;
+    }
+    return -1;
+}
+fn append_signature(source:[i32], source_length: i32, tokens:[i32], token_count: i32, records:[i32], record_length: i32, offsets:[i32], node_count: i32, declaration: i32, kind: i32, id: i32, type_arena:[i32], type_arena_length: i32, resolutions:[i32], resolution_length: i32, alias_catalog:[i32], alias_words: i32, alias_scratch:[i32], alias_scratch_capacity: i32, type_output:[i32], type_capacity: i32, depth: i32, output:[i32], capacity: i32, position: i32) -> i32 {
+    if (id <= -1 || capacity - position <= RECORD - 1) {
+        return -1;
+    }
+    let shape: i32 = STRUCTURE_SHAPE;
+    let return_tag: i32 = -1;
+    let list_index: i32 = 5;
+    let mode: i32 = 0;
+    if (kind == lowering::declarations::FUNCTION || kind == lowering::declarations::EXTERNAL) {
+        if (kind == lowering::declarations::FUNCTION) {
+            shape = INTERNAL_SHAPE;
+            list_index = 4;
+        } else {
+            shape = EXTERNAL_SHAPE;
+            list_index = 6;
+        }
+        return_tag = result_type(source, source_length, tokens, token_count, records, record_length, offsets, node_count, declaration, list_index + 2, type_arena, type_arena_length, resolutions, resolution_length, alias_catalog, alias_words, alias_scratch, alias_scratch_capacity, type_output, type_capacity, depth);
+        if (return_tag <= -1) {
+            return return_tag;
+        }
+        mode = 1;
+    }
+    let record_position: i32 = position;
+    output[record_position] = id;
+    output[record_position + 1] = kind;
+    output[record_position + 2] = shape;
+    output[record_position + 3] = 0;
+    output[record_position + 4] = return_tag;
+    output[record_position + 5] = 0;
+    let next: i32 = append_members(source, source_length, tokens, token_count, records, record_length, offsets, node_count, child(records, record_length, offsets, node_count, declaration, list_index), mode, type_arena, type_arena_length, resolutions, resolution_length, alias_catalog, alias_words, alias_scratch, alias_scratch_capacity, type_output, type_capacity, depth, output, capacity, record_position, record_position + RECORD);
+    if (next <= -1) {
+        return -1;
+    }
+    return next;
+}
+pub fn lower(source:[i32], source_length: i32, tokens:[i32], token_count: i32, records:[i32], record_length: i32, offsets:[i32], node_count: i32, declaration_table:[i32], declaration_words: i32, type_arena:[i32], type_arena_length: i32, resolutions:[i32], resolution_length: i32, alias_catalog:[i32], alias_words: i32, alias_scratch:[i32], alias_scratch_capacity: i32, type_output:[i32], type_capacity: i32, allocated:[i32], allocation_words: i32, output:[i32], capacity: i32) -> i32 {
+    if (source_length <= -1 || token_count <= -1 || record_length <= -1 || node_count <= 0 || type_arena_length <= 0 || resolution_length <= -1 || resolution_length % 2 != 0 || alias_words <= -1 || alias_scratch_capacity < 0 || type_capacity <= 0 || capacity <= HEADER - 1 || declaration_words <= HEADER - 1 || allocation_words <= HEADER - 1) {
+        return -1;
+    }
+    let rows: i32 = declaration_table[0];
+    if (rows <= 0 || declaration_words != HEADER + rows * lowering::declarations::ROW || allocated[1] != rows || allocation_words != lowering::declarations::HEADER + rows * 10) {
+        return -1;
+    }
+    output[0] = VERSION;
+    output[1] = 0;
+    output[2] = HEADER;
+    output[3] = 0;
+    output[4] = 0;
+    output[5] = 0;
+    output[6] = 0;
+    output[7] = 0;
+    let row: i32 = 0;
+    let written: i32 = HEADER;
+    while (row <= rows - 1) {
+        let declaration_slot: i32 = lowering::declarations::HEADER + row * lowering::declarations::ROW;
+        let allocation_slot: i32 = lowering::declarations::HEADER + row * 10;
+        let kind: i32 = allocated[allocation_slot + 1];
+        let field: i32 = 0;
+        while (field <= lowering::declarations::ROW - 1) {
+            if (declaration_table[declaration_slot + field] != allocated[allocation_slot + field]) {
+                return -1;
+            }
+            field += 1;
+        }
+        if (kind == lowering::declarations::CONSTANT) {
+            let next: i32 = append_constant(source, source_length, tokens, token_count, records, record_length, offsets, node_count, allocated[allocation_slot + 4], allocated[allocation_slot + 8], type_arena, type_arena_length, resolutions, resolution_length, alias_catalog, alias_words, alias_scratch, alias_scratch_capacity, type_output, type_capacity, node_count, output, capacity, written);
+            if (next <= -1) {
+            return -1;
+            }
+            output[1] += 1;
+            output[6] += 1;
+            written = next;
+            output[2] = written;
+        }
+        if (kind == lowering::declarations::STRUCTURE || kind == lowering::declarations::FUNCTION || kind == lowering::declarations::EXTERNAL) {
+            let signature_id: i32 = allocated[allocation_slot + 8]; // Callable IDs occupy the backend's function namespace, which is
+            // independent of the globally unique declaration ID used by
+            // constants. Bodies and call expressions use this Core ID too.
+            if (kind == lowering::declarations::FUNCTION || kind == lowering::declarations::EXTERNAL) {
+                signature_id = allocated[allocation_slot + 9];
+            }
+            let next: i32 = append_signature(source, source_length, tokens, token_count, records, record_length, offsets, node_count, allocated[allocation_slot + 4], kind, signature_id, type_arena, type_arena_length, resolutions, resolution_length, alias_catalog, alias_words, alias_scratch, alias_scratch_capacity, type_output, type_capacity, node_count, output, capacity, written);
+            if (next <= -1) {
+            return -1;
+            }
+            output[1] += 1;
+            if (kind == lowering::declarations::STRUCTURE) {
+                output[3] += 1;
+            }
+            if (kind == lowering::declarations::FUNCTION) {
+                output[4] += 1;
+            }
+            if (kind == lowering::declarations::EXTERNAL) {
+                output[5] += 1;
+            }
+            written = next;
+            output[2] = written;
+        }
+        row += 1;
+    }
+    return written;
+}
+fn catalog_range(offset: i32, words: i32, length: i32) -> bool {
+    if (offset <= -1 || words <= -1 || length <= -1 || offset>length || words>length - offset) {
+        return false;
+    }
+    return true;
+}
+fn row_range(offset: i32, count: i32, stride: i32, length: i32) -> bool {
+    if (count <= -1 || stride <= 0 || count>715827882) {
+        return false;
+    }
+    return catalog_range(offset, count * stride, length);
+}
+fn ranges_overlap(first: i32, first_words: i32, second: i32, second_words: i32) -> bool {
+    if (first_words <= 0 || second_words <= 0) {
+        return false;
+    }
+    if (first <= second) {
+        return second - first <= first_words - 1;
+    }
+    return first - second <= second_words - 1;
+}
+fn copy_catalog(input:[i32], offset: i32, words: i32, output:[i32], capacity: i32) -> bool {
+    if (offset <= -1 || words <= -1 || capacity <= -1 || words>capacity) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index <= words - 1) {
+        output[index] = input[offset + index];
+        index += 1;
+    }
+    return true;
+}
+fn valid_declaration_slice(input:[i32], length: i32, offset: i32, words: i32, unit: i32) -> bool {
+    if (!catalog_range(offset, words, length) || words <= lowering::declarations::HEADER - 1) {
+        return false;
+    }
+    let rows: i32 = input[offset];
+    if (rows <= 0 || rows>(words - lowering::declarations::HEADER) / lowering::declarations::ROW || words != lowering::declarations::HEADER + rows * lowering::declarations::ROW) {
+        return false;
+    }
+    let row: i32 = 0;
+    while (row <= rows - 1) {
+        let slot: i32 = offset + lowering::declarations::HEADER + row * lowering::declarations::ROW;
+        if (input[slot] != unit) {
+            return false;
+        }
+        row += 1;
+    }
+    return true;
+}
+fn valid_context(contexts:[i32], position: i32, sources_length: i32, tokens_length: i32, records_length: i32, offsets_length: i32, arenas_length: i32, resolutions_length: i32) -> bool {
+    let source_offset: i32 = contexts[position + SOURCE_OFFSET];
+    let source_words: i32 = contexts[position + SOURCE_LENGTH];
+    let token_offset: i32 = contexts[position + TOKEN_OFFSET];
+    let token_count: i32 = contexts[position + TOKEN_COUNT];
+    let record_offset: i32 = contexts[position + RECORD_OFFSET];
+    let record_words: i32 = contexts[position + RECORD_LENGTH];
+    let offsets_offset: i32 = contexts[position + OFFSETS_OFFSET];
+    let node_count: i32 = contexts[position + NODE_COUNT];
+    let arena_offset: i32 = contexts[position + TYPE_ARENA_OFFSET];
+    let arena_words: i32 = contexts[position + TYPE_ARENA_LENGTH];
+    let resolution_offset: i32 = contexts[position + RESOLUTION_OFFSET];
+    let resolution_words: i32 = contexts[position + RESOLUTION_LENGTH];
+    if (!catalog_range(source_offset, source_words, sources_length) || !row_range(token_offset, token_count, 3, tokens_length) || !catalog_range(record_offset, record_words, records_length) || !row_range(offsets_offset, node_count, 1, offsets_length) || !catalog_range(arena_offset, arena_words, arenas_length) || !catalog_range(resolution_offset, resolution_words, resolutions_length)) {
+        return false;
+    }
+    if (token_count <= -1 || node_count <= 0 || arena_words <= 0 || resolution_words <= -1 || resolution_words % 2 != 0) {
+        return false;
+    }
+    return true;
+}
+fn duplicate_record(output:[i32], written: i32, candidate:[i32], candidate_position: i32) -> bool {
+    let candidate_id: i32 = candidate[candidate_position];
+    let candidate_shape: i32 = candidate[candidate_position + 2];
+    let position: i32 = HEADER;
+    while (position <= written - 1) {
+        if (output[position] == candidate_id && output[position + 2] == candidate_shape) {
+            return true;
+        }
+        let payload: i32 = output[position + 5];
+        if (payload <= -1 || payload>written - position - RECORD) {
+            return true;
+        }
+        position += RECORD + payload;
+    }
+    return false;
+}
+// Lower every descriptor-ordered unit against one allocation table. The
+// declaration catalog must contain the same exact per-unit tables consumed by
+// lowering::units::accumulate; allocation rows are selected by the cumulative
+// declaration-row cursor, so callable Core IDs remain globally assigned. The
+// caller supplies bounded scratch arrays because Lanius has no borrowed
+// sub-slice value. Returns the aggregate signature word count, or -1.
+//
+// The output is initialized once and receives records in unit order. Existing
+// lower() remains the compatibility-preserving one-unit entry point.
+pub fn lower_units(descriptors:[i32], descriptor_length: i32, unit_count: i32, contexts:[i32], context_length: i32, declaration_catalog:[i32], declaration_catalog_length: i32, source_catalog:[i32], source_catalog_length: i32, token_catalog:[i32], token_catalog_length: i32, record_catalog:[i32], record_catalog_length: i32, offsets_catalog:[i32], offsets_catalog_length: i32, type_arena_catalog:[i32], type_arena_catalog_length: i32, resolution_catalog:[i32], resolution_catalog_length: i32, alias_catalog:[i32], alias_catalog_length: i32, alias_unit_capacity: i32, alias_scratch:[i32], alias_scratch_capacity: i32, allocated:[i32], allocation_words: i32, declaration_words: i32, type_output:[i32], type_capacity: i32, source_scratch:[i32], source_capacity: i32, token_scratch:[i32], token_capacity: i32, record_scratch:[i32], record_capacity: i32, offsets_scratch:[i32], offsets_capacity: i32, type_arena_scratch:[i32], type_arena_capacity: i32, resolution_scratch:[i32], resolution_capacity: i32, declaration_scratch:[i32], declaration_capacity: i32, allocation_scratch:[i32], allocation_capacity: i32, signature_scratch:[i32], signature_capacity: i32, output:[i32], capacity: i32) -> i32 {
+    if (unit_count <= 0 || descriptor_length <= -1 || unit_count>descriptor_length / lowering::units::DESCRIPTOR_WORDS || descriptor_length != unit_count * lowering::units::DESCRIPTOR_WORDS || context_length <= -1 || unit_count>context_length / CONTEXT_WORDS || context_length != unit_count * CONTEXT_WORDS || declaration_catalog_length <= -1 || source_catalog_length <= -1 || token_catalog_length <= -1 || record_catalog_length <= -1 || offsets_catalog_length <= -1 || type_arena_catalog_length <= -1 || alias_catalog_length <= -1 || alias_unit_capacity <= -1 || alias_scratch_capacity <= -1 || allocation_words <= 7 || declaration_words <= 7 || type_capacity <= 0 || capacity <= HEADER - 1 || source_capacity <= -1 || token_capacity <= -1 || record_capacity <= -1 || offsets_capacity <= -1 || type_arena_capacity <= 0 || resolution_capacity <= -1 || declaration_capacity <= 7 || allocation_capacity <= 7 || signature_capacity <= HEADER - 1) {
+        return -1;
+    }
+    if (allocated[0] != unit_count || allocated[1] <= 0 || allocated[1]>(2147483647 - lowering::declarations::HEADER) / 10 || allocation_words != lowering::declarations::HEADER + allocated[1] * 10) {
+        return -1;
+    }
+    let total_rows: i32 = 0;
+    let total_declaration_words: i32 = 0;
+    let unit: i32 = 0;
+    while (unit <= unit_count - 1) {
+        let descriptor: i32 = unit * lowering::units::DESCRIPTOR_WORDS;
+        let context: i32 = unit * CONTEXT_WORDS;
+        let declaration_offset: i32 = descriptors[descriptor + lowering::units::DECLARATION_OFFSET];
+        let local_words: i32 = descriptors[descriptor + lowering::units::DECLARATION_WORDS];
+        if (!valid_declaration_slice(declaration_catalog, declaration_catalog_length, declaration_offset, local_words, unit) || !valid_context(contexts, context, source_catalog_length, token_catalog_length, record_catalog_length, offsets_catalog_length, type_arena_catalog_length, resolution_catalog_length)) {
+            return -1;
+        }
+        if (declaration_catalog[declaration_offset]>2147483647 - total_rows) {
+            return -1;
+        }
+        if (local_words > 2147483647 - total_declaration_words) {
+            return -1;
+        }
+        total_rows += declaration_catalog[declaration_offset];
+        total_declaration_words += local_words;
+        unit += 1;
+    }
+    if (total_rows>(2147483647 - lowering::declarations::HEADER) / lowering::declarations::ROW || declaration_words != total_declaration_words || allocated[1] != total_rows) {
+        return -1;
+    }
+    // Descriptor ranges are not allowed to alias another unit's input. This
+    // prevents a repeated catalog slice from silently compiling one unit twice.
+    unit = 0;
+    while (unit <= unit_count - 1) {
+        let descriptor: i32 = unit * lowering::units::DESCRIPTOR_WORDS;
+        let context: i32 = unit * CONTEXT_WORDS;
+        let declaration_offset: i32 = descriptors[descriptor + lowering::units::DECLARATION_OFFSET];
+        let declaration_words_local: i32 = descriptors[descriptor + lowering::units::DECLARATION_WORDS];
+        let source_offset: i32 = contexts[context + SOURCE_OFFSET];
+        let source_words: i32 = contexts[context + SOURCE_LENGTH];
+        let token_offset: i32 = contexts[context + TOKEN_OFFSET];
+        let token_words: i32 = contexts[context + TOKEN_COUNT] * 3;
+        let record_offset: i32 = contexts[context + RECORD_OFFSET];
+        let record_words: i32 = contexts[context + RECORD_LENGTH];
+        let offsets_offset: i32 = contexts[context + OFFSETS_OFFSET];
+        let offsets_words: i32 = contexts[context + NODE_COUNT];
+        let arena_offset: i32 = contexts[context + TYPE_ARENA_OFFSET];
+        let arena_words: i32 = contexts[context + TYPE_ARENA_LENGTH];
+        let resolution_offset: i32 = contexts[context + RESOLUTION_OFFSET];
+        let resolution_words: i32 = contexts[context + RESOLUTION_LENGTH];
+        let previous: i32 = 0;
+        while (previous <= unit - 1) {
+            let previous_descriptor: i32 = previous * lowering::units::DESCRIPTOR_WORDS;
+            let previous_context: i32 = previous * CONTEXT_WORDS;
+            if (ranges_overlap(declaration_offset, declaration_words_local, descriptors[previous_descriptor + lowering::units::DECLARATION_OFFSET], descriptors[previous_descriptor + lowering::units::DECLARATION_WORDS]) || ranges_overlap(source_offset, source_words, contexts[previous_context + SOURCE_OFFSET], contexts[previous_context + SOURCE_LENGTH]) || ranges_overlap(token_offset, token_words, contexts[previous_context + TOKEN_OFFSET], contexts[previous_context + TOKEN_COUNT] * 3) || ranges_overlap(record_offset, record_words, contexts[previous_context + RECORD_OFFSET], contexts[previous_context + RECORD_LENGTH]) || ranges_overlap(offsets_offset, offsets_words, contexts[previous_context + OFFSETS_OFFSET], contexts[previous_context + NODE_COUNT]) || ranges_overlap(arena_offset, arena_words, contexts[previous_context + TYPE_ARENA_OFFSET], contexts[previous_context + TYPE_ARENA_LENGTH]) || ranges_overlap(resolution_offset, resolution_words, contexts[previous_context + RESOLUTION_OFFSET], contexts[previous_context + RESOLUTION_LENGTH])) {
+                return -1;
+            }
+            previous += 1;
+        }
+        unit += 1;
+    }
+    output[0] = VERSION;
+    output[1] = 0;
+    output[2] = HEADER;
+    output[3] = 0;
+    output[4] = 0;
+    output[5] = 0;
+    output[6] = 0;
+    output[7] = 0;
+    let written: i32 = HEADER;
+    let allocation_row: i32 = 0;
+    unit = 0;
+    while (unit <= unit_count - 1) {
+        let descriptor: i32 = unit * lowering::units::DESCRIPTOR_WORDS;
+        let context: i32 = unit * CONTEXT_WORDS;
+        let declaration_offset: i32 = descriptors[descriptor + lowering::units::DECLARATION_OFFSET];
+        let local_declaration_words: i32 = descriptors[descriptor + lowering::units::DECLARATION_WORDS];
+        let rows: i32 = declaration_catalog[declaration_offset];
+        if (rows>(2147483647 - lowering::declarations::HEADER) / 10) {
+            return -1;
+        }
+        let source_length: i32 = contexts[context + SOURCE_LENGTH];
+        let token_count: i32 = contexts[context + TOKEN_COUNT];
+        let record_length: i32 = contexts[context + RECORD_LENGTH];
+        let node_count: i32 = contexts[context + NODE_COUNT];
+        let arena_length: i32 = contexts[context + TYPE_ARENA_LENGTH];
+        let resolution_length: i32 = contexts[context + RESOLUTION_LENGTH];
+        if (!copy_catalog(source_catalog, contexts[context + SOURCE_OFFSET], source_length, source_scratch, source_capacity) || !copy_catalog(token_catalog, contexts[context + TOKEN_OFFSET], token_count * 3, token_scratch, token_capacity) || !copy_catalog(record_catalog, contexts[context + RECORD_OFFSET], record_length, record_scratch, record_capacity) || !copy_catalog(offsets_catalog, contexts[context + OFFSETS_OFFSET], node_count, offsets_scratch, offsets_capacity) || !copy_catalog(type_arena_catalog, contexts[context + TYPE_ARENA_OFFSET], arena_length, type_arena_scratch, type_arena_capacity) || !copy_catalog(resolution_catalog, contexts[context + RESOLUTION_OFFSET], resolution_length, resolution_scratch, resolution_capacity) || !copy_catalog(declaration_catalog, declaration_offset, local_declaration_words, declaration_scratch, declaration_capacity)) {
+            return -1;
+        }
+        let alias_words: i32 = 0;
+        if (alias_unit_capacity > 0) {
+            let alias_offset: i32 = unit * alias_unit_capacity;
+            if (alias_offset > alias_catalog_length - 1 || alias_catalog[alias_offset] != lowering::aliases::MAGIC) {
+                return -1;
+            }
+            alias_words = alias_catalog[alias_offset + 2];
+            if (alias_words <= lowering::aliases::HEADER - 1
+                || alias_words > alias_unit_capacity
+                || alias_offset > alias_catalog_length - alias_words
+                || alias_words > alias_scratch_capacity) { return -1; }
+            let alias_word: i32 = 0;
+            while (alias_word < alias_words) {
+                alias_scratch[alias_word] = alias_catalog[alias_offset + alias_word];
+                alias_word += 1;
+            }
+        }
+        let offset_index: i32 = 0;
+        while (offset_index <= node_count - 1) {
+            if (offsets_scratch[offset_index] <= -1 || offsets_scratch[offset_index]>record_length - 4) {
+                return -1;
+            }
+            offset_index += 1;
+        }
+        declaration_scratch[0] = rows;
+        let header: i32 = 0;
+        while (header <= lowering::declarations::HEADER - 1) {
+            allocation_scratch[header] = allocated[header];
+            header += 1;
+        }
+        allocation_scratch[0] = 1;
+        allocation_scratch[1] = rows;
+        let row: i32 = 0;
+        while (row <= rows - 1) {
+            let declaration_slot: i32 = lowering::declarations::HEADER + row * lowering::declarations::ROW;
+            let global_slot: i32 = lowering::declarations::HEADER +(allocation_row + row) * 10;
+            let field: i32 = 0;
+            while (field <= lowering::declarations::ROW - 1) {
+                declaration_scratch[declaration_slot + field] = declaration_catalog[declaration_offset + declaration_slot + field];
+                if (declaration_scratch[declaration_slot + field] != allocated[global_slot + field]) {
+                    return -1;
+                }
+                field += 1;
+            }
+            field = 0;
+            while (field <= 9) {
+                allocation_scratch[lowering::declarations::HEADER + row * 10 + field] = allocated[global_slot + field];
+                field += 1;
+            }
+            row += 1;
+        }
+        let local_allocation_words: i32 = lowering::declarations::HEADER + rows * 10;
+        let local_signature_words: i32 = lower(source_scratch, source_length, token_scratch, token_count, record_scratch, record_length, offsets_scratch, node_count, declaration_scratch, local_declaration_words, type_arena_scratch, arena_length, resolution_scratch, resolution_length, alias_scratch, alias_words, type_arena_scratch, type_arena_capacity, type_output, type_capacity, allocation_scratch, local_allocation_words, signature_scratch, signature_capacity);
+        if (local_signature_words <= -1 || local_signature_words <= HEADER - 1 || signature_scratch[2] != local_signature_words || local_signature_words>signature_capacity) {
+            return -1;
+        }
+        let local_position: i32 = HEADER;
+        while (local_position <= local_signature_words - 1) {
+            if (duplicate_record(output, written, signature_scratch, local_position)) {
+                return -1;
+            }
+            let payload: i32 = signature_scratch[local_position + 5];
+            if (payload <= -1 || payload>local_signature_words - local_position - RECORD || capacity - written <= RECORD + payload - 1) {
+                return -1;
+            }
+            let field: i32 = 0;
+            while (field <= RECORD + payload - 1) {
+                output[written + field] = signature_scratch[local_position + field];
+                field += 1;
+            }
+            written += RECORD + payload;
+            local_position += RECORD + payload;
+        }
+        output[1] += signature_scratch[1];
+        output[3] += signature_scratch[3];
+        output[4] += signature_scratch[4];
+        output[5] += signature_scratch[5];
+        output[6] += signature_scratch[6];
+        output[2] = written;
+        allocation_row += rows;
+        unit += 1;
+    }
+    return written;
+}

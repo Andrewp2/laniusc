@@ -1,0 +1,13 @@
+module app::main;
+
+struct AnswerBox {
+    value: i32,
+}
+
+fn ignore_box(value: AnswerBox) -> i32 {
+    return 42;
+}
+
+fn main() -> i32 {
+    return 42;
+}

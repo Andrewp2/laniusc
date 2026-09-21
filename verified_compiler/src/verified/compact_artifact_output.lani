@@ -1,6 +1,16 @@
 module verified::compact_artifact_output;
 import verified::output;
 import verified::parser;
+import verified::host;
+
+const BUNDLE_PATH: i32 = 8;
+const BUNDLE_SOURCE: i32 = 1032;
+const BUNDLE_RAW: i32 = 66568;
+const BUNDLE_CANONICAL: i32 = 132104;
+const BUNDLE_SEMANTIC: i32 = 197640;
+const BUNDLE_RECORDS: i32 = 328712;
+const BUNDLE_OFFSETS: i32 = 1377288;
+const BUNDLE_WORDS: i32 = 1508360;
 fn hex_digit(value: i32) -> i32 {
     if (value<10) {
         return 48 + value;
@@ -157,5 +167,35 @@ pub fn emit_unit(path:[i32], path_length: i32, source:[i32], source_length: i32,
     next = tokens(canonical, canonical_length, token_count, source_length, output, capacity, next);
     next = semantic(semantic_kinds, semantic_length, token_count, output, capacity, next);
     next = hex_u32(output, capacity, next, node_count);
-    return nodes(records, records_length, offsets, node_count, token_count, output, capacity, next);
+    return nodes(records, records_length, offsets, node_count,
+        token_count, output, capacity, next);
+}
+
+// Native entrypoints use one owned per-unit bundle instead of importing the
+// eighteen-parameter emitter.  Metadata words [0..4] carry path/source/raw/
+// token/node lengths; all arrays retain their existing canonical capacities.
+fn emit_unit_raw(bundle_pointer: ptr, output_pointer: ptr, position: i32,
+    capacity: i32) -> i32 {
+    let bundle:[i32] = verified::host::i32_slice_from_raw_parts(bundle_pointer, BUNDLE_WORDS);
+    let path:[i32] = verified::host::i32_slice_from_raw_parts(bundle_pointer + BUNDLE_PATH * 4, 1024);
+    let source:[i32] = verified::host::i32_slice_from_raw_parts(bundle_pointer + BUNDLE_SOURCE * 4, 65536);
+    let raw:[i32] = verified::host::i32_slice_from_raw_parts(bundle_pointer + BUNDLE_RAW * 4, 65536);
+    let canonical:[i32] = verified::host::i32_slice_from_raw_parts(bundle_pointer + BUNDLE_CANONICAL * 4, 65536);
+    let semantic_kinds:[i32] = verified::host::i32_slice_from_raw_parts(bundle_pointer + BUNDLE_SEMANTIC * 4, 131072);
+    let records:[i32] = verified::host::i32_slice_from_raw_parts(bundle_pointer + BUNDLE_RECORDS * 4, 1048576);
+    let offsets:[i32] = verified::host::i32_slice_from_raw_parts(bundle_pointer + BUNDLE_OFFSETS * 4, 131072);
+    let output:[i32] = verified::host::i32_slice_from_raw_parts(output_pointer, capacity);
+    return emit_unit(path, bundle[0], source, bundle[1], raw, 65536, bundle[2],
+        canonical, 65536, bundle[3], semantic_kinds, 131072, records, 1048576,
+        offsets, bundle[4], output, capacity, position);
+}
+
+pub fn emit_unit_compiler_raw(bundle_pointer: ptr, output_pointer: ptr,
+    position: i32) -> i32 {
+    return emit_unit_raw(bundle_pointer, output_pointer, position, 16777216);
+}
+
+pub fn emit_unit_extractor_raw(bundle_pointer: ptr, output_pointer: ptr,
+    position: i32) -> i32 {
+    return emit_unit_raw(bundle_pointer, output_pointer, position, 67108864);
 }

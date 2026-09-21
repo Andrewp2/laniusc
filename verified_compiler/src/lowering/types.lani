@@ -1,5 +1,6 @@
 module lowering::types;
 
+import lowering::aliases;
 import verified::host;
 
 // This is the type boundary between the existing Surface type arena and the
@@ -15,6 +16,7 @@ pub const POINTER: i32 = 4;
 pub const STRING: i32 = 5;
 pub const I32_SLICE: i32 = 6;
 pub const STRUCTURE_BASE: i32 = 16;
+pub const NOMINAL_MAGIC: i32 = -1381259330;
 
 fn represented(tag: i32) -> bool {
     return (tag >= I32 && tag <= I32_SLICE) || tag >= STRUCTURE_BASE;
@@ -24,7 +26,9 @@ fn represented(tag: i32) -> bool {
 // five transport-supported primitives first. `words` is the private catalog
 // prepared once by lower, not a borrowed pointer into an immutable string.
 // An unsupported builtin must never fall through to nominal/alias resolution.
-fn builtin(source: [i32], start: i32, finish: i32, words: [i32]) -> i32 {
+fn builtin(source: [i32], start: i32, finish: i32, names: str) -> i32 {
+    let words: [i32] = verified::host::i32_slice_from_raw_parts(
+        verified::host::string_data_ptr(names), 17);
     let position: i32 = 0;
     let tag: i32 = 1;
     while (position < 68) {
@@ -48,12 +52,34 @@ fn builtin(source: [i32], start: i32, finish: i32, words: [i32]) -> i32 {
     return -INVALID;
 }
 
-// Name resolution is an independent compiler pass. Its result is a sparse
-// [path-arena-node, Core-type-tag] table for this arena, not a host callback or
-// a trusted proof. Qualified names and aliases are never guessed from their
-// last spelling. Rows are sorted by arena node; repeated resolutions are
-// rejected, including equal repeats and rows shadowed by builtin precedence.
-fn resolved(resolutions: [i32], length: i32, node: i32) -> i32 {
+// Name resolution is an independent compiler pass. The existing arena-keyed
+// [path-arena-node, Core-type-tag] rows remain accepted for unit contexts.
+// The one-unit nominal extension is marked by NOMINAL_MAGIC and carries a
+// [declaration-name-token, Core-type-tag] table shared by independently
+// extracted arenas. Qualified names and aliases are never guessed from their
+// last spelling. Rows are sorted by their key; repeated spellings are
+// rejected, including duplicate declarations.
+fn same_token(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
+    a: i32, b: i32) -> bool {
+    if (a <= -1 || b <= -1 || a >= token_count || b >= token_count
+        || tokens[a * 3] != 1 || tokens[b * 3] != 1) { return false; }
+    let a_start: i32 = tokens[a * 3 + 1];
+    let a_finish: i32 = tokens[a * 3 + 2];
+    let b_start: i32 = tokens[b * 3 + 1];
+    let b_finish: i32 = tokens[b * 3 + 2];
+    if (a_start <= -1 || a_finish <= a_start || a_finish > source_length
+        || b_start <= -1 || b_finish <= b_start || b_finish > source_length
+        || a_finish - a_start != b_finish - b_start) { return false; }
+    let span_length: i32 = a_finish - a_start;
+    let index: i32 = 0;
+    while (index <= span_length - 1) {
+        if (source[a_start + index] != source[b_start + index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+fn resolved_arena(resolutions: [i32], length: i32, node: i32) -> i32 {
     let answer: i32 = -INVALID;
     let position: i32 = 0;
     while (position < length) {
@@ -62,6 +88,24 @@ fn resolved(resolutions: [i32], length: i32, node: i32) -> i32 {
             answer = resolutions[position + 1];
         }
         position += 2;
+    }
+    return answer;
+}
+
+fn resolved_token(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
+    resolutions: [i32], start: i32, length: i32, token: i32) -> i32 {
+    let answer: i32 = -INVALID;
+    let position: i32 = start;
+    while (position < length) {
+        if (same_token(source, source_length, tokens, token_count,
+            token, resolutions[position])) {
+            if (answer != -INVALID) { return -2; }
+            answer = resolutions[position + 1];
+        }
+        position += 2;
+    }
+    if (answer == -INVALID) {
+        return answer;
     }
     return answer;
 }
@@ -75,25 +119,46 @@ fn resolved(resolutions: [i32], length: i32, node: i32) -> i32 {
 pub fn lower(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
     arena: [i32], arena_length: i32, root: i32,
     resolutions: [i32], resolution_length: i32,
+    alias_catalog: [i32], alias_words: i32, alias_scratch: [i32],
+    alias_scratch_capacity: i32,
     output: [i32], capacity: i32) -> i32 {
-    if (source_length < 0 || token_count < 0 || token_count > 715827882
-        || arena_length <= 0 || resolution_length < 0 || resolution_length % 2 != 0) {
+    if (source_length <= -1 || token_count <= -1 || token_count > 715827882
+        || arena_length <= 0 || resolution_length <= -1 || resolution_length % 2 != 0
+        || alias_words <= -1 || alias_scratch_capacity <= -1) {
         return -INVALID;
     }
+    if (alias_words > 0 && !lowering::aliases::valid(alias_catalog, alias_words,
+        tokens, token_count)) { return -INVALID; }
     let count: i32 = arena[0];
-    if (count <= 0 || count > (arena_length - 1) / 8 || capacity < count
-        || root < 0 || root >= count) { return -INVALID; }
-    let position: i32 = 0;
+    if (count <= 0 || count > (arena_length - 1) / 8 || capacity <= count - 1
+        || root <= -1 || root >= count) { return -INVALID; }
+    let nominal_table: bool = false;
+    let table_start: i32 = 0;
+    if (resolution_length >= 2 && resolutions[0] == NOMINAL_MAGIC) {
+        let table_rows: i32 = resolutions[1];
+        if (table_rows <= -1 || table_rows > (resolution_length - 2) / 2
+            || resolution_length != 2 + table_rows * 2) { return -INVALID; }
+        nominal_table = true;
+        table_start = 2;
+    }
+    let position: i32 = table_start;
     let previous: i32 = -1;
     while (position < resolution_length) {
-        let path: i32 = resolutions[position];
-        if (path <= previous || path >= count || arena[1 + path * 8] != 1
-            || !represented(resolutions[position + 1])) { return -INVALID; }
-        previous = path;
+        let key: i32 = resolutions[position];
+        if (nominal_table) {
+            if (key <= previous || key <= -1 || key >= token_count
+                || resolutions[position + 1] <= STRUCTURE_BASE - 1
+                || !represented(resolutions[position + 1])) { return -INVALID; }
+            previous = key;
+        } else {
+            if (key <= previous || key <= -1 || key >= count
+                || arena[1 + key * 8] != 1
+                || !represented(resolutions[position + 1])) { return -INVALID; }
+            previous = key;
+        }
         position += 2;
     }
-    let catalog: [i32];
-    let prepared: bool = false;
+    let names: str = "i32 bool usize ptr str i8 i16 i64 isize u8 u16 u32 u64 f32 f64 char ";
     let node: i32 = 0;
     while (node < count) {
         let slot: i32 = 1 + node * 8;
@@ -103,49 +168,68 @@ pub fn lower(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
         if (kind == 0) {
             if (first != -1) { return -UNSUPPORTED; }
             let token: i32 = arena[slot + 4];
-            if (token < 0 || token >= token_count) { return -INVALID; }
+            if (token <= -1 || token >= token_count) { return -INVALID; }
             let start: i32 = tokens[token * 3 + 1];
             let finish: i32 = tokens[token * 3 + 2];
-            if (start < 0 || finish <= start || finish > source_length) { return -INVALID; }
+            if (start <= -1 || finish <= start || finish > source_length) { return -INVALID; }
             let next: i32 = arena[slot + 7];
             if (next != -1 && (next <= node || next >= count || arena[1 + next * 8] != 0)) {
                 return -INVALID;
             }
         } else {
-            if (first < 0 || first >= node) { return -INVALID; }
+            if (first <= -1 || first >= node) { return -INVALID; }
             if (kind == 1) {
                 let segment: i32 = first;
                 let segments: i32 = 0;
                 while (segment != -1) {
-                    if (segment < 0 || segment >= node || arena[1 + segment * 8] != 0) {
+                    if (segment <= -1 || segment >= node || arena[1 + segment * 8] != 0) {
                         return -INVALID;
                     }
                     segments += 1;
                     segment = arena[1 + segment * 8 + 7];
                 }
                 if (segments == 1) {
-                    if (!prepared) {
-                        // The explicit trailing space pads this catalog to
-                        // 68 bytes, exactly 17 packed words. Materialize it
-                        // only if needed, then reuse it for this entire arena.
-                        let names: str = "i32 bool usize ptr str i8 i16 i64 isize u8 u16 u32 u64 f32 f64 char ";
-                        catalog = verified::host::i32_slice_from_raw_parts(
-                            verified::host::string_data_ptr(names), 17);
-                        prepared = true;
-                    }
                     let token: i32 = arena[1 + first * 8 + 4];
-                    tag = builtin(source, tokens[token * 3 + 1], tokens[token * 3 + 2], catalog);
+                    tag = builtin(source, tokens[token * 3 + 1], tokens[token * 3 + 2], names);
                     if (tag == -UNSUPPORTED) { return -UNSUPPORTED; }
                 }
-                if (tag == -INVALID) { tag = resolved(resolutions, resolution_length, node); }
-                if (tag == -INVALID) { return -INVALID; }
+                if (tag == -INVALID) {
+                    let alias_ambiguous: i32 = 0 - lowering::aliases::AMBIGUOUS;
+                    let alias_unsupported: i32 = 0 - lowering::aliases::UNSUPPORTED;
+                    let alias_tag: i32 = lowering::aliases::scalar(source, source_length,
+                        tokens, token_count, alias_catalog, alias_words, arena,
+                        node, alias_scratch, alias_scratch_capacity);
+                    if (alias_tag == alias_ambiguous) { return -INVALID; }
+                    if (alias_tag == alias_unsupported) { return -UNSUPPORTED; }
+                    if (alias_tag > 0) { tag = alias_tag; }
+                    else {
+                        if (nominal_table) {
+                            // Qualified names are resolved against the same
+                            // authenticated final-name map as unqualified
+                            // names; duplicate keys remain a hard failure.
+                            let nominal_segment: i32 = first;
+                            while (arena[1 + nominal_segment * 8 + 7] != -1) {
+                                nominal_segment = arena[1 + nominal_segment * 8 + 7];
+                            }
+                            let nominal_token: i32 = arena[1 + nominal_segment * 8 + 4];
+                            tag = resolved_token(source, source_length, tokens,
+                                token_count, resolutions, table_start,
+                                resolution_length, nominal_token);
+                        } else {
+                            tag = resolved_arena(resolutions, resolution_length, node);
+                        }
+                    }
+                }
+                if (tag == -INVALID) {
+                    return -INVALID;
+                }
             } else {
                 if (kind == 2) {
                     if (arena[1 + first * 8] != 1) { return -INVALID; }
                     tag = output[first];
                 } else {
                     if (kind == 4) {
-                        if (arena[1 + first * 8] < 2) { return -INVALID; }
+                        if (arena[1 + first * 8] <= 1) { return -INVALID; }
                         if (output[first] != I32) { return -UNSUPPORTED; }
                         tag = I32_SLICE;
                     } else {
@@ -158,6 +242,6 @@ pub fn lower(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
         output[node] = tag;
         node += 1;
     }
-    if (arena[1 + root * 8] < 2) { return -INVALID; }
+    if (arena[1 + root * 8] <= 1) { return -INVALID; }
     return output[root];
 }

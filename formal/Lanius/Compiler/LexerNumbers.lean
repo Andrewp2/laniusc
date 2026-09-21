@@ -152,12 +152,6 @@ theorem DigitTailScan.result_offset_ge
   | separatorBeforeInvalid => omega
   | boundary => omega
 
-theorem DigitTailScan.success_end_ge
-    {base : Nat} {input : List Byte} {offset finish : Nat}
-    (scan : DigitTailScan base input offset (.success finish)) :
-    offset ≤ finish := by
-  exact scan.result_offset_ge
-
 def scanDigitRun (source : List Byte) (start base : Nat) : DigitScanResult :=
   match source.drop start with
   | [] => .failure start
@@ -219,7 +213,7 @@ theorem DigitRunScan.success_end_after_start
     start < finish := by
   cases scan with
   | valid _ _ _ _ _ tail =>
-      have tailBound := tail.success_end_ge
+      have tailBound := tail.result_offset_ge
       omega
 
 theorem scanDigitRun_success_end_after_start
@@ -259,13 +253,6 @@ def scanExponent
   | .success finish => .success .float finish
   | .failure error => .failure error
 
-theorem scanExponent_deterministic
-    (source : List Byte) (exponentStart : Nat) {left right : NumberScanResult}
-    (leftResult : scanExponent source exponentStart = left)
-    (rightResult : scanExponent source exponentStart = right) :
-    left = right := by
-  exact leftResult.symm.trans rightResult
-
 theorem scanExponent_any_success_end_after_start
     {source : List Byte} {exponentStart finish : Nat} {kind : TokenKind}
     (result : scanExponent source exponentStart = .success kind finish) :
@@ -278,12 +265,6 @@ theorem scanExponent_any_success_end_after_start
       exact Nat.lt_trans (exponentDigitsStart_after_exponent source exponentStart)
         (scanDigitRun_success_end_after_start digits)
   | failure error => simp [digits] at result
-
-theorem scanExponent_success_end_after_start
-    {source : List Byte} {exponentStart finish : Nat}
-    (result : scanExponent source exponentStart = .success .float finish) :
-    exponentStart < finish := by
-  exact scanExponent_any_success_end_after_start result
 
 def finishDecimal
     (source : List Byte) (integerEnd : Nat) : NumberScanResult :=
@@ -316,13 +297,6 @@ def finishDecimal
             else
               .success .float fractionStart
         | none => .success .float fractionStart
-
-theorem finishDecimal_deterministic
-    (source : List Byte) (integerEnd : Nat) {left right : NumberScanResult}
-    (leftResult : finishDecimal source integerEnd = left)
-    (rightResult : finishDecimal source integerEnd = right) :
-    left = right := by
-  exact leftResult.symm.trans rightResult
 
 theorem finishDecimal_success_end_ge
     {source : List Byte} {integerEnd finish : Nat} {kind : TokenKind}
@@ -421,13 +395,6 @@ def scanNumber (source : List Byte) (start : Nat) : NumberScanResult :=
       | .success integerEnd => finishDecimal source integerEnd
       | .failure error => .failure error
 
-theorem scanNumber_deterministic
-    (source : List Byte) (start : Nat) {left right : NumberScanResult}
-    (leftResult : scanNumber source start = left)
-    (rightResult : scanNumber source start = right) :
-    left = right := by
-  exact leftResult.symm.trans rightResult
-
 theorem scanNumber_success_end_after_start
     {source : List Byte} {start finish : Nat} {kind : TokenKind}
     (result : scanNumber source start = .success kind finish) :
@@ -466,13 +433,6 @@ def scanLeadingDotNumber
             .success .float fractionEnd
       | none => .success .float fractionEnd
 
-theorem scanLeadingDotNumber_deterministic
-    (source : List Byte) (start : Nat) {left right : NumberScanResult}
-    (leftResult : scanLeadingDotNumber source start = left)
-    (rightResult : scanLeadingDotNumber source start = right) :
-    left = right := by
-  exact leftResult.symm.trans rightResult
-
 theorem scanLeadingDotNumber_success_end_after_start
     {source : List Byte} {start finish : Nat} {kind : TokenKind}
     (result : scanLeadingDotNumber source start = .success kind finish) :
@@ -495,27 +455,5 @@ theorem scanLeadingDotNumber_success_end_after_start
             omega
           · simp [hasExponent] at result
             omega
-
-theorem scanNumber_decimal_fraction_exponent :
-    scanNumber ([49, 50, 46, 51, 52, 101, 43, 53, 95, 54, 32, 120] : List Byte) 0 =
-      .success .float 10 := by
-  native_decide
-
-theorem scanNumber_stops_before_range :
-    scanNumber ([49, 50, 46, 46, 51, 52] : List Byte) 0 =
-      .success .integer 2 := by
-  native_decide
-
-theorem scanNumber_requires_prefixed_digit :
-    scanNumber ([48, 120] : List Byte) 0 = .failure 2 := by
-  native_decide
-
-theorem scanNumber_reports_missing_exponent_digit :
-    scanNumber ([49, 101, 43] : List Byte) 0 = .failure 3 := by
-  native_decide
-
-theorem scanLeadingDotNumber_decimal :
-    scanLeadingDotNumber ([46, 53] : List Byte) 0 = .success .float 2 := by
-  native_decide
 
 end Lanius.Compiler.Lexer

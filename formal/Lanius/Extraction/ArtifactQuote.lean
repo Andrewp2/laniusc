@@ -6,6 +6,38 @@ open Lean Elab Term
 
 namespace Lanius.Extraction
 
+/- Core values are the final output of the pack quotation path.  Core was
+   historically only runtime data (and therefore derived `Repr`), while the
+   extraction wire types carried `ToExpr` for JSON quotation.  Keep this
+   bridge local to the quotation module: it lets the elaborator emit ordinary
+   Core constructors without making every Core consumer pay for a quotation
+   interface. -/
+deriving instance Lean.ToExpr for Lanius.Core.PointerWidth
+deriving instance Lean.ToExpr for Lanius.Core.Target
+deriving instance Lean.ToExpr for Lanius.Core.SignedIntTy
+deriving instance Lean.ToExpr for Lanius.Core.UnsignedIntTy
+deriving instance Lean.ToExpr for Lanius.Core.ScalarTy
+deriving instance Lean.ToExpr for Lanius.Core.Ty
+deriving instance Lean.ToExpr for Lanius.Core.ValueProjection
+deriving instance Lean.ToExpr for Lanius.Core.Value
+deriving instance Lean.ToExpr for Lanius.Core.UnaryOp
+deriving instance Lean.ToExpr for Lanius.Core.BinaryOp
+deriving instance Lean.ToExpr for Lanius.Core.AssignOp
+deriving instance Lean.ToExpr for Lanius.Core.HostService
+deriving instance Lean.ToExpr for Lanius.Capability
+deriving instance Lean.ToExpr for Lanius.Core.ExternalBehavior
+deriving instance Lean.ToExpr for Lanius.Core.Intrinsic
+deriving instance Lean.ToExpr for Lanius.Core.Pattern
+deriving instance Lean.ToExpr for Lanius.Core.Expr
+deriving instance Lean.ToExpr for Lanius.Core.Place
+deriving instance Lean.ToExpr for Lanius.Core.Stmt
+deriving instance Lean.ToExpr for Lanius.Core.StructDecl
+deriving instance Lean.ToExpr for Lanius.Core.EnumDecl
+deriving instance Lean.ToExpr for Lanius.Core.Function
+deriving instance Lean.ToExpr for Lanius.Core.Constant
+deriving instance Lean.ToExpr for Lanius.Core.Program
+
+
 /-- Exact constructor expressions, scoped to the current Lean environment.
 Sharing proof-only quotations retains the original checked definitions instead
 of later asking unification to compare duplicate long constructor chains. -/
@@ -166,6 +198,58 @@ elab "artifact_field% " json:term ", " field:ident : term => do
   | "lowering" => quoteBounded artifact.lowering
   | name => throwError "artifact has no quotable field {name}"
 
+/-- Quote one source file's bytes as a String. The byte-to-string conversion is
+    performed while decoding the artifact; the resulting literal is still
+    kernel-checked against any source literal used by a provenance theorem. -/
+elab "artifact_source_text% " json:term ", " path:term : term => do
+  let expectedPath ← elabStringLiteral path
+  let artifact ← elabArtifactLiteral json
+  let some source := artifact.sources.find? fun source => source.path == expectedPath
+    | throwError "artifact has no source {expectedPath}"
+  unless source.bytes.all (· < 256) do
+    throwError "source {expectedPath} contains a non-byte value"
+  let bytes := ByteArray.mk (source.bytes.toArray.map UInt8.ofNat)
+  match String.fromUTF8? bytes with
+  | some text => pure (toExpr text)
+  | none => throwError "source {expectedPath} is not valid UTF-8"
+
+/-- Quote one source file's bytes from a named unit in an artifact pack. -/
+elab "artifact_pack_source_text% " json:term ", " path:term : term => do
+  let expectedPath ← elabStringLiteral path
+  let artifact ← elabArtifactPackUnitAt json expectedPath
+  let some source := artifact.sources.find? fun source => source.path == expectedPath
+    | throwError "artifact has no source {expectedPath}"
+  unless source.bytes.all (· < 256) do
+    throwError "source {expectedPath} contains a non-byte value"
+  let bytes := ByteArray.mk (source.bytes.toArray.map UInt8.ofNat)
+  match String.fromUTF8? bytes with
+  | some text => pure (toExpr text)
+  | none => throwError "source {expectedPath} is not valid UTF-8"
+
+private def quoteSourceByte (source : String) (index : Nat) : TermElabM Expr := do
+  let bytes := source.toUTF8
+  let some byte := bytes[index]?
+    | throwError "source byte index {index} is out of bounds"
+  pure (toExpr byte.toNat)
+
+/- A small byte quotation keeps a provenance check from normalizing an entire
+   source string in the kernel.  The source is still read from the literal at
+   elaboration time, while the resulting natural is ordinary checked data. -/
+elab "source_byte% " source:term ", " index:term : term => do
+  quoteSourceByte (← elabStringLiteral source) (← elabNatLiteral index)
+
+elab "artifact_pack_source_byte% " json:term ", " path:term ", " index:term : term => do
+  let expectedPath ← elabStringLiteral path
+  let artifact ← elabArtifactPackUnitAt json expectedPath
+  let some source := artifact.sources.find? fun source => source.path == expectedPath
+    | throwError "artifact has no source {expectedPath}"
+  unless source.bytes.all (· < 256) do
+    throwError "source {expectedPath} contains a non-byte value"
+  let bytes := ByteArray.mk (source.bytes.toArray.map UInt8.ofNat)
+  let some byte := bytes[← elabNatLiteral index]?
+    | throwError "source byte index is out of bounds"
+  pure (toExpr byte.toNat)
+
 /-- Quote one field of an artifact's Core program. Core function bodies can be
     much larger than the other program tables, so keeping these fields as
     separate declarations prevents a constant or type lookup from unfolding
@@ -203,6 +287,53 @@ elab "artifact_core_program% " json:term : term => do
   let some wire := artifact.core_program
     | throwError "extraction artifact has no Core program"
   pure (mkApp (mkConst ``CoreDecode.program) (toExpr wire))
+
+elab "artifact_pack_core_program% " json:term : term => do
+  let pack ← elabArtifactPackLiteral json
+  let programs ← pack.units.mapM fun artifact => do
+    let some wire := artifact.core_program
+      | throwError "extraction artifact pack unit has no Core program"
+    let quotedWire ← quoteBounded wire
+    pure (mkApp (mkConst ``CoreDecode.program) quotedWire)
+  let programList := programs.foldr
+    (fun program tail => mkAppN (mkConst ``CoreDecode.consProgram) #[program, tail])
+    (mkConst ``CoreDecode.emptyPrograms)
+  pure (mkApp (mkConst ``CoreDecode.concatPrograms) programList)
+
+/-- Decode and concatenate a pack while elaborating, then quote the resulting
+    ordinary Core value.  Unlike `artifact_pack_core_program%`, the generated
+    term contains no `CoreDecode.program` or list-fold machinery for the
+    kernel to normalize: all wire translation and pack concatenation happen
+    before the quotation is installed. -/
+elab "artifact_pack_core_program_flat% " json:term : term => do
+  reportQuotation "flat Core pack"
+  let pack ← elabArtifactPackLiteral json
+  let programs ← pack.units.mapM fun artifact => do
+    let some wire := artifact.core_program
+      | throwError "extraction artifact pack unit has no Core program"
+    pure (CoreDecode.program wire)
+  quoteBounded (CoreDecode.concatPrograms programs)
+
+/-- Quote the Core programs for every pack unit except the named source.
+    This is deliberately a quarantine operation: a unit whose source no
+    longer matches the checkout must not remain available through the shared
+    program merely because another unit still has a usable artifact. -/
+elab "artifact_pack_core_program_except% " json:term ", " path:term : term => do
+  let excludedPath ← elabStringLiteral path
+  let pack ← elabArtifactPackLiteral json
+  let programs ← pack.units.filterMapM fun artifact => do
+    let excluded := artifact.sources.any fun source => source.path == excludedPath
+    if excluded then
+      pure none
+    else
+      let some wire := artifact.core_program
+        | throwError "extraction artifact pack unit has no Core program"
+      let quotedWire ← quoteBounded wire
+      pure (some (mkApp (mkConst ``CoreDecode.program) quotedWire))
+  let programList := programs.foldr
+    (fun program tail => mkAppN (mkConst ``CoreDecode.consProgram) #[program, tail])
+    (mkConst ``CoreDecode.emptyPrograms)
+  pure (mkApp (mkConst ``CoreDecode.concatPrograms) programList)
 
 /-- Elaborate a JSON artifact pack into ordinary constructor data. JSON is an
     interchange format only: proofs and definitional reduction consume the

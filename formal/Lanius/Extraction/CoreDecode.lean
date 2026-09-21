@@ -296,6 +296,23 @@ def program (wire : CoreProgram) : Core.Program := {
   functions := wire.functions.map function
 }
 
+def appendPrograms (left right : Core.Program) : Core.Program := {
+  target := left.target
+  structures := left.structures ++ right.structures
+  enumerations := left.enumerations ++ right.enumerations
+  constants := left.constants ++ right.constants
+  functions := left.functions ++ right.functions
+}
+
+def concatPrograms : List Core.Program → Core.Program
+  | [] => {}
+  | first :: rest => rest.foldl appendPrograms first
+
+def emptyPrograms : List Core.Program := []
+
+def consProgram (head : Core.Program) (tail : List Core.Program) : List Core.Program :=
+  head :: tail
+
 end CoreDecode
 
 end Lanius.Extraction

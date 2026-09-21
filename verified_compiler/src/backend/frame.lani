@@ -22,6 +22,11 @@ pub const CONST_END: i32 = 11;
 pub const STRIDE: i32 = 12;
 // Compile-time result of place resolution: initialization flag slot, or -1.
 pub const PLACE_FLAG: i32 = 13;
+// End of the contiguous function-code region.  This is deliberately kept in
+// the fixed frame header: backend::program appends runtime data after the
+// functions, so the last function span cannot be recovered from the final
+// image length.
+pub const FUNCTION_END: i32 = 14;
 
 pub fn allocate(work: [i32], count: i32) -> i32 {
     if (count < 1 || count > 1048576 - work[TOP]) { work[FAILED] = 1; return -1; }

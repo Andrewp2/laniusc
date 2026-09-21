@@ -1,0 +1,105 @@
+module app::main;
+
+import lowering::program;
+import lowering::semantic;
+import lowering::transport;
+import verified::extraction;
+import verified::grammar;
+import verified::host;
+
+// A source-to-x86 smoke test for the native Core handoff.  The source bytes,
+// canonical token rows, and materialized parse records are the same values
+// passed from extraction into lowering; no second source parser or guessed
+// Core identity is used by this test.
+fn main() -> i32 {
+    let source_memory: ptr = verified::host::alloc(256, 4);
+    let grammar_memory: ptr = verified::host::alloc(8716, 4);
+    let raw_memory: ptr = verified::host::alloc(4096, 4);
+    let canonical_memory: ptr = verified::host::alloc(4096, 4);
+    let kinds_memory: ptr = verified::host::alloc(512, 4);
+    let workspace_memory: ptr = verified::host::alloc(131072, 4);
+    let records_memory: ptr = verified::host::alloc(32768, 4);
+    let offsets_memory: ptr = verified::host::alloc(2048, 4);
+    let type_arena_memory: ptr = verified::host::alloc(4096, 4);
+    let type_output_memory: ptr = verified::host::alloc(4096, 4);
+    let alias_catalog_memory: ptr = verified::host::alloc(4096, 4);
+    let alias_work_memory: ptr = verified::host::alloc(4096, 4);
+    let alias_stack_memory: ptr = verified::host::alloc(4096, 4);
+    let alias_scratch_memory: ptr = verified::host::alloc(4096, 4);
+    let alias_result_memory: ptr = verified::host::alloc(16, 4);
+    let declarations_memory: ptr = verified::host::alloc(4096, 4);
+    let modules_memory: ptr = verified::host::alloc(4096, 4);
+    let allocated_memory: ptr = verified::host::alloc(4096, 4);
+    let signatures_memory: ptr = verified::host::alloc(16384, 4);
+    let bodies_memory: ptr = verified::host::alloc(32768, 4);
+    let transport_memory: ptr = verified::host::alloc(16384, 4);
+    if (source_memory == 0 || grammar_memory == 0 || raw_memory == 0
+        || canonical_memory == 0 || kinds_memory == 0 || workspace_memory == 0
+        || records_memory == 0 || offsets_memory == 0 || type_arena_memory == 0
+        || type_output_memory == 0 || alias_catalog_memory == 0
+        || alias_work_memory == 0 || alias_stack_memory == 0
+        || alias_scratch_memory == 0 || alias_result_memory == 0
+        || declarations_memory == 0 || modules_memory == 0
+        || allocated_memory == 0 || signatures_memory == 0
+        || bodies_memory == 0 || transport_memory == 0) { return 1; }
+
+    let source: [i32] = verified::host::i32_slice_from_raw_parts(source_memory, 64);
+    let grammar: [i32] = verified::host::i32_slice_from_raw_parts(grammar_memory, 2179);
+    let raw: [i32] = verified::host::i32_slice_from_raw_parts(raw_memory, 1024);
+    let canonical: [i32] = verified::host::i32_slice_from_raw_parts(canonical_memory, 1024);
+    let kinds: [i32] = verified::host::i32_slice_from_raw_parts(kinds_memory, 128);
+    let workspace: [i32] = verified::host::i32_slice_from_raw_parts(workspace_memory, 32768);
+    let records: [i32] = verified::host::i32_slice_from_raw_parts(records_memory, 8192);
+    let offsets: [i32] = verified::host::i32_slice_from_raw_parts(offsets_memory, 512);
+    let type_arena: [i32] = verified::host::i32_slice_from_raw_parts(type_arena_memory, 1024);
+    let type_output: [i32] = verified::host::i32_slice_from_raw_parts(type_output_memory, 1024);
+    let alias_catalog: [i32] = verified::host::i32_slice_from_raw_parts(alias_catalog_memory, 1024);
+    let alias_work: [i32] = verified::host::i32_slice_from_raw_parts(alias_work_memory, 1024);
+    let alias_stack: [i32] = verified::host::i32_slice_from_raw_parts(alias_stack_memory, 1024);
+    let alias_scratch: [i32] = verified::host::i32_slice_from_raw_parts(alias_scratch_memory, 1024);
+    let alias_result: [i32] = verified::host::i32_slice_from_raw_parts(alias_result_memory, 4);
+    let declarations: [i32] = verified::host::i32_slice_from_raw_parts(declarations_memory, 1024);
+    let modules: [i32] = verified::host::i32_slice_from_raw_parts(modules_memory, 1024);
+    let allocated: [i32] = verified::host::i32_slice_from_raw_parts(allocated_memory, 1024);
+    let signatures: [i32] = verified::host::i32_slice_from_raw_parts(signatures_memory, 4096);
+    let bodies: [i32] = verified::host::i32_slice_from_raw_parts(bodies_memory, 8192);
+    let transport: [i32] = verified::host::i32_slice_from_raw_parts(transport_memory, 4096);
+
+    let source_bytes: [i32; 54] = [
+        109,111,100,117,108,101,32,97,112,112,58,58,109,97,105,110,59,10,
+        102,110,32,109,97,105,110,40,41,32,45,62,32,105,51,50,32,123,10,
+        32,32,32,32,114,101,116,117,114,110,32,52,50,59,10,125,10,
+    ];
+    let byte: i32 = 0;
+    while (byte != 54) {
+        source[byte] = source_bytes[byte];
+        byte += 1;
+    }
+    if (verified::grammar::load(grammar, 2179) != 2179) { return 2; }
+    let extracted = verified::extraction::extract_syntax(source, 54, grammar,
+        2179, raw, 1024, canonical, 1024, kinds, 128, workspace, 32768,
+        records, 8192, offsets, 512, 1024);
+    if (verified::extraction::extraction_stage(extracted)
+        != verified::extraction::EXTRACT_SUCCESS) { return 3; }
+    let token_count: i32 = verified::extraction::token_count(extracted);
+    let node_count: i32 = verified::extraction::node_count(extracted);
+    let semantic_root: i32 = lowering::semantic::prepare(source, 54, canonical,
+        token_count, records, 8192, offsets, node_count, node_count - 1,
+        declarations, 1024, type_arena, 1024, alias_catalog, 1024,
+        alias_work, 1024, alias_stack, 1024, alias_scratch, 1024,
+        alias_result, 4, type_output, 1024, 1024);
+    if (semantic_root < 0) { return 5; }
+    let lowered = lowering::program::program(source, 54, canonical, token_count,
+        records, 8192, offsets, 512, node_count, node_count - 1, 0,
+        type_arena, 1024, semantic_root, type_output, 0, alias_catalog, 1024,
+        alias_work, 1024, alias_stack, 1024, alias_scratch, 1024, alias_result,
+        4, declarations, 1024, modules, 1024, type_output, 1024, allocated,
+        1024, signatures, 4096, bodies, 8192, transport, 4096);
+    if (lowering::program::program_stage(lowered)
+        != lowering::program::SUCCESS) { return 6; }
+    let words: i32 = lowering::program::transport_words(lowered);
+    if (words <= lowering::transport::HEADER - 1
+        || transport[0] != lowering::transport::VERSION
+        || transport[1] != lowering::transport::POINTER_BITS) { return 7; }
+    return 0;
+}

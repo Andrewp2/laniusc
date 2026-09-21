@@ -1,0 +1,61 @@
+module lowering::resolutions;
+
+import lowering::declarations;
+import lowering::types;
+
+pub const MAGIC: i32 = -1381259330;
+
+// The one-unit nominal resolution table is a deterministic flat sequence
+// [MAGIC, structure-row-count, declaration-name-token, Core-type-tag, ...].
+// It is built only after allocation has assigned final Core IDs. Type lowering
+// compares token spellings (not arena node numbers): surface_type.extract
+// resets its arena for each independently lowered type.
+//
+// Rows are emitted in declaration order, which is source-token order for the
+// authenticated collector table. Duplicate spellings remain visible as
+// duplicate rows and are rejected by types.lower rather than guessed away.
+pub fn build(source:[i32], source_length: i32, tokens:[i32], token_count: i32,
+    declaration_table:[i32], declaration_words: i32, allocated:[i32],
+    allocation_words: i32, output:[i32], capacity: i32) -> i32 {
+    if (source_length <= -1 || token_count <= -1 || declaration_words <= 7
+        || allocation_words <= 7 || capacity <= 1) { return -1; }
+    let rows: i32 = declaration_table[0];
+    if (rows <= 0 || declaration_words != lowering::declarations::HEADER + rows * lowering::declarations::ROW
+        || allocated[0] != 1 || allocated[1] != rows
+        || allocation_words != lowering::declarations::HEADER + rows * 10
+        || rows > (capacity - 2) / 2) { return -1; }
+    output[0] = MAGIC;
+    output[1] = 0;
+    let written: i32 = 2;
+    let previous: i32 = -1;
+    let row: i32 = 0;
+    while (row < rows) {
+        let declaration_slot: i32 = lowering::declarations::HEADER + row * lowering::declarations::ROW;
+        let allocation_slot: i32 = lowering::declarations::HEADER + row * 10;
+        let kind: i32 = declaration_table[declaration_slot + 1];
+        let field: i32 = 0;
+        while (field < lowering::declarations::ROW) {
+            if (allocated[allocation_slot + field]
+                != declaration_table[declaration_slot + field]) { return -1; }
+            field += 1;
+        }
+        if (kind == lowering::declarations::STRUCTURE) {
+            let token: i32 = declaration_table[declaration_slot + 5];
+            let core: i32 = allocated[allocation_slot + 9];
+            if (token <= previous || token <= -1 || token >= token_count
+                || tokens[token * 3] != 1 || core <= -1
+                || allocated[allocation_slot + 8] != core
+                || core > 2147483631) { return -1; }
+            let start: i32 = tokens[token * 3 + 1];
+            let finish: i32 = tokens[token * 3 + 2];
+            if (start <= -1 || finish <= start || finish > source_length) { return -1; }
+            output[written] = token;
+            output[written + 1] = lowering::types::STRUCTURE_BASE + core;
+            written += 2;
+            output[1] += 1;
+            previous = token;
+        }
+        row += 1;
+    }
+    return written;
+}

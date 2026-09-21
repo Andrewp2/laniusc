@@ -1,0 +1,1005 @@
+module lowering::bodies;
+
+import backend::syntax;
+import lowering::declarations;
+import lowering::types;
+import verified::parser;
+import verified::surface_expr;
+import verified::surface_tree;
+import verified::surface_type;
+
+// Body transport is a sequence of backend::compile function inputs.  The
+// table header is [version, pointer_bits, function_count, word_count].  Each
+// following record is [word_count, 1, 64, function_id, result_type,
+// parameter_count, body_word_count, (parameter_id, type)*, body...].  A
+// parameter/local ID is the canonical token index of its declaration.  This
+// is deliberately a transport boundary: no host name lookup or guessed ID is
+// performed here.
+pub const VERSION: i32 = 1;
+pub const POINTER_BITS: i32 = 64;
+pub const HEADER: i32 = 4;
+pub const RECORD_HEADER: i32 = 7;
+// Value-name resolution is intentionally separate from the nominal type
+// resolution pairs passed to type lowering.  Each unit supplies a tagged
+// table [magic, row-count, words, reserved, local-token, global-id, ...].
+pub const VALUE_MAGIC: i32 = -1381259329;
+pub const VALUE_HEADER: i32 = 4;
+pub const VALUE_ROW: i32 = 2;
+pub const INVALID: i32 = 1;
+pub const UNSUPPORTED: i32 = 2;
+
+fn child(records: [i32], record_length: i32, offsets: [i32], node_count: i32,
+    node: i32, index: i32) -> i32 {
+    return verified::surface_tree::child(records, record_length, offsets,
+        node_count, node, index, verified::parser::CHILD_STATE, 0);
+}
+
+fn token_child(records: [i32], record_length: i32, offsets: [i32],
+    node_count: i32, token_count: i32, node: i32, index: i32) -> i32 {
+    return verified::surface_tree::child(records, record_length, offsets,
+        node_count, node, index, verified::parser::CHILD_TOKEN, token_count);
+}
+
+fn record_production(records: [i32], record_length: i32, offsets: [i32],
+    node_count: i32, node: i32) -> i32 {
+    let offset: i32 = verified::surface_tree::record(records, record_length,
+        offsets, node_count, node);
+    if (offset <= -1) { return -1; }
+    return records[offset];
+}
+
+fn append(output: [i32], capacity: i32, position: i32, word: i32) -> i32 {
+    if (position <= -1 || position >= capacity) { return -1; }
+    output[position] = word;
+    return position + 1;
+}
+
+fn decimal(source: [i32], source_length: i32, tokens: [i32],
+    token_count: i32, token: i32) -> i32 {
+    if (token <= -1 || token >= token_count || source_length <= -1) {
+        return -INVALID;
+    }
+    let start: i32 = tokens[token * 3 + 1];
+    let finish: i32 = tokens[token * 3 + 2];
+    if (start <= -1 || finish <= start || finish > source_length) {
+        return -INVALID;
+    }
+    let value: i32 = 0;
+    let digits: i32 = 0;
+    let index: i32 = start;
+    while (index <= finish - 1) {
+        let byte: i32 = source[index];
+        if (byte != 95) {
+            if (byte <= 47 || byte > 57 || value > (2147483647 - byte + 48) / 10) {
+                return -INVALID;
+            }
+            value = value * 10 + byte - 48;
+            digits += 1;
+        }
+        index += 1;
+    }
+    if (digits <= 0) { return -INVALID; }
+    return value;
+}
+
+fn same_token(source: [i32], source_length: i32, tokens: [i32],
+    token_count: i32, left: i32, right: i32) -> bool {
+    if (left <= -1 || right <= -1 || left >= token_count || right >= token_count) {
+        return false;
+    }
+    let left_start: i32 = tokens[left * 3 + 1];
+    let left_finish: i32 = tokens[left * 3 + 2];
+    let right_start: i32 = tokens[right * 3 + 1];
+    let right_finish: i32 = tokens[right * 3 + 2];
+    if (left_start <= -1 || right_start <= -1 || left_finish <= left_start
+        || right_finish <= right_start || left_finish > source_length
+        || right_finish > source_length || left_finish - left_start != right_finish - right_start) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index < left_finish - left_start) {
+        if (source[left_start + index] != source[right_start + index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+// A Surface path is accepted as a local/callee only when it contains one
+// ordinary identifier segment.  Qualified paths, generic segments, fields,
+// indexing, and struct/array forms have no honest lowering in this stage.
+fn simple_path_token(arena: [i32], arena_count: i32, node: i32) -> i32 {
+    if (node <= -1 || node >= arena_count || arena[1 + node * 7] != 6) {
+        return -UNSUPPORTED;
+    }
+    let path: i32 = arena[1 + node * 7 + 3];
+    if (path <= -1 || path >= arena_count || arena[1 + path * 7] != 5) {
+        return -UNSUPPORTED;
+    }
+    let first: i32 = arena[1 + path * 7 + 3];
+    if (first <= -1 || first >= arena_count || arena[1 + first * 7] != 4) {
+        return -UNSUPPORTED;
+    }
+    if (arena[1 + first * 7 + 3] != -1
+        || arena[1 + path * 7 + 4] != -1) { return -UNSUPPORTED; }
+    return arena[1 + first * 7 + 5];
+}
+
+// Calls retain their full path shape in the surface arena.  Resolve the
+// terminal spelling here; callable_id then uses the qualified bit to reject
+// ambiguous imported names instead of silently selecting a local declaration.
+fn qualified_path_token(arena: [i32], arena_count: i32, node: i32) -> i32 {
+    if (node <= -1 || node >= arena_count || arena[1 + node * 7] != 6) {
+        return -UNSUPPORTED;
+    }
+    let path: i32 = arena[1 + node * 7 + 3];
+    if (path <= -1 || path >= arena_count || arena[1 + path * 7] != 5) {
+        return -UNSUPPORTED;
+    }
+    let segment: i32 = arena[1 + path * 7 + 3];
+    let answer: i32 = -1;
+    let fuel: i32 = arena_count;
+    while (segment >= 0 && fuel > 0) {
+        if (segment >= arena_count || arena[1 + segment * 7] != 4) {
+            return -UNSUPPORTED;
+        }
+        answer = arena[1 + segment * 7 + 5];
+        segment = arena[1 + segment * 7 + 3];
+        fuel -= 1;
+    }
+    if (fuel == 0 || answer <= -1) { return -UNSUPPORTED; }
+    return answer;
+}
+
+fn path_is_qualified(arena: [i32], arena_count: i32, node: i32) -> bool {
+    if (node <= -1 || node >= arena_count || arena[1 + node * 7] != 6) {
+        return false;
+    }
+    let path: i32 = arena[1 + node * 7 + 3];
+    if (path <= -1 || path >= arena_count || arena[1 + path * 7] != 5) {
+        return false;
+    }
+    let first: i32 = arena[1 + path * 7 + 3];
+    return first >= 0 && first < arena_count
+        && arena[1 + first * 7 + 3] >= 0;
+}
+
+fn callable_id(source: [i32], source_length: i32, tokens: [i32],
+    token_count: i32, declaration_table: [i32], declaration_words: i32,
+    allocated: [i32], allocation_words: i32, value_catalog: [i32],
+    value_words: i32, owner_unit: i32, qualified: bool, name: i32) -> i32 {
+    if (declaration_words <= lowering::declarations::HEADER - 1
+        || allocation_words <= lowering::declarations::HEADER - 1) { return -INVALID; }
+    let rows: i32 = allocated[1];
+    if (rows <= 0 || allocation_words != lowering::declarations::HEADER + rows * 10) {
+        return -INVALID;
+    }
+    if (qualified) {
+        if (owner_unit <= -1) { return -INVALID; }
+        let found: i32 = -1;
+        let matches: i32 = 0;
+        let row: i32 = 0;
+        while (row < rows) {
+            let slot: i32 = lowering::declarations::HEADER + row * 10;
+            let kind: i32 = allocated[slot + 1];
+            if ((kind == lowering::declarations::FUNCTION
+                    || kind == lowering::declarations::EXTERNAL)
+                && allocated[slot] != owner_unit
+                && same_token(source, source_length, tokens, token_count, name,
+                    allocated[slot + 5])) {
+                found = allocated[slot + 9];
+                matches += 1;
+            }
+            row += 1;
+        }
+        if (matches != 1) { return -INVALID; }
+        return found;
+    }
+    // Multi-unit callers must use the caller-local authenticated value map.
+    // Its token keys are indices in this unit's token arena; they must never
+    // be compared with a foreign allocation row's owner-local token index.
+    if (value_words > 0) {
+        if (value_words <= VALUE_HEADER - 1
+            || value_catalog[0] != VALUE_MAGIC
+            || value_catalog[1] <= -1
+            || value_catalog[2] != value_words
+            || value_words != VALUE_HEADER + value_catalog[1] * VALUE_ROW
+            || name <= -1 || name >= token_count) { return -INVALID; }
+        let value: i32 = VALUE_HEADER;
+        while (value <= value_words - 1) {
+            if (value_catalog[value] == name) {
+                let id: i32 = value_catalog[value + 1];
+                let allocation: i32 = lowering::declarations::HEADER;
+                while (allocation <= allocation_words - 1) {
+                    if (allocated[allocation + 1] == lowering::declarations::FUNCTION
+                        || allocated[allocation + 1] == lowering::declarations::EXTERNAL) {
+                        if (allocated[allocation + 9] == id) { return id; }
+                    }
+                    allocation += 10;
+                }
+                return -INVALID;
+            }
+            value += VALUE_ROW;
+        }
+        return -INVALID;
+    }
+    let row: i32 = 0;
+    while (row < rows) {
+        let slot: i32 = lowering::declarations::HEADER + row * 10;
+        let kind: i32 = allocated[slot + 1];
+        if (kind == lowering::declarations::FUNCTION || kind == lowering::declarations::EXTERNAL) {
+            // Allocation rows preserve the source declaration's name token,
+            // so the global namespace remains usable when declaration rows
+            // come from multiple units with different local row offsets.
+            let declaration_name: i32 = allocated[slot + 5];
+            if (same_token(source, source_length, tokens, token_count, name,
+                declaration_name)) {
+                return allocated[slot + 9];
+            }
+        }
+        row += 1;
+    }
+    return -INVALID;
+}
+
+fn signature_position(signatures: [i32], signature_words: i32,
+    function_id: i32) -> i32 {
+    if (signature_words <= 7 || signatures[0] != 1) { return -INVALID; }
+    let position: i32 = 8;
+    while (position < signature_words) {
+        if (position > signature_words - 6) { return -INVALID; }
+        let payload: i32 = signatures[position + 5];
+        if (payload <= -1 || payload > signature_words - position - 6) {
+            return -INVALID;
+        }
+        if (signatures[position] == function_id
+            && signatures[position + 1] == lowering::declarations::FUNCTION) {
+            return position;
+        }
+        position += 6 + payload;
+    }
+    return -INVALID;
+}
+
+fn valid_value_catalog(values: [i32], words: i32, token_count: i32,
+    allocated: [i32], allocation_words: i32) -> bool {
+    if (words <= 0 || words <= VALUE_HEADER - 1 || values[0] != VALUE_MAGIC
+        || values[1] <= -1 || values[2] != words
+        || words != VALUE_HEADER + values[1] * VALUE_ROW
+        || token_count <= -1) { return false; }
+    let row: i32 = VALUE_HEADER;
+    while (row <= words - 1) {
+        let token: i32 = values[row];
+        let id: i32 = values[row + 1];
+        if (token <= -1 || token >= token_count || id <= -1) { return false; }
+        let prior: i32 = VALUE_HEADER;
+        while (prior <= row - 1) {
+            if (values[prior] == token) {
+                return false;
+            }
+            prior += VALUE_ROW;
+        }
+        let allocation: i32 = lowering::declarations::HEADER;
+        let found: bool = false;
+        while (allocation <= allocation_words - 1) {
+            if (allocated[allocation + 9] == id
+                && (allocated[allocation + 1] == lowering::declarations::FUNCTION
+                    || allocated[allocation + 1] == lowering::declarations::EXTERNAL)) {
+                found = true;
+            }
+            allocation += 10;
+        }
+        if (!found) { return false; }
+        row += VALUE_ROW;
+    }
+    return true;
+}
+
+// Assignment targets are deliberately narrower than general expressions:
+// only one-segment local paths and recursively indexed places have a canonical
+// backend representation in this lowering stage.
+fn place(source: [i32], source_length: i32, tokens: [i32],
+    token_count: i32, records: [i32], record_length: i32, offsets: [i32],
+    node_count: i32, arena: [i32], arena_count: i32, node: i32,
+    declaration_table: [i32], declaration_words: i32, allocated: [i32],
+    allocation_words: i32, value_catalog: [i32], value_words: i32,
+    output: [i32], capacity: i32, position: i32, depth: i32,
+    owner_unit: i32) -> i32 {
+    if (depth <= 0 || node <= -1 || node >= arena_count) { return -INVALID; }
+    let slot: i32 = 1 + node * 7;
+    let kind: i32 = arena[slot];
+    if (kind == 6) {
+        let name: i32 = simple_path_token(arena, arena_count, node);
+        if (name <= -1 || name >= token_count) { return -INVALID; }
+        let next: i32 = append(output, capacity, position, backend::syntax::PLACE_LOCAL);
+        next = append(output, capacity, next, name);
+        return next;
+    }
+    if (kind == 7) {
+        let next: i32 = append(output, capacity, position, backend::syntax::PLACE_INDEX);
+        if (next <= -1) { return next; }
+        next = place(source, source_length, tokens, token_count, records,
+            record_length, offsets, node_count, arena, arena_count,
+            arena[slot + 3], declaration_table, declaration_words, allocated,
+            allocation_words, value_catalog, value_words, output, capacity,
+            next, depth - 1, owner_unit);
+        if (next <= -1) { return next; }
+        return expression(source, source_length, tokens, token_count, records,
+            record_length, offsets, node_count, arena, arena_count,
+            arena[slot + 4], declaration_table, declaration_words, allocated,
+            allocation_words, value_catalog, value_words, output, capacity,
+            next, depth - 1, owner_unit);
+    }
+    return -UNSUPPORTED;
+}
+
+fn expression(source: [i32], source_length: i32, tokens: [i32],
+    token_count: i32, records: [i32], record_length: i32, offsets: [i32],
+    node_count: i32, arena: [i32], arena_count: i32, node: i32,
+    declaration_table: [i32], declaration_words: i32, allocated: [i32],
+    allocation_words: i32, value_catalog: [i32], value_words: i32,
+    output: [i32], capacity: i32, position: i32, depth: i32,
+    owner_unit: i32) -> i32 {
+    if (depth <= 0 || node <= -1 || node >= arena_count) { return -INVALID; }
+    let slot: i32 = 1 + node * 7;
+    let kind: i32 = arena[slot];
+    if (kind == 0) {
+        let next: i32 = append(output, capacity, position, backend::syntax::VALUE);
+        if (next <= -1) { return -INVALID; }
+        let production: i32 = arena[slot + 2];
+        if (production == 175) {
+            let value: i32 = decimal(source, source_length, tokens, token_count,
+                arena[slot + 5]);
+            if (value <= -1) { return -INVALID; }
+            next = append(output, capacity, next, backend::syntax::I32);
+            next = append(output, capacity, next, value);
+            return next;
+        }
+        if (production == 185 || production == 186) {
+            next = append(output, capacity, next, backend::syntax::BOOL);
+            let value: i32 = 0;
+            if (production == 185) { value = 1; }
+            next = append(output, capacity, next, value);
+        return next;
+    }
+        return -100000000 - production;
+}
+    if (kind == 1) {
+        let operation: i32 = arena[slot + 2] - 156;
+        if (operation <= -1 || operation > 2) { return -UNSUPPORTED; }
+        let next: i32 = append(output, capacity, position, backend::syntax::UNARY);
+        next = append(output, capacity, next, operation);
+        if (next <= -1) { return -INVALID; }
+        next = expression(source, source_length, tokens, token_count, records,
+            record_length, offsets, node_count, arena, arena_count,
+            arena[slot + 3], declaration_table, declaration_words, allocated,
+            allocation_words, value_catalog, value_words, output, capacity,
+            next, depth - 1, owner_unit);
+        return next;
+    }
+    if (kind == 2) {
+        let production: i32 = arena[slot + 2];
+        let operation: i32 = -1;
+        if (production == 119) { operation = backend::syntax::OR_ELSE; }
+        if (production == 122) { operation = backend::syntax::AND_THEN; }
+        if (production == 125) { operation = backend::syntax::BIT_OR; }
+        if (production == 128) { operation = backend::syntax::BIT_XOR; }
+        if (production == 131) { operation = backend::syntax::BIT_AND; }
+        if (production == 134) { operation = backend::syntax::EQUAL; }
+        if (production == 135) { operation = backend::syntax::NOT_EQUAL; }
+        if (production == 138) { operation = backend::syntax::LESS; }
+        if (production == 139) { operation = backend::syntax::GREATER; }
+        if (production == 140) { operation = backend::syntax::LESS_EQUAL; }
+        if (production == 141) { operation = backend::syntax::GREATER_EQUAL; }
+        if (production == 144) { operation = backend::syntax::SHIFT_LEFT; }
+        if (production == 145) { operation = backend::syntax::SHIFT_RIGHT; }
+        if (production == 148) { operation = backend::syntax::ADD; }
+        if (production == 149) { operation = backend::syntax::SUBTRACT; }
+        if (production == 152) { operation = backend::syntax::MULTIPLY; }
+        if (production == 153) { operation = backend::syntax::DIVIDE; }
+        if (production == 154) { operation = backend::syntax::REMAINDER; }
+        if (operation <= -1) { return -UNSUPPORTED; }
+        let next: i32 = append(output, capacity, position, backend::syntax::BINARY);
+        next = append(output, capacity, next, operation);
+        if (next <= -1) { return -INVALID; }
+        next = expression(source, source_length, tokens, token_count, records,
+            record_length, offsets, node_count, arena, arena_count,
+            arena[slot + 3], declaration_table, declaration_words, allocated,
+            allocation_words, value_catalog, value_words, output, capacity,
+            next, depth - 1, owner_unit);
+        return expression(source, source_length, tokens, token_count, records,
+            record_length, offsets, node_count, arena, arena_count,
+            arena[slot + 4], declaration_table, declaration_words, allocated,
+            allocation_words, value_catalog, value_words, output, capacity,
+            next, depth - 1, owner_unit);
+    }
+    if (kind == 3) {
+        let operation: i32 = arena[slot + 2] - 106;
+        if (operation < 0 || operation > 10) { return -UNSUPPORTED; }
+        let next: i32 = append(output, capacity, position, backend::syntax::ASSIGN);
+        next = append(output, capacity, next, operation);
+        if (next <= -1) { return -INVALID; }
+        next = place(source, source_length, tokens, token_count, records,
+            record_length, offsets, node_count, arena, arena_count,
+            arena[slot + 3], declaration_table, declaration_words, allocated,
+            allocation_words, value_catalog, value_words, output, capacity,
+            next, depth - 1, owner_unit);
+        if (next <= -1) { return -INVALID; }
+        next = expression(source, source_length, tokens, token_count, records,
+            record_length, offsets, node_count, arena, arena_count,
+            arena[slot + 4], declaration_table, declaration_words, allocated,
+            allocation_words, value_catalog, value_words, output, capacity,
+            next, depth - 1, owner_unit);
+        if (next <= -1) { return -INVALID; }
+        return next;
+    }
+    if (kind == 6) {
+        let name: i32 = simple_path_token(arena, arena_count, node);
+        if (name <= -1 || name >= token_count) { return -INVALID; }
+        let next: i32 = append(output, capacity, position, backend::syntax::LOCAL);
+        next = append(output, capacity, next, name);
+        return next;
+    }
+    if (kind == 7) {
+        let next: i32 = append(output, capacity, position, backend::syntax::INDEX);
+        next = expression(source, source_length, tokens, token_count, records,
+            record_length, offsets, node_count, arena, arena_count,
+            arena[slot + 3], declaration_table, declaration_words, allocated,
+            allocation_words, value_catalog, value_words, output, capacity,
+            next, depth - 1, owner_unit);
+        if (next <= -1) { return -INVALID; }
+        next = expression(source, source_length, tokens, token_count, records,
+            record_length, offsets, node_count, arena, arena_count,
+            arena[slot + 4], declaration_table, declaration_words, allocated,
+            allocation_words, value_catalog, value_words, output, capacity,
+            next, depth - 1, owner_unit);
+        if (next <= -1) { return -INVALID; }
+        return next;
+    }
+    if (kind == 9) {
+        let callee: i32 = arena[slot + 3];
+        let qualified: bool = path_is_qualified(arena, arena_count, callee);
+        let name: i32 = qualified_path_token(arena, arena_count, callee);
+        if (name <= -1 || name >= token_count) { return -INVALID; }
+        let id: i32 = callable_id(source, source_length, tokens, token_count,
+            declaration_table, declaration_words, allocated, allocation_words,
+            value_catalog, value_words, owner_unit, qualified, name);
+        if (id <= -1) { return -INVALID; }
+        let next: i32 = append(output, capacity, position, backend::syntax::CALL);
+        next = append(output, capacity, next, id);
+        let argument: i32 = arena[slot + 4];
+        let count: i32 = 0;
+        let current: i32 = argument;
+        while (current >= 0) {
+            if (current >= arena_count) { return -INVALID; }
+            count += 1;
+            current = arena[1 + current * 7 + 6];
+        }
+        output[position + 2] = count;
+        next = append(output, capacity, next, count);
+        current = argument;
+        while (current >= 0) {
+            next = expression(source, source_length, tokens, token_count,
+                records, record_length, offsets, node_count, arena,
+                arena_count, current, declaration_table, declaration_words,
+                allocated, allocation_words, value_catalog, value_words,
+                output, capacity, next, depth - 1, owner_unit);
+            if (next <= -1) { return -INVALID; }
+            current = arena[1 + current * 7 + 6];
+        }
+        return next;
+    }
+    return -UNSUPPORTED;
+}
+
+// Inferred lets need the scalar kind before their initializer is serialized.
+// Keep this query aligned with the expression emitter and deliberately close:
+// literals and scalar unary/binary expressions have a syntax-local result kind;
+// paths, calls, aggregates, and assignments require a lexical type environment
+// which this transport boundary does not carry.
+fn expression_kind(arena: [i32], arena_count: i32, node: i32, depth: i32) -> i32 {
+    if (depth <= 0 || node <= -1 || node >= arena_count) { return -INVALID; }
+    let slot: i32 = 1 + node * 7;
+    let kind: i32 = arena[slot];
+    if (kind == 0) {
+        let production: i32 = arena[slot + 2];
+        if (production == 175) { return backend::syntax::I32; }
+        if (production == 185 || production == 186) { return backend::syntax::BOOL; }
+        return -UNSUPPORTED;
+    }
+    if (kind == 1) {
+        let operation: i32 = arena[slot + 2] - 156;
+        let operand: i32 = expression_kind(arena, arena_count, arena[slot + 3], depth - 1);
+        if (operand <= -1) { return operand; }
+        if (operation == backend::syntax::NOT) {
+            if (operand == backend::syntax::BOOL) { return backend::syntax::BOOL; }
+            return -UNSUPPORTED;
+        }
+        if ((operation == backend::syntax::POSITIVE || operation == backend::syntax::NEGATE)
+            && operand == backend::syntax::I32) { return backend::syntax::I32; }
+        return -UNSUPPORTED;
+    }
+    if (kind == 2) {
+        let operation: i32 = -1;
+        let production: i32 = arena[slot + 2];
+        if (production == 119) { operation = backend::syntax::OR_ELSE; }
+        if (production == 122) { operation = backend::syntax::AND_THEN; }
+        if (production == 125) { operation = backend::syntax::BIT_OR; }
+        if (production == 128) { operation = backend::syntax::BIT_XOR; }
+        if (production == 131) { operation = backend::syntax::BIT_AND; }
+        if (production == 134) { operation = backend::syntax::EQUAL; }
+        if (production == 135) { operation = backend::syntax::NOT_EQUAL; }
+        if (production == 138) { operation = backend::syntax::LESS; }
+        if (production == 139) { operation = backend::syntax::GREATER; }
+        if (production == 140) { operation = backend::syntax::LESS_EQUAL; }
+        if (production == 141) { operation = backend::syntax::GREATER_EQUAL; }
+        if (production == 144) { operation = backend::syntax::SHIFT_LEFT; }
+        if (production == 145) { operation = backend::syntax::SHIFT_RIGHT; }
+        if (production == 148) { operation = backend::syntax::ADD; }
+        if (production == 149) { operation = backend::syntax::SUBTRACT; }
+        if (production == 152) { operation = backend::syntax::MULTIPLY; }
+        if (production == 153) { operation = backend::syntax::DIVIDE; }
+        if (production == 154) { operation = backend::syntax::REMAINDER; }
+        if (operation <= -1) { return -UNSUPPORTED; }
+        let left: i32 = expression_kind(arena, arena_count, arena[slot + 3], depth - 1);
+        let right: i32 = expression_kind(arena, arena_count, arena[slot + 4], depth - 1);
+        if (left <= -1) { return left; }
+        if (right <= -1) { return right; }
+        if (operation == backend::syntax::AND_THEN || operation == backend::syntax::OR_ELSE) {
+            if (left == backend::syntax::BOOL && right == backend::syntax::BOOL) {
+                return backend::syntax::BOOL;
+            }
+            return -UNSUPPORTED;
+        }
+        if (operation >= backend::syntax::EQUAL
+            && operation <= backend::syntax::GREATER_EQUAL) {
+            if (left == backend::syntax::I32 && right == backend::syntax::I32) {
+                return backend::syntax::BOOL;
+            }
+            return -UNSUPPORTED;
+        }
+        if (left == backend::syntax::I32 && right == backend::syntax::I32) {
+            return backend::syntax::I32;
+        }
+        return -UNSUPPORTED;
+    }
+    return -UNSUPPORTED;
+}
+
+fn expression_from_surface(source: [i32], source_length: i32, tokens: [i32],
+    token_count: i32, records: [i32], record_length: i32, offsets: [i32],
+    node_count: i32, surface: i32, expression_arena: [i32],
+    expression_capacity: i32, declaration_table: [i32], declaration_words: i32,
+    allocated: [i32], allocation_words: i32, value_catalog: [i32],
+    value_words: i32, output: [i32], capacity: i32, position: i32,
+    depth: i32, owner_unit: i32) -> i32 {
+    let root: i32 = verified::surface_expr::extract(records, record_length,
+        offsets, node_count, token_count, surface, expression_arena,
+        expression_capacity, depth);
+    if (root <= -1 || expression_arena[0] <= 0) {
+        return -INVALID;
+    }
+    return expression(source, source_length, tokens, token_count, records,
+        record_length, offsets, node_count, expression_arena,
+        expression_arena[0], root, declaration_table, declaration_words,
+        allocated, allocation_words, value_catalog, value_words, output,
+        capacity, position, depth, owner_unit);
+}
+
+fn statement(source: [i32], source_length: i32, tokens: [i32],
+    token_count: i32, records: [i32], record_length: i32, offsets: [i32],
+    node_count: i32, node: i32, expression_arena: [i32],
+    expression_capacity: i32, type_arena: [i32], type_capacity: i32,
+    resolutions: [i32], resolution_length: i32, alias_catalog: [i32],
+    alias_words: i32, alias_scratch: [i32], alias_scratch_capacity: i32,
+    type_output: [i32],
+    type_output_capacity: i32, declaration_table: [i32], declaration_words: i32,
+    allocated: [i32], allocation_words: i32, value_catalog: [i32],
+    value_words: i32, output: [i32], capacity: i32, position: i32,
+    depth: i32, owner_unit: i32) -> i32 {
+    if (depth <= 0) { return -INVALID; }
+    let production: i32 = record_production(records, record_length, offsets,
+        node_count, node);
+    if (production == 76) {
+        let optional: i32 = child(records, record_length, offsets, node_count,
+            node, 1);
+        if (record_production(records, record_length, offsets, node_count,
+            optional) != 90) { return -UNSUPPORTED; }
+        let surface: i32 = child(records, record_length, offsets, node_count,
+            optional, 0);
+        let next: i32 = append(output, capacity, position, backend::syntax::RETURN);
+        next = append(output, capacity, next, 1);
+        return expression_from_surface(source, source_length, tokens,
+            token_count, records, record_length, offsets, node_count, surface,
+            expression_arena, expression_capacity, declaration_table,
+            declaration_words, allocated, allocation_words, value_catalog,
+            value_words, output, capacity, next, depth - 1, owner_unit);
+    }
+    if (production == 85) {
+        let surface: i32 = child(records, record_length, offsets, node_count,
+            node, 0);
+        let next: i32 = append(output, capacity, position, backend::syntax::EXPRESSION);
+        return expression_from_surface(source, source_length, tokens,
+            token_count, records, record_length, offsets, node_count, surface,
+            expression_arena, expression_capacity, declaration_table,
+            declaration_words, allocated, allocation_words, value_catalog,
+            value_words, output, capacity, next, depth - 1, owner_unit);
+    }
+    if (production == 75) {
+        let type_optional: i32 = child(records, record_length, offsets,
+            node_count, node, 2);
+        let init_optional: i32 = child(records, record_length, offsets,
+            node_count, node, 3);
+        let name: i32 = token_child(records, record_length, offsets,
+            node_count, token_count, node, 1);
+        let type_production: i32 = record_production(records, record_length,
+            offsets, node_count, type_optional);
+        let init_production: i32 = record_production(records, record_length,
+            offsets, node_count, init_optional);
+        if (type_production == 86) {
+            let type_surface: i32 = child(records, record_length, offsets,
+                node_count, type_optional, 1);
+            let type_root: i32 = verified::surface_type::extract(records,
+                record_length, offsets, node_count, token_count, type_surface,
+                type_arena, type_capacity, depth - 1);
+            if (type_root <= -1) { return -INVALID; }
+            let kind: i32 = lowering::types::lower(source, source_length, tokens, token_count,
+                type_arena, type_capacity, type_root, resolutions,
+                resolution_length, alias_catalog, alias_words, alias_scratch,
+                alias_scratch_capacity, type_output, type_output_capacity);
+            if (kind != lowering::types::I32 && kind != lowering::types::BOOL) {
+                return -UNSUPPORTED;
+            }
+            if (init_production == 89) {
+                let next: i32 = append(output, capacity, position,
+                    backend::syntax::LET_UNINITIALIZED);
+                next = append(output, capacity, next, name);
+                next = append(output, capacity, next, kind);
+                return next;
+            }
+            if (init_production != 88) { return -UNSUPPORTED; }
+            let surface: i32 = child(records, record_length, offsets,
+                node_count, init_optional, 1);
+            let next: i32 = append(output, capacity, position, backend::syntax::LET);
+            next = append(output, capacity, next, name);
+            next = append(output, capacity, next, kind);
+            if (next <= -1) { return -INVALID; }
+            return expression_from_surface(source, source_length, tokens,
+                token_count, records, record_length, offsets, node_count, surface,
+                expression_arena, expression_capacity, declaration_table,
+                declaration_words, allocated, allocation_words, value_catalog,
+                value_words, output, capacity, next, depth - 1, owner_unit);
+        }
+        if (type_production == 87 && init_production == 88) {
+            let surface: i32 = child(records, record_length, offsets,
+                node_count, init_optional, 1);
+            let root: i32 = verified::surface_expr::extract(records,
+                record_length, offsets, node_count, token_count, surface,
+                expression_arena, expression_capacity, depth - 1);
+            if (root <= -1 || expression_arena[0] <= 0) { return -INVALID; }
+            let kind: i32 = expression_kind(expression_arena, expression_arena[0],
+                root, depth - 1);
+            if (kind != backend::syntax::I32 && kind != backend::syntax::BOOL) {
+                return -UNSUPPORTED;
+            }
+            let next: i32 = append(output, capacity, position, backend::syntax::LET);
+            next = append(output, capacity, next, name);
+            next = append(output, capacity, next, kind);
+            if (next <= -1) { return -INVALID; }
+            return expression_from_surface(source, source_length, tokens,
+                token_count, records, record_length, offsets, node_count, surface,
+                expression_arena, expression_capacity, declaration_table,
+                declaration_words, allocated, allocation_words, value_catalog,
+                value_words, output, capacity, next, depth - 1, owner_unit);
+        }
+        return -UNSUPPORTED;
+    }
+    if (production == 84) {
+        let block: i32 = child(records, record_length, offsets, node_count,
+            node, 0);
+        return block_statements(source, source_length, tokens, token_count,
+            records, record_length, offsets, node_count, block,
+            expression_arena, expression_capacity, type_arena, type_capacity,
+            resolutions, resolution_length, alias_catalog, alias_words,
+            alias_scratch, alias_scratch_capacity, type_output,
+            type_output_capacity,
+            declaration_table, declaration_words, allocated, allocation_words,
+            value_catalog, value_words, output, capacity, position, depth - 1, owner_unit);
+    }
+    if (production == 80) {
+        let condition: i32 = child(records, record_length, offsets,
+            node_count, node, 2);
+        let body: i32 = child(records, record_length, offsets,
+            node_count, node, 4);
+        let next: i32 = append(output, capacity, position, backend::syntax::WHILE);
+        next = expression_from_surface(source, source_length, tokens,
+            token_count, records, record_length, offsets, node_count,
+            condition, expression_arena, expression_capacity,
+            declaration_table, declaration_words, allocated, allocation_words,
+            value_catalog, value_words, output, capacity, next, depth - 1, owner_unit);
+        if (next <= -1) { return next; }
+        return block_statements(source, source_length, tokens, token_count,
+            records, record_length, offsets, node_count, body,
+            expression_arena, expression_capacity, type_arena, type_capacity,
+            resolutions, resolution_length, alias_catalog, alias_words,
+            alias_scratch, alias_scratch_capacity, type_output,
+            type_output_capacity,
+            declaration_table, declaration_words, allocated, allocation_words,
+            value_catalog, value_words, output, capacity, next, depth - 1, owner_unit);
+    }
+    if (production == 77) {
+        let condition: i32 = child(records, record_length, offsets,
+            node_count, node, 2);
+        let then_block: i32 = child(records, record_length, offsets,
+            node_count, node, 4);
+        let else_optional: i32 = child(records, record_length, offsets,
+            node_count, node, 5);
+        let next: i32 = append(output, capacity, position, backend::syntax::IF);
+        next = expression_from_surface(source, source_length, tokens,
+            token_count, records, record_length, offsets, node_count,
+            condition, expression_arena, expression_capacity,
+            declaration_table, declaration_words, allocated, allocation_words,
+            value_catalog, value_words, output, capacity, next, depth - 1, owner_unit);
+        if (next <= -1) { return next; }
+        next = block_statements(source, source_length, tokens, token_count,
+            records, record_length, offsets, node_count, then_block,
+            expression_arena, expression_capacity, type_arena, type_capacity,
+            resolutions, resolution_length, alias_catalog, alias_words,
+            alias_scratch, alias_scratch_capacity, type_output,
+            type_output_capacity,
+            declaration_table, declaration_words, allocated, allocation_words,
+            value_catalog, value_words, output, capacity, next, depth - 1,
+            owner_unit);
+        if (next <= -1) { return next; }
+        let else_production: i32 = record_production(records, record_length,
+            offsets, node_count, else_optional);
+        if (else_production == 78) {
+            let else_block: i32 = child(records, record_length, offsets,
+                node_count, else_optional, 1);
+            return block_statements(source, source_length, tokens, token_count,
+                records, record_length, offsets, node_count, else_block,
+                expression_arena, expression_capacity, type_arena,
+                type_capacity, resolutions, resolution_length, alias_catalog,
+                alias_words, alias_scratch, alias_scratch_capacity, type_output,
+                type_output_capacity, declaration_table, declaration_words,
+                allocated, allocation_words, value_catalog, value_words,
+                output, capacity, next, depth - 1, owner_unit);
+        }
+        if (else_production == 79) {
+            return append(output, capacity, next, backend::syntax::SKIP);
+        }
+        return -UNSUPPORTED;
+    }
+    // for/break/continue and malformed statement tags fail closed.
+    return -UNSUPPORTED;
+}
+
+fn block_statements(source: [i32], source_length: i32, tokens: [i32],
+    token_count: i32, records: [i32], record_length: i32, offsets: [i32],
+    node_count: i32, block: i32, expression_arena: [i32],
+    expression_capacity: i32, type_arena: [i32], type_capacity: i32,
+    resolutions: [i32], resolution_length: i32, alias_catalog: [i32],
+    alias_words: i32, alias_scratch: [i32], alias_scratch_capacity: i32,
+    type_output: [i32],
+    type_output_capacity: i32, declaration_table: [i32], declaration_words: i32,
+    allocated: [i32], allocation_words: i32, value_catalog: [i32],
+    value_words: i32, output: [i32], capacity: i32, position: i32,
+    depth: i32, owner_unit: i32) -> i32 {
+    if (depth <= 0) { return -INVALID; }
+    let production: i32 = record_production(records, record_length, offsets,
+        node_count, block);
+    if (production != 12 && production != 14 && production != 71
+        && production != 72 && production != 84) { return -INVALID; }
+    let list: i32 = child(records, record_length, offsets, node_count, block, 1);
+    let result: i32 = statement_list(source, source_length, tokens, token_count, records,
+        record_length, offsets, node_count, list, expression_arena,
+        expression_capacity, type_arena, type_capacity, resolutions,
+        resolution_length, alias_catalog, alias_words, alias_scratch,
+        alias_scratch_capacity, type_output, type_output_capacity,
+        declaration_table, declaration_words, allocated, allocation_words,
+        value_catalog, value_words, output, capacity, position, depth - 1,
+        owner_unit);
+    if (result <= -1) { return -200000000 - (0 - result); }
+    return result;
+}
+
+fn statement_list(source: [i32], source_length: i32, tokens: [i32],
+    token_count: i32, records: [i32], record_length: i32, offsets: [i32],
+    node_count: i32, list: i32, expression_arena: [i32],
+    expression_capacity: i32, type_arena: [i32], type_capacity: i32,
+    resolutions: [i32], resolution_length: i32, alias_catalog: [i32],
+    alias_words: i32, alias_scratch: [i32], alias_scratch_capacity: i32,
+    type_output: [i32],
+    type_output_capacity: i32, declaration_table: [i32], declaration_words: i32,
+    allocated: [i32], allocation_words: i32, value_catalog: [i32],
+    value_words: i32, output: [i32], capacity: i32, position: i32,
+    depth: i32, owner_unit: i32) -> i32 {
+    if (depth <= 0) { return -INVALID; }
+    let production: i32 = record_production(records, record_length, offsets,
+        node_count, list);
+    if (production == 74) { return append(output, capacity, position, backend::syntax::SKIP); }
+    if (production != 73) { return -210000000 - production; }
+    let first: i32 = child(records, record_length, offsets, node_count, list, 0);
+    // Core LET carries its continuation as part of the constructor. Do not
+    // wrap it in SEQUENCE or the continuation would be consumed twice by the
+    // backend statement walker.
+    if (record_production(records, record_length, offsets, node_count, first) == 75) {
+        let next: i32 = statement(source, source_length, tokens, token_count,
+            records, record_length, offsets, node_count, first,
+            expression_arena, expression_capacity, type_arena, type_capacity,
+            resolutions, resolution_length, alias_catalog, alias_words,
+            alias_scratch, alias_scratch_capacity, type_output,
+            type_output_capacity,
+            declaration_table, declaration_words, allocated, allocation_words,
+            value_catalog, value_words, output, capacity, position, depth - 1,
+            owner_unit);
+        if (next <= -1) { return -220000000 - (0 - next); }
+        return statement_list(source, source_length, tokens, token_count,
+            records, record_length, offsets, node_count,
+            child(records, record_length, offsets, node_count, list, 1),
+            expression_arena, expression_capacity, type_arena, type_capacity,
+            resolutions, resolution_length, alias_catalog, alias_words,
+            alias_scratch, alias_scratch_capacity, type_output,
+            type_output_capacity,
+            declaration_table, declaration_words, allocated, allocation_words,
+            value_catalog, value_words, output, capacity, next, depth - 1,
+            owner_unit);
+    }
+    let next: i32 = append(output, capacity, position, backend::syntax::SEQUENCE);
+    next = statement(source, source_length, tokens, token_count, records,
+        record_length, offsets, node_count, first, expression_arena,
+        expression_capacity, type_arena, type_capacity, resolutions,
+        resolution_length, alias_catalog, alias_words, alias_scratch,
+        alias_scratch_capacity, type_output, type_output_capacity,
+        declaration_table, declaration_words, allocated, allocation_words,
+        value_catalog, value_words, output, capacity, next, depth - 1,
+        owner_unit);
+    if (next <= -1) { return -230000000 - (0 - next); }
+    return statement_list(source, source_length, tokens, token_count, records,
+        record_length, offsets, node_count,
+        child(records, record_length, offsets, node_count, list, 1),
+        expression_arena, expression_capacity, type_arena, type_capacity,
+        resolutions, resolution_length, alias_catalog, alias_words,
+        alias_scratch, alias_scratch_capacity, type_output,
+        type_output_capacity,
+        declaration_table, declaration_words, allocated, allocation_words,
+        value_catalog, value_words, output, capacity, next, depth - 1,
+        owner_unit);
+}
+
+fn append_function(source: [i32], source_length: i32, tokens: [i32],
+    token_count: i32, records: [i32], record_length: i32, offsets: [i32],
+    node_count: i32, declaration: i32, function_id: i32, signature: i32,
+    signatures: [i32], expression_arena: [i32], expression_capacity: i32,
+    type_arena: [i32], type_capacity: i32, resolutions: [i32],
+    resolution_length: i32, alias_catalog: [i32], alias_words: i32,
+    alias_scratch: [i32], alias_scratch_capacity: i32, type_output: [i32],
+    type_output_capacity: i32,
+    declaration_table: [i32], declaration_words: i32, allocated: [i32],
+    allocation_words: i32, value_catalog: [i32], value_words: i32,
+    output: [i32], capacity: i32, position: i32, depth: i32,
+    owner_unit: i32) -> i32 {
+    let parameter_count: i32 = signatures[signature + 3];
+    let payload: i32 = signatures[signature + 5];
+    if (parameter_count <= -1 || payload != parameter_count * 2
+        || signatures[signature + 4] <= 0) { return -UNSUPPORTED; }
+    let record_start: i32 = position;
+    let body_start: i32 = position + RECORD_HEADER + parameter_count * 2;
+    if (body_start <= position || body_start >= capacity) { return -INVALID; }
+    let next: i32 = append(output, capacity, position, 0);
+    next = append(output, capacity, next, VERSION);
+    next = append(output, capacity, next, POINTER_BITS);
+    next = append(output, capacity, next, function_id);
+    next = append(output, capacity, next, signatures[signature + 4]);
+    next = append(output, capacity, next, parameter_count);
+    next = append(output, capacity, next, 0);
+    if (next <= -1) { return -INVALID; }
+    let parameter: i32 = 0;
+    while (parameter < parameter_count) {
+        output[next] = signatures[signature + 6 + parameter * 2];
+        output[next + 1] = signatures[signature + 7 + parameter * 2];
+        next += 2;
+        parameter += 1;
+    }
+    let body: i32 = child(records, record_length, offsets, node_count,
+        declaration, 8);
+    next = block_statements(source, source_length, tokens, token_count,
+        records, record_length, offsets, node_count, body, expression_arena,
+        expression_capacity, type_arena, type_capacity, resolutions,
+        resolution_length, alias_catalog, alias_words, alias_scratch,
+        alias_scratch_capacity, type_output, type_output_capacity,
+        declaration_table, declaration_words, allocated, allocation_words,
+        value_catalog, value_words, output, capacity, next, depth - 1,
+        owner_unit);
+    if (next <= -1 || next <= body_start) { return next; }
+    output[record_start] = next - record_start - 1;
+    output[record_start + 6] = next - body_start;
+    return next;
+}
+
+// Lower all nongeneric internal functions in source order. External
+// declarations have no body and are intentionally omitted. Constants,
+// structures, aliases, qualified paths, aggregate values, lets without either
+// a type or initializer, void returns, and control-flow statements outside
+// the supported subset are rejected with UNSUPPORTED.
+// Lower only functions owned by `owner_unit` from one global namespace. The
+// declaration/allocation/signature tables are immutable aggregate inputs;
+// source/tree/alias/value arenas remain the current unit's local inputs. An
+// owner of -1 preserves the historical all-rows behavior for the compatibility
+// entrypoint, which has no value catalog.
+pub fn lower_owned(owner_unit: i32, source: [i32], source_length: i32, tokens: [i32],
+    token_count: i32, records: [i32], record_length: i32, offsets: [i32],
+    node_count: i32, declaration_table: [i32], declaration_words: i32,
+    allocated: [i32], allocation_words: i32, signatures: [i32],
+    signature_words: i32, expression_arena: [i32], expression_capacity: i32,
+    type_arena: [i32], type_capacity: i32, resolutions: [i32],
+    resolution_length: i32, alias_catalog: [i32], alias_words: i32,
+    alias_scratch: [i32], alias_scratch_capacity: i32, type_output: [i32],
+    type_output_capacity: i32, value_catalog: [i32], value_words: i32,
+    output: [i32], capacity: i32) -> i32 {
+    if (owner_unit <= -2 || source_length <= -1 || token_count <= -1 || record_length <= -1
+        || node_count <= 0 || declaration_words <= lowering::declarations::HEADER - 1
+        || allocation_words <= lowering::declarations::HEADER - 1 || signature_words <= 7
+        || value_words <= -1 || (owner_unit >= 0 && value_words <= 0)
+        || expression_capacity <= 0 || type_capacity <= 0
+        || type_output_capacity <= 0 || capacity <= HEADER) {
+        return -INVALID;
+    }
+    let rows: i32 = allocated[1];
+    if (rows <= 0 || declaration_words != lowering::declarations::HEADER + rows * lowering::declarations::ROW
+        || allocation_words != lowering::declarations::HEADER + rows * 10) {
+        return -INVALID;
+    }
+    if (value_words > 0
+        && !valid_value_catalog(value_catalog, value_words, token_count,
+            allocated, allocation_words)) { return -INVALID; }
+    output[0] = VERSION;
+    output[1] = POINTER_BITS;
+    output[2] = 0;
+    output[3] = HEADER;
+    let written: i32 = HEADER;
+    let row: i32 = 0;
+    while (row < rows) {
+        let slot: i32 = lowering::declarations::HEADER + row * 10;
+        if (allocated[slot + 1] == lowering::declarations::FUNCTION
+            && (owner_unit == -1 || allocated[slot] == owner_unit)) {
+            let function_id: i32 = allocated[slot + 9];
+            let signature: i32 = signature_position(signatures, signature_words,
+                function_id);
+            if (signature <= -1) { return -INVALID; }
+            let next: i32 = append_function(source, source_length, tokens,
+                token_count, records, record_length, offsets, node_count,
+                allocated[slot + 4], function_id, signature, signatures,
+                expression_arena, expression_capacity, type_arena,
+                type_capacity, resolutions, resolution_length, alias_catalog,
+                alias_words, alias_scratch, alias_scratch_capacity, type_output,
+                type_output_capacity, declaration_table, declaration_words,
+                allocated, allocation_words, value_catalog, value_words,
+                output, capacity, written, node_count, owner_unit);
+            if (next <= -1) { return next; }
+            written = next;
+            output[2] += 1;
+        }
+        row += 1;
+    }
+    output[3] = written;
+    return written;
+}
+
+// Preserve the established all-rows API used by the single-program caller.
+pub fn lower(source: [i32], source_length: i32, tokens: [i32],
+    token_count: i32, records: [i32], record_length: i32, offsets: [i32],
+    node_count: i32, declaration_table: [i32], declaration_words: i32,
+    allocated: [i32], allocation_words: i32, signatures: [i32],
+    signature_words: i32, expression_arena: [i32], expression_capacity: i32,
+    type_arena: [i32], type_capacity: i32, resolutions: [i32],
+    resolution_length: i32, alias_catalog: [i32], alias_words: i32,
+    alias_scratch: [i32], alias_scratch_capacity: i32, type_output: [i32],
+    type_output_capacity: i32, output: [i32], capacity: i32) -> i32 {
+    return lower_owned(-1, source, source_length, tokens, token_count,
+        records, record_length, offsets, node_count, declaration_table,
+        declaration_words, allocated, allocation_words, signatures,
+        signature_words, expression_arena, expression_capacity, type_arena,
+        type_capacity, resolutions, resolution_length, alias_catalog,
+        alias_words, alias_scratch, alias_scratch_capacity, type_output,
+        type_output_capacity, type_arena, 0, output, capacity);
+}

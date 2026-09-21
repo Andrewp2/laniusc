@@ -323,12 +323,4 @@ theorem IsLongestMatch.functional
   exact member_eq_of_unique_spelling uniqueSpellings
     leftLongest.1 rightLongest.1 sameSpelling
 
-theorem matchSymbolHead_result_unique
-    {input : List Byte} {left right : SymbolRule}
-    (leftResult : matchSymbolHead input = some left)
-    (rightResult : matchSymbolHead input = some right) :
-    left = right := by
-  exact IsLongestMatch.functional symbolRules_unique_spellings
-    (matchSymbolHead_spec leftResult) (matchSymbolHead_spec rightResult)
-
 end Lanius.Compiler.Lexer

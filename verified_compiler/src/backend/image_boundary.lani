@@ -1,0 +1,26 @@
+module backend::image_boundary;
+
+import backend::image;
+import verified::host;
+
+// Keep the image implementation call inside the backend module graph. The
+// application entry point receives only the scalar image length, avoiding the
+// unsupported imported backend aggregate-call lowering path.
+pub fn compile(input:[i32], length: i32, function_input:[i32],
+    function_capacity: i32, work:[i32], work_length: i32, output:[i32],
+    capacity: i32) -> i32 {
+    return backend::image::compile(input, length, function_input,
+        function_capacity, work, work_length, output, capacity);
+}
+
+// Raw-pointer entry avoids passing slice values across the application/backend
+// native boundary. The views are reconstructed only inside this module.
+pub fn compile_raw(input: ptr, length: i32, function_input: ptr,
+    work: ptr, output: ptr) -> i32 {
+    let input_view:[i32] = verified::host::i32_slice_from_raw_parts(input, length);
+    let function_view:[i32] = verified::host::i32_slice_from_raw_parts(function_input, 65536);
+    let work_view:[i32] = verified::host::i32_slice_from_raw_parts(work, 524304);
+    let output_view:[i32] = verified::host::i32_slice_from_raw_parts(output, 2097152);
+    return backend::image::compile(input_view, length, function_view,
+        65536, work_view, 524304, output_view, 2097152);
+}
