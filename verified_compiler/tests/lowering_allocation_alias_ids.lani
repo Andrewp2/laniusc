@@ -1,37 +1,143 @@
 module app::main;
 
 import lowering::allocation;
+import lowering::declarations;
+import verified::host;
 
 // A compile-time alias occupies the declaration-ID hole between the structure
 // and constant groups. Runtime IDs preserve that authenticated space instead
 // of silently renumbering the hole; the check covers every Core-backed kind.
 fn main() -> i32 {
-    let input: [i32; 56] = [
-        6,1,1,1,1,1,1,0,
-        0,6,0,2,1,-1,0,0,
-        0,1,1,4,3,5,-1,0,
-        0,2,1,6,5,7,4,0,
-        0,3,0,8,7,9,-1,0,
-        0,4,0,10,9,11,-1,0,
-        0,5,0,12,11,13,-1,0,
-    ];
-    let output: [i32; 68] = [
-        0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,0,0,0,
-    ];
-    let words: i32 = lowering::allocation::allocate(input, 56, 1, output, 68);
-    if (words != 68 || output[0] != 1 || output[1] != 6
-        || output[2] != 1 || output[3] != 1 || output[4] != 1
-        || output[5] != 1 || output[6] != 1 || output[7] != 5) { return 1; }
-    if (output[18 + 8] != 0 || output[18 + 9] != 0) { return 2; }
-    if (output[28 + 8] != 1 || output[28 + 9] != -1) { return 3; }
-    if (output[38 + 8] != 2 || output[38 + 9] != 2) { return 4; }
-    if (output[48 + 8] != 3 || output[48 + 9] != 3) { return 5; }
-    if (output[48 + 18] != 4 || output[48 + 19] != 4) { return 6; }
+    let input_words: i32 = lowering::declarations::HEADER
+        + 6 * lowering::declarations::ROW;
+    let input_memory: ptr = verified::host::alloc(
+        input_words * verified::host::I32_BYTES,
+        lowering::declarations::ALIGNMENT);
+    let catalog_memory: ptr = verified::host::alloc(
+        lowering::declarations::TABLE_REF_BYTES,
+        lowering::declarations::TABLE_REF_ALIGNMENT);
+    if (input_memory == 0 || catalog_memory == 0) { return 13; }
+    let declarations: lowering::declarations::Table =
+        lowering::declarations::from_raw_parts(input_memory, 6);
+    let catalog: lowering::declarations::Catalog =
+        lowering::declarations::catalog_from_raw_parts(catalog_memory, 1);
+    lowering::declarations::catalog_write_table(catalog, 0, declarations);
+    let counts: lowering::declarations::DeclarationCounts =
+        lowering::declarations::DeclarationCounts {
+            rows: 6, structures: 1, enumerations: 0, aliases: 1,
+            constants: 1, functions: 1, externals: 1, modules: 1,
+            imports: 0,
+        };
+    lowering::declarations::table_write_header(declarations, counts);
+    lowering::declarations::table_write_row(declarations, 0,
+        lowering::declarations::DeclarationRow {
+            unit: 0, kind: lowering::declarations::Module,
+            is_public: false, item: 2, declaration: 1,
+            name: -1, target: 0, ordinal: 0,
+        });
+    lowering::declarations::table_write_row(declarations, 1,
+        lowering::declarations::DeclarationRow {
+            unit: 0, kind: lowering::declarations::Structure,
+            is_public: true, item: 4, declaration: 3,
+            name: 5, target: -1, ordinal: 0,
+        });
+    lowering::declarations::table_write_row(declarations, 2,
+        lowering::declarations::DeclarationRow {
+            unit: 0, kind: lowering::declarations::Alias,
+            is_public: true, item: 6, declaration: 5,
+            name: 7, target: 4, ordinal: 0,
+        });
+    lowering::declarations::table_write_row(declarations, 3,
+        lowering::declarations::DeclarationRow {
+            unit: 0, kind: lowering::declarations::Constant,
+            is_public: false, item: 8, declaration: 7,
+            name: 9, target: -1, ordinal: 0,
+        });
+    lowering::declarations::table_write_row(declarations, 4,
+        lowering::declarations::DeclarationRow {
+            unit: 0, kind: lowering::declarations::Function,
+            is_public: false, item: 10, declaration: 9,
+            name: 11, target: -1, ordinal: 0,
+        });
+    lowering::declarations::table_write_row(declarations, 5,
+        lowering::declarations::DeclarationRow {
+            unit: 0, kind: lowering::declarations::External,
+            is_public: false, item: 12, declaration: 11,
+            name: 13, target: -1, ordinal: 0,
+        });
+    let expected_words: i32 = lowering::allocation::HEADER
+        + 6 * lowering::allocation::ROW;
+    let output_memory: ptr = verified::host::alloc(
+        expected_words * verified::host::I32_BYTES,
+        lowering::allocation::ALIGNMENT);
+    if (output_memory == 0) { return 9; }
+    let allocation_output: lowering::allocation::Table =
+        lowering::allocation::from_raw_parts(output_memory, 6);
+    let words: i32 = lowering::allocation::allocate(catalog,
+        allocation_output);
+    let header: lowering::allocation::AllocationHeader =
+        lowering::allocation::table_header(allocation_output);
+    if (words != expected_words || header.units != 1 || header.rows != 6
+        || header.structures != 1 || header.enumerations != 0
+        || header.aliases != 1 || header.constants != 1
+        || header.functions != 1 || header.externals != 1
+        || header.declarations != 5) { return 1; }
+    let module_allocation: lowering::allocation::AllocationRow =
+        lowering::allocation::table_row(allocation_output, 0);
+    let structure_allocation: lowering::allocation::AllocationRow =
+        lowering::allocation::table_row(allocation_output, 1);
+    let alias_allocation: lowering::allocation::AllocationRow =
+        lowering::allocation::table_row(allocation_output, 2);
+    let constant_allocation: lowering::allocation::AllocationRow =
+        lowering::allocation::table_row(allocation_output, 3);
+    let function_allocation: lowering::allocation::AllocationRow =
+        lowering::allocation::table_row(allocation_output, 4);
+    let external_allocation: lowering::allocation::AllocationRow =
+        lowering::allocation::table_row(allocation_output, 5);
+    if (lowering::allocation::row_declaration_id(module_allocation) != -1
+        || lowering::allocation::row_core_id(module_allocation) != -1) { return 2; }
+    if (lowering::allocation::row_declaration_id(structure_allocation) != 0
+        || lowering::allocation::row_core_id(structure_allocation) != 0) { return 3; }
+    if (lowering::allocation::row_declaration_id(alias_allocation) != 1
+        || lowering::allocation::row_core_id(alias_allocation) != -1) { return 4; }
+    if (lowering::allocation::row_declaration_id(constant_allocation) != 2
+        || lowering::allocation::row_core_id(constant_allocation) != 2) { return 5; }
+    if (lowering::allocation::row_declaration_id(function_allocation) != 3
+        || lowering::allocation::row_core_id(function_allocation) != 3) { return 6; }
+    if (lowering::allocation::row_declaration_id(external_allocation) != 4
+        || lowering::allocation::row_core_id(external_allocation) != 4) { return 7; }
+    let alias_source: lowering::declarations::DeclarationRow =
+        lowering::declarations::table_row(declarations, 2);
+    alias_source.ordinal = 1;
+    lowering::declarations::table_write_row(declarations, 2,
+        alias_source);
+    if (lowering::allocation::allocate(catalog,
+            allocation_output) != -1) { return 8; }
+    alias_source.ordinal = 0;
+    lowering::declarations::table_write_row(declarations, 2,
+        alias_source);
+    counts.aliases = 2;
+    lowering::declarations::table_write_header(declarations, counts);
+    if (lowering::allocation::allocate(catalog,
+            allocation_output) != -1) { return 10; }
+    counts.aliases = 1;
+    lowering::declarations::table_write_header(declarations, counts);
+    let structure_source: lowering::declarations::DeclarationRow =
+        lowering::declarations::table_row(declarations, 1);
+    structure_source.name = -1;
+    lowering::declarations::table_write_row(declarations, 1,
+        structure_source);
+    if (lowering::allocation::allocate(catalog,
+            allocation_output) != -1) { return 11; }
+    structure_source.name = 5;
+    lowering::declarations::table_write_row(declarations, 1,
+        structure_source);
+    let function_source: lowering::declarations::DeclarationRow =
+        lowering::declarations::table_row(declarations, 4);
+    function_source.target = 0;
+    lowering::declarations::table_write_row(declarations, 4,
+        function_source);
+    if (lowering::allocation::allocate(catalog,
+            allocation_output) != -1) { return 12; }
     return 0;
 }

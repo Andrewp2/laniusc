@@ -1,0 +1,18 @@
+module app::main;
+
+struct AnswerBox {
+    value: i32,
+}
+
+fn unbox(value: AnswerBox) -> i32 {
+    return value.value;
+}
+
+fn box_then_unbox(value: i32) -> i32 {
+    return unbox(AnswerBox { value: value });
+}
+
+fn main() -> i32 {
+    let boxed: AnswerBox = AnswerBox { value: 42 };
+    return unbox(boxed) + box_then_unbox(42) - 84;
+}

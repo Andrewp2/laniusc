@@ -1,0 +1,7 @@
+module app::main;
+
+import x86::encode;
+
+fn main() -> i32 {
+    return x86::encode::binary_opcode(x86::encode::Add) - 1;
+}

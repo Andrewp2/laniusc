@@ -1,11 +1,14 @@
 module verified::grammar;
 import verified::host;
+import verified::ascii;
+
 pub const WORDS: i32 = 2179;
+const NIBBLE_BITS: i32 = 4;
 fn hex_nibble(byte: i32) -> i32 {
-    if (byte >= 48 && byte <= 57) {
-        return byte - 48;
+    if (byte >= verified::ascii::ZERO && byte <= verified::ascii::NINE) {
+        return byte - verified::ascii::ZERO;
     }
-    return byte - 87;
+    return byte - verified::ascii::LOWER_A + 10;
 }
 // The grammar is the same authenticated artifact used by extractor.lani.
 // Keeping its decoding in a pure Lanius producer lets later entrypoints share
@@ -19,7 +22,18 @@ pub fn load(output:[i32], capacity: i32) -> i32 {
     let index: i32 = 0;
     while (index<WORDS) {
         let value: i32 = words[index];
-        output[index] =(hex_nibble(value&255) << 12)|(hex_nibble((value >> 8)&255) << 8)|(hex_nibble((value >> 16)&255) << 4)|hex_nibble((value >> 24)&255);
+        output[index] =
+            (hex_nibble(value & verified::host::BYTE_MASK)
+                << (NIBBLE_BITS * verified::host::I32_BYTE_3))
+            | (hex_nibble((value >> verified::host::BITS_PER_BYTE)
+                & verified::host::BYTE_MASK)
+                    << (NIBBLE_BITS * verified::host::I32_BYTE_2))
+            | (hex_nibble((value >> (verified::host::BITS_PER_BYTE
+                * verified::host::I32_BYTE_2))
+                & verified::host::BYTE_MASK) << NIBBLE_BITS)
+            | hex_nibble((value >> (verified::host::BITS_PER_BYTE
+                * verified::host::I32_BYTE_3))
+                & verified::host::BYTE_MASK);
         index += 1;
     }
     return WORDS;

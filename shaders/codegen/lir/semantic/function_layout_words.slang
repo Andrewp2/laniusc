@@ -25,7 +25,9 @@ RWStructuredBuffer<uint> semantic_struct_field_word_count_by_row;
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_TYPE = 5u;
 static const uint HIR_STRUCT_ITEM = 27u;
+static const uint HIR_ENUM_ITEM = 26u;
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
+static const uint HIR_TYPE_FORM_SLICE = 3u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
@@ -153,9 +155,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
             return;
         }
 
-        uint multiplier = array_length(field.value, hir_count);
+        bool slice_field = field.value < hir_count &&
+            compact_hir_core[field.value].kind == HIR_TYPE &&
+            compact_hir_payload[field.value].a == HIR_TYPE_FORM_SLICE;
+        uint cached_width = semantic_struct_field_word_count_by_row[field_row];
+        if (cached_width == INVALID)
+        {
+            semantic_struct_word_count_by_hir[root] = INVALID;
+            return;
+        }
+        uint multiplier = cached_width != 0u ? cached_width
+            : slice_field ? 2u : array_length(field.value, hir_count);
         uint element_type = array_element_type(field.value, hir_count);
-        uint child = nested_struct(element_type, hir_count);
+        // A slice owns a pointer-and-length pair, not an inline copy of its
+        // element type (even when that element is a nominal struct).
+        uint child = slice_field ? INVALID
+            : nested_struct(element_type, hir_count);
         if (child == INVALID)
         {
             if (depth == 0u)

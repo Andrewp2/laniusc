@@ -1,6 +1,11 @@
 module verified::byte_io;
 import verified::host;
-const PACKED_IO_WORDS: i32 = 16384; // Bridge byte-oriented host I/O to the extractor's i32-per-byte buffers.
+import verified::ascii;
+pub const PACKED_IO_WORDS: i32 = 16384;
+const STANDARD_OUTPUT: i32 = 1;
+const STANDARD_ERROR: i32 = 2;
+const DECIMAL_RADIX: i32 = 10;
+// Bridge byte-oriented host I/O to the extractor's i32-per-byte buffers.
 // Native `[i32]` storage has a coherent packed four-byte raw view. Callers
 // provide one reusable packed scratch buffer so large files and artifacts need
 // one host call per chunk rather than one host call per byte.
@@ -16,7 +21,7 @@ pub fn read_file(handle: i32, output:[i32], capacity: i32, packed:[i32],) -> i32
     }
     let total: i32 = 0;
     while (true) {
-        let request: i32 = PACKED_IO_WORDS * 4;
+        let request: i32 = PACKED_IO_WORDS * verified::host::I32_BYTES;
         let remaining: i32 = capacity - total;
         if (remaining<request) {
             request = remaining + 1;
@@ -34,7 +39,10 @@ pub fn read_file(handle: i32, output:[i32], capacity: i32, packed:[i32],) -> i32
         }
         let index: i32 = 0;
         while (index != count) {
-            output[total + index] =(packed[index / 4] >>((index % 4) * 8))&255;
+            output[total + index] = (packed[index / verified::host::I32_BYTES]
+                >> ((index % verified::host::I32_BYTES)
+                    * verified::host::BITS_PER_BYTE))
+                & verified::host::BYTE_MASK;
             index += 1;
         }
         total += count;
@@ -52,10 +60,10 @@ pub fn write_stdout(input:[i32], length: i32, packed_pointer: ptr,) -> i32 {
     let total: i32 = 0;
     while (total != length) {
         let chunk_length: i32 = length - total;
-        if (chunk_length>PACKED_IO_WORDS * 4) {
-            chunk_length = PACKED_IO_WORDS * 4;
+        if (chunk_length > PACKED_IO_WORDS * verified::host::I32_BYTES) {
+            chunk_length = PACKED_IO_WORDS * verified::host::I32_BYTES;
         }
-        let word_count: i32 =(chunk_length + 3) / 4;
+        let word_count: i32 = verified::host::packed_words(chunk_length);
         let word: i32 = 0;
         while (word != word_count) {
             packed[word] = 0;
@@ -64,10 +72,13 @@ pub fn write_stdout(input:[i32], length: i32, packed_pointer: ptr,) -> i32 {
         let index: i32 = 0;
         while (index != chunk_length) {
             let value: i32 = input[total + index];
-            if (value <= -1 || value >= 256) {
+            if (value <= -1 || value > verified::host::BYTE_MASK) {
                 return -1;
             }
-            packed[index / 4] = packed[index / 4]|(value <<((index % 4) * 8));
+            packed[index / verified::host::I32_BYTES] =
+                packed[index / verified::host::I32_BYTES]
+                | (value << ((index % verified::host::I32_BYTES)
+                    * verified::host::BITS_PER_BYTE));
             index += 1;
         }
         let chunk_size: usize = chunk_length;
@@ -85,11 +96,16 @@ pub fn write_stdout_text(input: str, length: i32) -> i32 {
     if (length <= -1) {
         return -1;
     }
-    let words:[i32] = verified::host::i32_slice_from_raw_parts(verified::host::string_data_ptr(input), (length + 3) / 4);
+    let words:[i32] = verified::host::i32_slice_from_raw_parts(
+        verified::host::string_data_ptr(input),
+        verified::host::packed_words(length));
     let total: i32 = 0;
     while (total != length) {
-        let value: i32 =(words[total / 4] >>((total % 4) * 8))&255;
-        if (verified::host::write_byte(1, value) != 1) {
+        let value: i32 = (words[total / verified::host::I32_BYTES]
+            >> ((total % verified::host::I32_BYTES)
+                * verified::host::BITS_PER_BYTE))
+            & verified::host::BYTE_MASK;
+        if (verified::host::write_byte(STANDARD_OUTPUT, value) != 1) {
             return -1;
         }
         total += 1;
@@ -104,18 +120,21 @@ pub fn write_stderr_natural(value: i32) -> i32 {
         return -1;
     }
     let divisor: i32 = 1;
-    while (value / divisor >= 10) {
-        divisor *= 10;
+    while (value / divisor >= DECIMAL_RADIX) {
+        divisor *= DECIMAL_RADIX;
     }
     let written: i32 = 0;
     while (divisor != 0) {
-        if (verified::host::write_byte(2, 48 +(value / divisor) % 10) != 1) {
+        if (verified::host::write_byte(STANDARD_ERROR,
+                verified::ascii::ZERO
+                    + (value / divisor) % DECIMAL_RADIX) != 1) {
             return -1;
         }
         written += 1;
-        divisor /= 10;
+        divisor /= DECIMAL_RADIX;
     }
-    if (verified::host::write_byte(2, 10) != 1) {
+    if (verified::host::write_byte(STANDARD_ERROR,
+            verified::ascii::LINE_FEED) != 1) {
         return -1;
     }
     return written + 1;

@@ -1,0 +1,215 @@
+module lowering::body_statement;
+
+import verified::production;
+import backend::syntax;
+import lowering::body_context;
+import lowering::body_expression;
+import lowering::locals;
+import lowering::types;
+import verified::surface_expr;
+import verified::surface_type;
+import verified::token;
+
+type BodyContext = lowering::body_context::BodyContext;
+
+fn statement(context: BodyContext, node: i32, output: [i32], capacity: i32,
+    position: i32, depth: i32) -> i32 {
+    let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
+    if (depth <= 0) { return lowering::body_context::invalid(); }
+    let production: i32 = lowering::body_context::record_production(context, node);
+    if (production == verified::production::RETURN_STMT) {
+        let optional: i32 = lowering::body_context::child(context, node, 1);
+        let return_kind: i32 = lowering::body_context::record_production(context, optional);
+        let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::statement_code(backend::syntax::StatementReturn));
+        if (return_kind == verified::production::RETURN_VOID) {
+            return lowering::body_context::append(output, capacity, next, 0);
+        }
+        if (return_kind != verified::production::RETURN_VALUE) {
+            return lowering::body_context::unsupported();
+        }
+        let surface: i32 = lowering::body_context::child(context, optional, 0);
+        next = lowering::body_context::append(output, capacity, next, 1);
+        return lowering::body_expression::expression_from_surface(context, surface, output, capacity,
+            next, depth - 1);
+    }
+    if (production == verified::production::EXPR_STMT) {
+        let surface: i32 = lowering::body_context::child(context, node, 0);
+        let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::statement_code(backend::syntax::StatementExpression));
+        return lowering::body_expression::expression_from_surface(context, surface, output, capacity,
+            next, depth - 1);
+    }
+    if (production == verified::production::LET_STMT) {
+        let type_optional: i32 = lowering::body_context::child(context, node, 2);
+        let init_optional: i32 = lowering::body_context::child(context, node, 3);
+        let name: i32 = lowering::body_context::token_child(context, node, 1);
+        let type_production: i32 = lowering::body_context::record_production(context, type_optional);
+        let init_production: i32 = lowering::body_context::record_production(context, init_optional);
+        if (type_production == verified::production::LET_TYPE) {
+            let type_surface: i32 = lowering::body_context::child(context, type_optional, 1);
+            let surface_type_input: verified::surface_type::TypeInput =
+                verified::surface_type::TypeInput {
+                    tree: context.tree,
+                    root: type_surface,
+                    depth: depth - 1,
+                };
+            let surface_type_output: verified::surface_type::TypeArena =
+                context.type_arena;
+            let type_root: i32 = verified::surface_type::extract(
+                surface_type_input, surface_type_output);
+            if (type_root <= -1) { return lowering::body_context::invalid(); }
+            let source_region: lowering::types::WordRegion =
+                lowering::types::region(context.source, context.source_length);
+            let tokens: verified::token::TokenTable = context.tokens;
+            let resolution_table: lowering::types::ResolutionTable =
+                context.resolutions;
+            let type_input: lowering::types::TypeInput =
+                lowering::types::TypeInput {
+                    source: source_region,
+                    tokens: tokens,
+                    arena: surface_type_output,
+                    root: type_root,
+                    resolutions: resolution_table,
+                    aliases: context.alias_catalog,
+                };
+            let type_workspace: lowering::types::TypeWorkspace =
+                lowering::types::TypeWorkspace {
+                    alias_scratch: lowering::types::region(
+                        context.alias_scratch,
+                        context.alias_scratch_capacity),
+                    output: lowering::types::region(context.type_output,
+                        context.type_output_capacity),
+                };
+            let kind: i32 = lowering::types::lower(type_input,
+                type_workspace);
+            if (kind <= 0) { return lowering::body_context::unsupported(); }
+            if (init_production == verified::production::LET_INIT_NONE) {
+                let next: i32 = lowering::body_context::append(output, capacity, position,
+                    backend::syntax::statement_code(backend::syntax::StatementLetUninitialized));
+                next = lowering::body_context::append(output, capacity, next, name);
+                next = lowering::body_context::append(output, capacity, next, kind);
+                if (next <= -1 || !lowering::locals::bind(context.locals, name, kind)) {
+                    return lowering::body_context::invalid();
+                }
+                return next;
+            }
+            if (init_production != verified::production::LET_INIT) { return lowering::body_context::unsupported(); }
+            let surface: i32 = lowering::body_context::child(context, init_optional, 1);
+            let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::statement_code(backend::syntax::StatementLet));
+            next = lowering::body_context::append(output, capacity, next, name);
+            next = lowering::body_context::append(output, capacity, next, kind);
+            if (next <= -1) { return lowering::body_context::invalid(); }
+            next = lowering::body_expression::expression_from_surface(context, surface, output, capacity,
+                next, depth - 1);
+            if (next <= -1 || !lowering::locals::bind(context.locals, name, kind)) {
+                return lowering::body_context::invalid();
+            }
+            return next;
+        }
+        if (type_production == verified::production::LET_TYPE_NONE
+            && init_production == verified::production::LET_INIT) {
+            let surface: i32 = lowering::body_context::child(context, init_optional, 1);
+            let root: i32 = lowering::body_expression::extract_expression(context, surface, depth - 1);
+            if (root <= -1
+                || verified::surface_expr::node_count(arena)
+                    <= 0) {
+                return lowering::body_context::invalid();
+            }
+            let kind: i32 = lowering::body_expression::expression_kind(context,
+                verified::surface_expr::node_count(arena),
+                root, depth - 1);
+            if (kind <= 0) { return lowering::body_context::unsupported(); }
+            let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::statement_code(backend::syntax::StatementLet));
+            next = lowering::body_context::append(output, capacity, next, name);
+            next = lowering::body_context::append(output, capacity, next, kind);
+            if (next <= -1) { return lowering::body_context::invalid(); }
+            next = lowering::body_expression::expression(context,
+                verified::surface_expr::node_count(arena), root,
+                output, capacity, next, depth - 1);
+            if (next <= -1 || !lowering::locals::bind(context.locals, name, kind)) {
+                return lowering::body_context::invalid();
+            }
+            return next;
+        }
+        return lowering::body_context::unsupported();
+    }
+    if (production == verified::production::BLOCK_STMT) {
+        let block: i32 = lowering::body_context::child(context, node, 0);
+        return block_statements(context, block, output, capacity, position,
+            depth - 1);
+    }
+    if (production == verified::production::WHILE_STMT) {
+        let condition: i32 = lowering::body_context::child(context, node, 2);
+        let body: i32 = lowering::body_context::child(context, node, 4);
+        let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::statement_code(backend::syntax::StatementWhile));
+        next = lowering::body_expression::expression_from_surface(context, condition, output, capacity,
+            next, depth - 1);
+        if (next <= -1) { return next; }
+        return block_statements(context, body, output, capacity, next,
+            depth - 1);
+    }
+    if (production == verified::production::IF_STMT) {
+        let condition: i32 = lowering::body_context::child(context, node, 2);
+        let then_block: i32 = lowering::body_context::child(context, node, 4);
+        let else_optional: i32 = lowering::body_context::child(context, node, 5);
+        let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::statement_code(backend::syntax::StatementIf));
+        next = lowering::body_expression::expression_from_surface(context, condition, output, capacity,
+            next, depth - 1);
+        if (next <= -1) { return next; }
+        next = block_statements(context, then_block, output, capacity, next,
+            depth - 1);
+        if (next <= -1) { return next; }
+        let else_production: i32 = lowering::body_context::record_production(context, else_optional);
+        if (else_production == verified::production::ELSE_STMT) {
+            let else_block: i32 = lowering::body_context::child(context, else_optional, 1);
+            return block_statements(context, else_block, output, capacity,
+                next, depth - 1);
+        }
+        if (else_production == verified::production::ELSE_NONE) {
+            return lowering::body_context::append(output, capacity, next, backend::syntax::statement_code(backend::syntax::StatementSkip));
+        }
+        return lowering::body_context::unsupported();
+    }
+    // for/break/continue and malformed statement tags fail closed.
+    return lowering::body_context::unsupported();
+}
+
+pub fn block_statements(context: BodyContext, block: i32, output: [i32],
+    capacity: i32, position: i32, depth: i32) -> i32 {
+    let locals: lowering::locals::Table = context.locals;
+    if (depth <= 0) { return lowering::body_context::invalid(); }
+    let production: i32 = lowering::body_context::record_production(context, block);
+    if (production != verified::production::FN_BLOCK && production != verified::production::IMPL_FN_BLOCK && production != verified::production::BLOCK
+        && production != verified::production::IF_BLOCK && production != verified::production::BLOCK_STMT) { return lowering::body_context::invalid(); }
+    let list: i32 = lowering::body_context::child(context, block, 1);
+    let outer_local_count: i32 = lowering::locals::save(locals);
+    let result: i32 = statement_list(context, list, output, capacity,
+        position, depth - 1);
+    lowering::locals::restore(locals, outer_local_count);
+    return result;
+}
+
+fn statement_list(context: BodyContext, list: i32, output: [i32],
+    capacity: i32, position: i32, depth: i32) -> i32 {
+    if (depth <= 0) { return lowering::body_context::invalid(); }
+    let production: i32 = lowering::body_context::record_production(context, list);
+    if (production == verified::production::STMTS_END) { return lowering::body_context::append(output, capacity, position, backend::syntax::statement_code(backend::syntax::StatementSkip)); }
+    if (production != verified::production::STMTS_MORE) { return lowering::body_context::invalid(); }
+    let first: i32 = lowering::body_context::child(context, list, 0);
+    // Core LET carries its continuation as part of the constructor. Do not
+    // wrap it in SEQUENCE or the continuation would be consumed twice by the
+    // backend statement walker.
+    if (lowering::body_context::record_production(context, first)
+        == verified::production::LET_STMT) {
+        let next: i32 = statement(context, first, output, capacity, position,
+            depth - 1);
+        if (next <= -1) { return next; }
+        return statement_list(context,
+            lowering::body_context::child(context, list, 1), output, capacity, next,
+            depth - 1);
+    }
+    let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::statement_code(backend::syntax::StatementSequence));
+    next = statement(context, first, output, capacity, next, depth - 1);
+    if (next <= -1) { return next; }
+    return statement_list(context,
+        lowering::body_context::child(context, list, 1), output, capacity, next, depth - 1);
+}

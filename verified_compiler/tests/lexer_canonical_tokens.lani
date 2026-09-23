@@ -8,21 +8,23 @@ fn main() -> i32 {
         108, 101, 116, 32, 108, 101, 116, 116, 101, 114, 32, 102, 110, 0,
     ];
     if (verified::canonical_tokens::keyword_kind(source, 0, 3)
-        != verified::token::LET) {
+        != verified::token::kind_code(verified::token::LetKeyword)) {
         return 1;
     }
     if (verified::canonical_tokens::keyword_kind(source, 4, 10)
-        != verified::token::IDENTIFIER) {
+        != verified::token::kind_code(verified::token::Identifier)) {
         return 2;
     }
     if (verified::canonical_tokens::keyword_kind(source, 11, 13)
-        != verified::token::FN) {
+        != verified::token::kind_code(verified::token::FnKeyword)) {
         return 3;
     }
-    if (!verified::canonical_tokens::is_trivia(verified::token::WHITESPACE)) {
+    if (!verified::canonical_tokens::is_trivia(
+            verified::token::kind_code(verified::token::Whitespace))) {
         return 4;
     }
-    if (verified::canonical_tokens::is_trivia(verified::token::INTEGER)) {
+    if (verified::canonical_tokens::is_trivia(
+            verified::token::kind_code(verified::token::Integer))) {
         return 5;
     }
 
@@ -36,6 +38,7 @@ fn main() -> i32 {
     let range_count: i32 = verified::canonical_tokens::canonicalize_in_place(
         range_source, range_records, 4);
     if (range_count != 4) { return 6; }
-    if (range_records[3] != verified::token::DOT_DOT_EQUAL) { return 7; }
+    if (range_records[3] != verified::token::kind_code(
+            verified::token::DotDotEqual)) { return 7; }
     return 0;
 }

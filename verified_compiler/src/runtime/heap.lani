@@ -3,42 +3,59 @@ import x86::register;
 import x86::encode;
 import x86::control;
 
+const GUARD_SEQUENCE_BYTES: i32 = 8;
+const ALL_BITS: i32 = -1;
+const MMAP_READ_WRITE: i32 = 3;
+const MMAP_PRIVATE_ANONYMOUS: i32 = 34;
+const MMAP_NO_FILE: i32 = -1;
+const LINUX_MMAP_SYSCALL: i32 = 9;
+// Linux reserves unsigned pointer values -4095 through -1 for syscall errors.
+const LINUX_ERROR_POINTER_MIN: i32 = -4095;
+
 pub fn allocate(output: [i32], capacity: i32, cursor: i32) -> i32 {
     let next: i32 = cursor;
     // A fresh zero-filled anonymous mapping for each block, including size zero.
     // Pointer identity/size/borrow records still belong to the storage proof boundary.
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::TEST, x86::register::RSI, x86::register::RSI);
-    next = x86::control::branch(output, capacity, next, x86::control::NOT_EQUAL, next + 8);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Test, x86::register::RSI, x86::register::RSI);
+    next = x86::control::branch(output, capacity, next,
+        x86::control::NotEqual, next + GUARD_SEQUENCE_BYTES);
     next = x86::control::trap(output, capacity, next);
-    next = x86::encode::address(output, capacity, next, x86::register::R10, x86::register::RSI, -1);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::TEST, x86::register::RSI, x86::register::R10);
-    next = x86::control::branch(output, capacity, next, x86::control::EQUAL, next + 8);
+    next = x86::encode::address(output, capacity, next, x86::register::R10,
+        x86::register::RSI, ALL_BITS);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Test, x86::register::RSI, x86::register::R10);
+    next = x86::control::branch(output, capacity, next,
+        x86::control::Equal, next + GUARD_SEQUENCE_BYTES);
     next = x86::control::trap(output, capacity, next);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::ADD, x86::register::RSI, x86::register::RDI);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Add, x86::register::RSI, x86::register::RDI);
     let overflow: i32 = next + 2;
-    next = x86::control::branch(output, capacity, next, x86::control::BELOW, 0);
+    next = x86::control::branch(output, capacity, next, x86::control::Below, 0);
     next = x86::control::push(output, capacity, next, x86::register::R10);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RDI, 0, 0);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RDX, 3, 0);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::R10, 34, 0);
-    next = x86::encode::immediate(output, capacity, next, 64, x86::register::R8, -1, -1);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::R9, 0, 0);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, 9, 0);
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32, x86::register::RDI, 0, 0);
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32,
+        x86::register::RDX, MMAP_READ_WRITE, 0);
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32,
+        x86::register::R10, MMAP_PRIVATE_ANONYMOUS, 0);
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_64,
+        x86::register::R8, MMAP_NO_FILE, ALL_BITS);
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32, x86::register::R9, 0, 0);
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32,
+        x86::register::RAX, LINUX_MMAP_SYSCALL, 0);
     next = x86::control::syscall(output, capacity, next);
     next = x86::control::pop(output, capacity, next, x86::register::R10);
-    next = x86::encode::immediate(output, capacity, next, 64, x86::register::RDX, -4095, -1);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::CMP, x86::register::RAX, x86::register::RDX);
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_64,
+        x86::register::RDX, LINUX_ERROR_POINTER_MIN, ALL_BITS);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Compare, x86::register::RAX, x86::register::RDX);
     let failed: i32 = next + 2;
-    next = x86::control::branch(output, capacity, next, x86::control::ABOVE_EQUAL, 0);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::ADD, x86::register::RAX, x86::register::R10);
-    next = x86::encode::immediate(output, capacity, next, 64, x86::register::RDX, -1, -1);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::XOR, x86::register::R10, x86::register::RDX);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::AND, x86::register::RAX, x86::register::R10);
+    next = x86::control::branch(output, capacity, next, x86::control::AboveEqual, 0);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Add, x86::register::RAX, x86::register::R10);
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_64,
+        x86::register::RDX, ALL_BITS, ALL_BITS);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Xor, x86::register::R10, x86::register::RDX);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::And, x86::register::RAX, x86::register::R10);
     next = x86::control::return_near(output, capacity, next);
-    if (x86::control::patch_relative(output, next, failed, next) < 0) { return -1; }
-    if (x86::control::patch_relative(output, next, overflow, next) < 0) { return -1; }
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, 0, 0);
+    if (x86::control::patch_relative(output, next, failed, next) <= -1) { return -1; }
+    if (x86::control::patch_relative(output, next, overflow, next) <= -1) { return -1; }
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32, x86::register::RAX, 0, 0);
     next = x86::control::return_near(output, capacity, next);
     return next;
 }
-

@@ -169,6 +169,7 @@ uint type_head_token_for_compact_node(uint type_node)
 {
     if (!valid_compact_node(type_node))
         return INVALID;
+    uint owner = compact_hir_core[type_node].token_start;
     uint path_i = path_id_by_owner_hir[type_node];
     uint path_count = min(path_count_out[0u], gParams.n_hir_nodes);
     if (path_i != INVALID && path_i < path_count)
@@ -178,12 +179,12 @@ uint type_head_token_for_compact_node(uint type_node)
         {
             uint row = path_segment_base[path_i] + count - 1u;
             uint leaf = row < gParams.n_tokens ? path_segment_token[row] : INVALID;
-            if (valid_token(leaf))
+            if (valid_token(leaf) &&
+                type_expr_ref_tag[leaf] != TYPE_REF_INVALID)
                 return leaf;
         }
     }
-    uint token = compact_hir_core[type_node].token_start;
-    return valid_token(token) ? token : INVALID;
+    return valid_token(owner) ? owner : INVALID;
 }
 
 uint instance_arg_ref_index(uint instance, uint slot)

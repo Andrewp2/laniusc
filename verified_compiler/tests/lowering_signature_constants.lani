@@ -1,0 +1,70 @@
+module app::main;
+
+import backend::syntax;
+import lowering::declarations;
+import lowering::signature_index;
+import lowering::signatures;
+import verified::host;
+
+fn main() -> i32 {
+    let required: lowering::signature_index::Requirements =
+        lowering::signature_index::Requirements {
+            entries: 2, members: 0, variants: 0, fields: 0,
+            constants: 2, bytes: 3, valid: true,
+        };
+    let memory: ptr = verified::host::alloc(
+        lowering::signature_index::allocation_bytes(required),
+        lowering::signature_index::ALIGNMENT);
+    let cursor: ptr = verified::host::alloc(
+        lowering::signature_index::WRITER_BYTES,
+        lowering::signature_index::ALIGNMENT);
+    if (memory == 0 || cursor == 0) { return 1; }
+    let table: lowering::signature_index::Table =
+        lowering::signature_index::from_raw_parts(memory, required);
+    let output: lowering::signature_index::Writer =
+        lowering::signature_index::writer(table, cursor);
+    let scalar: i32 = lowering::signature_index::push_scalar(output, 42, 0);
+    if (scalar != 0
+        || !lowering::signature_index::push_record(output,
+            lowering::signatures::SignatureRecord {
+                id: 0, declaration_kind: lowering::declarations::Constant,
+                shape: lowering::signatures::ConstantShape,
+                arity: 0,
+                result_type: backend::syntax::type_code(
+                    backend::syntax::TypeI32),
+            }, -1, -1, scalar)) { return 2; }
+    let invalid: [i32; 1] = [256];
+    if (lowering::signature_index::push_string(output, invalid, 1, 0, 1)
+        != -1) { return 3; }
+    let source: [i32; 3] = [65, 195, 169];
+    let string: i32 = lowering::signature_index::push_string(output,
+        source, 3, 0, 3);
+    if (string != 1
+        || !lowering::signature_index::push_record(output,
+            lowering::signatures::SignatureRecord {
+                id: 1, declaration_kind: lowering::declarations::Constant,
+                shape: lowering::signatures::ConstantShape,
+                arity: 0,
+                result_type: backend::syntax::type_code(
+                    backend::syntax::TypeString),
+            }, -1, -1, string)
+        || !lowering::signature_index::complete(output)) { return 4; }
+    let index: lowering::signature_index::Table =
+        lowering::signature_index::finish(output);
+    let number: lowering::signature_index::ConstantValue =
+        lowering::signature_index::constant_at(index, 0);
+    let text: lowering::signature_index::ConstantValue =
+        lowering::signature_index::constant_at(index, 1);
+    if (number.encoding != lowering::signature_index::ScalarConstant
+        || number.low != 42 || number.high != 0
+        || text.encoding != lowering::signature_index::StringConstant
+        || text.byte_count != 3
+        || lowering::signature_index::constant_byte(index, 1, 0) != 65
+        || lowering::signature_index::constant_byte(index, 1, 1) != 195
+        || lowering::signature_index::constant_byte(index, 1, 2) != 169
+        || lowering::signature_index::constant_byte(index, 1, 3) != -1
+        || lowering::signature_index::constant_byte(index, 0, 0) != -1) {
+        return 5;
+    }
+    return 0;
+}

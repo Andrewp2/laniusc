@@ -1,172 +1,103 @@
 module lowering::units;
+
 import lowering::allocation;
 import lowering::declarations;
-import lowering::modules; // A unit descriptor names two already-materialized, per-unit pass results in
-// flat catalog storage.  Descriptors are ordered by unit ID; there is no
-// host-provided ID to trust or sort:
-//   [declaration_offset, declaration_words, module_offset, module_words]
-//
-// The declaration slice is the exact output of declarations.collect.  The
-// module slice is the exact output of modules.materialize.  Keeping these
-// slices as inputs makes this boundary usable by a caller that extracts units
-// sequentially, while preserving the existing variable-size table formats.
-pub const DESCRIPTOR_WORDS: i32 = 4;
-pub const DECLARATION_OFFSET: i32 = 0;
-pub const DECLARATION_WORDS: i32 = 1;
-pub const MODULE_OFFSET: i32 = 2;
-pub const MODULE_WORDS: i32 = 3;
-pub const SUCCESS: i32 = 0;
-pub const BAD_INPUT: i32 = 1;
-pub const DECLARATIONS: i32 = 2;
-pub const MODULES: i32 = 3;
-pub const ALLOCATION: i32 = 4;
+import verified::host;
+
+pub enum UnitsStage {
+    Success,
+    BadInput,
+    Declarations,
+    Allocation,
+}
+
+pub fn stage_code(stage: UnitsStage) -> i32 {
+    return match (stage) {
+        Success -> 0,
+        BadInput -> 1,
+        Declarations -> 2,
+        Allocation -> 3,
+    };
+}
+
+pub fn stage_succeeded(stage: UnitsStage) -> bool {
+    return stage_code(stage) == stage_code(Success);
+}
+
 pub struct UnitsResult {
-    stage: i32,
+    stage: UnitsStage,
     detail: i32,
     units: i32,
     declaration_words: i32,
-    module_words: i32,
     allocation_words: i32,
 }
-pub fn units_stage(result: UnitsResult) -> i32 {
-    return result.stage;
+
+pub fn units_stage(value: UnitsResult) -> UnitsStage { return value.stage; }
+pub fn units_detail(value: UnitsResult) -> i32 { return value.detail; }
+pub fn units_count(value: UnitsResult) -> i32 { return value.units; }
+pub fn units_declaration_words(value: UnitsResult) -> i32 {
+    return value.declaration_words;
 }
-pub fn units_detail(result: UnitsResult) -> i32 {
-    return result.detail;
+pub fn units_allocation_words(value: UnitsResult) -> i32 {
+    return value.allocation_words;
 }
-pub fn units_count(result: UnitsResult) -> i32 {
-    return result.units;
-}
-pub fn units_declaration_words(result: UnitsResult) -> i32 {
-    return result.declaration_words;
-}
-pub fn units_module_words(result: UnitsResult) -> i32 {
-    return result.module_words;
-}
-pub fn units_allocation_words(result: UnitsResult) -> i32 {
-    return result.allocation_words;
-}
-fn result(stage: i32, detail: i32, units: i32, declarations: i32, modules: i32, allocation: i32) -> UnitsResult {
+
+fn result(stage: UnitsStage, detail: i32, units: i32,
+    declaration_words: i32, allocation_words: i32) -> UnitsResult {
     return UnitsResult {
         stage: stage,
         detail: detail,
         units: units,
-        declaration_words: declarations,
-        module_words: modules,
-        allocation_words: allocation,
+        declaration_words: declaration_words,
+        allocation_words: allocation_words,
     };
 }
-fn valid_range(offset: i32, words: i32, length: i32) -> bool {
-    if (offset <= -1 || words <= -1 || length <= -1 || offset>length || words>length - offset) {
-        return false;
-    }
-    return true;
-}
-fn valid_declaration_table(input:[i32], total: i32, offset: i32, words: i32, unit: i32) -> bool {
-    if (!valid_range(offset, words, total) || words <= lowering::declarations::HEADER - 1) {
-        return false;
-    }
-    let rows: i32 = input[offset];
-    if (rows <= 0 || rows>(words - lowering::declarations::HEADER) / lowering::declarations::ROW || words != lowering::declarations::HEADER + rows * lowering::declarations::ROW) {
-        return false;
-    }
-    let row: i32 = 0;
-    while (row <= rows - 1) {
-        let slot: i32 = offset + lowering::declarations::HEADER + row * lowering::declarations::ROW; // Allocation performs the complete row validation.  This early
-        // check is the unit-boundary invariant needed before concatenation.
-        if (input[slot] != unit) {
-            return false;
-        }
-        row += 1;
-    }
-    return true;
-}
-fn valid_module_table(input:[i32], total: i32, offset: i32, words: i32, unit: i32) -> bool {
-    if (!valid_range(offset, words, total) || words <= lowering::modules::HEADER - 1) {
-        return false;
-    }
-    let paths: i32 = input[offset + 1];
-    let segments: i32 = input[offset + 2];
-    let claimed_words: i32 = input[offset + 3];
-    if (input[offset] != unit || paths <= -1 || segments <= -1 || claimed_words != words) {
-        return false;
-    }
-    let position: i32 = offset + lowering::modules::HEADER;
-    let finish: i32 = offset + words;
-    let path: i32 = 0;
-    let counted_segments: i32 = 0;
-    while (path <= paths - 1) {
-        if (position>finish || finish - position <= 8) {
-            return false;
-        }
-        if (input[position] != unit || input[position + 1]<lowering::declarations::MODULE || input[position + 1]>lowering::declarations::IMPORT) {
-            return false;
-        }
-        let count: i32 = input[position + 8];
-        if (count <= -1 || count>(finish - position - 9) / lowering::modules::SEGMENT) {
-            return false;
-        }
-        if (counted_segments>2147483647 - count) {
-            return false;
-        }
-        counted_segments += count;
-        position += 9 + count * lowering::modules::SEGMENT;
-        path += 1;
-    }
-    return position == finish && counted_segments == segments;
-}
-fn copy_table(input:[i32], offset: i32, words: i32, output:[i32], capacity: i32, position: i32) -> i32 {
-    if (position <= -1 || capacity <= -1 || position>capacity || words <= -1 || words>capacity - position) {
-        return -1;
-    }
-    let index: i32 = 0;
-    while (index <= words - 1) {
-        output[position + index] = input[offset + index];
-        index += 1;
-    }
-    return position + words;
-}
-// Accumulate all per-unit declaration/module metadata in descriptor order,
-// then allocate one global ID namespace.  A successful one-unit call with a
-// descriptor for unit zero produces the same declaration and allocation table
-// as the existing program composition pass.  This function intentionally
-// stops at the allocation boundary: signatures, bodies, and transport still
-// require per-unit source/tree context and must be widened before this result
-// can be lowered into one executable transport program.
-pub fn accumulate(descriptors:[i32], descriptor_length: i32, unit_count: i32, declaration_catalog:[i32], declaration_catalog_length: i32, module_catalog:[i32], module_catalog_length: i32, declarations:[i32], declaration_capacity: i32, modules:[i32], module_capacity: i32, allocated:[i32], allocation_capacity: i32) -> UnitsResult {
-    if (descriptor_length <= -1 || unit_count <= 0 || unit_count>descriptor_length / DESCRIPTOR_WORDS || descriptor_length != unit_count * DESCRIPTOR_WORDS || declaration_catalog_length <= -1 || module_catalog_length <= -1 || declaration_capacity <= lowering::declarations::HEADER - 1 || module_capacity <= lowering::modules::HEADER - 1 || allocation_capacity <= lowering::allocation::HEADER - 1) {
-        return result(BAD_INPUT, 0, 0, 0, 0, 0);
+
+// The unit boundary validates each collector table before global ID
+// allocation. The allocator checks the stronger kind and ordinal invariants.
+pub fn accumulate(catalog: lowering::declarations::Catalog,
+    output: lowering::allocation::Table) -> UnitsResult {
+    let unit_count: i32 = catalog.count;
+    if (unit_count <= 0 || lowering::allocation::table_capacity(output) <= 0) {
+        return result(BadInput, 0, 0, 0, 0);
     }
     let declaration_words: i32 = 0;
-    let module_words: i32 = 0;
     let unit: i32 = 0;
-    while (unit <= unit_count - 1) {
-        let descriptor: i32 = unit * DESCRIPTOR_WORDS;
-        let declaration_offset: i32 = descriptors[descriptor + DECLARATION_OFFSET];
-        let local_declaration_words: i32 = descriptors[descriptor + DECLARATION_WORDS];
-        let module_offset: i32 = descriptors[descriptor + MODULE_OFFSET];
-        let local_module_words: i32 = descriptors[descriptor + MODULE_WORDS];
-        if (!valid_declaration_table(declaration_catalog, declaration_catalog_length, declaration_offset, local_declaration_words, unit)) {
-            return result(DECLARATIONS, -1, unit, declaration_words, module_words, 0);
+    while (unit != unit_count) {
+        let table: lowering::declarations::Table =
+            lowering::declarations::catalog_table(catalog, unit);
+        if (!lowering::declarations::table_has_exact_rows(table)) {
+            return result(Declarations, -1, unit, declaration_words, 0);
         }
-        if (!valid_module_table(module_catalog, module_catalog_length, module_offset, local_module_words, unit)) {
-            return result(MODULES, -1, unit, declaration_words, module_words, 0);
+        let rows: i32 = lowering::declarations::count_rows(
+            lowering::declarations::table_header(table));
+        if (rows <= 0 || rows > (verified::host::I32_MAX
+                - lowering::declarations::HEADER)
+                / lowering::declarations::ROW) {
+            return result(Declarations, -1, unit, declaration_words, 0);
         }
-        let next_declarations: i32 = copy_table(declaration_catalog, declaration_offset, local_declaration_words, declarations, declaration_capacity, declaration_words);
-        if (next_declarations <= -1) {
-            return result(DECLARATIONS, -2, unit, declaration_words, module_words, 0);
+        let local_words: i32 = lowering::declarations::HEADER
+            + rows * lowering::declarations::ROW;
+        if (local_words > verified::host::I32_MAX - declaration_words) {
+            return result(Declarations, -1, unit, declaration_words, 0);
         }
-        let next_modules: i32 = copy_table(module_catalog, module_offset, local_module_words, modules, module_capacity, module_words);
-        if (next_modules <= -1) {
-            return result(MODULES, -2, unit, next_declarations, module_words, 0);
+        let row: i32 = 0;
+        while (row != rows) {
+            if (lowering::declarations::row_unit(
+                    lowering::declarations::table_row(table, row)) != unit) {
+                return result(Declarations, -1, unit, declaration_words, 0);
+            }
+            row += 1;
         }
-        declaration_words = next_declarations;
-        module_words = next_modules;
+        declaration_words += local_words;
         unit += 1;
     }
-    let allocation_words: i32 = lowering::allocation::allocate(declarations, declaration_words, unit_count, allocated, allocation_capacity);
+    let allocation_words: i32 = lowering::allocation::allocate(catalog,
+        output);
     if (allocation_words <= -1) {
-        return result(ALLOCATION, allocation_words, unit_count, declaration_words, module_words, 0);
+        return result(Allocation, allocation_words, unit_count,
+            declaration_words, 0);
     }
-    return result(SUCCESS, 0, unit_count, declaration_words, module_words, allocation_words);
+    return result(Success, 0, unit_count, declaration_words,
+        allocation_words);
 }

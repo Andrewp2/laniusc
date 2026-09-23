@@ -1,0 +1,25 @@
+module app;
+
+// The first struct name has token ID 5, so its nominal type ID collides in
+// the low byte with the scalar f32 code. This nested aggregate must still
+// be passed through a 64-bit pointer. The old float predicate crashes here.
+pub struct Triple {
+    first: i32,
+    second: i32,
+    third: i32,
+}
+
+pub struct Box {
+    triple: Triple,
+    after: i32,
+}
+
+fn make() -> Triple {
+    return Triple { first: 11, second: 13, third: 19 };
+}
+
+fn main() -> i32 {
+    let value: Box = Box { triple: make(), after: 17 };
+    return value.triple.first + value.triple.second + value.triple.third +
+        value.after - 60;
+}

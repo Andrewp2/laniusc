@@ -1,0 +1,57 @@
+module app::main;
+
+import backend::syntax;
+import backend::operation;
+import x86::control;
+
+fn main() -> i32 {
+    let code: i32 = backend::syntax::binary_code(
+        backend::syntax::BinaryAndThen);
+    let after_last: i32 = backend::syntax::binary_code(
+        backend::syntax::BinaryShiftRight) + 1;
+    while (code != after_last) {
+        let operation: backend::syntax::BinaryOperation =
+            backend::syntax::binary_from_code(code);
+        if (backend::syntax::binary_code(operation) != code) { return 1; }
+        let comparison: bool = code >= backend::syntax::binary_code(
+            backend::syntax::BinaryEqual)
+            && code <= backend::syntax::binary_code(
+                backend::syntax::BinaryGreaterEqual);
+        if (backend::syntax::binary_is_comparison(operation) != comparison) {
+            return 2;
+        }
+        code += 1;
+    }
+    if (backend::syntax::binary_from_code(
+            backend::syntax::binary_code(
+                backend::syntax::InvalidBinaryOperation) - 1)
+        != backend::syntax::InvalidBinaryOperation) { return 3; }
+    if (backend::syntax::binary_from_code(after_last)
+        != backend::syntax::InvalidBinaryOperation) { return 4; }
+    if (backend::syntax::assignment_binary(
+            backend::syntax::AssignmentAdd)
+        != backend::syntax::BinaryAdd) { return 5; }
+    if (backend::syntax::assignment_binary(
+            backend::syntax::AssignmentBitOr)
+        != backend::syntax::BinaryBitOr) { return 6; }
+    let assignment: i32 = backend::syntax::assignment_code(
+        backend::syntax::AssignmentSet);
+    while (assignment <= backend::syntax::assignment_code(
+            backend::syntax::AssignmentBitOr)) {
+        let decoded: backend::syntax::AssignmentOperation =
+            backend::syntax::assignment_from_code(assignment);
+        if (backend::syntax::assignment_code(decoded) != assignment) {
+            return 9;
+        }
+        assignment += 1;
+    }
+    if (backend::syntax::assignment_from_code(-2)
+        != backend::syntax::InvalidAssignmentOperation) { return 10; }
+    if (backend::syntax::assignment_from_code(11)
+        != backend::syntax::InvalidAssignmentOperation) { return 11; }
+    if (backend::operation::condition(backend::syntax::BinaryLess)
+        != x86::control::Less) { return 7; }
+    if (backend::operation::condition(backend::syntax::BinaryGreaterEqual)
+        != x86::control::GreaterEqual) { return 8; }
+    return 0;
+}

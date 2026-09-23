@@ -1,79 +1,198 @@
 module backend::frame;
+import backend::layout;
+import verified::host;
 import x86::register;
 import x86::encode;
-import x86::buffer;
+import x86::control;
 
-// Mutable compilation state and scoped binding tables. Each table has
-// `stride` entries. Eight tables hold local IDs/types/slots, break patches,
-// call fields/targets, and function input/code positions for the whole image.
-pub const HEADER: i32 = 16;
-pub const INPUT: i32 = 0;
-pub const CODE: i32 = 1;
-pub const SLOTS: i32 = 2;
-pub const RESULT: i32 = 3;
-pub const FAILED: i32 = 4;
-pub const BREAK_COUNT: i32 = 5;
-pub const TOP: i32 = 6;
-pub const SRET: i32 = 7;
-pub const FUNCTION_COUNT: i32 = 8;
-pub const FIXUP_COUNT: i32 = 9;
-pub const STRUCT_END: i32 = 10;
-pub const CONST_END: i32 = 11;
-pub const STRIDE: i32 = 12;
-// Compile-time result of place resolution: initialization flag slot, or -1.
-pub const PLACE_FLAG: i32 = 13;
-// End of the contiguous function-code region.  This is deliberately kept in
-// the fixed frame header: backend::program appends runtime data after the
-// functions, so the last function span cannot be recovered from the final
-// image length.
-pub const FUNCTION_END: i32 = 14;
-
-pub fn allocate(work: [i32], count: i32) -> i32 {
-    if (count < 1 || count > 1048576 - work[TOP]) { work[FAILED] = 1; return -1; }
-    work[TOP] += count;
-    if (work[TOP] > work[SLOTS]) { work[SLOTS] = work[TOP]; }
-    return work[TOP] - 1;
+// Mutable compilation state. The header is a typed record; typed local
+// bindings, call fixups, function positions, and break patches follow it.
+// Each trailing region has `stride` typed records.
+const STATE_FIELD_BYTES: i32 = backend::layout::VALUE_WORD_BYTES;
+const STATE_FIELD_COUNT: i32 = 14;
+const STATE_BYTES: i32 = STATE_FIELD_COUNT * STATE_FIELD_BYTES;
+pub const HEADER: i32 = STATE_BYTES / verified::host::I32_BYTES;
+const LOCAL_FIELD_BYTES: i32 = backend::layout::VALUE_WORD_BYTES;
+const LOCAL_RECORD_BYTES: i32 = 3 * LOCAL_FIELD_BYTES;
+const LOCAL_RECORD_WORDS: i32 = LOCAL_RECORD_BYTES
+    / verified::host::I32_BYTES;
+const CALL_FIXUP_RECORD_BYTES: i32 = 2 * LOCAL_FIELD_BYTES;
+const CALL_FIXUP_RECORD_WORDS: i32 = CALL_FIXUP_RECORD_BYTES
+    / verified::host::I32_BYTES;
+const FUNCTION_RECORD_BYTES: i32 = 2 * LOCAL_FIELD_BYTES;
+const FUNCTION_RECORD_WORDS: i32 = FUNCTION_RECORD_BYTES
+    / verified::host::I32_BYTES;
+const BREAK_PATCH_RECORD_BYTES: i32 = STATE_FIELD_BYTES;
+const BREAK_PATCH_WORDS: i32 = BREAK_PATCH_RECORD_BYTES
+    / verified::host::I32_BYTES;
+pub const WORK_WORDS_PER_STRIDE: i32 = LOCAL_RECORD_WORDS
+    + CALL_FIXUP_RECORD_WORDS + FUNCTION_RECORD_WORDS
+    + BREAK_PATCH_WORDS;
+pub const WORK_ALIGNMENT: i32 = LOCAL_FIELD_BYTES;
+pub struct State {
+    input: i32,
+    code: i32,
+    slots: i32,
+    result: i32,
+    failed: i32,
+    break_count: i32,
+    top: i32,
+    sret: i32,
+    function_count: i32,
+    entry_index: i32,
+    fixup_count: i32,
+    stride: i32,
+    // Compile-time result of place resolution: initialization flag slot, or -1.
+    place_flag: i32,
+    // The function-code boundary precedes appended runtime data.
+    function_end: i32,
 }
 
-pub fn take(input: [i32], length: i32, work: [i32]) -> i32 {
-    let position: i32 = work[INPUT];
-    if (position < 0 || position >= length) { work[FAILED] = 1; return 0; }
-    work[INPUT] = position + 1;
+pub struct Workspace {
+    memory: ptr,
+    words: i32,
+}
+
+pub fn from_raw_parts(memory: ptr, words: i32) -> Workspace {
+    return Workspace { memory: memory, words: words };
+}
+
+pub fn state_view(work: Workspace) -> [State] {
+    let first: ptr = work.memory
+        + STATE_BYTES - STATE_FIELD_BYTES;
+    return slice_from_raw_parts(first, 1);
+}
+const MAX_STACK_SLOTS: i32 = 1048576;
+const STACK_ALIGNMENT_BYTES: i32 = 16;
+const STACK_ALIGNMENT_WORDS: i32 = STACK_ALIGNMENT_BYTES
+    / backend::layout::VALUE_WORD_BYTES;
+
+pub struct FunctionPosition {
+    input_offset: i32,
+    code_start: i32,
+}
+
+pub struct BreakPatch {
+    position: i32,
+}
+
+fn break_patch_first(work: Workspace, stride: i32) -> ptr {
+    return work.memory + STATE_BYTES
+        + stride * (LOCAL_RECORD_BYTES + CALL_FIXUP_RECORD_BYTES
+            + FUNCTION_RECORD_BYTES + BREAK_PATCH_RECORD_BYTES)
+        - STATE_FIELD_BYTES;
+}
+
+pub fn read_break_patch(work: Workspace, index: i32) -> i32 {
+    let state: [State] = state_view(work);
+    let patches: [BreakPatch] = slice_from_raw_parts(
+        break_patch_first(work, state[0].stride), state[0].stride);
+    return patches[index].position;
+}
+
+pub fn write_break_patch(work: Workspace, index: i32, position: i32) {
+    let state: [State] = state_view(work);
+    let patches: [BreakPatch] = slice_from_raw_parts(
+        break_patch_first(work, state[0].stride), state[0].stride);
+    patches[index].position = position;
+}
+
+pub fn call_fixup_first(work: Workspace) -> ptr {
+    let state: [State] = state_view(work);
+    let capacity: i32 = state[0].stride;
+    return work.memory + STATE_BYTES
+        + capacity * (LOCAL_RECORD_BYTES + CALL_FIXUP_RECORD_BYTES)
+        - LOCAL_FIELD_BYTES;
+}
+
+pub fn local_binding_first(work: Workspace) -> ptr {
+    let state: [State] = state_view(work);
+    let capacity: i32 = state[0].stride;
+    return work.memory + STATE_BYTES
+        + capacity * LOCAL_RECORD_BYTES - LOCAL_FIELD_BYTES;
+}
+
+fn function_position_first(work: Workspace) -> ptr {
+    let state: [State] = state_view(work);
+    let capacity: i32 = state[0].stride;
+    return work.memory + STATE_BYTES
+        + capacity * (LOCAL_RECORD_BYTES + CALL_FIXUP_RECORD_BYTES
+            + FUNCTION_RECORD_BYTES) - LOCAL_FIELD_BYTES;
+}
+
+fn function_table(work: Workspace) -> [FunctionPosition] {
+    let state: [State] = state_view(work);
+    return slice_from_raw_parts(function_position_first(work),
+        state[0].stride);
+}
+
+pub fn set_function_input_offset(work: Workspace, index: i32,
+    input_offset: i32) {
+    let functions: [FunctionPosition] = function_table(work);
+    functions[index].input_offset = input_offset;
+}
+
+pub fn function_input_offset(work: Workspace, index: i32) -> i32 {
+    let functions: [FunctionPosition] = function_table(work);
+    return functions[index].input_offset;
+}
+
+pub fn set_function_code_start(work: Workspace, index: i32,
+    code_start: i32) {
+    let functions: [FunctionPosition] = function_table(work);
+    functions[index].code_start = code_start;
+}
+
+pub fn function_code_start(work: Workspace, index: i32) -> i32 {
+    let functions: [FunctionPosition] = function_table(work);
+    return functions[index].code_start;
+}
+
+pub fn allocate(work: Workspace, count: i32) -> i32 {
+    let state: [State] = state_view(work);
+    if (count < 1 || count > MAX_STACK_SLOTS - state[0].top) {
+        state[0].failed = 1;
+        return -1;
+    }
+    state[0].top += count;
+    if (state[0].top > state[0].slots) { state[0].slots = state[0].top; }
+    return state[0].top - 1;
+}
+
+pub fn take(input: [i32], length: i32, work: Workspace) -> i32 {
+    let state: [State] = state_view(work);
+    let position: i32 = state[0].input;
+    if (position <= -1 || position >= length) { state[0].failed = 1; return 0; }
+    state[0].input = position + 1;
     return input[position];
 }
 
-pub fn lookup(work: [i32], active: i32, id: i32) -> i32 {
-    let index: i32 = active;
-    while (index > 0) {
-        index -= 1;
-        if (work[HEADER + index] == id) { return index; }
-    }
-    return -1;
+pub fn displacement(slot: i32) -> i32 {
+    return -(slot + 1) * backend::layout::VALUE_WORD_BYTES;
+}
+pub fn bytes(slots: i32) -> i32 {
+    return ((slots + STACK_ALIGNMENT_WORDS - 1) / STACK_ALIGNMENT_WORDS)
+        * STACK_ALIGNMENT_BYTES;
 }
 
-pub fn displacement(slot: i32) -> i32 { return -(slot + 1) * 8; }
-pub fn bytes(slots: i32) -> i32 { return ((slots + 1) / 2) * 16; }
-
-pub fn store(output: [i32], capacity: i32, work: [i32], slot: i32, source: i32) -> i32 {
-    if (slot + 1 > work[SLOTS]) { work[SLOTS] = slot + 1; }
-    work[CODE] = x86::encode::store(output, capacity, work[CODE], 32, source,
+pub fn store(output: [i32], capacity: i32, work: Workspace, slot: i32, source: i32) -> i32 {
+    let state: [State] = state_view(work);
+    if (slot + 1 > state[0].slots) { state[0].slots = slot + 1; }
+    state[0].code = x86::encode::store(output, capacity, state[0].code, x86::register::WIDTH_32, source,
         x86::register::RBP, displacement(slot));
-    return work[CODE];
+    return state[0].code;
 }
 
-pub fn load(output: [i32], capacity: i32, work: [i32], slot: i32, destination: i32) -> i32 {
-    work[CODE] = x86::encode::load(output, capacity, work[CODE], 32, destination,
+pub fn load(output: [i32], capacity: i32, work: Workspace, slot: i32, destination: i32) -> i32 {
+    let state: [State] = state_view(work);
+    state[0].code = x86::encode::load(output, capacity, state[0].code, x86::register::WIDTH_32, destination,
         x86::register::RBP, displacement(slot));
-    return work[CODE];
+    return state[0].code;
 }
 
 pub fn return_value(output: [i32], capacity: i32, cursor: i32) -> i32 {
-    // MOV RSP,RBP; POP RBP; RET. Reserve the complete fixed protocol first.
-    if (!x86::buffer::fits(capacity, cursor, 5)) { return -1; }
-    output[cursor] = 72;
-    output[cursor + 1] = 137;
-    output[cursor + 2] = 236;
-    output[cursor + 3] = 93;
-    output[cursor + 4] = 195;
-    return cursor + 5;
+    let next: i32 = x86::encode::move_register(output, capacity, cursor,
+        x86::register::WIDTH_64, x86::register::RSP, x86::register::RBP);
+    next = x86::control::pop(output, capacity, next, x86::register::RBP);
+    return x86::control::return_near(output, capacity, next);
 }

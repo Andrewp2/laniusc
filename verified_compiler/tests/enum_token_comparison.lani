@@ -1,0 +1,13 @@
+module enum_token_comparison;
+
+import verified::symbol;
+import verified::token;
+
+fn main() -> i32 {
+    let source: [i32; 2] = [47, 47];
+    let matched = verified::symbol::match_symbol_head(source, 2, 0);
+    let kind: verified::token::TokenKind =
+        verified::symbol::token_match_token_kind(matched);
+    if (kind == verified::token::LineComment) { return 0; }
+    return 1;
+}

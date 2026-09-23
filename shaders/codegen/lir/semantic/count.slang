@@ -120,13 +120,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             uint arm_count = payload.b < active_match_arm_count()
                 ? min(payload.c, active_match_arm_count() - payload.b) : 0u;
-            // Store the scrutinee once, reload it for each tag access, and
-            // finish with the selected result value.
-            // Store the scrutinee and a compiler-owned `matched` flag once,
-            // then lower each arm as `!matched && pattern_matches`. This
-            // preserves first-match semantics for wildcard/default arms as
-            // well as for future overlapping pattern forms.
-            semantic_lir_count[node] = arm_count * 12u + 4u;
+            // Each successful arm stores its result and branches directly to
+            // the enclosing match end. Only the no-match path reaches TRAP,
+            // so every predecessor of the result read defines its value.
+            semantic_lir_count[node] = arm_count * 8u + 5u;
             return;
         }
         uint parent = compact_expr_parent[node];

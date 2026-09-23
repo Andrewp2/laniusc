@@ -1,71 +1,475 @@
 module backend::syntax;
 
-// Preorder serialization of structural Core constructors, not a second IR.
-// The function header is shared with the proved parameter-return lowering.
-pub const I32: i32 = 1;
-pub const BOOL: i32 = 2;
-pub const USIZE: i32 = 3;
-pub const POINTER: i32 = 4;
-pub const STRING: i32 = 5;
-pub const SLICE: i32 = 6;
-pub const STRUCT_BASE: i32 = 16;
-pub const VALUE: i32 = 0;
-pub const LOCAL: i32 = 1;
-pub const CAST: i32 = 2;
-pub const UNARY: i32 = 3;
-pub const BINARY: i32 = 4;
-pub const INDEX: i32 = 7;
-pub const ASSIGN: i32 = 12;
-pub const STRUCT_VALUE: i32 = 8;
-pub const FIELD: i32 = 9;
-pub const CONSTANT: i32 = 13;
-pub const CALL: i32 = 14;
-pub const SLICE_FROM_RAW_PARTS: i32 = 15;
-pub const SLICE_DATA_PTR: i32 = 16;
-pub const STRING_DATA_PTR: i32 = 17;
-pub const PLACE_LOCAL: i32 = 0;
-pub const PLACE_FIELD: i32 = 1;
-pub const PLACE_INDEX: i32 = 2;
-pub const SKIP: i32 = 0;
-pub const EXPRESSION: i32 = 1;
-pub const SEQUENCE: i32 = 2;
-pub const LET: i32 = 3;
-pub const LET_UNINITIALIZED: i32 = 4;
-pub const IF: i32 = 5;
-pub const WHILE: i32 = 6;
-pub const RETURN: i32 = 10;
-pub const BREAK: i32 = 11;
-pub const CONTINUE: i32 = 12;
-pub const POSITIVE: i32 = 0;
-pub const NOT: i32 = 1;
-pub const NEGATE: i32 = 2;
-pub const AND_THEN: i32 = 0;
-pub const OR_ELSE: i32 = 1;
-pub const EQUAL: i32 = 2;
-pub const NOT_EQUAL: i32 = 3;
-pub const LESS: i32 = 4;
-pub const LESS_EQUAL: i32 = 5;
-pub const GREATER: i32 = 6;
-pub const GREATER_EQUAL: i32 = 7;
-pub const ADD: i32 = 8;
-pub const SUBTRACT: i32 = 9;
-pub const MULTIPLY: i32 = 10;
-pub const DIVIDE: i32 = 11;
-pub const REMAINDER: i32 = 12;
-pub const BIT_AND: i32 = 13;
-pub const BIT_OR: i32 = 14;
-pub const BIT_XOR: i32 = 15;
-pub const SHIFT_LEFT: i32 = 16;
-pub const SHIFT_RIGHT: i32 = 17;
+// Core is serialized into i32 buffers at the lowering/backend boundary. The
+// compiler uses enums for every semantic category and converts to an integer
+// only when it reads or writes that representation.
+pub const NOMINAL_TYPE_BASE: i32 = 16;
+pub const PROGRAM_VERSION: i32 = 3;
+pub const FUNCTION_VERSION: i32 = 1;
+pub const POINTER_BITS: i32 = 64;
+pub const PROGRAM_HEADER_WORDS: i32 = 6;
+pub const FUNCTION_HEADER_WORDS: i32 = 6;
+pub const PARAMETER_ROW_WORDS: i32 = 2;
+pub const FUNCTION_RECORD_PREFIX_WORDS: i32 = 1;
+const PROGRAM_VERSION_FIELD: i32 = 0;
+const PROGRAM_POINTER_BITS_FIELD: i32 = 1;
+const PROGRAM_ENTRY_FIELD: i32 = 2;
+const PROGRAM_TYPE_COUNT_FIELD: i32 = 3;
+const PROGRAM_CONSTANT_COUNT_FIELD: i32 = 4;
+const PROGRAM_FUNCTION_COUNT_FIELD: i32 = 5;
+const FUNCTION_KIND_FIELD: i32 = 0;
+const FUNCTION_POINTER_BITS_FIELD: i32 = 1;
+const FUNCTION_ID_FIELD: i32 = 2;
+const FUNCTION_RESULT_TYPE_FIELD: i32 = 3;
+const FUNCTION_PARAMETER_COUNT_FIELD: i32 = 4;
+const FUNCTION_BODY_WORDS_FIELD: i32 = 5;
+pub const PARAMETER_ID_FIELD: i32 = 0;
+pub const PARAMETER_TYPE_FIELD: i32 = 1;
 
-pub fn scalar(kind: i32) -> bool { return kind == I32 || kind == BOOL; }
+pub struct ProgramHeader {
+    version: i32,
+    pointer_bits: i32,
+    entry: i32,
+    types: i32,
+    constants: i32,
+    functions: i32,
+}
 
-pub fn assignment_binary(operation: i32) -> i32 {
-    if (operation >= 1 && operation <= 5) { return operation + 7; }
-    if (operation == 6) { return BIT_XOR; }
-    if (operation == 7) { return SHIFT_LEFT; }
-    if (operation == 8) { return SHIFT_RIGHT; }
-    if (operation == 9) { return BIT_AND; }
-    if (operation == 10) { return BIT_OR; }
-    return -1;
+pub fn read_program_header(input: [i32]) -> ProgramHeader {
+    let version: i32 = input[PROGRAM_VERSION_FIELD];
+    let pointer_bits: i32 = input[PROGRAM_POINTER_BITS_FIELD];
+    let entry: i32 = input[PROGRAM_ENTRY_FIELD];
+    let types: i32 = input[PROGRAM_TYPE_COUNT_FIELD];
+    let constants: i32 = input[PROGRAM_CONSTANT_COUNT_FIELD];
+    let functions: i32 = input[PROGRAM_FUNCTION_COUNT_FIELD];
+    return ProgramHeader {
+        version: version, pointer_bits: pointer_bits, entry: entry,
+        types: types, constants: constants, functions: functions,
+    };
+}
+
+pub fn write_program_header(output: [i32], header: ProgramHeader) {
+    output[PROGRAM_VERSION_FIELD] = header.version;
+    output[PROGRAM_POINTER_BITS_FIELD] = header.pointer_bits;
+    output[PROGRAM_ENTRY_FIELD] = header.entry;
+    output[PROGRAM_TYPE_COUNT_FIELD] = header.types;
+    output[PROGRAM_CONSTANT_COUNT_FIELD] = header.constants;
+    output[PROGRAM_FUNCTION_COUNT_FIELD] = header.functions;
+}
+
+pub fn program_type_count(input: [i32]) -> i32 {
+    return input[PROGRAM_TYPE_COUNT_FIELD];
+}
+
+pub fn program_entry(input: [i32]) -> i32 {
+    return input[PROGRAM_ENTRY_FIELD];
+}
+
+pub fn set_program_entry(output: [i32], entry: i32) {
+    output[PROGRAM_ENTRY_FIELD] = entry;
+}
+
+pub enum FunctionRecordKind {
+    InvalidFunction,
+    DefinedFunction,
+    RuntimeFunction,
+}
+
+pub fn function_code(kind: FunctionRecordKind) -> i32 {
+    return match (kind) {
+        InvalidFunction -> 0,
+        DefinedFunction -> 1,
+        RuntimeFunction -> 2,
+    };
+}
+
+pub fn function_is(encoded: i32, expected: FunctionRecordKind) -> bool {
+    return encoded == function_code(expected);
+}
+
+pub fn function_from_code(encoded: i32) -> FunctionRecordKind {
+    if (function_is(encoded, DefinedFunction)) { return DefinedFunction; }
+    if (function_is(encoded, RuntimeFunction)) { return RuntimeFunction; }
+    return InvalidFunction;
+}
+
+pub struct FunctionHeader {
+    kind: FunctionRecordKind,
+    pointer_bits: i32,
+    id: i32,
+    result_type: i32,
+    parameters: i32,
+    body_words: i32,
+}
+
+pub struct Parameter {
+    id: i32,
+    kind: i32,
+}
+
+// A decoded function's parameter span in the native parameter catalog.
+pub struct FunctionParameters {
+    header: FunctionHeader,
+    data: [Parameter],
+    start: i32,
+    length: i32,
+}
+
+pub fn read_function_header(input: [i32], position: i32)
+    -> FunctionHeader {
+    let kind: FunctionRecordKind = function_from_code(
+        input[position + FUNCTION_KIND_FIELD]);
+    let pointer_bits: i32 = input[position + FUNCTION_POINTER_BITS_FIELD];
+    let id: i32 = input[position + FUNCTION_ID_FIELD];
+    let result_type: i32 = input[position + FUNCTION_RESULT_TYPE_FIELD];
+    let parameters: i32 = input[position + FUNCTION_PARAMETER_COUNT_FIELD];
+    let body_words: i32 = input[position + FUNCTION_BODY_WORDS_FIELD];
+    return FunctionHeader {
+        kind: kind, pointer_bits: pointer_bits, id: id,
+        result_type: result_type, parameters: parameters,
+        body_words: body_words,
+    };
+}
+
+pub fn write_function_header(output: [i32], position: i32,
+    header: FunctionHeader) {
+    output[position + FUNCTION_KIND_FIELD] = function_code(header.kind);
+    output[position + FUNCTION_POINTER_BITS_FIELD] = header.pointer_bits;
+    output[position + FUNCTION_ID_FIELD] = header.id;
+    output[position + FUNCTION_RESULT_TYPE_FIELD] = header.result_type;
+    output[position + FUNCTION_PARAMETER_COUNT_FIELD] = header.parameters;
+    output[position + FUNCTION_BODY_WORDS_FIELD] = header.body_words;
+}
+
+pub fn function_id_at(input: [i32], position: i32) -> i32 {
+    return input[position + FUNCTION_ID_FIELD];
+}
+
+pub fn set_function_body_words_at(output: [i32], position: i32,
+    body_words: i32) {
+    output[position + FUNCTION_BODY_WORDS_FIELD] = body_words;
+}
+
+pub enum Presence {
+    Absent,
+    Present,
+}
+
+pub fn presence_code(value: Presence) -> i32 {
+    return match (value) {
+        Absent -> 0,
+        Present -> 1,
+    };
+}
+
+pub fn valid_boolean(encoded: i32) -> bool {
+    return encoded == 0 || encoded == 1;
+}
+
+pub enum TypeLayoutKind {
+    StructureLayout,
+    EnumerationLayout,
+}
+
+pub fn layout_code(kind: TypeLayoutKind) -> i32 {
+    return match (kind) {
+        StructureLayout -> 0,
+        EnumerationLayout -> 1,
+    };
+}
+
+pub fn layout_is(encoded: i32, expected: TypeLayoutKind) -> bool {
+    return encoded == layout_code(expected);
+}
+
+pub enum ValueType {
+    TypeI32,
+    TypeBool,
+    TypeUsize,
+    TypePointer,
+    TypeString,
+    TypeSlice,
+}
+
+pub fn type_code(kind: ValueType) -> i32 {
+    return match (kind) {
+        TypeI32 -> 1,
+        TypeBool -> 2,
+        TypeUsize -> 3,
+        TypePointer -> 4,
+        TypeString -> 5,
+        TypeSlice -> 6,
+    };
+}
+
+pub fn type_is(encoded: i32, expected: ValueType) -> bool {
+    return encoded == type_code(expected);
+}
+
+pub fn primitive_type(encoded: i32) -> bool {
+    return encoded >= type_code(TypeI32) && encoded <= type_code(TypeSlice);
+}
+
+pub fn scalar(encoded: i32) -> bool {
+    return type_is(encoded, TypeI32) || type_is(encoded, TypeBool);
+}
+
+pub enum ExpressionKind {
+    ExprValue,
+    ExprLocal,
+    ExprCast,
+    ExprUnary,
+    ExprBinary,
+    ExprIndex,
+    ExprStruct,
+    ExprField,
+    ExprAssign,
+    ExprConstant,
+    ExprCall,
+    ExprSliceFromRawParts,
+    ExprSliceDataPointer,
+    ExprStringDataPointer,
+    ExprEnumeration,
+    ExprEnumTag,
+    ExprEnumField,
+    ExprMatch,
+}
+
+pub fn expression_code(kind: ExpressionKind) -> i32 {
+    return match (kind) {
+        ExprValue -> 0,
+        ExprLocal -> 1,
+        ExprCast -> 2,
+        ExprUnary -> 3,
+        ExprBinary -> 4,
+        ExprIndex -> 7,
+        ExprStruct -> 8,
+        ExprField -> 9,
+        ExprAssign -> 12,
+        ExprConstant -> 13,
+        ExprCall -> 14,
+        ExprSliceFromRawParts -> 15,
+        ExprSliceDataPointer -> 16,
+        ExprStringDataPointer -> 17,
+        ExprEnumeration -> 18,
+        ExprEnumTag -> 19,
+        ExprEnumField -> 20,
+        ExprMatch -> 21,
+    };
+}
+
+pub enum PlaceKind {
+    PlaceLocal,
+    PlaceField,
+    PlaceIndex,
+}
+
+pub fn place_code(kind: PlaceKind) -> i32 {
+    return match (kind) {
+        PlaceLocal -> 0,
+        PlaceField -> 1,
+        PlaceIndex -> 2,
+    };
+}
+
+pub enum StatementKind {
+    StatementSkip,
+    StatementExpression,
+    StatementSequence,
+    StatementLet,
+    StatementLetUninitialized,
+    StatementIf,
+    StatementWhile,
+    StatementReturn,
+    StatementBreak,
+    StatementContinue,
+}
+
+pub fn statement_code(kind: StatementKind) -> i32 {
+    return match (kind) {
+        StatementSkip -> 0,
+        StatementExpression -> 1,
+        StatementSequence -> 2,
+        StatementLet -> 3,
+        StatementLetUninitialized -> 4,
+        StatementIf -> 5,
+        StatementWhile -> 6,
+        StatementReturn -> 10,
+        StatementBreak -> 11,
+        StatementContinue -> 12,
+    };
+}
+
+pub enum UnaryOperation {
+    UnaryPositive,
+    UnaryNot,
+    UnaryNegate,
+}
+
+pub fn unary_code(operation: UnaryOperation) -> i32 {
+    return match (operation) {
+        UnaryPositive -> 0,
+        UnaryNot -> 1,
+        UnaryNegate -> 2,
+    };
+}
+
+pub enum BinaryOperation {
+    BinaryAndThen,
+    BinaryOrElse,
+    BinaryEqual,
+    BinaryNotEqual,
+    BinaryLess,
+    BinaryLessEqual,
+    BinaryGreater,
+    BinaryGreaterEqual,
+    BinaryAdd,
+    BinarySubtract,
+    BinaryMultiply,
+    BinaryDivide,
+    BinaryRemainder,
+    BinaryBitAnd,
+    BinaryBitOr,
+    BinaryBitXor,
+    BinaryShiftLeft,
+    BinaryShiftRight,
+    InvalidBinaryOperation,
+}
+
+pub fn binary_code(operation: BinaryOperation) -> i32 {
+    return match (operation) {
+        BinaryAndThen -> 0,
+        BinaryOrElse -> 1,
+        BinaryEqual -> 2,
+        BinaryNotEqual -> 3,
+        BinaryLess -> 4,
+        BinaryLessEqual -> 5,
+        BinaryGreater -> 6,
+        BinaryGreaterEqual -> 7,
+        BinaryAdd -> 8,
+        BinarySubtract -> 9,
+        BinaryMultiply -> 10,
+        BinaryDivide -> 11,
+        BinaryRemainder -> 12,
+        BinaryBitAnd -> 13,
+        BinaryBitOr -> 14,
+        BinaryBitXor -> 15,
+        BinaryShiftLeft -> 16,
+        BinaryShiftRight -> 17,
+        InvalidBinaryOperation -> -1,
+    };
+}
+
+pub fn binary_from_code(encoded: i32) -> BinaryOperation {
+    if (encoded == binary_code(BinaryAndThen)) { return BinaryAndThen; }
+    if (encoded == binary_code(BinaryOrElse)) { return BinaryOrElse; }
+    if (encoded == binary_code(BinaryEqual)) { return BinaryEqual; }
+    if (encoded == binary_code(BinaryNotEqual)) { return BinaryNotEqual; }
+    if (encoded == binary_code(BinaryLess)) { return BinaryLess; }
+    if (encoded == binary_code(BinaryLessEqual)) { return BinaryLessEqual; }
+    if (encoded == binary_code(BinaryGreater)) { return BinaryGreater; }
+    if (encoded == binary_code(BinaryGreaterEqual)) { return BinaryGreaterEqual; }
+    if (encoded == binary_code(BinaryAdd)) { return BinaryAdd; }
+    if (encoded == binary_code(BinarySubtract)) { return BinarySubtract; }
+    if (encoded == binary_code(BinaryMultiply)) { return BinaryMultiply; }
+    if (encoded == binary_code(BinaryDivide)) { return BinaryDivide; }
+    if (encoded == binary_code(BinaryRemainder)) { return BinaryRemainder; }
+    if (encoded == binary_code(BinaryBitAnd)) { return BinaryBitAnd; }
+    if (encoded == binary_code(BinaryBitOr)) { return BinaryBitOr; }
+    if (encoded == binary_code(BinaryBitXor)) { return BinaryBitXor; }
+    if (encoded == binary_code(BinaryShiftLeft)) { return BinaryShiftLeft; }
+    if (encoded == binary_code(BinaryShiftRight)) { return BinaryShiftRight; }
+    return InvalidBinaryOperation;
+}
+
+pub fn binary_is_comparison(operation: BinaryOperation) -> bool {
+    return operation == BinaryEqual || operation == BinaryNotEqual
+        || operation == BinaryLess || operation == BinaryLessEqual
+        || operation == BinaryGreater || operation == BinaryGreaterEqual;
+}
+
+pub enum AssignmentOperation {
+    AssignmentSet,
+    AssignmentAdd,
+    AssignmentSubtract,
+    AssignmentMultiply,
+    AssignmentDivide,
+    AssignmentRemainder,
+    AssignmentBitXor,
+    AssignmentShiftLeft,
+    AssignmentShiftRight,
+    AssignmentBitAnd,
+    AssignmentBitOr,
+    InvalidAssignmentOperation,
+}
+
+pub fn assignment_code(operation: AssignmentOperation) -> i32 {
+    return match (operation) {
+        AssignmentSet -> 0,
+        AssignmentAdd -> 1,
+        AssignmentSubtract -> 2,
+        AssignmentMultiply -> 3,
+        AssignmentDivide -> 4,
+        AssignmentRemainder -> 5,
+        AssignmentBitXor -> 6,
+        AssignmentShiftLeft -> 7,
+        AssignmentShiftRight -> 8,
+        AssignmentBitAnd -> 9,
+        AssignmentBitOr -> 10,
+        InvalidAssignmentOperation -> -1,
+    };
+}
+
+pub fn assignment_from_code(encoded: i32) -> AssignmentOperation {
+    if (encoded == assignment_code(AssignmentSet)) { return AssignmentSet; }
+    if (encoded == assignment_code(AssignmentAdd)) { return AssignmentAdd; }
+    if (encoded == assignment_code(AssignmentSubtract)) { return AssignmentSubtract; }
+    if (encoded == assignment_code(AssignmentMultiply)) { return AssignmentMultiply; }
+    if (encoded == assignment_code(AssignmentDivide)) { return AssignmentDivide; }
+    if (encoded == assignment_code(AssignmentRemainder)) { return AssignmentRemainder; }
+    if (encoded == assignment_code(AssignmentBitXor)) { return AssignmentBitXor; }
+    if (encoded == assignment_code(AssignmentShiftLeft)) { return AssignmentShiftLeft; }
+    if (encoded == assignment_code(AssignmentShiftRight)) { return AssignmentShiftRight; }
+    if (encoded == assignment_code(AssignmentBitAnd)) { return AssignmentBitAnd; }
+    if (encoded == assignment_code(AssignmentBitOr)) { return AssignmentBitOr; }
+    return InvalidAssignmentOperation;
+}
+
+pub fn valid_assignment_code(value: i32) -> bool {
+    return value >= assignment_code(AssignmentSet)
+        && value <= assignment_code(AssignmentBitOr);
+}
+
+pub fn assignment_binary(operation: AssignmentOperation) -> BinaryOperation {
+    if (operation == AssignmentAdd) {
+        return BinaryAdd;
+    }
+    if (operation == AssignmentSubtract) {
+        return BinarySubtract;
+    }
+    if (operation == AssignmentMultiply) {
+        return BinaryMultiply;
+    }
+    if (operation == AssignmentDivide) {
+        return BinaryDivide;
+    }
+    if (operation == AssignmentRemainder) {
+        return BinaryRemainder;
+    }
+    if (operation == AssignmentBitXor) {
+        return BinaryBitXor;
+    }
+    if (operation == AssignmentShiftLeft) {
+        return BinaryShiftLeft;
+    }
+    if (operation == AssignmentShiftRight) {
+        return BinaryShiftRight;
+    }
+    if (operation == AssignmentBitAnd) {
+        return BinaryBitAnd;
+    }
+    if (operation == AssignmentBitOr) {
+        return BinaryBitOr;
+    }
+    return InvalidBinaryOperation;
 }

@@ -3,6 +3,10 @@ module app::main;
 import verified::parser;
 import verified::parse_tree;
 import verified::parse_output;
+import verified::output;
+import verified::host;
+
+const WORKSPACE_WORDS: i32 = 256;
 
 fn main() -> i32 {
     // Terminals map to raw kinds 0, 10, 20, and 30. The grammar is:
@@ -19,53 +23,63 @@ fn main() -> i32 {
         1, 2, 0,
         0, 1, 2,
     ];
-    let workspace: [i32; 128] = [
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    ];
+    let workspace_ptr: ptr = verified::host::alloc_i32(WORKSPACE_WORDS);
+    if (workspace_ptr == 0) { return 30; }
+    let workspace: [i32] = verified::host::i32_slice_from_raw_parts(
+        workspace_ptr, WORKSPACE_WORDS);
+    let parser_storage: verified::parser::WorkspaceStorage =
+        verified::parser::storage(workspace_ptr, WORKSPACE_WORDS);
 
     let pair_tokens: [i32; 2] = [10, 20];
     let accepted = verified::parser::recognize(
-        balanced_grammar, 43, pair_tokens, 2, workspace, 128);
-    if (verified::parser::parse_status(accepted)
-            != verified::parser::PARSE_SUCCESS) {
+        balanced_grammar, 43, pair_tokens, 2, parser_storage);
+    if (!verified::parser::parse_succeeded(accepted)) {
         return 31;
     }
     if (verified::parser::parse_root_state(accepted) < 0) { return 32; }
     if (verified::parser::parse_state_count(accepted) != 10) { return 33; }
 
     let derivation: [i32; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    let copied = verified::parser::copy_derivation(workspace, 128, 2,
-        verified::parser::parse_state_count(accepted),
-        verified::parser::parse_root_state(accepted), derivation, 16, 0);
+    let derivation_input: verified::parser::DerivationInput =
+        verified::parser::DerivationInput {
+            workspace: parser_storage,
+            token_count: 2,
+            state_count: verified::parser::parse_state_count(accepted),
+            state_id: verified::parser::parse_root_state(accepted),
+        };
+    let derivation_output: verified::parser::DerivationOutput =
+        verified::parser::DerivationOutput {
+            data: derivation,
+            capacity: 16,
+            offset: 0,
+        };
+    let copied = verified::parser::copy_derivation(
+        derivation_input, derivation_output);
     if (copied != 1 || derivation[0] != 0 || derivation[1] != 0
-        || derivation[2] != 4 || derivation[4] != verified::parser::CHILD_STATE) {
+        || derivation[2] != 4 || derivation[4] != verified::parser::child_code(verified::parser::StateChild)) {
         return 10;
     }
     let balanced_state: i32 = derivation[5];
-    let balanced_children = verified::parser::copy_derivation(workspace, 128, 2,
-        verified::parser::parse_state_count(accepted), balanced_state, derivation, 16, 0);
+    derivation_input.state_id = balanced_state;
+    let balanced_children = verified::parser::copy_derivation(
+        derivation_input, derivation_output);
     if (balanced_children != 3 || derivation[0] != 1
-        || derivation[4] != verified::parser::CHILD_TOKEN || derivation[5] != 0
-        || derivation[6] != 1 || derivation[7] != verified::parser::CHILD_STATE
-        || derivation[10] != verified::parser::CHILD_TOKEN || derivation[11] != 1
+        || derivation[4] != verified::parser::child_code(verified::parser::TokenChild) || derivation[5] != 0
+        || derivation[6] != 1 || derivation[7] != verified::parser::child_code(verified::parser::StateChild)
+        || derivation[10] != verified::parser::child_code(verified::parser::TokenChild) || derivation[11] != 1
         || derivation[12] != 2) { return 11; }
     let epsilon_state: i32 = derivation[8];
-    if (verified::parser::copy_derivation(workspace, 128, 2,
-        verified::parser::parse_state_count(accepted), epsilon_state, derivation, 16, 0) != 0
+    derivation_input.state_id = epsilon_state;
+    if (verified::parser::copy_derivation(derivation_input, derivation_output) != 0
         || derivation[0] != 2 || derivation[1] != 2 || derivation[2] != 2) { return 12; }
-    if (verified::parser::copy_derivation(workspace, 128, 2,
-        verified::parser::parse_state_count(accepted), balanced_state, derivation, 4, 0) != -2) {
+    derivation_input.state_id = balanced_state;
+    derivation_output.capacity = 4;
+    if (verified::parser::copy_derivation(derivation_input, derivation_output) != -2) {
         return 13;
     }
-    if (verified::parser::copy_derivation(workspace, 128, 2,
-        verified::parser::parse_state_count(accepted), -1, derivation, 16, 0) != -1) {
+    derivation_input.state_id = -1;
+    derivation_output.capacity = 16;
+    if (verified::parser::copy_derivation(derivation_input, derivation_output) != -1) {
         return 14;
     }
 
@@ -74,9 +88,10 @@ fn main() -> i32 {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     let tree_offsets: [i32; 4] = [0, 0, 0, 0];
-    let tree = verified::parse_tree::materialize(accepted, workspace, 128, 2,
-        tree_records, 32, tree_offsets, 4, 8);
-    if (verified::parse_tree::tree_status(tree) != verified::parse_tree::TREE_SUCCESS
+    let tree = verified::parse_tree::materialize(
+        accepted, verified::parse_tree::input(parser_storage, 2, 8),
+        verified::parse_tree::storage(tree_records, 32, tree_offsets, 4));
+    if (!verified::parse_tree::tree_succeeded(tree)
         || verified::parse_tree::tree_node_count(tree) != 3
         || verified::parse_tree::tree_root(tree) != 2
         || verified::parse_tree::tree_words_used(tree) != 24) { return 20; }
@@ -87,48 +102,65 @@ fn main() -> i32 {
         || tree_records[tree_offsets[2] + 5] != 1) { return 21; }
     let lean_bytes: [i32; 128] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     let expected_lean: [i32; 84] = [91,226,159,168,50,44,49,44,50,44,50,44,91,93,226,159,169,44,226,159,168,49,44,49,44,48,44,52,44,91,46,116,111,107,101,110,32,48,44,46,110,111,100,101,32,48,44,46,116,111,107,101,110,32,49,93,226,159,169,44,226,159,168,48,44,48,44,48,44,52,44,91,46,110,111,100,101,32,49,93,226,159,169,93];
-    let emitted_count = verified::parse_output::emit_nodes(balanced_grammar, 43,
-        tree_records, 32, tree_offsets, 3, 2, lean_bytes, 128, 0);
+    let parse_nodes: verified::parse_output::ParseNodes =
+        verified::parse_output::ParseNodes {
+            grammar: balanced_grammar,
+            grammar_length: 43,
+            records: tree_records,
+            record_length: 32,
+            offsets: tree_offsets,
+            node_count: 3,
+            token_count: 2,
+        };
+    let emitted_count = verified::parse_output::emit_nodes(parse_nodes,
+        verified::output::cursor(lean_bytes, 128, 0));
     if (emitted_count != 84) { return 28; }
     let emitted_index: i32 = 0;
     while (emitted_index != emitted_count) {
         if (lean_bytes[emitted_index] != expected_lean[emitted_index]) { return 29; }
         emitted_index += 1;
     }
-    let shallow = verified::parse_tree::materialize(accepted, workspace, 128, 2,
-        tree_records, 32, tree_offsets, 4, 2);
-    if (verified::parse_tree::tree_status(shallow) != verified::parse_tree::TREE_DEPTH_LIMIT
+    let shallow = verified::parse_tree::materialize(
+        accepted, verified::parse_tree::input(parser_storage, 2, 2),
+        verified::parse_tree::storage(tree_records, 32, tree_offsets, 4));
+    if (!verified::parse_tree::tree_has_stage(shallow,
+            verified::parse_tree::DepthLimitReached)
         || verified::parse_tree::tree_root(shallow) != -1) { return 22; }
-    let full_tree = verified::parse_tree::materialize(accepted, workspace, 128, 2,
-        tree_records, 32, tree_offsets, 2, 8);
-    if (verified::parse_tree::tree_status(full_tree) != verified::parse_tree::TREE_OUTPUT_FULL) {
+    let full_tree = verified::parse_tree::materialize(
+        accepted, verified::parse_tree::input(parser_storage, 2, 8),
+        verified::parse_tree::storage(tree_records, 32, tree_offsets, 2));
+    if (!verified::parse_tree::tree_has_stage(full_tree,
+            verified::parse_tree::OutputStorageFull)) {
         return 23;
     }
-    let full_records = verified::parse_tree::materialize(accepted, workspace, 128, 2,
-        tree_records, 23, tree_offsets, 4, 8);
-    if (verified::parse_tree::tree_status(full_records) != verified::parse_tree::TREE_OUTPUT_FULL) {
+    let full_records = verified::parse_tree::materialize(
+        accepted, verified::parse_tree::input(parser_storage, 2, 8),
+        verified::parse_tree::storage(tree_records, 23, tree_offsets, 4));
+    if (!verified::parse_tree::tree_has_stage(full_records,
+            verified::parse_tree::OutputStorageFull)) {
         return 24;
     }
 
     let no_tokens: [i32; 1] = [0];
     let empty = verified::parser::recognize(
-        balanced_grammar, 43, no_tokens, 0, workspace, 128);
-    if (verified::parser::parse_status(empty)
-            != verified::parser::PARSE_SUCCESS) {
+        balanced_grammar, 43, no_tokens, 0, parser_storage);
+    if (!verified::parser::parse_succeeded(empty)) {
         return 2;
     }
 
     let rejected_tokens: [i32; 2] = [10, 10];
     let rejected = verified::parser::recognize(
-        balanced_grammar, 43, rejected_tokens, 2, workspace, 128);
-    if (verified::parser::parse_status(rejected)
-            != verified::parser::PARSE_REJECTED
+        balanced_grammar, 43, rejected_tokens, 2, parser_storage);
+    if (!verified::parser::parse_has_stage(rejected,
+            verified::parser::Rejected)
         || verified::parser::parse_error_position(rejected) != 4) {
         return 3;
     }
-    let rejected_tree = verified::parse_tree::materialize(rejected, workspace, 128, 2,
-        tree_records, 32, tree_offsets, 4, 8);
-    if (verified::parse_tree::tree_status(rejected_tree) != verified::parse_tree::TREE_BAD_INPUT) {
+    let rejected_tree = verified::parse_tree::materialize(
+        rejected, verified::parse_tree::input(parser_storage, 2, 8),
+        verified::parse_tree::storage(tree_records, 32, tree_offsets, 4));
+    if (!verified::parse_tree::tree_has_stage(rejected_tree,
+            verified::parse_tree::InvalidInput)) {
         return 25;
     }
 
@@ -137,11 +169,27 @@ fn main() -> i32 {
         0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     let full = verified::parser::recognize(
-        balanced_grammar, 43, pair_tokens, 2, tiny_workspace, 19);
-    if (verified::parser::parse_status(full)
-            != verified::parser::PARSE_OUTPUT_FULL) {
+        balanced_grammar, 43, pair_tokens, 2,
+        verified::parser::storage(
+            verified::host::i32_slice_data_ptr(tiny_workspace), 19));
+    if (!verified::parser::parse_has_stage(full,
+            verified::parser::StateStorageFull)) {
         return 4;
     }
+    // Five lattice charts occupy 20 words; the remaining 18 words hold
+    // exactly one typed state. The recognizer must stop before the canary.
+    workspace[38] = 12345678;
+    let one_state_workspace: [i32] =
+        verified::host::i32_slice_from_raw_parts(workspace_ptr, 38);
+    let one_state_full = verified::parser::recognize(
+        balanced_grammar, 43, pair_tokens, 2,
+        verified::parser::storage(
+            verified::host::i32_slice_data_ptr(one_state_workspace), 38));
+    if (!verified::parser::parse_has_stage(one_state_full,
+            verified::parser::StateStorageFull)) {
+        return 34;
+    }
+    if (workspace[38] != 12345678) { return 35; }
 
     // One physical token of raw kind 99 may be consumed as two virtual
     // terminals whose canonical raw kind is 30.
@@ -158,25 +206,34 @@ fn main() -> i32 {
     ];
     let split_token: [i32; 1] = [99];
     let split = verified::parser::recognize(
-        split_grammar, 29, split_token, 1, workspace, 128);
-    if (verified::parser::parse_status(split)
-            != verified::parser::PARSE_SUCCESS) {
+        split_grammar, 29, split_token, 1, parser_storage);
+    if (!verified::parser::parse_succeeded(split)) {
         return 5;
     }
-    if (verified::parser::copy_derivation(workspace, 128, 1,
-        verified::parser::parse_state_count(split), verified::parser::parse_root_state(split),
-        derivation, 16, 0) != 2 || derivation[1] != 0 || derivation[2] != 2
-        || derivation[4] != verified::parser::CHILD_TOKEN || derivation[5] != 0
-        || derivation[6] != 3 || derivation[7] != verified::parser::CHILD_TOKEN
+    derivation_input.token_count = 1;
+    derivation_input.state_count = verified::parser::parse_state_count(split);
+    derivation_input.state_id = verified::parser::parse_root_state(split);
+    if (verified::parser::copy_derivation(derivation_input, derivation_output) != 2
+        || derivation[1] != 0 || derivation[2] != 2
+        || derivation[4] != verified::parser::child_code(verified::parser::TokenChild) || derivation[5] != 0
+        || derivation[6] != 3 || derivation[7] != verified::parser::child_code(verified::parser::TokenChild)
         || derivation[8] != 0 || derivation[9] != 3) { return 15; }
-    if (verified::parser::copy_derivation(workspace, 128, 536870912,
-        1, 0, derivation, 16, 0) != -1
-        || verified::parser::copy_derivation(workspace, 128, 1,
-            10000, 0, derivation, 16, 0) != -1) { return 16; }
+    derivation_input.token_count = 536870912;
+    derivation_input.state_count = 1;
+    derivation_input.state_id = 0;
+    if (verified::parser::copy_derivation(derivation_input, derivation_output) != -1) {
+        return 16;
+    }
+    derivation_input.token_count = 1;
+    derivation_input.state_count = 10000;
+    if (verified::parser::copy_derivation(derivation_input, derivation_output) != -1) {
+        return 16;
+    }
 
-    let split_tree = verified::parse_tree::materialize(split, workspace, 128, 1,
-        tree_records, 32, tree_offsets, 4, 8);
-    if (verified::parse_tree::tree_status(split_tree) != verified::parse_tree::TREE_SUCCESS
+    let split_tree = verified::parse_tree::materialize(
+        split, verified::parse_tree::input(parser_storage, 1, 8),
+        verified::parse_tree::storage(tree_records, 32, tree_offsets, 4));
+    if (!verified::parse_tree::tree_succeeded(split_tree)
         || verified::parse_tree::tree_node_count(split_tree) != 1
         || verified::parse_tree::tree_words_used(split_tree) != 10
         || tree_records[5] != 0 || tree_records[8] != 0
@@ -184,17 +241,16 @@ fn main() -> i32 {
 
     let ordinary_pair: [i32; 2] = [30, 30];
     let ordinary = verified::parser::recognize(
-        split_grammar, 29, ordinary_pair, 2, workspace, 128);
-    if (verified::parser::parse_status(ordinary)
-            != verified::parser::PARSE_SUCCESS) {
+        split_grammar, 29, ordinary_pair, 2, parser_storage);
+    if (!verified::parser::parse_succeeded(ordinary)) {
         return 6;
     }
 
     let trailing: [i32; 2] = [99, 30];
     let trailing_result = verified::parser::recognize(
-        split_grammar, 29, trailing, 2, workspace, 128);
-    if (verified::parser::parse_status(trailing_result)
-            != verified::parser::PARSE_REJECTED) {
+        split_grammar, 29, trailing, 2, parser_storage);
+    if (!verified::parser::parse_has_stage(trailing_result,
+            verified::parser::Rejected)) {
         return 7;
     }
 
@@ -205,10 +261,11 @@ fn main() -> i32 {
         0, 0, 1, 0, 2, 2, 0, 2, 2, 0, 1, 1, 1, 0, 1,
     ];
     let repeated = verified::parser::recognize(repeated_grammar, 32,
-        no_tokens, 0, workspace, 128);
-    let repeated_tree = verified::parse_tree::materialize(repeated, workspace, 128, 0,
-        tree_records, 32, tree_offsets, 4, 8);
-    if (verified::parse_tree::tree_status(repeated_tree) != verified::parse_tree::TREE_SUCCESS
+        no_tokens, 0, parser_storage);
+    let repeated_tree = verified::parse_tree::materialize(
+        repeated, verified::parse_tree::input(parser_storage, 0, 8),
+        verified::parse_tree::storage(tree_records, 32, tree_offsets, 4));
+    if (!verified::parse_tree::tree_succeeded(repeated_tree)
         || verified::parse_tree::tree_node_count(repeated_tree) != 3
         || verified::parse_tree::tree_words_used(repeated_tree) != 18
         || tree_records[5] != 0 || tree_records[8] != 1
@@ -220,18 +277,18 @@ fn main() -> i32 {
         2, 1, 1, 1, 0, 99, 30, 17, 17, 17, 17, 17, 0, 17, 17, 17, 0,
     ];
     let bad = verified::parser::recognize(
-        bad_grammar, 17, no_tokens, 0, workspace, 128);
-    if (verified::parser::parse_status(bad)
-            != verified::parser::PARSE_BAD_GRAMMAR) {
+        bad_grammar, 17, no_tokens, 0, parser_storage);
+    if (!verified::parser::parse_has_stage(bad,
+            verified::parser::InvalidGrammar)) {
         return 8;
     }
 
     // This is the first token count whose chart prefix would overflow i32.
     // It must be rejected before the recognizer can inspect the token slice.
     let oversized = verified::parser::recognize(
-        balanced_grammar, 43, no_tokens, 536870912, workspace, 128);
-    if (verified::parser::parse_status(oversized)
-            != verified::parser::PARSE_BAD_INPUT) {
+        balanced_grammar, 43, no_tokens, 536870912, parser_storage);
+    if (!verified::parser::parse_has_stage(oversized,
+            verified::parser::InvalidInput)) {
         return 9;
     }
     return 0;

@@ -1,73 +1,194 @@
 module lowering::aliases;
-
+import verified::production;
+import backend::syntax;
 import lowering::declarations;
+import lowering::builtin;
 import verified::host;
 import verified::parser;
-import verified::surface_tree;
 import verified::surface_type;
+import verified::syntax_tree;
 import verified::token;
 
-// Alias catalogs are intentionally independent of the Core declaration-ID
-// allocator.  A catalog is one authenticated source unit and has this flat
-// layout:
-//
-//   [magic, rows, words, module_segments, module_token...]
-//   [path_segments, target_kind, target_value, path_token...]
-//
-// `target_kind = SCALAR` makes target_value a lowering::types tag.  A
-// `NOMINAL` target_value is a stable catalog-symbol ordinal, not a guessed
-// Core ID; the allocation pass can map it after global IDs exist.  Every key
-// is the complete module path followed by the declaration name.  Thus a
-// qualified lookup never falls back to its last spelling.
-pub const MAGIC: i32 = 1397316673; // little-endian ASCII "ALIS"
-pub const HEADER: i32 = 4;
-pub const SCALAR: i32 = 1;
-pub const NOMINAL: i32 = 2;
-pub const INVALID: i32 = 1;
-pub const UNSUPPORTED: i32 = 2;
-pub const AMBIGUOUS: i32 = 3;
-pub const CYCLE: i32 = 4;
-pub const WORK_ROW: i32 = 6;
+const RESULT_SLOT: i32 = 0;
 
-const KIND_SEGMENT: i32 = 0;
-const KIND_PATH: i32 = 1;
-const KIND_PATH_TYPE: i32 = 2;
-const KIND_ARRAY: i32 = 3;
-const KIND_SLICE: i32 = 4;
-const KIND_REFERENCE: i32 = 5;
+// One source unit owns one module path and a typed symbol table. This is
+// private compiler state, not a Core wire format. A Nominal target value is
+// a stable symbol ordinal, not a guessed Core ID.
+const NATIVE_FIELD_BYTES: i32 = 8;
+pub const SYMBOL_ALIGNMENT: i32 = NATIVE_FIELD_BYTES;
+pub const SYMBOL_RECORD_BYTES: i32 = 3 * NATIVE_FIELD_BYTES;
+pub const CATALOG_RECORD_BYTES: i32 = 6 * NATIVE_FIELD_BYTES;
+pub const CATALOG_ALIGNMENT: i32 = NATIVE_FIELD_BYTES;
+const FIRST_PATH_TOKEN: i32 = 0;
+const WORK_FIELDS_PER_RECORD: i32 = 5;
+pub const WORK_RECORD_BYTES: i32 = WORK_FIELDS_PER_RECORD
+    * NATIVE_FIELD_BYTES;
+pub const WORK_ALIGNMENT: i32 = NATIVE_FIELD_BYTES;
+pub const RESOLUTION_RECORD_BYTES: i32 = 2 * NATIVE_FIELD_BYTES;
 
-fn child(records: [i32], length: i32, offsets: [i32], count: i32,
-    node: i32, index: i32) -> i32 {
-    return verified::surface_tree::child(records, length, offsets, count,
-        node, index, verified::parser::CHILD_STATE, 0);
+enum ResolutionState {
+    Unvisited,
+    Visiting,
+    Resolved,
 }
 
-fn token_child(records: [i32], length: i32, offsets: [i32], count: i32,
-    token_count: i32, node: i32, index: i32) -> i32 {
-    return verified::surface_tree::child(records, length, offsets, count,
-        node, index, verified::parser::CHILD_TOKEN, token_count);
+struct AliasWork {
+    declaration: i32,
+    declaration_kind: lowering::declarations::DeclarationKind,
+    state: ResolutionState,
+    target_kind: AliasTargetKind,
+    target_value: i32,
 }
 
-fn valid_token(source: [i32], source_length: i32, tokens: [i32],
+fn alias_work_slice(data: ptr, length: i32) -> [AliasWork] {
+    return slice_from_raw_parts(data, length);
+}
+
+fn resolution_state_code(state: ResolutionState) -> i32 {
+    return match (state) {
+        Unvisited -> 0,
+        Visiting -> 1,
+        Resolved -> 2,
+    };
+}
+
+pub enum AliasTargetKind {
+    Unresolved,
+    Scalar,
+    Nominal,
+}
+
+pub struct AliasSymbol {
+    name_token: i32,
+    target_kind: AliasTargetKind,
+    target_value: i32,
+}
+
+pub struct Catalog {
+    module_tokens: [i32],
+    module_segments: i32,
+    symbols: [AliasSymbol],
+    symbol_count: i32,
+}
+
+pub struct Table {
+    data: [Catalog],
+    count: i32,
+}
+
+pub fn from_raw_parts(memory: ptr, count: i32) -> Table {
+    let first: ptr = memory;
+    if (count > 0) {
+        first = memory + count * CATALOG_RECORD_BYTES
+            - NATIVE_FIELD_BYTES;
+    }
+    return Table { data: slice_from_raw_parts(first, count), count: count };
+}
+
+pub fn empty() -> Catalog {
+    let null_pointer: ptr = 0;
+    return Catalog {
+        module_tokens: verified::host::i32_slice_from_raw_parts(
+            null_pointer, 0),
+        module_segments: 0,
+        symbols: slice_from_raw_parts(null_pointer, 0),
+        symbol_count: 0,
+    };
+}
+
+fn symbol_view(memory: ptr, count: i32) -> [AliasSymbol] {
+    let first: ptr = memory;
+    if (count > 0) {
+        first = memory + count * SYMBOL_RECORD_BYTES
+            - NATIVE_FIELD_BYTES;
+    }
+    return slice_from_raw_parts(first, count);
+}
+
+pub struct AliasResolution {
+    target_kind: AliasTargetKind,
+    target_value: i32,
+}
+
+pub fn target_kind_code(kind: AliasTargetKind) -> i32 {
+    return match (kind) {
+        Unresolved -> -1,
+        Scalar -> 1,
+        Nominal -> 2,
+    };
+}
+
+pub fn target_has_kind(encoded: i32, expected: AliasTargetKind) -> bool {
+    return encoded == target_kind_code(expected);
+}
+
+pub enum AliasError {
+    Invalid,
+    Unsupported,
+    Ambiguous,
+    Cycle,
+}
+
+pub fn error_code(error: AliasError) -> i32 {
+    return match (error) {
+        Invalid -> 1,
+        Unsupported -> 2,
+        Ambiguous -> 3,
+        Cycle -> 4,
+    };
+}
+
+pub fn failure(error: AliasError) -> i32 {
+    return 0 - error_code(error);
+}
+
+pub fn failed_with(value: i32, error: AliasError) -> bool {
+    return value == failure(error);
+}
+
+fn child(tree: verified::syntax_tree::Tree, node: i32, index: i32) -> i32 {
+    return verified::syntax_tree::child(tree, node, index,
+        verified::parser::StateChild);
+}
+
+fn token_child(tree: verified::syntax_tree::Tree, node: i32,
+    index: i32) -> i32 {
+    return verified::syntax_tree::child(tree, node, index,
+        verified::parser::TokenChild);
+}
+
+fn valid_token(source: [i32], source_length: i32,
+    tokens: verified::token::TokenTable,
     token_count: i32, token: i32) -> bool {
-    if (token <= -1 || token >= token_count || tokens[token * 3] != verified::token::IDENTIFIER) {
+    if (!identifier_token(tokens, token_count, token)) {
         return false;
     }
-    let start: i32 = tokens[token * 3 + 1];
-    let finish: i32 = tokens[token * 3 + 2];
+    let rows: [verified::token::TokenRow] = tokens.data;
+    let start: i32 = rows[token].start;
+    let finish: i32 = rows[token].finish;
     return start > -1 && finish > start && finish <= source_length;
 }
 
-fn same_token(source: [i32], source_length: i32, tokens: [i32],
+fn identifier_token(tokens: verified::token::TokenTable, token_count: i32,
+    token: i32) -> bool {
+    let rows: [verified::token::TokenRow] = tokens.data;
+    return token > -1 && token <= token_count - 1
+        && verified::token::kind_is(
+            rows[token].kind, verified::token::Identifier);
+}
+
+fn same_token(source: [i32], source_length: i32,
+    tokens: verified::token::TokenTable,
     token_count: i32, left: i32, right: i32) -> bool {
     if (!valid_token(source, source_length, tokens, token_count, left)
         || !valid_token(source, source_length, tokens, token_count, right)) {
         return false;
     }
-    let left_start: i32 = tokens[left * 3 + 1];
-    let left_finish: i32 = tokens[left * 3 + 2];
-    let right_start: i32 = tokens[right * 3 + 1];
-    let right_finish: i32 = tokens[right * 3 + 2];
+    let rows: [verified::token::TokenRow] = tokens.data;
+    let left_start: i32 = rows[left].start;
+    let left_finish: i32 = rows[left].finish;
+    let right_start: i32 = rows[right].start;
+    let right_finish: i32 = rows[right].finish;
     if (left_finish - left_start != right_finish - right_start) { return false; }
     let index: i32 = 0;
     while (index <= left_finish - left_start - 1) {
@@ -77,467 +198,697 @@ fn same_token(source: [i32], source_length: i32, tokens: [i32],
     return true;
 }
 
-// Return a supported builtin tag, -UNSUPPORTED for a known but non-transport
-// builtin, and -INVALID for an ordinary user spelling.
-fn builtin(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
+// Return a supported builtin tag, or an encoded AliasError at the scalar API
+// boundary for a known unsupported type or an ordinary user spelling.
+fn builtin(source: [i32], source_length: i32,
+    tokens: verified::token::TokenTable, token_count: i32,
     token: i32) -> i32 {
-    if (!valid_token(source, source_length, tokens, token_count, token)) { return -INVALID; }
-    let start: i32 = tokens[token * 3 + 1];
-    let finish: i32 = tokens[token * 3 + 2];
-    let names: str = "i32 bool usize ptr str i8 i16 i64 isize u8 u16 u32 u64 f32 f64 char ";
-    let words: [i32] = verified::host::i32_slice_from_raw_parts(
-        verified::host::string_data_ptr(names), 17);
-    let position: i32 = 0;
-    let tag: i32 = 1;
-    while (position <= 67) {
-        let matched: bool = true;
-        let index: i32 = 0;
-        let byte: i32 = (words[position / 4] >> ((position % 4) * 8)) & 255;
-        while (byte != 32) {
-            if (index >= finish - start) { matched = false; }
-            else { if (source[start + index] != byte) { matched = false; } }
-            index += 1;
-            position += 1;
-            byte = (words[position / 4] >> ((position % 4) * 8)) & 255;
-        }
-        if (matched && index == finish - start) {
-            if (tag <= 5) { return tag; }
-            return -UNSUPPORTED;
-        }
-        tag += 1;
-        position += 1;
+    if (!valid_token(source, source_length, tokens, token_count, token)) { return failure(Invalid); }
+    let rows: [verified::token::TokenRow] = tokens.data;
+    let start: i32 = rows[token].start;
+    let finish: i32 = rows[token].finish;
+    let found: lowering::builtin::Lookup = lowering::builtin::lookup(
+        source, source_length, start, finish);
+    if (lowering::builtin::is_supported(found)) {
+        return lowering::builtin::type_tag(found);
     }
-    return -INVALID;
+    if (lowering::builtin::is_unsupported(found)) {
+        return failure(Unsupported);
+    }
+    return failure(Invalid);
 }
 
-fn path_node(records: [i32], length: i32, offsets: [i32], count: i32,
-    root: i32) -> bool {
-    let offset: i32 = verified::surface_tree::record(records, length, offsets, count, root);
-    return offset > -1 && records[offset] == 47;
+fn path_node(tree: verified::syntax_tree::Tree, root: i32) -> bool {
+    return verified::syntax_tree::production(tree, root)
+        == verified::production::PATH;
 }
 
 // Materialize a plain parse-tree path into token IDs. Generic path segments
 // are rejected: aliases are monomorphic and the catalog never erases args.
-fn parse_path(source: [i32], source_length: i32, records: [i32],
-    length: i32, offsets: [i32], count: i32, tokens: [i32], token_count: i32,
-    root: i32, output: [i32], capacity: i32) -> i32 {
-    if (!path_node(records, length, offsets, count, root) || capacity <= 0) { return -INVALID; }
-    let segment: i32 = child(records, length, offsets, count, root, 0);
-    let tail: i32 = child(records, length, offsets, count, root, 1);
+struct ParsePathContext {
+    source: [i32],
+    source_length: i32,
+    tree: verified::syntax_tree::Tree,
+    tokens: verified::token::TokenTable,
+    token_count: i32,
+    output: [i32],
+    capacity: i32,
+}
+
+fn parse_path(context: ParsePathContext, root: i32) -> i32 {
+    let source: [i32] = context.source;
+    let source_length: i32 = context.source_length;
+    let tree: verified::syntax_tree::Tree = context.tree;
+    let tokens: verified::token::TokenTable = context.tokens;
+    let token_count: i32 = context.token_count;
+    let output: [i32] = context.output;
+    let capacity: i32 = context.capacity;
+    if (!path_node(tree, root) || capacity <= 0) { return failure(Invalid); }
+    let segment: i32 = child(tree, root, 0);
+    let tail: i32 = child(tree, root, 1);
     let written: i32 = 0;
     let previous: i32 = -1;
     while (segment >= 0) {
-        let offset: i32 = verified::surface_tree::record(records, length, offsets, count, segment);
-        if (offset <= -1 || records[offset] != 48 || records[offset + 3] != 1) { return -INVALID; }
-        let name: i32 = token_child(records, length, offsets, count, token_count, segment, 0);
-        if (!valid_token(source, source_length, tokens, token_count, name)) {
-            return -INVALID;
+        if (verified::syntax_tree::production(tree, segment)
+                != verified::production::PATH_IDENT
+            || verified::syntax_tree::child_count(tree, segment) != 1) {
+            return failure(Invalid);
         }
-        if (written >= capacity || name <= previous) { return -INVALID; }
+        let name: i32 = token_child(tree, segment, 0);
+        if (!valid_token(source, source_length, tokens, token_count, name)) {
+            return failure(Invalid);
+        }
+        if (written >= capacity || name <= previous) { return failure(Invalid); }
         output[written] = name;
         written += 1;
         previous = name;
-        let tail_offset: i32 = verified::surface_tree::record(records, length, offsets, count, tail);
-        if (tail_offset <= -1) { return -INVALID; }
-        if (records[tail_offset] == 51) {
-            if (records[tail_offset + 3] != 0) { return -INVALID; }
+        let tail_production: i32 =
+            verified::syntax_tree::production(tree, tail);
+        if (tail_production == verified::production::PATH_END) {
+            if (verified::syntax_tree::child_count(tree, tail) != 0) {
+                return failure(Invalid);
+            }
             return written;
         }
-        if (records[tail_offset] != 50 || records[tail_offset + 3] != 4) { return -INVALID; }
-        segment = child(records, length, offsets, count, tail, 2);
-        tail = child(records, length, offsets, count, tail, 3);
+        if (tail_production != verified::production::PATH_MORE
+            || verified::syntax_tree::child_count(tree, tail) != 4) {
+            return failure(Invalid);
+        }
+        segment = child(tree, tail, 2);
+        tail = child(tree, tail, 3);
     }
-    return -INVALID;
+    return failure(Invalid);
 }
 
-fn segment_count(arena: [i32], count: i32, path: i32) -> i32 {
-    if (path <= -1 || path >= count || arena[1 + path * 8] != KIND_PATH) { return -INVALID; }
-    let segment: i32 = arena[1 + path * 8 + 2];
-    let segments: i32 = 0;
-    while (segment != -1) {
-        if (segment <= -1 || segment >= count || arena[1 + segment * 8] != KIND_SEGMENT) { return -INVALID; }
-        segments += 1;
-        segment = arena[1 + segment * 8 + 7];
-    }
-    return segments;
-}
-
-fn copy_arena_path(arena: [i32], count: i32, path: i32, output: [i32],
+fn copy_arena_path(arena: verified::surface_type::TypeArena,
+    count: i32, path: i32, output: [i32],
     capacity: i32) -> i32 {
-    let segments: i32 = segment_count(arena, count, path);
-    if (segments <= 0 || capacity <= segments - 1) { return -INVALID; }
-    let segment: i32 = arena[1 + path * 8 + 2];
+    let nodes: [verified::surface_type::TypeNode] = arena.data;
+    if (count <= 0 || count > arena.capacity || path <= -1
+        || path >= count || capacity <= 0
+        || !verified::surface_type::kind_is(nodes[path].kind,
+            verified::surface_type::Path)) { return failure(Invalid); }
+    let segment: i32 = nodes[path].first;
     let written: i32 = 0;
     while (segment != -1) {
-        output[written] = arena[1 + segment * 8 + 4];
+        if (segment <= -1 || segment >= path || written >= capacity
+            || !verified::surface_type::kind_is(nodes[segment].kind,
+                verified::surface_type::Segment)) { return failure(Invalid); }
+        output[written] = nodes[segment].token;
         written += 1;
-        segment = arena[1 + segment * 8 + 7];
+        let next: i32 = nodes[segment].next;
+        if (next != -1 && next <= segment) { return failure(Invalid); }
+        segment = next;
     }
     return written;
 }
 
-fn row_matches(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
-    catalog: [i32], row: i32, path: [i32], path_count: i32,
-    module_count: i32) -> bool {
-    let row_count: i32 = catalog[row];
-    let canonical_count: i32 = module_count + 1;
-    if (path_count == 1) {
-        if (row_count != canonical_count) { return false; }
-        let index: i32 = 0;
-        while (index <= module_count - 1) {
-            if (!same_token(source, source_length, tokens, token_count,
-                catalog[HEADER + index], catalog[row + 3 + index])) { return false; }
-            index += 1;
-        }
-        return same_token(source, source_length, tokens, token_count,
-            path[0], catalog[row + 3 + module_count]);
-    }
-    if (row_count != path_count) { return false; }
-    let index: i32 = 0;
-    while (index <= path_count - 1) {
-        if (!same_token(source, source_length, tokens, token_count,
-            path[index], catalog[row + 3 + index])) { return false; }
-        index += 1;
-    }
-    return true;
+struct TokenContext {
+    source: [i32],
+    source_length: i32,
+    tokens: verified::token::TokenTable,
+    token_count: i32,
 }
 
-fn lookup_symbol(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
-    catalog: [i32], words: i32, path: [i32], path_count: i32) -> i32 {
-    if (words <= HEADER - 1 || catalog[0] != MAGIC || path_count <= 0) { return -INVALID; }
-    let rows: i32 = catalog[1];
-    let module_count: i32 = catalog[3];
-    let position: i32 = HEADER + module_count;
+fn row_matches(context: TokenContext, catalog: Catalog,
+    symbol: AliasSymbol, path: [i32], path_count: i32) -> bool {
+    let module_count: i32 = catalog.module_segments;
+    let module_tokens: [i32] = catalog.module_tokens;
+    if (path_count == 1) {
+        return same_token(context.source, context.source_length,
+            context.tokens, context.token_count, path[FIRST_PATH_TOKEN],
+            symbol.name_token);
+    }
+    if (path_count != module_count + 1) { return false; }
+    let index: i32 = 0;
+    while (index <= module_count - 1) {
+        if (!same_token(context.source, context.source_length,
+            context.tokens, context.token_count,
+            path[index], module_tokens[index])) {
+            return false;
+        }
+        index += 1;
+    }
+    return same_token(context.source, context.source_length,
+        context.tokens, context.token_count, path[module_count],
+        symbol.name_token);
+}
+
+fn lookup_symbol(context: TokenContext, catalog: Catalog,
+    path: [i32], path_count: i32) -> i32 {
+    let rows: i32 = catalog.symbol_count;
+    if (path_count <= 0 || rows <= -1 || catalog.module_segments <= 0) {
+        return failure(Invalid);
+    }
+    let symbols: [AliasSymbol] = catalog.symbols;
     let found: i32 = -1;
     let row: i32 = 0;
     while (row <= rows - 1) {
-        if (position > words - 3) { return -INVALID; }
-        if (row_matches(source, source_length, tokens, token_count,
-            catalog, position, path, path_count, module_count)) {
-            if (found != -1) { return -AMBIGUOUS; }
-            found = position;
+        if (row_matches(context, catalog, symbols[row], path, path_count)) {
+            if (found != -1) { return failure(Ambiguous); }
+            found = row;
         }
-        position += 3 + catalog[position];
         row += 1;
     }
-    if (position != words) { return -INVALID; }
     return found;
 }
 
-fn resolve_arena(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
-    records: [i32], record_length: i32, offsets: [i32], node_count: i32,
-    catalog: [i32], catalog_words: i32, work: [i32], work_capacity: i32,
-    stack: [i32], stack_capacity: i32, type_arena: [i32], type_capacity: i32,
-    scratch: [i32], scratch_capacity: i32, root: i32, stack_depth: i32,
-    depth: i32, result: [i32]) -> i32 {
-    if (depth <= 0 || root <= -1 || root >= type_arena[0]) { return -INVALID; }
-    let slot: i32 = 1 + root * 8;
-    let kind: i32 = type_arena[slot];
-    if (kind == KIND_PATH_TYPE) {
-        let path: i32 = type_arena[slot + 2];
-        if (path <= -1 || path >= root || type_arena[1 + path * 8] != KIND_PATH) { return -INVALID; }
-        let segments: i32 = type_arena[1 + path * 8 + 2];
-        let segment: i32 = segments;
-        while (segment != -1) {
-            if (segment <= -1 || segment >= root || type_arena[1 + segment * 8] != KIND_SEGMENT
-                || type_arena[1 + segment * 8 + 2] != -1) { return -UNSUPPORTED; }
-            segment = type_arena[1 + segment * 8 + 7];
-        }
-        let path_count: i32 = copy_arena_path(type_arena, type_arena[0], path,
-            scratch, scratch_capacity);
-        if (path_count <= 0) { return -INVALID; }
-        let builtin_tag: i32 = -INVALID;
-        if (path_count == 1) {
-            let token: i32 = scratch[0];
-            builtin_tag = builtin(source, source_length, tokens, token_count, token);
-            if (builtin_tag > 0) {
-                result[0] = SCALAR;
-                result[1] = builtin_tag;
-                return 0;
-            }
-            if (builtin_tag == -UNSUPPORTED) { return -UNSUPPORTED; }
-        }
-        let symbol_row: i32 = lookup_symbol(source, source_length, tokens, token_count,
-            catalog, catalog_words, scratch, path_count);
-        if (symbol_row == -AMBIGUOUS) { return -AMBIGUOUS; }
-        if (symbol_row <= -1) { return -INVALID; }
-        let row: i32 = HEADER + catalog[3];
-        let ordinal: i32 = 0;
-        while (row <= symbol_row - 1) {
-            row += 3 + catalog[row];
-            ordinal += 1;
-        }
-        if (row != symbol_row || ordinal <= -1 || ordinal >= work_capacity / WORK_ROW) { return -INVALID; }
-        let nested: i32 = resolve_symbol(source, source_length, tokens, token_count,
-            records, record_length, offsets, node_count, catalog, catalog_words,
-            work, work_capacity, stack, stack_capacity, type_arena, type_capacity,
-            scratch, scratch_capacity, ordinal, stack_depth, depth - 1, result);
-        if (nested <= -1) { return nested; }
-        return 0;
-    }
-    if (kind == KIND_SLICE) {
-        let child: i32 = type_arena[slot + 2];
-        if (child <= -1 || child >= root) { return -INVALID; }
-        let nested: i32 = resolve_arena(source, source_length, tokens, token_count,
-            records, record_length, offsets, node_count, catalog, catalog_words,
-            work, work_capacity, stack, stack_capacity, type_arena, type_capacity,
-            scratch, scratch_capacity, child, stack_depth, depth - 1, result);
-        if (nested <= -1) { return nested; }
-        if (result[0] != SCALAR || result[1] != 1) { return -UNSUPPORTED; }
-        result[1] = 6;
-        return 0;
-    }
-    if (kind == KIND_ARRAY || kind == KIND_REFERENCE) { return -UNSUPPORTED; }
-    return -INVALID;
+struct AliasContext {
+    source: [i32],
+    source_length: i32,
+    tokens: verified::token::TokenTable,
+    token_count: i32,
+    tree: verified::syntax_tree::Tree,
+    catalog: Catalog,
+    work: [AliasWork],
+    work_capacity: i32,
+    stack: [i32],
+    stack_capacity: i32,
+    type_arena: verified::surface_type::TypeArena,
+    scratch: [i32],
+    scratch_capacity: i32,
+    result: [AliasResolution],
 }
 
-fn resolve_symbol(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
-    records: [i32], record_length: i32, offsets: [i32], node_count: i32,
-    catalog: [i32], catalog_words: i32, work: [i32], work_capacity: i32,
-    stack: [i32], stack_capacity: i32, type_arena: [i32], type_capacity: i32,
-    scratch: [i32], scratch_capacity: i32, index: i32, stack_depth: i32,
-    depth: i32, result: [i32]) -> i32 {
-    if (index <= -1 || index >= work_capacity / WORK_ROW || depth <= 0
-        || stack_depth <= -1 || stack_depth >= stack_capacity) { return -INVALID; }
-    let slot: i32 = index * WORK_ROW;
-    if (work[slot + 2] == 2) {
-        result[0] = work[slot + 3];
-        result[1] = work[slot + 4];
+fn resolve_arena(context: AliasContext, root: i32, stack_depth: i32,
+    depth: i32) -> i32 {
+    let source: [i32] = context.source;
+    let tokens: verified::token::TokenTable = context.tokens;
+    let catalog: Catalog = context.catalog;
+    let work: [AliasWork] = context.work;
+    let type_arena: verified::surface_type::TypeArena = context.type_arena;
+    let nodes: [verified::surface_type::TypeNode] = type_arena.data;
+    let arena_count: [verified::surface_type::CountCell] = type_arena.count;
+    let scratch: [i32] = context.scratch;
+    let result: [AliasResolution] = context.result;
+    let source_length: i32 = context.source_length;
+    let token_count: i32 = context.token_count;
+    let work_capacity: i32 = context.work_capacity;
+    let scratch_capacity: i32 = context.scratch_capacity;
+    if (depth <= 0 || root <= -1
+        || root >= arena_count[0].value) {
+        return failure(Invalid);
+    }
+    let kind: verified::surface_type::SurfaceTypeKind = nodes[root].kind;
+    if (verified::surface_type::kind_is(kind, verified::surface_type::PathType)) {
+        let path: i32 = nodes[root].first;
+        if (path <= -1 || path >= root || !verified::surface_type::kind_is(
+            nodes[path].kind,
+            verified::surface_type::Path)) { return failure(Invalid); }
+        let segments: i32 = nodes[path].first;
+        let segment: i32 = segments;
+        while (segment != -1) {
+            if (segment <= -1 || segment >= root || !verified::surface_type::kind_is(
+                    nodes[segment].kind,
+                    verified::surface_type::Segment)
+                || nodes[segment].first != -1) {
+                return failure(Unsupported);
+            }
+            segment = nodes[segment].next;
+        }
+        let path_count: i32 = copy_arena_path(type_arena,
+            arena_count[0].value, path,
+            scratch, scratch_capacity);
+        if (path_count <= 0) { return failure(Invalid); }
+        let builtin_tag: i32 = failure(Invalid);
+        if (path_count == 1) {
+            let token: i32 = scratch[FIRST_PATH_TOKEN];
+            builtin_tag = builtin(source, source_length, tokens, token_count, token);
+            if (builtin_tag > 0) {
+                result[RESULT_SLOT].target_kind = Scalar;
+                result[RESULT_SLOT].target_value = builtin_tag;
+                return 0;
+            }
+            if (failed_with(builtin_tag, Unsupported)) { return failure(Unsupported); }
+        }
+        let token_context: TokenContext = TokenContext {
+            source: source,
+            source_length: source_length,
+            tokens: tokens,
+            token_count: token_count,
+        };
+        let symbol: i32 = lookup_symbol(token_context, catalog,
+            scratch, path_count);
+        if (failed_with(symbol, Ambiguous)) { return failure(Ambiguous); }
+        if (symbol <= -1 || symbol >= work_capacity) {
+            return failure(Invalid);
+        }
+        let nested: i32 = resolve_symbol(context, symbol, stack_depth,
+            depth - 1);
+        if (nested <= -1) { return nested; }
         return 0;
     }
-    if (work[slot + 2] == 1) { return -CYCLE; }
-    work[slot + 2] = 1;
-    stack[stack_depth] = index;
-    if (work[slot + 1] == lowering::declarations::STRUCTURE) {
-        work[slot + 3] = NOMINAL;
-        work[slot + 4] = index;
-    } else {
-        let declaration: i32 = work[slot];
-        let root: i32 = verified::surface_type::extract(records, record_length, offsets,
-            node_count, token_count, declaration, type_arena, type_capacity, depth);
-        if (root <= -1 || type_arena[0] <= 0) { return -INVALID; }
-        let resolved: i32 = resolve_arena(source, source_length, tokens, token_count,
-            records, record_length, offsets, node_count, catalog, catalog_words,
-            work, work_capacity, stack, stack_capacity, type_arena, type_capacity,
-            scratch, scratch_capacity, root, stack_depth + 1, depth - 1, result);
-        if (resolved <= -1) { return resolved; }
-        work[slot + 3] = result[0];
-        work[slot + 4] = result[1];
+    if (verified::surface_type::kind_is(kind, verified::surface_type::Slice)) {
+        let child: i32 = nodes[root].first;
+        if (child <= -1 || child >= root) { return failure(Invalid); }
+        let nested: i32 = resolve_arena(context, child, stack_depth,
+            depth - 1);
+        if (nested <= -1) { return nested; }
+        if (!target_has_kind(target_kind_code(result[RESULT_SLOT].target_kind), Scalar)
+            || result[RESULT_SLOT].target_value
+                != backend::syntax::type_code(backend::syntax::TypeI32)) {
+            return failure(Unsupported);
+        }
+        result[RESULT_SLOT].target_value
+            = backend::syntax::type_code(backend::syntax::TypeSlice);
+        return 0;
     }
-    work[slot + 2] = 2;
-    result[0] = work[slot + 3];
-    result[1] = work[slot + 4];
+    if (verified::surface_type::kind_is(kind, verified::surface_type::Array)
+        || verified::surface_type::kind_is(kind, verified::surface_type::Reference)) {
+        return failure(Unsupported);
+    }
+    return failure(Invalid);
+}
+
+fn resolve_symbol(context: AliasContext, index: i32, stack_depth: i32,
+    depth: i32) -> i32 {
+    let work: [AliasWork] = context.work;
+    let stack: [i32] = context.stack;
+    let type_arena: verified::surface_type::TypeArena = context.type_arena;
+    let result: [AliasResolution] = context.result;
+    let work_capacity: i32 = context.work_capacity;
+    let stack_capacity: i32 = context.stack_capacity;
+    if (index <= -1 || index >= work_capacity || depth <= 0
+        || stack_depth <= -1 || stack_depth >= stack_capacity) { return failure(Invalid); }
+    if (resolution_state_code(work[index].state)
+            == resolution_state_code(Resolved)) {
+        result[RESULT_SLOT].target_kind = work[index].target_kind;
+        result[RESULT_SLOT].target_value = work[index].target_value;
+        return 0;
+    }
+    if (resolution_state_code(work[index].state)
+        == resolution_state_code(Visiting)) { return failure(Cycle); }
+    work[index].state = Visiting;
+    stack[stack_depth] = index;
+    if (lowering::declarations::same_kind(
+            work[index].declaration_kind,
+            lowering::declarations::Structure)
+        || lowering::declarations::same_kind(
+            work[index].declaration_kind,
+            lowering::declarations::Enumeration)) {
+        work[index].target_kind = Nominal;
+        work[index].target_value = index;
+    } else {
+        let declaration: i32 = work[index].declaration;
+        let type_input: verified::surface_type::TypeInput =
+            verified::surface_type::TypeInput {
+                tree: context.tree,
+                root: declaration,
+                depth: depth,
+            };
+        let root: i32 = verified::surface_type::extract(type_input,
+            type_arena);
+        let arena_count: [verified::surface_type::CountCell] =
+            type_arena.count;
+        if (root <= -1 || arena_count[0].value <= 0) {
+            return failure(Invalid);
+        }
+        let resolved: i32 = resolve_arena(context, root, stack_depth + 1,
+            depth - 1);
+        if (resolved <= -1) { return resolved; }
+        let kind: AliasTargetKind = result[RESULT_SLOT].target_kind;
+        if (target_kind_code(kind) <= -1) { return failure(Invalid); }
+        work[index].target_kind = kind;
+        work[index].target_value = result[RESULT_SLOT].target_value;
+    }
+    work[index].state = Resolved;
+    result[RESULT_SLOT].target_kind = work[index].target_kind;
+    result[RESULT_SLOT].target_value = work[index].target_value;
     return 0;
 }
 
-fn duplicate_key(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
-    output: [i32], row: i32, prior: i32) -> bool {
-    let count: i32 = output[row];
-    if (count != output[prior]) { return false; }
-    let index: i32 = 0;
-    while (index <= count - 1) {
-        if (!same_token(source, source_length, tokens, token_count,
-            output[row + 3 + index], output[prior + 3 + index])) { return false; }
-        index += 1;
-    }
-    return true;
+fn duplicate_key(source: [i32], source_length: i32,
+    tokens: verified::token::TokenTable, token_count: i32,
+    symbols: [AliasSymbol], name: i32, prior: i32) -> bool {
+    return same_token(source, source_length, tokens, token_count,
+        name, symbols[prior].name_token);
 }
 
-// Build one source-unit catalog. `work` is six words per alias/structure,
-// `result` is two words of descriptor scratch, and `stack` is the explicit
-// cycle bound. The caller chooses all capacities, so malformed or unexpectedly
-// deep input fails closed rather than relying on evaluator recursion.
-pub fn build(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
-    records: [i32], record_length: i32, offsets: [i32], node_count: i32,
-    declaration_table: [i32], declaration_words: i32, type_arena: [i32],
-    type_capacity: i32, work: [i32], work_capacity: i32, stack: [i32],
-    stack_capacity: i32, scratch: [i32], scratch_capacity: i32,
-    result: [i32], result_capacity: i32, output: [i32], capacity: i32,
-    depth: i32) -> i32 {
-    if (source_length <= -1 || token_count <= -1 || record_length <= -1
-        || node_count <= 0 || declaration_words <= lowering::declarations::HEADER - 1
-        || type_capacity <= 0 || work_capacity <= 0 || stack_capacity <= 0
-        || scratch_capacity <= 0 || result_capacity <= 1
-        || capacity <= HEADER - 1 || depth <= 0) {
-        return -INVALID;
+fn initialize_work(work: [AliasWork], index: i32,
+    declaration: lowering::declarations::DeclarationRow) {
+    work[index].declaration = lowering::declarations::row_target(declaration);
+    work[index].declaration_kind = lowering::declarations::row_kind(declaration);
+    work[index].state = Unvisited;
+    work[index].target_kind = Unresolved;
+    work[index].target_value = -1;
+}
+
+pub struct WordRegion {
+    data: [i32],
+    words: i32,
+}
+
+pub fn region(data: [i32], words: i32) -> WordRegion {
+    return WordRegion { data: data, words: words };
+}
+
+pub struct AliasWorkRegion {
+    data: [AliasWork],
+    capacity: i32,
+}
+
+pub struct AliasResolutionRegion {
+    data: [AliasResolution],
+}
+
+pub fn result_region(data: ptr) -> AliasResolutionRegion {
+    let first: ptr = data + RESOLUTION_RECORD_BYTES - NATIVE_FIELD_BYTES;
+    return AliasResolutionRegion {
+        data: slice_from_raw_parts(first, 1),
+    };
+}
+
+pub fn work_region(data: ptr, capacity: i32) -> AliasWorkRegion {
+    // Typed aggregate slices use descending machine words, so their data
+    // pointer is the last word inside the caller-owned record allocation.
+    let first: ptr = data;
+    if (capacity > 0) {
+        first = data + capacity * WORK_RECORD_BYTES - NATIVE_FIELD_BYTES;
     }
-    let rows: i32 = declaration_table[0];
-    if (rows <= 0 || declaration_words != lowering::declarations::HEADER + rows * lowering::declarations::ROW) {
-        return -INVALID;
+    return AliasWorkRegion {
+        data: alias_work_slice(first, capacity),
+        capacity: capacity,
+    };
+}
+
+pub struct AliasBuildInputs {
+    source: WordRegion,
+    tokens: verified::token::TokenTable,
+    tree: verified::syntax_tree::Tree,
+    declarations: lowering::declarations::Table,
+    depth: i32,
+}
+
+pub struct AliasBuildWorkspace {
+    type_arena: verified::surface_type::TypeArena,
+    work: AliasWorkRegion,
+    stack: WordRegion,
+    scratch: WordRegion,
+    result: AliasResolutionRegion,
+    output: Table,
+    output_slot: i32,
+}
+
+// Build one source-unit catalog. `work` contains one typed record per
+// alias/structure; `result` is one typed descriptor, and `stack` is the explicit
+// cycle bound. Path and symbol storage is sized after the declaration/path
+// count is known, so malformed or unexpectedly deep input fails closed.
+pub fn build(input: AliasBuildInputs, workspace: AliasBuildWorkspace) -> i32 {
+    let source_region: WordRegion = input.source;
+    let token_region: verified::token::TokenTable = input.tokens;
+    let tree: verified::syntax_tree::Tree = input.tree;
+    let declaration_table: lowering::declarations::Table =
+        input.declarations;
+    let type_arena: verified::surface_type::TypeArena =
+        workspace.type_arena;
+    let work_region: AliasWorkRegion = workspace.work;
+    let stack_region: WordRegion = workspace.stack;
+    let scratch_region: WordRegion = workspace.scratch;
+    let resolution_region: AliasResolutionRegion = workspace.result;
+    let output_table: Table = workspace.output;
+    let output_slot: i32 = workspace.output_slot;
+    let source: [i32] = source_region.data;
+    let source_length: i32 = source_region.words;
+    let tokens: verified::token::TokenTable = token_region;
+    let token_count: i32 = token_region.count;
+    let work: [AliasWork] = work_region.data;
+    let work_capacity: i32 = work_region.capacity;
+    let stack: [i32] = stack_region.data;
+    let stack_capacity: i32 = stack_region.words;
+    let scratch: [i32] = scratch_region.data;
+    let scratch_capacity: i32 = scratch_region.words;
+    let result: [AliasResolution] = resolution_region.data;
+    let depth: i32 = input.depth;
+    if (source_length <= -1 || token_count <= -1 || tree.node_count <= 0
+        || declaration_table.count <= 0
+        || type_arena.capacity <= 0 || work_capacity <= 0 || stack_capacity <= 0
+        || scratch_capacity <= 0 || depth <= 0
+        || output_slot <= -1 || output_slot >= output_table.count) {
+        return failure(Invalid);
     }
-    let module_row: i32 = -1;
+    let rows: i32 = lowering::declarations::count_rows(
+        lowering::declarations::table_header(declaration_table));
+    if (rows <= 0 || rows != declaration_table.count) {
+        return failure(Invalid);
+    }
+    let module_path: i32 = -1;
+    let expected_symbols: i32 = 0;
     let row: i32 = 0;
     while (row <= rows - 1) {
-        let slot: i32 = lowering::declarations::HEADER + row * lowering::declarations::ROW;
-        if (declaration_table[slot + 1] == lowering::declarations::MODULE) {
-            if (module_row != -1) { return -AMBIGUOUS; }
-            module_row = slot;
+        let declaration: lowering::declarations::DeclarationRow =
+            lowering::declarations::table_row(declaration_table, row);
+        if (lowering::declarations::row_has_kind(declaration,
+                lowering::declarations::Module)) {
+            if (module_path != -1) { return failure(Ambiguous); }
+            module_path = lowering::declarations::row_target(declaration);
+        }
+        if (lowering::declarations::row_has_kind(declaration,
+                lowering::declarations::Alias)
+            || lowering::declarations::row_has_kind(declaration,
+                lowering::declarations::Structure)
+            || lowering::declarations::row_has_kind(declaration,
+                lowering::declarations::Enumeration)) {
+            expected_symbols += 1;
         }
         row += 1;
     }
-    if (module_row <= -1) { return -INVALID; }
-    let module_path: i32 = declaration_table[module_row + 6];
-    let module_segments: i32 = parse_path(source, source_length, records,
-        record_length, offsets, node_count, tokens, token_count, module_path,
-        scratch, scratch_capacity);
+    if (module_path <= -1) { return failure(Invalid); }
+    let path_context: ParsePathContext = ParsePathContext {
+        source: source,
+        source_length: source_length,
+        tree: tree,
+        tokens: tokens,
+        token_count: token_count,
+        output: scratch,
+        capacity: scratch_capacity,
+    };
+    let module_segments: i32 = parse_path(path_context, module_path);
     if (module_segments <= 0 || module_segments > scratch_capacity
-        || capacity - module_segments <= HEADER - 1) { return -INVALID; }
+        || module_segments > verified::host::I32_MAX
+            / verified::host::I32_BYTES) { return failure(Invalid); }
+    if (expected_symbols > stack_capacity
+        || expected_symbols > work_capacity
+        || expected_symbols > verified::host::I32_MAX
+            / SYMBOL_RECORD_BYTES) { return failure(Invalid); }
+    let module_memory: ptr = verified::host::alloc_i32(module_segments);
+    let symbol_bytes: i32 = SYMBOL_RECORD_BYTES;
+    if (expected_symbols > 0) {
+        symbol_bytes = expected_symbols * SYMBOL_RECORD_BYTES;
+    }
+    let symbol_memory: ptr = verified::host::alloc(symbol_bytes,
+        SYMBOL_ALIGNMENT);
+    if (module_memory == 0 || symbol_memory == 0) {
+        return failure(Invalid);
+    }
+    let module_tokens: [i32] = verified::host::i32_slice_from_raw_parts(
+        module_memory, module_segments);
+    let symbols: [AliasSymbol] = symbol_view(symbol_memory,
+        expected_symbols);
     let module_token: i32 = 0;
     while (module_token <= module_segments - 1) {
-        output[HEADER + module_token] = scratch[module_token];
+        module_tokens[module_token] = scratch[module_token];
         module_token += 1;
     }
-    output[0] = MAGIC;
-    output[1] = 0;
-    output[2] = 0;
-    output[3] = module_segments;
-    let written: i32 = HEADER + module_segments;
+    let catalog: Catalog = Catalog {
+        module_tokens: module_tokens,
+        module_segments: module_segments,
+        symbols: symbols,
+        symbol_count: expected_symbols,
+    };
     let symbol_count: i32 = 0;
     let source_row: i32 = 0;
     while (source_row <= rows - 1) {
-        let declaration_slot: i32 = lowering::declarations::HEADER + source_row * lowering::declarations::ROW;
-        let kind: i32 = declaration_table[declaration_slot + 1];
-        if (kind == lowering::declarations::ALIAS || kind == lowering::declarations::STRUCTURE) {
-            if (symbol_count >= stack_capacity || (symbol_count + 1) * WORK_ROW > work_capacity) {
-                return -INVALID;
+        let declaration: lowering::declarations::DeclarationRow =
+            lowering::declarations::table_row(declaration_table, source_row);
+        if (lowering::declarations::row_has_kind(declaration,
+                lowering::declarations::Alias)
+            || lowering::declarations::row_has_kind(declaration,
+                lowering::declarations::Structure)
+            || lowering::declarations::row_has_kind(declaration,
+                lowering::declarations::Enumeration)) {
+            if (symbol_count >= expected_symbols) {
+                return failure(Invalid);
             }
-            let name: i32 = declaration_table[declaration_slot + 5];
-            if (!valid_token(source, source_length, tokens, token_count, name)) { return -INVALID; }
+            let name: i32 = lowering::declarations::row_name(declaration);
+            if (!valid_token(source, source_length, tokens, token_count, name)) { return failure(Invalid); }
             let builtin_name: i32 = builtin(source, source_length, tokens, token_count, name);
-            if (builtin_name != -INVALID) { return -AMBIGUOUS; }
-            if (capacity - written <= module_segments + 3) { return -INVALID; }
-            output[written] = module_segments + 1;
-            output[written + 1] = -1;
-            output[written + 2] = -1;
-            module_token = 0;
-            while (module_token <= module_segments - 1) {
-                output[written + 3 + module_token] = output[HEADER + module_token];
-                module_token += 1;
-            }
-            output[written + 3 + module_segments] = name;
-            let prior_row: i32 = HEADER + module_segments;
+            if (!failed_with(builtin_name, Invalid)) { return failure(Ambiguous); }
             let prior: i32 = 0;
             while (prior <= symbol_count - 1) {
                 if (duplicate_key(source, source_length, tokens, token_count,
-                    output, written, prior_row)) { return -AMBIGUOUS; }
-                prior_row += 3 + output[prior_row];
+                    symbols, name, prior)) { return failure(Ambiguous); }
                 prior += 1;
             }
-            let work_slot: i32 = symbol_count * WORK_ROW;
-            work[work_slot] = declaration_table[declaration_slot + 6];
-            work[work_slot + 1] = kind;
-            work[work_slot + 2] = 0;
-            work[work_slot + 3] = -1;
-            work[work_slot + 4] = -1;
-            work[work_slot + 5] = written;
-            written += 3 + module_segments + 1;
+            symbols[symbol_count] = AliasSymbol {
+                name_token: name,
+                target_kind: Unresolved,
+                target_value: -1,
+            };
+            initialize_work(work, symbol_count, declaration);
             symbol_count += 1;
         }
         source_row += 1;
     }
-    output[1] = symbol_count;
-    output[2] = written;
+    if (symbol_count != expected_symbols) { return failure(Invalid); }
+    let context: AliasContext = AliasContext {
+        source: source,
+        source_length: source_length,
+        tokens: tokens,
+        token_count: token_count,
+        tree: input.tree,
+        catalog: catalog,
+        work: work,
+        work_capacity: work_capacity,
+        stack: stack,
+        stack_capacity: stack_capacity,
+        type_arena: type_arena,
+        scratch: scratch,
+        scratch_capacity: scratch_capacity,
+        result: result,
+    };
     let symbol: i32 = 0;
     while (symbol <= symbol_count - 1) {
-        let resolved: i32 = resolve_symbol(source, source_length, tokens, token_count,
-            records, record_length, offsets, node_count, output, written, work,
-            work_capacity, stack, stack_capacity, type_arena, type_capacity,
-            scratch, scratch_capacity, symbol, 0, depth, result);
+        let resolved: i32 = resolve_symbol(context, symbol, 0, depth);
         // A qualified target may name a declaration from another source unit.
         // Keep that row nominal until the aggregate allocator supplies the
         // cross-unit type map; ambiguity, unsupported forms, and cycles still
         // reject here.
         if (resolved <= -1) {
-            if (resolved != -INVALID) { return resolved; }
-            let deferred_slot: i32 = symbol * WORK_ROW;
-            work[deferred_slot + 3] = NOMINAL;
-            work[deferred_slot + 4] = 0;
+            if (!failed_with(resolved, Invalid)) { return resolved; }
+            work[symbol].target_kind = Nominal;
+            work[symbol].target_value = 0;
         }
-        let work_slot: i32 = symbol * WORK_ROW;
-        let row_position: i32 = work[work_slot + 5];
-        output[row_position + 1] = work[work_slot + 3];
-        output[row_position + 2] = work[work_slot + 4];
+        symbols[symbol].target_kind = work[symbol].target_kind;
+        symbols[symbol].target_value = work[symbol].target_value;
         symbol += 1;
     }
-    return written;
+    let output_rows: [Catalog] = output_table.data;
+    output_rows[output_slot] = catalog;
+    return symbol_count;
 }
 
-// Validate the fixed/variable catalog shape before types.lower trusts it.
-pub fn valid(catalog: [i32], words: i32, tokens: [i32], token_count: i32) -> bool {
-    if (words <= HEADER - 1 || token_count <= -1 || token_count > 715827882
-        || catalog[0] != MAGIC || catalog[1] <= -1
-        || catalog[2] != words || catalog[3] <= -1 || HEADER + catalog[3] > words) {
+// Validate the native symbol span before type lowering trusts it.
+pub fn valid(catalog: Catalog,
+    tokens: verified::token::TokenTable) -> bool {
+    let token_count: i32 = tokens.count;
+    if (token_count <= -1 || catalog.module_segments <= 0
+        || catalog.symbol_count <= -1) {
         return false;
     }
+    let module_count: i32 = catalog.module_segments;
+    let rows: i32 = catalog.symbol_count;
+    let module_tokens: [i32] = catalog.module_tokens;
+    let symbols: [AliasSymbol] = catalog.symbols;
     let index: i32 = 0;
-    while (index <= catalog[3] - 1) {
-        let token: i32 = catalog[HEADER + index];
-        if (token <= -1 || token >= token_count
-            || tokens[token * 3] != verified::token::IDENTIFIER) { return false; }
+    while (index <= module_count - 1) {
+        let token: i32 = module_tokens[index];
+        if (!identifier_token(tokens, token_count, token)) {
+            return false;
+        }
         index += 1;
     }
     let row: i32 = 0;
-    let position: i32 = HEADER + catalog[3];
-    while (row <= catalog[1] - 1) {
-        if (position > words - 3) { return false; }
-        let count: i32 = catalog[position];
-        let kind: i32 = catalog[position + 1];
-        let payload: i32 = catalog[position + 2];
-        if (count <= 0 || position + 3 + count > words
-            || (kind != SCALAR && kind != NOMINAL) || payload <= -1
-            || (kind == SCALAR && payload > 6)) { return false; }
-        index = 0;
-        while (index <= count - 1) {
-            let token: i32 = catalog[position + 3 + index];
-            if (token <= -1 || token >= token_count
-                || tokens[token * 3] != verified::token::IDENTIFIER) { return false; }
-            index += 1;
+    while (row <= rows - 1) {
+        let symbol: AliasSymbol = symbols[row];
+        let kind: i32 = target_kind_code(symbol.target_kind);
+        let payload: i32 = symbol.target_value;
+        if (!identifier_token(tokens, token_count, symbol.name_token)
+            || (!target_has_kind(kind, Scalar) && !target_has_kind(kind, Nominal))
+            || payload <= -1 || (target_has_kind(kind, Scalar)
+                && !backend::syntax::primitive_type(payload))) {
+            return false;
         }
-        position += 3 + count;
         row += 1;
     }
-    return position == words;
+    return true;
+}
+
+pub fn valid_or_empty(catalog: Catalog,
+    tokens: verified::token::TokenTable) -> bool {
+    if (catalog.module_segments == 0) {
+        return catalog.symbol_count == 0;
+    }
+    return valid(catalog, tokens);
+}
+
+pub struct AliasLookupInput {
+    source: WordRegion,
+    tokens: verified::token::TokenTable,
+    catalog: Catalog,
+    arena: verified::surface_type::TypeArena,
+    root: i32,
+}
+
+pub struct AliasLookupWorkspace {
+    scratch: WordRegion,
 }
 
 // Resolve an arena path against a catalog. Nominal rows are left for the
 // allocation-authenticated resolution table; scalar() reports them as a
 // non-scalar miss so types.lower can continue to nominal resolution.
-pub fn scalar(source: [i32], source_length: i32, tokens: [i32], token_count: i32,
-    catalog: [i32], words: i32, arena: [i32], root: i32, scratch: [i32],
-    scratch_capacity: i32) -> i32 {
-    if (!valid(catalog, words, tokens, token_count) || root <= -1
-        || root >= arena[0]) { return -INVALID; }
-    let path: i32 = root;
-    let root_kind: i32 = arena[1 + root * 8];
-    if (root_kind == KIND_PATH_TYPE) {
-        path = arena[1 + root * 8 + 2];
-        if (path <= -1 || path >= root) { return -INVALID; }
-    } else {
-        if (root_kind != KIND_PATH) { return -INVALID; }
+pub fn scalar(input: AliasLookupInput,
+    workspace: AliasLookupWorkspace) -> i32 {
+    let source: [i32] = input.source.data;
+    let source_length: i32 = input.source.words;
+    let tokens: verified::token::TokenTable = input.tokens;
+    let token_count: i32 = input.tokens.count;
+    let catalog: Catalog = input.catalog;
+    let arena: verified::surface_type::TypeArena = input.arena;
+    let nodes: [verified::surface_type::TypeNode] = arena.data;
+    let arena_count: [verified::surface_type::CountCell] = arena.count;
+    let root: i32 = input.root;
+    let scratch: [i32] = workspace.scratch.data;
+    let scratch_capacity: i32 = workspace.scratch.words;
+    if (arena.capacity <= 0 || arena_count[0].value <= 0
+        || arena_count[0].value > arena.capacity
+        || !valid(catalog, tokens) || root <= -1
+        || root >= arena_count[0].value) {
+        return failure(Invalid);
     }
-    if (arena[1 + path * 8] != KIND_PATH) { return -INVALID; }
-    let segment: i32 = arena[1 + path * 8 + 2];
+    let path: i32 = root;
+    let root_kind: verified::surface_type::SurfaceTypeKind = nodes[root].kind;
+    if (verified::surface_type::kind_is(root_kind, verified::surface_type::PathType)) {
+        path = nodes[root].first;
+        if (path <= -1 || path >= root) { return failure(Invalid); }
+    } else {
+        if (!verified::surface_type::kind_is(root_kind,
+            verified::surface_type::Path)) { return failure(Invalid); }
+    }
+    if (!verified::surface_type::kind_is(nodes[path].kind,
+        verified::surface_type::Path)) { return failure(Invalid); }
+    let count: i32 = copy_arena_path(arena,
+        arena_count[0].value, path, scratch, scratch_capacity);
+    if (count <= 0) { return failure(Invalid); }
+    let segment: i32 = nodes[path].first;
     while (segment != -1) {
         if (segment <= -1 || segment >= root
-            || arena[1 + segment * 8] != KIND_SEGMENT
-            || arena[1 + segment * 8 + 2] != -1) { return -UNSUPPORTED; }
-        segment = arena[1 + segment * 8 + 7];
-    }
-    let count: i32 = copy_arena_path(arena, arena[0], path, scratch, scratch_capacity);
-    if (count <= 0) { return -INVALID; }
-    let module_count: i32 = catalog[3];
-    let position: i32 = HEADER + module_count;
-    let row: i32 = 0;
-    let answer: i32 = -INVALID;
-    while (row <= catalog[1] - 1) {
-        if (position > words - 3) { return -INVALID; }
-        if (row_matches(source, source_length, tokens, token_count, catalog,
-            position, scratch, count, module_count)) {
-            if (answer != -INVALID) { return -AMBIGUOUS; }
-            if (catalog[position + 1] == NOMINAL) { return -INVALID; }
-            answer = catalog[position + 2];
+            || !verified::surface_type::kind_is(nodes[segment].kind,
+                verified::surface_type::Segment)
+            || nodes[segment].first != -1) {
+            return failure(Unsupported);
         }
-        position += 3 + catalog[position];
+        segment = nodes[segment].next;
+    }
+    let rows: i32 = catalog.symbol_count;
+    let symbols: [AliasSymbol] = catalog.symbols;
+    let row: i32 = 0;
+    let answer: i32 = failure(Invalid);
+    let token_context: TokenContext = TokenContext {
+        source: source,
+        source_length: source_length,
+        tokens: tokens,
+        token_count: token_count,
+    };
+    while (row <= rows - 1) {
+        let symbol: AliasSymbol = symbols[row];
+        if (row_matches(token_context, catalog, symbol, scratch, count)) {
+            if (!failed_with(answer, Invalid)) { return failure(Ambiguous); }
+            if (target_kind_code(symbol.target_kind)
+                    == target_kind_code(Nominal)) {
+                return failure(Invalid);
+            }
+            answer = symbol.target_value;
+        }
         row += 1;
     }
     return answer;

@@ -12,8 +12,8 @@ const CAPACITY: i32 = 4096;
 // patcher rather than precomputed instruction byte offsets.
 fn check_equal(output: [i32], cursor: i32, width: i32, left: i32, right: i32,
     fixups: [i32], index: i32) -> i32 {
-    let next: i32 = x86::encode::binary(output, CAPACITY, cursor, width, x86::encode::CMP, left, right);
-    next = x86::control::branch(output, CAPACITY, next, x86::control::NOT_EQUAL, 0);
+    let next: i32 = x86::encode::binary(output, CAPACITY, cursor, width, x86::encode::Compare, left, right);
+    next = x86::control::branch(output, CAPACITY, next, x86::control::NotEqual, 0);
     if (next < 0) { return -1; }
     fixups[index] = next - 4;
     return next;
@@ -32,7 +32,7 @@ fn main() -> i32 {
     let cursor: i32 = x86::control::push(output, CAPACITY, 0, x86::register::RBP);
     cursor = x86::encode::move_register(output, CAPACITY, cursor, 64, x86::register::RBP, x86::register::RSP);
     cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RAX, 128, 0);
-    cursor = x86::encode::binary(output, CAPACITY, cursor, 64, x86::encode::SUB, x86::register::RSP, x86::register::RAX);
+    cursor = x86::encode::binary(output, CAPACITY, cursor, 64, x86::encode::Subtract, x86::register::RSP, x86::register::RAX);
     cursor = x86::encode::move_register(output, CAPACITY, cursor, 64, x86::register::R12, x86::register::RSP);
 
     cursor = x86::encode::immediate(output, CAPACITY, cursor, 64, x86::register::RDI, -1, -1);
@@ -58,10 +58,10 @@ fn main() -> i32 {
     cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RAX, 0, 0);
     cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RDX, 1, 0);
     let loop: i32 = cursor;
-    cursor = x86::encode::binary(output, CAPACITY, cursor, 32, x86::encode::ADD, x86::register::RAX, x86::register::RCX);
-    cursor = x86::encode::binary(output, CAPACITY, cursor, 32, x86::encode::SUB, x86::register::RCX, x86::register::RDX);
-    cursor = x86::encode::binary(output, CAPACITY, cursor, 32, x86::encode::TEST, x86::register::RCX, x86::register::RCX);
-    cursor = x86::control::branch(output, CAPACITY, cursor, x86::control::NOT_EQUAL, loop);
+    cursor = x86::encode::binary(output, CAPACITY, cursor, 32, x86::encode::Add, x86::register::RAX, x86::register::RCX);
+    cursor = x86::encode::binary(output, CAPACITY, cursor, 32, x86::encode::Subtract, x86::register::RCX, x86::register::RDX);
+    cursor = x86::encode::binary(output, CAPACITY, cursor, 32, x86::encode::Test, x86::register::RCX, x86::register::RCX);
+    cursor = x86::control::branch(output, CAPACITY, cursor, x86::control::NotEqual, loop);
     cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::R11, 55, 0);
     cursor = check_equal(output, cursor, 32, x86::register::RAX, x86::register::R11, fixups, 4);
 
@@ -81,7 +81,7 @@ fn main() -> i32 {
     let helper: i32 = cursor;
     cursor = x86::encode::immediate(output, CAPACITY, cursor, 64, x86::register::RAX, -2147483647, 305419896);
     cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RCX, 1, 0);
-    cursor = x86::encode::shift(output, CAPACITY, cursor, 64, x86::encode::SHIFT_LEFT, x86::register::RAX);
+    cursor = x86::encode::shift(output, CAPACITY, cursor, 64, x86::encode::ShiftLeft, x86::register::RAX);
     cursor = x86::encode::immediate(output, CAPACITY, cursor, 64, x86::register::R11, 2, 610839793);
     cursor = check_equal(output, cursor, 64, x86::register::RAX, x86::register::R11, fixups, 6);
     cursor = x86::encode::immediate(output, CAPACITY, cursor, 32, x86::register::RAX, 42, 0);

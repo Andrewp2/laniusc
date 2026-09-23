@@ -1,0 +1,55 @@
+module app::main;
+
+import lowering::unit_descriptor;
+import verified::host;
+
+struct Container {
+    id: i32,
+    descriptors: lowering::unit_descriptor::Table,
+}
+
+fn write_descriptors(table: lowering::unit_descriptor::Table) -> i32 {
+    let rows: [lowering::unit_descriptor::UnitDescriptor] = table.data;
+    if (rows[0].source_offset != 7 || table.count != 2) { return 1; }
+    rows[0].token_offset = 17;
+    rows[0].token_count = 19;
+    rows[1].token_offset = 23;
+    rows[1].token_count = 27;
+    return 0;
+}
+
+fn main() -> i32 {
+    let record_bytes: i32 = lowering::unit_descriptor::RECORD_BYTES;
+    let memory: ptr = verified::host::alloc(
+        2 * record_bytes + lowering::unit_descriptor::ALIGNMENT,
+        lowering::unit_descriptor::ALIGNMENT);
+    if (memory == 0) { return 2; }
+    let guard: [i32] = verified::host::i32_slice_from_raw_parts(memory,
+        (2 * record_bytes + lowering::unit_descriptor::ALIGNMENT)
+            / verified::host::I32_BYTES);
+    guard[2 * record_bytes / verified::host::I32_BYTES] = 12345678;
+    let descriptor_table: lowering::unit_descriptor::Table =
+        lowering::unit_descriptor::from_raw_parts(memory, 2);
+    let container: Container = Container {
+        id: 7,
+        descriptors: descriptor_table,
+    };
+    let table: lowering::unit_descriptor::Table = container.descriptors;
+    let rows: [lowering::unit_descriptor::UnitDescriptor] = table.data;
+    rows[0].source_offset = 7;
+    rows[0].source_length = 11;
+    rows[1].body_offset = 29;
+    rows[1].body_words = 31;
+    if (write_descriptors(table) != 0) { return 3; }
+    if (container.id != 7 || table.count != 2) { return 10; }
+    if (rows[0].source_offset != 7) { return 11; }
+    if (rows[0].source_length != 11) { return 12; }
+    if (rows[0].token_offset != 17) { return 13; }
+    if (rows[0].token_count != 19) { return 14; }
+    if (rows[1].token_offset != 23) { return 15; }
+    if (rows[1].token_count != 27) { return 16; }
+    if (rows[1].body_offset != 29) { return 17; }
+    if (rows[1].body_words != 31) { return 18; }
+    if (guard[2 * record_bytes / verified::host::I32_BYTES] != 12345678) { return 19; }
+    return 0;
+}

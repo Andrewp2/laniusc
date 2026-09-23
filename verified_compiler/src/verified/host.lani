@@ -5,6 +5,15 @@
 // the large capability/documentation surfaces of the general standard library.
 module verified::host;
 
+pub const I32_BYTES: i32 = 4;
+pub const BITS_PER_BYTE: i32 = 8;
+pub const BYTE_MASK: i32 = 255;
+pub const I32_MAX: i32 = 2147483647;
+pub const I32_BYTE_0: i32 = 0;
+pub const I32_BYTE_1: i32 = 1;
+pub const I32_BYTE_2: i32 = 2;
+pub const I32_BYTE_3: i32 = 3;
+
 // These three declarations are compiler intrinsics. Their source bodies are
 // deliberately inert; a backend implements the pointer/length representation.
 pub fn i32_slice_from_raw_parts(data: ptr, length: i32) -> [i32] {
@@ -21,13 +30,21 @@ pub fn string_data_ptr(value: str) -> ptr {
 
 pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
 
+pub fn alloc_i32(words: i32) -> ptr {
+    if (words <= -1 || words > I32_MAX / I32_BYTES) { return 0; }
+    let size: usize = words * I32_BYTES;
+    let alignment: usize = I32_BYTES;
+    return alloc(size, alignment);
+}
+
+pub fn packed_words(byte_count: i32) -> i32 {
+    if (byte_count <= -1) { return -1; }
+    return (byte_count + I32_BYTES - 1) / I32_BYTES;
+}
+
 pub extern "lanius_std" fn open_read(path_ptr: ptr, path_len: usize) -> i32;
 pub extern "lanius_std" fn close(handle: i32) -> i32;
 pub extern "lanius_std" fn read(handle: i32, data: ptr, len: usize) -> i32;
 
 pub extern "lanius_std" fn write_stdout(data: ptr, len: usize) -> i32;
 pub extern "lanius_std" fn write_byte(handle: i32, value: i32) -> i32;
-
-pub extern "lanius_std" fn argc() -> i32;
-pub extern "lanius_std" fn arg_len(index: i32) -> i32;
-pub extern "lanius_std" fn arg_read(index: i32, data: ptr, len: usize) -> i32;

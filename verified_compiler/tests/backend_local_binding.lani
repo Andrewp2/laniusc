@@ -1,0 +1,53 @@
+module app::main;
+
+import backend::frame;
+import backend::local;
+import verified::host;
+
+fn main() -> i32 {
+    let capacity: i32 = backend::frame::HEADER
+        + 4 * backend::frame::WORK_WORDS_PER_STRIDE;
+    let bytes: usize = capacity * verified::host::I32_BYTES;
+    let alignment: usize = backend::frame::WORK_ALIGNMENT;
+    let memory: ptr = verified::host::alloc(bytes + alignment, alignment);
+    if (memory == 0) { return 2; }
+    let guard: [i32] = verified::host::i32_slice_from_raw_parts(
+        memory, capacity + alignment / verified::host::I32_BYTES);
+    guard[capacity] = 12345678;
+    let work: backend::frame::Workspace = backend::frame::from_raw_parts(
+        memory, capacity);
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    state[0].stride = 4;
+    backend::local::write(work, 0,
+        backend::local::binding(7, 3, 2));
+    backend::local::write(work, 1,
+        backend::local::binding(7, -4, 9));
+    backend::local::write(work, 3,
+        backend::local::binding(11, 8, 5));
+    backend::frame::set_function_input_offset(work, 0, 17);
+    backend::frame::set_function_code_start(work, 0, 512);
+    backend::frame::set_function_input_offset(work, 3, 29);
+    backend::frame::set_function_code_start(work, 3, 2048);
+    backend::frame::write_break_patch(work, 0, 123);
+    backend::frame::write_break_patch(work, 3, 789);
+    let shadow: backend::local::LocalBinding =
+        backend::local::read(work, 1);
+    let last: backend::local::LocalBinding =
+        backend::local::read(work, 3);
+    if (backend::local::lookup(work, 1, 7) != 0
+        || backend::local::lookup(work, 2, 7) != 1
+        || backend::local::binding_kind(shadow) != -4
+        || backend::local::binding_slot(shadow) != 9
+        || backend::local::binding_kind(last) != 8
+        || backend::local::binding_slot(last) != 5
+        || backend::frame::function_input_offset(work, 0) != 17
+        || backend::frame::function_code_start(work, 0) != 512
+        || backend::frame::function_input_offset(work, 3) != 29
+        || backend::frame::function_code_start(work, 3) != 2048
+        || backend::frame::read_break_patch(work, 0) != 123
+        || backend::frame::read_break_patch(work, 3) != 789
+        || guard[capacity] != 12345678) {
+        return 1;
+    }
+    return 0;
+}

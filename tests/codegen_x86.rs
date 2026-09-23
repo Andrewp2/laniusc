@@ -169,12 +169,12 @@ fn select_quad(source: [i32], source_length: i32, position: i32) -> Quad {
 }
 
 fn main() -> i32 {
-    let source: [i32; 1] = [7];
-    let result: Quad = select_quad(source, 1, 0);
+    let source: [i32; 2] = [7, 8];
+    let result: Quad = select_quad(source, 2, 1);
     return result.first * 4 + result.second;
 }
 "#,
-        108,
+        106,
     );
 }
 
@@ -2023,6 +2023,44 @@ fn main() {
 "#,
         65,
     );
+}
+
+#[test]
+fn x86_rejects_payload_enum_equality_instead_of_comparing_tags_only() {
+    let source = r#"
+enum Kind { Empty, With(i32), }
+
+fn first() -> Kind { return With(1); }
+fn second() -> Kind { return With(2); }
+
+fn main() -> i32 {
+    let left: Kind = first();
+    let right: Kind = second();
+    if (left == right) { return 1; }
+    return 0;
+}
+"#
+    .to_owned();
+    let error = common::run_gpu_codegen_with_timeout(
+        "x86 payload enum equality", move || {
+            pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
+        },
+    )
+    .expect_err("payload-bearing enum equality must not silently compare only tags");
+    match error {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0017");
+            assert_eq!(diagnostic.category, "native codegen");
+            assert_eq!(
+                diagnostic
+                    .primary_label
+                    .as_ref()
+                    .and_then(|label| label.source_line.as_deref()),
+                Some("    if (left == right) { return 1; }")
+            );
+        }
+        other => panic!("expected source-spanned x86 rejection, got {other:?}"),
+    }
 }
 
 #[test]
@@ -4702,6 +4740,197 @@ fn main() {
 }
 "#,
         101,
+    );
+}
+
+#[test]
+fn x86_indexes_slice_field_with_runtime_length() {
+    assert_source_exit(
+        "slice_field_runtime_index",
+        r#"
+struct Region { data: [i32], }
+
+fn read(values: [i32], index: i32) -> i32 {
+    let region: Region = Region { data: values };
+    return region.data[index];
+}
+
+fn main() -> i32 {
+    let values: [i32; 3] = [7, 8, 19];
+    return read(values, 1);
+}
+"#,
+        8,
+    );
+}
+
+#[test]
+fn x86_traps_slice_field_out_of_bounds() {
+    assert_source_exit(
+        "slice_field_out_of_bounds",
+        r#"
+struct Region { data: [i32], }
+
+fn read(values: [i32], index: i32) -> i32 {
+    let region: Region = Region { data: values };
+    return region.data[index];
+}
+
+fn main() -> i32 {
+    let values: [i32; 3] = [7, 8, 19];
+    return read(values, 3);
+}
+"#,
+        101,
+    );
+}
+
+#[test]
+fn x86_wraps_fixed_array_as_slice_field() {
+    assert_source_exit(
+        "fixed_array_as_slice_field",
+        r#"
+struct Region { data: [i32], }
+
+fn read(region: Region, index: i32) -> i32 {
+    return region.data[index];
+}
+
+fn main() -> i32 {
+    let values: [i32; 3] = [7, 8, 19];
+    let region: Region = Region { data: values };
+    return read(region, 1);
+}
+"#,
+        8,
+    );
+}
+
+#[test]
+fn x86_wraps_fixed_array_in_nonfirst_slice_field() {
+    assert_source_exit(
+        "fixed_array_in_nonfirst_slice_field",
+        r#"
+struct Region { before: i32, data: [i32], after: i32 }
+
+fn main() -> i32 {
+    let values: [i32; 3] = [7, 8, 19];
+    let region: Region = Region { before: 2, data: values, after: 3 };
+    return region.before + region.data[2] + region.after;
+}
+"#,
+        24,
+    );
+}
+
+#[test]
+fn x86_rewraps_slice_projected_from_nested_struct() {
+    assert_source_exit(
+        "rewrap_nested_slice_field",
+        r#"
+struct WordRegion { data: [i32], words: i32 }
+struct SourcePair { left: WordRegion, right: WordRegion }
+struct Views { left: [i32], right: [i32] }
+
+fn sum(input: SourcePair) -> i32 {
+    let left: [i32] = input.left.data;
+    let right: [i32] = input.right.data;
+    let views: Views = Views { left: left, right: right };
+    return views.left[1] + views.right[1];
+}
+
+fn main() -> i32 {
+    let left: [i32; 3] = [1, 2, 3];
+    let right: [i32; 3] = [4, 5, 6];
+    let left_region: WordRegion = WordRegion { data: left, words: 3 };
+    let right_region: WordRegion = WordRegion { data: right, words: 3 };
+    let input: SourcePair = SourcePair { left: left_region, right: right_region };
+    return sum(input);
+}
+"#,
+        7,
+    );
+}
+
+#[test]
+fn x86_copies_aggregate_call_results_into_struct_fields() {
+    assert_source_exit(
+        "aggregate_call_result_struct_fields",
+        r#"
+struct Region { data: [i32], words: i32 }
+struct Input { left: Region, right: Region }
+
+fn region(data: [i32], words: i32) -> Region {
+    return Region { data: data, words: words };
+}
+
+fn inspect(input: Input) -> i32 {
+    if (input.left.words != 3 || input.right.words != 3) { return 1; }
+    return input.left.data[1] + input.right.data[2];
+}
+
+fn main() -> i32 {
+    let left: [i32; 3] = [1, 2, 3];
+    let right: [i32; 3] = [4, 5, 6];
+    let input: Input = Input {
+        left: region(left, 3),
+        right: region(right, 3),
+    };
+    return inspect(input);
+}
+"#,
+        8,
+    );
+}
+
+#[test]
+fn x86_passes_projected_slice_field_as_fat_slice_argument() {
+    assert_source_exit(
+        "projected_slice_field_call_argument",
+        r#"
+struct Context { before: i32, values: [i32], after: i32 }
+
+fn read(values: [i32], index: i32) -> i32 {
+    return values[index];
+}
+
+fn forward(context: Context) -> i32 {
+    return read(context.values, 1);
+}
+
+fn main() -> i32 {
+    let values: [i32; 3] = [7, 8, 19];
+    let context: Context = Context { before: 2, values: values, after: 3 };
+    return forward(context);
+}
+"#,
+        8,
+    );
+}
+
+#[test]
+fn x86_passes_projected_slice_field_in_stack_arguments() {
+    assert_source_exit(
+        "projected_slice_field_stack_arguments",
+        r#"
+struct Context { before: i32, values: [i32], after: i32 }
+
+fn read(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32,
+        values: [i32], index: i32) -> i32 {
+    return values[index] + a + b + c + d + e + f;
+}
+
+fn forward(context: Context) -> i32 {
+    return read(1, 2, 3, 4, 5, 6, context.values, 1);
+}
+
+fn main() -> i32 {
+    let values: [i32; 3] = [7, 8, 19];
+    let context: Context = Context { before: 2, values: values, after: 3 };
+    return forward(context);
+}
+"#,
+        29,
     );
 }
 
@@ -8536,6 +8765,275 @@ fn main() -> i32 {
         Some(10),
         "raw-parts slice failed: {output:?}"
     );
+}
+
+#[test]
+fn x86_typed_slice_from_raw_parts_preserves_record_fields() {
+    let sources = [
+        r#"
+module verified::records;
+
+pub struct Pair { left: i32, right: i32 }
+
+pub fn slice_from_raw_parts(data: ptr, length: i32) -> [Pair] {
+    return slice_from_raw_parts(data, length);
+}
+
+pub fn score(values: [Pair]) -> i32 {
+    values[0].left = 3;
+    values[0].right = 2;
+    values[1].left = 8;
+    values[1].right = 17;
+    return values[0].left + values[0].right + values[1].left + values[1].right;
+}
+"#,
+        r#"
+module app::main;
+
+import verified::records;
+
+pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+
+fn main() -> i32 {
+    let memory: ptr = alloc(32, 8);
+    // Struct fields and array elements occupy descending eight-byte words.
+    let first: ptr = memory + 24;
+    let values: [verified::records::Pair] =
+        verified::records::slice_from_raw_parts(first, 2);
+    return verified::records::score(values);
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout("x86 typed slice from raw parts", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+    })
+    .expect("typed raw-parts slice should compile to x86_64");
+
+    let output = common::run_x86_64_elf_output(
+        "x86 typed slice from raw parts",
+        "x86_typed_slice_from_raw_parts",
+        &bytes,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(30),
+        "typed slice failed: {output:?}"
+    );
+}
+
+#[test]
+fn x86_stores_whole_records_through_typed_slice() {
+    assert_source_exit(
+        "typed_slice_struct_store",
+        include_str!("../verified_compiler/tests/x86/typed_slice_struct_store.lani"),
+        0,
+    );
+}
+
+#[test]
+fn x86_stores_wide_struct_literal_through_dynamic_typed_slice_index() {
+    let sources = [
+        include_str!("../verified_compiler/src/verified/host.lani"),
+        include_str!("../verified_compiler/src/verified/token.lani"),
+        include_str!("../verified_compiler/src/lowering/unit_context.lani"),
+        include_str!("../verified_compiler/tests/x86/wide_struct_slice_store.lani"),
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 wide struct literal slice store", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("wide struct literal slice store should compile to x86_64");
+    let output = common::run_x86_64_elf_output(
+        "x86 wide struct literal slice store",
+        "x86_wide_struct_literal_slice_store",
+        &bytes,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "wide struct store failed: {output:?}"
+    );
+}
+
+#[test]
+fn x86_loads_field_after_multiword_fields_through_dynamic_slice_index() {
+    let sources = [
+        include_str!("../verified_compiler/src/verified/host.lani"),
+        include_str!("../verified_compiler/tests/x86/indexed_multiword_struct_field.lani"),
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 indexed multiword struct field",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("indexed multiword struct field should compile to x86_64");
+    let output = common::run_x86_64_elf_output(
+        "x86 indexed multiword struct field",
+        "x86_indexed_multiword_struct_field",
+        &bytes,
+    );
+    assert_eq!(output.status.code(), Some(0), "indexed field failed: {output:?}");
+}
+
+#[test]
+fn x86_preserves_typed_slice_length_through_return_and_local_store() {
+    assert_source_exit(
+        "typed_slice_forward",
+        include_str!("../verified_compiler/tests/typed_slice_forward.lani"),
+        30,
+    );
+}
+
+#[test]
+fn x86_imported_struct_slice_field_copies_raw_parts_pair() {
+    let sources = [
+        include_str!("../verified_compiler/src/verified/host.lani"),
+        include_str!("../verified_compiler/src/lowering/unit_descriptor.lani"),
+        include_str!("../verified_compiler/tests/imported_struct_field.lani"),
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "x86 imported struct slice field",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("imported struct slice field should compile to x86_64");
+    let output = common::run_x86_64_elf_output(
+        "x86 imported struct slice field",
+        "x86_imported_struct_slice_field",
+        &bytes,
+    );
+    assert_eq!(output.status.code(), Some(0), "slice field failed: {output:?}");
+}
+
+#[test]
+fn x86_passes_projected_multi_slice_struct_fields_to_intrinsic() {
+    let sources = [
+        include_str!("../verified_compiler/src/verified/host.lani"),
+        include_str!("../verified_compiler/tests/typed_multi_slice_return.lani"),
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 projected multi-slice fields", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("projected multi-slice fields should compile to x86_64");
+    let output = common::run_x86_64_elf_output(
+        "x86 projected multi-slice fields",
+        "x86_projected_multi_slice_fields",
+        &bytes,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "slice field failed: {output:?}"
+    );
+}
+
+#[test]
+fn x86_returns_bounded_multi_slice_unit_view() {
+    let sources = [
+        include_str!("../verified_compiler/src/verified/host.lani"),
+        include_str!("../verified_compiler/src/verified/token.lani"),
+        include_str!("../verified_compiler/src/lowering/unit_context.lani"),
+        include_str!("../verified_compiler/tests/lowering_unit_syntax_view.lani"),
+    ];
+    let bytes =
+        common::run_gpu_codegen_with_timeout("x86 bounded multi-slice unit view", move || {
+            pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+        })
+        .expect("bounded multi-slice unit view should compile to x86_64");
+    let output = common::run_x86_64_elf_output(
+        "x86 bounded multi-slice unit view",
+        "x86_bounded_multi_slice_unit_view",
+        &bytes,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "unit view failed: {output:?}"
+    );
+}
+
+#[test]
+fn x86_passes_direct_raw_parts_slice_as_call_argument() {
+    assert_source_exit(
+        "typed_slice_intrinsic_call",
+        include_str!("../verified_compiler/tests/typed_slice_intrinsic_call.lani"),
+        0,
+    );
+}
+
+#[test]
+fn x86_returns_direct_typed_slice_intrinsic_without_losing_length() {
+    assert_source_exit(
+        "typed_slice_direct_return",
+        include_str!("../verified_compiler/tests/typed_slice_direct_return.lani"),
+        30,
+    );
+}
+
+#[test]
+fn x86_nominal_aggregate_type_id_does_not_use_float_register() {
+    assert_source_exit(
+        "aggregate_float_code_collision",
+        include_str!("../verified_compiler/tests/x86/aggregate_float_code_collision.lani"),
+        0,
+    );
+}
+
+#[test]
+fn x86_nested_two_word_struct_call_uses_call_result_type() {
+    assert_source_exit(
+        "two_word_nested_struct",
+        include_str!("../verified_compiler/tests/two_word_nested_struct.lani"),
+        0,
+    );
+}
+
+#[test]
+fn x86_struct_literal_still_rejects_wrong_field_type() {
+    let source = r#"
+module app::main;
+struct Pair { first: i32, second: i32 }
+struct Box { pair: Pair, after: i32 }
+fn main() -> i32 {
+    let value: Box = Box { pair: 7, after: 17 };
+    return value.after;
+}
+"#;
+    let err = common::run_gpu_codegen_with_timeout("x86 wrong struct field type", move || {
+        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(source))
+    })
+    .expect_err("an integer cannot initialize a struct field");
+    match err {
+        CompileError::Diagnostic(diagnostic) => assert_eq!(diagnostic.code, "LNC0006"),
+        other => panic!("expected a field type mismatch, got {other:?}"),
+    }
+}
+
+#[test]
+fn x86_typed_slice_from_raw_parts_rejects_non_slice_result() {
+    let source = r#"
+module app::main;
+
+fn slice_from_raw_parts(data: ptr, length: i32) -> i32 {
+    return slice_from_raw_parts(data, length);
+}
+
+fn main() -> i32 {
+    return slice_from_raw_parts(0, 1);
+}
+"#;
+    let err = common::run_gpu_codegen_with_timeout(
+        "x86 typed slice from raw parts rejects non-slice result",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&[source])),
+    )
+    .expect_err("a raw-parts constructor must declare a slice result");
+
+    match err {
+        CompileError::Diagnostic(diagnostic) => {
+            assert_eq!(diagnostic.code, "LNC0027");
+            assert!(diagnostic.render().contains("must return a slice type"));
+        }
+        other => panic!("expected call-resolution diagnostic, got {other:?}"),
+    }
 }
 
 #[test]

@@ -1,7 +1,10 @@
 module verified::certificate_output_native;
 
+import backend::frame;
 import verified::certificate_output;
 import verified::host;
+
+pub const HEADER_BYTES: i32 = verified::certificate_output::HEADER_BYTES;
 
 // Native entrypoints cross this module through raw pointers because the x86
 // backend does not yet lower imported slice parameters.  Rebuild bounded
@@ -30,26 +33,19 @@ pub fn emit_image_raw(image_pointer: ptr, image_length: i32,
 
 pub fn emit_functions_raw(work_pointer: ptr, work_length: i32, stride: i32,
     count: i32, output_pointer: ptr, capacity: i32, position: i32) -> i32 {
-    let work:[i32] = verified::host::i32_slice_from_raw_parts(work_pointer, work_length);
+    let work: backend::frame::Workspace =
+        backend::frame::from_raw_parts(work_pointer, work_length);
     let output:[i32] = verified::host::i32_slice_from_raw_parts(output_pointer, capacity);
-    return verified::certificate_output::emit_functions(work, work_length, stride,
+    return verified::certificate_output::emit_functions(work, stride,
         count, output, capacity, position);
 }
 
-pub fn emit_functions_compiler_raw(work_pointer: ptr, stride: i32, count: i32,
-    output_pointer: ptr, position: i32) -> i32 {
-    let work:[i32] = verified::host::i32_slice_from_raw_parts(work_pointer, 524304);
-    let output:[i32] = verified::host::i32_slice_from_raw_parts(output_pointer, 16777216);
-    return verified::certificate_output::emit_functions(work, 524304, stride, count,
-        output, 16777216, position);
-}
-
-pub fn emit_functions_extractor_raw(work_pointer: ptr, stride: i32, count: i32,
-    output_pointer: ptr, position: i32) -> i32 {
-    let work:[i32] = verified::host::i32_slice_from_raw_parts(work_pointer, 16384);
-    let output:[i32] = verified::host::i32_slice_from_raw_parts(output_pointer, 67108864);
-    return verified::certificate_output::emit_functions(work, 16384, stride, count,
-        output, 67108864, position);
+pub fn emit_empty_functions_raw(output_pointer: ptr, capacity: i32,
+    position: i32) -> i32 {
+    let output:[i32] = verified::host::i32_slice_from_raw_parts(
+        output_pointer, capacity);
+    return verified::certificate_output::emit_empty_functions(
+        output, capacity, position);
 }
 
 pub fn pack_in_place_raw(output_pointer: ptr, length: i32) -> i32 {

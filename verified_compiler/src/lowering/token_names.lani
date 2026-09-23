@@ -1,0 +1,77 @@
+module lowering::token_names;
+
+import lowering::unit_context;
+import verified::token;
+
+// Compare identifier spellings across source units without copying or
+// truncating their source bytes. The contexts own each unit's source/token
+// ranges; this view owns no storage.
+pub struct Catalog {
+    contexts: lowering::unit_context::Table,
+    sources: [i32],
+    tokens: verified::token::TokenTable,
+}
+
+pub fn catalog(contexts: lowering::unit_context::Table,
+    sources: [i32], tokens: verified::token::TokenTable) -> Catalog {
+    return Catalog {
+        contexts: contexts,
+        sources: sources,
+        tokens: tokens,
+    };
+}
+
+pub fn same(catalog: Catalog, unit: i32, token: i32,
+    other_unit: i32, other_token: i32) -> bool {
+    let source: [i32] = catalog.sources;
+    let tokens: [verified::token::TokenRow] = catalog.tokens.data;
+    let context_table: lowering::unit_context::Table = catalog.contexts;
+    let contexts: [lowering::unit_context::UnitContext] =
+        context_table.data;
+    if (unit <= -1 || unit >= context_table.count
+        || other_unit <= -1 || other_unit >= context_table.count) {
+        return false;
+    }
+    let context: i32 = unit;
+    let other_context: i32 = other_unit;
+    let source_offset: i32 = contexts[context].source_offset;
+    let source_length: i32 = contexts[context].source_length;
+    let token_offset: i32 = contexts[context].token_offset;
+    let token_count: i32 = contexts[context].token_count;
+    let other_source_offset: i32 = contexts[other_context].source_offset;
+    let other_source_length: i32 = contexts[other_context].source_length;
+    let other_token_offset: i32 = contexts[other_context].token_offset;
+    let other_count: i32 = contexts[other_context].token_count;
+    if (token <= -1 || token >= token_count || other_token <= -1
+        || other_token >= other_count) { return false; }
+    let left: i32 = token_offset + token;
+    let right: i32 = other_token_offset + other_token;
+    if (!verified::token::kind_is(tokens[left].kind,
+            verified::token::Identifier)
+        || !verified::token::kind_is(tokens[right].kind,
+            verified::token::Identifier)) {
+        return false;
+    }
+    let left_start: i32 = tokens[left].start;
+    let left_finish: i32 = tokens[left].finish;
+    let right_start: i32 = tokens[right].start;
+    let right_finish: i32 = tokens[right].finish;
+    if (left_start <= -1 || left_finish <= left_start
+        || right_start <= -1 || right_finish <= right_start
+        || left_finish - left_start != right_finish - right_start) {
+        return false;
+    }
+    let count: i32 = left_finish - left_start;
+    if (left_finish > source_length || right_finish > other_source_length) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index != count) {
+        if (source[source_offset + left_start + index]
+            != source[other_source_offset + right_start + index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}

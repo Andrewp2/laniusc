@@ -3,15 +3,20 @@ module verified::decimal;
 import verified::token;
 import verified::digits;
 import verified::token_scan;
+import verified::ascii;
+
+const DECIMAL_RADIX: i32 = 10;
 
 pub type Scan = verified::token_scan::TokenScan;
 
 pub fn integer_scan(end_offset: i32) -> Scan {
-    return verified::token_scan::successful(verified::token::INTEGER, end_offset);
+    return verified::token_scan::successful(
+        verified::token::Integer, end_offset);
 }
 
 pub fn float_scan(end_offset: i32) -> Scan {
-    return verified::token_scan::successful(verified::token::FLOAT, end_offset);
+    return verified::token_scan::successful(
+        verified::token::FloatLiteral, end_offset);
 }
 
 pub fn number_failure(error_offset: i32) -> Scan {
@@ -26,12 +31,13 @@ pub fn scan_exponent(
     let digits_start: i32 = exponent_start + 1;
     if (digits_start <= source_length - 1) {
         let sign: i32 = source[digits_start];
-        if (sign == 43 || sign == 45) {
+        if (sign == verified::ascii::PLUS || sign == verified::ascii::MINUS) {
             digits_start += 1;
         }
     }
 
-    let digits = verified::digits::scan_digit_run(source, source_length, digits_start, 10);
+    let digits = verified::digits::scan_digit_run(
+        source, source_length, digits_start, DECIMAL_RADIX);
     if (!verified::digits::digit_scan_succeeded(digits)) {
         return number_failure(verified::digits::digit_scan_error_offset(digits));
     }
@@ -48,38 +54,42 @@ pub fn finish_decimal(
     }
 
     let next: i32 = source[integer_end];
-    if (next == 101 || next == 69) {
+    if (next == verified::ascii::LOWER_E
+        || next == verified::ascii::UPPER_E) {
         return scan_exponent(source, source_length, integer_end);
     }
-    if (next != 46) {
+    if (next != verified::ascii::DOT) {
         return integer_scan(integer_end);
     }
 
     if (integer_end + 1 <= source_length - 1) {
-        if (source[integer_end + 1] == 46) {
+        if (source[integer_end + 1] == verified::ascii::DOT) {
             return integer_scan(integer_end);
         }
     }
 
     let fraction_start: i32 = integer_end + 1;
     if (fraction_start <= source_length - 1) {
-        if (verified::digits::is_digit_for_base(source[fraction_start], 10)) {
+        if (verified::digits::is_digit_for_base(
+                source[fraction_start], DECIMAL_RADIX)) {
             let fraction = verified::digits::scan_digit_run(
-                source, source_length, fraction_start, 10);
+                source, source_length, fraction_start, DECIMAL_RADIX);
             if (!verified::digits::digit_scan_succeeded(fraction)) {
                 return number_failure(verified::digits::digit_scan_error_offset(fraction));
             }
             let fraction_end: i32 = verified::digits::digit_scan_end_offset(fraction);
             if (fraction_end <= source_length - 1) {
                 let exponent: i32 = source[fraction_end];
-                if (exponent == 101 || exponent == 69) {
+                if (exponent == verified::ascii::LOWER_E
+                    || exponent == verified::ascii::UPPER_E) {
                     return scan_exponent(source, source_length, fraction_end);
                 }
             }
             return float_scan(fraction_end);
         }
         let exponent: i32 = source[fraction_start];
-        if (exponent == 101 || exponent == 69) {
+        if (exponent == verified::ascii::LOWER_E
+            || exponent == verified::ascii::UPPER_E) {
             return scan_exponent(source, source_length, fraction_start);
         }
     }

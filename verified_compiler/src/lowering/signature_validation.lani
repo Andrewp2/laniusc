@@ -1,0 +1,220 @@
+module lowering::signature_validation;
+
+import backend::syntax;
+import lowering::allocation;
+import lowering::declarations;
+import lowering::signature_index;
+import lowering::signatures;
+import lowering::unit_descriptor;
+import verified::host;
+
+// Validate native signature rows against the allocator's ownership and each
+// owner's local token namespace. Every populated entry must match exactly
+// one allocation row.
+pub struct Input {
+    index: lowering::signature_index::Table,
+    allocations: lowering::allocation::Table,
+    descriptors: lowering::unit_descriptor::Table,
+    nominal_types: i32,
+}
+
+pub fn supported_type(tag: i32, nominal_types: i32) -> bool {
+    if (tag >= backend::syntax::type_code(backend::syntax::TypeI32)
+        && tag <= backend::syntax::type_code(backend::syntax::TypeSlice)) {
+        return true;
+    }
+    return tag >= backend::syntax::NOMINAL_TYPE_BASE
+        && tag <= backend::syntax::NOMINAL_TYPE_BASE + nominal_types - 1;
+}
+
+fn members_valid(index: lowering::signature_index::Table, id: i32,
+    arity: i32, token_count: i32, nominal_types: i32,
+    unique_names: bool) -> bool {
+    let member: i32 = 0;
+    while (member != arity) {
+        let value: lowering::signatures::SignatureMember =
+            lowering::signature_index::member_at(index, id, member);
+        if (value.name <= -1 || value.name >= token_count
+            || !supported_type(value.type_tag, nominal_types)) {
+            return false;
+        }
+        if (unique_names) {
+            let earlier: i32 = 0;
+            while (earlier != member) {
+                let prior: lowering::signatures::SignatureMember =
+                    lowering::signature_index::member_at(index, id, earlier);
+                if (prior.name == value.name) { return false; }
+                earlier += 1;
+            }
+        }
+        member += 1;
+    }
+    return true;
+}
+
+fn enumeration_valid(index: lowering::signature_index::Table, id: i32,
+    arity: i32, token_count: i32,
+    nominal_types: i32) -> bool {
+    let ordinal: i32 = 0;
+    while (ordinal != arity) {
+        let variant: lowering::signature_index::Variant =
+            lowering::signature_index::variant_at(index, id, ordinal);
+        if (variant.name <= -1 || variant.name >= token_count
+            || variant.field_count <= -1) {
+            return false;
+        }
+        let field: i32 = 0;
+        while (field != variant.field_count) {
+            if (!supported_type(lowering::signature_index::enum_field_type(
+                    index, id, ordinal, field), nominal_types)) {
+                return false;
+            }
+            field += 1;
+        }
+        ordinal += 1;
+    }
+    return true;
+}
+
+fn constant_valid(index: lowering::signature_index::Table, id: i32,
+    result_type: i32, nominal_types: i32) -> bool {
+    if (!supported_type(result_type, nominal_types)) { return false; }
+    let value: lowering::signature_index::ConstantValue =
+        lowering::signature_index::constant_at(index, id);
+    if (result_type == backend::syntax::type_code(
+            backend::syntax::TypeString)) {
+        if (value.encoding != lowering::signature_index::StringConstant
+            || value.byte_count <= -1) {
+            return false;
+        }
+        let byte: i32 = 0;
+        while (byte != value.byte_count) {
+            let encoded: i32 = lowering::signature_index::constant_byte(
+                index, id, byte);
+            if (encoded <= -1 || encoded > verified::host::BYTE_MASK) {
+                return false;
+            }
+            byte += 1;
+        }
+        return true;
+    }
+    if (value.encoding != lowering::signature_index::ScalarConstant) {
+        return false;
+    }
+    if (result_type == backend::syntax::type_code(
+            backend::syntax::TypeBool)) {
+        return (value.low == 0 || value.low == 1) && value.high == 0;
+    }
+    if (result_type == backend::syntax::type_code(
+            backend::syntax::TypePointer)) {
+        return value.low == 0 && value.high == 0;
+    }
+    if (result_type == backend::syntax::type_code(
+            backend::syntax::TypeI32)) { return value.high == 0; }
+    return result_type == backend::syntax::type_code(
+        backend::syntax::TypeUsize);
+}
+
+fn row_valid(index: lowering::signature_index::Table,
+    allocation: lowering::allocation::AllocationRow, token_count: i32,
+    nominal_types: i32) -> bool {
+    let id: i32 = lowering::allocation::row_core_id(allocation);
+    let kind: lowering::declarations::DeclarationKind =
+        lowering::allocation::row_kind(allocation);
+    let shape: lowering::signatures::SignatureShape =
+        lowering::signatures::InvalidShape;
+    if (lowering::declarations::same_kind(kind,
+            lowering::declarations::Structure)) {
+        shape = lowering::signatures::StructureShape;
+    }
+    if (lowering::declarations::same_kind(kind,
+            lowering::declarations::Enumeration)) {
+        shape = lowering::signatures::EnumerationShape;
+    }
+    if (lowering::declarations::same_kind(kind,
+            lowering::declarations::Constant)) {
+        shape = lowering::signatures::ConstantShape;
+    }
+    if (lowering::declarations::same_kind(kind,
+            lowering::declarations::Function)) {
+        shape = lowering::signatures::InternalFunctionShape;
+    }
+    if (lowering::declarations::same_kind(kind,
+            lowering::declarations::External)) {
+        shape = lowering::signatures::ExternalFunctionShape;
+    }
+    if (shape == lowering::signatures::InvalidShape) { return id == -1; }
+    if (id <= -1 || id != lowering::allocation::row_declaration_id(
+            allocation)
+        || !lowering::signature_index::has_shape(index, id, shape)) {
+        return false;
+    }
+    let record: lowering::signatures::SignatureRecord =
+        lowering::signature_index::record_at(index, id);
+    let arity: i32 = lowering::signatures::record_arity(record);
+    let result_type: i32 = lowering::signatures::record_result_type(record);
+    if (!lowering::declarations::same_kind(
+            lowering::signatures::record_declaration_kind(record), kind)
+        || arity <= -1) { return false; }
+    if (shape == lowering::signatures::StructureShape) {
+        return result_type == -1
+            && members_valid(index, id, arity, token_count,
+                nominal_types, false);
+    }
+    if (shape == lowering::signatures::EnumerationShape) {
+        return result_type == -1
+            && enumeration_valid(index, id, arity,
+                token_count, nominal_types);
+    }
+    if (shape == lowering::signatures::ConstantShape) {
+        return arity == 0 && result_type > 0
+            && constant_valid(index, id, result_type,
+                nominal_types);
+    }
+    return result_type > 0
+        && supported_type(result_type, nominal_types)
+        && members_valid(index, id, arity, token_count,
+            nominal_types, true);
+}
+
+pub fn valid(input: Input) -> bool {
+    let allocated: lowering::allocation::Table = input.allocations;
+    let descriptors: [lowering::unit_descriptor::UnitDescriptor] =
+        input.descriptors.data;
+    let index: lowering::signature_index::Table = input.index;
+    if (!lowering::allocation::table_has_exact_rows(allocated)) {
+        return false;
+    }
+    let header: lowering::allocation::AllocationHeader =
+        lowering::allocation::table_header(allocated);
+    let rows: i32 = header.rows;
+    if (rows <= 0 || rows > (verified::host::I32_MAX
+            - lowering::allocation::HEADER) / lowering::allocation::ROW
+        || input.descriptors.count != header.units
+        || index.count != header.declarations) { return false; }
+    let expected: i32 = 0;
+    let row: i32 = 0;
+    while (row != rows) {
+        let allocation: lowering::allocation::AllocationRow =
+            lowering::allocation::table_row(allocated, row);
+        let unit: i32 = lowering::allocation::row_unit(allocation);
+        if (unit <= -1 || unit >= input.descriptors.count
+            || !row_valid(index, allocation,
+                descriptors[unit].token_count, input.nominal_types)) {
+            return false;
+        }
+        if (lowering::allocation::row_core_id(allocation) >= 0) {
+            expected += 1;
+        }
+        row += 1;
+    }
+    let populated: i32 = 0;
+    let id: i32 = 0;
+    while (id != index.count) {
+        if (lowering::signature_index::contains(index, id)) {
+            populated += 1;
+        }
+        id += 1;
+    }
+    return populated == expected;
+}

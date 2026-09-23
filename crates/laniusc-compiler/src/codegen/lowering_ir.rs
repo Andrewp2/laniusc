@@ -507,6 +507,7 @@ pub struct SemanticLirAggregateElement {
     pub value_metadata: u32,
     pub word_offset: u32,
     pub word_count: u32,
+    pub slice_array_length: u32,
 }
 
 /// A decoded string literal retained independently of compact HIR. The byte
@@ -611,6 +612,7 @@ pub(crate) const LOWERING_DIAGNOSTIC_X86_NOMINAL_RESULT_LAYOUT: u32 = 41;
 pub(crate) const LOWERING_DIAGNOSTIC_X86_LEGACY_RESULT_LAYOUT: u32 = 42;
 pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_TOKEN: u32 = 1;
 pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_HIR: u32 = 2;
+pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE: u32 = 3;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ShaderType)]
@@ -2141,6 +2143,61 @@ fn build_lowering_compiler_graph(
                 "semantic_struct_field_start_by_hir",
                 semantic_struct_field_start_by_hir,
             ),
+            PassAccess::write(
+                "semantic_struct_word_count_by_hir",
+                semantic_struct_word_count_by_hir,
+            ),
+        ],
+    })?;
+    graph.add_pass(PassDesc {
+        name: "lir.semantic.functions.layout.enum_variants",
+        phase: CompilerPhase::SemanticLowering,
+        dispatch_domain: ResourceDomain::Declarations,
+        accesses: vec![
+            PassAccess::read("compact_hir_count", hir_count),
+            PassAccess::read("compact_hir_core", hir_core),
+            PassAccess::read("compact_variant_count", hir_variant_count),
+            PassAccess::read("compact_variants", hir_variants),
+            PassAccess::read(
+                "compact_variant_payload_row_count",
+                hir_variant_payload_row_count,
+            ),
+            PassAccess::read("compact_variant_payload_start", hir_variant_payload_start),
+            PassAccess::read("compact_variant_payload_count", hir_variant_payload_count),
+            PassAccess::read("compact_variant_payloads", hir_variant_payloads),
+            PassAccess::read("semantic_expr_ref_tag", semantic_expr_ref_tags),
+            PassAccess::read("semantic_expr_ref_payload", semantic_expr_ref_payloads),
+            PassAccess::read_write(
+                "semantic_struct_word_count_by_hir",
+                semantic_struct_word_count_by_hir,
+            ),
+        ],
+    })?;
+    graph.add_pass(PassDesc {
+        name: "lir.semantic.functions.layout.enum_fields",
+        phase: CompilerPhase::SemanticLowering,
+        dispatch_domain: ResourceDomain::Declarations,
+        accesses: vec![
+            PassAccess::read("compact_hir_core", hir_core),
+            PassAccess::read("compact_hir_payload", hir_payload),
+            PassAccess::read("compact_field_count", hir_field_count),
+            PassAccess::read("compact_fields", hir_fields),
+            PassAccess::read(
+                "semantic_aggregate_decl_token",
+                semantic_aggregate_decl_tokens,
+            ),
+            PassAccess::read(
+                "semantic_aggregate_hir_by_name_token",
+                semantic_aggregate_hir_by_name_token,
+            ),
+            PassAccess::read(
+                "semantic_struct_word_count_by_hir",
+                semantic_struct_word_count_by_hir,
+            ),
+            PassAccess::write(
+                "semantic_struct_field_word_count_by_row",
+                semantic_struct_field_word_count_by_row,
+            ),
         ],
     })?;
     graph.add_pass(PassDesc {
@@ -2170,7 +2227,7 @@ fn build_lowering_compiler_graph(
                 "semantic_struct_field_count_by_hir",
                 semantic_struct_field_count_by_hir,
             ),
-            PassAccess::write(
+            PassAccess::read_write(
                 "semantic_struct_word_count_by_hir",
                 semantic_struct_word_count_by_hir,
             ),
@@ -2178,7 +2235,7 @@ fn build_lowering_compiler_graph(
                 "semantic_struct_field_word_offset_by_row",
                 semantic_struct_field_word_offset_by_row,
             ),
-            PassAccess::write(
+            PassAccess::read_write(
                 "semantic_struct_field_word_count_by_row",
                 semantic_struct_field_word_count_by_row,
             ),
@@ -2673,6 +2730,7 @@ fn build_lowering_compiler_graph(
         accesses: vec![
             PassAccess::read("compact_hir_count", hir_count),
             PassAccess::read("compact_hir_core", hir_core),
+            PassAccess::read("compact_hir_payload", hir_payload),
             PassAccess::read("compact_field_count", hir_field_count),
             PassAccess::read("compact_fields", hir_fields),
             PassAccess::read(
@@ -8455,7 +8513,7 @@ fn build_lowering_compiler_graph(
             ],
         })?;
         graph.add_pass(PassDesc {
-            name: "lir.x86.packed.emit",
+            name: "lir.x86.specialized.emit",
             phase: CompilerPhase::Artifact,
             dispatch_domain: target_domain,
             accesses: vec![
@@ -10816,7 +10874,7 @@ mod tests {
             ),
             ("lir.x86.artifact.layout", "codegen/lir/x86/artifact_layout"),
             ("lir.x86.artifact.clear", "codegen/lir/x86/artifact_clear"),
-            ("lir.x86.packed.emit", "codegen/lir/x86/packed_emit"),
+            ("lir.x86.specialized.emit", "codegen/lir/x86/specialized_emit"),
             ("lir.x86.emit", "codegen/lir/x86/emit"),
             ("lir.x86.runtime.emit", "codegen/lir/x86/runtime_emit"),
             (

@@ -1,0 +1,70 @@
+module verified::utf8;
+
+const BYTE_LIMIT: i32 = 256;
+const ASCII_MAX: i32 = 127;
+const CONTINUATION_MIN: i32 = 128;
+const CONTINUATION_MAX: i32 = 191;
+const TWO_BYTE_MIN: i32 = 194;
+const TWO_BYTE_MAX: i32 = 223;
+const THREE_BYTE_MIN: i32 = 224;
+const THREE_BYTE_MAX: i32 = 239;
+const FOUR_BYTE_MIN: i32 = 240;
+const FOUR_BYTE_MAX: i32 = 244;
+const THREE_BYTE_OVERLONG_LEAD: i32 = 224;
+const THREE_BYTE_OVERLONG_SECOND_MIN: i32 = 160;
+const SURROGATE_LEAD: i32 = 237;
+const SURROGATE_SECOND_MAX: i32 = 159;
+const FOUR_BYTE_OVERLONG_LEAD: i32 = 240;
+const FOUR_BYTE_OVERLONG_SECOND_MIN: i32 = 144;
+const MAX_CODE_POINT_LEAD: i32 = 244;
+const MAX_CODE_POINT_SECOND_MAX: i32 = 143;
+
+pub enum LeadWidth {
+    InvalidLead,
+    AsciiLead,
+    TwoByteLead,
+    ThreeByteLead,
+    FourByteLead,
+}
+
+pub fn width(lead: LeadWidth) -> i32 {
+    return match (lead) {
+        InvalidLead -> 0,
+        AsciiLead -> 1,
+        TwoByteLead -> 2,
+        ThreeByteLead -> 3,
+        FourByteLead -> 4,
+    };
+}
+
+pub fn classify(byte: i32) -> LeadWidth {
+    if (byte <= -1 || byte >= BYTE_LIMIT) { return InvalidLead; }
+    if (byte <= ASCII_MAX) { return AsciiLead; }
+    if (byte >= TWO_BYTE_MIN && byte <= TWO_BYTE_MAX) {
+        return TwoByteLead;
+    }
+    if (byte >= THREE_BYTE_MIN && byte <= THREE_BYTE_MAX) {
+        return ThreeByteLead;
+    }
+    if (byte >= FOUR_BYTE_MIN && byte <= FOUR_BYTE_MAX) {
+        return FourByteLead;
+    }
+    return InvalidLead;
+}
+
+pub fn continuation(byte: i32) -> bool {
+    return byte >= CONTINUATION_MIN && byte <= CONTINUATION_MAX;
+}
+
+pub fn second_byte_valid(first: i32, second: i32) -> bool {
+    if (!continuation(second)) { return false; }
+    if (first == THREE_BYTE_OVERLONG_LEAD
+        && second < THREE_BYTE_OVERLONG_SECOND_MIN) { return false; }
+    if (first == SURROGATE_LEAD
+        && second > SURROGATE_SECOND_MAX) { return false; }
+    if (first == FOUR_BYTE_OVERLONG_LEAD
+        && second < FOUR_BYTE_OVERLONG_SECOND_MIN) { return false; }
+    if (first == MAX_CODE_POINT_LEAD
+        && second > MAX_CODE_POINT_SECOND_MAX) { return false; }
+    return true;
+}

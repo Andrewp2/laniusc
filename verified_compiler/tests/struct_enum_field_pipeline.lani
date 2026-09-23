@@ -1,0 +1,33 @@
+module app::main;
+
+enum Kind { First, Second }
+
+struct Candidate { matches: i32, kind: Kind, value: i32 }
+
+fn replace(kind: Kind) -> Candidate {
+    let candidate: Candidate = Candidate {
+        matches: 1,
+        kind: First,
+        value: 7,
+    };
+    candidate.kind = kind;
+    return candidate;
+}
+
+fn main() -> i32 {
+    let initial: Candidate = Candidate {
+        matches: 1,
+        kind: Second,
+        value: 7,
+    };
+    let updated: Candidate = replace(Second);
+    let first: i32 = match (initial.kind) {
+        First -> 1,
+        Second -> initial.matches + initial.value,
+    };
+    let second: i32 = match (updated.kind) {
+        First -> 1,
+        Second -> updated.matches + updated.value,
+    };
+    return first + second - 16;
+}

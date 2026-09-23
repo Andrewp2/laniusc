@@ -1,0 +1,10 @@
+module app::main;
+
+const NUMBER: i32 = 42;
+const FLAG: bool = true;
+const MESSAGE: str = "Aé";
+const EMPTY: str = "";
+
+fn main() -> i32 {
+    return 0;
+}

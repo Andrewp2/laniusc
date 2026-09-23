@@ -1,8 +1,11 @@
 module app::main;
 
+import backend::syntax;
 import lowering::aliases;
 import lowering::types;
 import verified::host;
+import verified::surface_type;
+import verified::token;
 
 // Focused catalog contract: a source-authenticated scalar alias row resolves
 // by its token spelling, while a malformed scalar payload is rejected before
@@ -10,16 +13,28 @@ import verified::host;
 fn main() -> i32 {
     let source_memory: ptr = verified::host::alloc(32, 4);
     let token_memory: ptr = verified::host::alloc(64, 4);
-    let arena_memory: ptr = verified::host::alloc(128, 4);
-    let catalog_memory: ptr = verified::host::alloc(64, 4);
+    let arena_memory: ptr = verified::host::alloc(
+        verified::surface_type::allocation_bytes(3),
+        verified::surface_type::ALIGNMENT);
+    let catalog_memory: ptr = verified::host::alloc(64, 8);
+    let symbol_memory: ptr = verified::host::alloc(
+        lowering::aliases::SYMBOL_RECORD_BYTES,
+        lowering::aliases::SYMBOL_ALIGNMENT);
+    let module_memory: ptr = verified::host::alloc_i32(1);
     let scratch_memory: ptr = verified::host::alloc(16, 4);
     let output_memory: ptr = verified::host::alloc(64, 4);
     if (source_memory == 0 || token_memory == 0 || arena_memory == 0
-        || catalog_memory == 0 || scratch_memory == 0 || output_memory == 0) { return 1; }
+        || catalog_memory == 0 || symbol_memory == 0 || module_memory == 0
+        || scratch_memory == 0 || output_memory == 0) { return 1; }
     let source: [i32] = verified::host::i32_slice_from_raw_parts(source_memory, 8);
     let tokens: [i32] = verified::host::i32_slice_from_raw_parts(token_memory, 16);
-    let arena: [i32] = verified::host::i32_slice_from_raw_parts(arena_memory, 32);
-    let catalog: [i32] = verified::host::i32_slice_from_raw_parts(catalog_memory, 16);
+    let catalog_table: lowering::aliases::Table =
+        lowering::aliases::from_raw_parts(catalog_memory, 1);
+    let catalogs: [lowering::aliases::Catalog] = catalog_table.data;
+    let symbols: [lowering::aliases::AliasSymbol] = slice_from_raw_parts(
+        symbol_memory + lowering::aliases::SYMBOL_RECORD_BYTES - 8, 1);
+    let module_tokens: [i32] = verified::host::i32_slice_from_raw_parts(
+        module_memory, 1);
     let scratch: [i32] = verified::host::i32_slice_from_raw_parts(scratch_memory, 4);
     let output: [i32] = verified::host::i32_slice_from_raw_parts(output_memory, 16);
     source[0] = 65;
@@ -27,35 +42,96 @@ fn main() -> i32 {
     source[2] = 105;
     source[3] = 97;
     source[4] = 115;
-    tokens[0] = 1;
+    tokens[0] = verified::token::kind_code(verified::token::Identifier);
     tokens[1] = 0;
     tokens[2] = 5;
-    catalog[0] = lowering::aliases::MAGIC;
-    catalog[1] = 1;
-    catalog[2] = 8;
-    catalog[3] = 0;
-    catalog[4] = 1;
-    catalog[5] = lowering::aliases::SCALAR;
-    catalog[6] = 1;
-    catalog[7] = 0;
-    if (!lowering::aliases::valid(catalog, 8, tokens, 1)) { return 2; }
-    arena[0] = 3;
-    arena[1] = 0;
-    arena[3] = -1;
-    arena[5] = 0;
-    arena[8] = -1;
-    arena[9] = 1;
-    arena[11] = 0;
-    arena[13] = -1;
-    arena[17] = 2;
-    arena[19] = 1;
-    arena[21] = -1;
-    if (lowering::aliases::scalar(source, 5, tokens, 1, catalog, 8,
-        arena, 2, scratch, 1) != 1) { return 3; }
-    if (lowering::types::lower(source, 5, tokens, 1, arena, 32, 2,
-        scratch, 0, catalog, 8, scratch, 4, output, 16)
-        != lowering::types::I32) { return 5; }
-    catalog[6] = 7;
-    if (lowering::aliases::valid(catalog, 8, tokens, 1)) { return 4; }
+    let native_token_memory: ptr = verified::host::alloc(
+        verified::token::RECORD_BYTES, verified::token::ALIGNMENT);
+    if (native_token_memory == 0) { return 1; }
+    let token_rows: verified::token::TokenTable =
+        verified::token::from_raw_parts(native_token_memory, 1);
+    if (!verified::token::decode_packed(tokens, 3, 1, token_rows, 0)) {
+        return 1;
+    }
+    module_tokens[0] = 0;
+    symbols[0] = lowering::aliases::AliasSymbol {
+        name_token: 0,
+        target_kind: lowering::aliases::Scalar,
+        target_value: 1,
+    };
+    catalogs[0] = lowering::aliases::Catalog {
+        module_tokens: module_tokens,
+        module_segments: 1,
+        symbols: symbols,
+        symbol_count: 1,
+    };
+    let catalog: lowering::aliases::Catalog = catalogs[0];
+    if (!lowering::aliases::valid(catalog, token_rows)) { return 2; }
+    let typed_arena: verified::surface_type::TypeArena =
+        verified::surface_type::from_raw_parts(arena_memory, 3);
+    let arena_count: [verified::surface_type::CountCell] = typed_arena.count;
+    let nodes: [verified::surface_type::TypeNode] = typed_arena.data;
+    arena_count[0].value = 3;
+    nodes[0] = verified::surface_type::TypeNode {
+        kind: verified::surface_type::Segment,
+        first: -1, token: 0, next: -1 };
+    nodes[1] = verified::surface_type::TypeNode {
+        kind: verified::surface_type::Path,
+        first: 0, token: -1, next: -1 };
+    nodes[2] = verified::surface_type::TypeNode {
+        kind: verified::surface_type::PathType,
+        first: 1, token: -1, next: -1 };
+    let alias_input: lowering::aliases::AliasLookupInput =
+        lowering::aliases::AliasLookupInput {
+            source: lowering::aliases::region(source, 5),
+            tokens: token_rows,
+            catalog: catalog,
+            arena: typed_arena,
+            root: 2,
+        };
+    let alias_workspace: lowering::aliases::AliasLookupWorkspace =
+        lowering::aliases::AliasLookupWorkspace {
+            scratch: lowering::aliases::region(scratch, 1),
+        };
+    if (lowering::aliases::scalar(alias_input, alias_workspace) != 1) {
+        return 3;
+    }
+    let resolution_table: lowering::types::ResolutionTable =
+        lowering::types::from_raw_parts(scratch_memory, 0,
+            lowering::types::ArenaNode);
+    let source_region: lowering::types::WordRegion =
+        lowering::types::region(source, 5);
+    let token_table: verified::token::TokenTable = token_rows;
+    let type_input: lowering::types::TypeInput = lowering::types::TypeInput {
+        source: source_region,
+        tokens: token_table,
+        arena: typed_arena,
+        root: 2,
+        resolutions: resolution_table,
+        aliases: catalog,
+    };
+    let alias_scratch_region: lowering::types::WordRegion =
+        lowering::types::region(scratch, 4);
+    let type_output_region: lowering::types::WordRegion =
+        lowering::types::region(output, 16);
+    let type_workspace: lowering::types::TypeWorkspace =
+        lowering::types::TypeWorkspace {
+            alias_scratch: alias_scratch_region,
+            output: type_output_region,
+        };
+    if (lowering::types::lower(type_input, type_workspace)
+        != backend::syntax::type_code(backend::syntax::TypeI32)) { return 5; }
+    nodes[0].next = 0;
+    if (!lowering::aliases::failed_with(
+        lowering::aliases::scalar(alias_input, alias_workspace),
+        lowering::aliases::Invalid)) { return 6; }
+    nodes[0].next = -1;
+    arena_count[0].value = typed_arena.capacity + 1;
+    if (!lowering::aliases::failed_with(
+        lowering::aliases::scalar(alias_input, alias_workspace),
+        lowering::aliases::Invalid)) { return 7; }
+    arena_count[0].value = 3;
+    symbols[0].target_value = 7;
+    if (lowering::aliases::valid(catalog, token_rows)) { return 4; }
     return 0;
 }

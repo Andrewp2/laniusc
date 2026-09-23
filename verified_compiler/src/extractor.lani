@@ -1,330 +1,314 @@
 module app::main;
 import verified::extraction;
+import verified::parser;
 import verified::byte_io;
 import verified::semantic_tokens;
+import verified::token;
 import verified::compact_artifact_output;
 import verified::host;
 import verified::output;
 import verified::certificate_output_native;
 import verified::grammar;
-import lowering::program;
 import lowering::program_transport;
+import driver::arguments;
 import lowering::transport;
 import verified::core_output;
-import verified::certificate_output;
-import backend::frame;
-// Native syntax/Core handoff. Ordinary inputs remain the raw compact
-// hexadecimal artifact. `--core` preserves the existing v3 certificate route;
-// `--lean-core` emits the same canonical lowering transport as Lean data with
-// a checked witness through Lanius.X86.TransportDecode.
-// Nonzero exit means all partial output must be discarded. Buffers are
-// allocated once and reused sequentially across units.
-fn append_bundle_unit(bundle_pointer: ptr, unit_count: i32, unit: i32,
-    source_pointer: ptr, source_length: i32, canonical_pointer: ptr,
-    token_count: i32, records_pointer: ptr, offsets_pointer: ptr,
-    node_count: i32, raw_count: i32, path_length: i32) -> i32 {
-    if (unit_count <= 0 || unit < 0 || unit >= unit_count
-        || source_length < 0 || token_count < 0 || node_count <= 0
-        || raw_count < 0 || path_length < 0) { return -1; }
-    let bundle:[i32] = verified::host::i32_slice_from_raw_parts(
-        bundle_pointer, lowering::program_transport::bundle_words(unit_count));
-    let source:[i32] = verified::host::i32_slice_from_raw_parts(source_pointer, 65536);
-    let canonical:[i32] = verified::host::i32_slice_from_raw_parts(canonical_pointer, 65536);
-    let records:[i32] = verified::host::i32_slice_from_raw_parts(records_pointer, 1048576);
-    let offsets:[i32] = verified::host::i32_slice_from_raw_parts(
-        offsets_pointer, lowering::program_transport::BUNDLE_OFFSETS_CAP);
-    let source_base: i32 = lowering::program_transport::bundle_sources_offset(unit_count)
-        + unit * lowering::program_transport::BUNDLE_SOURCE_CAP;
-    let token_base: i32 = lowering::program_transport::bundle_tokens_offset(unit_count)
-        + unit * lowering::program_transport::BUNDLE_TOKEN_CAP;
-    let record_base: i32 = lowering::program_transport::bundle_records_offset(unit_count)
-        + unit * lowering::program_transport::BUNDLE_RECORD_CAP;
-    let offsets_base: i32 = lowering::program_transport::bundle_offsets_offset(unit_count)
-        + unit * lowering::program_transport::BUNDLE_OFFSETS_CAP;
-    let copy: i32 = 0;
-    while (copy != source_length) {
-        bundle[source_base + copy] = source[copy];
-        copy += 1;
+
+const PATH_BYTE_CAPACITY: i32 = 1024;
+const PACKED_PATH_WORD_CAPACITY: i32 =
+    PATH_BYTE_CAPACITY / verified::host::I32_BYTES;
+const CORE_OPTION_LENGTH: i32 = 6;
+const LEAN_CORE_OPTION_LENGTH: i32 = 11;
+const MODE_SCRATCH_WORDS: i32 = 3;
+const TRANSPORT_WORD_CAPACITY: i32 = 262144;
+const OUTPUT_BYTE_CAPACITY: i32 = 67108864;
+
+enum ExtractorMode {
+    CompactMode,
+    CoreMode,
+    LeanCoreMode,
+}
+
+enum ExtractorExit {
+    Success,
+    InvalidArguments,
+    PathTooLong,
+    AllocationFailed,
+    ArgumentReadFailed,
+    OpenFailed,
+    ReadFailed,
+    SemanticFailed,
+    CompactOutputFailed,
+    OutputWriteFailed,
+    GrammarLoadFailed,
+    CompactHeaderFailed,
+    ExtractionFailed,
+    BundleFailed,
+    LoweringFailed,
+    LeanCoreOutputFailed,
+    CertificateHeaderFailed,
+    CertificateTransportFailed,
+    CertificateImageFailed,
+    CertificateFunctionsFailed,
+}
+
+fn exit_code(status: ExtractorExit) -> i32 {
+    return match (status) {
+        Success -> 0,
+        InvalidArguments -> 1,
+        PathTooLong -> 2,
+        AllocationFailed -> 3,
+        ArgumentReadFailed -> 4,
+        OpenFailed -> 5,
+        ReadFailed -> 6,
+        SemanticFailed -> 20,
+        CompactOutputFailed -> 21,
+        OutputWriteFailed -> 22,
+        GrammarLoadFailed -> 23,
+        CompactHeaderFailed -> 23,
+        ExtractionFailed -> 28,
+        BundleFailed -> 30,
+        LoweringFailed -> 30,
+        LeanCoreOutputFailed -> 30,
+        CertificateHeaderFailed -> 30,
+        CertificateTransportFailed -> 30,
+        CertificateImageFailed -> 30,
+        CertificateFunctionsFailed -> 30,
+    };
+}
+
+fn emits_core(mode: ExtractorMode) -> bool {
+    return match (mode) {
+        CompactMode -> false,
+        CoreMode -> true,
+        LeanCoreMode -> true,
+    };
+}
+
+fn emits_lean_core(mode: ExtractorMode) -> bool {
+    return match (mode) {
+        CompactMode -> false,
+        CoreMode -> false,
+        LeanCoreMode -> true,
+    };
+}
+
+fn emits_compact_core(mode: ExtractorMode) -> bool {
+    return match (mode) {
+        CompactMode -> false,
+        CoreMode -> true,
+        LeanCoreMode -> false,
+    };
+}
+
+fn selected_mode(scratch: [i32]) -> ExtractorMode {
+    let option_length: i32 = driver::arguments::length(1);
+    if (option_length == CORE_OPTION_LENGTH
+        && driver::arguments::matches(
+            1, scratch, "--core", CORE_OPTION_LENGTH)) {
+        return CoreMode;
     }
-    copy = 0;
-    while (copy != token_count * 3) {
-        bundle[token_base + copy] = canonical[copy];
-        copy += 1;
+    if (option_length == LEAN_CORE_OPTION_LENGTH
+        && driver::arguments::matches(
+            1, scratch, "--lean-core", LEAN_CORE_OPTION_LENGTH)) {
+        return LeanCoreMode;
     }
-    copy = 0;
-    while (copy != 1048576) {
-        bundle[record_base + copy] = records[copy];
-        copy += 1;
-    }
-    copy = 0;
-    while (copy != node_count) {
-        bundle[offsets_base + copy] = offsets[copy];
-        copy += 1;
-    }
-    let metadata_base: i32 = lowering::program_transport::bundle_metadata_offset(unit_count)
-        + unit * lowering::program_transport::BUNDLE_METADATA_WORDS;
-    bundle[metadata_base] = source_length;
-    bundle[metadata_base + 1] = token_count;
-    bundle[metadata_base + 2] = node_count;
-    bundle[metadata_base + 3] = raw_count;
-    bundle[metadata_base + 4] = path_length;
-    return 0;
+    return CompactMode;
 }
 
 fn main() -> i32 {
-    let argument_count: i32 = verified::host::argc();
+    let argument_count: i32 = driver::arguments::count();
     if (argument_count <= 1) {
-        return 1;
+        return exit_code(InvalidArguments);
     }
     // `--core` retains its one-unit v3 certificate contract. `--lean-core`
     // accepts the extractor's complete source closure and lowers it through
     // the same aggregate bundle used by compiler.lani. Ordinary mode remains
     // compact-only.
-    let core_mode: i32 = 0;
-    let lean_core_mode: i32 = 0;
-    let first_argument: i32 = 1;
-    if (verified::host::arg_len(1) == 6 || verified::host::arg_len(1) == 11) {
-        let mode_memory: ptr = verified::host::alloc(24, 4);
-        if (mode_memory == 0) { return 3; }
-        let mode:[i32] = verified::host::i32_slice_from_raw_parts(mode_memory, 6);
-        let mode_pointer: ptr = verified::host::i32_slice_data_ptr(mode);
-        let mode_length: i32 = verified::host::arg_len(1);
-        if (verified::host::arg_read(1, mode_pointer, mode_length) != mode_length) { return 4; }
-        if (mode_length == 6 && mode[0] == 1868770605 && mode[1] == 25970) {
-            core_mode = 1;
-            first_argument = 2;
-        }
-        if (mode_length == 11 && mode[0] == 1701588269
-            && mode[1] == 1663921761 && mode[2] == 6648431) {
-            lean_core_mode = 1;
-            first_argument = 2;
-        }
-    }
-    if (core_mode == 1 && argument_count != 3) {
-        return 1;
+    let mode_memory: ptr = verified::host::alloc_i32(MODE_SCRATCH_WORDS);
+    if (mode_memory == 0) { return exit_code(AllocationFailed); }
+    let mode_scratch: [i32] = verified::host::i32_slice_from_raw_parts(
+        mode_memory, MODE_SCRATCH_WORDS);
+    let mode: ExtractorMode = selected_mode(mode_scratch);
+    let first_argument: i32 = match (mode) {
+        CompactMode -> 1,
+        CoreMode -> 2,
+        LeanCoreMode -> 2,
+    };
+    if (emits_compact_core(mode) && argument_count != 3) {
+        return exit_code(InvalidArguments);
     }
     let unit_count: i32 = argument_count - first_argument;
-    if (lean_core_mode == 1 && (unit_count <= 0
+    if (emits_core(mode) && (unit_count <= 0
         || unit_count > lowering::program_transport::BUNDLE_UNIT_LIMIT)) {
-        return 1;
+        return exit_code(InvalidArguments);
     }
     let packed_path:[i32];
     {
-        let allocation: ptr = verified::host::alloc(1024, 4);
-        if (allocation == 0) { return 3; }
-        packed_path = verified::host::i32_slice_from_raw_parts(allocation, 256);
+        let allocation: ptr = verified::host::alloc_i32(
+            PACKED_PATH_WORD_CAPACITY);
+        if (allocation == 0) { return exit_code(AllocationFailed); }
+        packed_path = verified::host::i32_slice_from_raw_parts(
+            allocation, PACKED_PATH_WORD_CAPACITY);
     }
     let path:[i32];
     {
-        let allocation: ptr = verified::host::alloc(4096, 4);
-        if (allocation == 0) { return 3; }
-        path = verified::host::i32_slice_from_raw_parts(allocation, 1024);
+        let allocation: ptr = verified::host::alloc_i32(PATH_BYTE_CAPACITY);
+        if (allocation == 0) { return exit_code(AllocationFailed); }
+        path = verified::host::i32_slice_from_raw_parts(
+            allocation, PATH_BYTE_CAPACITY);
     }
     let source:[i32];
     {
-        let allocation: ptr = verified::host::alloc(262144, 4);
-        if (allocation == 0) { return 3; }
-        source = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+        let allocation: ptr = verified::host::alloc_i32(
+            verified::extraction::SOURCE_BYTE_CAPACITY);
+        if (allocation == 0) { return exit_code(AllocationFailed); }
+        source = verified::host::i32_slice_from_raw_parts(allocation,
+            verified::extraction::SOURCE_BYTE_CAPACITY);
     }
     let grammar:[i32];
     {
-        let allocation: ptr = verified::host::alloc(8716, 4);
-        if (allocation == 0) { return 3; }
-        grammar = verified::host::i32_slice_from_raw_parts(allocation, 2179);
+        let allocation: ptr = verified::host::alloc_i32(
+            verified::grammar::WORDS);
+        if (allocation == 0) { return exit_code(AllocationFailed); }
+        grammar = verified::host::i32_slice_from_raw_parts(
+            allocation, verified::grammar::WORDS);
     }
     let raw:[i32];
     {
-        let allocation: ptr = verified::host::alloc(262144, 4);
-        if (allocation == 0) { return 3; }
-        raw = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+        let allocation: ptr = verified::host::alloc_i32(
+            verified::token::TOKEN_WORD_CAPACITY);
+        if (allocation == 0) { return exit_code(AllocationFailed); }
+        raw = verified::host::i32_slice_from_raw_parts(allocation,
+            verified::token::TOKEN_WORD_CAPACITY);
     }
     let canonical:[i32];
     {
-        let allocation: ptr = verified::host::alloc(262144, 4);
-        if (allocation == 0) { return 3; }
-        canonical = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+        let allocation: ptr = verified::host::alloc_i32(
+            verified::token::TOKEN_WORD_CAPACITY);
+        if (allocation == 0) { return exit_code(AllocationFailed); }
+        canonical = verified::host::i32_slice_from_raw_parts(allocation,
+            verified::token::TOKEN_WORD_CAPACITY);
     }
     let kinds:[i32];
     {
-        let allocation: ptr = verified::host::alloc(262144, 4);
-        if (allocation == 0) { return 3; }
-        kinds = verified::host::i32_slice_from_raw_parts(allocation, 65536);
+        let allocation: ptr = verified::host::alloc_i32(
+            verified::extraction::TOKEN_KIND_CAPACITY);
+        if (allocation == 0) { return exit_code(AllocationFailed); }
+        kinds = verified::host::i32_slice_from_raw_parts(allocation,
+            verified::extraction::TOKEN_KIND_CAPACITY);
     }
     let workspace:[i32];
     {
-        let allocation: ptr = verified::host::alloc(67108864, 4);
-        if (allocation == 0) { return 3; }
-        workspace = verified::host::i32_slice_from_raw_parts(allocation, 16777216);
+        let allocation: ptr = verified::host::alloc_i32(
+            verified::extraction::PARSER_WORK_WORD_CAPACITY);
+        if (allocation == 0) { return exit_code(AllocationFailed); }
+        workspace = verified::host::i32_slice_from_raw_parts(allocation,
+            verified::extraction::PARSER_WORK_WORD_CAPACITY);
     }
     let records:[i32];
     {
-        let allocation: ptr = verified::host::alloc(4194304, 4);
-        if (allocation == 0) { return 3; }
-        records = verified::host::i32_slice_from_raw_parts(allocation, 1048576);
+        let allocation: ptr = verified::host::alloc_i32(
+            verified::extraction::PARSE_RECORD_WORD_CAPACITY);
+        if (allocation == 0) { return exit_code(AllocationFailed); }
+        records = verified::host::i32_slice_from_raw_parts(allocation,
+            verified::extraction::PARSE_RECORD_WORD_CAPACITY);
     }
     let offsets:[i32];
     {
-        let allocation: ptr = verified::host::alloc(524288, 4);
-        if (allocation == 0) { return 3; }
-        offsets = verified::host::i32_slice_from_raw_parts(allocation, 131072);
+        let allocation: ptr = verified::host::alloc_i32(
+            verified::extraction::PARSE_NODE_CAPACITY);
+        if (allocation == 0) { return exit_code(AllocationFailed); }
+        offsets = verified::host::i32_slice_from_raw_parts(allocation,
+            verified::extraction::PARSE_NODE_CAPACITY);
     }
-    let semantic:[i32];
-    {
-        let allocation: ptr = verified::host::alloc(524288, 4);
-        if (allocation == 0) { return 3; }
-        semantic = verified::host::i32_slice_from_raw_parts(allocation, 131072);
-    }
+    let semantic_memory: ptr = verified::host::alloc(
+        verified::semantic_tokens::allocation_bytes(
+            verified::extraction::TOKEN_KIND_CAPACITY),
+        verified::semantic_tokens::ALIGNMENT);
+    if (semantic_memory == 0) { return exit_code(AllocationFailed); }
     let output:[i32];
     {
-        let allocation: ptr = verified::host::alloc(268435456, 4);
-        if (allocation == 0) { return 3; }
-        output = verified::host::i32_slice_from_raw_parts(allocation, 67108864);
+        let allocation: ptr = verified::host::alloc_i32(OUTPUT_BYTE_CAPACITY);
+        if (allocation == 0) { return exit_code(AllocationFailed); }
+        output = verified::host::i32_slice_from_raw_parts(
+            allocation, OUTPUT_BYTE_CAPACITY);
     }
     let packed_io:[i32];
     {
-        let allocation: ptr = verified::host::alloc(65536, 4);
-        if (allocation == 0) { return 3; }
-        packed_io = verified::host::i32_slice_from_raw_parts(allocation, 16384);
-    }
-    // Core lowering workspaces are allocated once and reused. They are only
-    // touched in --core mode; ordinary extraction retains its syntax-only
-    // contract and therefore accepts source units without a supported main.
-    let type_arena:[i32];
-    {
-        let allocation: ptr = verified::host::alloc(1048576, 4);
-        if (allocation == 0) { return 3; }
-        type_arena = verified::host::i32_slice_from_raw_parts(allocation, 262144);
-    }
-    let type_output:[i32];
-    {
-        let allocation: ptr = verified::host::alloc(262144, 4);
-        if (allocation == 0) { return 3; }
-        type_output = verified::host::i32_slice_from_raw_parts(allocation, 65536);
-    }
-    let alias_catalog:[i32];
-    {
-        let allocation: ptr = verified::host::alloc(262144, 4);
-        if (allocation == 0) { return 3; }
-        alias_catalog = verified::host::i32_slice_from_raw_parts(allocation, 65536);
-    }
-    let alias_work:[i32];
-    {
-        let allocation: ptr = verified::host::alloc(262144, 4);
-        if (allocation == 0) { return 3; }
-        alias_work = verified::host::i32_slice_from_raw_parts(allocation, 65536);
-    }
-    let alias_stack:[i32];
-    {
-        let allocation: ptr = verified::host::alloc(262144, 4);
-        if (allocation == 0) { return 3; }
-        alias_stack = verified::host::i32_slice_from_raw_parts(allocation, 65536);
-    }
-    let alias_scratch:[i32];
-    {
-        let allocation: ptr = verified::host::alloc(262144, 4);
-        if (allocation == 0) { return 3; }
-        alias_scratch = verified::host::i32_slice_from_raw_parts(allocation, 65536);
-    }
-    let alias_result:[i32];
-    {
-        let allocation: ptr = verified::host::alloc(16, 4);
-        if (allocation == 0) { return 3; }
-        alias_result = verified::host::i32_slice_from_raw_parts(allocation, 4);
-    }
-    let declarations:[i32];
-    {
-        let allocation: ptr = verified::host::alloc(262144, 4);
-        if (allocation == 0) { return 3; }
-        declarations = verified::host::i32_slice_from_raw_parts(allocation, 65536);
-    }
-    let modules:[i32];
-    {
-        let allocation: ptr = verified::host::alloc(262144, 4);
-        if (allocation == 0) { return 3; }
-        modules = verified::host::i32_slice_from_raw_parts(allocation, 65536);
-    }
-    let allocated:[i32];
-    {
-        let allocation: ptr = verified::host::alloc(262144, 4);
-        if (allocation == 0) { return 3; }
-        allocated = verified::host::i32_slice_from_raw_parts(allocation, 65536);
-    }
-    let signatures:[i32];
-    {
-        let allocation: ptr = verified::host::alloc(1048576, 4);
-        if (allocation == 0) { return 3; }
-        signatures = verified::host::i32_slice_from_raw_parts(allocation, 262144);
-    }
-    let bodies:[i32];
-    {
-        let allocation: ptr = verified::host::alloc(4194304, 4);
-        if (allocation == 0) { return 3; }
-        bodies = verified::host::i32_slice_from_raw_parts(allocation, 1048576);
+        let allocation: ptr = verified::host::alloc_i32(
+            verified::byte_io::PACKED_IO_WORDS);
+        if (allocation == 0) { return exit_code(AllocationFailed); }
+        packed_io = verified::host::i32_slice_from_raw_parts(
+            allocation, verified::byte_io::PACKED_IO_WORDS);
     }
     let transport:[i32];
     {
-        let allocation: ptr = verified::host::alloc(1048576, 4);
-        if (allocation == 0) { return 3; }
-        transport = verified::host::i32_slice_from_raw_parts(allocation, 262144);
+        let allocation: ptr = verified::host::alloc_i32(
+            TRANSPORT_WORD_CAPACITY);
+        if (allocation == 0) { return exit_code(AllocationFailed); }
+        transport = verified::host::i32_slice_from_raw_parts(
+            allocation, TRANSPORT_WORD_CAPACITY);
     }
-    let syntax_result:[i32];
-    {
-        let allocation: ptr = verified::host::alloc(28, 4);
-        if (allocation == 0) { return 3; }
-        syntax_result = verified::host::i32_slice_from_raw_parts(allocation, 7);
-    }
-    let bundle:[i32];
-    let bundle_pointer: ptr = 0;
-    if (lean_core_mode == 1) {
+    let bundle: lowering::program_transport::Bundle =
+        lowering::program_transport::from_raw_parts(0, 0);
+    if (emits_core(mode)) {
         let bundle_word_count: i32 = lowering::program_transport::bundle_words(unit_count);
-        if (bundle_word_count <= 0) { return 3; }
-        let allocation: ptr = verified::host::alloc(bundle_word_count * 4, 4);
-        if (allocation == 0) { return 3; }
-        bundle = verified::host::i32_slice_from_raw_parts(allocation, bundle_word_count);
-        bundle_pointer = allocation;
-        bundle[0] = lowering::program_transport::BUNDLE_MAGIC;
-        bundle[1] = unit_count;
-        let bundle_header_word: i32 = 0;
-        while (bundle_header_word < lowering::program_transport::BUNDLE_HEADER - 2) {
-            bundle[2 + bundle_header_word] = 0;
-            bundle_header_word += 1;
-        }
+        if (bundle_word_count <= 0) { return exit_code(AllocationFailed); }
+        let allocation: ptr = verified::host::alloc(
+            bundle_word_count * verified::host::I32_BYTES,
+            lowering::program_transport::BUNDLE_ALIGNMENT);
+        if (allocation == 0) { return exit_code(AllocationFailed); }
+        bundle = lowering::program_transport::from_raw_parts(allocation,
+            unit_count);
     }
     let transport_length: i32 = 0;
     let packed_path_pointer: ptr = verified::host::i32_slice_data_ptr(packed_path);
     let packed_io_pointer: ptr = verified::host::i32_slice_data_ptr(packed_io);
     let workspace_pointer: ptr = verified::host::i32_slice_data_ptr(workspace);
-    if (verified::grammar::load(grammar, 2179) != 2179) {
-        return 23;
+    if (verified::grammar::load(grammar, verified::grammar::WORDS)
+        != verified::grammar::WORDS) {
+        return exit_code(GrammarLoadFailed);
     }
     let compact_position: i32 = 0;
-    if (core_mode == 1) { compact_position = 16; }
+    if (emits_compact_core(mode)) {
+        compact_position = verified::certificate_output_native::HEADER_BYTES;
+    }
     let output_length: i32 = 0;
-    if (lean_core_mode == 0) {
-        output_length = verified::compact_artifact_output::emit_header(argument_count - first_argument, output, 67108864, compact_position);
+    if (!emits_lean_core(mode)) {
+        output_length = verified::compact_artifact_output::emit_header(
+            argument_count - first_argument,
+            verified::output::cursor(
+                output, OUTPUT_BYTE_CAPACITY, compact_position));
         if (output_length <= -1) {
-            return 23;
+            return exit_code(CompactHeaderFailed);
         }
     }
     let argument: i32 = first_argument;
     while (argument != argument_count) {
-        let path_length: i32 = verified::host::arg_len(argument);
-        if (path_length <= 0 || path_length >= 1025) {
-            return 2;
+        let path_length: i32 = driver::arguments::length(argument);
+        if (path_length <= 0 || path_length > PATH_BYTE_CAPACITY) {
+            return exit_code(PathTooLong);
         }
-        if (verified::host::arg_read(argument, packed_path_pointer, path_length) != path_length) {
-            return 4;
+        if (driver::arguments::read(argument, packed_path_pointer, path_length)
+            != path_length) {
+            return exit_code(ArgumentReadFailed);
         }
         let index: i32 = 0;
         while (index != path_length) {
-            path[index] =(packed_path[index / 4] >>((index % 4) * 8))&255;
+            path[index] =
+                (packed_path[index / verified::host::I32_BYTES]
+                    >> ((index % verified::host::I32_BYTES)
+                        * verified::host::BITS_PER_BYTE))
+                & verified::host::BYTE_MASK;
             index += 1;
         }
         let handle: i32 = verified::host::open_read(packed_path_pointer, path_length);
         if (handle <= -1) {
-            return 5;
+            return exit_code(OpenFailed);
         }
-        let source_length: i32 = verified::byte_io::read_file(handle, source, 65536, packed_io);
+        let source_length: i32 = verified::byte_io::read_file(handle, source,
+            verified::extraction::SOURCE_BYTE_CAPACITY, packed_io);
         let closed: i32 = verified::host::close(handle);
         if (source_length <= -1 || closed <= -1) {
             verified::byte_io::write_stderr_natural(argument);
@@ -333,161 +317,159 @@ fn main() -> i32 {
             } else {
                 verified::byte_io::write_stderr_natural(0);
             }
-            return 6;
+            return exit_code(ReadFailed);
         }
-        let lex_metadata: i32 = verified::extraction::lex_syntax_raw(
-            verified::host::i32_slice_data_ptr(source), source_length,
-            verified::host::i32_slice_data_ptr(grammar),
-            verified::host::i32_slice_data_ptr(raw),
-            verified::host::i32_slice_data_ptr(canonical),
-            verified::host::i32_slice_data_ptr(kinds));
-        if (lex_metadata <= -1) { return 28; }
-        let raw_count: i32 = lex_metadata / 65536;
-        let tokens: i32 = lex_metadata % 65536;
-        let nodes: i32 = verified::extraction::parse_syntax_raw(
-            verified::host::i32_slice_data_ptr(grammar),
-            verified::host::i32_slice_data_ptr(kinds), tokens,
-            verified::host::i32_slice_data_ptr(workspace),
-            verified::host::i32_slice_data_ptr(records),
-            verified::host::i32_slice_data_ptr(offsets));
-        if (nodes <= -1) { return 28; }
-        // `lower_owned_raw` consumes the first three words as its bounded
-        // scalar metadata ABI: source length, token count, and node count.
-        // Preserve the remaining extraction facts after that prefix for the
-        // caller's diagnostics without feeding the wrong fields to lowering.
-        syntax_result[0] = source_length;
-        syntax_result[1] = tokens;
-        syntax_result[2] = nodes;
-        syntax_result[3] = raw_count;
-        syntax_result[4] = tokens;
-        syntax_result[5] = nodes;
-        syntax_result[6] = 0;
+        let syntax_input: verified::extraction::SyntaxInput =
+            verified::extraction::SyntaxInput {
+                source: verified::extraction::buffer(source, source_length),
+                grammar: verified::extraction::buffer(grammar,
+                    verified::grammar::WORDS),
+            };
+        let syntax_workspace: verified::extraction::SyntaxWorkspace =
+            verified::extraction::SyntaxWorkspace {
+                raw_tokens: verified::extraction::buffer(raw,
+                    verified::token::TOKEN_WORD_CAPACITY),
+                canonical_tokens: verified::extraction::buffer(canonical,
+                    verified::token::TOKEN_WORD_CAPACITY),
+                token_kinds: verified::extraction::buffer(kinds,
+                    verified::extraction::TOKEN_KIND_CAPACITY),
+                parser_workspace: verified::parser::storage(
+                    verified::host::i32_slice_data_ptr(workspace),
+                    verified::extraction::PARSER_WORK_WORD_CAPACITY),
+                parse_records: verified::extraction::buffer(records,
+                    verified::extraction::PARSE_RECORD_WORD_CAPACITY),
+                node_offsets: verified::extraction::buffer(offsets,
+                    verified::extraction::PARSE_NODE_CAPACITY),
+                depth_limit: verified::extraction::DEFAULT_PARSE_DEPTH_LIMIT,
+            };
+        let extracted: verified::extraction::SyntaxResult =
+            verified::extraction::extract_syntax(syntax_input,
+                syntax_workspace);
+        if (!verified::extraction::extraction_has_stage(extracted,
+                verified::extraction::Extracted)) {
+            return exit_code(ExtractionFailed);
+        }
+        let raw_count: i32 = verified::extraction::raw_count(extracted);
+        let tokens: i32 = verified::extraction::token_count(extracted);
+        let nodes: i32 = verified::extraction::node_count(extracted);
+        let record_words: i32 = verified::extraction::tree_words(extracted);
         if (verified::semantic_tokens::collect_raw(
             verified::host::i32_slice_data_ptr(grammar),
             verified::host::i32_slice_data_ptr(kinds), tokens, nodes,
             verified::host::i32_slice_data_ptr(records),
             verified::host::i32_slice_data_ptr(offsets),
-            verified::host::i32_slice_data_ptr(semantic)) != 0) {
-            return 20;
+            semantic_memory) != 0) {
+            return exit_code(SemanticFailed);
         }
-        if (core_mode == 1) {
-            let program_transport_words: i32 = lowering::program_transport::lower_owned_raw(
-                verified::host::i32_slice_data_ptr(source),
-                verified::host::i32_slice_data_ptr(canonical),
-                verified::host::i32_slice_data_ptr(records),
-                verified::host::i32_slice_data_ptr(offsets),
-                verified::host::i32_slice_data_ptr(syntax_result),
-                verified::host::i32_slice_data_ptr(transport));
-            if (program_transport_words <= lowering::transport::HEADER - 1) {
-                return 30;
-            }
-            // This is the exact canonical transport consumed by the existing
-            // v3 certificate checker. Reject an empty or malformed handoff;
-            // no guessed Core IDs or alternate serialization is accepted.
-            if (program_transport_words
-                    <= lowering::transport::HEADER - 1
-                || transport[0] != lowering::transport::VERSION
-                || transport[1] != lowering::transport::POINTER_BITS) {
-                return 30;
-            }
-            transport_length = program_transport_words;
-        }
-        if (lean_core_mode == 1) {
+        if (emits_core(mode)) {
             let unit: i32 = argument - first_argument;
-            let append_status: i32 = append_bundle_unit(bundle_pointer, unit_count, unit,
-                    verified::host::i32_slice_data_ptr(source), source_length,
-                    verified::host::i32_slice_data_ptr(canonical), tokens,
-                    verified::host::i32_slice_data_ptr(records),
-                    verified::host::i32_slice_data_ptr(offsets), nodes,
-                    raw_count, path_length);
-            if (append_status != 0) {
-                return 30;
+            let source_region: lowering::program_transport::WordRegion =
+                lowering::program_transport::region(source, source_length);
+            let canonical_tokens: lowering::program_transport::PackedTokenRows =
+                lowering::program_transport::PackedTokenRows {
+                    data: canonical,
+                    words: verified::token::TOKEN_WORD_CAPACITY,
+                    count: tokens,
+                };
+            let offset_region: lowering::program_transport::WordRegion =
+                lowering::program_transport::region(offsets, nodes);
+            let parsed_unit: lowering::program_transport::ParsedUnit =
+                lowering::program_transport::ParsedUnit {
+                    source: source_region,
+                    canonical_tokens: canonical_tokens,
+                    parse_records: records,
+                    node_offsets: offset_region,
+                    record_words: record_words,
+                    raw_token_count: raw_count,
+                    path_length: path_length,
+                };
+            if (!lowering::program_transport::append_parsed_unit(
+                bundle, unit, parsed_unit)) {
+                return exit_code(BundleFailed);
             }
         } else {
-            workspace[0] = path_length;
-            workspace[1] = source_length;
-            workspace[2] = raw_count;
-            workspace[3] = tokens;
-            workspace[4] = nodes;
-            let bundle_copy: i32 = 0;
-            while (bundle_copy != path_length) {
-                workspace[8 + bundle_copy] = path[bundle_copy];
-                bundle_copy += 1;
-            }
-            bundle_copy = 0;
-            while (bundle_copy != source_length) {
-                workspace[1032 + bundle_copy] = source[bundle_copy];
-                bundle_copy += 1;
-            }
-            bundle_copy = 0;
-            while (bundle_copy != raw_count * 3) {
-                workspace[66568 + bundle_copy] = raw[bundle_copy];
-                bundle_copy += 1;
-            }
-            bundle_copy = 0;
-            while (bundle_copy != tokens * 3) {
-                workspace[132104 + bundle_copy] = canonical[bundle_copy];
-                bundle_copy += 1;
-            }
-            bundle_copy = 0;
-            while (bundle_copy != tokens * 2) {
-                workspace[197640 + bundle_copy] = semantic[bundle_copy];
-                bundle_copy += 1;
-            }
-            bundle_copy = 0;
-            while (bundle_copy != 1048576) {
-                workspace[328712 + bundle_copy] = records[bundle_copy];
-                bundle_copy += 1;
-            }
-            bundle_copy = 0;
-            while (bundle_copy != nodes) {
-                workspace[1377288 + bundle_copy] = offsets[bundle_copy];
-                bundle_copy += 1;
-            }
-            output_length = verified::compact_artifact_output::emit_unit_extractor_raw(
-                verified::host::i32_slice_data_ptr(workspace),
-                verified::host::i32_slice_data_ptr(output), output_length);
+            let path_region: verified::compact_artifact_output::WordRegion =
+                verified::compact_artifact_output::WordRegion {
+                    data: path, length: path_length };
+            let source_region: verified::compact_artifact_output::WordRegion =
+                verified::compact_artifact_output::WordRegion {
+                    data: source, length: source_length };
+            let raw_tokens: verified::compact_artifact_output::TokenRows =
+                verified::compact_artifact_output::TokenRows {
+                    data: raw,
+                    length: verified::token::TOKEN_WORD_CAPACITY,
+                    count: raw_count };
+            let canonical_tokens: verified::compact_artifact_output::TokenRows =
+                verified::compact_artifact_output::TokenRows {
+                    data: canonical,
+                    length: verified::token::TOKEN_WORD_CAPACITY,
+                    count: tokens };
+            let semantic_region: verified::semantic_tokens::AssignmentBuffer =
+                verified::semantic_tokens::from_raw_parts(semantic_memory,
+                    verified::extraction::TOKEN_KIND_CAPACITY);
+            let parse_region: verified::compact_artifact_output::WordRegion =
+                verified::compact_artifact_output::WordRegion {
+                    data: records,
+                    length: record_words };
+            let artifact: verified::compact_artifact_output::ArtifactUnit =
+                verified::compact_artifact_output::ArtifactUnit {
+                    path: path_region,
+                    source: source_region,
+                    raw_tokens: raw_tokens,
+                    canonical_tokens: canonical_tokens,
+                    semantic_kinds: semantic_region,
+                    parse_records: parse_region,
+                    node_offsets: offsets,
+                    node_count: nodes,
+                };
+            output_length = verified::compact_artifact_output::emit_unit(
+                artifact, verified::output::cursor(
+                    output, OUTPUT_BYTE_CAPACITY, output_length));
             if (output_length <= -1) {
-                return 21;
+                return exit_code(CompactOutputFailed);
             }
         }
         argument += 1;
     }
-    if (lean_core_mode == 1) {
-        transport_length = lowering::program_transport::lower_units_raw(
-            bundle_pointer, unit_count,
+    if (emits_core(mode)) {
+        transport_length = lowering::program_transport::lower_units(
+            bundle,
             verified::host::i32_slice_data_ptr(transport));
-        if (transport_length <= lowering::transport::HEADER - 1
-            || transport[0] != lowering::transport::VERSION
-            || transport[1] != lowering::transport::POINTER_BITS) {
+        if (!lowering::transport::header_format_valid(transport,
+                transport_length)) {
             if (transport_length <= -1) {
                 verified::byte_io::write_stderr_natural(0 - transport_length);
             }
-            return 30;
+            return exit_code(LoweringFailed);
         }
-        output_length = verified::core_output::emit_program(
-            transport_length, transport, output, 67108864, 0);
-        if (output_length <= -1) {
-            return 30;
+        if (emits_lean_core(mode)) {
+            output_length = verified::core_output::emit_program(
+                transport_length, transport, output, OUTPUT_BYTE_CAPACITY, 0);
+            if (output_length <= -1) {
+                return exit_code(LeanCoreOutputFailed);
+            }
         }
     }
-    if (core_mode == 1) {
-        // The compact pack was written at byte position 16.  Keep its exact
+    if (emits_compact_core(mode)) {
+        // The compact pack was written after the certificate prefix. Keep its exact
         // end as the continuation position: emit_header only backfills the
         // v3 prefix and must not overwrite the compact bytes.
-        let compact_length: i32 = output_length - 16;
+        let compact_length: i32 = output_length
+            - verified::certificate_output_native::HEADER_BYTES;
         let header_end: i32 = verified::certificate_output_native::emit_header_raw(
             compact_length, verified::host::i32_slice_data_ptr(output),
-            67108864, 0);
-        if (header_end != 16 || transport_length <= lowering::transport::HEADER - 1) {
-            return 30;
+            OUTPUT_BYTE_CAPACITY, 0);
+        if (header_end != verified::certificate_output_native::HEADER_BYTES
+            || transport_length <= lowering::transport::HEADER - 1) {
+            return exit_code(CertificateHeaderFailed);
         }
-        packed_io[backend::frame::FUNCTION_END] = 0;
         let certificate_length: i32 = verified::certificate_output_native::emit_transport_raw(
-            verified::host::i32_slice_data_ptr(transport), 262144, transport_length,
-            verified::host::i32_slice_data_ptr(output), 67108864, output_length);
+            verified::host::i32_slice_data_ptr(transport),
+            TRANSPORT_WORD_CAPACITY, transport_length,
+            verified::host::i32_slice_data_ptr(output), OUTPUT_BYTE_CAPACITY,
+            output_length);
         if (certificate_length <= -1) {
-            return 30;
+            return exit_code(CertificateTransportFailed);
         }
         // Core handoff is intentionally a phase certificate: no native ELF
         // or function spans are claimed. These are the same v3 fields with
@@ -495,21 +477,22 @@ fn main() -> i32 {
         // transport, and Core before any image boundary is requested.
         certificate_length = verified::certificate_output_native::emit_image_raw(
             verified::host::i32_slice_data_ptr(packed_io), 0,
-            verified::host::i32_slice_data_ptr(output), 67108864, certificate_length);
+            verified::host::i32_slice_data_ptr(output), OUTPUT_BYTE_CAPACITY,
+            certificate_length);
         if (certificate_length <= -1) {
-            return 30;
+            return exit_code(CertificateImageFailed);
         }
-        certificate_length = verified::certificate_output_native::emit_functions_extractor_raw(
-            verified::host::i32_slice_data_ptr(packed_io), 0, 0,
-            verified::host::i32_slice_data_ptr(output), certificate_length);
+        certificate_length = verified::certificate_output_native::emit_empty_functions_raw(
+            verified::host::i32_slice_data_ptr(output), OUTPUT_BYTE_CAPACITY,
+            certificate_length);
         if (certificate_length <= -1) {
-            return 30;
+            return exit_code(CertificateFunctionsFailed);
         }
         output_length = certificate_length;
     }
     // Extraction is complete, so its 64 MiB workspace can become the packed
     // byte buffer for one atomic logical host write.
-    let output_words: i32 = (output_length + 3) / 4;
+    let output_words: i32 = verified::host::packed_words(output_length);
     let output_word: i32 = 0;
     while (output_word != output_words) {
         workspace[output_word] = 0;
@@ -517,12 +500,16 @@ fn main() -> i32 {
     }
     let output_index: i32 = 0;
     while (output_index != output_length) {
-        workspace[output_index / 4] = workspace[output_index / 4] | (output[output_index] << ((output_index % 4) * 8));
+        workspace[output_index / verified::host::I32_BYTES] =
+            workspace[output_index / verified::host::I32_BYTES]
+            | (output[output_index]
+                << ((output_index % verified::host::I32_BYTES)
+                    * verified::host::BITS_PER_BYTE));
         output_index += 1;
     }
     let output_size: usize = output_length;
     if (verified::host::write_stdout(workspace_pointer, output_size) != output_length) {
-        return 22;
+        return exit_code(OutputWriteFailed);
     }
-    return 0;
+    return exit_code(Success);
 }

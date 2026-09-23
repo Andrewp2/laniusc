@@ -5,26 +5,29 @@ import x86::register;
 import x86::encode;
 import x86::control;
 
-pub fn condition(operation: i32) -> i32 {
-    if (operation == backend::syntax::EQUAL) { return x86::control::EQUAL; }
-    if (operation == backend::syntax::NOT_EQUAL) { return x86::control::NOT_EQUAL; }
-    if (operation == backend::syntax::LESS) { return x86::control::LESS; }
-    if (operation == backend::syntax::LESS_EQUAL) { return x86::control::LESS_EQUAL; }
-    if (operation == backend::syntax::GREATER) { return x86::control::GREATER; }
-    if (operation == backend::syntax::GREATER_EQUAL) { return x86::control::GREATER_EQUAL; }
-    return -1;
+const MAX_I32_SHIFT_COUNT: i32 = x86::register::WIDTH_32 - 1;
+
+pub fn condition(operation: backend::syntax::BinaryOperation) -> x86::control::Condition {
+    if (operation == backend::syntax::BinaryEqual) { return x86::control::Equal; }
+    if (operation == backend::syntax::BinaryNotEqual) { return x86::control::NotEqual; }
+    if (operation == backend::syntax::BinaryLess) { return x86::control::Less; }
+    if (operation == backend::syntax::BinaryLessEqual) { return x86::control::LessEqual; }
+    if (operation == backend::syntax::BinaryGreater) { return x86::control::Greater; }
+    if (operation == backend::syntax::BinaryGreaterEqual) { return x86::control::GreaterEqual; }
+    return x86::control::InvalidCondition;
 }
 
-fn opcode(operation: i32) -> i32 {
-    if (operation == backend::syntax::ADD) { return x86::encode::ADD; }
-    if (operation == backend::syntax::SUBTRACT) { return x86::encode::SUB; }
-    if (operation == backend::syntax::BIT_AND) { return x86::encode::AND; }
-    if (operation == backend::syntax::BIT_OR) { return x86::encode::OR; }
-    if (operation == backend::syntax::BIT_XOR) { return x86::encode::XOR; }
-    return -1;
+fn opcode(operation: backend::syntax::BinaryOperation) -> x86::encode::BinaryOperation {
+    if (operation == backend::syntax::BinaryAdd) { return x86::encode::Add; }
+    if (operation == backend::syntax::BinarySubtract) { return x86::encode::Subtract; }
+    if (operation == backend::syntax::BinaryBitAnd) { return x86::encode::And; }
+    if (operation == backend::syntax::BinaryBitOr) { return x86::encode::Or; }
+    if (operation == backend::syntax::BinaryBitXor) { return x86::encode::Xor; }
+    return x86::encode::InvalidBinaryOperation;
 }
 
-pub fn boolean(output: [i32], capacity: i32, cursor: i32, condition: i32) -> i32 {
+pub fn boolean(output: [i32], capacity: i32, cursor: i32,
+    condition: x86::control::Condition) -> i32 {
     return x86::encode::zero_extend_byte(output, capacity,
         x86::control::set_condition(output, capacity, cursor, condition, x86::register::RAX),
         x86::register::RAX, x86::register::RAX);
@@ -32,48 +35,55 @@ pub fn boolean(output: [i32], capacity: i32, cursor: i32, condition: i32) -> i32
 
 // The right operand is in EAX and the left operand is saved in a frame slot.
 // Keep the cursor in the call chain; callers update their workspace once.
-pub fn from_slot(output: [i32], capacity: i32, cursor: i32, slot: i32, operation: i32) -> i32 {
+pub fn from_slot(output: [i32], capacity: i32, cursor: i32, slot: i32,
+    operation: backend::syntax::BinaryOperation) -> i32 {
     return binary(output, capacity,
         x86::encode::load(output, capacity,
-            x86::encode::move_register(output, capacity, cursor, 32, x86::register::RCX, x86::register::RAX),
-            32, x86::register::RAX, x86::register::RBP, backend::frame::displacement(slot)),
+            x86::encode::move_register(output, capacity, cursor, x86::register::WIDTH_32, x86::register::RCX, x86::register::RAX),
+            x86::register::WIDTH_32, x86::register::RAX, x86::register::RBP, backend::frame::displacement(slot)),
         operation);
 }
 
 // EAX is the left operand, ECX the right. All expression temporaries live
 // in frame slots, so these caller-saved scratch registers can be clobbered.
-pub fn binary(output: [i32], capacity: i32, cursor: i32, operation: i32) -> i32 {
-    let comparison: i32 = condition(operation);
-    if (comparison >= 0) {
+pub fn binary(output: [i32], capacity: i32, cursor: i32,
+    operation: backend::syntax::BinaryOperation) -> i32 {
+    let comparison: x86::control::Condition = condition(operation);
+    if (x86::control::valid_condition(comparison)) {
         return boolean(output, capacity,
-            x86::encode::binary(output, capacity, cursor, 32, x86::encode::CMP, x86::register::RAX, x86::register::RCX),
+            x86::encode::binary(output, capacity, cursor, x86::register::WIDTH_32, x86::encode::Compare, x86::register::RAX, x86::register::RCX),
             comparison);
     }
-    let opcode: i32 = opcode(operation);
-    if (opcode >= 0) {
-        return x86::encode::binary(output, capacity, cursor, 32, opcode, x86::register::RAX, x86::register::RCX);
+    let opcode: x86::encode::BinaryOperation = opcode(operation);
+    if (x86::encode::valid_binary_operation(opcode)) {
+        return x86::encode::binary(output, capacity, cursor, x86::register::WIDTH_32, opcode, x86::register::RAX, x86::register::RCX);
     }
-    if (operation == backend::syntax::MULTIPLY) {
-        return x86::encode::multiply(output, capacity, cursor, 32, x86::register::RAX, x86::register::RCX);
+    if (operation == backend::syntax::BinaryMultiply) {
+        return x86::encode::multiply(output, capacity, cursor, x86::register::WIDTH_32, x86::register::RAX, x86::register::RCX);
     }
-    if (operation == backend::syntax::DIVIDE || operation == backend::syntax::REMAINDER) {
-        let next: i32 = x86::control::sign_extend_dividend(output, capacity, cursor, 32);
-        next = x86::encode::divide(output, capacity, next, 32, x86::register::RCX, true);
-        if (operation == backend::syntax::REMAINDER) {
-            next = x86::encode::move_register(output, capacity, next, 32, x86::register::RAX, x86::register::RDX);
+    if (operation == backend::syntax::BinaryDivide
+        || operation == backend::syntax::BinaryRemainder) {
+        let next: i32 = x86::control::sign_extend_dividend(output, capacity,
+            cursor, x86::register::WIDTH_32);
+        next = x86::encode::divide(output, capacity, next, x86::register::WIDTH_32, x86::register::RCX, true);
+        if (operation == backend::syntax::BinaryRemainder) {
+            next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_32, x86::register::RAX, x86::register::RDX);
         }
         return next;
     }
-    if (operation == backend::syntax::SHIFT_LEFT || operation == backend::syntax::SHIFT_RIGHT) {
+    if (operation == backend::syntax::BinaryShiftLeft
+        || operation == backend::syntax::BinaryShiftRight) {
         // An unsigned comparison also rejects negative counts. Do not let
         // hardware's masked shift count silently change Core trap behavior.
-        let next: i32 = x86::encode::immediate(output, capacity, cursor, 32, x86::register::R11, 31, 0);
-        next = x86::encode::binary(output, capacity, next, 32, x86::encode::CMP, x86::register::RCX, x86::register::R11);
-        next = x86::control::branch(output, capacity, next, x86::control::BELOW_EQUAL, next + 8);
-        next = x86::control::trap(output, capacity, next);
-        let extension: i32 = x86::encode::SHIFT_LEFT;
-        if (operation == backend::syntax::SHIFT_RIGHT) { extension = x86::encode::SHIFT_SIGNED_RIGHT; }
-        return x86::encode::shift(output, capacity, next, 32, extension, x86::register::RAX);
+        let next: i32 = x86::encode::immediate(output, capacity, cursor, x86::register::WIDTH_32, x86::register::R11, MAX_I32_SHIFT_COUNT, 0);
+        next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_32, x86::encode::Compare, x86::register::RCX, x86::register::R11);
+        next = x86::control::branch_over_trap(output, capacity, next,
+            x86::control::BelowEqual);
+        let shift: x86::encode::ShiftOperation = x86::encode::ShiftLeft;
+        if (operation == backend::syntax::BinaryShiftRight) {
+            shift = x86::encode::ShiftSignedRight;
+        }
+        return x86::encode::shift(output, capacity, next, x86::register::WIDTH_32, shift, x86::register::RAX);
     }
     return -1;
 }

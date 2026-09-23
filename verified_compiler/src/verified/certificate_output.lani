@@ -1,53 +1,37 @@
 module verified::certificate_output;
 
 import verified::output;
+import verified::host;
 import backend::frame;
 
 // The certificate envelope is an ASCII transport around the existing compact
 // pack, canonical Core transport, and the exact emitted ELF.  Version 3 adds
 // an ELF byte count and ordered start/length pairs for every backend function.
 const VERSION: i32 = 3;
+const HEADER_WORDS: i32 = 2;
+pub const HEADER_BYTES: i32 =
+    HEADER_WORDS * verified::output::HEX_WORD_CHARACTERS;
 
-fn hex_digit(value: i32) -> i32 {
-    if (value < 10) { return 48 + value; }
-    return 87 + value;
-}
-
-fn hex_word(output:[i32], capacity: i32, position: i32, value: i32) -> i32 {
-    if (position <= -1 || position > capacity - 8) { return -1; }
-    let first: i32 = hex_byte(output, capacity, position, (value >> 24) & 255);
-    if (first <= -1) { return -1; }
-    let second: i32 = hex_byte(output, capacity, first, (value >> 16) & 255);
-    if (second <= -1) { return -1; }
-    let third: i32 = hex_byte(output, capacity, second, (value >> 8) & 255);
-    if (third <= -1) { return -1; }
-    return hex_byte(output, capacity, third, value & 255);
-}
-
-fn hex_byte(output:[i32], capacity: i32, position: i32, value: i32) -> i32 {
-    if (value <= -1 || value > 255) { return -1; }
-    let next: i32 = verified::output::byte(output, capacity, position,
-        hex_digit((value >> 4) & 15));
-    return verified::output::byte(output, capacity, next, hex_digit(value & 15));
-}
-
-// Reserve/write the two outer fields.  The compact payload is emitted at
-// position 16 first, so callers can provide its exact byte length here after
-// extraction has completed.
+// Reserve/write the two outer fields. The compact payload is emitted after
+// HEADER_BYTES, so callers can provide its exact length once extraction ends.
 pub fn emit_header(compact_length: i32, output:[i32], capacity: i32, position: i32) -> i32 {
     if (compact_length <= -1) { return -1; }
-    let next: i32 = hex_word(output, capacity, position, VERSION);
-    return hex_word(output, capacity, next, compact_length);
+    let next: i32 = verified::output::hex_word(
+        verified::output::cursor(output, capacity, position), VERSION);
+    return verified::output::hex_word(
+        verified::output::cursor(output, capacity, next), compact_length);
 }
 
 pub fn emit_transport(words:[i32], words_length: i32, count: i32,
     output:[i32], capacity: i32, position: i32,) -> i32 {
     if (words_length <= -1 || count <= -1 || count > words_length) { return -1; }
-    let next: i32 = hex_word(output, capacity, position, count);
+    let next: i32 = verified::output::hex_word(
+        verified::output::cursor(output, capacity, position), count);
     if (next <= -1) { return -1; }
     let index: i32 = 0;
     while (index != count) {
-        next = hex_word(output, capacity, next, words[index]);
+        next = verified::output::hex_word(
+            verified::output::cursor(output, capacity, next), words[index]);
         if (next <= -1) { return -1; }
         index += 1;
     }
@@ -60,44 +44,58 @@ pub fn emit_transport(words:[i32], words_length: i32, count: i32,
 pub fn emit_image(image:[i32], image_length: i32,
     output:[i32], capacity: i32, position: i32) -> i32 {
     if (image_length <= -1) { return -1; }
-    let next: i32 = hex_word(output, capacity, position, image_length);
+    let next: i32 = verified::output::hex_word(
+        verified::output::cursor(output, capacity, position), image_length);
     if (next <= -1) { return -1; }
     let index: i32 = 0;
     while (index != image_length) {
-        next = hex_byte(output, capacity, next, image[index]);
+        next = verified::output::hex_byte(
+            verified::output::cursor(output, capacity, next), image[index]);
         if (next <= -1) { return -1; }
         index += 1;
     }
     return next;
 }
 
-// Work-table function starts are absolute output offsets.  The explicit
-// FUNCTION_END header slot is captured before runtime data is appended, so
+// Work-table function starts are absolute output offsets. The explicit
+// `function_end` state field is captured before runtime data is appended, so
 // the final length ends exactly at the last function byte.
-pub fn emit_functions(work:[i32], work_length: i32, stride: i32, count: i32,
+pub fn emit_functions(work: backend::frame::Workspace, stride: i32, count: i32,
     output:[i32], capacity: i32, position: i32) -> i32 {
-    if (work_length <= backend::frame::HEADER - 1 || stride <= -1 || count <= -1 ||
-        backend::frame::HEADER + stride * 8 > work_length ||
-        count > stride ||
-        backend::frame::HEADER + stride * 7 + count > work_length) { return -1; }
-    let end: i32 = work[backend::frame::FUNCTION_END];
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    if (work.words <= backend::frame::HEADER - 1 || stride <= -1
+        || state[0].stride != stride || count <= -1 ||
+        backend::frame::HEADER + stride
+            * backend::frame::WORK_WORDS_PER_STRIDE
+            > work.words ||
+        count > stride) { return -1; }
+    let end: i32 = state[0].function_end;
     if (end <= -1) { return -1; }
-    let next: i32 = hex_word(output, capacity, position, count);
+    let next: i32 = verified::output::hex_word(
+        verified::output::cursor(output, capacity, position), count);
     if (next <= -1) { return -1; }
     let index: i32 = 0;
     while (index != count) {
-        let start: i32 = work[backend::frame::HEADER + stride * 7 + index];
+        let start: i32 = backend::frame::function_code_start(work, index);
         let finish: i32 = end;
         if (index + 1 < count) {
-            finish = work[backend::frame::HEADER + stride * 7 + index + 1];
+            finish = backend::frame::function_code_start(work, index + 1);
         }
         if (start <= -1 || finish <= start) { return -1; }
-        next = hex_word(output, capacity, next, start);
-        next = hex_word(output, capacity, next, finish - start);
+        next = verified::output::hex_word(
+            verified::output::cursor(output, capacity, next), start);
+        next = verified::output::hex_word(
+            verified::output::cursor(output, capacity, next), finish - start);
         if (next <= -1) { return -1; }
         index += 1;
     }
     return next;
+}
+
+pub fn emit_empty_functions(output:[i32], capacity: i32,
+    position: i32) -> i32 {
+    return verified::output::hex_word(
+        verified::output::cursor(output, capacity, position), 0);
 }
 
 // Compact output occupies one i32 slot per byte until the whole pipeline has
@@ -106,18 +104,29 @@ pub fn emit_functions(work:[i32], work_length: i32, stride: i32, count: i32,
 // and avoids a second large output allocation.
 pub fn pack_in_place(output:[i32], length: i32) -> i32 {
     if (length <= -1) { return -1; }
-    let word_count: i32 = (length + 3) / 4;
+    let word_count: i32 = verified::host::packed_words(length);
     let word: i32 = 0;
     while (word != word_count) {
-        let base: i32 = word * 4;
-        let first: i32 = output[base];
+        let base: i32 = word * verified::host::I32_BYTES;
+        let first: i32 = output[base + verified::host::I32_BYTE_0];
         let second: i32 = 0;
         let third: i32 = 0;
         let fourth: i32 = 0;
-        if (base + 1 < length) { second = output[base + 1]; }
-        if (base + 2 < length) { third = output[base + 2]; }
-        if (base + 3 < length) { fourth = output[base + 3]; }
-        output[word] = first | (second << 8) | (third << 16) | (fourth << 24);
+        if (length > base + verified::host::I32_BYTE_1) {
+            second = output[base + verified::host::I32_BYTE_1];
+        }
+        if (length > base + verified::host::I32_BYTE_2) {
+            third = output[base + verified::host::I32_BYTE_2];
+        }
+        if (length > base + verified::host::I32_BYTE_3) {
+            fourth = output[base + verified::host::I32_BYTE_3];
+        }
+        output[word] = first
+            | (second << verified::host::BITS_PER_BYTE)
+            | (third << (verified::host::BITS_PER_BYTE
+                * verified::host::I32_BYTE_2))
+            | (fourth << (verified::host::BITS_PER_BYTE
+                * verified::host::I32_BYTE_3));
         word += 1;
     }
     return word_count;

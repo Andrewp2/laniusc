@@ -220,7 +220,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         operands.a < function_count ? semantic_lir_functions[operands.a].result_word_count :
         opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? core.value_word_count :
         opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
-        operands.a == INTRINSIC_I32_SLICE_FROM_RAW_PARTS ? 2u : 0u;
+        intrinsic_slice_from_raw_parts(operands.a) ? 2u : 0u;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL && operands.a >= function_count)
         report_diagnostic(LOWERING_DIAGNOSTIC_X86_CALL_TARGET,
             LOWERING_DIAGNOSTIC_DETAIL_HIR, source_hir, source_hir, semantic_row);
@@ -258,8 +258,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint return_words = opt_ir_op(core) == SEMANTIC_LIR_OP_RETURN && owner < function_count
         ? semantic_lir_functions[owner].result_word_count : 0u;
     uint copy_words = 0u;
-    if ((opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_SET ||
-         opt_ir_op(core) == SEMANTIC_LIR_OP_STORE) &&
+    // Field and index stores own their destination directly. Only a local
+    // declaration store needs extra rows to copy an aggregate value.
+    if (x86_lir_opcode(core) == X86_LIR_OP_STORE_LOCAL &&
         operands.b < total)
     {
         OptIrNodeCore value_core = opt_ir_core[operands.b];
@@ -295,6 +296,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
             words += semantic_lir_aggregate_elements[row].word_count;
         }
         operation_rows = 1u + max(core.value_word_count, words);
+    }
+    if (x86_lir_opcode(core) == X86_LIR_OP_FIELD_STORE &&
+        operands.c < total)
+    {
+        OptIrNodeCore value_core = opt_ir_core[operands.c];
+        OptIrNodeOperands value_operands = opt_ir_operands[operands.c];
+        uint call_words = opt_ir_op(value_core) == SEMANTIC_LIR_OP_CALL &&
+            value_operands.a < function_count
+            ? semantic_lir_functions[value_operands.a].result_word_count : 0u;
+        uint value_words = max(call_words,
+            x86_aggregate_value_word_count(value_core, value_operands));
+        operation_rows = max(operation_rows, value_words);
     }
     target_lir_count[scheduled_row] = operation_rows +
         argument_rows + result_words + return_words + copy_words;

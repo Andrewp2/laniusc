@@ -1,0 +1,25 @@
+module app::main;
+
+enum Choice {
+    Payload(i32),
+    Empty,
+}
+
+fn choose(use_payload: bool) -> Choice {
+    if (use_payload) { return Payload(42); }
+    return Empty;
+}
+
+fn extract(selected: Choice) -> i32 {
+    return match (selected) {
+        Payload(value) => value,
+        Empty => -1,
+    };
+}
+
+fn main() -> i32 {
+    if (!false) {
+        return extract(choose(true)) + extract(choose(false));
+    }
+    return 0;
+}

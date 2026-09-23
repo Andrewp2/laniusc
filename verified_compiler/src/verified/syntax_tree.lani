@@ -1,0 +1,194 @@
+module verified::syntax_tree;
+
+import verified::host;
+import verified::parser;
+import verified::surface_tree;
+
+// Native compiler view of a materialized parser derivation. The packed
+// derivation remains the certificate format; lowering reads these records.
+const FIELD_BYTES: i32 = 8;
+pub const NODE_BYTES: i32 = 5 * FIELD_BYTES;
+pub const CHILD_BYTES: i32 = 3 * FIELD_BYTES;
+pub const TREE_BYTES: i32 = 6 * FIELD_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+
+pub struct Node {
+    production: i32,
+    origin: i32,
+    end: i32,
+    first_child: i32,
+    child_count: i32,
+}
+
+pub struct Child {
+    kind: verified::parser::ChildKind,
+    payload: i32,
+    semantic_kind: i32,
+}
+
+pub struct Tree {
+    nodes: [Node],
+    children: [Child],
+    node_count: i32,
+    child_count: i32,
+}
+
+pub struct Catalog {
+    data: [Tree],
+    count: i32,
+}
+
+pub fn catalog_from_raw_parts(memory: ptr, count: i32) -> Catalog {
+    let first: ptr = memory;
+    if (count > 0) { first = memory + count * TREE_BYTES - FIELD_BYTES; }
+    return Catalog { data: slice_from_raw_parts(first, count), count: count };
+}
+
+pub fn empty() -> Tree {
+    let zero: ptr = 0;
+    return Tree {
+        nodes: slice_from_raw_parts(zero, 0),
+        children: slice_from_raw_parts(zero, 0),
+        node_count: 0,
+        child_count: 0,
+    };
+}
+
+fn node_view(memory: ptr, count: i32) -> [Node] {
+    let first: ptr = memory;
+    if (count > 0) { first = memory + count * NODE_BYTES - FIELD_BYTES; }
+    return slice_from_raw_parts(first, count);
+}
+
+fn child_view(memory: ptr, count: i32) -> [Child] {
+    let first: ptr = memory;
+    if (count > 0) { first = memory + count * CHILD_BYTES - FIELD_BYTES; }
+    return slice_from_raw_parts(first, count);
+}
+
+pub fn decode(records: [i32], record_words: i32, offsets: [i32],
+    node_count: i32, token_count: i32) -> Tree {
+    let invalid: Tree = empty();
+    if (record_words <= 0 || node_count <= 0 || token_count <= -1
+        || node_count > verified::host::I32_MAX / NODE_BYTES) {
+        return invalid;
+    }
+    let children: i32 = 0;
+    let node: i32 = 0;
+    while (node <= node_count - 1) {
+        let record: i32 = verified::surface_tree::record(records,
+            record_words, offsets, node_count, node);
+        if (record <= -1) { return invalid; }
+        let count: i32 = records[record
+            + verified::parser::DERIVATION_CHILD_COUNT_FIELD];
+        if (count > verified::host::I32_MAX / CHILD_BYTES - children
+            || records[record + verified::parser::DERIVATION_PRODUCTION_FIELD] <= -1
+            || records[record + verified::parser::DERIVATION_ORIGIN_FIELD] <= -1
+            || records[record + verified::parser::DERIVATION_END_FIELD]
+                <= records[record
+                    + verified::parser::DERIVATION_ORIGIN_FIELD] - 1) {
+            return invalid;
+        }
+        let child: i32 = 0;
+        while (child <= count - 1) {
+            let slot: i32 = record + verified::parser::DERIVATION_HEADER_WORDS
+                + child * verified::parser::DERIVATION_CHILD_WORDS;
+            let tag: i32 = records[slot
+                + verified::parser::DERIVATION_CHILD_TAG_FIELD];
+            let payload: i32 = records[slot
+                + verified::parser::DERIVATION_CHILD_PAYLOAD_FIELD];
+            if (payload <= -1) { return invalid; }
+            if (verified::parser::encoded_child_is(tag,
+                    verified::parser::TokenChild)) {
+                if (payload >= token_count) { return invalid; }
+            } else {
+                if (!verified::parser::encoded_child_is(tag,
+                        verified::parser::StateChild)
+                    || payload >= node) { return invalid; }
+            }
+            child += 1;
+        }
+        children += count;
+        node += 1;
+    }
+    let node_memory: ptr = verified::host::alloc(
+        node_count * NODE_BYTES, ALIGNMENT);
+    let child_bytes: i32 = CHILD_BYTES;
+    if (children > 0) { child_bytes = children * CHILD_BYTES; }
+    let child_memory: ptr = verified::host::alloc(child_bytes, ALIGNMENT);
+    if (node_memory == 0 || child_memory == 0) { return invalid; }
+    let native_nodes: [Node] = node_view(node_memory, node_count);
+    let native_children: [Child] = child_view(child_memory, children);
+    node = 0;
+    let first_child: i32 = 0;
+    while (node <= node_count - 1) {
+        let record: i32 = offsets[node];
+        let count: i32 = records[record
+            + verified::parser::DERIVATION_CHILD_COUNT_FIELD];
+        native_nodes[node] = Node {
+            production: records[record
+                + verified::parser::DERIVATION_PRODUCTION_FIELD],
+            origin: records[record
+                + verified::parser::DERIVATION_ORIGIN_FIELD],
+            end: records[record + verified::parser::DERIVATION_END_FIELD],
+            first_child: first_child,
+            child_count: count,
+        };
+        let child: i32 = 0;
+        while (child <= count - 1) {
+            let slot: i32 = record + verified::parser::DERIVATION_HEADER_WORDS
+                + child * verified::parser::DERIVATION_CHILD_WORDS;
+            let tag: i32 = records[slot
+                + verified::parser::DERIVATION_CHILD_TAG_FIELD];
+            let kind: verified::parser::ChildKind =
+                verified::parser::StateChild;
+            if (verified::parser::encoded_child_is(tag,
+                    verified::parser::TokenChild)) {
+                kind = verified::parser::TokenChild;
+            }
+            native_children[first_child + child] = Child {
+                kind: kind,
+                payload: records[slot
+                    + verified::parser::DERIVATION_CHILD_PAYLOAD_FIELD],
+                semantic_kind: records[slot
+                    + verified::parser::DERIVATION_CHILD_KIND_FIELD],
+            };
+            child += 1;
+        }
+        first_child += count;
+        node += 1;
+    }
+    return Tree {
+        nodes: native_nodes,
+        children: native_children,
+        node_count: node_count,
+        child_count: children,
+    };
+}
+
+pub fn production(tree: Tree, node: i32) -> i32 {
+    if (node <= -1 || node >= tree.node_count) { return -1; }
+    let nodes: [Node] = tree.nodes;
+    return nodes[node].production;
+}
+
+pub fn child_count(tree: Tree, node: i32) -> i32 {
+    if (node <= -1 || node >= tree.node_count) { return -1; }
+    let nodes: [Node] = tree.nodes;
+    return nodes[node].child_count;
+}
+
+pub fn child(tree: Tree, node: i32, index: i32,
+    expected: verified::parser::ChildKind) -> i32 {
+    if (node <= -1 || node >= tree.node_count || index <= -1) {
+        return -1;
+    }
+    let nodes: [Node] = tree.nodes;
+    let record: Node = nodes[node];
+    if (index >= record.child_count) { return -1; }
+    let children: [Child] = tree.children;
+    let selected: Child = children[record.first_child + index];
+    if (verified::parser::child_code(selected.kind)
+        != verified::parser::child_code(expected)) { return -1; }
+    return selected.payload;
+}

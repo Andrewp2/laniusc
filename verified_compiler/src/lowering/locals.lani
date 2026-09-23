@@ -1,0 +1,99 @@
+module lowering::locals;
+
+import verified::host;
+
+const ENTRY_WORDS: i32 = 2;
+const WORD_BYTES: i32 = 8;
+pub const ENTRY_BYTES: i32 = ENTRY_WORDS * WORD_BYTES;
+pub const ALIGNMENT: i32 = WORD_BYTES;
+pub const MAX_CAPACITY: i32 =
+    (verified::host::I32_MAX - WORD_BYTES) / ENTRY_BYTES;
+
+struct Binding {
+    name: i32,
+    kind: i32,
+}
+
+struct CountCell {
+    value: i32,
+}
+
+pub struct Table {
+    entries: [Binding],
+    count: [CountCell],
+    capacity: i32,
+}
+
+fn binding_slice_from_raw_parts(data: ptr, length: i32) -> [Binding] {
+    return slice_from_raw_parts(data, length);
+}
+
+pub fn allocation_bytes(capacity: i32) -> i32 {
+    if (capacity <= -1 || capacity > MAX_CAPACITY) { return -1; }
+    let count: i32 = capacity;
+    if (count == 0) { count = 1; }
+    return WORD_BYTES + count * ENTRY_BYTES;
+}
+
+pub fn from_raw_parts(memory: ptr, capacity: i32) -> Table {
+    // The leading word is the mutable count; records occupy the remaining
+    // descending eight-byte words. This requires only one allocation.
+    let first: ptr = memory + WORD_BYTES;
+    if (capacity > 0) {
+        let offset: i32 = capacity * ENTRY_BYTES;
+        first = memory + offset;
+    }
+    let entries: [Binding] = binding_slice_from_raw_parts(first, capacity);
+    let count: [CountCell] = slice_from_raw_parts(memory, 1);
+    count[0].value = 0;
+    return Table { entries: entries, count: count, capacity: capacity };
+}
+
+pub fn save(table: Table) -> i32 {
+    let count: [CountCell] = table.count;
+    return count[0].value;
+}
+
+pub fn restore(table: Table, saved: i32) {
+    let count: [CountCell] = table.count;
+    count[0].value = saved;
+}
+
+pub fn name_at(table: Table, index: i32) -> i32 {
+    let count: [CountCell] = table.count;
+    if (index <= -1 || index >= count[0].value) { return -1; }
+    let entries: [Binding] = table.entries;
+    return entries[index].name;
+}
+
+pub fn kind_at(table: Table, index: i32) -> i32 {
+    let count: [CountCell] = table.count;
+    if (index <= -1 || index >= count[0].value) { return -1; }
+    let entries: [Binding] = table.entries;
+    return entries[index].kind;
+}
+
+pub fn type_of(table: Table, name: i32) -> i32 {
+    let entries: [Binding] = table.entries;
+    let count: [CountCell] = table.count;
+    let index: i32 = count[0].value - 1;
+    while (index >= 0) {
+        if (entries[index].name == name) {
+            return entries[index].kind;
+        }
+        index -= 1;
+    }
+    return -1;
+}
+
+pub fn bind(table: Table, name: i32, kind: i32) -> bool {
+    let entries: [Binding] = table.entries;
+    let count_storage: [CountCell] = table.count;
+    let count: i32 = count_storage[0].value;
+    if (name <= -1 || kind <= 0 || count <= -1
+        || count >= table.capacity) { return false; }
+    entries[count].name = name;
+    entries[count].kind = kind;
+    count_storage[0].value = count + 1;
+    return true;
+}

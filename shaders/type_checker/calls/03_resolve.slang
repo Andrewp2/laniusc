@@ -29,6 +29,7 @@ StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint4> call_arg_record;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_param_count;
+StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> compact_path_count;
 StructuredBuffer<HirPath> compact_paths;
 StructuredBuffer<uint> path_id_by_owner_hir;
@@ -69,7 +70,10 @@ static const uint HIR_ITEM_NAMESPACE_VALUE = 2u;
 
 static const uint ERR_CALL_MISMATCH = 10u;
 static const uint CALL_MISMATCH_ARITY = 0xffffff05u;
+static const uint CALL_MISMATCH_TYPED_SLICE_RETURN = 0xffffff06u;
 static const uint INTRINSIC_NONE = 0u;
+static const uint INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS = 7u;
+static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
@@ -284,7 +288,8 @@ void resolve_callee_token(uint callee_i, uint call_node)
     if (method_call_name_id[callee_i] != INVALID)
         return;
 
-    if (call_intrinsic_tag[callee_i] != INTRINSIC_NONE)
+    if (call_intrinsic_tag[callee_i] != INTRINSIC_NONE &&
+        call_intrinsic_tag[callee_i] != INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS)
         return;
 
     uint fn_i = INVALID;
@@ -309,6 +314,19 @@ void resolve_callee_token(uint callee_i, uint call_node)
         if (!valid_token(fn_i))
         {
             call_return_type[callee_i] = TY_UNKNOWN;
+            return;
+        }
+    }
+
+    if (call_intrinsic_tag[callee_i] == INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS)
+    {
+        uint return_instance = call_return_type_token[fn_i];
+        if (!valid_token(return_instance) ||
+            type_instance_kind[return_instance] != TYPE_INSTANCE_SLICE)
+        {
+            call_return_type[callee_i] = TY_UNKNOWN;
+            record_error(callee_i, ERR_CALL_MISMATCH,
+                CALL_MISMATCH_TYPED_SLICE_RETURN);
             return;
         }
     }

@@ -1,62 +1,84 @@
 module backend::call;
 import backend::frame;
+import backend::layout;
 import backend::parameter;
 import backend::value;
 import x86::register;
 import x86::encode;
 import x86::control;
 
-pub fn find(input: [i32], work: [i32], id: i32) -> i32 {
-    let index: i32 = 0;
-    let stride: i32 = work[backend::frame::STRIDE];
-    while (index < work[backend::frame::FUNCTION_COUNT]) {
-        let position: i32 = work[backend::frame::HEADER + stride * 6 + index];
-        if (input[position + 2] == id) { return index; }
-        index += 1;
-    }
-    return -1;
+pub struct CallFixup {
+    field: i32,
+    target: i32,
+}
+
+fn slice_from_raw_parts(data: ptr, length: i32) -> [CallFixup] {
+    return slice_from_raw_parts(data, length);
+}
+
+fn fixup_table(work: backend::frame::Workspace) -> [CallFixup] {
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    return slice_from_raw_parts(backend::frame::call_fixup_first(work),
+        state[0].stride);
+}
+
+pub fn read_fixup(work: backend::frame::Workspace, index: i32) -> CallFixup {
+    let fixups: [CallFixup] = fixup_table(work);
+    return CallFixup {
+        field: fixups[index].field,
+        target: fixups[index].target,
+    };
 }
 
 // Arguments are already in ABI locations. Nonnegative targets are Core IDs;
 // -1 names the backend-generated fresh string-data helper, not a Core function.
-pub fn relative(output: [i32], capacity: i32, work: [i32], target: i32) -> i32 {
-    let fixup: i32 = work[backend::frame::FIXUP_COUNT];
-    let stride: i32 = work[backend::frame::STRIDE];
-    if (fixup >= stride || work[backend::frame::CODE] < 0) { work[backend::frame::FAILED] = 1; return -1; }
-    work[backend::frame::HEADER + stride * 4 + fixup] = work[backend::frame::CODE] + 1;
-    work[backend::frame::HEADER + stride * 5 + fixup] = target;
-    work[backend::frame::FIXUP_COUNT] = fixup + 1;
-    work[backend::frame::CODE] = x86::control::call(output, capacity, work[backend::frame::CODE], 0);
-    return work[backend::frame::CODE];
+pub fn relative(output: [i32], capacity: i32, work: backend::frame::Workspace, target: i32) -> i32 {
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    let fixup: i32 = state[0].fixup_count;
+    if (fixup >= state[0].stride
+        || state[0].code <= -1) {
+        state[0].failed = 1;
+        return -1;
+    }
+    let fixups: [CallFixup] = fixup_table(work);
+    fixups[fixup].field = state[0].code + 1;
+    fixups[fixup].target = target;
+    state[0].fixup_count = fixup + 1;
+    state[0].code = x86::control::call(output, capacity, state[0].code, 0);
+    return state[0].code;
 }
 
 // All arguments are evaluated and copied before assigning ABI registers.
 // Each scalar or aggregate-address argument occupies one ABI word. Padding
 // precedes reversed stack arguments, keeping RSP aligned immediately at CALL.
-pub fn emit(output: [i32], capacity: i32, work: [i32], slot: i32, count: i32, target: i32) -> i32 {
+pub fn emit(output: [i32], capacity: i32, work: backend::frame::Workspace, slot: i32, count: i32, target: i32) -> i32 {
+    let state: [backend::frame::State] = backend::frame::state_view(work);
     let extras: i32 = 0;
-    if (count > 6) { extras = count - 6; }
-    let padding: i32 = (extras % 2) * 8;
+    if (count > backend::parameter::INTEGER_ARGUMENT_REGISTERS) {
+        extras = count - backend::parameter::INTEGER_ARGUMENT_REGISTERS;
+    }
+    let padding: i32 = (extras % 2) * backend::layout::VALUE_WORD_BYTES;
     if (padding != 0) {
-        let next: i32 = x86::encode::immediate(output, capacity, work[backend::frame::CODE], 32, x86::register::R11, padding, 0);
-        work[backend::frame::CODE] = x86::encode::binary(output, capacity, next, 64, x86::encode::SUB, x86::register::RSP, x86::register::R11);
+        let next: i32 = x86::encode::immediate(output, capacity, state[0].code, x86::register::WIDTH_32, x86::register::R11, padding, 0);
+        state[0].code = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Subtract, x86::register::RSP, x86::register::R11);
     }
     let index: i32 = count;
-    while (index > 6) {
+    while (index > backend::parameter::INTEGER_ARGUMENT_REGISTERS) {
         index -= 1;
         backend::value::load_word(output, capacity, work, slot - index, x86::register::RAX);
-        work[backend::frame::CODE] = x86::control::push(output, capacity, work[backend::frame::CODE], x86::register::RAX);
+        state[0].code = x86::control::push(output, capacity, state[0].code, x86::register::RAX);
     }
     index = 0;
-    while (index < count && index < 6) {
+    while (index < count
+        && index < backend::parameter::INTEGER_ARGUMENT_REGISTERS) {
         backend::value::load_word(output, capacity, work, slot - index, backend::parameter::argument_register(index));
         index += 1;
     }
-    if (relative(output, capacity, work, target) < 0) { return -1; }
-    let reclaimed: i32 = extras * 8 + padding;
+    if (relative(output, capacity, work, target) <= -1) { return -1; }
+    let reclaimed: i32 = extras * backend::layout::VALUE_WORD_BYTES + padding;
     if (reclaimed != 0) {
-        let next: i32 = x86::encode::immediate(output, capacity, work[backend::frame::CODE], 32, x86::register::R11, reclaimed, 0);
-        work[backend::frame::CODE] = x86::encode::binary(output, capacity, next, 64, x86::encode::ADD, x86::register::RSP, x86::register::R11);
+        let next: i32 = x86::encode::immediate(output, capacity, state[0].code, x86::register::WIDTH_32, x86::register::R11, reclaimed, 0);
+        state[0].code = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Add, x86::register::RSP, x86::register::R11);
     }
-    return work[backend::frame::CODE];
+    return state[0].code;
 }

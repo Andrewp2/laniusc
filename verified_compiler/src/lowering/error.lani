@@ -1,0 +1,23 @@
+module lowering::error;
+
+// Lowering returns positive word counts and negative failures. Keep the
+// semantic category typed until the scalar return boundary.
+pub enum LoweringError {
+    InvalidInput,
+    UnsupportedFeature,
+}
+
+pub fn error_code(error: LoweringError) -> i32 {
+    return match (error) {
+        InvalidInput -> 1,
+        UnsupportedFeature -> 2,
+    };
+}
+
+pub fn failure(error: LoweringError) -> i32 {
+    return 0 - error_code(error);
+}
+
+pub fn failed_with(value: i32, error: LoweringError) -> bool {
+    return value == failure(error);
+}

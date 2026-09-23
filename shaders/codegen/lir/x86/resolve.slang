@@ -40,7 +40,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     X86LirOperands operands = target_lir_operands[page_row];
     if (core.result_or_target != INVALID &&
         core.op != X86_LIR_OP_COMPARE_BRANCH_FALSE &&
-        core.op != X86_LIR_OP_SELECT_STORE)
+        core.op != X86_LIR_OP_SELECT_STORE &&
+        (operands.metadata & X86_LIR_METADATA_INDEX_AGGREGATE_COPY) == 0u)
         core.result_or_target = row;
     if (core.op == X86_LIR_OP_BINARY || core.op == X86_LIR_OP_COMPARE)
     {

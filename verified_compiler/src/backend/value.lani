@@ -1,54 +1,66 @@
 module backend::value;
 import backend::frame;
 import backend::layout;
+import backend::layout_index;
 import x86::register;
 import x86::encode;
 
 // Copy a value from RAX to R11, using R10 only. Source and destination are
 // distinct compiler-owned regions. Padding is copied but never interpreted.
-pub fn copy(output: [i32], capacity: i32, work: [i32], count: i32) -> i32 {
+pub fn copy(output: [i32], capacity: i32, work: backend::frame::Workspace, count: i32) -> i32 {
+    let state: [backend::frame::State] = backend::frame::state_view(work);
     let index: i32 = 0;
-    while (index < count && work[backend::frame::CODE] >= 0) {
-        let next: i32 = x86::encode::load(output, capacity, work[backend::frame::CODE], 64,
-            x86::register::R10, x86::register::RAX, index * 8);
-        work[backend::frame::CODE] = x86::encode::store(output, capacity, next, 64,
-            x86::register::R10, x86::register::R11, index * 8);
+    while (index < count && state[0].code >= 0) {
+        let next: i32 = x86::encode::load(output, capacity, state[0].code, x86::register::WIDTH_64,
+            x86::register::R10, x86::register::RAX,
+            index * backend::layout::VALUE_WORD_BYTES);
+        state[0].code = x86::encode::store(output, capacity, next, x86::register::WIDTH_64,
+            x86::register::R10, x86::register::R11,
+            index * backend::layout::VALUE_WORD_BYTES);
         index += 1;
     }
-    return work[backend::frame::CODE];
+    return state[0].code;
 }
 
-pub fn address(output: [i32], capacity: i32, work: [i32], slot: i32, destination: i32) -> i32 {
-    work[backend::frame::CODE] = x86::encode::address(output, capacity, work[backend::frame::CODE],
+pub fn address(output: [i32], capacity: i32, work: backend::frame::Workspace, slot: i32, destination: i32) -> i32 {
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    state[0].code = x86::encode::address(output, capacity, state[0].code,
         destination, x86::register::RBP, backend::frame::displacement(slot));
-    return work[backend::frame::CODE];
+    return state[0].code;
 }
 
-pub fn put(input: [i32], length: i32, output: [i32], capacity: i32, work: [i32], slot: i32, kind: i32) -> i32 {
+pub fn put(layout: backend::layout_index::Table, output: [i32],
+    capacity: i32, work: backend::frame::Workspace, slot: i32,
+    kind: i32) -> i32 {
+    let state: [backend::frame::State] = backend::frame::state_view(work);
     if (backend::layout::aggregate(kind)) {
         address(output, capacity, work, slot, x86::register::R11);
-        return copy(output, capacity, work, backend::layout::words(input, length, kind, 0));
+        return copy(output, capacity, work,
+            backend::layout_index::words(layout, kind));
     }
-    work[backend::frame::CODE] = x86::encode::store(output, capacity, work[backend::frame::CODE],
+    state[0].code = x86::encode::store(output, capacity, state[0].code,
         backend::layout::width(kind), x86::register::RAX, x86::register::RBP, backend::frame::displacement(slot));
-    return work[backend::frame::CODE];
+    return state[0].code;
 }
 
-pub fn get(output: [i32], capacity: i32, work: [i32], slot: i32, kind: i32) -> i32 {
+pub fn get(output: [i32], capacity: i32, work: backend::frame::Workspace, slot: i32, kind: i32) -> i32 {
+    let state: [backend::frame::State] = backend::frame::state_view(work);
     if (backend::layout::aggregate(kind)) { return address(output, capacity, work, slot, x86::register::RAX); }
-    work[backend::frame::CODE] = x86::encode::load(output, capacity, work[backend::frame::CODE],
+    state[0].code = x86::encode::load(output, capacity, state[0].code,
         backend::layout::width(kind), x86::register::RAX, x86::register::RBP, backend::frame::displacement(slot));
-    return work[backend::frame::CODE];
+    return state[0].code;
 }
 
-pub fn save_word(output: [i32], capacity: i32, work: [i32], slot: i32, register: i32) -> i32 {
-    work[backend::frame::CODE] = x86::encode::store(output, capacity, work[backend::frame::CODE], 64,
+pub fn save_word(output: [i32], capacity: i32, work: backend::frame::Workspace, slot: i32, register: i32) -> i32 {
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    state[0].code = x86::encode::store(output, capacity, state[0].code, x86::register::WIDTH_64,
         register, x86::register::RBP, backend::frame::displacement(slot));
-    return work[backend::frame::CODE];
+    return state[0].code;
 }
 
-pub fn load_word(output: [i32], capacity: i32, work: [i32], slot: i32, register: i32) -> i32 {
-    work[backend::frame::CODE] = x86::encode::load(output, capacity, work[backend::frame::CODE], 64,
+pub fn load_word(output: [i32], capacity: i32, work: backend::frame::Workspace, slot: i32, register: i32) -> i32 {
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    state[0].code = x86::encode::load(output, capacity, state[0].code, x86::register::WIDTH_64,
         register, x86::register::RBP, backend::frame::displacement(slot));
-    return work[backend::frame::CODE];
+    return state[0].code;
 }

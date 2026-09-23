@@ -1,0 +1,5 @@
+module app::auxiliary;
+
+pub fn auxiliary() -> i32 {
+    return 7;
+}

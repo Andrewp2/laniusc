@@ -35,6 +35,7 @@ bool observable_root(OptIrNodeCore core)
     return op == SEMANTIC_LIR_OP_VALUE_SET ||
         op == SEMANTIC_LIR_OP_STORE || semantic_lir_is_call(op) ||
         (op >= SEMANTIC_LIR_OP_BLOCK_BEGIN && op <= SEMANTIC_LIR_OP_RETURN) ||
+        op == SEMANTIC_LIR_OP_TRAP ||
         op == SEMANTIC_LIR_OP_DROP || op == SEMANTIC_LIR_OP_LOAD ||
         op == SEMANTIC_LIR_OP_AGGREGATE_COPY ||
         op == SEMANTIC_LIR_OP_DIV || op == SEMANTIC_LIR_OP_REM;

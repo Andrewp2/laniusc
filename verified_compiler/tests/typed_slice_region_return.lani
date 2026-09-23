@@ -1,0 +1,99 @@
+module app::main;
+
+import verified::host;
+
+const WORK_FIELD_COUNT: i32 = 6;
+const WORK_FIELD_BYTES: i32 = 8;
+const WORK_RECORD_BYTES: i32 = WORK_FIELD_COUNT * WORK_FIELD_BYTES;
+const RECORD_COUNT: i32 = 2;
+
+enum Kind {
+    Unknown,
+    Scalar,
+}
+
+struct Work {
+    first: Kind,
+    second: i32,
+    third: i32,
+    fourth: i32,
+    fifth: i32,
+    sixth: i32,
+}
+
+struct WorkRegion {
+    data: [Work],
+    capacity: i32,
+}
+
+struct Result {
+    kind: Kind,
+    value: i32,
+}
+
+struct ResultRegion {
+    data: [Result],
+}
+
+fn work_slice_from_raw_parts(data: ptr, length: i32) -> [Work] {
+    return slice_from_raw_parts(data, length);
+}
+
+fn work_region(data: ptr, capacity: i32) -> WorkRegion {
+    let first: ptr = data + capacity * WORK_RECORD_BYTES - WORK_FIELD_BYTES;
+    return WorkRegion {
+        data: work_slice_from_raw_parts(first, capacity),
+        capacity: capacity,
+    };
+}
+
+fn result_slice_from_raw_parts(data: ptr, length: i32) -> [Result] {
+    return slice_from_raw_parts(data, length);
+}
+
+fn result_region(data: ptr) -> ResultRegion {
+    let first: ptr = data + 2 * WORK_FIELD_BYTES - WORK_FIELD_BYTES;
+    return ResultRegion {
+        data: result_slice_from_raw_parts(first, 1),
+    };
+}
+
+fn kind_code(kind: Kind) -> i32 {
+    return match (kind) {
+        Unknown -> 0,
+        Scalar -> 1,
+    };
+}
+
+fn main() -> i32 {
+    let memory: ptr = verified::host::alloc(
+        RECORD_COUNT * WORK_RECORD_BYTES + WORK_FIELD_BYTES,
+        WORK_FIELD_BYTES);
+    if (memory == 0) { return 1; }
+    let work_guard: [i32] = verified::host::i32_slice_from_raw_parts(
+        memory, (RECORD_COUNT * WORK_RECORD_BYTES + WORK_FIELD_BYTES)
+            / verified::host::I32_BYTES);
+    work_guard[RECORD_COUNT * WORK_RECORD_BYTES
+        / verified::host::I32_BYTES] = 12345678;
+    let work: WorkRegion = work_region(memory, RECORD_COUNT);
+    let entries: [Work] = work.data;
+    entries[0].first = Scalar;
+    entries[1].sixth = 9;
+    let result_memory: ptr = verified::host::alloc(
+        3 * WORK_FIELD_BYTES, WORK_FIELD_BYTES);
+    if (result_memory == 0) { return 3; }
+    let result_guard: [i32] = verified::host::i32_slice_from_raw_parts(
+        result_memory, 3 * WORK_FIELD_BYTES / verified::host::I32_BYTES);
+    result_guard[2 * WORK_FIELD_BYTES / verified::host::I32_BYTES] = 87654321;
+    let result: ResultRegion = result_region(result_memory);
+    let resolved: [Result] = result.data;
+    resolved[0].kind = entries[0].first;
+    resolved[0].value = entries[1].sixth;
+    if (work.capacity != RECORD_COUNT || kind_code(resolved[0].kind) != 1
+        || entries[1].sixth != 9) { return 2; }
+    if (work_guard[RECORD_COUNT * WORK_RECORD_BYTES
+            / verified::host::I32_BYTES] != 12345678
+        || result_guard[2 * WORK_FIELD_BYTES
+            / verified::host::I32_BYTES] != 87654321) { return 4; }
+    return 0;
+}

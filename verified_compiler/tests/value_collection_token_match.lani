@@ -1,0 +1,133 @@
+module app::main;
+
+import lowering::allocation;
+import lowering::declarations;
+import lowering::signature_index;
+import lowering::value_collection;
+import lowering::unit_context;
+import lowering::value_catalog;
+import verified::host;
+import verified::token;
+
+const ALLOCATION_WORDS: i32 = lowering::allocation::HEADER
+    + 2 * lowering::allocation::ROW;
+
+// Two 13-byte catalog names share their first 12 bytes but must not resolve
+// as one callable through the aggregate value catalog.
+fn main() -> i32 {
+    let source: [i32; 27] = [97,98,99,100,101,102,103,104,105,106,107,108,120,0,97,98,99,100,101,102,103,104,105,106,107,108,121];
+    let tokens: [i32; 6] = [1,0,13, 1,14,27];
+    let token_memory: ptr = verified::host::alloc(
+        2 * verified::token::RECORD_BYTES, verified::token::ALIGNMENT);
+    if (token_memory == 0) { return 2; }
+    let token_table: verified::token::TokenTable =
+        verified::token::from_raw_parts(token_memory, 2);
+    if (!verified::token::decode_packed(tokens, 6, 2, token_table, 0)) {
+        return 2;
+    }
+    let context_memory: ptr = verified::host::alloc(
+        2 * lowering::unit_context::RECORD_BYTES,
+        lowering::unit_context::ALIGNMENT);
+    if (context_memory == 0) { return 2; }
+    let context_table: lowering::unit_context::Table =
+        lowering::unit_context::from_raw_parts(context_memory, 2);
+    let contexts: [lowering::unit_context::UnitContext] =
+        context_table.data;
+    contexts[0] = lowering::unit_context::empty();
+    contexts[0].source_offset = 0;
+    contexts[0].source_length = 13;
+    contexts[0].token_offset = 0;
+    contexts[0].token_count = 1;
+    contexts[1] = lowering::unit_context::empty();
+    contexts[1].source_offset = 14;
+    contexts[1].source_length = 13;
+    contexts[1].token_offset = 1;
+    contexts[1].token_count = 1;
+    let allocation_memory: ptr = verified::host::alloc(
+        ALLOCATION_WORDS * verified::host::I32_BYTES,
+        lowering::allocation::ALIGNMENT);
+    if (allocation_memory == 0) { return 4; }
+    let allocation_table: lowering::allocation::Table =
+        lowering::allocation::from_raw_parts(allocation_memory, 2);
+    lowering::allocation::table_write_header(allocation_table,
+        lowering::allocation::AllocationHeader {
+        units: 2, rows: 2, structures: 0, enumerations: 0,
+        aliases: 0, constants: 0, functions: 2, externals: 0,
+        declarations: 2,
+    });
+    let first_source: lowering::declarations::DeclarationRow =
+        lowering::declarations::DeclarationRow {
+            unit: 0, kind: lowering::declarations::Function,
+            is_public: false, item: 0, declaration: 0, name: 0,
+            target: -1, ordinal: 0,
+        };
+    let second_source: lowering::declarations::DeclarationRow =
+        lowering::declarations::DeclarationRow {
+            unit: 1, kind: lowering::declarations::Function,
+            is_public: false, item: 0, declaration: 0, name: 0,
+            target: -1, ordinal: 0,
+        };
+    let first_allocation: lowering::allocation::AllocationRow =
+        lowering::allocation::AllocationRow {
+            source: first_source, declaration_id: 0, core_id: 10,
+        };
+    let second_allocation: lowering::allocation::AllocationRow =
+        lowering::allocation::AllocationRow {
+            source: second_source, declaration_id: 1, core_id: 11,
+        };
+    lowering::allocation::table_write_row(allocation_table, 0,
+        first_allocation);
+    lowering::allocation::table_write_row(allocation_table, 1,
+        second_allocation);
+    let requirements: lowering::signature_index::Requirements =
+        lowering::signature_index::Requirements {
+            entries: 2, members: 0, variants: 0, fields: 0,
+            constants: 0, bytes: 0, valid: true,
+        };
+    let signature_memory: ptr = verified::host::alloc(
+        lowering::signature_index::allocation_bytes(requirements),
+        lowering::signature_index::ALIGNMENT);
+    let cursor_memory: ptr = verified::host::alloc(
+        lowering::signature_index::WRITER_BYTES,
+        lowering::signature_index::ALIGNMENT);
+    if (signature_memory == 0 || cursor_memory == 0) { return 5; }
+    let signature_storage: lowering::signature_index::Table =
+        lowering::signature_index::from_raw_parts(signature_memory,
+            requirements);
+    let writer: lowering::signature_index::Writer =
+        lowering::signature_index::writer(signature_storage, cursor_memory);
+    let signature_index: lowering::signature_index::Table =
+        lowering::signature_index::finish(writer);
+    let value_memory: ptr = verified::host::alloc(
+        2 * lowering::value_catalog::RECORD_BYTES,
+        lowering::value_catalog::ALIGNMENT);
+    if (value_memory == 0) { return 3; }
+    let output: lowering::value_catalog::ValueTable =
+        lowering::value_catalog::from_raw_parts(value_memory, 2);
+    let input: lowering::value_collection::ValueCatalogInput =
+        lowering::value_collection::ValueCatalogInput {
+            unit: 0,
+            contexts: context_table,
+            sources: lowering::value_collection::region(source, 27),
+            tokens: token_table,
+            allocations: allocation_table,
+            signature_index: signature_index,
+        };
+    let rows: i32 = lowering::value_collection::build_value_catalog(input,
+        output);
+    let found: lowering::value_catalog::ValueBinding =
+        lowering::value_catalog::read_binding(output, 0);
+    if (rows != 1 || lowering::value_catalog::binding_token(found) != 0
+        || !lowering::value_catalog::binding_is_kind(found,
+            lowering::value_catalog::CallableBinding)
+        || !lowering::value_catalog::binding_is_scope(found,
+            lowering::value_catalog::LocalBinding)
+        || lowering::value_catalog::binding_id(found) != 10
+        || lowering::value_catalog::binding_member(found) != -1
+        || lowering::value_catalog::binding_arity(found) != -1
+        || !lowering::value_catalog::valid_slice(output, 0, rows, 1,
+            allocation_table)) {
+        return 1;
+    }
+    return 0;
+}

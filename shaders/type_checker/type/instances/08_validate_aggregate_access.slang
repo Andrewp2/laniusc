@@ -24,7 +24,6 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_hir_expr_parent;
-StructuredBuffer<uint> compact_hir_expr_root;
 StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> visible_decl;
@@ -56,8 +55,14 @@ static const uint TY_CHAR = 6u;
 static const uint TY_STRING = 7u;
 
 static const uint HIR_CALL_EXPR = 19u;
+static const uint HIR_EXPR = 14u;
+static const uint HIR_BINARY_EXPR = 16u;
+static const uint HIR_UNARY_EXPR = 17u;
+static const uint HIR_POSTFIX_EXPR = 18u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
+static const uint HIR_LITERAL_EXPR = 23u;
+static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 
@@ -201,17 +206,21 @@ uint visible_type_for_token(uint token_i)
     return call_return_type[token_i];
 }
 
-uint compact_expr_for_raw(uint node)
-{
-    if (!valid_compact_node(node))
-        return INVALID;
-    uint root = compact_hir_expr_root[node];
-    return valid_compact_node(root) ? root : node;
-}
-
 uint compact_expr_form(uint node)
 {
     return valid_compact_node(node) ? compact_hir_payload[node].a : 0u;
+}
+
+bool has_expression_form(uint node)
+{
+    if (!valid_compact_node(node))
+        return false;
+    // Payload.a is kind-dependent: calls store a callee node ID, which can
+    // numerically equal an integer or boolean expression-form tag.
+    uint kind = compact_hir_core[node].kind;
+    return kind == HIR_EXPR || kind == HIR_BINARY_EXPR ||
+           kind == HIR_UNARY_EXPR || kind == HIR_POSTFIX_EXPR ||
+           kind == HIR_LITERAL_EXPR;
 }
 
 uint compact_expr_value_token(uint node)
@@ -225,6 +234,12 @@ uint compact_expr_value_token(uint node)
 uint direct_arithmetic_operand_type(uint node)
 {
     if (!valid_compact_node(node))
+        return TY_UNKNOWN;
+
+    if (compact_hir_core[node].kind == HIR_NAME_EXPR ||
+        compact_hir_core[node].kind == HIR_PATH_EXPR)
+        return visible_type_for_token(compact_expr_value_token(node));
+    if (!has_expression_form(node))
         return TY_UNKNOWN;
 
     uint form = compact_expr_form(node);
@@ -262,8 +277,12 @@ uint call_callee_token(uint call_node)
 
 uint direct_expr_record_type(uint node)
 {
-    uint expr = compact_expr_for_raw(node);
-    if (!valid_compact_node(expr))
+    uint expr = node;
+    if (valid_compact_node(expr) &&
+        (compact_hir_core[expr].kind == HIR_NAME_EXPR ||
+         compact_hir_core[expr].kind == HIR_PATH_EXPR))
+        return visible_type_for_token(compact_expr_value_token(expr));
+    if (!has_expression_form(expr))
         return TY_UNKNOWN;
 
     uint form = compact_expr_form(expr);
@@ -317,7 +336,7 @@ uint direct_value_type(uint node)
     if (record_ty != TY_UNKNOWN)
         return record_ty;
 
-    uint expr = compact_expr_for_raw(node);
+    uint expr = node;
     uint lit = valid_compact_node(expr)
         ? hir_scalar_type_for_hir(compact_hir_core[expr].kind, compact_expr_form(expr))
         : TY_UNKNOWN;
@@ -349,16 +368,15 @@ uint first_value_type_from_node(uint root, out uint value_token)
     if (!valid_node(root))
         return TY_UNKNOWN;
 
-    uint expr = compact_expr_for_raw(root);
-    uint node = valid_compact_node(compact_hir_expr_root[root])
-        ? compact_hir_expr_root[root]
-        : root;
-    uint ty = direct_value_type(node);
+    // HirField.value is already the canonical root of the field expression.
+    // Its forest root may be the containing struct literal, whose type is not
+    // the type of this individual field value.
+    uint ty = direct_value_type(root);
     if (ty != TY_UNKNOWN)
     {
-        uint token_i = compact_expr_value_token(expr);
+        uint token_i = compact_expr_value_token(root);
         if (!valid_token(token_i))
-            token_i = compact_hir_core[node].token_start;
+            token_i = compact_hir_core[root].token_start;
         value_token = valid_token(token_i) ? token_i : INVALID;
         return ty;
     }
@@ -380,7 +398,6 @@ void validate_struct_literal_field_row(uint field_row)
         return;
     if (!valid_token(struct_lit_context_decl_token[literal_node]))
         return;
-
     if (struct_init_field_ordinal[field_token] == INVALID)
     {
         record_error(field_token, ERR_INVALID_MEMBER_ACCESS, 0u);

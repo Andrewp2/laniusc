@@ -1,0 +1,22 @@
+module app::main;
+
+enum Lookup { Unknown, Supported(i32), Unsupported }
+struct Box { before: i32, value: Lookup, after: i32 }
+
+fn choose() -> Lookup { return Supported(1); }
+
+fn build(value: Lookup) -> Box {
+    return Box { before: 7, value: value, after: 8 };
+}
+
+fn main() -> i32 {
+    let found: Lookup = choose();
+    let box: Box = build(found);
+    if (box.before != 7) { return 1; }
+    if (box.after != 8) { return 2; }
+    return match (box.value) {
+        Unknown -> 3,
+        Supported(code) -> code - 1,
+        Unsupported -> 4,
+    };
+}

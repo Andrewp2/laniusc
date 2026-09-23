@@ -4,22 +4,73 @@ import x86::encode;
 import x86::control;
 import x86::register;
 
+pub struct LocalBinding {
+    id: i32,
+    kind: i32,
+    slot: i32,
+}
+
+pub fn binding(id: i32, kind: i32, slot: i32) -> LocalBinding {
+    return LocalBinding { id: id, kind: kind, slot: slot };
+}
+
+pub fn binding_kind(value: LocalBinding) -> i32 { return value.kind; }
+pub fn binding_slot(value: LocalBinding) -> i32 { return value.slot; }
+
+fn slice_from_raw_parts(data: ptr, length: i32) -> [LocalBinding] {
+    return slice_from_raw_parts(data, length);
+}
+
+fn table(work: backend::frame::Workspace) -> [LocalBinding] {
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    return slice_from_raw_parts(backend::frame::local_binding_first(work),
+        state[0].stride);
+}
+
+pub fn write(work: backend::frame::Workspace, index: i32, value: LocalBinding) {
+    let locals: [LocalBinding] = table(work);
+    locals[index].id = value.id;
+    locals[index].kind = value.kind;
+    locals[index].slot = value.slot;
+}
+
+pub fn read(work: backend::frame::Workspace, index: i32) -> LocalBinding {
+    let locals: [LocalBinding] = table(work);
+    return LocalBinding {
+        id: locals[index].id,
+        kind: locals[index].kind,
+        slot: locals[index].slot,
+    };
+}
+
+pub fn lookup(work: backend::frame::Workspace, active: i32, id: i32) -> i32 {
+    let locals: [LocalBinding] = table(work);
+    let index: i32 = active;
+    while (index > 0) {
+        index -= 1;
+        if (locals[index].id == id) { return index; }
+    }
+    return -1;
+}
+
 // A negative binding kind denotes an originally uninitialized local. It has
 // one extra frame word after its value, initialized to zero at every scope
 // entry. Initialized declarations and parameters need no flag or read check.
-pub fn mark(output: [i32], capacity: i32, work: [i32], slot: i32, initialized: bool) -> i32 {
+pub fn mark(output: [i32], capacity: i32, work: backend::frame::Workspace, slot: i32, initialized: bool) -> i32 {
+    let state: [backend::frame::State] = backend::frame::state_view(work);
     let value: i32 = 0;
     if (initialized) { value = 1; }
-    work[backend::frame::CODE] = x86::encode::immediate(output, capacity, work[backend::frame::CODE],
-        32, x86::register::R11, value, 0);
+    state[0].code = x86::encode::immediate(output, capacity, state[0].code,
+        x86::register::WIDTH_32, x86::register::R11, value, 0);
     return backend::frame::store(output, capacity, work, slot, x86::register::R11);
 }
 
-pub fn require(output: [i32], capacity: i32, work: [i32], slot: i32) -> i32 {
+pub fn require(output: [i32], capacity: i32, work: backend::frame::Workspace, slot: i32) -> i32 {
+    let state: [backend::frame::State] = backend::frame::state_view(work);
     backend::frame::load(output, capacity, work, slot, x86::register::R11);
-    let next: i32 = x86::encode::binary(output, capacity, work[backend::frame::CODE], 32,
-        x86::encode::TEST, x86::register::R11, x86::register::R11);
-    next = x86::control::branch(output, capacity, next, x86::control::NOT_EQUAL, next + 8);
-    work[backend::frame::CODE] = x86::control::trap(output, capacity, next);
-    return work[backend::frame::CODE];
+    let next: i32 = x86::encode::binary(output, capacity, state[0].code, x86::register::WIDTH_32,
+        x86::encode::Test, x86::register::R11, x86::register::R11);
+    state[0].code = x86::control::branch_over_trap(
+        output, capacity, next, x86::control::NotEqual);
+    return state[0].code;
 }

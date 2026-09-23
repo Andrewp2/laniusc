@@ -54,6 +54,7 @@ RWStructuredBuffer<uint> struct_init_field_ordinal_by_row;
 
 static const uint INVALID = 0xffffffffu;
 
+static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_INSTANCE = 3u;
@@ -115,6 +116,12 @@ uint type_head_token_for_node(uint type_node)
     if (!valid_compact_node(type_node))
         return INVALID;
 
+    // Qualified type refs are published on the HIR owner's token; the path
+    // leaf can be a distinct token without a resolved ref.
+    uint type_head = compact_hir_core[type_node].token_start;
+    if (valid_token(type_head) && type_expr_ref_tag[type_head] != TYPE_REF_INVALID)
+        return type_head;
+
     uint path_i = path_id_by_owner_hir[type_node];
     uint path_count = min(path_count_out[0u], gParams.n_hir_nodes);
     if (path_i != INVALID && path_i < path_count)
@@ -129,7 +136,6 @@ uint type_head_token_for_node(uint type_node)
         }
     }
 
-    uint type_head = compact_hir_core[type_node].token_start;
     return valid_token(type_head) ? type_head : INVALID;
 }
 

@@ -1,0 +1,18 @@
+module app::main;
+
+enum Pairish { Empty, Pair(i32, i32) }
+struct Box { before: i32, value: Pairish, after: i32 }
+
+fn build(value: Pairish) -> Box {
+    return Box { before: 7, value: value, after: 8 };
+}
+
+fn main() -> i32 {
+    let box: Box = build(Pair(1, 2));
+    if (box.before != 7) { return 1; }
+    if (box.after != 8) { return 2; }
+    return match (box.value) {
+        Empty -> 3,
+        Pair(left, right) -> left + right - 3,
+    };
+}

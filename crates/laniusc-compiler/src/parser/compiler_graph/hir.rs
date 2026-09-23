@@ -3562,6 +3562,10 @@ fn register_canonical_materialization(
             ("canonical_count", "hir_canonical_count", None),
             ("call_arg_count", "hir_call_arg_table_count", None),
             ("call_args", "hir_call_args", None),
+            ("field_count", "hir_field_table_count", None),
+            ("fields", "hir_field_rows", None),
+            ("array_element_count", "hir_array_element_table_count", None),
+            ("array_elements", "hir_array_element_rows", None),
             (
                 "expr_parent_encoded",
                 "hir_canonical_expr_parent_encoded",

@@ -1,185 +1,251 @@
 module verified::surface_type;
-import verified::surface_tree;
+import verified::production;
+import verified::syntax_tree;
 import verified::parser;
+import verified::host;
 
-// Surface type arena: count followed by eight words per allocated semantic
-// node. Kinds are segment, path, path type, array, slice, and reference.
-// Children are allocated before parents, exactly matching reconstructTypeExpr.
-// Slot seven is an intrusive next link for segment and type-argument lists.
-const KIND_SEGMENT: i32 = 0;
-const KIND_PATH: i32 = 1;
-const KIND_PATH_TYPE: i32 = 2;
-const KIND_ARRAY: i32 = 3;
-const KIND_SLICE: i32 = 4;
-const KIND_REFERENCE: i32 = 5;
+// Four native fields occupy the same 32 bytes as the former eight-word
+// arena row. Children precede parents; next links segments and type args.
+const FIELD_BYTES: i32 = 8;
+pub const NODE_BYTES: i32 = 4 * FIELD_BYTES;
+pub const COUNT_BYTES: i32 = FIELD_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+pub const MAX_CAPACITY: i32 =
+    (verified::host::I32_MAX - COUNT_BYTES) / NODE_BYTES;
+pub enum SurfaceTypeKind {
+    Segment,
+    Path,
+    PathType,
+    Array,
+    Slice,
+    Reference,
+}
 
-fn append(arena:[i32], capacity: i32, kind: i32, origin: i32,
-    first: i32, second: i32, token: i32) -> i32 {
-    let count: i32 = arena[0];
-    if (count <= -1 || capacity <= 0 || count >= (capacity - 1) / 8) { return -1; }
-    let slot: i32 = 1 + count * 8;
-    arena[slot] = kind;
-    arena[slot + 1] = origin;
-    arena[slot + 2] = first;
-    arena[slot + 3] = second;
-    arena[slot + 4] = token;
-    arena[slot + 5] = -1;
-    arena[slot + 6] = -1;
-    arena[slot + 7] = -1;
-    arena[0] = count + 1;
+pub struct TypeInput {
+    tree: verified::syntax_tree::Tree,
+    root: i32,
+    depth: i32,
+}
+
+pub struct TypeArena {
+    data: [TypeNode],
+    count: [CountCell],
+    capacity: i32,
+}
+
+pub struct TypeNode {
+    kind: SurfaceTypeKind,
+    first: i32,
+    token: i32,
+    next: i32,
+}
+
+pub struct CountCell {
+    value: i32,
+}
+
+pub fn allocation_bytes(capacity: i32) -> i32 {
+    if (capacity <= -1 || capacity > MAX_CAPACITY) { return -1; }
+    let nodes: i32 = capacity;
+    if (nodes == 0) { nodes = 1; }
+    return COUNT_BYTES + nodes * NODE_BYTES;
+}
+
+// Native nodes and count occupy one allocation; no packed row carrier or
+// conversion copy exists between type extraction and Core lowering.
+pub fn from_raw_parts(memory: ptr, capacity: i32) -> TypeArena {
+    let first: ptr = memory + COUNT_BYTES;
+    if (capacity > 0) { first = memory + capacity * NODE_BYTES; }
+    let count: [CountCell] = slice_from_raw_parts(memory, 1);
+    count[0].value = 0;
+    return TypeArena {
+        data: slice_from_raw_parts(first, capacity),
+        count: count,
+        capacity: capacity,
+    };
+}
+
+struct BuildContext {
+    tree: verified::syntax_tree::Tree,
+    arena: TypeArena,
+}
+
+pub fn kind_code(kind: SurfaceTypeKind) -> i32 {
+    return match (kind) {
+        Segment -> 0,
+        Path -> 1,
+        PathType -> 2,
+        Array -> 3,
+        Slice -> 4,
+        Reference -> 5,
+    };
+}
+
+pub fn kind_is(actual: SurfaceTypeKind, expected: SurfaceTypeKind) -> bool {
+    return kind_code(actual) == kind_code(expected);
+}
+
+fn append(arena: TypeArena, kind: SurfaceTypeKind,
+    first: i32, token: i32) -> i32 {
+    let count_storage: [CountCell] = arena.count;
+    let count: i32 = count_storage[0].value;
+    if (count <= -1 || count >= arena.capacity) {
+        return -1;
+    }
+    let nodes: [TypeNode] = arena.data;
+    nodes[count] = TypeNode {
+        kind: kind, first: first, token: token, next: -1,
+    };
+    count_storage[0].value = count + 1;
     return count;
 }
 
-fn node_child(records:[i32], length: i32, offsets:[i32], count: i32,
+fn node_child(tree: verified::syntax_tree::Tree,
     node: i32, index: i32) -> i32 {
-    return verified::surface_tree::child(records, length, offsets, count,
-        node, index, verified::parser::CHILD_STATE, 0);
+    return verified::syntax_tree::child(tree, node, index,
+        verified::parser::StateChild);
 }
 
-fn token_child(records:[i32], length: i32, offsets:[i32], count: i32,
-    token_count: i32, node: i32, index: i32) -> i32 {
-    return verified::surface_tree::child(records, length, offsets, count,
-        node, index, verified::parser::CHILD_TOKEN, token_count);
+fn token_child(tree: verified::syntax_tree::Tree,
+    node: i32, index: i32) -> i32 {
+    return verified::syntax_tree::child(tree, node, index,
+        verified::parser::TokenChild);
 }
 
 // Return -1 for an empty argument list and -2 for failure.
-fn arguments(records:[i32], length: i32, offsets:[i32], count: i32,
-    token_count: i32, node: i32, arena:[i32], capacity: i32, fuel: i32) -> i32 {
-    let offset: i32 = verified::surface_tree::record(records, length, offsets, count, node);
-    if (offset <= -1) { return -2; }
-    if (records[offset] == 226) { return -1; }
-    if (records[offset] != 227 || fuel <= 0) { return -2; }
-    let current: i32 = node_child(records, length, offsets, count, node, 1);
-    let tail: i32 = node_child(records, length, offsets, count, node, 2);
+fn arguments(context: BuildContext, node: i32, fuel: i32) -> i32 {
+    let tree: verified::syntax_tree::Tree = context.tree;
+    let arena: TypeArena = context.arena;
+    let nodes: [TypeNode] = arena.data;
+    let production: i32 = verified::syntax_tree::production(tree, node);
+    if (production == verified::production::TYPE_ARGS_NONE) { return -1; }
+    if (production != verified::production::TYPE_ARGS_SOME || fuel <= 0) { return -2; }
+    let current: i32 = node_child(tree, node, 1);
+    let tail: i32 = node_child(tree, node, 2);
     let first: i32 = -1;
     let previous: i32 = -1;
     let remaining: i32 = fuel;
     while (remaining != 0) {
         remaining -= 1;
-        let value: i32 = build(records, length, offsets, count, token_count,
-            current, arena, capacity, fuel - 1);
+        let value: i32 = build(context, current, fuel - 1);
         if (value <= -1) { return -2; }
         if (previous == -1) { first = value; }
-        else { arena[1 + previous * 8 + 7] = value; }
+        else { nodes[previous].next = value; }
         previous = value;
-        let tail_offset: i32 = verified::surface_tree::record(records, length,
-            offsets, count, tail);
-        if (tail_offset <= -1) { return -2; }
-        if (records[tail_offset] == 229) { return first; }
-        if (records[tail_offset] != 228) { return -2; }
-        let after: i32 = node_child(records, length, offsets, count, tail, 1);
-        let after_offset: i32 = verified::surface_tree::record(records, length,
-            offsets, count, after);
-        if (after_offset <= -1) { return -2; }
-        if (records[after_offset] == 231) { return first; }
-        if (records[after_offset] != 230) { return -2; }
-        current = node_child(records, length, offsets, count, after, 0);
-        tail = node_child(records, length, offsets, count, after, 1);
+        let tail_production: i32 =
+            verified::syntax_tree::production(tree, tail);
+        if (tail_production == verified::production::TYPE_ARGS_END) { return first; }
+        if (tail_production != verified::production::TYPE_ARGS_MORE) { return -2; }
+        let after: i32 = node_child(tree, tail, 1);
+        let after_production: i32 =
+            verified::syntax_tree::production(tree, after);
+        if (after_production
+            == verified::production::TYPE_ARGS_AFTER_COMMA_TRAILING) { return first; }
+        if (after_production
+            != verified::production::TYPE_ARGS_AFTER_COMMA_MORE) { return -2; }
+        current = node_child(tree, after, 0);
+        tail = node_child(tree, after, 1);
     }
     return -2;
 }
 
-fn path_type(records:[i32], length: i32, offsets:[i32], count: i32,
-    token_count: i32, node: i32, arena:[i32], capacity: i32, fuel: i32) -> i32 {
-    let offset: i32 = verified::surface_tree::record(records, length, offsets, count, node);
-    if (offset <= -1 || records[offset] != 69 || fuel <= 0) { return -1; }
-    let path_node: i32 = node_child(records, length, offsets, count, node, 0);
-    let path_offset: i32 = verified::surface_tree::record(records, length,
-        offsets, count, path_node);
-    if (path_offset <= -1 || records[path_offset] != 56) { return -1; }
-    let segment: i32 = node_child(records, length, offsets, count, path_node, 0);
-    let tail: i32 = node_child(records, length, offsets, count, path_node, 1);
+fn path_type(context: BuildContext, node: i32, fuel: i32) -> i32 {
+    let tree: verified::syntax_tree::Tree = context.tree;
+    let arena: TypeArena = context.arena;
+    let nodes: [TypeNode] = arena.data;
+    if (verified::syntax_tree::production(tree, node)
+            != verified::production::TYPE_IDENT || fuel <= 0) { return -1; }
+    let path_node: i32 = node_child(tree, node, 0);
+    if (verified::syntax_tree::production(tree, path_node)
+            != verified::production::TYPE_PATH) { return -1; }
+    let segment: i32 = node_child(tree, path_node, 0);
+    let tail: i32 = node_child(tree, path_node, 1);
     let first_segment: i32 = -1;
     let previous_segment: i32 = -1;
     let remaining: i32 = fuel;
     while (remaining != 0) {
         remaining -= 1;
-        let segment_offset: i32 = verified::surface_tree::record(records, length,
-            offsets, count, segment);
-        if (segment_offset <= -1 || records[segment_offset] != 57) { return -1; }
-        let name: i32 = token_child(records, length, offsets, count, token_count,
-            segment, 0);
+        if (verified::syntax_tree::production(tree, segment)
+                != verified::production::TYPE_PATH_IDENT) { return -1; }
+        let name: i32 = token_child(tree, segment, 0);
         if (name <= -1) { return -1; }
-        let tail_offset: i32 = verified::surface_tree::record(records, length,
-            offsets, count, tail);
-        if (tail_offset <= -1) { return -1; }
-        if (records[tail_offset] == 59) {
-            let args: i32 = arguments(records, length, offsets, count, token_count,
-                node_child(records, length, offsets, count, node, 1), arena,
-                capacity, fuel - 1);
+        let tail_production: i32 =
+            verified::syntax_tree::production(tree, tail);
+        if (tail_production == verified::production::TYPE_PATH_END) {
+            let args: i32 = arguments(context,
+                node_child(tree, node, 1),
+                fuel - 1);
             if (args <= -2) { return -1; }
-            let last: i32 = append(arena, capacity, KIND_SEGMENT, segment, args, -1, name);
+            let last: i32 = append(arena, Segment, args, name);
             if (last <= -1) { return -1; }
             if (previous_segment == -1) { first_segment = last; }
-            else { arena[1 + previous_segment * 8 + 7] = last; }
-            let path: i32 = append(arena, capacity, KIND_PATH, node,
-                first_segment, -1, -1);
+            else { nodes[previous_segment].next = last; }
+            let path: i32 = append(arena, Path,
+                first_segment, -1);
             if (path <= -1) { return -1; }
-            return append(arena, capacity, KIND_PATH_TYPE, node, path, -1, -1);
+            return append(arena, PathType, path, -1);
         }
-        if (records[tail_offset] != 58) { return -1; }
-        let initial: i32 = append(arena, capacity, KIND_SEGMENT, segment, -1, -1, name);
+        if (tail_production != verified::production::TYPE_PATH_MORE) { return -1; }
+        let initial: i32 = append(arena, Segment, -1, name);
         if (initial <= -1) { return -1; }
         if (previous_segment == -1) { first_segment = initial; }
-        else { arena[1 + previous_segment * 8 + 7] = initial; }
+        else { nodes[previous_segment].next = initial; }
         previous_segment = initial;
-        segment = node_child(records, length, offsets, count, tail, 2);
-        tail = node_child(records, length, offsets, count, tail, 3);
+        segment = node_child(tree, tail, 2);
+        tail = node_child(tree, tail, 3);
     }
     return -1;
 }
 
-fn build(records:[i32], length: i32, offsets:[i32], count: i32,
-    token_count: i32, node: i32, arena:[i32], capacity: i32, fuel: i32) -> i32 {
+fn build(context: BuildContext, node: i32, fuel: i32) -> i32 {
+    let tree: verified::syntax_tree::Tree = context.tree;
+    let arena: TypeArena = context.arena;
     if (fuel <= 0) { return -1; }
-    let offset: i32 = verified::surface_tree::record(records, length, offsets, count, node);
-    if (offset <= -1) { return -1; }
-    let production: i32 = records[offset];
-    if (production == 69) {
-        return path_type(records, length, offsets, count, token_count, node,
-            arena, capacity, fuel - 1);
+    let production: i32 = verified::syntax_tree::production(tree, node);
+    if (production <= -1) { return -1; }
+    if (production == verified::production::TYPE_IDENT) {
+        return path_type(context, node, fuel - 1);
     }
-    if (production == 70) {
-        let element: i32 = build(records, length, offsets, count, token_count,
-            node_child(records, length, offsets, count, node, 1), arena,
-            capacity, fuel - 1);
+    if (production == verified::production::TYPE_ARRAY) {
+        let element: i32 = build(context,
+            node_child(tree, node, 1), fuel - 1);
         if (element <= -1) { return -1; }
-        let tail: i32 = node_child(records, length, offsets, count, node, 2);
-        let tail_offset: i32 = verified::surface_tree::record(records, length,
-            offsets, count, tail);
-        if (tail_offset <= -1) { return -1; }
-        if (records[tail_offset] == 284) {
-            return append(arena, capacity, KIND_SLICE, node, element, -1, -1);
+        let tail: i32 = node_child(tree, node, 2);
+        let tail_production: i32 =
+            verified::syntax_tree::production(tree, tail);
+        if (tail_production == verified::production::TYPE_SLICE_TAIL) {
+            return append(arena, Slice, element, -1);
         }
-        if (records[tail_offset] != 283) { return -1; }
-        let length_node: i32 = node_child(records, length, offsets, count, tail, 1);
-        let length_offset: i32 = verified::surface_tree::record(records, length,
-            offsets, count, length_node);
-        if (length_offset <= -1) { return -1; }
-        let length_kind: i32 = records[length_offset] - 286;
-        if (length_kind != 0 && length_kind != 1) { return -1; }
-        let length_token: i32 = token_child(records, length, offsets, count,
-            token_count, length_node, 0);
+        if (tail_production != verified::production::TYPE_ARRAY_TAIL) { return -1; }
+        let length_node: i32 = node_child(tree, tail, 1);
+        let length_production: i32 =
+            verified::syntax_tree::production(tree, length_node);
+        if (length_production != verified::production::TYPE_ARRAY_LEN_NAME
+            && length_production != verified::production::TYPE_ARRAY_LEN_INT) {
+            return -1;
+        }
+        let length_token: i32 = token_child(tree, length_node, 0);
         if (length_token <= -1) { return -1; }
-        return append(arena, capacity, KIND_ARRAY, node, element,
-            length_kind, length_token);
+        return append(arena, Array, element, length_token);
     }
-    if (production == 285) {
-        let referent: i32 = build(records, length, offsets, count, token_count,
-            node_child(records, length, offsets, count, node, 1), arena,
-            capacity, fuel - 1);
+    if (production == verified::production::TYPE_REF) {
+        let referent: i32 = build(context,
+            node_child(tree, node, 1), fuel - 1);
         if (referent <= -1) { return -1; }
-        return append(arena, capacity, KIND_REFERENCE, node, referent, -1, -1);
+        return append(arena, Reference, referent, -1);
     }
     return -1;
 }
 
 // Build one type and return its arena root. Failure leaves partial arena data,
 // which callers must discard. The returned order is the Surface-ID order.
-pub fn extract(records:[i32], length: i32, offsets:[i32], count: i32,
-    token_count: i32, root: i32, arena:[i32], capacity: i32, depth: i32) -> i32 {
-    if (capacity <= 0) { return -1; }
-    arena[0] = 0;
-    return build(records, length, offsets, count, token_count, root,
-        arena, capacity, depth);
+pub fn extract(input: TypeInput, output: TypeArena) -> i32 {
+    if (output.capacity <= 0) { return -1; }
+    let count: [CountCell] = output.count;
+    count[0].value = 0;
+    let context: BuildContext = BuildContext {
+        tree: input.tree,
+        arena: output,
+    };
+    return build(context, input.root, input.depth);
 }

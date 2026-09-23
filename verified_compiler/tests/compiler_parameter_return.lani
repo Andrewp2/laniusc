@@ -1,0 +1,9 @@
+module app::main;
+
+fn select_second(left: i32, right: i32) -> i32 {
+    return right;
+}
+
+fn main() -> i32 {
+    return select_second(1, 42);
+}

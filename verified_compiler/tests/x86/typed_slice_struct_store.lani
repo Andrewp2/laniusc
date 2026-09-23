@@ -1,0 +1,44 @@
+module app::main;
+
+pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn pair(left: i32, right: i32) -> Pair {
+    return Pair { left: left, right: right };
+}
+
+fn main() -> i32 {
+    let memory: ptr = alloc(32, 8);
+    if (memory == 0) { return 2; }
+    let first: ptr = memory + 24;
+    let values: [Pair] = slice_from_raw_parts(first, 2);
+    values[0].left = 1;
+    values[0].right = 2;
+    values[1].left = 3;
+    values[1].right = 4;
+    let destination: i32 = 1;
+    values[destination] = pair(7, 9);
+    values[0] = values[destination];
+    if (values[0].left != 7 || values[0].right != 9
+        || values[1].left != 7 || values[1].right != 9) {
+        return 3;
+    }
+    // The two views overlap by one field, exercising both copy directions.
+    let overlap_memory: ptr = alloc(32, 8);
+    if (overlap_memory == 0) { return 4; }
+    let lower: [Pair] = slice_from_raw_parts(overlap_memory + 16, 1);
+    let higher: [Pair] = slice_from_raw_parts(overlap_memory + 24, 1);
+    higher[0].left = 11;
+    higher[0].right = 13;
+    lower[0] = higher[0];
+    if (lower[0].left != 11 || lower[0].right != 13) { return 5; }
+    lower[0].left = 17;
+    lower[0].right = 19;
+    higher[0] = lower[0];
+    if (higher[0].left != 17 || higher[0].right != 19) { return 6; }
+    return 0;
+}

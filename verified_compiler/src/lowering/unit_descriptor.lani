@@ -1,0 +1,35 @@
+module lowering::unit_descriptor;
+
+// This table is private to multi-unit lowering. Body lowering writes the body
+// slice; Core transport consumes it alongside each unit's source and tokens.
+// Signatures live in a separate native index, not in per-unit wire slices.
+pub const FIELD_BYTES: i32 = 8;
+pub const FIELD_COUNT: i32 = 6;
+pub const RECORD_BYTES: i32 = FIELD_COUNT * FIELD_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+
+pub struct UnitDescriptor {
+    source_offset: i32,
+    source_length: i32,
+    token_offset: i32,
+    token_count: i32,
+    body_offset: i32,
+    body_words: i32,
+}
+
+pub struct Table {
+    data: [UnitDescriptor],
+    count: i32,
+}
+
+pub fn from_raw_parts(memory: ptr, count: i32) -> Table {
+    // Typed aggregate slices start at the last word within their allocation.
+    let first: ptr = memory;
+    if (count > 0) {
+        first = memory + count * RECORD_BYTES - FIELD_BYTES;
+    }
+    return Table {
+        data: slice_from_raw_parts(first, count),
+        count: count,
+    };
+}

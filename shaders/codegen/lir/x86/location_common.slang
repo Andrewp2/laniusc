@@ -504,6 +504,12 @@ uint x86_compare32_instruction_bytes(uint left, uint right)
         x86_move32_to_fixed_bytes(right, 1u) + 2u;
 }
 
+uint x86_compare_aggregate_word_bytes(uint left, uint right)
+{
+    return x86_move64_to_fixed_bytes(left, 0u) +
+        x86_move64_to_fixed_bytes(right, 1u) + 6u;
+}
+
 uint x86_test32_instruction_bytes(uint location)
 {
     if (!x86_location_is_register(location))

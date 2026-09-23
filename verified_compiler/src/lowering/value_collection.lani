@@ -1,0 +1,187 @@
+module lowering::value_collection;
+
+import verified::token;
+
+import lowering::allocation;
+import lowering::declarations;
+import lowering::signature_index;
+import lowering::signatures;
+import lowering::token_names;
+import lowering::unit_context;
+import lowering::value_catalog;
+
+type ValueBindingKind = lowering::value_catalog::ValueBindingKind;
+
+pub struct WordRegion {
+    data: [i32],
+    words: i32,
+}
+
+pub fn region(data: [i32], words: i32) -> WordRegion {
+    return WordRegion { data: data, words: words };
+}
+
+struct ValueCandidate {
+    matches: i32,
+    kind: ValueBindingKind,
+    id: i32,
+    member: i32,
+    arity: i32,
+}
+
+fn empty_value_candidate() -> ValueCandidate {
+    return ValueCandidate {
+        matches: 0,
+        kind: lowering::value_catalog::CallableBinding,
+        id: -1,
+        member: -1,
+        arity: -1,
+    };
+}
+
+fn add_value_candidate(candidate: ValueCandidate,
+    kind: lowering::value_catalog::ValueBindingKind, id: i32, member: i32,
+    arity: i32) -> ValueCandidate {
+    if (candidate.matches == 0) {
+        return ValueCandidate {
+            matches: 1,
+            kind: kind,
+            id: id,
+            member: member,
+            arity: arity,
+        };
+    }
+    // Once ambiguous, the payload is never read. Keep the state explicit
+    // without carrying an arbitrary earlier candidate through more matches.
+    return ValueCandidate {
+        matches: candidate.matches + 1,
+        kind: lowering::value_catalog::CallableBinding,
+        id: -1,
+        member: -1,
+        arity: -1,
+    };
+}
+
+fn append_value_candidate(output: lowering::value_catalog::ValueTable,
+    position: i32,
+    token: i32, scope: lowering::value_catalog::ValueBindingScope,
+    candidate: ValueCandidate) -> i32 {
+    if (candidate.matches != 1) { return position; }
+    let binding: lowering::value_catalog::ValueBinding =
+        lowering::value_catalog::binding(token, candidate.kind, scope, candidate.id,
+            candidate.member, candidate.arity);
+    return lowering::value_catalog::write_binding(output, position,
+        binding);
+}
+
+pub struct ValueCatalogInput {
+    unit: i32,
+    contexts: lowering::unit_context::Table,
+    sources: WordRegion,
+    tokens: verified::token::TokenTable,
+    allocations: lowering::allocation::Table,
+    signature_index: lowering::signature_index::Table,
+}
+
+// Construct the caller-local value map required by owned body lowering.
+// Local and imported candidates are retained separately.  A scope is emitted
+// only when its spelling resolves to one callable or enum variant; ambiguous
+// spellings are omitted instead of guessed.
+pub fn build_value_catalog(input: ValueCatalogInput,
+    output: lowering::value_catalog::ValueTable) -> i32 {
+    let unit: i32 = input.unit;
+    let context_table: lowering::unit_context::Table = input.contexts;
+    let contexts: [lowering::unit_context::UnitContext] =
+        context_table.data;
+    let source_catalog: [i32] = input.sources.data;
+    let token_catalog: verified::token::TokenTable = input.tokens;
+    let allocated: lowering::allocation::Table = input.allocations;
+    let signatures: lowering::signature_index::Table = input.signature_index;
+    if (unit <= -1 || unit >= context_table.count
+        || output.count <= -1 || signatures.count <= 0
+        || !lowering::allocation::table_has_exact_rows(allocated)) {
+        return -1;
+    }
+    let allocation_rows: i32 = lowering::allocation::table_header(
+        allocated).rows;
+    let context: i32 = unit;
+    let token_count: i32 = contexts[context].token_count;
+    let token_names: lowering::token_names::Catalog =
+        lowering::token_names::catalog(context_table, source_catalog,
+            token_catalog);
+    let token: i32 = 0;
+    let written: i32 = 0;
+    while (token < token_count) {
+        let local: ValueCandidate = empty_value_candidate();
+        let imported: ValueCandidate = empty_value_candidate();
+        let row: i32 = 0;
+        while (row != allocation_rows) {
+            let allocation: lowering::allocation::AllocationRow =
+                lowering::allocation::table_row(allocated, row);
+            let owner: i32 = lowering::allocation::row_unit(allocation);
+            if (lowering::allocation::row_has_kind(allocation,
+                    lowering::declarations::Function)
+                || lowering::allocation::row_has_kind(allocation,
+                    lowering::declarations::External)) {
+                if (lowering::token_names::same(token_names, unit, token, owner,
+                        lowering::allocation::row_name(allocation))) {
+                    if (owner == unit) {
+                        local = add_value_candidate(local,
+                            lowering::value_catalog::CallableBinding,
+                            lowering::allocation::row_core_id(allocation),
+                            -1, -1);
+                    } else {
+                        imported = add_value_candidate(imported,
+                            lowering::value_catalog::CallableBinding,
+                            lowering::allocation::row_core_id(allocation),
+                            -1, -1);
+                    }
+                }
+            }
+            if (lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Enumeration)) {
+                let type_id: i32 = lowering::allocation::row_declaration_id(
+                    allocation);
+                if (!lowering::signature_index::has_shape(signatures,
+                    type_id, lowering::signatures::EnumerationShape)) {
+                    return -1;
+                }
+                let record: lowering::signatures::SignatureRecord =
+                    lowering::signature_index::record_at(signatures, type_id);
+                let variant: i32 = 0;
+                while (variant < lowering::signatures::record_arity(record)) {
+                    let native: lowering::signature_index::Variant =
+                        lowering::signature_index::variant_at(signatures,
+                            type_id, variant);
+                    if (native.name <= -1 || native.field_count <= -1) {
+                        return -1;
+                    }
+                    if (lowering::token_names::same(token_names, unit, token,
+                            owner, native.name)) {
+                        if (owner == unit) {
+                            local = add_value_candidate(local,
+                                lowering::value_catalog::EnumVariantBinding,
+                                type_id, variant, native.field_count);
+                        } else {
+                            imported = add_value_candidate(imported,
+                                lowering::value_catalog::EnumVariantBinding,
+                                type_id, variant, native.field_count);
+                        }
+                    }
+                    variant += 1;
+                }
+            }
+            row += 1;
+        }
+        let next: i32 = append_value_candidate(output, written,
+            token, lowering::value_catalog::LocalBinding, local);
+        if (next <= -1) { return -1; }
+        written = next;
+        next = append_value_candidate(output, written, token,
+            lowering::value_catalog::ImportedBinding, imported);
+        if (next <= -1) { return -1; }
+        written = next;
+        token += 1;
+    }
+    return written;
+}

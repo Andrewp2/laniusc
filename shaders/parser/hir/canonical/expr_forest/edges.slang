@@ -11,6 +11,10 @@ StructuredBuffer<HirCore> hir_core;
 StructuredBuffer<HirPayload> hir_payload;
 StructuredBuffer<uint> call_arg_count;
 StructuredBuffer<HirCallArg> call_args;
+StructuredBuffer<uint> field_count;
+StructuredBuffer<HirField> fields;
+StructuredBuffer<uint> array_element_count;
+StructuredBuffer<HirArrayElement> array_elements;
 RWStructuredBuffer<uint> expr_parent_encoded;
 RWStructuredBuffer<uint> expr_forest_status;
 
@@ -22,6 +26,8 @@ static const uint HIR_ASSIGN_EXPR = 15u;
 static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_ARRAY_EXPR = 24u;
+static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_EXPR_NOT = 6u;
 static const uint HIR_EXPR_EQ = 7u;
@@ -36,6 +42,11 @@ static const uint HIR_STMT_FOR = 7u;
 uint tid(uint3 dtid) { return dtid.x + dtid.y * MAX_GROUPS_X * 256u; }
 uint active_hir_count() { return min(canonical_count[0u], gCanonical.canonical_capacity); }
 uint active_arg_count() { return min(call_arg_count[0u], gCanonical.canonical_capacity); }
+uint active_field_count() { return min(field_count[0u], gCanonical.canonical_capacity); }
+uint active_array_element_count()
+{
+    return min(array_element_count[0u], gCanonical.canonical_capacity);
+}
 bool valid_hir(uint hir) { return hir != INVALID && hir < active_hir_count(); }
 
 bool fixed_arity_expression_kind(uint kind)
@@ -111,5 +122,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         HirCallArg arg = call_args[row];
         publish_parent(arg.value, arg.call);
+    }
+    if (row < active_field_count())
+    {
+        HirField field = fields[row];
+        if (valid_hir(field.owner) &&
+            hir_core[field.owner].kind == HIR_STRUCT_LITERAL_EXPR)
+            publish_parent(field.value, field.owner);
+    }
+    if (row < active_array_element_count())
+    {
+        HirArrayElement element = array_elements[row];
+        if (valid_hir(element.array) &&
+            hir_core[element.array].kind == HIR_ARRAY_EXPR)
+            publish_parent(element.value, element.array);
     }
 }

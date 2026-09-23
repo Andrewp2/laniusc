@@ -14,6 +14,7 @@ struct Params
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> struct_init_field_ordinal_by_row;
@@ -42,6 +43,8 @@ RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint TYPE_REF_SCALAR = 1u;
+static const uint HIR_TYPE = 5u;
+static const uint HIR_TYPE_FORM_SLICE = 3u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 
@@ -65,17 +68,32 @@ uint value_metadata_for_hir(uint node, uint hir_count)
 uint aggregate_decl_token_for_hir(uint node, uint hir_count)
 {
     if (node >= hir_count) return LIR_INVALID;
+    // The checked declaration token is authoritative. Numeric type-code
+    // windows can alias once a declaration's global token index exceeds 2048.
+    uint token = semantic_aggregate_decl_token[node];
+    if (token < gParams.n_tokens &&
+        semantic_aggregate_hir_by_name_token[token] < hir_count)
+        return token;
     uint scalar_type = semantic_lir_type(semantic_expr_type[node]);
     if (scalar_type >= TY_STRUCT_BASE && scalar_type < TY_ENUM_BASE)
-        return scalar_type - TY_STRUCT_BASE;
+    {
+        token = scalar_type - TY_STRUCT_BASE;
+        if (token < gParams.n_tokens &&
+            semantic_aggregate_hir_by_name_token[token] < hir_count)
+            return token;
+    }
     if (semantic_expr_ref_tag[node] == TYPE_REF_SCALAR)
     {
         uint type_id = semantic_expr_ref_payload[node];
         if (type_id >= TY_STRUCT_BASE && type_id < TY_ENUM_BASE)
-            return type_id - TY_STRUCT_BASE;
+        {
+            token = type_id - TY_STRUCT_BASE;
+            if (token < gParams.n_tokens &&
+                semantic_aggregate_hir_by_name_token[token] < hir_count)
+                return token;
+        }
     }
-    uint token = semantic_aggregate_decl_token[node];
-    return token < gParams.n_tokens ? token : LIR_INVALID;
+    return LIR_INVALID;
 }
 
 uint aggregate_word_count_for_hir(uint node, uint hir_count)
@@ -137,6 +155,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
     SemanticLirAggregateElement result;
+    result.slice_array_length = LIR_INVALID;
     if (row < array_count)
     {
         HirArrayElement source = compact_array_elements[row];
@@ -178,6 +197,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             result.word_offset = semantic_struct_field_word_offset_by_row[field_row];
             result.word_count = semantic_struct_field_word_count_by_row[field_row];
+            HirField declaration = compact_fields[field_row];
+            bool slice_field = declaration.value < hir_count &&
+                compact_hir_core[declaration.value].kind == HIR_TYPE &&
+                compact_hir_payload[declaration.value].a == HIR_TYPE_FORM_SLICE;
+            uint source_length = source.value < hir_count
+                ? semantic_array_length[source.value] : LIR_INVALID;
+            if (slice_field && source_length != LIR_INVALID &&
+                source_length != SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME &&
+                result.value_instruction < gParams.semantic_capacity &&
+                (semantic_lir_core[result.value_instruction].flags &
+                    SEMANTIC_LIR_FLAG_ARRAY_PAIR) == 0u)
+                result.slice_array_length = source_length;
         }
     }
     else

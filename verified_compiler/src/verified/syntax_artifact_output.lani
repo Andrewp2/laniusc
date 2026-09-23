@@ -1,12 +1,62 @@
 module verified::syntax_artifact_output;
 import verified::output;
 import verified::source_output;
+import verified::semantic_token_output;
 import verified::semantic_tokens;
 import verified::parse_output; // Emit the fields shared by syntax artifacts and optional presentation layers.
 // The caller supplies successful extraction prefixes and collected assignments.
 // Paths must be valid UTF-8 bytes; their encoding is decoded by Lean.
 // Partial output must be discarded on failure.
-pub fn emit_fields(path:[i32], path_length: i32, source:[i32], source_length: i32, grammar:[i32], grammar_length: i32, raw:[i32], raw_length: i32, raw_count: i32, tokens:[i32], tokens_length: i32, token_count: i32, semantic:[i32], semantic_length: i32, records:[i32], records_length: i32, offsets:[i32], node_count: i32, output:[i32], capacity: i32,) -> i32 {
+
+pub struct WordRegion {
+    data: [i32],
+    length: i32,
+}
+
+pub fn region(data: [i32], length: i32) -> WordRegion {
+    return WordRegion { data: data, length: length };
+}
+
+pub struct TokenRows {
+    data: [i32],
+    length: i32,
+    count: i32,
+}
+
+pub struct SyntaxArtifact {
+    path: WordRegion,
+    source: WordRegion,
+    grammar: WordRegion,
+    raw_tokens: TokenRows,
+    canonical_tokens: TokenRows,
+    semantic_kinds: verified::semantic_tokens::AssignmentBuffer,
+    parse_records: WordRegion,
+    node_offsets: [i32],
+    node_count: i32,
+}
+
+fn emit_fields(artifact: SyntaxArtifact,
+    destination: verified::output::Cursor) -> i32 {
+    let path: [i32] = artifact.path.data;
+    let path_length: i32 = artifact.path.length;
+    let source: [i32] = artifact.source.data;
+    let source_length: i32 = artifact.source.length;
+    let grammar: [i32] = artifact.grammar.data;
+    let grammar_length: i32 = artifact.grammar.length;
+    let raw: [i32] = artifact.raw_tokens.data;
+    let raw_length: i32 = artifact.raw_tokens.length;
+    let raw_count: i32 = artifact.raw_tokens.count;
+    let tokens: [i32] = artifact.canonical_tokens.data;
+    let tokens_length: i32 = artifact.canonical_tokens.length;
+    let token_count: i32 = artifact.canonical_tokens.count;
+    let semantic: verified::semantic_tokens::AssignmentBuffer =
+        artifact.semantic_kinds;
+    let records: [i32] = artifact.parse_records.data;
+    let records_length: i32 = artifact.parse_records.length;
+    let offsets: [i32] = artifact.node_offsets;
+    let node_count: i32 = artifact.node_count;
+    let output: [i32] = destination.data;
+    let capacity: i32 = destination.capacity;
     if (node_count <= 0) {
         return -1;
     }
@@ -17,25 +67,59 @@ pub fn emit_fields(path:[i32], path_length: i32, source:[i32], source_length: i3
     let semantic_start: str = ", semantic_token_kinds := ";
     let nodes_start: str = ", parse_nodes := ";
     let root_start: str = ", parse_root := some ";
-    let next: i32 = 0;
+    let next: i32 = destination.position;
     next = verified::output::text(output, capacity, next, header, 95);
-    next = verified::source_output::emit_bytes(path, path_length, output, capacity, next);
+    next = verified::source_output::emit_bytes(
+        verified::source_output::ByteRegion {
+            data: path,
+            length: path_length,
+        }, verified::output::cursor(output, capacity, next));
     next = verified::output::text(output, capacity, next, path_end, 48);
-    next = verified::source_output::emit_bytes(source, source_length, output, capacity, next);
+    next = verified::source_output::emit_bytes(
+        verified::source_output::ByteRegion {
+            data: source,
+            length: source_length,
+        }, verified::output::cursor(output, capacity, next));
     next = verified::output::text(output, capacity, next, raw_start, 24);
-    next = verified::source_output::emit_tokens(raw, raw_length, raw_count, source_length, 0, output, capacity, next);
+    next = verified::source_output::emit_tokens(
+        verified::source_output::TokenRows {
+            data: raw,
+            length: raw_length,
+            count: raw_count,
+            source_length: source_length,
+            file_id: 0,
+        }, verified::output::cursor(output, capacity, next));
     next = verified::output::text(output, capacity, next, tokens_start, 12);
-    next = verified::source_output::emit_tokens(tokens, tokens_length, token_count, source_length, 0, output, capacity, next);
+    next = verified::source_output::emit_tokens(
+        verified::source_output::TokenRows {
+            data: tokens,
+            length: tokens_length,
+            count: token_count,
+            source_length: source_length,
+            file_id: 0,
+        }, verified::output::cursor(output, capacity, next));
     next = verified::output::text(output, capacity, next, semantic_start, 26);
-    next = verified::semantic_tokens::emit(semantic, semantic_length, token_count, output, capacity, next);
+    next = verified::semantic_token_output::emit(semantic,
+        token_count, verified::output::cursor(output, capacity, next));
     next = verified::output::text(output, capacity, next, nodes_start, 17);
-    next = verified::parse_output::emit_nodes(grammar, grammar_length, records, records_length, offsets, node_count, token_count, output, capacity, next);
+    next = verified::parse_output::emit_nodes(
+        verified::parse_output::ParseNodes {
+            grammar: grammar,
+            grammar_length: grammar_length,
+            records: records,
+            record_length: records_length,
+            offsets: offsets,
+            node_count: node_count,
+            token_count: token_count,
+        }, verified::output::cursor(output, capacity, next));
     next = verified::output::text(output, capacity, next, root_start, 21);
     next = verified::output::natural(output, capacity, next, node_count - 1);
     return next;
 }
-pub fn emit(path:[i32], path_length: i32, source:[i32], source_length: i32, grammar:[i32], grammar_length: i32, raw:[i32], raw_length: i32, raw_count: i32, tokens:[i32], tokens_length: i32, token_count: i32, semantic:[i32], semantic_length: i32, records:[i32], records_length: i32, offsets:[i32], node_count: i32, output:[i32], capacity: i32,) -> i32 {
-    let next: i32 = emit_fields(path, path_length, source, source_length, grammar, grammar_length, raw, raw_length, raw_count, tokens, tokens_length, token_count, semantic, semantic_length, records, records_length, offsets, node_count, output, capacity);
+pub fn emit(artifact: SyntaxArtifact,
+    destination: verified::output::Cursor) -> i32 {
+    let next: i32 = emit_fields(artifact, destination);
     let end: str = " }";
-    return verified::output::text(output, capacity, next, end, 2);
+    return verified::output::text(destination.data, destination.capacity,
+        next, end, 2);
 }

@@ -3,21 +3,40 @@ module verified::raw_lexer;
 import verified::lexer;
 import verified::number;
 import verified::symbol;
+import verified::ascii;
 import verified::token;
 import verified::token_scan;
 
-pub const LEX_SUCCESS: i32 = 0;
-pub const LEX_ERROR: i32 = 1;
-pub const LEX_OUTPUT_FULL: i32 = 2;
+pub enum LexStage {
+    Lexed,
+    LexicalError,
+    TokenStorageFull,
+}
+
+pub fn stage_code(stage: LexStage) -> i32 {
+    return match (stage) {
+        Lexed -> 0,
+        LexicalError -> 1,
+        TokenStorageFull -> 2,
+    };
+}
 
 pub struct LexResult {
-    status: i32,
+    stage: LexStage,
     token_count: i32,
     error_offset: i32,
 }
 
-pub fn lex_status(result: LexResult) -> i32 {
-    return result.status;
+pub fn lex_stage_code(result: LexResult) -> i32 {
+    return stage_code(result.stage);
+}
+
+pub fn lex_has_stage(result: LexResult, expected: LexStage) -> bool {
+    return stage_code(result.stage) == stage_code(expected);
+}
+
+pub fn lex_succeeded(result: LexResult) -> bool {
+    return lex_has_stage(result, Lexed);
 }
 
 pub fn lex_token_count(result: LexResult) -> i32 {
@@ -30,7 +49,7 @@ pub fn lex_error_offset(result: LexResult) -> i32 {
 
 fn completed(token_count: i32) -> LexResult {
     return LexResult {
-        status: LEX_SUCCESS,
+        stage: Lexed,
         token_count: token_count,
         error_offset: 0,
     };
@@ -38,7 +57,7 @@ fn completed(token_count: i32) -> LexResult {
 
 fn lexical_failure(token_count: i32, error_offset: i32) -> LexResult {
     return LexResult {
-        status: LEX_ERROR,
+        stage: LexicalError,
         token_count: token_count,
         error_offset: error_offset,
     };
@@ -46,7 +65,7 @@ fn lexical_failure(token_count: i32, error_offset: i32) -> LexResult {
 
 fn output_full(token_count: i32, source_offset: i32) -> LexResult {
     return LexResult {
-        status: LEX_OUTPUT_FULL,
+        stage: TokenStorageFull,
         token_count: token_count,
         error_offset: source_offset,
     };
@@ -65,46 +84,53 @@ pub fn scan_one(
     }
 
     let byte: i32 = source[start];
-    let start_class: i32 = verified::lexer::classify_start(byte);
-    if (start_class == verified::lexer::START_IDENTIFIER) {
+    let start_class: verified::lexer::StartClass =
+        verified::lexer::classify_start(byte);
+    if (verified::lexer::start_is(
+            start_class, verified::lexer::IdentifierStart)) {
         return verified::token_scan::successful(
-            verified::token::IDENTIFIER,
+            verified::token::Identifier,
             verified::lexer::scan_identifier_end(source, source_length, start),
         );
     }
-    if (start_class == verified::lexer::START_DECIMAL_NUMBER) {
+    if (verified::lexer::start_is(
+            start_class, verified::lexer::DecimalNumberStart)) {
         return verified::number::scan_number(source, source_length, start);
     }
-    if (start_class == verified::lexer::START_WHITESPACE) {
+    if (verified::lexer::start_is(
+            start_class, verified::lexer::WhitespaceStart)) {
         return verified::token_scan::successful(
-            verified::token::WHITESPACE,
+            verified::token::Whitespace,
             verified::lexer::scan_whitespace_end(source, source_length, start),
         );
     }
-    if (start_class == verified::lexer::START_STRING_LITERAL) {
+    if (verified::lexer::start_is(
+            start_class, verified::lexer::StringLiteralStart)) {
         let quoted = verified::lexer::scan_string_end(source, source_length, start);
         if (!verified::lexer::scan_succeeded(quoted)) {
             return verified::token_scan::failed(
                 verified::lexer::scan_error_offset(quoted));
         }
         return verified::token_scan::successful(
-            verified::token::STRING,
+            verified::token::StringLiteral,
             verified::lexer::scan_end_offset(quoted),
         );
     }
-    if (start_class == verified::lexer::START_CHARACTER_LITERAL) {
+    if (verified::lexer::start_is(
+            start_class, verified::lexer::CharacterLiteralStart)) {
         let quoted = verified::lexer::scan_character_end(source, source_length, start);
         if (!verified::lexer::scan_succeeded(quoted)) {
             return verified::token_scan::failed(
                 verified::lexer::scan_error_offset(quoted));
         }
         return verified::token_scan::successful(
-            verified::token::CHARACTER,
+            verified::token::CharacterLiteral,
             verified::lexer::scan_end_offset(quoted),
         );
     }
-    if (start_class == verified::lexer::START_SYMBOL) {
-        if (byte == 46 && start + 1 < source_length) {
+    if (verified::lexer::start_is(
+            start_class, verified::lexer::SymbolStart)) {
+        if (byte == verified::ascii::DOT && start + 1 < source_length) {
             let following: i32 = source[start + 1];
             if (verified::lexer::is_decimal_digit(following)) {
                 return verified::number::scan_leading_dot_number(
@@ -114,14 +140,17 @@ pub fn scan_one(
 
         let matched = verified::symbol::match_symbol_head(
             source, source_length, start);
-        let kind: i32 = verified::symbol::token_match_kind(matched);
-        if (kind == verified::token::LINE_COMMENT) {
+        let kind: verified::token::TokenKind =
+            verified::symbol::token_match_token_kind(matched);
+        if (verified::symbol::token_match_is_kind(
+                matched, verified::token::LineComment)) {
             return verified::token_scan::successful(
                 kind,
                 verified::lexer::scan_line_comment_end(source, source_length, start),
             );
         }
-        if (kind == verified::token::BLOCK_COMMENT) {
+        if (verified::symbol::token_match_is_kind(
+                matched, verified::token::BlockComment)) {
             let comment = verified::lexer::scan_block_comment_end(
                 source, source_length, start);
             if (!verified::lexer::scan_succeeded(comment)) {
@@ -165,10 +194,12 @@ pub fn lex_into(
             return output_full(token_count, offset);
         }
 
-        let row: i32 = token_count * 3;
-        output_records[row] = verified::token_scan::kind(scanned);
-        output_records[row + 1] = offset;
-        output_records[row + 2] = verified::token_scan::end_offset(scanned);
+        let row: i32 = token_count * verified::token::ROW_WORDS;
+        output_records[row + verified::token::KIND_FIELD]
+            = verified::token_scan::encoded_kind(scanned);
+        output_records[row + verified::token::START_FIELD] = offset;
+        output_records[row + verified::token::END_FIELD]
+            = verified::token_scan::end_offset(scanned);
         offset = verified::token_scan::end_offset(scanned);
         token_count += 1;
     }

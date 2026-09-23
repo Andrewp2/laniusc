@@ -1,22 +1,42 @@
 module verified::lexer;
 
+import verified::ascii;
+
 // The lexical categories used to select the scanner for the next raw token.
 // Trivia is classified here because raw-token scanning must consume it even
 // though the parser-facing token stream later filters it out.
-pub type StartClass = i32;
+pub enum StartClass {
+    IdentifierStart,
+    DecimalNumberStart,
+    WhitespaceStart,
+    SymbolStart,
+    StringLiteralStart,
+    CharacterLiteralStart,
+    InvalidStart,
+}
 
-pub const START_IDENTIFIER: StartClass = 1;
-pub const START_DECIMAL_NUMBER: StartClass = 2;
-pub const START_WHITESPACE: StartClass = 3;
-pub const START_SYMBOL: StartClass = 4;
-pub const START_STRING_LITERAL: StartClass = 5;
-pub const START_CHARACTER_LITERAL: StartClass = 6;
-pub const START_INVALID: StartClass = 7;
+pub fn start_code(class: StartClass) -> i32 {
+    return match (class) {
+        IdentifierStart -> 0,
+        DecimalNumberStart -> 1,
+        WhitespaceStart -> 2,
+        SymbolStart -> 3,
+        StringLiteralStart -> 4,
+        CharacterLiteralStart -> 5,
+        InvalidStart -> 6,
+    };
+}
+
+pub fn start_is(class: StartClass, expected: StartClass) -> bool {
+    return start_code(class) == start_code(expected);
+}
 
 pub fn is_identifier_start(byte: i32) -> bool {
-    return byte >= 97 && byte <= 122
-        || byte >= 65 && byte <= 90
-        || byte == 95;
+    return byte >= verified::ascii::LOWER_A
+        && byte <= verified::ascii::LOWER_Z
+        || byte >= verified::ascii::UPPER_A
+        && byte <= verified::ascii::UPPER_Z
+        || byte == verified::ascii::UNDERSCORE;
 }
 
 
@@ -25,83 +45,63 @@ pub fn is_identifier_continue(byte: i32) -> bool {
 }
 
 pub fn is_decimal_digit(byte: i32) -> bool {
-    return byte >= 48 && byte <= 57;
+    return byte >= verified::ascii::ZERO && byte <= verified::ascii::NINE;
 }
 
 pub fn is_whitespace(byte: i32) -> bool {
-    return byte == 32 || byte == 9 || byte == 10 || byte == 13;
+    return byte == verified::ascii::SPACE
+        || byte == verified::ascii::TAB
+        || byte == verified::ascii::LINE_FEED
+        || byte == verified::ascii::CARRIAGE_RETURN;
 }
 
 pub fn is_symbol_start(byte: i32) -> bool {
-    return byte == 40
-        || byte == 41
-        || byte == 43
-        || byte == 42
-        || byte == 61
-        || byte == 45
-        || byte == 47
-        || byte == 33
-        || byte == 91
-        || byte == 93
-        || byte == 123
-        || byte == 125
-        || byte == 60
-        || byte == 62
-        || byte == 38
-        || byte == 124
-        || byte == 37
-        || byte == 94
-        || byte == 126
-        || byte == 44
-        || byte == 59
-        || byte == 58
-        || byte == 63
-        || byte == 46;
+    return byte == verified::ascii::LEFT_PAREN
+        || byte == verified::ascii::RIGHT_PAREN
+        || byte == verified::ascii::PLUS
+        || byte == verified::ascii::ASTERISK
+        || byte == verified::ascii::EQUAL
+        || byte == verified::ascii::MINUS
+        || byte == verified::ascii::SLASH
+        || byte == verified::ascii::EXCLAMATION
+        || byte == verified::ascii::LEFT_BRACKET
+        || byte == verified::ascii::RIGHT_BRACKET
+        || byte == verified::ascii::LEFT_BRACE
+        || byte == verified::ascii::RIGHT_BRACE
+        || byte == verified::ascii::LESS
+        || byte == verified::ascii::GREATER
+        || byte == verified::ascii::AMPERSAND
+        || byte == verified::ascii::PIPE
+        || byte == verified::ascii::PERCENT
+        || byte == verified::ascii::CARET
+        || byte == verified::ascii::TILDE
+        || byte == verified::ascii::COMMA
+        || byte == verified::ascii::SEMICOLON
+        || byte == verified::ascii::COLON
+        || byte == verified::ascii::QUESTION
+        || byte == verified::ascii::DOT;
 }
 
 pub fn classify_start(byte: i32) -> StartClass {
-    if (byte >= 97 && byte <= 122 || byte >= 65 && byte <= 90 || byte == 95) {
-        return START_IDENTIFIER;
+    if (is_identifier_start(byte)) {
+        return IdentifierStart;
     } else {
-        if (byte >= 48 && byte <= 57) {
-            return START_DECIMAL_NUMBER;
+        if (is_decimal_digit(byte)) {
+            return DecimalNumberStart;
         } else {
-            if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
-                return START_WHITESPACE;
+            if (is_whitespace(byte)) {
+                return WhitespaceStart;
             } else {
-                if (byte == 34) {
-                    return START_STRING_LITERAL;
+                if (byte == verified::ascii::QUOTE) {
+                    return StringLiteralStart;
                 } else {
-                    if (byte == 39) {
-                        return START_CHARACTER_LITERAL;
+                    if (byte == verified::ascii::APOSTROPHE) {
+                        return CharacterLiteralStart;
                     } else {
-                        if (byte == 40
-                            || byte == 41
-                            || byte == 43
-                            || byte == 42
-                            || byte == 61
-                            || byte == 45
-                            || byte == 47
-                            || byte == 33
-                            || byte == 91
-                            || byte == 93
-                            || byte == 123
-                            || byte == 125
-                            || byte == 60
-                            || byte == 62
-                            || byte == 38
-                            || byte == 124
-                            || byte == 37
-                            || byte == 94
-                            || byte == 126
-                            || byte == 44
-                            || byte == 59
-                            || byte == 58
-                            || byte == 63
-                            || byte == 46) {
-                            return START_SYMBOL;
+                        if (is_symbol_start(byte)) {
+                            return SymbolStart;
                         } else {
-                            return START_INVALID;
+                            return InvalidStart;
                         }
                     }
                 }
@@ -172,13 +172,13 @@ fn scan_quoted_end(
             escaping = false;
             offset += 1;
         } else {
-            if (byte == 10) {
+            if (byte == verified::ascii::LINE_FEED) {
                 return failed_scan(offset);
             }
             if (byte == delimiter) {
                 return successful_scan(offset + 1);
             }
-            if (byte == 92) {
+            if (byte == verified::ascii::BACKSLASH) {
                 escaping = true;
             }
             offset += 1;
@@ -189,16 +189,19 @@ fn scan_quoted_end(
 
 
 pub fn scan_string_end(source: [i32], source_length: i32, start: i32) -> ScanEnd {
-    return scan_quoted_end(source, source_length, start, 34);
+    return scan_quoted_end(source, source_length, start,
+        verified::ascii::QUOTE);
 }
 
 pub fn scan_character_end(source: [i32], source_length: i32, start: i32) -> ScanEnd {
-    return scan_quoted_end(source, source_length, start, 39);
+    return scan_quoted_end(source, source_length, start,
+        verified::ascii::APOSTROPHE);
 }
 
 pub fn scan_line_comment_end(source: [i32], source_length: i32, start: i32) -> i32 {
     let end: i32 = start + 2;
-    while (end <= source_length - 1 && source[end] != 10) {
+    while (end <= source_length - 1
+        && source[end] != verified::ascii::LINE_FEED) {
         end += 1;
     }
     return end;
@@ -207,7 +210,9 @@ pub fn scan_line_comment_end(source: [i32], source_length: i32, start: i32) -> i
 pub fn scan_block_comment_end(source: [i32], source_length: i32, start: i32) -> ScanEnd {
     let offset: i32 = start + 2;
     while (offset <= source_length - 1) {
-        if (source[offset] == 42 && offset + 1 <= source_length - 1 && source[offset + 1] == 47) {
+        if (source[offset] == verified::ascii::ASTERISK
+            && offset + 1 <= source_length - 1
+            && source[offset + 1] == verified::ascii::SLASH) {
             return successful_scan(offset + 2);
         }
         offset += 1;

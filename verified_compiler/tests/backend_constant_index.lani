@@ -1,0 +1,39 @@
+module app::main;
+
+import backend::constant_index;
+import backend::syntax;
+import verified::host;
+
+fn main() -> i32 {
+    let input: [i32; 10] = [7,1,42,0,8,5,3,65,195,169];
+    let memory: ptr = verified::host::alloc(
+        backend::constant_index::allocation_bytes(2),
+        backend::constant_index::ALIGNMENT);
+    if (memory == 0) { return 1; }
+    let constants: backend::constant_index::Table =
+        backend::constant_index::from_raw_parts(memory, 2);
+    if (backend::constant_index::build(input, 10, 0, constants) != 10
+        || backend::constant_index::find(constants, 7) != 0
+        || backend::constant_index::find(constants, 8) != 1
+        || backend::constant_index::find(constants, 9) != -1) {
+        return 2;
+    }
+    let scalar: backend::constant_index::Row =
+        backend::constant_index::at(constants, 0);
+    let string: backend::constant_index::Row =
+        backend::constant_index::at(constants, 1);
+    if (scalar.id != 7 || scalar.kind != backend::syntax::TypeI32
+        || scalar.low != 42 || scalar.high != 0
+        || string.id != 8 || string.kind != backend::syntax::TypeString
+        || string.byte_start != 7 || string.byte_count != 3) {
+        return 3;
+    }
+    input[4] = 7;
+    if (backend::constant_index::build(input, 10, 0, constants)
+        != -1) { return 4; }
+    input[4] = 8;
+    input[9] = 256;
+    if (backend::constant_index::build(input, 10, 0, constants)
+        != -1) { return 5; }
+    return 0;
+}

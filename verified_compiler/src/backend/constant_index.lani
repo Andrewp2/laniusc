@@ -1,0 +1,120 @@
+module backend::constant_index;
+
+import backend::literal;
+import backend::syntax;
+import verified::host;
+
+// Decode Core constants once. A string keeps a span into immutable Core input;
+// its bytes are copied to machine code only when a reference is emitted.
+const FIELD_BYTES: i32 = 8;
+const ROW_BYTES: i32 = 6 * FIELD_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+
+pub struct Row {
+    id: i32,
+    kind: backend::syntax::ValueType,
+    low: i32,
+    high: i32,
+    byte_start: i32,
+    byte_count: i32,
+}
+
+pub struct Table {
+    rows: [Row],
+    count: i32,
+}
+
+pub fn allocation_bytes(count: i32) -> i32 {
+    if (count <= -1 || count > verified::host::I32_MAX / ROW_BYTES) {
+        return -1;
+    }
+    if (count == 0) { return FIELD_BYTES; }
+    return count * ROW_BYTES;
+}
+
+pub fn from_raw_parts(memory: ptr, count: i32) -> Table {
+    let first: ptr = memory;
+    if (count > 0) { first = memory + count * ROW_BYTES - FIELD_BYTES; }
+    return Table {
+        rows: slice_from_raw_parts(first, count),
+        count: count,
+    };
+}
+
+fn find_prefix(table: Table, limit: i32, id: i32) -> i32 {
+    let rows: [Row] = table.rows;
+    let index: i32 = 0;
+    while (index < limit) {
+        if (rows[index].id == id) { return index; }
+        index += 1;
+    }
+    return -1;
+}
+
+pub fn find(table: Table, id: i32) -> i32 {
+    return find_prefix(table, table.count, id);
+}
+
+pub fn at(table: Table, index: i32) -> Row {
+    let rows: [Row] = table.rows;
+    return rows[index];
+}
+
+pub fn build(input: [i32], length: i32, start: i32,
+    table: Table) -> i32 {
+    if (start <= -1 || start > length || table.count <= -1
+        || table.count > (length - start)
+            / backend::literal::CONSTANT_HEADER_WORDS) { return -1; }
+    let rows: [Row] = table.rows;
+    let position: i32 = start;
+    let index: i32 = 0;
+    while (index < table.count) {
+        let size: i32 = backend::literal::constant_size(input, length,
+            position);
+        if (size <= -1) { return -1; }
+        let id: i32 = input[position
+            + backend::literal::CONSTANT_ID_FIELD];
+        if (find_prefix(table, index, id) >= 0) { return -1; }
+        let encoded: i32 = input[position
+            + backend::literal::CONSTANT_KIND_FIELD];
+        let kind: backend::syntax::ValueType = backend::syntax::TypeI32;
+        if (backend::syntax::type_is(encoded,
+                backend::syntax::TypeBool)) {
+            kind = backend::syntax::TypeBool;
+        }
+        if (backend::syntax::type_is(encoded,
+                backend::syntax::TypeUsize)) {
+            kind = backend::syntax::TypeUsize;
+        }
+        if (backend::syntax::type_is(encoded,
+                backend::syntax::TypePointer)) {
+            kind = backend::syntax::TypePointer;
+        }
+        if (backend::syntax::type_is(encoded,
+                backend::syntax::TypeString)) {
+            kind = backend::syntax::TypeString;
+        }
+        let low: i32 = 0;
+        let high: i32 = 0;
+        let byte_start: i32 = -1;
+        let byte_count: i32 = 0;
+        if (kind == backend::syntax::TypeString) {
+            byte_start = position
+                + backend::literal::CONSTANT_HEADER_WORDS;
+            byte_count = input[position
+                + backend::literal::CONSTANT_PAYLOAD_FIELD];
+        } else {
+            low = input[position
+                + backend::literal::CONSTANT_PAYLOAD_FIELD];
+            high = input[position
+                + backend::literal::SCALAR_CONSTANT_HIGH_FIELD];
+        }
+        rows[index] = Row {
+            id: id, kind: kind, low: low, high: high,
+            byte_start: byte_start, byte_count: byte_count,
+        };
+        position += size;
+        index += 1;
+    }
+    return position;
+}

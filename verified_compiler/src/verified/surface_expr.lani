@@ -1,74 +1,315 @@
 module verified::surface_expr;
-import verified::surface_tree;
+import verified::production;
 import verified::parser;
+import verified::host;
+import verified::syntax_tree;
 
-// Expression arena: count followed by seven words per node:
-// kind (0 literal, 1 unary, 2 binary, 3 assign, 4 path segment, 5 path,
-// 6 path expression, 7 index, 8 member, 9 call, 10 array,
-// 11 struct field, 12 struct value), parse origin,
-// production, left, right, token, expression-list link.
 // Semantic children precede parents. Segment left fields instead link to the
 // next segment (or -1); the owning path is allocated after all segments.
-fn append(arena:[i32], capacity: i32, kind: i32, origin: i32,
+pub enum SurfaceExprKind {
+    Literal,
+    Unary,
+    Binary,
+    Assign,
+    PathSegment,
+    Path,
+    PathExpression,
+    Index,
+    Member,
+    Call,
+    Array,
+    StructField,
+    StructValue,
+    MatchValue,
+    MatchArm,
+    PatternPath,
+    PatternLiteral,
+}
+
+pub fn kind_code(kind: SurfaceExprKind) -> i32 {
+    return match (kind) {
+        Literal -> 0,
+        Unary -> 1,
+        Binary -> 2,
+        Assign -> 3,
+        PathSegment -> 4,
+        Path -> 5,
+        PathExpression -> 6,
+        Index -> 7,
+        Member -> 8,
+        Call -> 9,
+        Array -> 10,
+        StructField -> 11,
+        StructValue -> 12,
+        MatchValue -> 13,
+        MatchArm -> 14,
+        PatternPath -> 15,
+        PatternLiteral -> 16,
+    };
+}
+
+pub fn has_kind(actual: SurfaceExprKind, expected: SurfaceExprKind) -> bool {
+    return kind_code(actual) == kind_code(expected);
+}
+
+const FIELD_BYTES: i32 = 8;
+pub const NODE_FIELDS: i32 = 7;
+pub const NODE_BYTES: i32 = NODE_FIELDS * FIELD_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+pub const MAX_CAPACITY: i32 =
+    (verified::host::I32_MAX - FIELD_BYTES) / NODE_BYTES;
+
+pub struct ExpressionNode {
+    kind: SurfaceExprKind,
+    origin: i32,
+    production: i32,
+    left: i32,
+    right: i32,
+    token: i32,
+    next: i32,
+}
+
+struct CountCell {
+    value: i32,
+}
+
+enum BuildMode {
+    ExpressionMode,
+    ArgumentListMode,
+    ArrayListMode,
+    StructFieldListMode,
+    MatchArmListMode,
+    PatternMode,
+    PatternListMode,
+}
+
+pub struct ExpressionInput {
+    tree: verified::syntax_tree::Tree,
+    root: i32,
+    depth: i32,
+}
+
+pub struct ExpressionArena {
+    data: [ExpressionNode],
+    count: [CountCell],
+    capacity: i32,
+}
+
+pub fn allocation_bytes(capacity: i32) -> i32 {
+    if (capacity <= -1 || capacity > MAX_CAPACITY) { return -1; }
+    let nodes: i32 = capacity;
+    if (nodes == 0) { nodes = 1; }
+    return FIELD_BYTES + nodes * NODE_BYTES;
+}
+
+pub fn from_raw_parts(memory: ptr, capacity: i32) -> ExpressionArena {
+    let first: ptr = memory + FIELD_BYTES;
+    if (capacity > 0) { first = memory + capacity * NODE_BYTES; }
+    let count: [CountCell] = slice_from_raw_parts(memory, 1);
+    count[0].value = 0;
+    return ExpressionArena {
+        data: slice_from_raw_parts(first, capacity),
+        count: count,
+        capacity: capacity,
+    };
+}
+
+pub fn node_count(arena: ExpressionArena) -> i32 {
+    let count: [CountCell] = arena.count;
+    return count[0].value;
+}
+
+struct BuildContext {
+    tree: verified::syntax_tree::Tree,
+    arena: ExpressionArena,
+}
+
+fn mode_code(mode: BuildMode) -> i32 {
+    return match (mode) {
+        ExpressionMode -> 0,
+        ArgumentListMode -> 1,
+        ArrayListMode -> 2,
+        StructFieldListMode -> 3,
+        MatchArmListMode -> 4,
+        PatternMode -> 5,
+        PatternListMode -> 6,
+    };
+}
+
+fn mode_is(mode: BuildMode, expected: BuildMode) -> bool {
+    return mode_code(mode) == mode_code(expected);
+}
+
+fn append(arena: ExpressionArena, kind: SurfaceExprKind, origin: i32,
     production: i32, left: i32, right: i32, token: i32) -> i32 {
-    let count: i32 = arena[0];
-    if (count <= -1 || count >= (capacity - 1) / 7) { return -1; }
-    let slot: i32 = 1 + count * 7;
-    arena[slot] = kind; arena[slot + 1] = origin; arena[slot + 2] = production;
-    arena[slot + 3] = left; arena[slot + 4] = right; arena[slot + 5] = token;
-    arena[slot + 6] = -1;
-    arena[0] = count + 1;
+    let count: i32 = node_count(arena);
+    if (count <= -1 || count >= arena.capacity) { return -1; }
+    let nodes: [ExpressionNode] = arena.data;
+    nodes[count] = ExpressionNode {
+        kind: kind,
+        origin: origin,
+        production: production,
+        left: left,
+        right: right,
+        token: token,
+        next: -1,
+    };
+    let count_storage: [CountCell] = arena.count;
+    count_storage[0].value = count + 1;
     return count;
 }
 
-fn child(records:[i32], length: i32, offsets:[i32], count: i32, node: i32, index: i32) -> i32 {
-    return verified::surface_tree::child(records, length, offsets, count,
-        node, index, verified::parser::CHILD_STATE, 0);
+fn child(context: BuildContext, node: i32, index: i32) -> i32 {
+    return verified::syntax_tree::child(context.tree, node, index,
+        verified::parser::StateChild);
 }
 
-fn path(records:[i32], length: i32, offsets:[i32], count: i32, tokens: i32,
-    node: i32, arena:[i32], capacity: i32, fuel: i32) -> i32 {
-    let offset: i32 = verified::surface_tree::record(records, length, offsets, count, node);
-    if (offset <= -1) { return -1; }
-    if (records[offset] != 47) { return -1; }
-    let segment: i32 = child(records, length, offsets, count, node, 0);
-    let tail: i32 = child(records, length, offsets, count, node, 1);
+fn token_child(context: BuildContext, node: i32, index: i32) -> i32 {
+    return verified::syntax_tree::child(context.tree, node, index,
+        verified::parser::TokenChild);
+}
+
+fn production(context: BuildContext, node: i32) -> i32 {
+    return verified::syntax_tree::production(context.tree, node);
+}
+
+fn children(context: BuildContext, node: i32) -> i32 {
+    return verified::syntax_tree::child_count(context.tree, node);
+}
+
+fn list_empty(mode: BuildMode, production: i32) -> bool {
+    if (mode_is(mode, ArgumentListMode)) {
+        return production == verified::production::ARGS_NONE;
+    }
+    return production == verified::production::ARRAY_NONE;
+}
+
+fn list_item(mode: BuildMode, production: i32, first: bool) -> bool {
+    if (mode_is(mode, ArgumentListMode)) {
+        if (first) { return production == verified::production::ARGS_SOME; }
+        return production == verified::production::ARGS_AFTER_COMMA_MORE;
+    }
+    if (first) { return production == verified::production::ARRAY_SOME; }
+    return production == verified::production::ARRAY_AFTER_COMMA_MORE;
+}
+
+fn list_end(mode: BuildMode, production: i32) -> bool {
+    if (mode_is(mode, ArgumentListMode)) {
+        return production == verified::production::ARGS_END;
+    }
+    return production == verified::production::ARRAY_END;
+}
+
+fn list_more(mode: BuildMode, production: i32) -> bool {
+    if (mode_is(mode, ArgumentListMode)) {
+        return production == verified::production::ARGS_MORE;
+    }
+    return production == verified::production::ARRAY_MORE;
+}
+
+fn list_trailing(mode: BuildMode, production: i32) -> bool {
+    if (mode_is(mode, ArgumentListMode)) {
+        return production == verified::production::ARGS_AFTER_COMMA_TRAILING;
+    }
+    return production == verified::production::ARRAY_AFTER_COMMA_TRAILING;
+}
+
+fn literal_production(production: i32) -> bool {
+    return production == verified::production::INT
+        || production == verified::production::FLOAT
+        || production == verified::production::STRING
+        || production == verified::production::CHAR
+        || production == verified::production::TRUE
+        || production == verified::production::FALSE;
+}
+
+fn unary_production(production: i32) -> bool {
+    return production == verified::production::POS
+        || production == verified::production::NEG
+        || production == verified::production::NOT;
+}
+
+fn binary_end(production: i32) -> i32 {
+    if (production == verified::production::OREXPR) {
+        return verified::production::OR_END;
+    }
+    if (production == verified::production::ANDEXPR) {
+        return verified::production::AND_END;
+    }
+    if (production == verified::production::BIT_OR) {
+        return verified::production::BOR_END;
+    }
+    if (production == verified::production::BIT_XOR) {
+        return verified::production::XOR_END;
+    }
+    if (production == verified::production::BIT_AND) {
+        return verified::production::BAND_END;
+    }
+    if (production == verified::production::EQUALITY) {
+        return verified::production::EQ_END;
+    }
+    if (production == verified::production::COMPARE) {
+        return verified::production::COMPARE_END;
+    }
+    if (production == verified::production::SHIFT) {
+        return verified::production::SHIFT_END;
+    }
+    if (production == verified::production::ADD) {
+        return verified::production::ADD_END;
+    }
+    if (production == verified::production::MUL) {
+        return verified::production::MUL_END;
+    }
+    return -1;
+}
+
+fn path(context: BuildContext, node: i32, fuel: i32) -> i32 {
+    let arena: ExpressionArena = context.arena;
+    let nodes: [ExpressionNode] = arena.data;
+    if (production(context, node) != verified::production::PATH) {
+        return -1;
+    }
+    let segment: i32 = child(context, node, 0);
+    let tail: i32 = child(context, node, 1);
     let first: i32 = -1;
     let previous: i32 = -1;
     let remaining: i32 = fuel;
     while (remaining >= 1) {
         remaining -= 1;
-        let segment_offset: i32 = verified::surface_tree::record(records, length, offsets, count, segment);
-        if (segment_offset <= -1) { return -1; }
         // Generic arguments will be handled by type extraction; never drop them.
-        if (records[segment_offset] != 48) { return -1; }
-        let token: i32 = verified::surface_tree::child(records, length, offsets, count,
-            segment, 0, verified::parser::CHILD_TOKEN, tokens);
+        if (production(context, segment) != verified::production::PATH_IDENT) {
+            return -1;
+        }
+        let token: i32 = token_child(context, segment, 0);
         if (token <= -1) { return -1; }
-        let current: i32 = append(arena, capacity, 4, segment, 48, -1, -1, token);
+        let current: i32 = append(arena, PathSegment, segment,
+            verified::production::PATH_IDENT, -1, -1, token);
         if (current <= -1) { return -1; }
         if (previous == -1) { first = current; }
-        else { arena[1 + previous * 7 + 3] = current; }
+        else { nodes[previous].left = current; }
         previous = current;
-        let tail_offset: i32 = verified::surface_tree::record(records, length, offsets, count, tail);
-        if (tail_offset <= -1) { return -1; }
-        if (records[tail_offset] == 51) {
-            return append(arena, capacity, 5, node, 47, first, -1, -1);
+        let tail_kind: i32 = production(context, tail);
+        if (tail_kind == verified::production::PATH_END) {
+            return append(arena, Path, node,
+                verified::production::PATH, first, -1, -1);
         }
-        if (records[tail_offset] != 50) { return -1; }
-        segment = child(records, length, offsets, count, tail, 2);
-        tail = child(records, length, offsets, count, tail, 3);
+        if (tail_kind != verified::production::PATH_MORE) { return -1; }
+        segment = child(context, tail, 2);
+        tail = child(context, tail, 3);
     }
     return -1;
 }
 
-// `mode == 0` builds one expression.  Modes 165/179 build the two
-// grammar-isomorphic expression lists, and mode 276 builds a struct-field
+// ExpressionMode builds one expression. ArgumentListMode and ArrayListMode
+// build the two grammar-isomorphic expression lists, while StructFieldListMode
+// builds a struct-field
 // list.  Keeping these cases in the same recursive function avoids a mutual
 // recursion cycle, which Lanius deliberately rejects at name resolution.
-fn build(records:[i32], length: i32, offsets:[i32], count: i32, tokens: i32,
-    node: i32, arena:[i32], capacity: i32, fuel: i32, mode: i32) -> i32 {
-    if (mode == 165 || mode == 179) {
+fn build(context: BuildContext, node: i32, fuel: i32,
+    mode: BuildMode) -> i32 {
+    let arena: ExpressionArena = context.arena;
+    let nodes: [ExpressionNode] = arena.data;
+    if (mode_is(mode, ArgumentListMode) || mode_is(mode, ArrayListMode)) {
         if (fuel <= 0) { return -2; }
         let current: i32 = node;
         let first: i32 = -1;
@@ -76,209 +317,345 @@ fn build(records:[i32], length: i32, offsets:[i32], count: i32, tokens: i32,
         let remaining: i32 = fuel;
         while (remaining >= 1) {
             remaining -= 1;
-            let offset: i32 = verified::surface_tree::record(records, length,
-                offsets, count, current);
-            if (offset <= -1) { return -2; }
-            let shape: i32 = records[offset] - mode;
-            if (shape == 0 && previous == -1) { return -1; }
-            if ((previous == -1 && shape != 1) ||
-                (previous != -1 && shape != 4)) { return -2; }
-            let value: i32 = build(records, length, offsets, count, tokens,
-                child(records, length, offsets, count, current, 0), arena,
-                capacity, fuel - 1, 0);
+            let production: i32 = production(context, current);
+            if (production <= -1) { return -2; }
+            if (list_empty(mode, production) && previous == -1) { return -1; }
+            if (!list_item(mode, production, previous == -1)) { return -2; }
+            let value: i32 = build(context,
+                child(context, current, 0),
+                fuel - 1, ExpressionMode);
             if (value <= -1) { return -2; }
             if (previous == -1) { first = value; }
-            else { arena[1 + previous * 7 + 6] = value; }
+            else { nodes[previous].next = value; }
             previous = value;
-            let tail: i32 = child(records, length, offsets, count, current, 1);
-            let tail_offset: i32 = verified::surface_tree::record(records,
-                length, offsets, count, tail);
-            if (tail_offset <= -1) { return -2; }
-            let tail_shape: i32 = records[tail_offset] - mode;
-            if (tail_shape == 3) { return first; }
-            if (tail_shape != 2) { return -2; }
-            current = child(records, length, offsets, count, tail, 1);
-            let next_offset: i32 = verified::surface_tree::record(records,
-                length, offsets, count, current);
-            if (next_offset <= -1) { return -2; }
-            let next_shape: i32 = records[next_offset] - mode;
-            if (next_shape == 5) { return first; }
+            let tail: i32 = child(context, current, 1);
+            let tail_production: i32 = production(context, tail);
+            if (list_end(mode, tail_production)) { return first; }
+            if (!list_more(mode, tail_production)) { return -2; }
+            current = child(context, tail, 1);
+            if (list_trailing(mode, production(context, current))) {
+                return first;
+            }
         }
         return -2;
     }
-    if (mode == 276) {
-        let offset: i32 = verified::surface_tree::record(records, length,
-            offsets, count, node);
-        if (offset <= -1) { return -2; }
-        if (records[offset] == 276) { return -1; }
-        if (records[offset] != 277 || fuel <= 0) { return -2; }
-        let current: i32 = child(records, length, offsets, count, node, 0);
-        let tail: i32 = child(records, length, offsets, count, node, 1);
+    if (mode_is(mode, StructFieldListMode)) {
+        let list_kind: i32 = production(context, node);
+        if (list_kind == verified::production::STRUCT_LIT_FIELDS_NONE) {
+            return -1;
+        }
+        if (list_kind != verified::production::STRUCT_LIT_FIELDS_SOME
+            || fuel <= 0) { return -2; }
+        let current: i32 = child(context, node, 0);
+        let tail: i32 = child(context, node, 1);
         let first: i32 = -1;
         let previous: i32 = -1;
         let remaining: i32 = fuel;
         while (remaining != 0) {
             remaining -= 1;
-            let field_offset: i32 = verified::surface_tree::record(records,
-                length, offsets, count, current);
-            if (field_offset <= -1 || records[field_offset] != 278) { return -2; }
-            let name: i32 = verified::surface_tree::child(records, length,
-                offsets, count, current, 0, verified::parser::CHILD_TOKEN, tokens);
-            let value: i32 = build(records, length, offsets, count, tokens,
-                child(records, length, offsets, count, current, 2), arena,
-                capacity, fuel - 1, 0);
+            if (production(context, current)
+                != verified::production::STRUCT_LIT_FIELD) { return -2; }
+            let name: i32 = token_child(context, current, 0);
+            let value: i32 = build(context,
+                child(context, current, 2),
+                fuel - 1, ExpressionMode);
             if (name <= -1 || value <= -1) { return -2; }
-            let field: i32 = append(arena, capacity, 11, current, 278,
-                value, -1, name);
+            let field: i32 = append(arena, StructField, current,
+                verified::production::STRUCT_LIT_FIELD, value, -1, name);
             if (field <= -1) { return -2; }
             if (previous == -1) { first = field; }
-            else { arena[1 + previous * 7 + 6] = field; }
+            else { nodes[previous].next = field; }
             previous = field;
-            let tail_offset: i32 = verified::surface_tree::record(records,
-                length, offsets, count, tail);
-            if (tail_offset <= -1) { return -2; }
-            if (records[tail_offset] == 280) { return first; }
-            if (records[tail_offset] != 279) { return -2; }
-            let after: i32 = child(records, length, offsets, count, tail, 1);
-            let after_offset: i32 = verified::surface_tree::record(records,
-                length, offsets, count, after);
-            if (after_offset <= -1) { return -2; }
-            if (records[after_offset] == 282) { return first; }
-            if (records[after_offset] != 281) { return -2; }
-            current = child(records, length, offsets, count, after, 0);
-            tail = child(records, length, offsets, count, after, 1);
+            let tail_kind: i32 = production(context, tail);
+            if (tail_kind == verified::production::STRUCT_LIT_FIELDS_END) {
+                return first;
+            }
+            if (tail_kind != verified::production::STRUCT_LIT_FIELDS_MORE) {
+                return -2;
+            }
+            let after: i32 = child(context, tail, 1);
+            let after_kind: i32 = production(context, after);
+            if (after_kind
+                == verified::production::STRUCT_LIT_FIELDS_AFTER_COMMA_TRAILING) {
+                return first;
+            }
+            if (after_kind
+                != verified::production::STRUCT_LIT_FIELDS_AFTER_COMMA_MORE) {
+                return -2;
+            }
+            current = child(context, after, 0);
+            tail = child(context, after, 1);
         }
         return -2;
     }
-    if (mode != 0) { return -2; }
-    if (fuel <= 0) { return -1; }
-    let offset: i32 = verified::surface_tree::record(records, length, offsets, count, node);
-    if (offset <= -1) { return -1; }
-    let production: i32 = records[offset];
-    if (production == 171) {
-        let first: i32 = build(records, length, offsets, count, tokens,
-            child(records, length, offsets, count, node, 1), arena, capacity,
-            fuel - 1, 179);
-        if (first <= -2) { return -1; }
-        return append(arena, capacity, 10, node, production, -1, first, -1);
-    }
-    if (production == 173) {
-        let tail: i32 = child(records, length, offsets, count, node, 1);
-        let tail_offset: i32 = verified::surface_tree::record(records, length, offsets, count, tail);
-        if (tail_offset <= -1) { return -1; }
-        let value: i32 = path(records, length, offsets, count, tokens,
-            child(records, length, offsets, count, node, 0), arena, capacity, fuel - 1);
-        if (value <= -1) { return -1; }
-        if (records[tail_offset] == 274) {
-            return append(arena, capacity, 6, node, 173, value, -1, -1);
+    if (mode_is(mode, PatternMode)) {
+        if (fuel <= 0) { return -2; }
+        let production: i32 = production(context, node);
+        if (production <= -1) { return -2; }
+        if (production == verified::production::PATTERN_IDENT) {
+            let owner: i32 = path(context,
+                child(context, node, 0), fuel - 1);
+            let tail: i32 = child(context, node, 1);
+            let tail_kind: i32 = production(context, tail);
+            if (owner <= -1 || tail_kind <= -1) { return -2; }
+            let payload: i32 = -1;
+            if (tail_kind == verified::production::PATTERN_TUPLE) {
+                payload = build(context,
+                    child(context, tail, 1),
+                    fuel - 1, PatternListMode);
+                if (payload <= -2) { return -2; }
+            } else {
+                if (tail_kind
+                    != verified::production::PATTERN_PLAIN) { return -2; }
+            }
+            return append(arena, PatternPath, node, production,
+                owner, payload, -1);
         }
-        if (records[tail_offset] != 275) { return -1; }
-        let fields: i32 = build(records, length, offsets, count, tokens,
-            child(records, length, offsets, count, tail, 1), arena, capacity,
-            fuel - 1, 276);
+        if (production == verified::production::PATTERN_INT
+            || production == verified::production::PATTERN_TRUE
+            || production == verified::production::PATTERN_FALSE) {
+            let token: i32 = -1;
+            if (production == verified::production::PATTERN_INT) {
+                token = token_child(context, node, 0);
+                if (token <= -1) { return -2; }
+            }
+            return append(arena, PatternLiteral, node, production,
+                -1, -1, token);
+        }
+        return -2;
+    }
+    if (mode_is(mode, PatternListMode)) {
+        if (fuel <= 0) { return -2; }
+        let current: i32 = node;
+        let first: i32 = -1;
+        let previous: i32 = -1;
+        let remaining: i32 = fuel;
+        while (remaining > 0) {
+            remaining -= 1;
+            let production: i32 = production(context, current);
+            if (production <= -1) { return -2; }
+            if (production == verified::production::PATTERNS_NONE
+                && previous == -1) { return -1; }
+            if ((previous == -1
+                    && production != verified::production::PATTERNS_SOME)
+                || (previous != -1
+                    && production
+                        != verified::production::PATTERNS_AFTER_COMMA_MORE)) {
+                return -2;
+            }
+            let pattern: i32 = build(context,
+                child(context, current, 0),
+                fuel - 1, PatternMode);
+            if (pattern <= -1) { return -2; }
+            if (previous == -1) { first = pattern; }
+            else { nodes[previous].next = pattern; }
+            previous = pattern;
+            let tail: i32 = child(context, current, 1);
+            let tail_kind: i32 = production(context, tail);
+            if (tail_kind == verified::production::PATTERNS_END) {
+                return first;
+            }
+            if (tail_kind != verified::production::PATTERNS_MORE) {
+                return -2;
+            }
+            current = child(context, tail, 1);
+            let after_kind: i32 = production(context, current);
+            if (after_kind
+                == verified::production::PATTERNS_AFTER_COMMA_TRAILING) {
+                return first;
+            }
+        }
+        return -2;
+    }
+    if (mode_is(mode, MatchArmListMode)) {
+        if (fuel <= 0) { return -2; }
+        let list_kind: i32 = production(context, node);
+        if (list_kind == verified::production::MATCH_ARMS_NONE) {
+            return -1;
+        }
+        if (list_kind != verified::production::MATCH_ARMS_SOME) {
+            return -2;
+        }
+        let current: i32 = child(context, node, 0);
+        let tail: i32 = child(context, node, 1);
+        let first: i32 = -1;
+        let previous: i32 = -1;
+        let remaining: i32 = fuel;
+        while (remaining > 0) {
+            remaining -= 1;
+            if (production(context, current)
+                != verified::production::MATCH_ARM) { return -2; }
+            let pattern: i32 = build(context,
+                child(context, current, 0),
+                fuel - 1, PatternMode);
+            let result: i32 = build(context,
+                child(context, current, 2),
+                fuel - 1, ExpressionMode);
+            if (pattern <= -1 || result <= -1) { return -2; }
+            let arm: i32 = append(arena, MatchArm, current,
+                verified::production::MATCH_ARM, pattern, result, -1);
+            if (arm <= -1) { return -2; }
+            if (previous == -1) { first = arm; }
+            else { nodes[previous].next = arm; }
+            previous = arm;
+            let tail_kind: i32 = production(context, tail);
+            if (tail_kind == verified::production::MATCH_ARMS_END) {
+                return first;
+            }
+            if (tail_kind != verified::production::MATCH_ARMS_MORE) {
+                return -2;
+            }
+            let after: i32 = child(context, tail, 1);
+            let after_kind: i32 = production(context, after);
+            if (after_kind
+                == verified::production::MATCH_ARMS_AFTER_COMMA_TRAILING) {
+                return first;
+            }
+            if (after_kind
+                != verified::production::MATCH_ARMS_AFTER_COMMA_MORE) {
+                return -2;
+            }
+            current = child(context, after, 0);
+            tail = child(context, after, 1);
+        }
+        return -2;
+    }
+    if (!mode_is(mode, ExpressionMode)) { return -2; }
+    if (fuel <= 0) { return -1; }
+    let production: i32 = production(context, node);
+    if (production <= -1) { return -1; }
+    if (production == verified::production::ARRAY_LIT) {
+        let first: i32 = build(context,
+            child(context, node, 1), fuel - 1,
+            ArrayListMode);
+        if (first <= -2) { return -1; }
+        return append(arena, Array, node, production, -1, first, -1);
+    }
+    if (production == verified::production::MATCH_EXPR) {
+        let scrutinee: i32 = build(context,
+            child(context, node, 2), fuel - 1,
+            ExpressionMode);
+        let arms: i32 = build(context,
+            child(context, node, 5), fuel - 1,
+            MatchArmListMode);
+        if (scrutinee <= -1 || arms <= -1) { return -1; }
+        return append(arena, MatchValue, node, production,
+            scrutinee, arms, -1);
+    }
+    if (production == verified::production::IDENT) {
+        let tail: i32 = child(context, node, 1);
+        let tail_kind: i32 = production(context, tail);
+        if (tail_kind <= -1) { return -1; }
+        let value: i32 = path(context,
+            child(context, node, 0), fuel - 1);
+        if (value <= -1) { return -1; }
+        if (tail_kind == verified::production::IDENT_PLAIN) {
+            return append(arena, PathExpression, node,
+                verified::production::IDENT, value, -1, -1);
+        }
+        if (tail_kind != verified::production::STRUCT_LIT) { return -1; }
+        let fields: i32 = build(context,
+            child(context, tail, 1), fuel - 1,
+            StructFieldListMode);
         if (fields <= -2) { return -1; }
-        return append(arena, capacity, 12, node, 173, value, fields, -1);
+        return append(arena, StructValue, node,
+            verified::production::IDENT, value, fields, -1);
     }
     // A path can reach the expression grammar directly for a call base.  The
     // usual path-expression production (173) wraps this node, but preserving
     // the same canonical arena shape here keeps hand-authenticated trees and
     // parser output equivalent without guessing a value ID.
-    if (production == 47) {
-        let owner: i32 = path(records, length, offsets, count, tokens,
-            node, arena, capacity, fuel - 1);
+    if (production == verified::production::PATH) {
+        let owner: i32 = path(context, node, fuel - 1);
         if (owner <= -1) { return -1; }
-        return append(arena, capacity, 6, node, production, owner, -1, -1);
+        return append(arena, PathExpression, node, production,
+            owner, -1, -1);
     }
-    if ((production >= 175 && production <= 178) || production == 185 || production == 186) {
-        if (records[offset + 3] != 1) { return -1; }
-        let token: i32 = verified::surface_tree::child(records, length, offsets, count,
-            node, 0, verified::parser::CHILD_TOKEN, tokens);
+    if (literal_production(production)) {
+        if (children(context, node) != 1) { return -1; }
+        let token: i32 = token_child(context, node, 0);
         if (token <= -1) { return -1; }
-        return append(arena, capacity, 0, node, production, -1, -1, token);
+        return append(arena, Literal, node, production, -1, -1, token);
     }
-    if (production == 104 || production == 159 || production == 172) {
+    if (production == verified::production::EXPR || production == verified::production::BASE || production == verified::production::GROUP) {
         let index: i32 = 0;
-        if (production == 172) { index = 1; }
-        return build(records, length, offsets, count, tokens,
-            child(records, length, offsets, count, node, index), arena,
-            capacity, fuel - 1, 0);
+        if (production == verified::production::GROUP) { index = 1; }
+        return build(context,
+            child(context, node, index), fuel - 1,
+            ExpressionMode);
     }
-    if (production >= 156 && production <= 158) {
-        let operand: i32 = build(records, length, offsets, count, tokens,
-            child(records, length, offsets, count, node, 1), arena, capacity,
-            fuel - 1, 0);
+    if (unary_production(production)) {
+        let operand: i32 = build(context,
+            child(context, node, 1), fuel - 1,
+            ExpressionMode);
         if (operand <= -1) { return -1; }
-        return append(arena, capacity, 1, node, production, operand, -1, -1);
+        return append(arena, Unary, node, production, operand, -1, -1);
     }
-    let heads: [i32; 10] = [118,121,124,127,130,133,137,143,147,151];
-    let ends: [i32; 10] = [120,123,126,129,132,136,142,146,150,155];
-    let end: i32 = -1;
-    let layer: i32 = 0;
-    while (layer != 10) {
-        if (production == heads[layer]) { end = ends[layer]; }
-        layer += 1;
-    }
-    if (end == -1 && production != 105 && production != 160) { return -1; }
-    let left: i32 = build(records, length, offsets, count, tokens,
-        child(records, length, offsets, count, node, 0), arena, capacity,
-        fuel - 1, 0);
+    let end: i32 = binary_end(production);
+    if (end == -1 && production != verified::production::ASSIGN && production != verified::production::POSTFIX) { return -1; }
+    let left: i32 = build(context,
+        child(context, node, 0), fuel - 1,
+        ExpressionMode);
     if (left <= -1) { return -1; }
-    let tail: i32 = child(records, length, offsets, count, node, 1);
+    let tail: i32 = child(context, node, 1);
     let remaining: i32 = fuel;
     while (remaining != 0) {
         remaining -= 1;
-        let tail_offset: i32 = verified::surface_tree::record(records, length, offsets, count, tail);
-        if (tail_offset <= -1) { return -1; }
-        let operation: i32 = records[tail_offset];
+        let operation: i32 = production(context, tail);
+        if (operation <= -1) { return -1; }
         // Keep postfix and binary/assignment paths in explicit branches.
         // The bootstrap compiler failed the mixed-chain execution test when
         // this branch used continue after updating the tail reference.
-        if (production == 160) {
-            if (operation == 164) { return left; }
-            if (operation == 161) {
-                let first: i32 = build(records, length, offsets, count, tokens,
-                    child(records, length, offsets, count, tail, 1), arena,
-                    capacity, fuel - 1, 165);
+        if (production == verified::production::POSTFIX) {
+            if (operation == verified::production::POSTFIX_END) { return left; }
+            if (operation == verified::production::POSTFIX_CALL) {
+                let first: i32 = build(context,
+                    child(context, tail, 1),
+                    fuel - 1, ArgumentListMode);
                 if (first <= -2) { return -1; }
-                left = append(arena, capacity, 9, tail, operation, left, first, -1);
-                tail = child(records, length, offsets, count, tail, 3);
+                left = append(arena, Call, tail, operation, left,
+                    first, -1);
+                tail = child(context, tail, 3);
             } else {
-            if (operation == 162) {
-                let index: i32 = build(records, length, offsets, count, tokens,
-                    child(records, length, offsets, count, tail, 1), arena,
-                    capacity, fuel - 1, 0);
+            if (operation == verified::production::POSTFIX_INDEX) {
+                let index: i32 = build(context,
+                    child(context, tail, 1),
+                    fuel - 1, ExpressionMode);
                 if (index <= -1) { return -1; }
-                left = append(arena, capacity, 7, tail, operation, left, index, -1);
-                tail = child(records, length, offsets, count, tail, 3);
+                left = append(arena, Index, tail, operation, left,
+                    index, -1);
+                tail = child(context, tail, 3);
             } else {
-                if (operation != 163) { return -1; }
-                let name: i32 = verified::surface_tree::child(records, length, offsets, count,
-                    tail, 1, verified::parser::CHILD_TOKEN, tokens);
+                if (operation != verified::production::POSTFIX_MEMBER) { return -1; }
+                let name: i32 = token_child(context, tail, 1);
                 if (name <= -1) { return -1; }
-                left = append(arena, capacity, 8, tail, operation, left, -1, name);
-                tail = child(records, length, offsets, count, tail, 2);
+                left = append(arena, Member, tail, operation, left,
+                    -1, name);
+                tail = child(context, tail, 2);
             }
             }
             if (left <= -1) { return -1; }
         } else {
-        if (production == 105) {
-            if (operation == 117) { return left; }
-            if (operation <= 105 || operation >= 117) { return -1; }
-            let right: i32 = build(records, length, offsets, count, tokens,
-                child(records, length, offsets, count, tail, 1), arena,
-                capacity, fuel - 1, 0);
+        if (production == verified::production::ASSIGN) {
+            if (operation == verified::production::ASSIGN_END) { return left; }
+            if (operation <= verified::production::ASSIGN
+                || operation >= verified::production::ASSIGN_END) { return -1; }
+            let right: i32 = build(context,
+                child(context, tail, 1),
+                fuel - 1, ExpressionMode);
             if (right <= -1) { return -1; }
-            return append(arena, capacity, 3, tail, operation, left, right, -1);
+            return append(arena, Assign, tail, operation, left,
+                right, -1);
         }
         if (operation == end) { return left; }
         if (operation <= production || operation >= end) { return -1; }
-        let right: i32 = build(records, length, offsets, count, tokens,
-            child(records, length, offsets, count, tail, 1), arena,
-            capacity, fuel - 1, 0);
+        let right: i32 = build(context,
+            child(context, tail, 1), fuel - 1,
+            ExpressionMode);
         if (right <= -1) { return -1; }
-        left = append(arena, capacity, 2, tail, operation, left, right, -1);
+        left = append(arena, Binary, tail, operation, left, right, -1);
         if (left <= -1) { return -1; }
-        tail = child(records, length, offsets, count, tail, 2);
+        tail = child(context, tail, 2);
         }
     }
     return -1;
@@ -286,10 +663,13 @@ fn build(records:[i32], length: i32, offsets:[i32], count: i32, tokens: i32,
 
 // Requires grammar-validated input. Build once in semantic traversal order.
 // Failure leaves partial arena contents which must be discarded.
-pub fn extract(records:[i32], length: i32, offsets:[i32], count: i32,
-    tokens: i32, root: i32, arena:[i32], capacity: i32, depth: i32) -> i32 {
-    if (capacity <= 0) { return -1; }
-    arena[0] = 0;
-    return build(records, length, offsets, count, tokens, root, arena, capacity,
-        depth, 0);
+pub fn extract(input: ExpressionInput, output: ExpressionArena) -> i32 {
+    if (output.capacity <= 0) { return -1; }
+    let count: [CountCell] = output.count;
+    count[0].value = 0;
+    let context: BuildContext = BuildContext {
+        tree: input.tree,
+        arena: output,
+    };
+    return build(context, input.root, input.depth, ExpressionMode);
 }

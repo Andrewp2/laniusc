@@ -1,0 +1,210 @@
+module backend::function_index;
+
+import backend::syntax;
+import runtime::service;
+import verified::host;
+
+// Core function records remain serialized input. This table owns the decoded
+// semantic headers and parameters; backend::frame owns emitted code positions.
+const FIELD_BYTES: i32 = 8;
+const FUNCTION_BYTES: i32 = 9 * FIELD_BYTES;
+const PARAMETER_BYTES: i32 = 2 * FIELD_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+
+pub struct Function {
+    header: backend::syntax::FunctionHeader,
+    input_offset: i32,
+    word_count: i32,
+    parameter_start: i32,
+}
+
+pub struct Requirements {
+    functions: i32,
+    parameters: i32,
+    end: i32,
+    valid: bool,
+}
+
+pub struct Table {
+    functions: [Function],
+    count: i32,
+    parameters: [backend::syntax::Parameter],
+    parameter_count: i32,
+}
+
+fn invalid() -> Requirements {
+    return Requirements {
+        functions: 0, parameters: 0, end: -1, valid: false,
+    };
+}
+
+pub fn measure(input: [i32], length: i32, start: i32,
+    count: i32) -> Requirements {
+    let required: Requirements = invalid();
+    if (start <= -1 || start > length || count <= 0
+        || count > (length - start)
+            / (backend::syntax::FUNCTION_RECORD_PREFIX_WORDS
+                + backend::syntax::FUNCTION_HEADER_WORDS)) {
+        return required;
+    }
+    required.functions = count;
+    let position: i32 = start;
+    let index: i32 = 0;
+    while (index < count) {
+        if (position >= length) { return invalid(); }
+        let words: i32 = input[position];
+        if (words <= backend::syntax::FUNCTION_HEADER_WORDS - 1
+            || words > length - position
+                - backend::syntax::FUNCTION_RECORD_PREFIX_WORDS) {
+            return invalid();
+        }
+        let first: i32 = position
+            + backend::syntax::FUNCTION_RECORD_PREFIX_WORDS;
+        let header: backend::syntax::FunctionHeader =
+            backend::syntax::read_function_header(input, first);
+        if ((header.kind != backend::syntax::DefinedFunction
+                && header.kind != backend::syntax::RuntimeFunction)
+            || header.pointer_bits != backend::syntax::POINTER_BITS
+            || header.id <= -1 || header.parameters <= -1
+            || header.parameters > (words
+                - backend::syntax::FUNCTION_HEADER_WORDS)
+                / backend::syntax::PARAMETER_ROW_WORDS
+            || header.body_words != words
+                - backend::syntax::FUNCTION_HEADER_WORDS
+                - header.parameters
+                    * backend::syntax::PARAMETER_ROW_WORDS
+            || header.parameters > length - required.parameters) {
+            return invalid();
+        }
+        if (header.kind == backend::syntax::RuntimeFunction
+            && !runtime::service::valid(input, first, words)) {
+            return invalid();
+        }
+        required.parameters += header.parameters;
+        position += backend::syntax::FUNCTION_RECORD_PREFIX_WORDS + words;
+        index += 1;
+    }
+    required.end = position;
+    required.valid = true;
+    return required;
+}
+
+pub fn allocation_bytes(required: Requirements) -> i32 {
+    if (!required.valid || required.functions <= 0
+        || required.parameters <= -1
+        || required.functions > verified::host::I32_MAX / FUNCTION_BYTES) {
+        return -1;
+    }
+    let bytes: i32 = required.functions * FUNCTION_BYTES;
+    if (required.parameters > (verified::host::I32_MAX - bytes)
+            / PARAMETER_BYTES) { return -1; }
+    return bytes + required.parameters * PARAMETER_BYTES;
+}
+
+fn slice_first(base: ptr, count: i32, bytes: i32) -> ptr {
+    if (count <= 0) { return base; }
+    return base + count * bytes - FIELD_BYTES;
+}
+
+pub fn from_raw_parts(memory: ptr, required: Requirements) -> Table {
+    let parameter_base: ptr = memory
+        + required.functions * FUNCTION_BYTES;
+    return Table {
+        functions: slice_from_raw_parts(
+            slice_first(memory, required.functions, FUNCTION_BYTES),
+            required.functions),
+        count: required.functions,
+        parameters: slice_from_raw_parts(
+            slice_first(parameter_base, required.parameters,
+                PARAMETER_BYTES), required.parameters),
+        parameter_count: required.parameters,
+    };
+}
+
+fn find_prefix(table: Table, limit: i32, id: i32) -> i32 {
+    let rows: [Function] = table.functions;
+    let index: i32 = 0;
+    while (index < limit) {
+        let row: Function = rows[index];
+        if (row.header.id == id) { return index; }
+        index += 1;
+    }
+    return -1;
+}
+
+pub fn find(table: Table, id: i32) -> i32 {
+    return find_prefix(table, table.count, id);
+}
+
+pub fn at(table: Table, index: i32) -> Function {
+    let rows: [Function] = table.functions;
+    return rows[index];
+}
+
+pub fn parameter_span_valid(table: Table, function: Function) -> bool {
+    return function.parameter_start >= 0
+        && function.parameter_start <= table.parameter_count
+        && function.header.parameters >= 0
+        && function.header.parameters
+            <= table.parameter_count - function.parameter_start;
+}
+
+pub fn parameter_at(table: Table, function: Function,
+    index: i32) -> backend::syntax::Parameter {
+    let parameters: [backend::syntax::Parameter] = table.parameters;
+    return parameters[function.parameter_start + index];
+}
+
+pub fn parameter_kind(table: Table, function_index: i32,
+    parameter_index: i32) -> i32 {
+    if (function_index <= -1 || function_index >= table.count) {
+        return -1;
+    }
+    let row: Function = at(table, function_index);
+    if (parameter_index <= -1
+        || parameter_index >= row.header.parameters) { return -1; }
+    if (!parameter_span_valid(table, row)) { return -1; }
+    return parameter_at(table, row, parameter_index).kind;
+}
+
+pub fn build(input: [i32], length: i32, start: i32,
+    table: Table) -> bool {
+    let required: Requirements = measure(input, length, start,
+        table.count);
+    if (!required.valid || required.parameters != table.parameter_count) {
+        return false;
+    }
+    let functions: [Function] = table.functions;
+    let parameters: [backend::syntax::Parameter] = table.parameters;
+    let position: i32 = start;
+    let parameter_cursor: i32 = 0;
+    let index: i32 = 0;
+    while (index <= table.count - 1) {
+        let words: i32 = input[position];
+        let first: i32 = position
+            + backend::syntax::FUNCTION_RECORD_PREFIX_WORDS;
+        let header: backend::syntax::FunctionHeader =
+            backend::syntax::read_function_header(input, first);
+        if (find_prefix(table, index, header.id) >= 0) { return false; }
+        functions[index] = Function {
+            header: header, input_offset: first,
+            word_count: words, parameter_start: parameter_cursor,
+        };
+        let parameter: i32 = 0;
+        while (parameter <= header.parameters - 1) {
+            let field: i32 = first
+                + backend::syntax::FUNCTION_HEADER_WORDS
+                + parameter * backend::syntax::PARAMETER_ROW_WORDS;
+            parameters[parameter_cursor] = backend::syntax::Parameter {
+                id: input[field + backend::syntax::PARAMETER_ID_FIELD],
+                kind: input[field + backend::syntax::PARAMETER_TYPE_FIELD],
+            };
+            parameter_cursor += 1;
+            parameter += 1;
+        }
+        position += backend::syntax::FUNCTION_RECORD_PREFIX_WORDS + words;
+        index += 1;
+    }
+    return position == required.end
+        && parameter_cursor == table.parameter_count;
+}

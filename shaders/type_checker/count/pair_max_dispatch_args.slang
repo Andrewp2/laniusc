@@ -39,8 +39,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (dtid.x != 0u || dtid.y != 0u || dtid.z != 0u)
         return;
 
-    uint groups = max(1u, (scaled_active_count() + WG_SIZE - 1u) / WG_SIZE);
+    uint groups = max(1u, ceil_div_u32(scaled_active_count(), WG_SIZE));
     dispatch_args[0u] = min(groups, MAX_GROUPS_X);
-    dispatch_args[1u] = max(1u, (groups + MAX_GROUPS_X - 1u) / MAX_GROUPS_X);
+    dispatch_args[1u] = max(1u, ceil_div_u32(groups, MAX_GROUPS_X));
     dispatch_args[2u] = 1u;
 }

@@ -1,0 +1,50 @@
+module app::main;
+
+import verified::host;
+
+struct Pair {
+    first: [i32],
+    second: [i32],
+    count: i32,
+}
+
+fn pair(first: [i32], second: [i32]) -> Pair {
+    return Pair { first: first, second: second, count: 2 };
+}
+
+fn main() -> i32 {
+    let first: [i32] = verified::host::i32_slice_from_raw_parts(
+        verified::host::alloc_i32(2), 2);
+    let second: [i32] = verified::host::i32_slice_from_raw_parts(
+        verified::host::alloc_i32(2), 2);
+    first[0] = 11;
+    first[1] = 22;
+    second[0] = 33;
+    second[1] = 44;
+    let direct: Pair = Pair { first: first, second: second, count: 2 };
+    if (direct.first[1] != 22 || direct.second[0] != 33) {
+        return 1;
+    }
+    let aliased: [i32] = direct.first;
+    let aliased_ptr: ptr = verified::host::i32_slice_data_ptr(aliased);
+    let aliased_view: [i32] = verified::host::i32_slice_from_raw_parts(
+        aliased_ptr, 2);
+    if (aliased_view[0] != 11) { return 8; }
+    let direct_ptr: ptr = verified::host::i32_slice_data_ptr(direct.first);
+    let direct_view: [i32] = verified::host::i32_slice_from_raw_parts(
+        direct_ptr, 2);
+    if (direct_view[0] != 11) { return 7; }
+    let returned: Pair = pair(first, second);
+    if (returned.count != 2) { return 2; }
+    if (returned.first[1] != 22) { return 3; }
+    if (returned.second[0] != 33) { return 4; }
+    let first_ptr: ptr = verified::host::i32_slice_data_ptr(returned.first);
+    let first_view: [i32] = verified::host::i32_slice_from_raw_parts(
+        first_ptr, 2);
+    if (first_view[0] != 11) { return 5; }
+    let second_ptr: ptr = verified::host::i32_slice_data_ptr(returned.second);
+    let second_view: [i32] = verified::host::i32_slice_from_raw_parts(
+        second_ptr, 2);
+    if (second_view[1] != 44) { return 6; }
+    return 0;
+}

@@ -185,20 +185,20 @@ uint semantic_lir_local_op(HirCore core, HirPayload payload, uint local_row,
     {
         if (local_row + 1u == row_count) return SEMANTIC_LIR_OP_VALUE_GET;
         if (local_row == 0u) return SEMANTIC_LIR_OP_VALUE_SET;
-        if (local_row == 1u) return SEMANTIC_LIR_OP_CONST_I32;
-        if (local_row == 2u) return SEMANTIC_LIR_OP_VALUE_SET;
-        uint arm_row = (local_row - 3u) % 12u;
+        if (local_row == 1u) return SEMANTIC_LIR_OP_BLOCK_BEGIN;
+        if (local_row + 3u >= row_count)
+        {
+            return local_row + 3u == row_count
+                ? SEMANTIC_LIR_OP_TRAP : SEMANTIC_LIR_OP_CONTROL_END;
+        }
+        uint arm_row = (local_row - 2u) % 8u;
         if (arm_row == 0u) return SEMANTIC_LIR_OP_VALUE_GET;
-        if (arm_row == 1u) return SEMANTIC_LIR_OP_LOGICAL_NOT;
-        if (arm_row == 2u) return SEMANTIC_LIR_OP_VALUE_GET;
-        if (arm_row == 3u) return SEMANTIC_LIR_OP_LOAD;
-        if (arm_row == 4u) return SEMANTIC_LIR_OP_CONST_I32;
-        if (arm_row == 5u) return SEMANTIC_LIR_OP_COMPARE;
-        if (arm_row == 6u) return SEMANTIC_LIR_OP_LOGICAL_AND;
-        if (arm_row == 7u) return SEMANTIC_LIR_OP_IF_BEGIN;
-        if (arm_row == 8u) return SEMANTIC_LIR_OP_VALUE_SET;
-        if (arm_row == 9u) return SEMANTIC_LIR_OP_CONST_I32;
-        if (arm_row == 10u) return SEMANTIC_LIR_OP_VALUE_SET;
+        if (arm_row == 1u) return SEMANTIC_LIR_OP_LOAD;
+        if (arm_row == 2u) return SEMANTIC_LIR_OP_CONST_I32;
+        if (arm_row == 3u) return SEMANTIC_LIR_OP_COMPARE;
+        if (arm_row == 4u) return SEMANTIC_LIR_OP_IF_BEGIN;
+        if (arm_row == 5u) return SEMANTIC_LIR_OP_VALUE_SET;
+        if (arm_row == 6u) return SEMANTIC_LIR_OP_BRANCH;
         return SEMANTIC_LIR_OP_CONTROL_END;
     }
     if (semantic_lir_is_assignment(core, payload))

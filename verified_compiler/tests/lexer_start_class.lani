@@ -3,22 +3,28 @@ module app::main;
 import verified::lexer;
 
 fn class_code(byte: i32) -> i32 {
-    if (verified::lexer::classify_start(byte) == verified::lexer::START_IDENTIFIER) {
+    if (verified::lexer::start_is(verified::lexer::classify_start(byte),
+            verified::lexer::IdentifierStart)) {
         return 1;
     }
-    if (verified::lexer::classify_start(byte) == verified::lexer::START_DECIMAL_NUMBER) {
+    if (verified::lexer::start_is(verified::lexer::classify_start(byte),
+            verified::lexer::DecimalNumberStart)) {
         return 2;
     }
-    if (verified::lexer::classify_start(byte) == verified::lexer::START_WHITESPACE) {
+    if (verified::lexer::start_is(verified::lexer::classify_start(byte),
+            verified::lexer::WhitespaceStart)) {
         return 3;
     }
-    if (verified::lexer::classify_start(byte) == verified::lexer::START_SYMBOL) {
+    if (verified::lexer::start_is(verified::lexer::classify_start(byte),
+            verified::lexer::SymbolStart)) {
         return 4;
     }
-    if (verified::lexer::classify_start(byte) == verified::lexer::START_STRING_LITERAL) {
+    if (verified::lexer::start_is(verified::lexer::classify_start(byte),
+            verified::lexer::StringLiteralStart)) {
         return 5;
     }
-    if (verified::lexer::classify_start(byte) == verified::lexer::START_CHARACTER_LITERAL) {
+    if (verified::lexer::start_is(verified::lexer::classify_start(byte),
+            verified::lexer::CharacterLiteralStart)) {
         return 6;
     }
     return 7;

@@ -2,67 +2,109 @@ module verified::parse_output;
 
 import verified::output;
 import verified::parser;
+import verified::ascii;
+
+pub struct ParseNodes {
+    grammar: [i32],
+    grammar_length: i32,
+    records: [i32],
+    record_length: i32,
+    offsets: [i32],
+    node_count: i32,
+    token_count: i32,
+}
 
 // Emit a Lean expression of type List Lanius.Extraction.ParseNode.
 // The record format comes from parse_tree.materialize. Node references are
 // dense postorder IDs; offsets identify their possibly noncontiguous records.
 // Grammar production numbers have exactly the packed grammar's meaning.
 // Return next byte offset or -1; never use partial output after failure.
-pub fn emit_nodes(grammar:[i32], grammar_length: i32, records:[i32],
-    records_length: i32, offsets:[i32], node_count: i32, token_count: i32,
-    output:[i32], capacity: i32, position: i32,) -> i32 {
-    if (grammar_length <= 16 || node_count <= -1 || token_count <= -1) { return -1; }
-    let lhs: i32 = grammar[8];
-    let production_count: i32 = grammar[2];
+pub fn emit_nodes(input: ParseNodes,
+    destination: verified::output::Cursor) -> i32 {
+    let grammar: [i32] = input.grammar;
+    let grammar_length: i32 = input.grammar_length;
+    let records: [i32] = input.records;
+    let records_length: i32 = input.record_length;
+    let offsets: [i32] = input.offsets;
+    let node_count: i32 = input.node_count;
+    let token_count: i32 = input.token_count;
+    let output: [i32] = destination.data;
+    let capacity: i32 = destination.capacity;
+    let position: i32 = destination.position;
+    if (grammar_length <= verified::parser::GRAMMAR_HEADER_WORDS - 1
+        || node_count <= -1 || token_count <= -1) { return -1; }
+    let lhs: i32 = grammar[verified::parser::HEADER_PRODUCTION_LHS_OFFSET];
+    let production_count: i32 = grammar[
+        verified::parser::HEADER_PRODUCTION_COUNT];
     if (lhs <= -1 || !(lhs <= grammar_length) || production_count <= -1
         || !(production_count <= grammar_length - lhs)) { return -1; }
     let open_tuple: str = "⟨";
     let close_tuple: str = "⟩";
     let token_name: str = ".token ";
     let node_name: str = ".node ";
-    let next: i32 = verified::output::byte(output, capacity, position, 91);
+    let next: i32 = verified::output::byte(output, capacity, position,
+        verified::ascii::LEFT_BRACKET);
     let node: i32 = 0;
     while (node != node_count) {
         let record: i32 = offsets[node];
         if (record <= -1 || !(record <= records_length)
-            || records_length - record <= 3) { return -1; }
-        let production: i32 = records[record];
-        let children: i32 = records[record + 3];
+            || records_length - record
+                <= verified::parser::DERIVATION_HEADER_WORDS - 1) { return -1; }
+        let production: i32 = records[record
+            + verified::parser::DERIVATION_PRODUCTION_FIELD];
+        let children: i32 = records[record
+            + verified::parser::DERIVATION_CHILD_COUNT_FIELD];
         if (production <= -1 || production >= production_count || children <= -1
-            || !(children <= (records_length - record - 4) / 3)) { return -1; }
-        if (node != 0) { next = verified::output::byte(output, capacity, next, 44); }
+            || !(children <= (records_length - record
+                    - verified::parser::DERIVATION_HEADER_WORDS)
+                / verified::parser::DERIVATION_CHILD_WORDS)) { return -1; }
+        if (node != 0) { next = verified::output::byte(output, capacity, next,
+            verified::ascii::COMMA); }
         next = verified::output::text(output, capacity, next, open_tuple, 3);
         next = verified::output::natural(output, capacity, next, production);
-        next = verified::output::byte(output, capacity, next, 44);
+        next = verified::output::byte(output, capacity, next,
+            verified::ascii::COMMA);
         next = verified::output::natural(output, capacity, next, grammar[lhs + production]);
-        next = verified::output::byte(output, capacity, next, 44);
-        next = verified::output::natural(output, capacity, next, records[record + 1]);
-        next = verified::output::byte(output, capacity, next, 44);
-        next = verified::output::natural(output, capacity, next, records[record + 2]);
-        next = verified::output::byte(output, capacity, next, 44);
-        next = verified::output::byte(output, capacity, next, 91);
+        next = verified::output::byte(output, capacity, next,
+            verified::ascii::COMMA);
+        next = verified::output::natural(output, capacity, next, records[record
+            + verified::parser::DERIVATION_ORIGIN_FIELD]);
+        next = verified::output::byte(output, capacity, next,
+            verified::ascii::COMMA);
+        next = verified::output::natural(output, capacity, next, records[record
+            + verified::parser::DERIVATION_END_FIELD]);
+        next = verified::output::byte(output, capacity, next,
+            verified::ascii::COMMA);
+        next = verified::output::byte(output, capacity, next,
+            verified::ascii::LEFT_BRACKET);
         let child: i32 = 0;
         while (child != children) {
-            let slot: i32 = record + 4 + child * 3;
-            let tag: i32 = records[slot];
-            let payload: i32 = records[slot + 1];
+            let slot: i32 = record + verified::parser::DERIVATION_HEADER_WORDS
+                + child * verified::parser::DERIVATION_CHILD_WORDS;
+            let tag: i32 = records[slot
+                + verified::parser::DERIVATION_CHILD_TAG_FIELD];
+            let payload: i32 = records[slot
+                + verified::parser::DERIVATION_CHILD_PAYLOAD_FIELD];
             if (payload <= -1) { return -1; }
-            if (child != 0) { next = verified::output::byte(output, capacity, next, 44); }
-            if (tag == verified::parser::CHILD_TOKEN) {
+            if (child != 0) { next = verified::output::byte(output, capacity,
+                next, verified::ascii::COMMA); }
+            if (tag == verified::parser::child_code(verified::parser::TokenChild)) {
                 if (payload >= token_count) { return -1; }
                 next = verified::output::text(output, capacity, next, token_name, 7);
             } else {
-                if (tag != verified::parser::CHILD_STATE || payload >= node) { return -1; }
+                if (tag != verified::parser::child_code(verified::parser::StateChild) || payload >= node) { return -1; }
                 next = verified::output::text(output, capacity, next, node_name, 6);
             }
             next = verified::output::natural(output, capacity, next, payload);
             if (next == -1) { return -1; }
             child += 1;
         }
-        next = verified::output::byte(output, capacity, next, 93);
+        next = verified::output::byte(output, capacity, next,
+            verified::ascii::RIGHT_BRACKET);
         next = verified::output::text(output, capacity, next, close_tuple, 3);
         if (next == -1) { return -1; }
         node += 1;
     }
-    return verified::output::byte(output, capacity, next, 93);
+    return verified::output::byte(output, capacity, next,
+        verified::ascii::RIGHT_BRACKET);
 }

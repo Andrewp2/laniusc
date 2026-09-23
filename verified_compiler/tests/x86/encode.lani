@@ -10,13 +10,13 @@ import verified::byte_io;
 fn emit_case(kind: i32, width: i32, destination: i32, source: i32, value: i32,
     output: [i32], capacity: i32, cursor: i32) -> i32 {
     if (kind == 0) { return x86::encode::move_register(output, capacity, cursor, width, destination, source); }
-    if (kind == 1) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::ADD, destination, source); }
-    if (kind == 2) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::SUB, destination, source); }
-    if (kind == 3) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::CMP, destination, source); }
-    if (kind == 4) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::AND, destination, source); }
-    if (kind == 5) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::OR, destination, source); }
-    if (kind == 6) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::XOR, destination, source); }
-    if (kind == 7) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::TEST, destination, source); }
+    if (kind == 1) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::Add, destination, source); }
+    if (kind == 2) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::Subtract, destination, source); }
+    if (kind == 3) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::Compare, destination, source); }
+    if (kind == 4) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::And, destination, source); }
+    if (kind == 5) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::Or, destination, source); }
+    if (kind == 6) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::Xor, destination, source); }
+    if (kind == 7) { return x86::encode::binary(output, capacity, cursor, width, x86::encode::Test, destination, source); }
     if (kind == 8) { return x86::encode::multiply(output, capacity, cursor, width, destination, source); }
     if (kind == 9) { return x86::encode::immediate(output, capacity, cursor, width, destination, value, 305419896); }
     if (kind == 10) { return x86::encode::load(output, capacity, cursor, width, destination, source, value); }
@@ -26,7 +26,8 @@ fn emit_case(kind: i32, width: i32, destination: i32, source: i32, value: i32,
     if (kind == 14) { return x86::encode::store_byte(output, capacity, cursor, destination, source, value); }
     if (kind == 15) { return x86::encode::sign_extend_i32(output, capacity, cursor, destination, source); }
     if (kind == 16) { return x86::encode::zero_extend_byte(output, capacity, cursor, destination, source); }
-    if (kind == 17) { return x86::encode::shift(output, capacity, cursor, width, source, destination); }
+    if (kind == 17) { return x86::encode::shift(output, capacity, cursor, width,
+        x86::encode::shift_operation_from_extension(source), destination); }
     if (kind == 18) { return x86::encode::divide(output, capacity, cursor, width, destination, source != 0); }
     if (kind == 19) { return x86::encode::negate(output, capacity, cursor, width, destination); }
     if (kind == 20) { return x86::control::set_condition(output, capacity, cursor, source, destination); }
@@ -58,7 +59,8 @@ fn rejected(result: i32, scratch: [i32], index: i32) -> bool {
     if (result != -1 || !unchanged(scratch)) {
         verified::byte_io::write_stderr_natural(index);
         verified::byte_io::write_stderr_natural(result + 1);
-        verified::byte_io::write_stderr_natural(x86::encode::ADD);
+        verified::byte_io::write_stderr_natural(
+            x86::encode::binary_opcode(x86::encode::Add));
         return false;
     }
     return true;
@@ -106,7 +108,10 @@ fn control_case(kind: i32, condition: i32, target: i32,
     output: [i32], capacity: i32, cursor: i32) -> i32 {
     if (kind == 0) { return x86::control::jump(output, capacity, cursor, target); }
     if (kind == 1) { return x86::control::call(output, capacity, cursor, target); }
-    if (kind == 2) { return x86::control::branch(output, capacity, cursor, condition, target); }
+    if (kind == 2) {
+        return x86::control::branch(output, capacity, cursor,
+            x86::control::condition_from_code(condition), target);
+    }
     if (kind == 3) { return x86::control::return_near(output, capacity, cursor); }
     if (kind == 4) { return x86::control::syscall(output, capacity, cursor); }
     if (kind == 5) { return x86::control::trap(output, capacity, cursor); }
@@ -277,9 +282,11 @@ fn main() -> i32 {
     if (!rejected(x86::encode::move_register(scratch, 32, 2, 64, -1, 0), scratch, 2)) { return 11; }
     if (!rejected(x86::encode::move_register(scratch, 32, 2, 64, 0, 16), scratch, 3)) { return 11; }
     if (!rejected(x86::encode::binary(scratch, 32, 2, 64, 0, 0, 0), scratch, 4)) { return 11; }
-    if (!rejected(x86::encode::shift(scratch, 32, 2, 64, 6, 0), scratch, 5)) { return 11; }
+    if (!rejected(x86::encode::shift(scratch, 32, 2, 64,
+        x86::encode::InvalidShiftOperation, 0), scratch, 5)) { return 11; }
     if (!rejected(x86::control::set_condition(scratch, 32, 2, 16, 0), scratch, 6)) { return 11; }
-    if (!rejected(x86::control::branch(scratch, 32, 2, -1, 0), scratch, 7)) { return 11; }
+    if (!rejected(x86::control::branch(scratch, 32, 2,
+        x86::control::InvalidCondition, 0), scratch, 7)) { return 11; }
     if (!rejected(x86::control::jump(scratch, 32, 2, -1), scratch, 8)) { return 11; }
     if (!rejected(x86::control::patch_relative(scratch, 5, 2, 0), scratch, 9)) { return 11; }
     if (!rejected(x86::control::patch_relative(scratch, 32, 2, 33), scratch, 10)) { return 11; }

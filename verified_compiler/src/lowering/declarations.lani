@@ -1,150 +1,447 @@
 module lowering::declarations;
+import verified::host;
+import verified::production;
 
-import verified::surface_tree;
 import verified::parser;
+import verified::syntax_tree;
 
-pub const STRUCTURE: i32 = 1;
-pub const ALIAS: i32 = 2;
-pub const CONSTANT: i32 = 3;
-pub const FUNCTION: i32 = 4;
-pub const EXTERNAL: i32 = 5;
-pub const MODULE: i32 = 6;
-pub const IMPORT: i32 = 7;
-pub const HEADER: i32 = 8;
-pub const ROW: i32 = 8;
-
-fn child(records: [i32], length: i32, offsets: [i32], count: i32,
-    node: i32, index: i32) -> i32 {
-    return verified::surface_tree::child(records, length, offsets, count,
-        node, index, verified::parser::CHILD_STATE, 0);
+pub enum DeclarationKind {
+    Invalid,
+    Structure,
+    Enumeration,
+    Alias,
+    Constant,
+    Function,
+    External,
+    Module,
+    Import,
 }
 
-fn declaration_kind(production: i32, is_public: bool) -> i32 {
-    if (is_public) {
-        if (production == 271) { return STRUCTURE; }
-        if (production == 269) { return ALIAS; }
-        if (production == 268) { return CONSTANT; }
-        if (production == 266) { return FUNCTION; }
-        if (production == 267) { return EXTERNAL; }
-    } else {
-        if (production == 257) { return STRUCTURE; }
-        if (production == 8) { return ALIAS; }
-        if (production == 207) { return CONSTANT; }
-        if (production == 4) { return FUNCTION; }
-        if (production == 5) { return EXTERNAL; }
-        if (production == 7) { return MODULE; }
-        if (production == 6) { return IMPORT; }
+pub fn kind_code(kind: DeclarationKind) -> i32 {
+    return match (kind) {
+        Invalid -> 0,
+        Structure -> 1,
+        Enumeration -> 2,
+        Alias -> 3,
+        Constant -> 4,
+        Function -> 5,
+        External -> 6,
+        Module -> 7,
+        Import -> 8,
+    };
+}
+
+pub fn kind_from_code(encoded: i32) -> DeclarationKind {
+    if (encoded == kind_code(Structure)) { return Structure; }
+    if (encoded == kind_code(Enumeration)) { return Enumeration; }
+    if (encoded == kind_code(Alias)) { return Alias; }
+    if (encoded == kind_code(Constant)) { return Constant; }
+    if (encoded == kind_code(Function)) { return Function; }
+    if (encoded == kind_code(External)) { return External; }
+    if (encoded == kind_code(Module)) { return Module; }
+    if (encoded == kind_code(Import)) { return Import; }
+    return Invalid;
+}
+
+pub fn same_kind(left: DeclarationKind, right: DeclarationKind) -> bool {
+    return kind_code(left) == kind_code(right);
+}
+
+pub struct DeclarationRow {
+    unit: i32,
+    kind: DeclarationKind,
+    is_public: bool,
+    item: i32,
+    declaration: i32,
+    name: i32,
+    target: i32,
+    ordinal: i32,
+}
+
+// Collector bookkeeping and the physical table header share one native type.
+pub struct DeclarationCounts {
+    rows: i32,
+    structures: i32,
+    enumerations: i32,
+    aliases: i32,
+    constants: i32,
+    functions: i32,
+    externals: i32,
+    modules: i32,
+    imports: i32,
+}
+
+pub fn empty_counts() -> DeclarationCounts {
+    return DeclarationCounts {
+        rows: 0,
+        structures: 0,
+        enumerations: 0,
+        aliases: 0,
+        constants: 0,
+        functions: 0,
+        externals: 0,
+        modules: 0,
+        imports: 0,
+    };
+}
+
+pub fn kind_count(counts: DeclarationCounts, kind: DeclarationKind) -> i32 {
+    if (same_kind(kind, Structure)) { return counts.structures; }
+    if (same_kind(kind, Enumeration)) { return counts.enumerations; }
+    if (same_kind(kind, Alias)) { return counts.aliases; }
+    if (same_kind(kind, Constant)) { return counts.constants; }
+    if (same_kind(kind, Function)) { return counts.functions; }
+    if (same_kind(kind, External)) { return counts.externals; }
+    if (same_kind(kind, Module)) { return counts.modules; }
+    if (same_kind(kind, Import)) { return counts.imports; }
+    return -1;
+}
+
+pub fn count_rows(counts: DeclarationCounts) -> i32 { return counts.rows; }
+
+// Call only after checking that the combined row total fits i32; each kind
+// count is bounded by its row total in validated collector tables.
+pub fn combine_counts(left: DeclarationCounts,
+    right: DeclarationCounts) -> DeclarationCounts {
+    return DeclarationCounts {
+        rows: left.rows + right.rows,
+        structures: left.structures + right.structures,
+        enumerations: left.enumerations + right.enumerations,
+        aliases: left.aliases + right.aliases,
+        constants: left.constants + right.constants,
+        functions: left.functions + right.functions,
+        externals: left.externals + right.externals,
+        modules: left.modules + right.modules,
+        imports: left.imports + right.imports,
+    };
+}
+
+pub fn add_kind(counts: DeclarationCounts, kind: DeclarationKind)
+    -> DeclarationCounts {
+    if (same_kind(kind, Invalid)) { return counts; }
+    counts.rows += 1;
+    if (same_kind(kind, Structure)) { counts.structures += 1; }
+    if (same_kind(kind, Enumeration)) { counts.enumerations += 1; }
+    if (same_kind(kind, Alias)) { counts.aliases += 1; }
+    if (same_kind(kind, Constant)) { counts.constants += 1; }
+    if (same_kind(kind, Function)) { counts.functions += 1; }
+    if (same_kind(kind, External)) { counts.externals += 1; }
+    if (same_kind(kind, Module)) { counts.modules += 1; }
+    if (same_kind(kind, Import)) { counts.imports += 1; }
+    return counts;
+}
+
+const FIELD_BYTES: i32 = 8;
+const HEADER_FIELDS: i32 = 9;
+const ROW_FIELDS: i32 = 8;
+pub const HEADER_BYTES: i32 = HEADER_FIELDS * FIELD_BYTES;
+pub const ROW_BYTES: i32 = ROW_FIELDS * FIELD_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+pub const HEADER: i32 = HEADER_BYTES / verified::host::I32_BYTES;
+pub const ROW: i32 = ROW_BYTES / verified::host::I32_BYTES;
+
+// The collector and its immediate consumers use native rows. The backing
+// allocation may still be shared with later catalog stages, but no word
+// offsets or field encodings cross this typed boundary.
+pub struct Table {
+    memory: ptr,
+    count: i32,
+}
+
+// A unit catalog carries native table references. Its rows do not need a
+// second packed declaration stream or per-unit word offsets.
+pub const TABLE_REF_BYTES: i32 = 2 * FIELD_BYTES;
+pub const TABLE_REF_ALIGNMENT: i32 = FIELD_BYTES;
+
+pub struct Catalog {
+    data: [Table],
+    count: i32,
+}
+
+pub fn catalog_from_raw_parts(memory: ptr, count: i32) -> Catalog {
+    let first: ptr = memory;
+    if (count > 0) {
+        first = memory + count * TABLE_REF_BYTES - FIELD_BYTES;
     }
+    return Catalog { data: slice_from_raw_parts(first, count),
+        count: count };
+}
+
+pub fn catalog_table(catalog: Catalog, index: i32) -> Table {
+    return catalog.data[index];
+}
+
+pub fn catalog_write_table(catalog: Catalog, index: i32, table: Table) {
+    catalog.data[index] = table;
+}
+
+pub fn from_raw_parts(memory: ptr, count: i32) -> Table {
+    return Table { memory: memory, count: count };
+}
+
+pub fn table_capacity(table: Table) -> i32 { return table.count; }
+
+pub fn table_with_rows(table: Table, rows: i32) -> Table {
+    return Table { memory: table.memory, count: rows };
+}
+
+fn table_header_view(table: Table) -> [DeclarationCounts] {
+    return slice_from_raw_parts(table.memory + HEADER_BYTES - FIELD_BYTES,
+        1);
+}
+
+fn table_row_view(table: Table, index: i32) -> [DeclarationRow] {
+    let first: ptr = table.memory + HEADER_BYTES + index * ROW_BYTES
+        + ROW_BYTES - FIELD_BYTES;
+    return slice_from_raw_parts(first, 1);
+}
+
+pub fn table_header(table: Table) -> DeclarationCounts {
+    let headers: [DeclarationCounts] = table_header_view(table);
+    return headers[0];
+}
+
+pub fn table_has_exact_rows(table: Table) -> bool {
+    if (table.count <= -1) { return false; }
+    return count_rows(table_header(table)) == table.count;
+}
+
+pub fn table_write_header(table: Table, counts: DeclarationCounts) {
+    let headers: [DeclarationCounts] = table_header_view(table);
+    headers[0] = counts;
+}
+
+pub fn table_row(table: Table, index: i32) -> DeclarationRow {
+    let rows: [DeclarationRow] = table_row_view(table, index);
+    return rows[0];
+}
+
+pub fn table_write_row(table: Table, index: i32,
+    row: DeclarationRow) {
+    let rows: [DeclarationRow] = table_row_view(table, index);
+    rows[0] = row;
+}
+
+pub fn header_matches(actual: DeclarationCounts,
+    expected: DeclarationCounts) -> bool {
+    return actual.rows == expected.rows
+        && actual.structures == expected.structures
+        && actual.enumerations == expected.enumerations
+        && actual.aliases == expected.aliases
+        && actual.constants == expected.constants
+        && actual.functions == expected.functions
+        && actual.externals == expected.externals
+        && actual.modules == expected.modules
+        && actual.imports == expected.imports;
+}
+
+// Validate one typed source row before the allocator assigns global IDs.
+pub fn row_valid(row: DeclarationRow, expected_unit: i32) -> bool {
+    let kind: DeclarationKind = row.kind;
+    if (same_kind(kind, Invalid)) { return false; }
+    if (row.unit != expected_unit || row.item <= -1
+        || row.declaration <= -1 || row.declaration >= row.item) {
+        return false;
+    }
+    if (same_kind(kind, Module) || same_kind(kind, Import)) {
+        if (row.is_public || row.name != -1) { return false; }
+    } else {
+        if (row.name <= -1) { return false; }
+    }
+    if (same_kind(kind, Alias) || same_kind(kind, Module)
+        || same_kind(kind, Import)) {
+        return row.target > -1 && row.target <= row.declaration - 1;
+    }
+    return row.target == -1;
+}
+
+// Compare the native source table with the source record carried by an
+// allocated declaration.
+pub fn same_row(actual: DeclarationRow, expected: DeclarationRow) -> bool {
+    return actual.unit == expected.unit
+        && same_kind(actual.kind, expected.kind)
+        && actual.is_public == expected.is_public
+        && actual.item == expected.item
+        && actual.declaration == expected.declaration
+        && actual.name == expected.name
+        && actual.target == expected.target
+        && actual.ordinal == expected.ordinal;
+}
+
+pub fn row_unit(row: DeclarationRow) -> i32 { return row.unit; }
+pub fn row_kind(row: DeclarationRow) -> DeclarationKind { return row.kind; }
+pub fn row_has_kind(row: DeclarationRow, expected: DeclarationKind) -> bool {
+    return same_kind(row.kind, expected);
+}
+pub fn row_is_public(row: DeclarationRow) -> bool { return row.is_public; }
+pub fn row_item(row: DeclarationRow) -> i32 { return row.item; }
+pub fn row_declaration(row: DeclarationRow) -> i32 { return row.declaration; }
+pub fn row_name(row: DeclarationRow) -> i32 { return row.name; }
+pub fn row_target(row: DeclarationRow) -> i32 { return row.target; }
+pub fn row_ordinal(row: DeclarationRow) -> i32 { return row.ordinal; }
+
+pub struct DeclarationInput {
+    tree: verified::syntax_tree::Tree,
+    token_count: i32,
+    root: i32,
+    unit: i32,
+}
+
+fn child(tree: verified::syntax_tree::Tree,
+    node: i32, index: i32) -> i32 {
+    return verified::syntax_tree::child(tree, node, index,
+        verified::parser::StateChild);
+}
+
+fn declaration_kind(production: i32, is_public: bool) -> DeclarationKind {
+    if (is_public) {
+        if (production == verified::production::PUB_STRUCT) { return Structure; }
+        if (production == verified::production::PUB_ENUM) { return Enumeration; }
+        if (production == verified::production::PUB_TYPE_ALIAS) { return Alias; }
+        if (production == verified::production::PUB_CONST) { return Constant; }
+        if (production == verified::production::PUB_FN) { return Function; }
+        if (production == verified::production::PUB_EXTERN_FN) { return External; }
+    } else {
+        if (production == verified::production::ITEM_STRUCT) { return Structure; }
+        if (production == verified::production::ITEM_ENUM) { return Enumeration; }
+        if (production == verified::production::ITEM_TYPE_ALIAS) { return Alias; }
+        if (production == verified::production::ITEM_CONST) { return Constant; }
+        if (production == verified::production::ITEM_FN) { return Function; }
+        if (production == verified::production::ITEM_EXTERN_FN) { return External; }
+        if (production == verified::production::ITEM_MODULE) { return Module; }
+        if (production == verified::production::ITEM_IMPORT) { return Import; }
+    }
+    return Invalid;
+}
+
+fn declaration_production(kind: DeclarationKind) -> i32 {
+    if (same_kind(kind, Structure)) { return verified::production::STRUCT; }
+    if (same_kind(kind, Enumeration)) { return verified::production::ENUM; }
+    if (same_kind(kind, Alias)) { return verified::production::TYPE_ALIAS; }
+    if (same_kind(kind, Constant)) { return verified::production::CONST; }
+    if (same_kind(kind, Function)) { return verified::production::FN; }
+    if (same_kind(kind, External)) { return verified::production::EXTERN_FN; }
+    if (same_kind(kind, Module)) { return verified::production::MODULE; }
+    if (same_kind(kind, Import)) { return verified::production::IMPORT; }
     return -1;
 }
 
-fn declaration_production(kind: i32) -> i32 {
-    if (kind == STRUCTURE) { return 258; }
-    if (kind == ALIAS) { return 16; }
-    if (kind == CONSTANT) { return 208; }
-    if (kind == FUNCTION) { return 11; }
-    if (kind == EXTERNAL) { return 15; }
-    if (kind == MODULE) { return 46; }
-    if (kind == IMPORT) { return 43; }
-    return -1;
-}
-
-fn monomorphic(records: [i32], length: i32, offsets: [i32], count: i32,
+fn monomorphic(tree: verified::syntax_tree::Tree,
     declaration: i32, generic_index: i32, bounds_index: i32) -> bool {
-    let generic: i32 = child(records, length, offsets, count, declaration, generic_index);
-    let bounds: i32 = child(records, length, offsets, count, declaration, bounds_index);
-    let generic_offset: i32 = verified::surface_tree::record(records, length, offsets, count, generic);
-    let bounds_offset: i32 = verified::surface_tree::record(records, length, offsets, count, bounds);
-    if (generic_offset <= -1 || bounds_offset <= -1) { return false; }
-    return records[generic_offset] == 232 && records[generic_offset + 3] == 0
-        && records[bounds_offset] == 36 && records[bounds_offset + 3] == 0;
+    let generic: i32 = child(tree, declaration, generic_index);
+    let bounds: i32 = child(tree, declaration, bounds_index);
+    return verified::syntax_tree::production(tree, generic)
+            == verified::production::ENUM_TYPE_PARAMS_NONE
+        && verified::syntax_tree::child_count(tree, generic) == 0
+        && verified::syntax_tree::production(tree, bounds)
+            == verified::production::WHERE_NONE
+        && verified::syntax_tree::child_count(tree, bounds) == 0;
 }
 
 // Collect source-origin declaration rows from one authenticated surface tree.
 // Rows preserve source nodes and per-kind ordinals; output is partial on
 // failure, and cross-module resolution remains a later pass.
-pub fn collect(records: [i32], length: i32, offsets: [i32], count: i32,
-    token_count: i32, root: i32, unit: i32, output: [i32], capacity: i32) -> i32 {
-    if (length <= -1 || count <= 0 || token_count <= -1 || unit <= -1 || capacity <= HEADER - 1) {
+pub fn collect(input: DeclarationInput, destination: Table) -> i32 {
+    let tree: verified::syntax_tree::Tree = input.tree;
+    let token_count: i32 = input.token_count;
+    let root: i32 = input.root;
+    let unit: i32 = input.unit;
+    let capacity: i32 = destination.count;
+    if (tree.node_count <= 0 || token_count <= -1
+        || unit <= -1 || capacity <= 0) {
         return -1;
     }
-    let root_offset: i32 = verified::surface_tree::record(records, length, offsets, count, root);
-    if (root_offset <= -1 || records[root_offset] != 0 || records[root_offset + 3] != 1) { return -1; }
-    let list: i32 = child(records, length, offsets, count, root, 0);
-    let index: i32 = 0;
-    while (index < HEADER) { output[index] = 0; index += 1; }
+    if (verified::syntax_tree::production(tree, root)
+            != verified::production::FILE
+        || verified::syntax_tree::child_count(tree, root) != 1) {
+        return -1;
+    }
+    let list: i32 = child(tree, root, 0);
+    let counts: DeclarationCounts = empty_counts();
+    table_write_header(destination, counts);
     while (list >= 0) {
-        let list_offset: i32 = verified::surface_tree::record(records, length, offsets, count, list);
-        if (list_offset <= -1) { return -1; }
-        if (records[list_offset] == 2) {
-            if (records[list_offset + 3] != 0 || output[MODULE] != 1) { return -1; }
-            return HEADER + output[0] * ROW;
+        let list_production: i32 =
+            verified::syntax_tree::production(tree, list);
+        if (list_production <= -1) { return -1; }
+        if (list_production == verified::production::ITEMS_END) {
+            if (verified::syntax_tree::child_count(tree, list) != 0
+                || counts.modules != 1) { return -1; }
+            table_write_header(destination, counts);
+            return HEADER + counts.rows * ROW;
         }
-        if (records[list_offset] != 1 || records[list_offset + 3] != 2
-            || output[0] >= (capacity - HEADER) / ROW) { return -1; }
-        let item: i32 = child(records, length, offsets, count, list, 0);
+        if (list_production != verified::production::ITEMS_MORE
+            || verified::syntax_tree::child_count(tree, list) != 2
+            || counts.rows >= capacity) {
+            return -1;
+        }
+        let item: i32 = child(tree, list, 0);
         let container: i32 = item;
-        let item_offset: i32 = verified::surface_tree::record(records, length, offsets, count, item);
-        if (item_offset <= -1) { return -1; }
-        let is_public: bool = records[item_offset] == 3;
+        let item_production: i32 =
+            verified::syntax_tree::production(tree, item);
+        if (item_production <= -1) { return -1; }
+        let is_public: bool =
+            item_production == verified::production::ITEM_PUB;
         if (is_public) {
-            container = child(records, length, offsets, count, item, 1);
-            item_offset = verified::surface_tree::record(records, length, offsets, count, container);
-            if (item_offset <= -1) { return -1; }
+            container = child(tree, item, 1);
+            item_production = verified::syntax_tree::production(tree,
+                container);
+            if (item_production <= -1) { return -1; }
         }
-        let kind: i32 = declaration_kind(records[item_offset], is_public);
-        if (kind <= -1) { return -1; }
-        let declaration: i32 = child(records, length, offsets, count, container, 0);
-        let declaration_offset: i32 = verified::surface_tree::record(records, length, offsets, count, declaration);
-        if (declaration_offset <= -1 || records[declaration_offset] != declaration_production(kind)) { return -1; }
+        let kind: DeclarationKind = declaration_kind(item_production,
+            is_public);
+        if (same_kind(kind, Invalid)) { return -1; }
+        let declaration: i32 = child(tree, container, 0);
+        if (verified::syntax_tree::production(tree, declaration)
+                != declaration_production(kind)) { return -1; }
         let name: i32 = -1;
         let target: i32 = -1;
-        if (kind == MODULE || kind == IMPORT) {
-            if (kind == MODULE) {
-                if (output[MODULE] != 0) { return -1; }
-                target = child(records, length, offsets, count, declaration, 1);
+        if (same_kind(kind, Module) || same_kind(kind, Import)) {
+            if (same_kind(kind, Module)) {
+                if (counts.modules != 0) { return -1; }
+                target = child(tree, declaration, 1);
             } else {
-                let tail: i32 = child(records, length, offsets, count, declaration, 1);
-                let tail_offset: i32 = verified::surface_tree::record(records, length, offsets, count, tail);
-                if (tail_offset <= -1 || records[tail_offset] != 44) { return -1; }
-                target = child(records, length, offsets, count, tail, 0);
+                let tail: i32 = child(tree, declaration, 1);
+                if (verified::syntax_tree::production(tree, tail)
+                        != verified::production::IMPORT_PATH) { return -1; }
+                target = child(tree, tail, 0);
             }
-            let target_offset: i32 = verified::surface_tree::record(records, length, offsets, count, target);
-            if (target_offset <= -1 || records[target_offset] != 47) { return -1; }
+            if (verified::syntax_tree::production(tree, target)
+                    != verified::production::PATH) { return -1; }
         } else {
             let name_index: i32 = 1;
-            if (kind == EXTERNAL) { name_index = 3; }
-            name = verified::surface_tree::child(records, length, offsets, count,
-                declaration, name_index, verified::parser::CHILD_TOKEN, token_count);
+            if (same_kind(kind, External)) { name_index = 3; }
+            name = verified::syntax_tree::child(tree, declaration,
+                name_index, verified::parser::TokenChild);
             if (name <= -1) { return -1; }
-            if (kind == STRUCTURE || kind == ALIAS) {
-                if (!monomorphic(records, length, offsets, count, declaration, 2, 3)) { return -1; }
-                if (kind == ALIAS) {
-                    target = child(records, length, offsets, count, declaration, 5);
+            if (same_kind(kind, Structure) || same_kind(kind, Enumeration)
+                || same_kind(kind, Alias)) {
+                if (!monomorphic(tree, declaration, 2, 3)) { return -1; }
+                if (same_kind(kind, Alias)) {
+                    target = child(tree, declaration, 5);
                     if (target <= -1) { return -1; }
                 }
             } else {
-                if (kind == FUNCTION) {
-                    if (!monomorphic(records, length, offsets, count, declaration, 2, 7)) { return -1; }
+                if (same_kind(kind, Function)) {
+                    if (!monomorphic(tree, declaration, 2, 7)) { return -1; }
                 }
-                if (kind == EXTERNAL) {
-                    if (!monomorphic(records, length, offsets, count, declaration, 4, 9)) { return -1; }
+                if (same_kind(kind, External)) {
+                    if (!monomorphic(tree, declaration, 4, 9)) { return -1; }
                 }
             }
         }
-        let slot: i32 = HEADER + output[0] * ROW;
-        output[slot] = unit;
-        output[slot + 1] = kind;
-        output[slot + 2] = 0;
-        if (is_public) { output[slot + 2] = 1; }
-        output[slot + 3] = item;
-        output[slot + 4] = declaration;
-        output[slot + 5] = name;
-        output[slot + 6] = target;
-        output[slot + 7] = output[kind];
-        output[kind] += 1;
-        output[0] += 1;
-        list = child(records, length, offsets, count, list, 1);
+        let row: DeclarationRow = DeclarationRow {
+            unit: unit,
+            kind: kind,
+            is_public: is_public,
+            item: item,
+            declaration: declaration,
+            name: name,
+            target: target,
+            ordinal: kind_count(counts, kind),
+        };
+        table_write_row(destination, counts.rows, row);
+        counts = add_kind(counts, kind);
+        list = child(tree, list, 1);
     }
     return -1;
 }

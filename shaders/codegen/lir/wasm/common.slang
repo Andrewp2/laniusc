@@ -122,6 +122,7 @@ uint wasm_scalar_opcode(OptIrNodeCore core, OptIrNodeOperands operands)
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_BRANCH) return WASM_LIR_OP_BRANCH;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_BRANCH_IF) return WASM_LIR_OP_BRANCH_IF;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_RETURN) return WASM_LIR_OP_RETURN;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_TRAP) return WASM_LIR_OP_UNREACHABLE;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_DROP) return WASM_LIR_OP_DROP;
     return WASM_LIR_OP_UNREACHABLE;
 }
@@ -145,5 +146,6 @@ bool wasm_lir_supported(OptIrNodeCore core)
          (core.flags & (SEMANTIC_LIR_FLAG_INDEXED | SEMANTIC_LIR_FLAG_FIELD)) != 0u) ||
         ((op == SEMANTIC_LIR_OP_BRANCH || op == SEMANTIC_LIR_OP_BRANCH_IF) &&
          (core.flags & SEMANTIC_LIR_FLAG_BRANCH_DEPTH_VALID) != 0u) ||
-        op == SEMANTIC_LIR_OP_RETURN || op == SEMANTIC_LIR_OP_DROP;
+        op == SEMANTIC_LIR_OP_RETURN || op == SEMANTIC_LIR_OP_DROP ||
+        op == SEMANTIC_LIR_OP_TRAP;
 }

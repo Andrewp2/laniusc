@@ -1,0 +1,59 @@
+module app::main;
+
+import lowering::value_catalog;
+import verified::host;
+
+fn main() -> i32 {
+    let source_memory: ptr = verified::host::alloc(
+        2 * lowering::value_catalog::RECORD_BYTES,
+        lowering::value_catalog::ALIGNMENT);
+    let destination_memory: ptr = verified::host::alloc(
+        lowering::value_catalog::RECORD_BYTES,
+        lowering::value_catalog::ALIGNMENT);
+    if (source_memory == 0 || destination_memory == 0) { return 1; }
+    let source: lowering::value_catalog::ValueTable =
+        lowering::value_catalog::from_raw_parts(source_memory, 2);
+    let destination: lowering::value_catalog::ValueTable =
+        lowering::value_catalog::from_raw_parts(destination_memory, 1);
+    let invalid: lowering::value_catalog::ValueBinding =
+        lowering::value_catalog::binding(5,
+            lowering::value_catalog::InvalidBinding,
+            lowering::value_catalog::InvalidScope, 7, -1, -1);
+    if (lowering::value_catalog::write_binding(source, 0, invalid) != 1) {
+        return 1;
+    }
+    let checked: lowering::value_catalog::ValueBinding =
+        lowering::value_catalog::read_binding(source, 0);
+    if (lowering::value_catalog::binding_is_kind(checked,
+            lowering::value_catalog::CallableBinding)
+        || lowering::value_catalog::binding_is_kind(checked,
+            lowering::value_catalog::EnumVariantBinding)
+        || lowering::value_catalog::binding_is_scope(checked,
+            lowering::value_catalog::LocalBinding)
+        || lowering::value_catalog::binding_is_scope(checked,
+            lowering::value_catalog::ImportedBinding)) { return 1; }
+
+    let valid: lowering::value_catalog::ValueBinding =
+        lowering::value_catalog::binding(5,
+            lowering::value_catalog::EnumVariantBinding,
+            lowering::value_catalog::ImportedBinding, 7, 2, 1);
+    if (lowering::value_catalog::write_binding(source, 1, valid) != 2
+        || lowering::value_catalog::write_binding(source, 2, valid) != -1
+        || !lowering::value_catalog::copy_rows(source, 1, 1,
+            destination)
+        || lowering::value_catalog::copy_rows(source, 2, 1,
+            destination)) {
+        return 2;
+    }
+    let decoded: lowering::value_catalog::ValueBinding =
+        lowering::value_catalog::read_binding(destination, 0);
+    if (!lowering::value_catalog::binding_is_kind(decoded,
+            lowering::value_catalog::EnumVariantBinding)
+        || !lowering::value_catalog::binding_is_scope(decoded,
+            lowering::value_catalog::ImportedBinding)
+        || lowering::value_catalog::binding_token(decoded) != 5
+        || lowering::value_catalog::binding_id(decoded) != 7
+        || lowering::value_catalog::binding_member(decoded) != 2
+        || lowering::value_catalog::binding_arity(decoded) != 1) { return 3; }
+    return 0;
+}

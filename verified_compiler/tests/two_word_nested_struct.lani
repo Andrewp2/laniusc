@@ -1,0 +1,13 @@
+module app::main;
+
+struct Pair { first: i32, second: i32 }
+struct Box { pair: Pair, after: i32 }
+
+fn make() -> Pair {
+    return Pair { first: 11, second: 13 };
+}
+
+fn main() -> i32 {
+    let value: Box = Box { pair: make(), after: 17 };
+    return value.pair.first + value.pair.second + value.after - 41;
+}

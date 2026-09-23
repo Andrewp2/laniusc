@@ -54,10 +54,19 @@ uint float_setcc_opcode(uint predicate)
     return 0x93u;
 }
 
-bool x86_emit_uses_packed_i32_pass(X86LirCore core,
+bool x86_emit_uses_specialized_pass(X86LirCore core,
                                    X86LirOperands operands)
 {
-    return (operands.metadata & X86_LIR_METADATA_PACKED_I32_ARRAY) != 0u ||
+    return (operands.metadata & X86_LIR_METADATA_INDEX_AGGREGATE_COPY) != 0u ||
+        ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u &&
+         (core.op == X86_LIR_OP_COMPARE ||
+          core.op == X86_LIR_OP_COMPARE_BRANCH_FALSE ||
+          core.op == X86_LIR_OP_SELECT_STORE)) ||
+        (operands.metadata & X86_LIR_METADATA_PACKED_I32_ARRAY) != 0u ||
+        (core.op == X86_LIR_OP_CALL_ARG &&
+         (operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u) ||
+        (core.op == X86_LIR_OP_FIELD_STORE &&
+         (operands.metadata & X86_LIR_METADATA_FIELD_AGGREGATE_WORD) != 0u) ||
         (core.op == X86_LIR_OP_STORE_LOCAL &&
          (operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u) ||
         core.op == X86_LIR_OP_INTRINSIC_SLICE_FROM_RAW_PARTS ||
@@ -160,7 +169,7 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
             (X86_LIR_METADATA_STRING_PAIR | X86_LIR_METADATA_ARRAY_PAIR)) != 0u
             ? operands.c : 0u;
         uint source = declaration_location(operands.a) + component;
-        if ((operands.metadata & 0xffu) == X86_LIR_TY_FLOAT)
+        if (x86_scalar_float(operands.metadata))
             move_f32_location(cursor, source, locations.result);
         else if (x86_alias_uses_64_bits(operands.metadata))
             move_location64(cursor, source, locations.result);
@@ -182,7 +191,7 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
             move_location64(cursor, locations.b, destination);
             move_location32(cursor, locations.c, destination + 1u);
         }
-        else if ((operands.metadata & 0xffu) == X86_LIR_TY_FLOAT)
+        else if (x86_scalar_float(operands.metadata))
             move_f32_location(cursor, locations.b,
                 declaration_location(operands.a));
         else if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER)
@@ -205,10 +214,11 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
             emit_u8(cursor, 0xb8u);
             emit_u32(cursor, operands.a);
         }
-        else if ((operands.metadata & 0xffu) == X86_LIR_TY_FLOAT)
+        else if (x86_scalar_float(operands.metadata))
             move_f32_to_gpr(cursor, locations.a, 0u);
         else load_value64(cursor, locations.a, 0u, function);
-        if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
+        if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u &&
+            (operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) == 0u)
         {
             emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x80u);
             emit_u32(cursor, 0u - operands.b * 8u);
@@ -218,6 +228,11 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     else if (core.op == X86_LIR_OP_INDEX_LOAD)
     {
         load_value64(cursor, locations.a, 0u, function);
+        if ((operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u)
+        {
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu);
+            emit_u8(cursor, 0x00u); // mov rax, [rax]
+        }
         load_value32(cursor, locations.b, 1u, function);
         emit_u8(cursor, 0x48u); emit_u8(cursor, 0xf7u); emit_u8(cursor, 0xd9u);
         bool aggregate = (operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u;
@@ -259,6 +274,11 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     else if (core.op == X86_LIR_OP_INDEX_STORE)
     {
         load_value64(cursor, locations.a, 0u, function);
+        if ((operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u)
+        {
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu);
+            emit_u8(cursor, 0x00u); // mov rax, [rax]
+        }
         load_value32(cursor, locations.b, 1u, function);
         if ((operands.metadata & 0xffu) == X86_LIR_TY_FLOAT)
             move_f32_to_gpr(cursor, locations.c, 2u);
@@ -638,14 +658,15 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
                 locations.result, function);
             return;
         }
-        if ((operands.metadata & 0xffu) == 5u)
+        if (x86_scalar_float(operands.metadata))
         {
             emit_f32_compare(cursor, locations.b, locations.c);
             emit_boolean_result(cursor, float_setcc_opcode(operands.a),
                 locations.result, function);
             return;
         }
-        bool pointer = (operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER;
+        bool pointer = (operands.metadata & X86_LIR_METADATA_AGGREGATE) == 0u &&
+            (operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER;
         if (pointer)
         {
             load_value64(cursor, locations.b, 0u, function);
@@ -667,15 +688,15 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     }
     else if (core.op == X86_LIR_OP_COMPARE_BRANCH_FALSE)
     {
-        bool f32 = (operands.metadata & 0xffu) == X86_LIR_TY_FLOAT;
+        bool f32 = x86_scalar_float(operands.metadata);
         if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u)
             emit_compare32_immediate(cursor, operands.b, locations.a);
         else if (f32)
             emit_f32_compare(cursor, locations.a, locations.b);
         else
         {
-            bool pointer = (operands.metadata & 0xffu) ==
-                SEMANTIC_LIR_TY_POINTER;
+            bool pointer = (operands.metadata & X86_LIR_METADATA_AGGREGATE) == 0u &&
+                (operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER;
             if (pointer)
             {
                 load_value64(cursor, locations.a, 0u, function);
@@ -764,6 +785,10 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         if (!direct && operands.a != X86_LIR_UNARY_NOT_BOOL)
             store_value32(cursor, 0u, locations.result, function);
     }
+    else if (core.op == X86_LIR_OP_TRAP)
+    {
+        emit_u8(cursor, 0x0fu); emit_u8(cursor, 0x0bu);
+    }
     else if (core.op == X86_LIR_OP_RETURN || core.op == X86_LIR_OP_RETURN_VOID)
     {
         if (operands.c != 0u)
@@ -791,9 +816,9 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     }
     else if (core.op == X86_LIR_OP_INLINE_RESULT)
     {
-        if ((operands.metadata & 0xffu) == X86_LIR_TY_FLOAT)
+        if (x86_scalar_float(operands.metadata))
             move_f32_location(cursor, locations.a, locations.result);
-        else if ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER)
+        else if (x86_alias_uses_64_bits(operands.metadata))
             move_location64(cursor, locations.a, locations.result);
         else
             move_location32(cursor, locations.a, locations.result);
@@ -813,7 +838,7 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
             bool wide = (operands.metadata &
                 (X86_LIR_METADATA_AGGREGATE |
                  X86_LIR_METADATA_WIDE)) != 0u;
-            if ((operands.metadata & 0xffu) == X86_LIR_TY_FLOAT)
+            if (x86_scalar_float(operands.metadata))
                 move_f32_to_gpr(cursor, locations.a,
                     x86_location_payload(destination));
             else if (wide) move_location64(cursor, locations.a, destination);
@@ -921,13 +946,15 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
             if (operands.b == 0u)
             {
                 load_value64(cursor, locations.a, 0u, function);
+                // Both words share one aggregate address. Read the high word
+                // before replacing RAX (which may hold that address) with
+                // the low word; the second target row emits no bytes.
+                if (operands.c == 2u)
+                {
+                    emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu);
+                    emit_u8(cursor, 0x90u); emit_u32(cursor, 0u - 8u);
+                }
                 emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x00u);
-            }
-            else
-            {
-                load_value64(cursor, locations.a, 1u, function);
-                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x91u);
-                emit_u32(cursor, 0u - operands.b * 8u);
             }
         }
         else
@@ -1077,17 +1104,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     cursor += x86_safety_guard_bytes(core, target_lir_operands[page_row],
         target_lir_locations[page_row]);
     X86LirOperands operands = target_lir_operands[page_row];
-    bool packed_i32 = x86_emit_uses_packed_i32_pass(core, operands);
-    if (!packed_i32)
+    bool specialized = x86_emit_uses_specialized_pass(core, operands);
+    if (!specialized)
         emit_instruction(cursor, core, operands,
                          target_lir_locations[page_row], function,
                          semantic_function, layout, saved_mask);
     bool final_explicit_return = core.op == X86_LIR_OP_RETURN ||
-        core.op == X86_LIR_OP_RETURN_VOID;
+        core.op == X86_LIR_OP_RETURN_VOID || core.op == X86_LIR_OP_TRAP;
     if (row + 1u == function.instruction_start + function.instruction_count &&
         !final_explicit_return)
     {
-        if (packed_i32)
+        if (specialized)
             cursor = layout.body_offset + target_byte_offset[row] +
                 target_byte_length[row] - implicit_footer_bytes(
                     function, semantic_function, saved_mask);

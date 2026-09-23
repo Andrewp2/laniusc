@@ -12,6 +12,7 @@ StructuredBuffer<HirField> compact_fields;
 RWStructuredBuffer<uint> semantic_aggregate_hir_by_name_token;
 RWStructuredBuffer<uint> semantic_struct_field_count_by_hir;
 RWStructuredBuffer<uint> semantic_struct_field_start_by_hir;
+RWStructuredBuffer<uint> semantic_struct_word_count_by_hir;
 
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint HIR_ENUM_ITEM = 26u;
@@ -30,6 +31,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint name_token = compact_hir_payload[row].b;
         if (name_token < gParams.n_tokens)
             semantic_aggregate_hir_by_name_token[name_token] = row;
+        if (compact_hir_core[row].kind == HIR_ENUM_ITEM)
+            semantic_struct_word_count_by_hir[row] = 1u;
     }
 
     uint field_count = min(compact_field_count[0u], gParams.n_hir_nodes);

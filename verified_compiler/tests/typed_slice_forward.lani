@@ -1,0 +1,29 @@
+module app::main;
+
+pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn slice_from_raw_parts(data: ptr, length: i32) -> [Pair] {
+    return slice_from_raw_parts(data, length);
+}
+
+fn forward(data: ptr, length: i32) -> [Pair] {
+    return slice_from_raw_parts(data, length);
+}
+
+fn main() -> i32 {
+    let memory: ptr = alloc(32, 8);
+    if (memory == 0) { return 2; }
+    let first: ptr = memory + 24;
+    let values: [Pair] = forward(first, 2);
+    values[0].left = 3;
+    values[0].right = 2;
+    values[1].left = 8;
+    values[1].right = 17;
+    return values[0].left + values[0].right
+        + values[1].left + values[1].right;
+}

@@ -43,13 +43,19 @@ RWStructuredBuffer<LoweringStatus> lowering_status;
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
-void report_structure_failure(uint row)
+void report_structure_failure(uint row, uint packed_source)
 {
-    uint ignored;
+    uint prior;
     InterlockedCompareExchange(lowering_status[0u].diagnostic_reason,
         LOWERING_DIAGNOSTIC_NONE,
         LOWERING_DIAGNOSTIC_OPT_SSA_INCOMING_REWRITE,
-        ignored);
+        prior);
+    if (prior == LOWERING_DIAGNOSTIC_NONE)
+    {
+        lowering_status[0u].diagnostic_detail_kind =
+            LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE;
+        lowering_status[0u].diagnostic_detail = packed_source;
+    }
     InterlockedOr(lowering_status[0u].flags,
         LOWERING_STATUS_OPTIMIZATION_STRUCTURE);
     InterlockedMin(lowering_status[0u].first_unsupported_opt_row, row);
@@ -144,7 +150,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             value_total);
         if (rewritten.predecessor >= gParams.block_capacity ||
             rewritten.value == INVALID)
-            report_structure_failure(row);
+            report_structure_failure(row, incoming.source);
     }
     opt_ir_ssa_incoming_values[row] = rewritten;
 }

@@ -1,0 +1,23 @@
+module app::main;
+
+struct Triple { first: i32, middle: i32, last: i32 }
+struct Box { before: i32, triple: Triple, after: i32 }
+
+fn replacement() -> Triple {
+    return Triple { first: 11, middle: 12, last: 13 };
+}
+
+fn checksum(value: Box) -> i32 {
+    return value.before + value.triple.first + value.triple.middle +
+        value.triple.last + value.after;
+}
+
+fn main() -> i32 {
+    let first: Triple = Triple { first: 2, middle: 3, last: 4 };
+    let value: Box = Box { before: 1, triple: first, after: 4 };
+    let second: Triple = Triple { first: 7, middle: 8, last: 9 };
+    value.triple = second;
+    let local_result: i32 = checksum(value);
+    value.triple = replacement();
+    return local_result + checksum(value) - 70;
+}

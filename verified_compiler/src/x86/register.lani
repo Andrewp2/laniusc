@@ -17,14 +17,27 @@ pub const R13: i32 = 13;
 pub const R14: i32 = 14;
 pub const R15: i32 = 15;
 
-pub fn valid(value: i32) -> bool { return value >= 0 && value < 16; }
-pub fn width_valid(width: i32) -> bool { return width == 32 || width == 64; }
+pub const WIDTH_32: i32 = 32;
+pub const WIDTH_64: i32 = 64;
+const REGISTER_COUNT: i32 = 16;
+const LEGACY_REGISTER_COUNT: i32 = 8;
+const REX_BASE: i32 = 64;
+const REX_W: i32 = 8;
+const REX_R: i32 = 4;
+
+pub fn valid(value: i32) -> bool {
+    return value >= 0 && value < REGISTER_COUNT;
+}
+pub fn width_valid(width: i32) -> bool {
+    return width == WIDTH_32 || width == WIDTH_64;
+}
 
 // Intel SDM volume 2, section 2.2.1: 0100WRXB. No indexed SIB operand
 // is used here, so X is zero. A zero return means no prefix is needed.
 pub fn rex(width: i32, reg: i32, base: i32, byte_register: bool) -> i32 {
-    let value: i32 = 64 + (reg / 8) * 4 + base / 8;
-    if (width == 64) { value += 8; }
-    if (value == 64 && !byte_register) { return 0; }
+    let value: i32 = REX_BASE + (reg / LEGACY_REGISTER_COUNT) * REX_R
+        + base / LEGACY_REGISTER_COUNT;
+    if (width == WIDTH_64) { value += REX_W; }
+    if (value == REX_BASE && !byte_register) { return 0; }
     return value;
 }

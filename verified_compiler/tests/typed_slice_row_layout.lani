@@ -1,0 +1,36 @@
+module app::main;
+
+import verified::host;
+
+struct Row {
+    first: i32,
+    second: i32,
+}
+
+const FIELD_BYTES: i32 = 8;
+const ROW_BYTES: i32 = 2 * FIELD_BYTES;
+const CAPACITY: i32 = 3;
+
+fn prefix(memory: ptr, capacity: i32, count: i32) -> [Row] {
+    let first: ptr = memory;
+    if (capacity > 0) {
+        first = memory + capacity * ROW_BYTES - FIELD_BYTES;
+    }
+    return slice_from_raw_parts(first, count);
+}
+
+fn main() -> i32 {
+    let memory: ptr = verified::host::alloc(CAPACITY * ROW_BYTES,
+        FIELD_BYTES);
+    if (memory == 0) { return 1; }
+    let capacity: [Row] = prefix(memory, CAPACITY, CAPACITY);
+    capacity[0] = Row { first: 11, second: 12 };
+    capacity[1] = Row { first: 21, second: 22 };
+    capacity[2] = Row { first: 31, second: 32 };
+    let one: [Row] = prefix(memory, CAPACITY, 1);
+    if (one[0].first != 11 || one[0].second != 12) { return 2; }
+    let two: [Row] = prefix(memory, CAPACITY, 2);
+    if (two[0].first != 11 || two[0].second != 12) { return 3; }
+    if (two[1].first != 21 || two[1].second != 22) { return 4; }
+    return 0;
+}

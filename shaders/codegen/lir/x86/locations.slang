@@ -106,7 +106,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     locations.c = X86_LOCATION_INVALID;
     locations.length = X86_LOCATION_INVALID;
     if (semantic_row < gParams.semantic_capacity &&
-        core.result_or_target != INVALID && core.op != X86_LIR_OP_SELECT_STORE)
+        core.result_or_target != INVALID && core.op != X86_LIR_OP_SELECT_STORE &&
+        (operands.metadata & X86_LIR_METADATA_INDEX_AGGREGATE_COPY) == 0u)
     {
         uint allocated = value_location(semantic_row);
         uint producer = semantic_to_target_start[semantic_row];
@@ -156,6 +157,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u)
             locations.a = X86_LOCATION_INVALID;
         else if ((operands.metadata &
+            X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u)
+            locations.a = value_location(operands.a);
+        else if ((operands.metadata &
             (X86_LIR_METADATA_STRING_LEN | X86_LIR_METADATA_ARRAY_LEN)) != 0u)
         {
             uint string_start = value_location(operands.a);
@@ -169,6 +173,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         locations.a = (operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u
             ? X86_LOCATION_INVALID : value_location(operands.a);
+        if ((operands.metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u)
+            locations.a = locations.a != X86_LOCATION_INVALID &&
+                (locations.a & X86_LOCATION_REGISTER) == 0u
+                    ? stack_location(locations.a + operands.b)
+                    : X86_LOCATION_INVALID;
         locations.c = locations.result;
     }
     else if (core.op == X86_LIR_OP_INDEX_LOAD)

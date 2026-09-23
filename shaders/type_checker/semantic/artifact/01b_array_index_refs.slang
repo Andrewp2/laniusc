@@ -307,11 +307,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint base_node = index_node != INVALID
         ? payload.b
         : for_node ? payload.c : node;
-    uint token = name_token(base_node);
-    uint decl = valid_token(token) ? visible_decl[token] : INVALID;
-    if (!valid_token(decl) || decl_type_ref_tag[decl] != TYPE_REF_INSTANCE) return;
-
-    uint instance = decl_type_ref_payload[decl];
+    // The preceding expression-reference pass already checked projections
+    // such as `region.data` and calls returning slices. A name-only lookup
+    // loses their instance type (and therefore their runtime length).
+    uint instance = valid_hir(base_node) &&
+        semantic_expr_ref_tag_by_hir[base_node] == TYPE_REF_INSTANCE
+            ? semantic_expr_ref_payload_by_hir[base_node] : INVALID;
+    if (!valid_token(instance))
+    {
+        uint token = name_token(base_node);
+        uint decl = valid_token(token) ? visible_decl[token] : INVALID;
+        if (!valid_token(decl) || decl_type_ref_tag[decl] != TYPE_REF_INSTANCE)
+            return;
+        instance = decl_type_ref_payload[decl];
+    }
     if (!valid_token(instance)) return;
     uint kind = type_instance_kind[instance];
     if (for_node)

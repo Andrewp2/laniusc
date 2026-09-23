@@ -1,143 +1,186 @@
 module lowering::modules;
+import verified::production;
 
 import lowering::declarations;
-import verified::surface_tree;
 import verified::parser;
+import verified::syntax_tree;
 import verified::token;
 
-pub const HEADER: i32 = 4;
-pub const SEGMENT: i32 = 4;
-
-fn child(records: [i32], length: i32, offsets: [i32], count: i32,
-    node: i32, index: i32) -> i32 {
-    return verified::surface_tree::child(records, length, offsets, count,
-        node, index, verified::parser::CHILD_STATE, 0);
+pub struct ModuleInput {
+    tokens: verified::token::TokenTable,
+    source_length: i32,
+    tree: verified::syntax_tree::Tree,
+    declarations: lowering::declarations::Table,
 }
 
-// This is the plain-path projection of surface_path_output's existing
-// materialized-tree traversal, not a token parser. Generic segments (49)
-// are rejected, as in Declarations.plainPath?.
-fn path(tokens: [i32], token_count: i32, source_length: i32,
-    records: [i32], length: i32, offsets: [i32], count: i32,
-    root: i32, output: [i32], capacity: i32, position: i32) -> i32 {
-    let root_offset: i32 = verified::surface_tree::record(records, length, offsets, count, root);
-    if (root_offset <= -1 || records[root_offset] != 47 || records[root_offset + 3] != 2
-        || position <= -1 || position >= capacity) { return -1; }
-    let segment: i32 = child(records, length, offsets, count, root, 0);
-    let tail: i32 = child(records, length, offsets, count, root, 1);
-    let written: i32 = position + 1;
-    let segments: i32 = 0;
+struct ModuleContext {
+    tokens: verified::token::TokenTable,
+    token_count: i32,
+    source_length: i32,
+    tree: verified::syntax_tree::Tree,
+}
+
+fn child(tree: verified::syntax_tree::Tree, node: i32,
+    index: i32) -> i32 {
+    return verified::syntax_tree::child(tree, node, index,
+        verified::parser::StateChild);
+}
+
+// Validate plain paths against the materialized tree and canonical tokens.
+// Generic segments are rejected, as in Declarations.plainPath?.
+fn path(context: ModuleContext, root: i32) -> bool {
+    let tokens: [verified::token::TokenRow] = context.tokens.data;
+    let tree: verified::syntax_tree::Tree = context.tree;
+    let token_count: i32 = context.token_count;
+    let source_length: i32 = context.source_length;
+    if (verified::syntax_tree::production(tree, root)
+            != verified::production::PATH
+        || verified::syntax_tree::child_count(tree, root) != 2) {
+        return false;
+    }
+    let segment: i32 = child(tree, root, 0);
+    let tail: i32 = child(tree, root, 1);
     let previous_token: i32 = -1;
     let previous_finish: i32 = 0;
     while (segment >= 0) {
-        let offset: i32 = verified::surface_tree::record(records, length, offsets, count, segment);
-        if (offset <= -1 || records[offset] != 48 || records[offset + 3] != 1
-            || capacity - written <= SEGMENT - 1) { return -1; }
-        let name: i32 = verified::surface_tree::child(records, length, offsets, count,
-            segment, 0, verified::parser::CHILD_TOKEN, token_count);
-        if (name <= -1 || name <= previous_token || tokens[name * 3] != verified::token::IDENTIFIER) { return -1; }
-        let start: i32 = tokens[name * 3 + 1];
-        let finish: i32 = tokens[name * 3 + 2];
-        if (start <= previous_finish - 1 || finish <= start || finish > source_length) { return -1; }
-        output[written] = segment;
-        output[written + 1] = name;
-        output[written + 2] = start;
-        output[written + 3] = finish - start;
-        written += SEGMENT;
-        segments += 1;
+        if (verified::syntax_tree::production(tree, segment)
+                != verified::production::PATH_IDENT
+            || verified::syntax_tree::child_count(tree, segment) != 1) {
+            return false;
+        }
+        let name: i32 = verified::syntax_tree::child(tree, segment, 0,
+            verified::parser::TokenChild);
+        if (name <= -1 || name <= previous_token
+            || !verified::token::kind_is(
+                tokens[name].kind,
+                verified::token::Identifier)) { return false; }
+        let start: i32 = tokens[name].start;
+        let finish: i32 = tokens[name].finish;
+        if (start <= previous_finish - 1 || finish <= start
+            || finish > source_length) { return false; }
         previous_token = name;
         previous_finish = finish;
-        let tail_offset: i32 = verified::surface_tree::record(records, length, offsets, count, tail);
-        if (tail_offset <= -1) { return -1; }
-        if (records[tail_offset] == 51) {
-            if (records[tail_offset + 3] != 0) { return -1; }
-            output[position] = segments;
-            return written;
+        let tail_production: i32 = verified::syntax_tree::production(tree, tail);
+        if (tail_production <= -1) { return false; }
+        if (tail_production == verified::production::PATH_END) {
+            if (verified::syntax_tree::child_count(tree, tail) != 0) {
+                return false;
+            }
+            return true;
         }
-        if (records[tail_offset] != 50 || records[tail_offset + 3] != 4) { return -1; }
-        segment = child(records, length, offsets, count, tail, 2);
-        tail = child(records, length, offsets, count, tail, 3);
+        if (tail_production != verified::production::PATH_MORE
+            || verified::syntax_tree::child_count(tree, tail) != 4) {
+            return false;
+        }
+        segment = child(tree, tail, 2);
+        tail = child(tree, tail, 3);
     }
-    return -1;
+    return false;
 }
 
 // Project module/import paths from one successful declaration collector table.
-// Tokens are authenticated canonical [kind,start,end] rows into the source;
+// Tokens are native records decoded once from canonical frontend rows;
 // the source bytes are retained by the caller, not copied or rescanned here.
 // Lengths match real storage, and all input/output buffers are disjoint.
-//
-// Output header: [unit, path-count, total-segments, total-output-words].
-// Each variable-size path record is the original eight-word collector row,
-// followed by its segment count and four words per segment:
-//   [segment-node, name-token, source-byte-start, source-byte-length].
-// Spans preserve exact spelling and origin; no host-assigned name IDs occur.
-// Import order and duplicates are preserved. This does not resolve imports
-// to modules, reject self/missing imports, or check global module uniqueness.
 //
 // Like declaredModulePath?, the module must be the first source item. The
 // collector's stronger exactly-one-module contract is checked too. Generic
 // paths and string imports are unsupported. The latter already fail in the
 // collector; their tail production is also rejected defensively here.
-// Return output word count, or -1; failure output is partial and discarded.
-pub fn materialize(tokens: [i32], token_count: i32, source_length: i32,
-    records: [i32], length: i32, offsets: [i32], count: i32,
-    table: [i32], table_length: i32, output: [i32], capacity: i32) -> i32 {
-    if (token_count <= -1) { return -1; }
-    if (token_count > 715827882) { return -1; }
-    if (source_length <= -1) { return -1; }
-    if (length <= -1) { return -1; }
-    if (count <= 0) { return -1; }
-    if (table_length <= 15) { return -1; }
-    if (capacity <= 3) { return -1; }
-    let rows: i32 = table[0];
-    if (rows <= 0 || rows > (table_length - 8) / 8 || table_length != 8 + rows * 8
-        || table[6] != 1 || table[7] <= -1 || table[7] >= rows
-        || table[8] <= -1 || table[9] != lowering::declarations::MODULE) { return -1; }
-    let unit: i32 = table[8];
+// Path records are not needed after this check; only the verdict advances.
+pub fn validate(input: ModuleInput) -> bool {
+    let tokens: verified::token::TokenTable = input.tokens;
+    let token_count: i32 = input.tokens.count;
+    let source_length: i32 = input.source_length;
+    let tree: verified::syntax_tree::Tree = input.tree;
+    let table: lowering::declarations::Table = input.declarations;
+    if (token_count <= -1
+        || source_length <= -1 || tree.node_count <= 0) {
+        return false;
+    }
+    if (table.count <= 0) { return false; }
+    let header: lowering::declarations::DeclarationCounts =
+        lowering::declarations::table_header(table);
+    let rows: i32 = lowering::declarations::count_rows(header);
+    if (rows <= 0 || rows != table.count
+        || lowering::declarations::kind_count(header,
+            lowering::declarations::Module) != 1
+        || lowering::declarations::kind_count(header,
+            lowering::declarations::Import) <= -1
+        || lowering::declarations::kind_count(header,
+            lowering::declarations::Import) >= rows) { return false; }
+    let first: lowering::declarations::DeclarationRow =
+        lowering::declarations::table_row(table, 0);
+    if (lowering::declarations::row_unit(first) <= -1
+        || !lowering::declarations::row_has_kind(first,
+            lowering::declarations::Module)) { return false; }
+    let unit: i32 = lowering::declarations::row_unit(first);
     let paths: i32 = 0;
-    let segments: i32 = 0;
-    let written: i32 = HEADER;
+    let context: ModuleContext = ModuleContext {
+        tokens: tokens,
+        token_count: token_count,
+        source_length: source_length,
+        tree: tree,
+    };
     let row: i32 = 0;
     while (row < rows) {
-        let slot: i32 = 8 + row * 8;
-        let kind: i32 = table[slot + 1];
-        if (table[slot] != unit || kind <= 0 || kind > 7) { return -1; }
-        if (kind >= lowering::declarations::MODULE) {
-            if (capacity - written <= 8 || table[slot + 2] != 0 || table[slot + 5] != -1) { return -1; }
-            let item: i32 = table[slot + 3];
-            let declaration: i32 = table[slot + 4];
-            let target: i32 = table[slot + 6];
-            let item_offset: i32 = verified::surface_tree::record(records, length, offsets, count, item);
-            let declaration_offset: i32 = verified::surface_tree::record(records, length, offsets, count, declaration);
-            if (item_offset <= -1 || declaration_offset <= -1
-                || child(records, length, offsets, count, item, 0) != declaration) { return -1; }
-            let actual: i32 = child(records, length, offsets, count, declaration, 1);
-            if (kind == lowering::declarations::MODULE) {
-                if (row != 0 || paths != 0 || table[slot + 7] != 0
-                    || records[item_offset] != 7 || records[declaration_offset] != 46) { return -1; }
-            } else {
-                if (paths <= 0 || table[slot + 7] != paths - 1
-                    || records[item_offset] != 6 || records[declaration_offset] != 43) { return -1; }
-                let tail_offset: i32 = verified::surface_tree::record(records, length, offsets, count, actual);
-                if (tail_offset <= -1 || records[tail_offset] != 44) { return -1; }
-                actual = child(records, length, offsets, count, actual, 0);
+        let declaration_row: lowering::declarations::DeclarationRow =
+            lowering::declarations::table_row(table, row);
+        if (lowering::declarations::row_unit(declaration_row) != unit
+            || lowering::declarations::row_has_kind(declaration_row,
+                lowering::declarations::Invalid)) { return false; }
+        if (lowering::declarations::row_has_kind(declaration_row,
+                lowering::declarations::Module)
+            || lowering::declarations::row_has_kind(declaration_row,
+                lowering::declarations::Import)) {
+            if (lowering::declarations::row_is_public(declaration_row)
+                || lowering::declarations::row_name(declaration_row) != -1) {
+                return false;
             }
-            if (actual != target) { return -1; }
-            let index: i32 = 0;
-            while (index < 8) { output[written + index] = table[slot + index]; index += 1; }
-            let next: i32 = path(tokens, token_count, source_length, records, length,
-                offsets, count, target, output, capacity, written + 8);
-            if (next <= -1) { return -1; }
-            segments += output[written + 8];
-            written = next;
+            let item: i32 = lowering::declarations::row_item(declaration_row);
+            let declaration: i32 = lowering::declarations::row_declaration(
+                declaration_row);
+            let target: i32 = lowering::declarations::row_target(
+                declaration_row);
+            let item_production: i32 =
+                verified::syntax_tree::production(tree, item);
+            let declaration_production: i32 =
+                verified::syntax_tree::production(tree, declaration);
+            if (item_production <= -1 || declaration_production <= -1
+                || child(tree, item, 0) != declaration) {
+                return false;
+            }
+            let actual: i32 = child(tree, declaration, 1);
+            if (lowering::declarations::row_has_kind(declaration_row,
+                    lowering::declarations::Module)) {
+                if (row != 0 || paths != 0
+                    || lowering::declarations::row_ordinal(declaration_row) != 0
+                    || item_production != verified::production::ITEM_MODULE
+                    || declaration_production != verified::production::MODULE) {
+                    return false;
+                }
+            } else {
+                if (paths <= 0
+                    || lowering::declarations::row_ordinal(declaration_row)
+                        != paths - 1
+                    || item_production != verified::production::ITEM_IMPORT
+                    || declaration_production != verified::production::IMPORT) {
+                    return false;
+                }
+                if (verified::syntax_tree::production(tree, actual)
+                        != verified::production::IMPORT_PATH) {
+                    return false;
+                }
+                actual = child(tree, actual, 0);
+            }
+            if (actual != target || !path(context, target)) { return false; }
             paths += 1;
         }
         row += 1;
     }
-    if (paths != table[7] + 1) { return -1; }
-    output[0] = unit;
-    output[1] = paths;
-    output[2] = segments;
-    output[3] = written;
-    return written;
+    if (paths != lowering::declarations::kind_count(header,
+            lowering::declarations::Module)
+            + lowering::declarations::kind_count(header,
+                lowering::declarations::Import)) { return false; }
+    return true;
 }

@@ -1,82 +1,94 @@
 module app::main;
+import lowering::allocation;
+import lowering::declarations;
 import lowering::units;
-import verified::host; // The unit tables are deliberately supplied out of the same flat catalog in
-// descriptor order.  This checks that the first pass copies both units before
-// allocation, rather than silently compiling only the first catalog entry.
+import verified::host; // The unit tables are supplied from a flat declaration
+// catalog in descriptor order. Both units must reach allocation.
+const ALLOCATION_WORDS: i32 = lowering::allocation::HEADER
+    + 4 * lowering::allocation::ROW;
+const UNIT_DECLARATION_WORDS: i32 = lowering::declarations::HEADER
+    + 2 * lowering::declarations::ROW;
+const DECLARATION_WORDS: i32 = 2 * UNIT_DECLARATION_WORDS;
 fn main() -> i32 {
-    let descriptor_memory: ptr = verified::host::alloc(32, 4);
-    let declaration_memory: ptr = verified::host::alloc(192, 4);
-    let module_memory: ptr = verified::host::alloc(32, 4);
-    let declarations_memory: ptr = verified::host::alloc(192, 4);
-    let modules_memory: ptr = verified::host::alloc(32, 4);
-    let allocated_memory: ptr = verified::host::alloc(192, 4);
-    if (descriptor_memory == 0 || declaration_memory == 0 || module_memory == 0 || declarations_memory == 0 || modules_memory == 0 || allocated_memory == 0) {
+    let descriptor_memory: ptr = verified::host::alloc(
+        2 * lowering::declarations::TABLE_REF_BYTES,
+        lowering::declarations::TABLE_REF_ALIGNMENT);
+    let declaration_memory: ptr = verified::host::alloc(
+        DECLARATION_WORDS * verified::host::I32_BYTES,
+        lowering::declarations::ALIGNMENT);
+    let allocated_memory: ptr = verified::host::alloc(
+        ALLOCATION_WORDS * verified::host::I32_BYTES,
+        lowering::allocation::ALIGNMENT);
+    if (descriptor_memory == 0 || declaration_memory == 0
+        || allocated_memory == 0) {
         return 1;
     }
-    let descriptors:[i32] = verified::host::i32_slice_from_raw_parts(descriptor_memory, 8);
-    let declaration_catalog:[i32] = verified::host::i32_slice_from_raw_parts(declaration_memory, 48);
-    let module_catalog:[i32] = verified::host::i32_slice_from_raw_parts(module_memory, 8);
-    let declarations:[i32] = verified::host::i32_slice_from_raw_parts(declarations_memory, 48);
-    let modules:[i32] = verified::host::i32_slice_from_raw_parts(modules_memory, 8);
-    let allocated:[i32] = verified::host::i32_slice_from_raw_parts(allocated_memory, 48);
-    descriptors[0] = 0;
-    descriptors[1] = 24;
-    descriptors[2] = 0;
-    descriptors[3] = 4;
-    descriptors[4] = 24;
-    descriptors[5] = 24;
-    descriptors[6] = 4;
-    descriptors[7] = 4;
+    let descriptor_table: lowering::declarations::Catalog =
+        lowering::declarations::catalog_from_raw_parts(descriptor_memory, 2);
+    let allocated: lowering::allocation::Table =
+        lowering::allocation::from_raw_parts(allocated_memory, 4);
     let unit: i32 = 0;
     while (unit <= 1) {
-        let base: i32 = unit * 24;
-        declaration_catalog[base] = 2;
-        declaration_catalog[base + 1] = 0;
-        declaration_catalog[base + 2] = 0;
-        declaration_catalog[base + 3] = 0;
-        declaration_catalog[base + 4] = 1;
-        declaration_catalog[base + 5] = 0;
-        declaration_catalog[base + 6] = 1;
-        declaration_catalog[base + 7] = 0;
-        let row: i32 = 0;
-        while (row <= 1) {
-            let slot: i32 = base + 8 + row * 8;
-            declaration_catalog[slot] = unit;
-            declaration_catalog[slot + 2] = 0;
-            declaration_catalog[slot + 6] = -1;
-            declaration_catalog[slot + 7] = 0;
-            if (row == 0) {
-                declaration_catalog[slot + 1] = 6;
-                declaration_catalog[slot + 3] = 2;
-                declaration_catalog[slot + 4] = 1;
-                declaration_catalog[slot + 5] = -1;
-                declaration_catalog[slot + 6] = 0;
-            } else {
-                declaration_catalog[slot + 1] = 4;
-                declaration_catalog[slot + 3] = 3;
-                declaration_catalog[slot + 4] = 2;
-                declaration_catalog[slot + 5] = 3;
-            }
-            row += 1;
-        }
+        let unit_memory: ptr = declaration_memory
+            + unit * UNIT_DECLARATION_WORDS * verified::host::I32_BYTES;
+        let table: lowering::declarations::Table =
+            lowering::declarations::from_raw_parts(unit_memory, 2);
+        lowering::declarations::table_write_header(table,
+            lowering::declarations::DeclarationCounts {
+            rows: 2, structures: 0, enumerations: 0, aliases: 0,
+            constants: 0, functions: 1, externals: 0, modules: 1,
+            imports: 0,
+        });
+        lowering::declarations::table_write_row(table, 0,
+            lowering::declarations::DeclarationRow {
+                unit: unit, kind: lowering::declarations::Module,
+                is_public: false, item: 2, declaration: 1,
+                name: -1, target: 0, ordinal: 0,
+            });
+        lowering::declarations::table_write_row(table, 1,
+            lowering::declarations::DeclarationRow {
+                unit: unit, kind: lowering::declarations::Function,
+                is_public: false, item: 3, declaration: 2,
+                name: 3, target: -1, ordinal: 0,
+            });
         unit += 1;
     }
-    module_catalog[0] = 0;
-    module_catalog[1] = 0;
-    module_catalog[2] = 0;
-    module_catalog[3] = 4;
-    module_catalog[4] = 1;
-    module_catalog[5] = 0;
-    module_catalog[6] = 0;
-    module_catalog[7] = 4;
-    let result = lowering::units::accumulate(descriptors, 8, 2, declaration_catalog, 48, module_catalog, 8, declarations, 48, modules, 8, allocated, 48);
-    if (lowering::units::units_stage(result) != lowering::units::SUCCESS || lowering::units::units_count(result) != 2 || lowering::units::units_declaration_words(result) != 48 || lowering::units::units_module_words(result) != 8 || lowering::units::units_allocation_words(result) != 48) {
+    lowering::declarations::catalog_write_table(descriptor_table, 0,
+        lowering::declarations::from_raw_parts(declaration_memory, 2));
+    let second_memory: ptr = declaration_memory
+        + UNIT_DECLARATION_WORDS * verified::host::I32_BYTES;
+    lowering::declarations::catalog_write_table(descriptor_table, 1,
+        lowering::declarations::from_raw_parts(second_memory, 2));
+    let second_table: lowering::declarations::Table =
+        lowering::declarations::from_raw_parts(second_memory, 2);
+    let second_unit_row: lowering::declarations::DeclarationRow =
+        lowering::declarations::table_row(second_table, 0);
+    second_unit_row.unit = 0;
+    lowering::declarations::table_write_row(second_table, 0,
+        second_unit_row);
+    let rejected = lowering::units::accumulate(descriptor_table,
+        allocated);
+    if (lowering::units::stage_code(lowering::units::units_stage(rejected))
+            != lowering::units::stage_code(lowering::units::Declarations)
+        || lowering::units::units_count(rejected) != 1) { return 5; }
+    second_unit_row.unit = 1;
+    lowering::declarations::table_write_row(second_table, 0,
+        second_unit_row);
+    let result = lowering::units::accumulate(descriptor_table,
+        allocated);
+    if (!lowering::units::stage_succeeded(lowering::units::units_stage(result)) || lowering::units::units_count(result) != 2 || lowering::units::units_declaration_words(result) != DECLARATION_WORDS || lowering::units::units_allocation_words(result) != ALLOCATION_WORDS) {
         return 2;
     }
-    if (allocated[0] != 2 || allocated[1] != 4 || allocated[5] != 2 || allocated[7] != 2) {
+    let header: lowering::allocation::AllocationHeader =
+        lowering::allocation::table_header(allocated);
+    if (header.units != 2 || header.rows != 4
+        || header.functions != 2 || header.externals != 0) {
         return 3;
     }
-    if (allocated[18 + 9] != 0 || allocated[38 + 9] != 1) {
+    if (lowering::allocation::row_core_id(
+            lowering::allocation::table_row(allocated, 1)) != 0
+        || lowering::allocation::row_core_id(
+            lowering::allocation::table_row(allocated, 3)) != 1) {
         return 4;
     }
     return 0;

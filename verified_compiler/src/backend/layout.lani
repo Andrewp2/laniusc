@@ -1,72 +1,32 @@
 module backend::layout;
 import backend::syntax;
 
-// Internal value storage uses eight-byte words. Structs concatenate fields;
-// slices/strings carry a data pointer and length. This is not the C struct ABI.
-// Packed i32 slice elements still occupy four bytes in the referenced buffer.
+// Native value storage uses eight-byte words. Structures concatenate fields;
+// enumerations contain a tag and the largest variant payload. Slices and
+// strings contain a pointer and length. This is not the platform C ABI.
 pub const MAX_VALUE_WORDS: i32 = 4096;
+pub const VALUE_WORD_BYTES: i32 = 8;
+pub const INTEGER_WIDTH: i32 = 32;
+pub const MACHINE_WIDTH: i32 = 64;
+
+// Core type records are serialized input. backend::layout_index decodes them
+// into typed rows once, then owns all nominal-width and field-offset queries.
+pub const TYPE_RECORD_HEADER_WORDS: i32 = 4;
+pub const TYPE_RECORD_WORD_COUNT_FIELD: i32 = 0;
+pub const TYPE_RECORD_ID_FIELD: i32 = 1;
+pub const TYPE_RECORD_KIND_FIELD: i32 = 2;
+pub const TYPE_RECORD_MEMBER_COUNT_FIELD: i32 = 3;
 
 pub fn aggregate(kind: i32) -> bool {
-    return kind == backend::syntax::SLICE || kind == backend::syntax::STRING || kind >= backend::syntax::STRUCT_BASE;
+    return backend::syntax::type_is(kind, backend::syntax::TypeSlice)
+        || backend::syntax::type_is(kind, backend::syntax::TypeString)
+        || kind >= backend::syntax::NOMINAL_TYPE_BASE;
 }
 
 pub fn width(kind: i32) -> i32 {
-    if (kind == backend::syntax::I32 || kind == backend::syntax::BOOL) { return 32; }
-    return 64;
-}
-
-pub fn record(input: [i32], length: i32, kind: i32) -> i32 {
-    if (length <= 5 || kind <= backend::syntax::STRUCT_BASE - 1) { return -1; }
-    let position: i32 = 6;
-    let index: i32 = 0;
-    while (index <= input[3] - 1) {
-        if (position > length - 2) { return -1; }
-        let count: i32 = input[position + 1];
-        if (count <= -1 || count > length - position - 2) { return -1; }
-        if (input[position] == kind - backend::syntax::STRUCT_BASE) { return position; }
-        position += 2 + count;
-        index += 1;
+    if (backend::syntax::type_is(kind, backend::syntax::TypeI32)
+        || backend::syntax::type_is(kind, backend::syntax::TypeBool)) {
+        return INTEGER_WIDTH;
     }
-    return -1;
-}
-
-pub fn words(input: [i32], length: i32, kind: i32, depth: i32) -> i32 {
-    if (depth >= 64) { return -1; }
-    if (kind >= backend::syntax::I32 && kind <= backend::syntax::POINTER) { return 1; }
-    if (kind == backend::syntax::SLICE || kind == backend::syntax::STRING) { return 2; }
-    let position: i32 = record(input, length, kind);
-    if (position <= -1) { return -1; }
-    let count: i32 = input[position + 1];
-    let index: i32 = 0;
-    let total: i32 = 0;
-    while (index <= count - 1) {
-        let size: i32 = words(input, length, input[position + 2 + index], depth + 1);
-        if (size <= 0 || size > MAX_VALUE_WORDS - total) { return -1; }
-        total += size;
-        index += 1;
-    }
-    if (total == 0) { return 1; }
-    return total;
-}
-
-pub fn field_kind(input: [i32], length: i32, kind: i32, field: i32) -> i32 {
-    let position: i32 = record(input, length, kind);
-    if (position <= -1 || field <= -1) { return -1; }
-    if (field >= input[position + 1]) { return -1; }
-    return input[position + 2 + field];
-}
-
-pub fn field_offset(input: [i32], length: i32, kind: i32, field: i32) -> i32 {
-    let position: i32 = record(input, length, kind);
-    if (position <= -1 || field <= -1) { return -1; }
-    if (field >= input[position + 1]) { return -1; }
-    let index: i32 = 0;
-    let offset: i32 = 0;
-    while (index <= field - 1) {
-        let size: i32 = words(input, length, input[position + 2 + index], 0);
-        if (size <= 0 || size > MAX_VALUE_WORDS - offset) { return -1; }
-        offset += size;
-        index += 1;
-    }
-    return offset * 8;
+    return MACHINE_WIDTH;
 }

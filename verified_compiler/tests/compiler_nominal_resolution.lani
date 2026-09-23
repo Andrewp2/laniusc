@@ -1,0 +1,9 @@
+module app::main;
+
+struct Unused {
+    value: i32,
+}
+
+fn main() -> i32 {
+    return 42;
+}

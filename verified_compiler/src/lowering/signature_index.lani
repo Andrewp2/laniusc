@@ -1,0 +1,532 @@
+module lowering::signature_index;
+
+import lowering::declarations;
+import lowering::signatures;
+import verified::host;
+
+// Native signature rows, members, variants, field types, and constants
+// indexed by the allocator's Core ID. No compact signature catalog exists.
+const FIELD_BYTES: i32 = 8;
+const ENTRY_FIELDS: i32 = 8;
+pub const ENTRY_BYTES: i32 = ENTRY_FIELDS * FIELD_BYTES;
+const MEMBER_BYTES: i32 = 2 * FIELD_BYTES;
+const VARIANT_BYTES: i32 = 3 * FIELD_BYTES;
+const ENUM_FIELD_BYTES: i32 = FIELD_BYTES;
+const CONSTANT_BYTES: i32 = 5 * FIELD_BYTES;
+const CONSTANT_BYTE_BYTES: i32 = verified::host::I32_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+
+pub struct Entry {
+    id: i32,
+    declaration_kind: lowering::declarations::DeclarationKind,
+    shape: lowering::signatures::SignatureShape,
+    arity: i32,
+    result_type: i32,
+    member_start: i32,
+    variant_start: i32,
+    constant_start: i32,
+}
+
+pub struct Variant {
+    name: i32,
+    field_start: i32,
+    field_count: i32,
+}
+
+pub struct EnumField {
+    type_tag: i32,
+}
+
+pub enum ConstantEncoding {
+    InvalidConstant,
+    ScalarConstant,
+    StringConstant,
+}
+
+pub struct ConstantValue {
+    encoding: ConstantEncoding,
+    low: i32,
+    high: i32,
+    byte_start: i32,
+    byte_count: i32,
+}
+
+pub struct Requirements {
+    entries: i32,
+    members: i32,
+    variants: i32,
+    fields: i32,
+    constants: i32,
+    bytes: i32,
+    valid: bool,
+}
+
+pub struct Table {
+    data: [Entry],
+    count: i32,
+    members: [lowering::signatures::SignatureMember],
+    member_count: i32,
+    variants: [Variant],
+    variant_count: i32,
+    fields: [EnumField],
+    field_count: i32,
+    constants: [ConstantValue],
+    constant_count: i32,
+    // Homogeneous byte values, not packed records.
+    bytes: [i32],
+    byte_count: i32,
+}
+
+fn member_shape(shape: lowering::signatures::SignatureShape) -> bool {
+    return shape == lowering::signatures::StructureShape
+        || shape == lowering::signatures::InternalFunctionShape
+        || shape == lowering::signatures::ExternalFunctionShape;
+}
+
+fn shape_matches_kind(record: lowering::signatures::SignatureRecord)
+    -> bool {
+    let shape: lowering::signatures::SignatureShape =
+        lowering::signatures::record_shape(record);
+    let kind: lowering::declarations::DeclarationKind =
+        lowering::signatures::record_declaration_kind(record);
+    return (shape == lowering::signatures::StructureShape
+            && lowering::declarations::same_kind(kind,
+                lowering::declarations::Structure))
+        || (shape == lowering::signatures::EnumerationShape
+            && lowering::declarations::same_kind(kind,
+                lowering::declarations::Enumeration))
+        || (shape == lowering::signatures::InternalFunctionShape
+            && lowering::declarations::same_kind(kind,
+                lowering::declarations::Function))
+        || (shape == lowering::signatures::ExternalFunctionShape
+            && lowering::declarations::same_kind(kind,
+                lowering::declarations::External))
+        || (shape == lowering::signatures::ConstantShape
+            && lowering::declarations::same_kind(kind,
+                lowering::declarations::Constant));
+}
+
+pub fn allocation_bytes(required: Requirements) -> i32 {
+    if (!required.valid || required.entries <= 0
+        || required.members <= -1 || required.variants <= -1
+        || required.fields <= -1 || required.constants <= -1
+        || required.bytes <= -1) { return -1; }
+    let bytes: i32 = 0;
+    if (required.entries > (verified::host::I32_MAX - bytes)
+            / ENTRY_BYTES) { return -1; }
+    bytes += required.entries * ENTRY_BYTES;
+    if (required.members > (verified::host::I32_MAX - bytes)
+            / MEMBER_BYTES) { return -1; }
+    bytes += required.members * MEMBER_BYTES;
+    if (required.variants > (verified::host::I32_MAX - bytes)
+            / VARIANT_BYTES) { return -1; }
+    bytes += required.variants * VARIANT_BYTES;
+    if (required.fields > (verified::host::I32_MAX - bytes)
+            / ENUM_FIELD_BYTES) { return -1; }
+    bytes += required.fields * ENUM_FIELD_BYTES;
+    if (required.constants > (verified::host::I32_MAX - bytes)
+            / CONSTANT_BYTES) { return -1; }
+    bytes += required.constants * CONSTANT_BYTES;
+    if (required.bytes > (verified::host::I32_MAX - bytes)
+            / CONSTANT_BYTE_BYTES) { return -1; }
+    return bytes + required.bytes * CONSTANT_BYTE_BYTES;
+}
+
+fn slice_first(base: ptr, count: i32, bytes: i32) -> ptr {
+    if (count <= 0) { return base; }
+    return base + count * bytes - FIELD_BYTES;
+}
+
+pub fn from_raw_parts(memory: ptr, required: Requirements) -> Table {
+    let member_base: ptr = memory + required.entries * ENTRY_BYTES;
+    let variant_base: ptr = member_base + required.members * MEMBER_BYTES;
+    let field_base: ptr = variant_base + required.variants * VARIANT_BYTES;
+    let constant_base: ptr = field_base
+        + required.fields * ENUM_FIELD_BYTES;
+    let byte_base: ptr = constant_base
+        + required.constants * CONSTANT_BYTES;
+    return Table {
+        data: slice_from_raw_parts(
+            slice_first(memory, required.entries, ENTRY_BYTES),
+            required.entries),
+        count: required.entries,
+        members: slice_from_raw_parts(
+            slice_first(member_base, required.members, MEMBER_BYTES),
+            required.members),
+        member_count: required.members,
+        variants: slice_from_raw_parts(
+            slice_first(variant_base, required.variants, VARIANT_BYTES),
+            required.variants),
+        variant_count: required.variants,
+        fields: slice_from_raw_parts(
+            slice_first(field_base, required.fields, ENUM_FIELD_BYTES),
+            required.fields),
+        field_count: required.fields,
+        constants: slice_from_raw_parts(
+            slice_first(constant_base, required.constants,
+                CONSTANT_BYTES),
+            required.constants),
+        constant_count: required.constants,
+        bytes: verified::host::i32_slice_from_raw_parts(byte_base,
+            required.bytes),
+        byte_count: required.bytes,
+    };
+}
+
+fn empty_entry() -> Entry {
+    return Entry {
+        id: -1,
+        declaration_kind: lowering::declarations::Invalid,
+        shape: lowering::signatures::InvalidShape,
+        arity: -1,
+        result_type: -1,
+        member_start: -1,
+        variant_start: -1,
+        constant_start: -1,
+    };
+}
+
+fn initialize(table: Table) {
+    let entries: [Entry] = table.data;
+    let id: i32 = 0;
+    while (id < table.count) {
+        entries[id] = empty_entry();
+        id += 1;
+    }
+}
+
+fn insert(table: Table, record: lowering::signatures::SignatureRecord,
+    member_start: i32, variant_start: i32,
+    constant_start: i32) -> bool {
+    let id: i32 = lowering::signatures::record_id(record);
+    if (id <= -1 || id >= table.count) { return false; }
+    let entries: [Entry] = table.data;
+    if (entries[id].id != -1) { return false; }
+    entries[id] = Entry {
+        id: id,
+        declaration_kind: lowering::signatures::record_declaration_kind(
+            record),
+        shape: lowering::signatures::record_shape(record),
+        arity: lowering::signatures::record_arity(record),
+        result_type: lowering::signatures::record_result_type(record),
+        member_start: member_start,
+        variant_start: variant_start,
+        constant_start: constant_start,
+    };
+    return true;
+}
+
+pub fn contains(table: Table, id: i32) -> bool {
+    if (id <= -1 || id >= table.count) { return false; }
+    let entries: [Entry] = table.data;
+    return entries[id].id == id;
+}
+
+pub fn has_shape(table: Table, id: i32,
+    shape: lowering::signatures::SignatureShape) -> bool {
+    if (!contains(table, id)) { return false; }
+    let entries: [Entry] = table.data;
+    return entries[id].shape == shape;
+}
+
+// Call only after contains succeeds; the validated entry is native data.
+pub fn record_at(table: Table, id: i32)
+    -> lowering::signatures::SignatureRecord {
+    let entries: [Entry] = table.data;
+    let entry: Entry = entries[id];
+    return lowering::signatures::SignatureRecord {
+        id: entry.id,
+        declaration_kind: entry.declaration_kind,
+        shape: entry.shape,
+        arity: entry.arity,
+        result_type: entry.result_type,
+    };
+}
+
+pub fn member_at(table: Table, id: i32, ordinal: i32)
+    -> lowering::signatures::SignatureMember {
+    let invalid: lowering::signatures::SignatureMember =
+        lowering::signatures::SignatureMember {
+            name: -1, type_tag: -1,
+        };
+    if (!contains(table, id)) { return invalid; }
+    let entries: [Entry] = table.data;
+    let entry: Entry = entries[id];
+    if (!member_shape(entry.shape) || ordinal <= -1
+        || ordinal >= entry.arity || entry.member_start <= -1
+        || entry.member_start > table.member_count - ordinal - 1) {
+        return invalid;
+    }
+    let members: [lowering::signatures::SignatureMember] = table.members;
+    return members[entry.member_start + ordinal];
+}
+
+fn invalid_variant() -> Variant {
+    return Variant { name: -1, field_start: -1, field_count: -1 };
+}
+
+pub fn variant_at(table: Table, id: i32, ordinal: i32) -> Variant {
+    if (!has_shape(table, id, lowering::signatures::EnumerationShape)) {
+        return invalid_variant();
+    }
+    let entries: [Entry] = table.data;
+    let entry: Entry = entries[id];
+    if (ordinal <= -1 || ordinal >= entry.arity
+        || entry.variant_start <= -1
+        || entry.variant_start > table.variant_count - ordinal - 1) {
+        return invalid_variant();
+    }
+    let variants: [Variant] = table.variants;
+    return variants[entry.variant_start + ordinal];
+}
+
+pub fn enum_field_type(table: Table, id: i32,
+    ordinal: i32, field: i32) -> i32 {
+    let variant: Variant = variant_at(table, id, ordinal);
+    if (field <= -1 || field >= variant.field_count
+        || variant.field_start <= -1
+        || variant.field_start > table.field_count - field - 1) {
+        return -1;
+    }
+    let fields: [EnumField] = table.fields;
+    return fields[variant.field_start + field].type_tag;
+}
+
+fn invalid_constant() -> ConstantValue {
+    return ConstantValue {
+        encoding: InvalidConstant,
+        low: 0, high: 0, byte_start: -1, byte_count: -1,
+    };
+}
+
+pub fn constant_at(table: Table, id: i32) -> ConstantValue {
+    if (!has_shape(table, id, lowering::signatures::ConstantShape)) {
+        return invalid_constant();
+    }
+    let entries: [Entry] = table.data;
+    let slot: i32 = entries[id].constant_start;
+    if (slot <= -1 || slot >= table.constant_count) {
+        return invalid_constant();
+    }
+    let constants: [ConstantValue] = table.constants;
+    return constants[slot];
+}
+
+pub fn constant_byte(table: Table, id: i32, ordinal: i32) -> i32 {
+    let constant: ConstantValue = constant_at(table, id);
+    if (constant.encoding != StringConstant || ordinal <= -1
+        || ordinal >= constant.byte_count || constant.byte_start <= -1
+        || constant.byte_start > table.byte_count - ordinal - 1) {
+        return -1;
+    }
+    let bytes: [i32] = table.bytes;
+    return bytes[constant.byte_start + ordinal];
+}
+
+// The signature producer writes native rows directly. Capacities are bounded
+// by the actual source and token totals; these cursors record the used spans.
+const WRITER_FIELD_BYTES: i32 = 8;
+pub const WRITER_BYTES: i32 = 10 * WRITER_FIELD_BYTES;
+
+pub struct WriterCursor {
+    entries: i32,
+    members: i32,
+    variants: i32,
+    fields: i32,
+    constants: i32,
+    bytes: i32,
+    committed_members: i32,
+    committed_variants: i32,
+    committed_fields: i32,
+    committed_constants: i32,
+}
+
+pub struct Writer {
+    table: Table,
+    cursor: [WriterCursor],
+}
+
+pub fn writer(table: Table, cursor_memory: ptr) -> Writer {
+    initialize(table);
+    let cursors: [WriterCursor] = slice_from_raw_parts(
+        cursor_memory + WRITER_BYTES - WRITER_FIELD_BYTES, 1);
+    cursors[0] = WriterCursor {
+        entries: 0, members: 0, variants: 0, fields: 0,
+        constants: 0, bytes: 0,
+        committed_members: 0, committed_variants: 0,
+        committed_fields: 0, committed_constants: 0,
+    };
+    return Writer { table: table, cursor: cursors };
+}
+
+pub fn member_position(output: Writer) -> i32 {
+    let cursors: [WriterCursor] = output.cursor;
+    return cursors[0].members;
+}
+
+pub fn variant_position(output: Writer) -> i32 {
+    let cursors: [WriterCursor] = output.cursor;
+    return cursors[0].variants;
+}
+
+pub fn push_member(output: Writer,
+    value: lowering::signatures::SignatureMember) -> bool {
+    let cursors: [WriterCursor] = output.cursor;
+    let table: Table = output.table;
+    let slot: i32 = cursors[0].members;
+    if (slot <= -1 || slot >= table.member_count
+        || value.name <= -1 || value.type_tag <= 0) { return false; }
+    let members: [lowering::signatures::SignatureMember] =
+        table.members;
+    members[slot] = value;
+    cursors[0].members = slot + 1;
+    return true;
+}
+
+pub fn push_variant(output: Writer, name: i32) -> i32 {
+    let cursors: [WriterCursor] = output.cursor;
+    let table: Table = output.table;
+    let slot: i32 = cursors[0].variants;
+    if (name <= -1 || slot <= -1 || slot >= table.variant_count) {
+        return -1;
+    }
+    let variants: [Variant] = table.variants;
+    variants[slot] = Variant {
+        name: name,
+        field_start: cursors[0].fields,
+        field_count: 0,
+    };
+    cursors[0].variants = slot + 1;
+    return slot;
+}
+
+pub fn push_field(output: Writer, variant_slot: i32,
+    type_tag: i32) -> bool {
+    let cursors: [WriterCursor] = output.cursor;
+    let table: Table = output.table;
+    let slot: i32 = cursors[0].fields;
+    if (variant_slot <= -1 || variant_slot != cursors[0].variants - 1
+        || variant_slot < cursors[0].committed_variants
+        || slot <= -1 || slot >= table.field_count
+        || type_tag <= 0) { return false; }
+    let variants: [Variant] = table.variants;
+    if (variants[variant_slot].field_start
+        + variants[variant_slot].field_count != slot) { return false; }
+    let fields: [EnumField] = table.fields;
+    fields[slot] = EnumField { type_tag: type_tag };
+    variants[variant_slot].field_count += 1;
+    cursors[0].fields = slot + 1;
+    return true;
+}
+
+pub fn push_scalar(output: Writer, low: i32, high: i32) -> i32 {
+    let cursors: [WriterCursor] = output.cursor;
+    let table: Table = output.table;
+    let slot: i32 = cursors[0].constants;
+    if (slot <= -1 || slot >= table.constant_count) { return -1; }
+    let constants: [ConstantValue] = table.constants;
+    constants[slot] = ConstantValue {
+        encoding: ScalarConstant,
+        low: low, high: high,
+        byte_start: -1, byte_count: 0,
+    };
+    cursors[0].constants = slot + 1;
+    return slot;
+}
+
+pub fn push_string(output: Writer, source: [i32],
+    source_length: i32, start: i32, count: i32) -> i32 {
+    let cursors: [WriterCursor] = output.cursor;
+    let table: Table = output.table;
+    let slot: i32 = cursors[0].constants;
+    let byte_start: i32 = cursors[0].bytes;
+    if (slot <= -1 || slot >= table.constant_count
+        || start <= -1 || count <= -1 || start > source_length
+        || count > source_length - start
+        || byte_start > table.byte_count
+        || count > table.byte_count - byte_start) { return -1; }
+    let bytes: [i32] = table.bytes;
+    let byte: i32 = 0;
+    while (byte < count) {
+        let value: i32 = source[start + byte];
+        if (value <= -1 || value > verified::host::BYTE_MASK) { return -1; }
+        bytes[byte_start + byte] = value;
+        byte += 1;
+    }
+    let constants: [ConstantValue] = table.constants;
+    constants[slot] = ConstantValue {
+        encoding: StringConstant,
+        low: 0, high: 0,
+        byte_start: byte_start, byte_count: count,
+    };
+    cursors[0].bytes = byte_start + count;
+    cursors[0].constants = slot + 1;
+    return slot;
+}
+
+pub fn push_record(output: Writer,
+    record: lowering::signatures::SignatureRecord,
+    member_start: i32, variant_start: i32,
+    constant_start: i32) -> bool {
+    let cursors: [WriterCursor] = output.cursor;
+    let cursor: WriterCursor = cursors[0];
+    let shape: lowering::signatures::SignatureShape =
+        lowering::signatures::record_shape(record);
+    let arity: i32 = lowering::signatures::record_arity(record);
+    if (!shape_matches_kind(record) || arity <= -1
+        || (cursor.members != cursor.committed_members
+            && !member_shape(shape))
+        || (cursor.variants != cursor.committed_variants
+            && shape != lowering::signatures::EnumerationShape)
+        || (cursor.constants != cursor.committed_constants
+            && shape != lowering::signatures::ConstantShape)) { return false; }
+    if (member_shape(shape)) {
+        if (member_start != cursor.committed_members
+            || arity != cursor.members - member_start
+            || variant_start != -1 || constant_start != -1) {
+            return false;
+        }
+    }
+    if (shape == lowering::signatures::EnumerationShape) {
+        if (variant_start != cursor.committed_variants
+            || arity != cursor.variants - variant_start
+            || member_start != -1 || constant_start != -1) {
+            return false;
+        }
+    }
+    if (shape == lowering::signatures::ConstantShape) {
+        if (arity != 0 || constant_start != cursor.committed_constants
+            || cursor.constants - constant_start != 1
+            || member_start != -1 || variant_start != -1) {
+            return false;
+        }
+    }
+    if (!insert(output.table, record, member_start, variant_start,
+            constant_start)) { return false; }
+    cursors[0].entries = cursor.entries + 1;
+    cursors[0].committed_members = cursor.members;
+    cursors[0].committed_variants = cursor.variants;
+    cursors[0].committed_fields = cursor.fields;
+    cursors[0].committed_constants = cursor.constants;
+    return true;
+}
+
+pub fn complete(output: Writer) -> bool {
+    let cursors: [WriterCursor] = output.cursor;
+    let cursor: WriterCursor = cursors[0];
+    return cursor.members == cursor.committed_members
+        && cursor.variants == cursor.committed_variants
+        && cursor.fields == cursor.committed_fields
+        && cursor.constants == cursor.committed_constants;
+}
+
+pub fn finish(output: Writer) -> Table {
+    let table: Table = output.table;
+    let cursors: [WriterCursor] = output.cursor;
+    table.member_count = cursors[0].members;
+    table.variant_count = cursors[0].variants;
+    table.field_count = cursors[0].fields;
+    table.constant_count = cursors[0].constants;
+    table.byte_count = cursors[0].bytes;
+    return table;
+}

@@ -1,0 +1,20 @@
+module app::main;
+
+struct Pair { left: i32, right: i32 }
+struct Box { before: i32, pair: Pair, after: i32 }
+
+fn replacement() -> Pair {
+    return Pair { left: 11, right: 12 };
+}
+
+fn main() -> i32 {
+    let first: Pair = Pair { left: 2, right: 3 };
+    let value: Box = Box { before: 1, pair: first, after: 4 };
+    let second: Pair = Pair { left: 7, right: 8 };
+    value.pair = second;
+    let local_result: i32 = value.before + value.pair.left * 10 +
+        value.pair.right + value.after;
+    value.pair = replacement();
+    return local_result + value.before + value.pair.left * 10 +
+        value.pair.right + value.after - 210;
+}

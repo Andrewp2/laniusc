@@ -2354,6 +2354,38 @@ fn main() {
 }
 
 #[test]
+fn type_checker_validates_fields_with_qualified_imported_types() {
+    let imported = "module core::arena; pub struct Arena { value: i32, }";
+    let valid = r#"module app::main;
+import core::arena;
+struct Wrap { field: core::arena::Arena, }
+fn good(value: core::arena::Arena) -> i32 {
+    let item: Wrap = Wrap { field: value };
+    return 0;
+}
+fn main() -> i32 { return 0; }
+"#;
+    assert_gpu_type_check_pack_accepts(&[imported, valid]);
+
+    let invalid = r#"module app::main;
+import core::arena;
+struct Wrap { field: core::arena::Arena, }
+fn wrong() -> i32 {
+    let item: Wrap = Wrap { field: 5 };
+    return 0;
+}
+fn main() -> i32 { return 0; }
+"#;
+    match common::type_check_source_pack_with_timeout(&[imported, invalid]) {
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(diagnostic.code, "LNC0006");
+            assert!(diagnostic.render().contains("field: 5"));
+        }
+        other => panic!("expected imported field type mismatch, got {other:?}"),
+    }
+}
+
+#[test]
 fn type_checker_source_pack_resolves_public_type_aliases_on_gpu() {
     assert_gpu_type_check_pack_accepts(&[
         "module core::count; pub type Count = i32;",

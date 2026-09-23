@@ -62,9 +62,14 @@ uint value_metadata_for_hir(uint node)
         (semantic_lir_core[instruction].flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u;
     uint materialized_type = instruction < gParams.lir_capacity
         ? semantic_lir_core[instruction].type_id : 0u;
-    bool array_value = materialized_type >= 128u && materialized_type < 4096u &&
+    bool slice_pair = instruction < gParams.lir_capacity &&
+        (semantic_lir_core[instruction].flags &
+            SEMANTIC_LIR_FLAG_ARRAY_PAIR) != 0u;
+    bool array_value = materialized_type >= 128u &&
+        materialized_type < 4096u &&
         compact_hir_core[node].kind != HIR_INDEX_EXPR && !indexed_scalar;
-    if (array_value && semantic_array_length[node] != INVALID)
+    if (slice_pair ||
+        (array_value && semantic_array_length[node] != INVALID))
         // Arrays cross function boundaries as a view, not as an aggregate
         // pointer. Keeping these two ABI categories disjoint also keeps the
         // runtime length component a narrow integer.

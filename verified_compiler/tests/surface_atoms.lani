@@ -2,13 +2,27 @@ module app::main;
 import verified::surface_atoms;
 import verified::output;
 import verified::byte_io;
+import verified::host;
+
+const PACKED_IO_WORDS: i32 = 16384;
 
 fn main() -> i32 {
+    let packed: ptr = verified::host::alloc(PACKED_IO_WORDS, 4);
     let source: [i32; 15] = [52,50,32,49,46,48,32,34,92,110,34,32,39,120,39];
     let tokens: [i32; 12] = [2,0,2, 5,3,6, 6,7,11, 7,12,15];
     let productions: [i32; 6] = [175,176,177,178,185,186];
     let output: [i32; 1024] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     let utf8: [i32; 4] = [240,159,152,128];
+    let spelling: verified::surface_atoms::TokenSpelling =
+        verified::surface_atoms::TokenSpelling {
+            source: source,
+            source_length: 15,
+            tokens: tokens,
+            token_count: 4,
+            token: 0,
+        };
+    let destination: verified::output::Cursor =
+        verified::output::cursor(output, 1024, 0);
     if (!verified::surface_atoms::valid_utf8(utf8, 4, 0, 4)) { return 1; }
     if (verified::surface_atoms::valid_utf8(utf8, 4, 0, 3)) { return 2; }
     utf8[0] = 244; utf8[1] = 144;
@@ -20,11 +34,15 @@ fn main() -> i32 {
     utf8[0] = 226; utf8[1] = 130; utf8[2] = 172;
     if (!verified::surface_atoms::valid_utf8(utf8, 4, 0, 3)) { return 6; }
     if (verified::surface_atoms::valid_utf8(utf8, 4, -1, 3)) { return 7; }
-    if (verified::surface_atoms::token_text(source, 15, tokens, 4, 4, output, 1024, 0) != -1) { return 8; }
-    if (verified::surface_atoms::literal(174, source, 15, tokens, 4, 0, output, 1024, 0) != -1) { return 9; }
-    if (verified::surface_atoms::literal(175, source, 15, tokens, 4, 0, output, 1, 0) != -1) { return 10; }
+    spelling.token = 4;
+    if (verified::surface_atoms::token_text(spelling, destination) != -1) { return 8; }
+    spelling.token = 0;
+    if (verified::surface_atoms::literal(174, spelling, destination) != -1) { return 9; }
+    destination.capacity = 1;
+    if (verified::surface_atoms::literal(175, spelling, destination) != -1) { return 10; }
+    destination.capacity = 1024;
     let expected_name: [i32; 87] = [226,159,168,48,44,40,83,116,114,105,110,103,46,102,114,111,109,85,84,70,56,33,32,40,66,121,116,101,65,114,114,97,121,46,109,107,32,40,40,91,53,50,44,53,48,93,58,32,76,105,115,116,32,78,97,116,41,46,116,111,65,114,114,97,121,46,109,97,112,32,85,73,110,116,56,46,111,102,78,97,116,41,41,41,226,159,169];
-    let name_length: i32 = verified::surface_atoms::name(source, 15, tokens, 4, 0, output, 1024, 0);
+    let name_length: i32 = verified::surface_atoms::name(spelling, destination);
     if (name_length != 87) { return 13; }
     let name_index: i32 = 0;
     while (name_index != name_length) {
@@ -32,7 +50,7 @@ fn main() -> i32 {
         name_index += 1;
     }
     tokens[2] = 16;
-    if (verified::surface_atoms::token_text(source, 15, tokens, 4, 0, output, 1024, 0) != -1) { return 15; }
+    if (verified::surface_atoms::token_text(spelling, destination) != -1) { return 15; }
     tokens[2] = 2;
     utf8[0] = 256;
     if (verified::surface_atoms::valid_utf8(utf8, 4, 0, 1)) { return 16; }
@@ -41,12 +59,14 @@ fn main() -> i32 {
     let index: i32 = 0;
     while (index != 6) {
         if (index != 0) { next = verified::output::byte(output, 1024, next, 44); }
-        next = verified::surface_atoms::literal(productions[index], source, 15, tokens,
-            4, index, output, 1024, next);
+        spelling.token = index;
+        destination.position = next;
+        next = verified::surface_atoms::literal(
+            productions[index], spelling, destination);
         if (next <= -1) { return 11; }
         index += 1;
     }
     next = verified::output::byte(output, 1024, next, 93);
-    if (verified::byte_io::write_stdout(output, next) != next) { return 12; }
+    if (verified::byte_io::write_stdout(output, next, packed) != next) { return 12; }
     return 0;
 }

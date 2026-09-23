@@ -1,157 +1,329 @@
 module lowering::allocation;
 
 import lowering::declarations;
+import verified::host;
 
-pub const HEADER: i32 = 8;
-pub const ROW: i32 = 10;
+type DeclarationKind = lowering::declarations::DeclarationKind;
 
-// Validate one exact collector table and count its rows independently of the
-// claimed header. The eight scratch words belong to allocate's output buffer.
-fn validate_unit(input: [i32], length: i32, position: i32, unit: i32,
-    scratch: [i32]) -> i32 {
-    if (position <= -1 || position > length || length - position <= 7) { return -1; }
-    let rows: i32 = input[position];
-    if (rows <= 0 || rows > (length - position - 8) / 8) { return -1; }
-    let index: i32 = 0;
-    while (index < 8) { scratch[index] = 0; index += 1; }
-    let row: i32 = 0;
-    while (row < rows) {
-        let slot: i32 = position + 8 + row * 8;
-        let kind: i32 = input[slot + 1];
-        if (input[slot] != unit || kind <= 0 || kind > 7
-            || input[slot + 2] <= -1 || input[slot + 2] > 1
-            || input[slot + 3] <= -1 || input[slot + 4] <= -1
-            || input[slot + 4] >= input[slot + 3]) { return -1; }
-        if (kind >= lowering::declarations::MODULE) {
-            if (input[slot + 2] != 0 || input[slot + 5] != -1) { return -1; }
-        } else { if (input[slot + 5] <= -1) { return -1; } }
-        if (kind == lowering::declarations::ALIAS || kind >= lowering::declarations::MODULE) {
-            if (input[slot + 6] <= -1 || input[slot + 6] >= input[slot + 4]) { return -1; }
-        } else { if (input[slot + 6] != -1) { return -1; } }
-        if (input[slot + 7] != scratch[kind]) { return -1; }
-        scratch[kind] += 1;
-        row += 1;
-    }
-    if (scratch[lowering::declarations::MODULE] != 1) { return -1; }
-    index = 1;
-    while (index < 8) {
-        if (input[position + index] != scratch[index]) { return -1; }
-        index += 1;
-    }
-    return position + 8 + rows * 8;
+const FIELD_BYTES: i32 = 8;
+const HEADER_FIELDS: i32 = 9;
+const ROW_FIELDS: i32 = 10;
+pub const HEADER_BYTES: i32 = HEADER_FIELDS * FIELD_BYTES;
+pub const ROW_BYTES: i32 = ROW_FIELDS * FIELD_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+pub const HEADER: i32 = HEADER_BYTES / verified::host::I32_BYTES;
+pub const ROW: i32 = ROW_BYTES / verified::host::I32_BYTES;
+
+pub struct AllocationRow {
+    source: lowering::declarations::DeclarationRow,
+    declaration_id: i32,
+    core_id: i32,
 }
 
-// Input is the exact concatenation of `units` declaration-collector tables,
-// ordered by source unit. Unit IDs must be 0..units-1, as in Program.allocate.
+pub struct AllocationHeader {
+    units: i32,
+    rows: i32,
+    structures: i32,
+    enumerations: i32,
+    aliases: i32,
+    constants: i32,
+    functions: i32,
+    externals: i32,
+    declarations: i32,
+}
+
+pub struct Table {
+    memory: ptr,
+    count: i32,
+}
+
+pub fn from_raw_parts(memory: ptr, count: i32) -> Table {
+    return Table { memory: memory, count: count };
+}
+
+pub fn table_capacity(table: Table) -> i32 { return table.count; }
+
+pub fn table_with_rows(table: Table, rows: i32) -> Table {
+    return Table { memory: table.memory, count: rows };
+}
+
+fn table_header_view(table: Table) -> [AllocationHeader] {
+    return slice_from_raw_parts(table.memory + HEADER_BYTES - FIELD_BYTES,
+        1);
+}
+
+fn table_row_view(table: Table, index: i32) -> [AllocationRow] {
+    let first: ptr = table.memory + HEADER_BYTES + index * ROW_BYTES
+        + ROW_BYTES - FIELD_BYTES;
+    return slice_from_raw_parts(first, 1);
+}
+
+pub fn table_header(table: Table) -> AllocationHeader {
+    let headers: [AllocationHeader] = table_header_view(table);
+    return headers[0];
+}
+
+pub fn table_has_exact_rows(table: Table) -> bool {
+    if (table.count <= -1) { return false; }
+    return table_header(table).rows == table.count;
+}
+
+pub fn table_write_header(table: Table, header: AllocationHeader) {
+    let headers: [AllocationHeader] = table_header_view(table);
+    headers[0] = header;
+}
+
+pub fn table_row(table: Table, index: i32) -> AllocationRow {
+    let rows: [AllocationRow] = table_row_view(table, index);
+    return rows[0];
+}
+
+pub fn table_write_row(table: Table, index: i32, row: AllocationRow) {
+    let rows: [AllocationRow] = table_row_view(table, index);
+    rows[0] = row;
+}
+
+pub fn row_source(row: AllocationRow)
+    -> lowering::declarations::DeclarationRow { return row.source; }
+
+pub fn row_unit(row: AllocationRow) -> i32 {
+    return lowering::declarations::row_unit(row.source);
+}
+
+pub fn row_kind(row: AllocationRow) -> lowering::declarations::DeclarationKind {
+    return lowering::declarations::row_kind(row.source);
+}
+
+pub fn row_has_kind(row: AllocationRow,
+    expected: lowering::declarations::DeclarationKind) -> bool {
+    return lowering::declarations::kind_code(row_kind(row))
+        == lowering::declarations::kind_code(expected);
+}
+
+pub fn row_is_public(row: AllocationRow) -> bool {
+    return lowering::declarations::row_is_public(row.source);
+}
+pub fn row_item(row: AllocationRow) -> i32 {
+    return lowering::declarations::row_item(row.source);
+}
+pub fn row_declaration(row: AllocationRow) -> i32 {
+    return lowering::declarations::row_declaration(row.source);
+}
+pub fn row_name(row: AllocationRow) -> i32 {
+    return lowering::declarations::row_name(row.source);
+}
+pub fn row_target(row: AllocationRow) -> i32 {
+    return lowering::declarations::row_target(row.source);
+}
+pub fn row_ordinal(row: AllocationRow) -> i32 {
+    return lowering::declarations::row_ordinal(row.source);
+}
+
+pub fn row_declaration_id(row: AllocationRow) -> i32 {
+    return row.declaration_id;
+}
+
+pub fn row_core_id(row: AllocationRow) -> i32 { return row.core_id; }
+
+pub fn clear_aliases(table: Table) {
+    let header: [AllocationHeader] = table_header_view(table);
+    header[0].aliases = 0;
+}
+
+// Validate one exact native table and count its rows independently of the
+// claimed header. Category ordinals are local typed state, not output scratch.
+fn validate_unit(table: lowering::declarations::Table, unit: i32) -> bool {
+    if (!lowering::declarations::table_has_exact_rows(table)) {
+        return false;
+    }
+    let header: lowering::declarations::DeclarationCounts =
+        lowering::declarations::table_header(table);
+    let rows: i32 = lowering::declarations::count_rows(
+        header);
+    if (rows <= 0) { return false; }
+    let ordinals: lowering::declarations::DeclarationCounts =
+        lowering::declarations::empty_counts();
+    let row: i32 = 0;
+    while (row < rows) {
+        let declaration: lowering::declarations::DeclarationRow =
+            lowering::declarations::table_row(table, row);
+        if (!lowering::declarations::row_valid(declaration, unit)) {
+            return false;
+        }
+        let declaration_kind: lowering::declarations::DeclarationKind =
+            lowering::declarations::row_kind(declaration);
+        let expected_ordinal: i32 =
+            lowering::declarations::kind_count(ordinals, declaration_kind);
+        if (lowering::declarations::row_ordinal(declaration)
+            != expected_ordinal) { return false; }
+        ordinals = lowering::declarations::add_kind(ordinals,
+            declaration_kind);
+        row += 1;
+    }
+    if (lowering::declarations::kind_count(ordinals,
+            lowering::declarations::Module) != 1) { return false; }
+    if (!lowering::declarations::header_matches(header, ordinals)) {
+        return false;
+    }
+    return true;
+}
+
+// Input is a native catalog of declaration-collector tables, ordered by
+// source unit. Unit IDs must be 0..catalog.count-1, as in Program.allocate.
 // The allocator derives every category base and prefix itself; no declaration
 // or Core IDs are accepted from the host or from an extractor's claims.
 //
-// Output header:
-//   [units, rows, structures, aliases, constants, functions, externs, declarations]
-// Each row preserves its eight source-origin words verbatim, then appends
-//   [declaration ID, Core ID].
+// Output is one native AllocationHeader followed by native AllocationRows.
+// The bounded input and output views expose typed rows. Each row contains its source
+// DeclarationRow plus a declaration ID and Core ID.
 // Aliases have no Core ID; module/import rows have neither ID (marked -1).
-// Structures use their Core type ID, constants their constant ID, and both
+// Structures and enums use their Core type ID, constants their constant ID, and both
 // callable kinds their function ID. Runtime IDs are the corresponding global
 // declaration IDs, so compile-time-only aliases remain explicit holes in the
 // Core namespace. Within each unit all functions precede its externs in the
 // ID namespace, irrespective of source-item order.
 //
 // Returns the number of output words, or -1. Failure output is partial and
-// must be discarded. Buffers must be disjoint and lengths match real storage.
-pub fn allocate(input: [i32], length: i32, units: i32,
-    output: [i32], capacity: i32) -> i32 {
-    if (length <= -1 || units <= -1 || units > length / 16 || capacity <= HEADER - 1) { return -1; }
-    let position: i32 = 0;
+// must be discarded. Input tables and output storage must be disjoint.
+pub fn allocate(catalog: lowering::declarations::Catalog,
+    output: Table) -> i32 {
+    let units: i32 = catalog.count;
+    let capacity: i32 = output.count;
+    if (units <= -1 || capacity <= 0) { return -1; }
     let unit: i32 = 0;
-    let rows: i32 = 0;
-    let structures: i32 = 0;
-    let aliases: i32 = 0;
-    let constants: i32 = 0;
-    let functions: i32 = 0;
-    let externs: i32 = 0;
+    let counts: lowering::declarations::DeclarationCounts =
+        lowering::declarations::empty_counts();
     while (unit <= units - 1) {
-        let next: i32 = validate_unit(input, length, position, unit, output);
-        if (next <= -1) { return -1; }
-        if (input[position] > 2147483647 - rows
-            || input[position + 1] > 2147483647 - structures
-            || input[position + 2] > 2147483647 - aliases
-            || input[position + 3] > 2147483647 - constants
-            || input[position + 4] > 2147483647 - functions
-            || input[position + 5] > 2147483647 - externs) { return -1; }
-        rows += input[position];
-        structures += input[position + 1];
-        aliases += input[position + 2];
-        constants += input[position + 3];
-        functions += input[position + 4];
-        externs += input[position + 5];
-        position = next;
+        let local_table: lowering::declarations::Table =
+            lowering::declarations::catalog_table(catalog, unit);
+        if (!validate_unit(local_table, unit)) { return -1; }
+        let local: lowering::declarations::DeclarationCounts =
+            lowering::declarations::table_header(local_table);
+        // validate_unit proves each category is bounded by its row count,
+        // so a checked row total also bounds every category sum.
+        if (lowering::declarations::count_rows(local)
+                > verified::host::I32_MAX
+                    - lowering::declarations::count_rows(counts)) {
+            return -1;
+        }
+        counts = lowering::declarations::combine_counts(counts, local);
         unit += 1;
     }
-    if (position != length || rows > (capacity - HEADER) / ROW
-        || aliases > 2147483647 - structures) { return -1; }
-    let constant_base: i32 = structures + aliases;
-    if (constants > 2147483647 - constant_base) { return -1; }
+    let rows: i32 = lowering::declarations::count_rows(counts);
+    let structures: i32 = lowering::declarations::kind_count(counts,
+        lowering::declarations::Structure);
+    let enumerations: i32 = lowering::declarations::kind_count(counts,
+        lowering::declarations::Enumeration);
+    let aliases: i32 = lowering::declarations::kind_count(counts,
+        lowering::declarations::Alias);
+    let constants: i32 = lowering::declarations::kind_count(counts,
+        lowering::declarations::Constant);
+    let functions: i32 = lowering::declarations::kind_count(counts,
+        lowering::declarations::Function);
+    let externals: i32 = lowering::declarations::kind_count(counts,
+        lowering::declarations::External);
+    if (rows > capacity
+        || enumerations > verified::host::I32_MAX - structures
+        || aliases > verified::host::I32_MAX - structures - enumerations) {
+        return -1;
+    }
+    let type_declarations: i32 = structures + enumerations;
+    let constant_base: i32 = type_declarations + aliases;
+    if (constants > verified::host::I32_MAX - constant_base) { return -1; }
     let function_base: i32 = constant_base + constants;
-    if (functions > 2147483647 - function_base
-        || externs > 2147483647 - function_base - functions) { return -1; }
+    if (functions > verified::host::I32_MAX - function_base
+        || externals > verified::host::I32_MAX - function_base - functions) {
+        return -1;
+    }
 
     let structure_cursor: i32 = 0;
+    let enumeration_cursor: i32 = 0;
     let alias_cursor: i32 = 0;
     let constant_cursor: i32 = 0;
     let function_cursor: i32 = 0;
-    let written: i32 = HEADER;
-    position = 0;
+    let written: i32 = 0;
     unit = 0;
     while (unit <= units - 1) {
+        let local_table: lowering::declarations::Table =
+            lowering::declarations::catalog_table(catalog, unit);
+        let local: lowering::declarations::DeclarationCounts =
+            lowering::declarations::table_header(local_table);
+        let local_rows: i32 = lowering::declarations::count_rows(local);
         let row: i32 = 0;
-        while (row < input[position]) {
-            let slot: i32 = position + 8 + row * 8;
-            let index: i32 = 0;
-            while (index < 8) { output[written + index] = input[slot + index]; index += 1; }
-            let kind: i32 = input[slot + 1];
-            let ordinal: i32 = input[slot + 7];
+        while (row != local_rows) {
+            let source: lowering::declarations::DeclarationRow =
+                lowering::declarations::table_row(local_table, row);
+            let kind: DeclarationKind =
+                lowering::declarations::row_kind(source);
+            let ordinal: i32 = lowering::declarations::row_ordinal(source);
             let declaration: i32 = -1;
             let core: i32 = -1;
-            if (kind == lowering::declarations::STRUCTURE) {
+            if (lowering::declarations::same_kind(kind,
+                    lowering::declarations::Structure)) {
                 core = structure_cursor + ordinal;
                 declaration = core;
             }
-            if (kind == lowering::declarations::ALIAS) { declaration = structures + alias_cursor + ordinal; }
-            if (kind == lowering::declarations::CONSTANT) {
+            if (lowering::declarations::same_kind(kind,
+                    lowering::declarations::Enumeration)) {
+                core = structures + enumeration_cursor + ordinal;
+                declaration = core;
+            }
+            if (lowering::declarations::same_kind(kind,
+                    lowering::declarations::Alias)) {
+                declaration = type_declarations + alias_cursor + ordinal;
+            }
+            if (lowering::declarations::same_kind(kind,
+                    lowering::declarations::Constant)) {
                 core = constant_cursor + ordinal;
                 declaration = constant_base + core;
                 core = declaration;
             }
-            if (kind == lowering::declarations::FUNCTION) {
+            if (lowering::declarations::same_kind(kind,
+                    lowering::declarations::Function)) {
                 core = function_cursor + ordinal;
                 declaration = function_base + core;
                 core = declaration;
             }
-            if (kind == lowering::declarations::EXTERNAL) {
-                core = function_cursor + input[position + 4] + ordinal;
+            if (lowering::declarations::same_kind(kind,
+                    lowering::declarations::External)) {
+                core = function_cursor
+                    + lowering::declarations::kind_count(local,
+                        lowering::declarations::Function) + ordinal;
                 declaration = function_base + core;
                 core = declaration;
             }
-            output[written + 8] = declaration;
-            output[written + 9] = core;
-            written += ROW;
+            table_write_row(output, written, AllocationRow {
+                source: source,
+                declaration_id: declaration,
+                core_id: core,
+            });
+            written += 1;
             row += 1;
         }
-        structure_cursor += input[position + 1];
-        alias_cursor += input[position + 2];
-        constant_cursor += input[position + 3];
-        function_cursor += input[position + 4] + input[position + 5];
-        position += 8 + input[position] * 8;
+        structure_cursor += lowering::declarations::kind_count(local,
+            lowering::declarations::Structure);
+        enumeration_cursor += lowering::declarations::kind_count(local,
+            lowering::declarations::Enumeration);
+        alias_cursor += lowering::declarations::kind_count(local,
+            lowering::declarations::Alias);
+        constant_cursor += lowering::declarations::kind_count(local,
+            lowering::declarations::Constant);
+        function_cursor += lowering::declarations::kind_count(local,
+            lowering::declarations::Function)
+            + lowering::declarations::kind_count(local,
+                lowering::declarations::External);
         unit += 1;
     }
-    output[0] = units;
-    output[1] = rows;
-    output[2] = structures;
-    output[3] = aliases;
-    output[4] = constants;
-    output[5] = functions;
-    output[6] = externs;
-    output[7] = function_base + functions + externs;
-    return written;
+    table_write_header(output, AllocationHeader {
+        units: units,
+        rows: rows,
+        structures: structures,
+        enumerations: enumerations,
+        aliases: aliases,
+        constants: constants,
+        functions: functions,
+        externals: externals,
+        declarations: function_base + functions + externals,
+    });
+    return HEADER + written * ROW;
 }

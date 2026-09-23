@@ -1,0 +1,48 @@
+module driver::arguments;
+
+import verified::host;
+
+// Keep the raw native process ABI behind a small driver boundary. Compiler
+// entrypoints should depend on the command-line abstraction, not on the host
+// service spelling used by the bootstrap runtime.
+extern "lanius_std" fn argc() -> i32;
+extern "lanius_std" fn arg_len(index: i32) -> i32;
+extern "lanius_std" fn arg_read(index: i32, data: ptr, len: usize) -> i32;
+
+pub fn count() -> i32 {
+    return argc();
+}
+
+pub fn length(index: i32) -> i32 {
+    return arg_len(index);
+}
+
+pub fn read(index: i32, data: ptr, length: i32) -> i32 {
+    if (length <= -1) { return -1; }
+    let byte_length: usize = length;
+    return arg_read(index, data, byte_length);
+}
+
+// Native arguments and string literals both use packed little-endian bytes.
+pub fn matches(index: i32, scratch: [i32], expected: str,
+    expected_length: i32) -> bool {
+    if (expected_length <= 0 || length(index) != expected_length
+        || read(index, verified::host::i32_slice_data_ptr(scratch),
+            expected_length) != expected_length) { return false; }
+    let expected_words: [i32] = verified::host::i32_slice_from_raw_parts(
+        verified::host::string_data_ptr(expected),
+        (expected_length + verified::host::I32_BYTES - 1)
+            / verified::host::I32_BYTES);
+    let byte: i32 = 0;
+    while (byte < expected_length) {
+        let actual: i32 = (scratch[byte / verified::host::I32_BYTES]
+            >> ((byte % verified::host::I32_BYTES)
+                * verified::host::BITS_PER_BYTE)) & verified::host::BYTE_MASK;
+        let wanted: i32 = (expected_words[byte / verified::host::I32_BYTES]
+            >> ((byte % verified::host::I32_BYTES)
+                * verified::host::BITS_PER_BYTE)) & verified::host::BYTE_MASK;
+        if (actual != wanted) { return false; }
+        byte += 1;
+    }
+    return true;
+}

@@ -1,0 +1,59 @@
+module app::main;
+
+import verified::parser;
+import verified::host;
+import verified::syntax_tree;
+
+fn main() -> i32 {
+    let records: [i32; 14] = [
+        7, 0, 2, 1, 1, 0, 9,
+        8, 0, 2, 1, 2, 0, 5,
+    ];
+    let offsets: [i32; 2] = [0, 7];
+    let tree: verified::syntax_tree::Tree =
+        verified::syntax_tree::decode(records, 14, offsets, 2, 1);
+    let nodes: [verified::syntax_tree::Node] = tree.nodes;
+    let children: [verified::syntax_tree::Child] = tree.children;
+    if (tree.node_count != 2 || tree.child_count != 2
+        || nodes[1].origin != 0 || nodes[1].end != 2
+        || nodes[1].first_child != 1
+        || children[0].semantic_kind != 9
+        || children[1].semantic_kind != 5
+        || verified::syntax_tree::production(tree, 0) != 7
+        || verified::syntax_tree::production(tree, 1) != 8
+        || verified::syntax_tree::child_count(tree, 0) != 1
+        || verified::syntax_tree::child(tree, 0, 0,
+            verified::parser::TokenChild) != 0
+        || verified::syntax_tree::child(tree, 0, 0,
+            verified::parser::StateChild) != -1
+        || verified::syntax_tree::child(tree, 1, 0,
+            verified::parser::StateChild) != 0) { return 1; }
+    let catalog_memory: ptr = verified::host::alloc(
+        2 * verified::syntax_tree::TREE_BYTES,
+        verified::syntax_tree::ALIGNMENT);
+    if (catalog_memory == 0) { return 4; }
+    let catalog: verified::syntax_tree::Catalog =
+        verified::syntax_tree::catalog_from_raw_parts(catalog_memory, 2);
+    let trees: [verified::syntax_tree::Tree] = catalog.data;
+    trees[0] = tree;
+    trees[1] = tree;
+    let index: i32 = 0;
+    while (index <= 1) {
+        let stored: verified::syntax_tree::Tree = trees[index];
+        if (stored.node_count != 2) { return 5; }
+        if (trees[index].node_count != 2) { return 6; }
+        index += 1;
+    }
+    records[4] = verified::parser::child_code(
+        verified::parser::StateChild);
+    if (verified::syntax_tree::decode(records, 14, offsets, 2, 1).node_count != 0) {
+        return 2;
+    }
+    records[4] = verified::parser::child_code(
+        verified::parser::TokenChild);
+    records[3] = 2;
+    if (verified::syntax_tree::decode(records, 14, offsets, 2, 1).node_count != 0) {
+        return 3;
+    }
+    return 0;
+}

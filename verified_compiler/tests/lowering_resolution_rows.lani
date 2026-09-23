@@ -1,0 +1,122 @@
+module app::main;
+
+import backend::syntax;
+import lowering::aliases;
+import lowering::types;
+import verified::host;
+import verified::surface_type;
+import verified::token;
+
+fn main() -> i32 {
+    let source: [i32; 5] = [84, 104, 105, 110, 103]; // "Thing"
+    let tokens: [i32; 3] = [0, 0, 5];
+    tokens[0] = verified::token::kind_code(verified::token::Identifier);
+    let arena_memory: ptr = verified::host::alloc(
+        verified::surface_type::allocation_bytes(3),
+        verified::surface_type::ALIGNMENT);
+    if (arena_memory == 0) { return 1; }
+    let typed_arena: verified::surface_type::TypeArena =
+        verified::surface_type::from_raw_parts(arena_memory, 3);
+    let arena_count: [verified::surface_type::CountCell] = typed_arena.count;
+    let nodes: [verified::surface_type::TypeNode] = typed_arena.data;
+    arena_count[0].value = 3;
+    nodes[0] = verified::surface_type::TypeNode {
+        kind: verified::surface_type::Segment,
+        first: -1, token: 0, next: -1 };
+    nodes[1] = verified::surface_type::TypeNode {
+        kind: verified::surface_type::Path,
+        first: 0, token: -1, next: -1 };
+    nodes[2] = verified::surface_type::TypeNode {
+        kind: verified::surface_type::PathType,
+        first: 1, token: -1, next: -1 };
+    let scratch: [i32; 1] = [0];
+    let output: [i32; 3] = [0, 0, 0];
+    let memory: ptr = verified::host::alloc(
+        2 * lowering::types::RESOLUTION_RECORD_BYTES,
+        lowering::types::RESOLUTION_ALIGNMENT);
+    let copied_memory: ptr = verified::host::alloc(
+        2 * lowering::types::RESOLUTION_RECORD_BYTES,
+        lowering::types::RESOLUTION_ALIGNMENT);
+    if (memory == 0 || copied_memory == 0) { return 1; }
+    let source_rows: lowering::types::ResolutionTable =
+        lowering::types::from_raw_parts(memory, 2,
+            lowering::types::IdentifierToken);
+    let rows: [lowering::types::ResolutionRow] = source_rows.data;
+    let expected: i32 = backend::syntax::NOMINAL_TYPE_BASE + 1;
+    rows[0] = lowering::types::ResolutionRow {
+        key: 0, type_tag: expected };
+    let copied: lowering::types::ResolutionTable =
+        lowering::types::from_raw_parts(copied_memory, 2,
+            lowering::types::IdentifierToken);
+    if (!lowering::types::copy_rows(source_rows, 0, 1, copied)) { return 2; }
+    let copied_rows: [lowering::types::ResolutionRow] = copied.data;
+    if (copied_rows[0].key != 0 || copied_rows[0].type_tag != expected) {
+        return 3;
+    }
+    let wrong_domain: lowering::types::ResolutionTable =
+        lowering::types::resolutions(copied_rows, 2,
+            lowering::types::ArenaNode);
+    if (lowering::types::copy_rows(source_rows, 0, 1, wrong_domain)) {
+        return 6;
+    }
+    let source_region: lowering::types::WordRegion =
+        lowering::types::region(source, 5);
+    let token_memory: ptr = verified::host::alloc(
+        verified::token::RECORD_BYTES, verified::token::ALIGNMENT);
+    if (token_memory == 0) { return 1; }
+    let token_table: verified::token::TokenTable =
+        verified::token::from_raw_parts(token_memory, 1);
+    if (!verified::token::decode_packed(tokens, 3, 1, token_table, 0)) {
+        return 1;
+    }
+    let alias_region: lowering::aliases::Catalog =
+        lowering::aliases::empty();
+    let input: lowering::types::TypeInput = lowering::types::TypeInput {
+        source: source_region,
+        tokens: token_table,
+        arena: typed_arena,
+        root: 2,
+        resolutions: lowering::types::resolutions(copied_rows, 1,
+            lowering::types::IdentifierToken),
+        aliases: alias_region,
+    };
+    let workspace: lowering::types::TypeWorkspace =
+        lowering::types::TypeWorkspace {
+            alias_scratch: lowering::types::region(scratch, 1),
+            output: lowering::types::region(output, 3),
+        };
+    let actual: i32 = lowering::types::lower(input, workspace);
+    if (actual != expected) { return actual; }
+    let malformed_aliases: lowering::aliases::Catalog =
+        lowering::aliases::empty();
+    malformed_aliases.symbol_count = 1;
+    input.aliases = malformed_aliases;
+    if (lowering::types::lower(input, workspace) >= 0) { return 8; }
+    input.aliases = alias_region;
+    let short_memory: ptr = verified::host::alloc(
+        verified::surface_type::allocation_bytes(0),
+        verified::surface_type::ALIGNMENT);
+    if (short_memory == 0) { return 1; }
+    let short_input: lowering::types::TypeInput = lowering::types::TypeInput {
+        source: source_region,
+        tokens: token_table,
+        arena: verified::surface_type::from_raw_parts(short_memory, 0),
+        root: 2,
+        resolutions: lowering::types::resolutions(copied_rows, 1,
+            lowering::types::IdentifierToken),
+        aliases: alias_region,
+    };
+    if (lowering::types::lower(short_input, workspace) >= 0) { return 7; }
+    copied_rows[1] = copied_rows[0];
+    let duplicate: lowering::types::TypeInput = lowering::types::TypeInput {
+        source: source_region,
+        tokens: token_table,
+        arena: typed_arena,
+        root: 2,
+        resolutions: lowering::types::resolutions(copied_rows, 2,
+            lowering::types::IdentifierToken),
+        aliases: alias_region,
+    };
+    if (lowering::types::lower(duplicate, workspace) >= 0) { return 5; }
+    return 0;
+}

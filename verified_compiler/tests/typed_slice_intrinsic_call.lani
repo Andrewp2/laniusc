@@ -1,0 +1,28 @@
+module app::main;
+
+pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn check(values: [Pair]) -> i32 {
+    if (values[0].left != 3 || values[0].right != 5
+        || values[1].left != 7 || values[1].right != 11) {
+        return 1;
+    }
+    return 0;
+}
+
+fn main() -> i32 {
+    let memory: ptr = alloc(2 * 2 * 8, 8);
+    if (memory == 0) { return 2; }
+    let first: ptr = memory + 3 * 8;
+    let values: [Pair] = slice_from_raw_parts(first, 2);
+    values[0].left = 3;
+    values[0].right = 5;
+    values[1].left = 7;
+    values[1].right = 11;
+    return check(slice_from_raw_parts(first, 2));
+}

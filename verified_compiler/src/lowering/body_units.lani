@@ -1,31 +1,36 @@
 module lowering::body_units;
+import backend::syntax;
+import lowering::allocation;
 import lowering::bodies;
+import lowering::body_context;
+import lowering::value_catalog;
 import lowering::declarations;
 import lowering::aliases;
+import lowering::error;
+import lowering::signature_index;
+import lowering::signature_producer;
 import lowering::signatures;
-import lowering::units; // This descriptor is intentionally identical to transport's multi-unit
-// descriptor. Source/token fields must agree with the richer signature
-// context; signature fields name one already-lowered unit table. This pass
-// fills the final two fields with offsets into body_catalog.
-pub const DESCRIPTOR_WORDS: i32 = 8;
-pub const SOURCE_OFFSET: i32 = 0;
-pub const SOURCE_LENGTH: i32 = 1;
-pub const TOKEN_OFFSET: i32 = 2;
-pub const TOKEN_COUNT: i32 = 3;
-pub const SIGNATURE_OFFSET: i32 = 4;
-pub const SIGNATURE_WORDS: i32 = 5;
-pub const BODY_OFFSET: i32 = 6;
-pub const BODY_WORDS: i32 = 7;
-pub const CONTEXT_WORDS: i32 = 12;
-pub const ALIAS_OFFSET: i32 = 12;
-pub const ALIAS_WORDS: i32 = 13;
-pub const ALIAS_CONTEXT_WORDS: i32 = 14;
-// Owned body lowering also consumes a caller-local value-name resolution
-// slice.  Keep it after the nominal type-resolution pair so the two formats
-// cannot be confused: [value offset, value words].
-pub const VALUE_OFFSET: i32 = 14;
-pub const VALUE_WORDS: i32 = 15;
-pub const VALUE_CONTEXT_WORDS: i32 = 16;
+import lowering::types;
+import lowering::unit_descriptor;
+import lowering::unit_context;
+import verified::host;
+import verified::surface_expr;
+import verified::surface_type;
+import verified::syntax_tree;
+import verified::token;
+
+pub struct WordRegion {
+    data: [i32],
+    words: i32,
+}
+
+pub fn region(data: [i32], words: i32) -> WordRegion {
+    return WordRegion { data: data, words: words };
+}
+
+fn invalid() -> i32 {
+    return lowering::error::failure(lowering::error::InvalidInput);
+}
 fn valid_range(offset: i32, words: i32, length: i32) -> bool {
     if (offset <= -1 || words <= -1 || length <= -1 || offset>length || words>length - offset) {
         return false;
@@ -33,7 +38,8 @@ fn valid_range(offset: i32, words: i32, length: i32) -> bool {
     return true;
 }
 fn rows_range(offset: i32, rows: i32, stride: i32, length: i32) -> bool {
-    if (rows <= -1 || stride <= 0 || rows>715827882) {
+    if (rows <= -1 || stride <= 0
+        || rows > verified::host::I32_MAX / stride) {
         return false;
     }
     return valid_range(offset, rows * stride, length);
@@ -47,222 +53,135 @@ fn overlap(first: i32, first_words: i32, second: i32, second_words: i32) -> bool
     }
     return first - second <= second_words - 1;
 }
-fn copy_words(input:[i32], offset: i32, words: i32, output:[i32], capacity: i32) -> bool {
-    if (offset <= -1 || words <= -1 || capacity <= -1 || words>capacity) {
+fn valid_declaration_table(table: lowering::declarations::Table,
+    unit: i32) -> bool {
+    if (!lowering::declarations::table_has_exact_rows(table)) {
         return false;
     }
-    let index: i32 = 0;
-    while (index <= words - 1) {
-        output[index] = input[offset + index];
-        index += 1;
-    }
-    return true;
-}
-fn valid_declaration_table(input:[i32], length: i32, offset: i32, words: i32, unit: i32) -> bool {
-    if (!valid_range(offset, words, length) || words <= lowering::declarations::HEADER - 1) {
-        return false;
-    }
-    let rows: i32 = input[offset];
-    if (rows <= 0 || rows>(words - lowering::declarations::HEADER) / lowering::declarations::ROW || words != lowering::declarations::HEADER + rows * lowering::declarations::ROW) {
+    let rows: i32 = lowering::declarations::count_rows(
+        lowering::declarations::table_header(table));
+    if (rows <= 0 || rows > (verified::host::I32_MAX
+            - lowering::declarations::HEADER)
+            / lowering::declarations::ROW) {
         return false;
     }
     let row: i32 = 0;
     while (row <= rows - 1) {
-        let slot: i32 = offset + lowering::declarations::HEADER + row * lowering::declarations::ROW;
-        if (input[slot] != unit) {
+        let declaration: lowering::declarations::DeclarationRow =
+            lowering::declarations::table_row(table, row);
+        if (lowering::declarations::row_unit(declaration) != unit) {
             return false;
         }
         row += 1;
     }
     return true;
 }
-fn valid_context(contexts:[i32], position: i32, source_length: i32, token_length: i32, record_length: i32, offsets_length: i32, arena_length: i32, resolution_length: i32) -> bool {
-    let source_offset: i32 = contexts[position + lowering::signatures::SOURCE_OFFSET];
-    let source_words: i32 = contexts[position + lowering::signatures::SOURCE_LENGTH];
-    let token_offset: i32 = contexts[position + lowering::signatures::TOKEN_OFFSET];
-    let token_count: i32 = contexts[position + lowering::signatures::TOKEN_COUNT];
-    let record_offset: i32 = contexts[position + lowering::signatures::RECORD_OFFSET];
-    let records: i32 = contexts[position + lowering::signatures::RECORD_LENGTH];
-    let offsets_offset: i32 = contexts[position + lowering::signatures::OFFSETS_OFFSET];
-    let nodes: i32 = contexts[position + lowering::signatures::NODE_COUNT];
-    let type_offset: i32 = contexts[position + lowering::signatures::TYPE_ARENA_OFFSET];
-    let type_words: i32 = contexts[position + lowering::signatures::TYPE_ARENA_LENGTH];
-    let resolution_offset: i32 = contexts[position + lowering::signatures::RESOLUTION_OFFSET];
-    let resolution_words: i32 = contexts[position + lowering::signatures::RESOLUTION_LENGTH];
-    if (!valid_range(source_offset, source_words, source_length) || !rows_range(token_offset, token_count, 3, token_length) || !valid_range(record_offset, records, record_length) || !rows_range(offsets_offset, nodes, 1, offsets_length) || !valid_range(type_offset, type_words, arena_length) || !valid_range(resolution_offset, resolution_words, resolution_length)) {
-        return false;
-    }
-    if (token_count <= -1 || nodes <= 0 || type_words <= 0 || resolution_words <= -1 || resolution_words % 2 != 0) {
-        return false;
-    }
-    return true;
-}
-fn valid_alias_context(contexts:[i32], position: i32, context_words: i32, alias_length: i32) -> bool {
-    if (context_words == CONTEXT_WORDS) {
-        return true;
-    }
-    if (context_words != ALIAS_CONTEXT_WORDS) {
-        return false;
-    }
-    return valid_range(contexts[position + ALIAS_OFFSET],
-        contexts[position + ALIAS_WORDS], alias_length);
-}
-fn valid_signature_table(input:[i32], offset: i32, words: i32, length: i32) -> bool {
-    if (!valid_range(offset, words, length) || words <= lowering::signatures::HEADER - 1 || input[offset] != lowering::signatures::VERSION || input[offset + 2] != words) {
-        return false;
-    }
-    let records: i32 = input[offset + 1];
-    if (records <= -1 || records>(words - lowering::signatures::HEADER) / lowering::signatures::RECORD) {
-        return false;
-    }
-    let position: i32 = offset + lowering::signatures::HEADER;
-    let count: i32 = 0;
-    while (position <= offset + words - 1) {
-        if (position>offset + words - lowering::signatures::RECORD) {
-            return false;
-        }
-        let payload: i32 = input[position + 5];
-        if (input[position] <= -1 || payload <= -1 || payload>offset + words - position - lowering::signatures::RECORD) {
-            return false;
-        }
-        let previous: i32 = offset + lowering::signatures::HEADER;
-        while (previous <= position - 1) {
-            if (input[previous] == input[position]) {
-                return false;
-            }
-            previous += lowering::signatures::RECORD + input[previous + 5];
-        }
-        count += 1;
-        position += lowering::signatures::RECORD + payload;
-    }
-    return position == offset + words && count == records;
+// Value-name resolution is a separate tagged catalog from nominal types.
+// Rows distinguish local/imported scope and callable/enum-variant bindings.
+struct ValueCatalogValidation {
+    catalog: lowering::value_catalog::ValueTable,
+    offset: i32,
+    count: i32,
+    token_count: i32,
+    allocations: lowering::allocation::Table,
+    signature_index: lowering::signature_index::Table,
 }
 
-// The owned body pass does not consume transport signature partitions.  It
-// only checks that each descriptor names a bounded, header-bearing partition;
-// the transport pass remains responsible for validating its records.
-fn valid_transport_signature_slice(input:[i32], offset: i32, words: i32,
-    length: i32) -> bool {
-    return valid_range(offset, words, length)
-        && words >= lowering::signatures::HEADER
-        && input[offset] == lowering::signatures::VERSION
-        && input[offset + 2] == words;
-}
-
-// Value-name resolution is a separate tagged catalog from the nominal type
-// pairs in each signature context.  Keys are token indices in the owning
-// unit; values are already allocated global function IDs.
-fn valid_value_catalog(input:[i32], offset: i32, words: i32, length: i32,
-    token_count: i32, allocated:[i32], allocation_words: i32,
-    signatures:[i32], signature_words: i32) -> bool {
-    if (!valid_range(offset, words, length) || words < lowering::bodies::VALUE_HEADER
-        || input[offset] != lowering::bodies::VALUE_MAGIC
-        || input[offset + 1] <= -1 || input[offset + 2] != words
-        || words != lowering::bodies::VALUE_HEADER
-            + input[offset + 1] * lowering::bodies::VALUE_ROW
-        || token_count <= -1) { return false; }
-    let position: i32 = offset + lowering::bodies::VALUE_HEADER;
-    let finish: i32 = offset + words;
+fn valid_value_catalog(validation: ValueCatalogValidation) -> bool {
+    let input: lowering::value_catalog::ValueTable = validation.catalog;
+    let offset: i32 = validation.offset;
+    let count: i32 = validation.count;
+    let allocation_table: lowering::allocation::Table =
+        validation.allocations;
+    let signature_index: lowering::signature_index::Table =
+        validation.signature_index;
+    if (!lowering::value_catalog::valid_slice(input, offset, count,
+            validation.token_count, allocation_table)) {
+        return false;
+    }
+    let position: i32 = offset;
+    let finish: i32 = offset + count;
     while (position < finish) {
-        let token: i32 = input[position];
-        let id: i32 = input[position + 1];
-        if (token <= -1 || token >= token_count || id <= -1) { return false; }
-        let previous: i32 = offset + lowering::bodies::VALUE_HEADER;
-        while (previous < position) {
-            if (input[previous] == token) {
-                return false;
-            }
-            previous += lowering::bodies::VALUE_ROW;
+        let binding: lowering::value_catalog::ValueBinding =
+            lowering::value_catalog::read_binding(input, position);
+        let id: i32 = lowering::value_catalog::binding_id(binding);
+        let member: i32 = lowering::value_catalog::binding_member(binding);
+        let arity: i32 = lowering::value_catalog::binding_arity(binding);
+        if (!lowering::signature_index::contains(signature_index, id)) {
+            return false;
         }
-        let allocation: i32 = lowering::declarations::HEADER;
-        let found: bool = false;
-        while (allocation < allocation_words) {
-            if (allocated[allocation + 9] == id
-                && (allocated[allocation + 1] == lowering::declarations::FUNCTION
-                    || allocated[allocation + 1] == lowering::declarations::EXTERNAL)) {
-                found = true;
-            }
-            allocation += 10;
-        }
-        if (!found) { return false; }
-        let signature: i32 = lowering::signatures::HEADER;
+        let record: lowering::signatures::SignatureRecord =
+            lowering::signature_index::record_at(signature_index, id);
         let signature_found: bool = false;
-        while (signature < signature_words) {
-            if (signature > signature_words - lowering::signatures::RECORD) {
-                return false;
-            }
-            if (signatures[signature] == id
-                && (signatures[signature + 1] == lowering::declarations::FUNCTION
-                    || signatures[signature + 1] == lowering::declarations::EXTERNAL)) {
+        if (lowering::value_catalog::binding_is_kind(binding,
+                lowering::value_catalog::CallableBinding)) {
+            if (lowering::signatures::record_has_shape(record,
+                    lowering::signatures::InternalFunctionShape)
+                || lowering::signatures::record_has_shape(record,
+                    lowering::signatures::ExternalFunctionShape)) {
                 signature_found = true;
             }
-            signature += lowering::signatures::RECORD + signatures[signature + 5];
+        } else {
+            if (lowering::signatures::record_has_shape(record,
+                    lowering::signatures::EnumerationShape)
+                && member < lowering::signatures::record_arity(record)) {
+                let selected: lowering::signature_index::Variant =
+                    lowering::signature_index::variant_at(signature_index,
+                        id, member);
+                if (selected.field_count == arity) {
+                    signature_found = true;
+                }
+            }
         }
         if (!signature_found) { return false; }
-        position += lowering::bodies::VALUE_ROW;
+        position += 1;
     }
     return position == finish;
 }
 
-fn valid_owned_context(contexts:[i32], position: i32,
-    alias_length: i32, value_input:[i32], value_length: i32,
-    token_count: i32, allocated:[i32], allocation_words: i32,
-    signatures:[i32], signature_words: i32) -> bool {
-    if (!valid_range(contexts[position + ALIAS_OFFSET],
-            contexts[position + ALIAS_WORDS], alias_length)) {
-        return false;
-    }
-    return valid_value_catalog(value_input,
-        contexts[position + VALUE_OFFSET],
-        contexts[position + VALUE_WORDS], value_length, token_count,
-        allocated, allocation_words, signatures, signature_words);
+struct OwnedContextValidation {
+    context: lowering::unit_context::UnitContext,
+    values: lowering::value_catalog::ValueTable,
+    token_count: i32,
+    allocations: lowering::allocation::Table,
+    signature_index: lowering::signature_index::Table,
 }
-fn prior_signature_id(signatures_catalog:[i32], descriptors:[i32], unit: i32, id: i32) -> bool {
-    let previous: i32 = 0;
-    while (previous <= unit - 1) {
-        let descriptor: i32 = previous * DESCRIPTOR_WORDS;
-        let begin: i32 = descriptors[descriptor + SIGNATURE_OFFSET] + lowering::signatures::HEADER;
-        let finish: i32 = descriptors[descriptor + SIGNATURE_OFFSET] + descriptors[descriptor + SIGNATURE_WORDS];
-        let position: i32 = begin;
-        while (position <= finish - 1) {
-            if (signatures_catalog[position] == id) {
-                return true;
-            }
-            position += lowering::signatures::RECORD + signatures_catalog[position + 5];
-        }
-        previous += 1;
-    }
-    return false;
-}
-fn prior_signature_ids(signatures_catalog:[i32], descriptors:[i32], unit: i32, offset: i32, words: i32) -> bool {
-    let position: i32 = offset + lowering::signatures::HEADER;
-    let finish: i32 = offset + words;
-    while (position <= finish - 1) {
-        if (prior_signature_id(signatures_catalog, descriptors, unit, signatures_catalog[position])) {
-            return true;
-        }
-        position += lowering::signatures::RECORD + signatures_catalog[position + 5];
-    }
-    return false;
+
+fn valid_owned_context(validation: OwnedContextValidation) -> bool {
+    let context: lowering::unit_context::UnitContext = validation.context;
+    let value_validation: ValueCatalogValidation = ValueCatalogValidation {
+        catalog: validation.values,
+        offset: context.value_row_offset,
+        count: context.value_count,
+        token_count: validation.token_count,
+        allocations: validation.allocations,
+        signature_index: validation.signature_index,
+    };
+    return valid_value_catalog(value_validation);
 }
 fn prior_body_id(body_catalog:[i32], written: i32, id: i32) -> bool {
     let table: i32 = 0;
     while (table <= written - 1) {
-        let words: i32 = body_catalog[table + lowering::bodies::HEADER - 1];
-        if (words <= lowering::bodies::HEADER - 1 || table + words>written) {
+        let words: i32 = lowering::body_context::header_words_at(
+            body_catalog, table);
+        if (words <= lowering::body_context::HEADER - 1 || table + words>written) {
             return true;
         }
-        let position: i32 = table + lowering::bodies::HEADER;
+        let position: i32 = table + lowering::body_context::HEADER;
         let finish: i32 = table + words;
         while (position <= finish - 1) {
-            let record_words: i32 = body_catalog[position];
-            if (record_words <= lowering::bodies::RECORD_HEADER - 1 || position + 1 + record_words>finish) {
+            let span: lowering::body_context::FunctionSpan =
+                lowering::body_context::read_function_span(body_catalog,
+                    position);
+            if (!lowering::body_context::span_fits(span, finish,
+                    lowering::body_context::RECORD_HEADER)) {
                 return true;
             }
-            if (body_catalog[position + 3] == id) {
+            if (backend::syntax::function_id_at(body_catalog,
+                    span.function) == id) {
                 return true;
             }
-            position += 1 + record_words;
+            position = lowering::body_context::span_end(span);
         }
         if (position != finish) {
             return true;
@@ -271,453 +190,233 @@ fn prior_body_id(body_catalog:[i32], written: i32, id: i32) -> bool {
     }
     return false;
 }
-// Lower body records for every unit in descriptor order. `transport_descriptors`
-// is the existing eight-word transport descriptor; this pass fills its body
-// offset/length fields so the result can be passed directly to
-// lowering::transport::lower_multi. The declaration and allocation scratch
-// tables are local views, but all appended function IDs come from the one
-// global allocation table.
-fn lower_units_context(descriptors:[i32], descriptor_length: i32, unit_count: i32, contexts:[i32], context_length: i32, transport_descriptors:[i32], transport_descriptor_length: i32, declaration_catalog:[i32], declaration_catalog_length: i32, source_catalog:[i32], source_catalog_length: i32, token_catalog:[i32], token_catalog_length: i32, record_catalog:[i32], record_catalog_length: i32, offsets_catalog:[i32], offsets_catalog_length: i32, type_arena_catalog:[i32], type_arena_catalog_length: i32, resolution_catalog:[i32], resolution_catalog_length: i32, signature_catalog:[i32], signature_catalog_length: i32, allocated:[i32], allocation_words: i32, declaration_words: i32, source_scratch:[i32], source_capacity: i32, token_scratch:[i32], token_capacity: i32, record_scratch:[i32], record_capacity: i32, offsets_scratch:[i32], offsets_capacity: i32, type_arena_scratch:[i32], type_arena_capacity: i32, resolution_scratch:[i32], resolution_capacity: i32, declaration_scratch:[i32], declaration_capacity: i32, allocation_scratch:[i32], allocation_capacity: i32, signature_scratch:[i32], signature_capacity: i32, expression_arena:[i32], expression_capacity: i32, type_output:[i32], type_output_capacity: i32, body_scratch:[i32], body_scratch_capacity: i32, body_catalog:[i32], body_capacity: i32, context_words: i32, alias_catalog:[i32], alias_catalog_length: i32, alias_scratch:[i32], alias_scratch_capacity: i32, alias_work:[i32], alias_work_capacity: i32) -> i32 {
-    if (unit_count <= 0 || descriptor_length <= -1 || unit_count>descriptor_length / lowering::units::DESCRIPTOR_WORDS || descriptor_length != unit_count * lowering::units::DESCRIPTOR_WORDS || context_length <= -1 || context_words <= 0 || unit_count>context_length / context_words || context_length != unit_count * context_words || transport_descriptor_length <= -1 || unit_count>transport_descriptor_length / DESCRIPTOR_WORDS || transport_descriptor_length != unit_count * DESCRIPTOR_WORDS || declaration_catalog_length <= -1 || source_catalog_length <= -1 || token_catalog_length <= -1 || record_catalog_length <= -1 || offsets_catalog_length <= -1 || type_arena_catalog_length <= -1 || resolution_catalog_length <= -1 || alias_catalog_length <= -1 || signature_catalog_length <= -1 || allocation_words <= lowering::declarations::HEADER - 1 || declaration_words <= lowering::declarations::HEADER - 1 || source_capacity <= -1 || token_capacity <= -1 || record_capacity <= -1 || offsets_capacity <= -1 || type_arena_capacity <= 0 || resolution_capacity <= -1 || alias_scratch_capacity <= -1 || alias_work_capacity <= -1 || declaration_capacity <= lowering::declarations::HEADER - 1 || allocation_capacity <= lowering::declarations::HEADER - 1 || signature_capacity <= lowering::signatures::HEADER - 1 || expression_capacity <= 0 || type_output_capacity <= 0 || body_scratch_capacity <= lowering::bodies::HEADER || body_capacity <= lowering::bodies::HEADER) {
-        return -1;
-    }
-    if (allocated[0] != unit_count || allocated[1] <= 0 || allocated[1]>(2147483647 - lowering::declarations::HEADER) / 10 || allocation_words != lowering::declarations::HEADER + allocated[1] * 10) {
-        return -1;
-    }
-    let total_rows: i32 = 0;
-    let total_declaration_words: i32 = 0;
-    let unit: i32 = 0;
-    while (unit <= unit_count - 1) {
-        let descriptor: i32 = unit * lowering::units::DESCRIPTOR_WORDS;
-        let context: i32 = unit * context_words;
-        let transport: i32 = unit * DESCRIPTOR_WORDS;
-        let declaration_offset: i32 = descriptors[descriptor + lowering::units::DECLARATION_OFFSET];
-        let local_declaration_words: i32 = descriptors[descriptor + lowering::units::DECLARATION_WORDS];
-        if (!valid_declaration_table(declaration_catalog, declaration_catalog_length, declaration_offset, local_declaration_words, unit) || !valid_context(contexts, context, source_catalog_length, token_catalog_length, record_catalog_length, offsets_catalog_length, type_arena_catalog_length, resolution_catalog_length) || !valid_alias_context(contexts, context, context_words, alias_catalog_length)) {
-            return -1;
-        }
-        let source_offset: i32 = contexts[context + lowering::signatures::SOURCE_OFFSET];
-        let source_words: i32 = contexts[context + lowering::signatures::SOURCE_LENGTH];
-        let token_offset: i32 = contexts[context + lowering::signatures::TOKEN_OFFSET];
-        let token_count: i32 = contexts[context + lowering::signatures::TOKEN_COUNT];
-        if (transport_descriptors[transport + SOURCE_OFFSET] != source_offset || transport_descriptors[transport + SOURCE_LENGTH] != source_words || transport_descriptors[transport + TOKEN_OFFSET] != token_offset || transport_descriptors[transport + TOKEN_COUNT] != token_count) {
-            return -1;
-        }
-        let signature_offset: i32 = transport_descriptors[transport + SIGNATURE_OFFSET];
-        let signature_words: i32 = transport_descriptors[transport + SIGNATURE_WORDS];
-        if (!valid_signature_table(signature_catalog, signature_offset, signature_words, signature_catalog_length)) {
-            return -1;
-        }
-        if (prior_signature_ids(signature_catalog, transport_descriptors, unit, signature_offset, signature_words)) {
-            return -1;
-        }
-        if (declaration_catalog[declaration_offset]>2147483647 - total_rows) {
-            return -1;
-        }
-        if (local_declaration_words>2147483647 - total_declaration_words) {
-            return -1;
-        }
-        total_rows += declaration_catalog[declaration_offset];
-        total_declaration_words += local_declaration_words;
-        unit += 1;
-    }
-    if (total_rows>(2147483647 - lowering::declarations::HEADER) / lowering::declarations::ROW || declaration_words != total_declaration_words || allocated[1] != total_rows) {
-        return -1;
-    }
-    let check: i32 = 0;
-    while (check <= unit_count - 1) {
-        let descriptor: i32 = check * lowering::units::DESCRIPTOR_WORDS;
-        let context: i32 = check * context_words;
-        let transport: i32 = check * DESCRIPTOR_WORDS;
-        let declaration_offset: i32 = descriptors[descriptor + lowering::units::DECLARATION_OFFSET];
-        let declaration_words_local: i32 = descriptors[descriptor + lowering::units::DECLARATION_WORDS];
-        let source_offset: i32 = contexts[context + lowering::signatures::SOURCE_OFFSET];
-        let source_words: i32 = contexts[context + lowering::signatures::SOURCE_LENGTH];
-        let token_offset: i32 = contexts[context + lowering::signatures::TOKEN_OFFSET];
-        let token_words: i32 = contexts[context + lowering::signatures::TOKEN_COUNT] * 3;
-        let record_offset: i32 = contexts[context + lowering::signatures::RECORD_OFFSET];
-        let record_words: i32 = contexts[context + lowering::signatures::RECORD_LENGTH];
-        let offsets_offset: i32 = contexts[context + lowering::signatures::OFFSETS_OFFSET];
-        let offsets_words: i32 = contexts[context + lowering::signatures::NODE_COUNT];
-        let type_offset: i32 = contexts[context + lowering::signatures::TYPE_ARENA_OFFSET];
-        let type_words: i32 = contexts[context + lowering::signatures::TYPE_ARENA_LENGTH];
-        let resolution_offset: i32 = contexts[context + lowering::signatures::RESOLUTION_OFFSET];
-        let resolution_words: i32 = contexts[context + lowering::signatures::RESOLUTION_LENGTH];
-        let alias_offset: i32 = 0;
-        let alias_words: i32 = 0;
-        if (context_words == ALIAS_CONTEXT_WORDS) {
-            alias_offset = contexts[context + ALIAS_OFFSET];
-            alias_words = contexts[context + ALIAS_WORDS];
-        }
-        let signature_offset: i32 = transport_descriptors[transport + SIGNATURE_OFFSET];
-        let signature_words: i32 = transport_descriptors[transport + SIGNATURE_WORDS];
-        let previous: i32 = 0;
-        while (previous <= check - 1) {
-            let previous_descriptor: i32 = previous * lowering::units::DESCRIPTOR_WORDS;
-            let previous_context: i32 = previous * context_words;
-            let previous_transport: i32 = previous * DESCRIPTOR_WORDS;
-            if (overlap(declaration_offset, declaration_words_local, descriptors[previous_descriptor + lowering::units::DECLARATION_OFFSET], descriptors[previous_descriptor + lowering::units::DECLARATION_WORDS]) || overlap(source_offset, source_words, contexts[previous_context + lowering::signatures::SOURCE_OFFSET], contexts[previous_context + lowering::signatures::SOURCE_LENGTH]) || overlap(token_offset, token_words, contexts[previous_context + lowering::signatures::TOKEN_OFFSET], contexts[previous_context + lowering::signatures::TOKEN_COUNT] * 3) || overlap(record_offset, record_words, contexts[previous_context + lowering::signatures::RECORD_OFFSET], contexts[previous_context + lowering::signatures::RECORD_LENGTH]) || overlap(offsets_offset, offsets_words, contexts[previous_context + lowering::signatures::OFFSETS_OFFSET], contexts[previous_context + lowering::signatures::NODE_COUNT]) || overlap(type_offset, type_words, contexts[previous_context + lowering::signatures::TYPE_ARENA_OFFSET], contexts[previous_context + lowering::signatures::TYPE_ARENA_LENGTH]) || overlap(resolution_offset, resolution_words, contexts[previous_context + lowering::signatures::RESOLUTION_OFFSET], contexts[previous_context + lowering::signatures::RESOLUTION_LENGTH]) || overlap(signature_offset, signature_words, transport_descriptors[previous_transport + SIGNATURE_OFFSET], transport_descriptors[previous_transport + SIGNATURE_WORDS])) {
-                return -1;
-            }
-            if (context_words == ALIAS_CONTEXT_WORDS && overlap(alias_offset, alias_words,
-                contexts[previous_context + ALIAS_OFFSET], contexts[previous_context + ALIAS_WORDS])) {
-                return -1;
-            }
-            previous += 1;
-        }
-        check += 1;
-    }
-    let written: i32 = 0;
-    let allocation_row: i32 = 0;
-    unit = 0;
-    while (unit <= unit_count - 1) {
-        let descriptor: i32 = unit * lowering::units::DESCRIPTOR_WORDS;
-        let context: i32 = unit * context_words;
-        let transport: i32 = unit * DESCRIPTOR_WORDS;
-        let declaration_offset: i32 = descriptors[descriptor + lowering::units::DECLARATION_OFFSET];
-        let local_declaration_words: i32 = descriptors[descriptor + lowering::units::DECLARATION_WORDS];
-        let rows: i32 = declaration_catalog[declaration_offset];
-        let alias_offset: i32 = 0;
-        let alias_words: i32 = 0;
-        if (context_words == ALIAS_CONTEXT_WORDS) {
-            alias_offset = contexts[context + ALIAS_OFFSET];
-            alias_words = contexts[context + ALIAS_WORDS];
-        }
-        if (!copy_words(source_catalog, contexts[context + lowering::signatures::SOURCE_OFFSET], contexts[context + lowering::signatures::SOURCE_LENGTH], source_scratch, source_capacity) || !copy_words(token_catalog, contexts[context + lowering::signatures::TOKEN_OFFSET], contexts[context + lowering::signatures::TOKEN_COUNT] * 3, token_scratch, token_capacity) || !copy_words(record_catalog, contexts[context + lowering::signatures::RECORD_OFFSET], contexts[context + lowering::signatures::RECORD_LENGTH], record_scratch, record_capacity) || !copy_words(offsets_catalog, contexts[context + lowering::signatures::OFFSETS_OFFSET], contexts[context + lowering::signatures::NODE_COUNT], offsets_scratch, offsets_capacity) || !copy_words(type_arena_catalog, contexts[context + lowering::signatures::TYPE_ARENA_OFFSET], contexts[context + lowering::signatures::TYPE_ARENA_LENGTH], type_arena_scratch, type_arena_capacity) || !copy_words(resolution_catalog, contexts[context + lowering::signatures::RESOLUTION_OFFSET], contexts[context + lowering::signatures::RESOLUTION_LENGTH], resolution_scratch, resolution_capacity) || !copy_words(declaration_catalog, declaration_offset, local_declaration_words, declaration_scratch, declaration_capacity) || !copy_words(signature_catalog, transport_descriptors[transport + SIGNATURE_OFFSET], transport_descriptors[transport + SIGNATURE_WORDS], signature_scratch, signature_capacity)) {
-            return -1;
-        }
-        if (context_words == ALIAS_CONTEXT_WORDS && !copy_words(alias_catalog, alias_offset,
-            alias_words, alias_scratch, alias_scratch_capacity)) {
-            return -1;
-        }
-        if (context_words == ALIAS_CONTEXT_WORDS &&
-            !lowering::aliases::valid(alias_scratch, alias_words, token_scratch,
-                contexts[context + lowering::signatures::TOKEN_COUNT])) {
-            return -1;
-        }
-        let node: i32 = 0;
-        while (node <= contexts[context + lowering::signatures::NODE_COUNT] - 1) {
-            if (offsets_scratch[node] <= -1 || offsets_scratch[node]>contexts[context + lowering::signatures::RECORD_LENGTH] - 4) {
-                return -1;
-            }
-            node += 1;
-        }
-        declaration_scratch[0] = rows;
-        let header: i32 = 0;
-        while (header <= lowering::declarations::HEADER - 1) {
-            allocation_scratch[header] = allocated[header];
-            header += 1;
-        }
-        allocation_scratch[0] = 1;
-        allocation_scratch[1] = rows;
-        let row: i32 = 0;
-        while (row <= rows - 1) {
-            let declaration_slot: i32 = lowering::declarations::HEADER + row * lowering::declarations::ROW;
-            let global_slot: i32 = lowering::declarations::HEADER +(allocation_row + row) * 10;
-            let field: i32 = 0;
-            while (field <= lowering::declarations::ROW - 1) {
-                declaration_scratch[declaration_slot + field] = declaration_catalog[declaration_offset + declaration_slot + field];
-                if (declaration_scratch[declaration_slot + field] != allocated[global_slot + field]) {
-                    return -1;
-                }
-                field += 1;
-            }
-            field = 0;
-            while (field <= 9) {
-                allocation_scratch[lowering::declarations::HEADER + row * 10 + field] = allocated[global_slot + field];
-                field += 1;
-            }
-            row += 1;
-        }
-        let local_allocation_words: i32 = lowering::declarations::HEADER + rows * 10;
-        let local_body_words: i32 = lowering::bodies::lower(source_scratch, contexts[context + lowering::signatures::SOURCE_LENGTH], token_scratch, contexts[context + lowering::signatures::TOKEN_COUNT], record_scratch, contexts[context + lowering::signatures::RECORD_LENGTH], offsets_scratch, contexts[context + lowering::signatures::NODE_COUNT], declaration_scratch, local_declaration_words, allocation_scratch, local_allocation_words, signature_scratch, transport_descriptors[transport + SIGNATURE_WORDS], expression_arena, expression_capacity, type_arena_scratch, contexts[context + lowering::signatures::TYPE_ARENA_LENGTH], resolution_scratch, contexts[context + lowering::signatures::RESOLUTION_LENGTH], alias_scratch, alias_words, alias_work, alias_work_capacity, type_output, type_output_capacity, body_scratch, body_scratch_capacity);
-        if (local_body_words <= lowering::bodies::HEADER - 1 || body_scratch[3] != local_body_words || local_body_words>body_scratch_capacity) {
-            return -1;
-        }
-        let local_position: i32 = lowering::bodies::HEADER;
-        while (local_position <= local_body_words - 1) {
-            let record_words: i32 = body_scratch[local_position];
-            if (record_words <= lowering::bodies::RECORD_HEADER - 1 || record_words>local_body_words - local_position - 1 || body_scratch[local_position + 3] <= -1 || prior_body_id(body_catalog, written, body_scratch[local_position + 3])) {
-                return -1;
-            }
-            local_position += record_words + 1;
-        }
-        if (local_position != local_body_words || body_capacity - written<local_body_words) {
-            return -1;
-        }
-        let word: i32 = 0;
-        while (word <= local_body_words - 1) {
-            body_catalog[written + word] = body_scratch[word];
-            word += 1;
-        }
-        transport_descriptors[transport + BODY_OFFSET] = written;
-        transport_descriptors[transport + BODY_WORDS] = local_body_words;
-        written += local_body_words;
-        allocation_row += rows;
-        unit += 1;
-    }
-    return written;
-}
-
-// Preserve the established twelve-word context API for callers whose units
-// have no alias catalog. The widened entrypoint below adds two per-unit words.
-pub fn lower_units(descriptors:[i32], descriptor_length: i32, unit_count: i32, contexts:[i32], context_length: i32, transport_descriptors:[i32], transport_descriptor_length: i32, declaration_catalog:[i32], declaration_catalog_length: i32, source_catalog:[i32], source_catalog_length: i32, token_catalog:[i32], token_catalog_length: i32, record_catalog:[i32], record_catalog_length: i32, offsets_catalog:[i32], offsets_catalog_length: i32, type_arena_catalog:[i32], type_arena_catalog_length: i32, resolution_catalog:[i32], resolution_catalog_length: i32, signature_catalog:[i32], signature_catalog_length: i32, allocated:[i32], allocation_words: i32, declaration_words: i32, source_scratch:[i32], source_capacity: i32, token_scratch:[i32], token_capacity: i32, record_scratch:[i32], record_capacity: i32, offsets_scratch:[i32], offsets_capacity: i32, type_arena_scratch:[i32], type_arena_capacity: i32, resolution_scratch:[i32], resolution_capacity: i32, declaration_scratch:[i32], declaration_capacity: i32, allocation_scratch:[i32], allocation_capacity: i32, signature_scratch:[i32], signature_capacity: i32, expression_arena:[i32], expression_capacity: i32, type_output:[i32], type_output_capacity: i32, body_scratch:[i32], body_scratch_capacity: i32, body_catalog:[i32], body_capacity: i32) -> i32 {
-    return lower_units_context(descriptors, descriptor_length, unit_count, contexts,
-        context_length, transport_descriptors, transport_descriptor_length,
-        declaration_catalog, declaration_catalog_length, source_catalog,
-        source_catalog_length, token_catalog, token_catalog_length, record_catalog,
-        record_catalog_length, offsets_catalog, offsets_catalog_length,
-        type_arena_catalog, type_arena_catalog_length, resolution_catalog,
-        resolution_catalog_length, signature_catalog, signature_catalog_length,
-        allocated, allocation_words, declaration_words, source_scratch,
-        source_capacity, token_scratch, token_capacity, record_scratch,
-        record_capacity, offsets_scratch, offsets_capacity, type_arena_scratch,
-        type_arena_capacity, resolution_scratch, resolution_capacity,
-        declaration_scratch, declaration_capacity, allocation_scratch,
-        allocation_capacity, signature_scratch, signature_capacity,
-        expression_arena, expression_capacity, type_output, type_output_capacity,
-        body_scratch, body_scratch_capacity, body_catalog, body_capacity,
-        CONTEXT_WORDS, resolution_scratch, 0, resolution_scratch, 0,
-        resolution_scratch, 0);
-}
-
-// Widened unit/context entrypoint. Context words 12 and 13 are the validated
-// alias-catalog offset and length for each unit; all other slices retain the
-// existing signatures.lower_units layout and disjointness checks.
-pub fn lower_units_aliases(descriptors:[i32], descriptor_length: i32, unit_count: i32, contexts:[i32], context_length: i32, transport_descriptors:[i32], transport_descriptor_length: i32, declaration_catalog:[i32], declaration_catalog_length: i32, source_catalog:[i32], source_catalog_length: i32, token_catalog:[i32], token_catalog_length: i32, record_catalog:[i32], record_catalog_length: i32, offsets_catalog:[i32], offsets_catalog_length: i32, type_arena_catalog:[i32], type_arena_catalog_length: i32, resolution_catalog:[i32], resolution_catalog_length: i32, signature_catalog:[i32], signature_catalog_length: i32, allocated:[i32], allocation_words: i32, declaration_words: i32, source_scratch:[i32], source_capacity: i32, token_scratch:[i32], token_capacity: i32, record_scratch:[i32], record_capacity: i32, offsets_scratch:[i32], offsets_capacity: i32, type_arena_scratch:[i32], type_arena_capacity: i32, resolution_scratch:[i32], resolution_capacity: i32, declaration_scratch:[i32], declaration_capacity: i32, allocation_scratch:[i32], allocation_capacity: i32, signature_scratch:[i32], signature_capacity: i32, expression_arena:[i32], expression_capacity: i32, type_output:[i32], type_output_capacity: i32, body_scratch:[i32], body_scratch_capacity: i32, body_catalog:[i32], body_capacity: i32, alias_catalog:[i32], alias_catalog_length: i32, alias_scratch:[i32], alias_scratch_capacity: i32, alias_work:[i32], alias_work_capacity: i32) -> i32 {
-    return lower_units_context(descriptors, descriptor_length, unit_count, contexts,
-        context_length, transport_descriptors, transport_descriptor_length,
-        declaration_catalog, declaration_catalog_length, source_catalog,
-        source_catalog_length, token_catalog, token_catalog_length, record_catalog,
-        record_catalog_length, offsets_catalog, offsets_catalog_length,
-        type_arena_catalog, type_arena_catalog_length, resolution_catalog,
-        resolution_catalog_length, signature_catalog, signature_catalog_length,
-        allocated, allocation_words, declaration_words, source_scratch,
-        source_capacity, token_scratch, token_capacity, record_scratch,
-        record_capacity, offsets_scratch, offsets_capacity, type_arena_scratch,
-        type_arena_capacity, resolution_scratch, resolution_capacity,
-        declaration_scratch, declaration_capacity, allocation_scratch,
-        allocation_capacity, signature_scratch, signature_capacity,
-        expression_arena, expression_capacity, type_output, type_output_capacity,
-        body_scratch, body_scratch_capacity, body_catalog, body_capacity,
-        ALIAS_CONTEXT_WORDS, alias_catalog, alias_catalog_length, alias_scratch,
-        alias_scratch_capacity, alias_work, alias_work_capacity);
-}
-
-fn valid_global_declarations(input:[i32], length: i32, words: i32,
+fn valid_global_declarations(input: lowering::declarations::Table,
     unit_count: i32) -> bool {
-    if (!valid_range(0, words, length) || words <= lowering::declarations::HEADER - 1
-        || input[0] <= 0
-        || words != lowering::declarations::HEADER
-            + input[0] * lowering::declarations::ROW) {
+    if (!lowering::declarations::table_has_exact_rows(input)) {
         return false;
     }
+    let rows: i32 = lowering::declarations::count_rows(
+        lowering::declarations::table_header(input));
+    if (rows <= 0) { return false; }
     let row: i32 = 0;
-    while (row <= input[0] - 1) {
-        let slot: i32 = lowering::declarations::HEADER
-            + row * lowering::declarations::ROW;
-        if (input[slot] < 0 || input[slot] >= unit_count) { return false; }
-        row += 1;
-    }
-    return true;
-}
-
-fn valid_global_allocation(input:[i32], length: i32, words: i32,
-    unit_count: i32) -> bool {
-    if (!valid_range(0, words, length) || words <= lowering::declarations::HEADER - 1
-        || input[0] != unit_count || input[1] <= 0
-        || words != lowering::declarations::HEADER + input[1] * 10) {
-        return false;
-    }
-    let row: i32 = 0;
-    while (row <= input[1] - 1) {
-        let slot: i32 = lowering::declarations::HEADER + row * 10;
-        if (input[slot] < 0 || input[slot] >= unit_count) { return false; }
-        row += 1;
-    }
-    return true;
-}
-
-// Validate one record range inside the aggregate signature table. Transport
-// descriptors retain per-unit record partitions, while bodies.lower_owned
-// resolves every function against the complete table at offset zero.
-fn valid_signature_records(input:[i32], offset: i32, words: i32,
-    length: i32) -> bool {
-    if (!valid_range(offset, words, length) || words < lowering::signatures::RECORD) {
-        return false;
-    }
-    let position: i32 = offset;
-    let finish: i32 = offset + words;
-    while (position <= finish - 1) {
-        if (position > finish - lowering::signatures::RECORD
-            || input[position] < 0 || input[position + 5] < 0
-            || input[position + 5] > finish - position
-                - lowering::signatures::RECORD) {
+    while (row <= rows - 1) {
+        let declaration: lowering::declarations::DeclarationRow =
+            lowering::declarations::table_row(input, row);
+        if (lowering::declarations::row_unit(declaration) <= -1
+            || lowering::declarations::row_unit(declaration) >= unit_count) {
             return false;
         }
-        position += lowering::signatures::RECORD + input[position + 5];
+        row += 1;
     }
-    return position == finish;
+    return true;
+}
+
+fn valid_global_allocation(input: lowering::allocation::Table,
+    unit_count: i32) -> bool {
+    if (!lowering::allocation::table_has_exact_rows(input)) {
+        return false;
+    }
+    let header: lowering::allocation::AllocationHeader =
+        lowering::allocation::table_header(input);
+    if (header.units != unit_count || header.rows <= 0) { return false; }
+    let row: i32 = 0;
+    while (row <= header.rows - 1) {
+        let allocation: lowering::allocation::AllocationRow =
+            lowering::allocation::table_row(input, row);
+        if (lowering::allocation::row_unit(allocation) <= -1
+            || lowering::allocation::row_unit(allocation) >= unit_count) {
+            return false;
+        }
+        row += 1;
+    }
+    return true;
+}
+
+// Body lowering resolves functions through the native signature index.
+pub struct BodyUnitInputs {
+    unit_count: i32,
+    contexts: lowering::unit_context::Table,
+    transport_descriptors: lowering::unit_descriptor::Table,
+    unit_declarations: lowering::declarations::Catalog,
+    global_declarations: lowering::declarations::Table,
+    sources: WordRegion,
+    tokens: verified::token::TokenTable,
+    trees: verified::syntax_tree::Catalog,
+    resolutions: lowering::types::ResolutionTable,
+    values: lowering::value_catalog::ValueTable,
+    signature_index: lowering::signature_index::Table,
+    allocations: lowering::allocation::Table,
+    aliases: lowering::aliases::Table,
+}
+
+pub struct BodyUnitWorkspace {
+    type_arena: verified::surface_type::TypeArena,
+    resolutions: lowering::types::ResolutionTable,
+    values: lowering::value_catalog::ValueTable,
+    expressions: verified::surface_expr::ExpressionArena,
+    type_output: WordRegion,
+    body: WordRegion,
+    body_catalog: WordRegion,
+    alias_work: WordRegion,
 }
 
 // Global body boundary. Declaration and allocation tables are passed intact;
-// only the unit-owned allocation rows are emitted against the copied local
-// syntax arenas. Signature offsets in transport descriptors identify each
-// unit's header-bearing partition for transport only. `global_signatures` is
-// the one aggregate header-bearing table used by every owned body. Each
-// sixteen-word context adds a tagged value-name slice at words 14 and 15;
-// those keys are local token indices and values are global function IDs.
-pub fn lower_units_owned(descriptors:[i32], descriptor_length: i32,
-    unit_count: i32, contexts:[i32], context_length: i32,
-    transport_descriptors:[i32], transport_descriptor_length: i32,
-    unit_declarations:[i32], unit_declaration_length: i32,
-    global_declarations:[i32], global_declaration_words: i32,
-    source_catalog:[i32], source_catalog_length: i32,
-    token_catalog:[i32], token_catalog_length: i32,
-    record_catalog:[i32], record_catalog_length: i32,
-    offsets_catalog:[i32], offsets_catalog_length: i32,
-    type_arena_catalog:[i32], type_arena_catalog_length: i32,
-    resolution_catalog:[i32], resolution_catalog_length: i32,
-    value_catalog:[i32], value_catalog_length: i32,
-    signature_catalog:[i32], signature_catalog_length: i32,
-    global_signatures:[i32], global_signature_words: i32,
-    allocated:[i32], allocation_words: i32,
-    source_scratch:[i32], source_capacity: i32,
-    token_scratch:[i32], token_capacity: i32,
-    record_scratch:[i32], record_capacity: i32,
-    offsets_scratch:[i32], offsets_capacity: i32,
-    type_arena_scratch:[i32], type_arena_capacity: i32,
-    resolution_scratch:[i32], resolution_capacity: i32,
-    value_scratch:[i32], value_scratch_capacity: i32,
-    expression_arena:[i32], expression_capacity: i32,
-    type_output:[i32], type_output_capacity: i32,
-    body_scratch:[i32], body_scratch_capacity: i32,
-    body_catalog:[i32], body_capacity: i32,
-    alias_catalog:[i32], alias_catalog_length: i32,
-    alias_scratch:[i32], alias_scratch_capacity: i32,
-    alias_work:[i32], alias_work_capacity: i32) -> i32 {
-    if (unit_count <= 0 || descriptor_length <= -1
-        || descriptor_length != unit_count * lowering::units::DESCRIPTOR_WORDS
-        || context_length <= -1
-        || context_length != unit_count * VALUE_CONTEXT_WORDS
-        || transport_descriptor_length <= -1
-        || transport_descriptor_length != unit_count * DESCRIPTOR_WORDS
-        || unit_declaration_length <= -1 || source_catalog_length <= -1
-        || token_catalog_length <= -1 || record_catalog_length <= -1
-        || offsets_catalog_length <= -1 || type_arena_catalog_length <= -1
-        || resolution_catalog_length <= -1 || value_catalog_length <= -1
-        || signature_catalog_length <= -1
-        || global_signature_words <= -1
-        || alias_catalog_length <= -1 || allocation_words <= 7
-        || source_capacity <= -1 || token_capacity <= -1
-        || record_capacity <= -1 || offsets_capacity <= -1
+// only the unit-owned allocation rows are emitted against decoded syntax
+// trees. The aggregate signature stream has already been decoded
+// into `signature_index`; value-name spans use local tokens and global IDs.
+pub fn lower_units_owned(input: BodyUnitInputs,
+    workspace: BodyUnitWorkspace) -> i32 {
+    let unit_count: i32 = input.unit_count;
+    let context_region: lowering::unit_context::Table = input.contexts;
+    let transport_region: lowering::unit_descriptor::Table =
+        input.transport_descriptors;
+    let unit_declarations: lowering::declarations::Catalog =
+        input.unit_declarations;
+    let global_declarations: lowering::declarations::Table =
+        input.global_declarations;
+    let source_region: WordRegion = input.sources;
+    let token_region: verified::token::TokenTable = input.tokens;
+    let tree_catalog: verified::syntax_tree::Catalog = input.trees;
+    let trees: [verified::syntax_tree::Tree] = tree_catalog.data;
+    let resolution_region: lowering::types::ResolutionTable =
+        input.resolutions;
+    let value_region: lowering::value_catalog::ValueTable = input.values;
+    let allocation_table: lowering::allocation::Table = input.allocations;
+    let alias_region: lowering::aliases::Table = input.aliases;
+    let descriptor_count: i32 = unit_declarations.count;
+    let contexts: [lowering::unit_context::UnitContext] =
+        context_region.data;
+    let context_count: i32 = context_region.count;
+    let transport_descriptors: [lowering::unit_descriptor::UnitDescriptor] =
+        transport_region.data;
+    let transport_descriptor_count: i32 = transport_region.count;
+    let source_catalog: [i32] = source_region.data;
+    let source_catalog_length: i32 = source_region.words;
+    let token_catalog: verified::token::TokenTable = token_region;
+    let token_catalog_length: i32 = token_region.count;
+    let lexical_catalogs: lowering::unit_context::LexicalCatalogs =
+        lowering::unit_context::LexicalCatalogs {
+            sources: source_catalog,
+            source_words: source_catalog_length,
+            tokens: token_catalog,
+        };
+    let resolution_catalog_length: i32 = resolution_region.count;
+    let value_catalog_count: i32 = value_region.count;
+    let alias_catalog: [lowering::aliases::Catalog] = alias_region.data;
+    let alias_catalog_count: i32 = alias_region.count;
+    let type_arena_work: verified::surface_type::TypeArena =
+        workspace.type_arena;
+    let resolution_work: lowering::types::ResolutionTable =
+        workspace.resolutions;
+    let value_work: lowering::value_catalog::ValueTable = workspace.values;
+    let signature_index: lowering::signature_index::Table =
+        input.signature_index;
+    let expression_work: verified::surface_expr::ExpressionArena =
+        workspace.expressions;
+    let type_output_work: WordRegion = workspace.type_output;
+    let body_work: WordRegion = workspace.body;
+    let body_catalog_region: WordRegion = workspace.body_catalog;
+    let alias_resolution_work: WordRegion = workspace.alias_work;
+    let type_arena_capacity: i32 = type_arena_work.capacity;
+    let resolution_scratch: [lowering::types::ResolutionRow] =
+        resolution_work.data;
+    let resolution_capacity: i32 = resolution_work.count;
+    let value_scratch: lowering::value_catalog::ValueTable = value_work;
+    let value_scratch_capacity: i32 = value_work.count;
+    let expression_capacity: i32 = expression_work.capacity;
+    let type_output: [i32] = type_output_work.data;
+    let type_output_capacity: i32 = type_output_work.words;
+    let body_scratch: [i32] = body_work.data;
+    let body_scratch_capacity: i32 = body_work.words;
+    let body_catalog: [i32] = body_catalog_region.data;
+    let body_capacity: i32 = body_catalog_region.words;
+    let alias_work: [i32] = alias_resolution_work.data;
+    let alias_work_capacity: i32 = alias_resolution_work.words;
+    if (unit_count <= 0 || descriptor_count != unit_count
+        || context_count != unit_count
+        || transport_descriptor_count != unit_count
+        || tree_catalog.count != unit_count
+        || source_catalog_length <= -1
+        || token_catalog_length <= -1
+        || resolution_catalog_length <= -1 || value_catalog_count <= -1
+        || (alias_catalog_count != 0 && alias_catalog_count != unit_count)
         || type_arena_capacity <= 0 || resolution_capacity <= -1
         || value_scratch_capacity <= -1
         || expression_capacity <= 0 || type_output_capacity <= 0
-        || body_scratch_capacity <= lowering::bodies::HEADER
-        || body_capacity <= lowering::bodies::HEADER
-        || alias_scratch_capacity <= -1 || alias_work_capacity <= -1) {
-        return -1;
+        || body_scratch_capacity <= lowering::body_context::HEADER
+        || body_capacity <= lowering::body_context::HEADER
+        || alias_work_capacity <= -1) {
+        return invalid();
     }
-    if (!valid_global_declarations(global_declarations,
-            global_declaration_words, global_declaration_words, unit_count)) {
-        return -1;
+    if (!valid_global_declarations(global_declarations, unit_count)) {
+        return invalid();
     }
-    if (!valid_global_allocation(allocated, allocation_words,
-            allocation_words, unit_count)) {
-        return -1;
+    if (!valid_global_allocation(allocation_table, unit_count)) {
+        return invalid();
     }
-    if (!valid_signature_table(global_signatures, 0,
-            global_signature_words, global_signature_words)) {
-        return -1;
+    let allocation_header: lowering::allocation::AllocationHeader =
+        lowering::allocation::table_header(allocation_table);
+    let expected_index_count: i32 =
+        allocation_header.declarations;
+    if (expected_index_count <= 0
+        || expected_index_count > allocation_header.rows
+        || signature_index.count != expected_index_count) {
+        return invalid();
     }
+    let catalog_lengths: lowering::signature_producer::ContextCatalogLengths =
+        lowering::signature_producer::context_catalog_lengths(source_catalog_length,
+            token_catalog_length, resolution_catalog_length);
     let unit: i32 = 0;
     while (unit <= unit_count - 1) {
-        let descriptor: i32 = unit * lowering::units::DESCRIPTOR_WORDS;
-        let context: i32 = unit * VALUE_CONTEXT_WORDS;
-        let transport: i32 = unit * DESCRIPTOR_WORDS;
-        let declaration_offset: i32 = descriptors[descriptor
-            + lowering::units::DECLARATION_OFFSET];
-        let declaration_words: i32 = descriptors[descriptor
-            + lowering::units::DECLARATION_WORDS];
-        if (!valid_declaration_table(unit_declarations, unit_declaration_length,
-                declaration_offset, declaration_words, unit)
-            || !valid_context(contexts, context, source_catalog_length,
-                token_catalog_length, record_catalog_length,
-                offsets_catalog_length, type_arena_catalog_length,
-                resolution_catalog_length)
-            || !valid_owned_context(contexts, context, alias_catalog_length,
-                value_catalog, value_catalog_length,
-                contexts[context + lowering::signatures::TOKEN_COUNT],
-                allocated, allocation_words, global_signatures,
-            global_signature_words)) {
-            return -1;
+        let context: i32 = unit;
+        let declaration_table: lowering::declarations::Table =
+            lowering::declarations::catalog_table(unit_declarations, unit);
+        let owned_validation: OwnedContextValidation =
+            OwnedContextValidation {
+                context: contexts[context],
+                values: value_region,
+                token_count: contexts[context].token_count,
+                allocations: allocation_table,
+                signature_index: signature_index,
+            };
+        if (!valid_declaration_table(declaration_table, unit)
+            || !lowering::signature_producer::context_valid(contexts[context],
+                catalog_lengths)
+            || !valid_owned_context(owned_validation)) {
+            return invalid();
         }
-        let source_offset: i32 = contexts[context + lowering::signatures::SOURCE_OFFSET];
-        let source_words: i32 = contexts[context + lowering::signatures::SOURCE_LENGTH];
-        let token_offset: i32 = contexts[context + lowering::signatures::TOKEN_OFFSET];
-        let token_count: i32 = contexts[context + lowering::signatures::TOKEN_COUNT];
-        if (transport_descriptors[transport + SOURCE_OFFSET] != source_offset
-            || transport_descriptors[transport + SOURCE_LENGTH] != source_words
-            || transport_descriptors[transport + TOKEN_OFFSET] != token_offset
-            || transport_descriptors[transport + TOKEN_COUNT] != token_count
-            || !valid_transport_signature_slice(signature_catalog,
-                transport_descriptors[transport + SIGNATURE_OFFSET],
-                transport_descriptors[transport + SIGNATURE_WORDS],
-                signature_catalog_length)) {
-            return -1;
+        let source_offset: i32 = contexts[context].source_offset;
+        let source_words: i32 = contexts[context].source_length;
+        let token_offset: i32 = contexts[context].token_offset;
+        let token_count: i32 = contexts[context].token_count;
+        if (transport_descriptors[unit].source_offset != source_offset
+            || transport_descriptors[unit].source_length != source_words
+            || transport_descriptors[unit].token_offset != token_offset
+            || transport_descriptors[unit].token_count != token_count) {
+            return invalid();
         }
         unit += 1;
     }
     let check: i32 = 0;
     while (check <= unit_count - 1) {
-        let context: i32 = check * VALUE_CONTEXT_WORDS;
-        let declaration: i32 = check * lowering::units::DESCRIPTOR_WORDS;
-        let transport: i32 = check * DESCRIPTOR_WORDS;
-        let source_offset: i32 = contexts[context + lowering::signatures::SOURCE_OFFSET];
-        let source_words: i32 = contexts[context + lowering::signatures::SOURCE_LENGTH];
-        let token_offset: i32 = contexts[context + lowering::signatures::TOKEN_OFFSET];
-        let token_words: i32 = contexts[context + lowering::signatures::TOKEN_COUNT] * 3;
-        let record_offset: i32 = contexts[context + lowering::signatures::RECORD_OFFSET];
-        let record_words: i32 = contexts[context + lowering::signatures::RECORD_LENGTH];
-        let offsets_offset: i32 = contexts[context + lowering::signatures::OFFSETS_OFFSET];
-        let offsets_words: i32 = contexts[context + lowering::signatures::NODE_COUNT];
-        let type_offset: i32 = contexts[context + lowering::signatures::TYPE_ARENA_OFFSET];
-        let type_words: i32 = contexts[context + lowering::signatures::TYPE_ARENA_LENGTH];
-        let alias_offset: i32 = contexts[context + ALIAS_OFFSET];
-        let alias_words: i32 = contexts[context + ALIAS_WORDS];
-        let signature_offset: i32 = transport_descriptors[transport + SIGNATURE_OFFSET];
-        let signature_words: i32 = transport_descriptors[transport + SIGNATURE_WORDS];
+        let context: i32 = check;
+        let source_offset: i32 = contexts[context].source_offset;
+        let source_words: i32 = contexts[context].source_length;
+        let token_offset: i32 = contexts[context].token_offset;
+        let token_rows: i32 = contexts[context].token_count;
         let previous: i32 = 0;
         while (previous <= check - 1) {
-            let previous_context: i32 = previous * VALUE_CONTEXT_WORDS;
-            let previous_descriptor: i32 = previous * lowering::units::DESCRIPTOR_WORDS;
-            let previous_transport: i32 = previous * DESCRIPTOR_WORDS;
+            let previous_context: i32 = previous;
             if (overlap(source_offset, source_words,
-                    contexts[previous_context + lowering::signatures::SOURCE_OFFSET],
-                    contexts[previous_context + lowering::signatures::SOURCE_LENGTH])) { return -132001001; }
-            if (overlap(token_offset, token_words,
-                    contexts[previous_context + lowering::signatures::TOKEN_OFFSET],
-                    contexts[previous_context + lowering::signatures::TOKEN_COUNT] * 3)) { return -132001002; }
-            if (overlap(record_offset, record_words,
-                    contexts[previous_context + lowering::signatures::RECORD_OFFSET],
-                    contexts[previous_context + lowering::signatures::RECORD_LENGTH])) { return -132001003; }
-            if (overlap(offsets_offset, offsets_words,
-                    contexts[previous_context + lowering::signatures::OFFSETS_OFFSET],
-                    contexts[previous_context + lowering::signatures::NODE_COUNT])) { return -132001004; }
-            if (overlap(type_offset, type_words,
-                    contexts[previous_context + lowering::signatures::TYPE_ARENA_OFFSET],
-                    contexts[previous_context + lowering::signatures::TYPE_ARENA_LENGTH])) { return -132001005; }
-            if (overlap(alias_offset, alias_words,
-                    contexts[previous_context + ALIAS_OFFSET],
-                    contexts[previous_context + ALIAS_WORDS])) { return -132001006; }
-            if (overlap(contexts[context + VALUE_OFFSET],
-                    contexts[context + VALUE_WORDS],
-                    contexts[previous_context + VALUE_OFFSET],
-                    contexts[previous_context + VALUE_WORDS])) { return -132001007; }
-            if (overlap(signature_offset, signature_words,
-                    transport_descriptors[previous_transport + SIGNATURE_OFFSET],
-                    transport_descriptors[previous_transport + SIGNATURE_WORDS])) { return -132001008; }
+                    contexts[previous_context].source_offset,
+                    contexts[previous_context].source_length)) { return invalid(); }
+            if (overlap(token_offset, token_rows,
+                    contexts[previous_context].token_offset,
+                    contexts[previous_context].token_count)) { return invalid(); }
+            if (overlap(contexts[context].value_row_offset,
+                    contexts[context].value_count,
+                    contexts[previous_context].value_row_offset,
+                    contexts[previous_context].value_count)) { return invalid(); }
             previous += 1;
         }
         check += 1;
@@ -725,97 +424,95 @@ pub fn lower_units_owned(descriptors:[i32], descriptor_length: i32,
     let written: i32 = 0;
     unit = 0;
     while (unit <= unit_count - 1) {
-        let context: i32 = unit * VALUE_CONTEXT_WORDS;
-        let transport: i32 = unit * DESCRIPTOR_WORDS;
-        if (!copy_words(source_catalog,
-                contexts[context + lowering::signatures::SOURCE_OFFSET],
-                contexts[context + lowering::signatures::SOURCE_LENGTH],
-                source_scratch, source_capacity)
-            || !copy_words(token_catalog,
-                contexts[context + lowering::signatures::TOKEN_OFFSET],
-                contexts[context + lowering::signatures::TOKEN_COUNT] * 3,
-                token_scratch, token_capacity)
-            || !copy_words(record_catalog,
-                contexts[context + lowering::signatures::RECORD_OFFSET],
-                contexts[context + lowering::signatures::RECORD_LENGTH],
-                record_scratch, record_capacity)
-            || !copy_words(offsets_catalog,
-                contexts[context + lowering::signatures::OFFSETS_OFFSET],
-                contexts[context + lowering::signatures::NODE_COUNT],
-                offsets_scratch, offsets_capacity)
-            || !copy_words(type_arena_catalog,
-                contexts[context + lowering::signatures::TYPE_ARENA_OFFSET],
-                contexts[context + lowering::signatures::TYPE_ARENA_LENGTH],
-                type_arena_scratch, type_arena_capacity)
-            || !copy_words(resolution_catalog,
-                contexts[context + lowering::signatures::RESOLUTION_OFFSET],
-                contexts[context + lowering::signatures::RESOLUTION_LENGTH],
-                resolution_scratch, resolution_capacity)
-            || !copy_words(value_catalog,
-                contexts[context + VALUE_OFFSET],
-                contexts[context + VALUE_WORDS], value_scratch,
-                value_scratch_capacity)) {
-            return -1;
+        let context: i32 = unit;
+        let lexical: lowering::unit_context::UnitLexical =
+            lowering::unit_context::lexical(lexical_catalogs,
+                contexts[context]);
+        let unit_tree: verified::syntax_tree::Tree = trees[unit];
+        if (!lexical.valid
+            || unit_tree.node_count != contexts[context].node_count
+            || !lowering::types::copy_rows(resolution_region,
+                contexts[context].resolution_row_offset,
+                contexts[context].resolution_count,
+                resolution_work)
+            || !lowering::value_catalog::copy_rows(value_region,
+                contexts[context].value_row_offset,
+                contexts[context].value_count, value_scratch)) {
+            return invalid();
         }
-        let alias_offset: i32 = contexts[context + ALIAS_OFFSET];
-        let alias_words: i32 = contexts[context + ALIAS_WORDS];
-        let value_words: i32 = contexts[context + VALUE_WORDS];
-        if (!copy_words(alias_catalog, alias_offset, alias_words,
-                alias_scratch, alias_scratch_capacity)
-            || !lowering::aliases::valid(alias_scratch, alias_words,
-                token_scratch, contexts[context + lowering::signatures::TOKEN_COUNT])) {
-            return -1;
+        let unit_source: [i32] = lexical.source;
+        let unit_tokens: verified::token::TokenTable = lexical.tokens;
+        let aliases: lowering::aliases::Catalog = lowering::aliases::empty();
+        if (alias_catalog_count == unit_count) { aliases = alias_catalog[unit]; }
+        let value_count: i32 = contexts[context].value_count;
+        if (alias_catalog_count == unit_count
+            && !lowering::aliases::valid(aliases, unit_tokens)) {
+            return invalid();
         }
-        let node: i32 = 0;
-        while (node <= contexts[context + lowering::signatures::NODE_COUNT] - 1) {
-            if (offsets_scratch[node] <= -1
-                || offsets_scratch[node] > contexts[context + lowering::signatures::RECORD_LENGTH] - 4) {
-                return -1;
-            }
-            node += 1;
-        }
-        let local_body_words: i32 = lowering::bodies::lower_owned(unit,
-            source_scratch, contexts[context + lowering::signatures::SOURCE_LENGTH],
-            token_scratch, contexts[context + lowering::signatures::TOKEN_COUNT],
-            record_scratch, contexts[context + lowering::signatures::RECORD_LENGTH],
-            offsets_scratch, contexts[context + lowering::signatures::NODE_COUNT],
-            global_declarations, global_declaration_words, allocated,
-            allocation_words, global_signatures, global_signature_words,
-            expression_arena, expression_capacity, type_arena_scratch,
-            contexts[context + lowering::signatures::TYPE_ARENA_LENGTH],
-            resolution_scratch, contexts[context + lowering::signatures::RESOLUTION_LENGTH],
-            alias_scratch, alias_words, alias_work, alias_work_capacity,
-            type_output, type_output_capacity, value_scratch, value_words,
-            body_scratch,
-            body_scratch_capacity);
-        if (local_body_words <= lowering::bodies::HEADER - 1
-            || body_scratch[3] != local_body_words
+        let body_inputs: lowering::body_context::BodyLoweringInputs =
+            lowering::body_context::BodyLoweringInputs {
+                owner_unit: unit,
+                source: lowering::body_context::region(unit_source,
+                    contexts[context].source_length),
+                tokens: unit_tokens,
+                tree: unit_tree,
+                allocations: allocation_table,
+                signature_index: signature_index,
+                resolutions: lowering::types::resolutions(resolution_scratch,
+                    contexts[context].resolution_count,
+                    lowering::types::IdentifierToken),
+                aliases: aliases,
+                values: lowering::value_catalog::table(value_scratch.data,
+                    value_count),
+            };
+        let body_workspace: lowering::body_context::BodyLoweringWorkspace =
+            lowering::body_context::BodyLoweringWorkspace {
+                expressions: expression_work,
+                types: type_arena_work,
+                alias_scratch: lowering::body_context::region(alias_work,
+                    alias_work_capacity),
+                type_output: lowering::body_context::region(type_output,
+                    type_output_capacity),
+                output: lowering::body_context::region(body_scratch,
+                    body_scratch_capacity),
+            };
+        let local_body_words: i32 = lowering::bodies::lower_owned(
+            body_inputs, body_workspace);
+        if (local_body_words <= lowering::body_context::HEADER - 1
+            || lowering::body_context::header_words_at(body_scratch, 0)
+                != local_body_words
             || local_body_words > body_scratch_capacity) {
             return local_body_words;
         }
-        let local_position: i32 = lowering::bodies::HEADER;
+        let local_position: i32 = lowering::body_context::HEADER;
         while (local_position <= local_body_words - 1) {
-            let record_words: i32 = body_scratch[local_position];
-            if (record_words <= lowering::bodies::RECORD_HEADER - 1
-                || record_words > local_body_words - local_position - 1
-                || body_scratch[local_position + 3] <= -1
+            let span: lowering::body_context::FunctionSpan =
+                lowering::body_context::read_function_span(body_scratch,
+                    local_position);
+            if (!lowering::body_context::span_fits(span, local_body_words,
+                    lowering::body_context::RECORD_HEADER)
+                || backend::syntax::function_id_at(body_scratch,
+                    span.function) <= -1
                 || prior_body_id(body_catalog, written,
-                    body_scratch[local_position + 3])) {
-                return -1;
+                    backend::syntax::function_id_at(body_scratch,
+                        span.function))) {
+                return invalid();
             }
-            local_position += record_words + 1;
+            local_position = lowering::body_context::span_end(span);
         }
-        if (local_position != local_body_words
-            || body_capacity - written < local_body_words) {
-            return -1;
+        if (local_position != local_body_words) {
+            return invalid();
+        }
+        if (!(local_body_words <= body_capacity - written)) {
+            return invalid();
         }
         let word: i32 = 0;
         while (word <= local_body_words - 1) {
             body_catalog[written + word] = body_scratch[word];
             word += 1;
         }
-        transport_descriptors[transport + BODY_OFFSET] = written;
-        transport_descriptors[transport + BODY_WORDS] = local_body_words;
+        transport_descriptors[unit].body_offset = written;
+        transport_descriptors[unit].body_words = local_body_words;
         written += local_body_words;
         unit += 1;
     }

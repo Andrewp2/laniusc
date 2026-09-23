@@ -2784,7 +2784,6 @@ fn build_graph(
         _compact_call_args as "compact_call_args" in CallArguments =>
             hir_rows * core::mem::size_of::<HirCallArg>() as u64;
         _compact_hir_expr_parent as "compact_hir_expr_parent" in HirNodes => hir_rows * 4;
-        _compact_hir_expr_root as "compact_hir_expr_root" in HirNodes => hir_rows * 4;
         _compact_hir_nearest_loop as "compact_hir_nearest_loop" in HirNodes => hir_rows * 4;
         _compact_hir_nearest_block as "compact_hir_nearest_block" in HirNodes => hir_rows * 4;
         _compact_hir_nearest_control as "compact_hir_nearest_control" in HirNodes => hir_rows * 4;

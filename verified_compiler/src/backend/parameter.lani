@@ -3,38 +3,80 @@ import x86::register;
 import x86::encode;
 import x86::control;
 import x86::buffer;
+import backend::syntax;
 
-// Transport of a Core function, in signed i32 words:
-// [version=1, pointer_bits=64, function_id, result_type=1(i32),
-//  parameter_count, body_word_count, (local_id, type=1)*, body...].
-// Body constructors are preorder Core syntax: skip=0, sequence=2,
+const DIRECT_RETURN_WORDS: i32 = 4;
+const SEQUENCED_RETURN_WORDS: i32 = 6;
+pub const INTEGER_ARGUMENT_REGISTERS: i32 = 6;
+pub const STACK_ARGUMENT_BASE_BYTES: i32 = 16;
+const SEQUENCE_PREFIX_WORDS: i32 = 1;
+const RETURN_STATEMENT_FIELD: i32 = 0;
+const RETURN_PRESENCE_FIELD: i32 = 1;
+const RETURN_EXPRESSION_FIELD: i32 = 2;
+const RETURN_LOCAL_FIELD: i32 = 3;
+const SEQUENCE_SKIP_FIELD: i32 = 5;
+const FIRST_EXTENDED_ARGUMENT: i32 = 4;
+const LEGACY_ARGUMENT_RETURN_BYTES: i32 = 3;
+const EXTENDED_ARGUMENT_RETURN_BYTES: i32 = 4;
+
+// The function header and parameter rows are already typed. Body constructors
+// are preorder Core syntax: skip=0, sequence=2,
 // returnValue=10 followed by option some=1 and local expression=1,id.
 // This first lowering accepts return-of-parameter bodies, with or without
 // the frontend's trailing skip. Other Core forms are explicitly unsupported.
 // The transport is input data, not a new language or an assumed proof.
-pub fn select(input: [i32], length: i32) -> i32 {
-    if (length <= 5) { return -1; }
-    if (input[0] != 1 || input[1] != 64 || input[2] <= -1 || input[3] != 1) { return -1; }
-    let count: i32 = input[4];
-    let body_length: i32 = input[5];
-    if (count <= 0 || count > 6 || (body_length != 4 && body_length != 6)) { return -1; }
-    let body: i32 = 6 + count * 2;
-    if (length != body + body_length) { return -1; }
-    let first: i32 = body;
-    if (body_length == 6) {
-        if (input[body] != 2 || input[body + 5] != 0) { return -1; }
-        first += 1;
+pub fn select(input: [i32], length: i32,
+    parameters: backend::syntax::FunctionParameters) -> i32 {
+    let header: backend::syntax::FunctionHeader = parameters.header;
+    if (header.kind != backend::syntax::DefinedFunction
+        || header.pointer_bits != backend::syntax::POINTER_BITS
+        || header.id <= -1
+        || header.result_type
+            != backend::syntax::type_code(
+            backend::syntax::TypeI32)) { return -1; }
+    let count: i32 = header.parameters;
+    let body_length: i32 = header.body_words;
+    if (parameters.start < 0 || parameters.start > parameters.length
+        || count > parameters.length - parameters.start
+        || count <= 0 || count > INTEGER_ARGUMENT_REGISTERS
+        || (body_length != DIRECT_RETURN_WORDS
+            && body_length != SEQUENCED_RETURN_WORDS)) { return -1; }
+    if (length != body_length) { return -1; }
+    let first: i32 = 0;
+    if (body_length == SEQUENCED_RETURN_WORDS) {
+        if (input[0] != backend::syntax::statement_code(
+                backend::syntax::StatementSequence)
+            || input[SEQUENCE_SKIP_FIELD]
+                != backend::syntax::statement_code(
+                backend::syntax::StatementSkip)) { return -1; }
+        first += SEQUENCE_PREFIX_WORDS;
     }
-    if (input[first] != 10 || input[first + 1] != 1 || input[first + 2] != 1) { return -1; }
-    let returned: i32 = input[first + 3];
+    if (input[first + RETURN_STATEMENT_FIELD]
+            != backend::syntax::statement_code(
+            backend::syntax::StatementReturn)
+        || input[first + RETURN_PRESENCE_FIELD]
+            != backend::syntax::presence_code(
+            backend::syntax::Present)
+        || input[first + RETURN_EXPRESSION_FIELD]
+            != backend::syntax::expression_code(
+            backend::syntax::ExprLocal)) { return -1; }
+    let returned: i32 = input[first + RETURN_LOCAL_FIELD];
     let selected: i32 = -1;
     let index: i32 = 0;
-    while (index <= count - 1) {
-        let id: i32 = input[6 + index * 2];
-        if (id <= -1 || input[7 + index * 2] != 1) { return -1; }
+    let values: [backend::syntax::Parameter] = parameters.data;
+    while (index != count) {
+        let parameter: backend::syntax::Parameter =
+            values[parameters.start + index];
+        let id: i32 = parameter.id;
+        if (id <= -1 || parameter.kind
+            != backend::syntax::type_code(backend::syntax::TypeI32)) {
+            return -1;
+        }
         let earlier: i32 = 0;
         while (earlier <= index - 1) {
-            if (input[6 + earlier * 2] == id) { return -1; }
+            let prior: backend::syntax::Parameter =
+                values[parameters.start + earlier];
+            if (prior.id == id) { return -1; }
             earlier += 1;
         }
         if (id == returned) { selected = index; }
@@ -54,15 +96,20 @@ pub fn argument_register(position: i32) -> i32 {
     return -1;
 }
 
-pub fn compile(input: [i32], length: i32, output: [i32], capacity: i32, cursor: i32) -> i32 {
-    let selected: i32 = select(input, length);
+pub fn compile(input: [i32], length: i32,
+    parameters: backend::syntax::FunctionParameters,
+    output: [i32], capacity: i32, cursor: i32) -> i32 {
+    let selected: i32 = select(input, length, parameters);
     if (selected <= -1) { return -1; }
     let source: i32 = argument_register(selected);
-    let size: i32 = 3;
-    if (selected >= 4) { size = 4; }
+    let size: i32 = LEGACY_ARGUMENT_RETURN_BYTES;
+    if (selected >= FIRST_EXTENDED_ARGUMENT) {
+        size = EXTENDED_ARGUMENT_RETURN_BYTES;
+    }
     // Reserve the entire function before emitting any bytes.
     if (!x86::buffer::fits(capacity, cursor, size)) { return -1; }
-    let next: i32 = x86::encode::move_register(output, capacity, cursor, 32, x86::register::RAX, source);
+    let next: i32 = x86::encode::move_register(output, capacity, cursor,
+        x86::register::WIDTH_32, x86::register::RAX, source);
     if (next <= -1) { return -1; }
     return x86::control::return_near(output, capacity, next);
 }

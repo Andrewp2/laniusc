@@ -5,27 +5,62 @@ import x86::encode;
 import x86::control;
 import x86::register;
 
+const DIRECT_LITERAL_RETURN_WORDS: i32 = 5;
+const SEQUENCED_LITERAL_RETURN_WORDS: i32 = 7;
+const UTF8_BYTE_MAX: i32 = 255;
+const STRING_ADDRESS_SEQUENCE_BYTES: i32 = 12;
+pub const CONSTANT_HEADER_WORDS: i32 = 3;
+pub const CONSTANT_ID_FIELD: i32 = 0;
+pub const CONSTANT_KIND_FIELD: i32 = 1;
+pub const CONSTANT_PAYLOAD_FIELD: i32 = 2;
+pub const SCALAR_CONSTANT_HIGH_FIELD: i32 = 3;
+pub const SCALAR_CONSTANT_WORDS: i32 = 4;
+
+const DIRECT_RETURN_STATEMENT_FIELD: i32 = 0;
+const DIRECT_RETURN_PRESENCE_FIELD: i32 = 1;
+const DIRECT_RETURN_EXPRESSION_FIELD: i32 = 2;
+const DIRECT_RETURN_TYPE_FIELD: i32 = 3;
+const DIRECT_RETURN_VALUE_FIELD: i32 = 4;
+const SEQUENCED_RETURN_STATEMENT_FIELD: i32 = 1;
+const SEQUENCED_RETURN_PRESENCE_FIELD: i32 = 2;
+const SEQUENCED_RETURN_EXPRESSION_FIELD: i32 = 3;
+const SEQUENCED_RETURN_TYPE_FIELD: i32 = 4;
+const SEQUENCED_RETURN_VALUE_FIELD: i32 = 5;
+const SEQUENCED_SKIP_FIELD: i32 = 6;
+const IMMEDIATE_RETURN_BYTES: i32 = 6;
+
 // Scalar constants contain id, kind, low, high. A string instead contains
 // id, STRING, byte_count, UTF-8 bytes. Layout is selected here in Lanius.
 pub fn constant_size(input: [i32], length: i32, position: i32) -> i32 {
-    if (position <= -1 || position > length - 3) { return -1; }
-    let kind: i32 = input[position + 1];
-    if (input[position] <= -1 || kind < backend::syntax::I32 || kind > backend::syntax::STRING) { return -1; }
-    if (kind == backend::syntax::STRING) {
-        let count: i32 = input[position + 2];
-        if (count <= -1 || count > length - position - 3) { return -1; }
+    if (position <= -1 || position > length - CONSTANT_HEADER_WORDS) {
+        return -1;
+    }
+    let kind: i32 = input[position + CONSTANT_KIND_FIELD];
+    if (input[position + CONSTANT_ID_FIELD] <= -1
+        || kind < backend::syntax::type_code(backend::syntax::TypeI32)
+        || kind > backend::syntax::type_code(backend::syntax::TypeString)) {
+        return -1;
+    }
+    if (kind == backend::syntax::type_code(backend::syntax::TypeString)) {
+        let count: i32 = input[position + CONSTANT_PAYLOAD_FIELD];
+        if (count <= -1
+            || count > length - position - CONSTANT_HEADER_WORDS) { return -1; }
         let index: i32 = 0;
         while (index <= count - 1) {
-            let byte: i32 = input[position + 3 + index];
-            if (byte <= -1 || byte > 255) { return -1; }
+            let byte: i32 = input[position + CONSTANT_HEADER_WORDS + index];
+            if (byte <= -1 || byte > UTF8_BYTE_MAX) { return -1; }
             index += 1;
         }
-        return 3 + count;
+        return CONSTANT_HEADER_WORDS + count;
     }
-    if (position > length - 4) { return -1; }
-    if (kind == backend::syntax::BOOL && input[position + 2] != 0 && input[position + 2] != 1) { return -1; }
-    if ((kind == backend::syntax::I32 || kind == backend::syntax::BOOL) && input[position + 3] != 0) { return -1; }
-    return 4;
+    if (position > length - SCALAR_CONSTANT_WORDS) { return -1; }
+    if (kind == backend::syntax::type_code(backend::syntax::TypeBool)
+        && !backend::syntax::valid_boolean(input[position
+            + CONSTANT_PAYLOAD_FIELD])) { return -1; }
+    if ((kind == backend::syntax::type_code(backend::syntax::TypeI32)
+            || kind == backend::syntax::type_code(backend::syntax::TypeBool))
+        && input[position + SCALAR_CONSTANT_HIGH_FIELD] != 0) { return -1; }
+    return SCALAR_CONSTANT_WORDS;
 }
 
 // Return a position-independent pointer in RAX and skip over the exact UTF-8
@@ -34,16 +69,21 @@ pub fn constant_size(input: [i32], length: i32, position: i32) -> i32 {
 pub fn string(input: [i32], length: i32, start: i32, count: i32,
     output: [i32], capacity: i32, cursor: i32) -> i32 {
     if (start <= -1 || start > length || count <= -1 || count > length - start ||
-        !x86::buffer::fits(capacity, cursor, 12)) { return -1; }
-    let padding: i32 = (4 - cursor % 4) % 4;
-    if (!x86::buffer::fits(capacity, cursor + 12, padding) ||
-        !x86::buffer::fits(capacity, cursor + 12 + padding, count)) { return -1; }
+        !x86::buffer::fits(capacity, cursor,
+            STRING_ADDRESS_SEQUENCE_BYTES)) { return -1; }
+    let padding: i32 = (x86::buffer::WORD_BYTES
+        - cursor % x86::buffer::WORD_BYTES) % x86::buffer::WORD_BYTES;
+    if (!x86::buffer::fits(capacity,
+            cursor + STRING_ADDRESS_SEQUENCE_BYTES, padding) ||
+        !x86::buffer::fits(capacity,
+            cursor + STRING_ADDRESS_SEQUENCE_BYTES + padding, count)) { return -1; }
     let index: i32 = 0;
     while (index <= count - 1) {
-        if (input[start + index] <= -1 || input[start + index] > 255) { return -1; }
+        if (input[start + index] <= -1
+            || input[start + index] > UTF8_BYTE_MAX) { return -1; }
         index += 1;
     }
-    let data: i32 = cursor + 12 + padding;
+    let data: i32 = cursor + STRING_ADDRESS_SEQUENCE_BYTES + padding;
     let next: i32 = x86::encode::relative_address(output, capacity, cursor, x86::register::RAX, 5 + padding);
     next = x86::control::jump(output, capacity, next, data + count);
     index = 0;
@@ -55,44 +95,75 @@ pub fn string(input: [i32], length: i32, start: i32, count: i32,
 
 // Exact literal-return fragment authenticated by the Lean x86 checker.  The
 // body does not inspect its parameters, so this compact path is valid for any
-// parameter count; the parameter rows remain in the frontend input but do not
-// need machine moves.  Its header is
-// [version=1, pointer_bits=64, id, result_type, parameter_count,
-//  body_word_count=5, returnValue, some, value, literal_type, value] or the
-// exact frontend-trailing form with body_word_count=7 and
+// parameter count; the typed function header is already decoded. Its body is
+// [returnValue, some, value, literal_type, value] or the frontend-trailing
 // [sequence, returnValue, some, value, literal_type, value, skip].
 // Keeping this path ahead of generic frame lowering makes the emitted bytes
 // equal the compact machine contract (mov eax,imm32; ret), including for an
 // unused aggregate parameter.
-pub fn return_value(input: [i32], length: i32, output: [i32], capacity: i32,
+pub fn return_value(input: [i32], length: i32,
+    header: backend::syntax::FunctionHeader, output: [i32], capacity: i32,
     cursor: i32) -> i32 {
-    if (length <= 5 || input[0] != 1 || input[1] != 64 || input[2] <= -1 ||
-        (input[3] != backend::syntax::I32 && input[3] != backend::syntax::BOOL)) {
+    if (header.kind != backend::syntax::DefinedFunction
+        || header.pointer_bits != backend::syntax::POINTER_BITS
+        || header.id <= -1
+        || (header.result_type
+                != backend::syntax::type_code(backend::syntax::TypeI32)
+            && header.result_type
+                != backend::syntax::type_code(backend::syntax::TypeBool))) {
         return -1;
     }
-    let count: i32 = input[4];
-    if (count <= -1 || count > (length - 6) / 2) { return -1; }
-    let body_start: i32 = 6 + count * 2;
-    let body_length: i32 = input[5];
-    if ((body_length != 5 && body_length != 7) ||
-        body_length != length - body_start) { return -1; }
-    if (body_length == 5 &&
-        (input[body_start] != 10 || input[body_start + 1] != 1 ||
-            input[body_start + 2] != 0 || input[body_start + 3] != input[3])) {
+    let body_length: i32 = header.body_words;
+    if (header.parameters < 0) { return -1; }
+    if ((body_length != DIRECT_LITERAL_RETURN_WORDS
+            && body_length != SEQUENCED_LITERAL_RETURN_WORDS) ||
+        body_length != length) { return -1; }
+    if (body_length == DIRECT_LITERAL_RETURN_WORDS &&
+        (input[DIRECT_RETURN_STATEMENT_FIELD]
+                != backend::syntax::statement_code(
+                backend::syntax::StatementReturn)
+            || input[DIRECT_RETURN_PRESENCE_FIELD]
+                != backend::syntax::presence_code(
+                backend::syntax::Present)
+            || input[DIRECT_RETURN_EXPRESSION_FIELD]
+                != backend::syntax::expression_code(
+                backend::syntax::ExprValue)
+            || input[DIRECT_RETURN_TYPE_FIELD]
+                != header.result_type)) {
         return -1;
     }
-    if (body_length == 7 &&
-        (input[body_start] != 2 || input[body_start + 1] != 10 ||
-            input[body_start + 2] != 1 || input[body_start + 3] != 0 ||
-            input[body_start + 4] != input[3] ||
-            input[body_start + 6] != 0)) {
+    if (body_length == SEQUENCED_LITERAL_RETURN_WORDS &&
+        (input[DIRECT_RETURN_STATEMENT_FIELD]
+                != backend::syntax::statement_code(
+                backend::syntax::StatementSequence)
+            || input[SEQUENCED_RETURN_STATEMENT_FIELD]
+                != backend::syntax::statement_code(
+                backend::syntax::StatementReturn)
+            || input[SEQUENCED_RETURN_PRESENCE_FIELD]
+                != backend::syntax::presence_code(
+                backend::syntax::Present)
+            || input[SEQUENCED_RETURN_EXPRESSION_FIELD]
+                != backend::syntax::expression_code(
+                backend::syntax::ExprValue)
+            || input[SEQUENCED_RETURN_TYPE_FIELD]
+                != header.result_type
+            || input[SEQUENCED_SKIP_FIELD]
+                != backend::syntax::statement_code(
+                backend::syntax::StatementSkip))) {
         return -1;
     }
-    let value: i32 = input[body_start + 4];
-    if (body_length == 7) { value = input[body_start + 5]; }
-    if (input[3] == backend::syntax::BOOL && value != 0 && value != 1) { return -1; }
-    if (!x86::buffer::fits(capacity, cursor, 6)) { return -1; }
-    let next: i32 = x86::encode::immediate(output, capacity, cursor, 32,
+    let value: i32 = input[DIRECT_RETURN_VALUE_FIELD];
+    if (body_length == SEQUENCED_LITERAL_RETURN_WORDS) {
+        value = input[SEQUENCED_RETURN_VALUE_FIELD];
+    }
+    if (header.result_type
+            == backend::syntax::type_code(backend::syntax::TypeBool)
+        && !backend::syntax::valid_boolean(value)) { return -1; }
+    if (!x86::buffer::fits(capacity, cursor, IMMEDIATE_RETURN_BYTES)) {
+        return -1;
+    }
+    let next: i32 = x86::encode::immediate(output, capacity, cursor,
+        x86::register::WIDTH_32,
         x86::register::RAX, value, 0);
     if (next <= -1) { return -1; }
     return x86::control::return_near(output, capacity, next);

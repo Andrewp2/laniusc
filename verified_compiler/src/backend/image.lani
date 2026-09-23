@@ -1,11 +1,13 @@
 module backend::image;
+import backend::compile;
 import backend::program;
-import backend::call;
 import backend::frame;
+import backend::syntax;
 import x86::buffer;
 import x86::encode;
 import x86::control;
 import x86::register;
+import runtime::io;
 
 // ELF64 little-endian Linux ET_EXEC: one RX load segment and a non-executable
 // RW stack. No interpreter, libc, assembler, external linker, or writable code.
@@ -15,47 +17,126 @@ pub const BASE: i32 = 4194304;
 pub const ENTRY: i32 = 256;
 pub const CODE: i32 = 512;
 
-pub fn compile(input: [i32], length: i32, function_input: [i32], function_capacity: i32,
-    work: [i32], work_length: i32, output: [i32], capacity: i32) -> i32 {
+const INITIAL_FILE_HANDLE: i32 = runtime::io::FIRST_FILE_HANDLE;
+const LINUX_EXIT_SYSCALL: i32 = 60;
+const ELF_MAGIC_OFFSET: i32 = 0;
+const ELF_MAGIC_0: i32 = 127;
+const ELF_MAGIC_1: i32 = 69;
+const ELF_MAGIC_2: i32 = 76;
+const ELF_MAGIC_3: i32 = 70;
+const ELF_CLASS_OFFSET: i32 = 4;
+const ELF_CLASS_64: i32 = 2;
+const ELF_DATA_OFFSET: i32 = 5;
+const ELF_LITTLE_ENDIAN: i32 = 1;
+const ELF_IDENT_VERSION_OFFSET: i32 = 6;
+const ELF_CURRENT_VERSION: i32 = 1;
+const ELF_TYPE_OFFSET: i32 = 16;
+const ELF_EXECUTABLE: i32 = 2;
+const ELF_MACHINE_OFFSET: i32 = 18;
+const ELF_X86_64: i32 = 62;
+const ELF_VERSION_OFFSET: i32 = 20;
+const ELF_ENTRY_OFFSET: i32 = 24;
+const ELF_PROGRAM_HEADER_OFFSET: i32 = 32;
+const ELF_HEADER_BYTES: i32 = 64;
+const ELF_HEADER_SIZE_OFFSET: i32 = 52;
+const ELF_PROGRAM_HEADER_SIZE_OFFSET: i32 = 54;
+const ELF_PROGRAM_HEADER_BYTES: i32 = 56;
+const ELF_PROGRAM_HEADER_COUNT_OFFSET: i32 = 56;
+const ELF_PROGRAM_HEADER_COUNT: i32 = 2;
+const LOAD_HEADER_OFFSET: i32 = ELF_HEADER_BYTES;
+const PROGRAM_TYPE_LOAD: i32 = 1;
+const PROGRAM_FLAGS_READ_EXECUTE: i32 = 5;
+const PROGRAM_TYPE_GNU_STACK: i32 = 1685382481;
+const PROGRAM_FLAGS_READ_WRITE: i32 = 6;
+const PROGRAM_TYPE_OFFSET: i32 = 0;
+const PROGRAM_FLAGS_OFFSET: i32 = 4;
+const PROGRAM_VIRTUAL_ADDRESS_OFFSET: i32 = 16;
+const PROGRAM_PHYSICAL_ADDRESS_OFFSET: i32 = 24;
+const PROGRAM_FILE_SIZE_OFFSET: i32 = 32;
+const PROGRAM_MEMORY_SIZE_OFFSET: i32 = 40;
+const PROGRAM_ALIGNMENT_OFFSET: i32 = 48;
+const LOAD_ALIGNMENT: i32 = 4096;
+const STACK_HEADER_OFFSET: i32 = LOAD_HEADER_OFFSET + ELF_PROGRAM_HEADER_BYTES;
+const STACK_ALIGNMENT_OFFSET: i32 = PROGRAM_ALIGNMENT_OFFSET;
+const STACK_ALIGNMENT: i32 = 16;
+
+pub fn compile(program: backend::compile::WordRegion,
+    function_workspace: backend::compile::WordRegion,
+    workspace: backend::frame::Workspace,
+    destination: backend::compile::WordRegion) -> i32 {
+    let input: [i32] = program.data;
+    let work: backend::frame::Workspace = workspace;
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    let output: [i32] = destination.data;
+    let capacity: i32 = destination.words;
     if (!x86::buffer::fits(capacity, 0, CODE)) { return -1; }
     let index: i32 = 0;
     while (index < CODE) { output[index] = 0; index += 1; }
-    let end: i32 = backend::program::compile(input, length, function_input, function_capacity,
-        work, work_length, output, capacity, CODE);
-    if (end < 0) { return -1; }
-    let entry: i32 = backend::call::find(input, work, input[2]);
-    if (entry < 0) { return -1; }
-    let first: i32 = work[backend::frame::HEADER + length * 6 + entry];
-    if (input[first] != 1 || input[first + 3] != 1 || input[first + 4] != 0) { return -1; }
-    let next: i32 = x86::encode::move_register(output, CODE, ENTRY, 64, x86::register::R10, x86::register::RSP);
-    next = x86::encode::immediate(output, CODE, next, 32, x86::register::RAX, 3, 0);
+    let end: i32 = backend::program::compile(program, function_workspace,
+        workspace, backend::compile::cursor(output, capacity, CODE));
+    if (end <= -1) { return -1; }
+    let entry: i32 = state[0].entry_index;
+    if (entry <= -1) { return -1; }
+    let first: i32 = backend::frame::function_input_offset(work, entry);
+    let header: backend::syntax::FunctionHeader =
+        backend::syntax::read_function_header(input, first);
+    if (header.kind != backend::syntax::DefinedFunction
+        || header.result_type
+            != backend::syntax::type_code(
+            backend::syntax::TypeI32)
+        || header.parameters != 0) { return -1; }
+    let next: i32 = x86::encode::move_register(output, CODE, ENTRY, x86::register::WIDTH_64, x86::register::R10, x86::register::RSP);
+    next = x86::encode::immediate(output, CODE, next, x86::register::WIDTH_32,
+        x86::register::RAX, INITIAL_FILE_HANDLE, 0);
     next = x86::control::push(output, CODE, next, x86::register::RAX);
     next = x86::control::push(output, CODE, next, x86::register::R10);
-    next = x86::encode::move_register(output, CODE, next, 64, x86::register::R15, x86::register::RSP);
-    next = x86::encode::binary(output, CODE, next, 32, x86::encode::XOR, x86::register::RBP, x86::register::RBP);
+    next = x86::encode::move_register(output, CODE, next, x86::register::WIDTH_64, x86::register::R15, x86::register::RSP);
+    next = x86::encode::binary(output, CODE, next, x86::register::WIDTH_32, x86::encode::Xor, x86::register::RBP, x86::register::RBP);
     next = x86::control::call(output, CODE, next, CODE);
-    next = x86::encode::move_register(output, CODE, next, 32, x86::register::RDI, x86::register::RAX);
-    next = x86::encode::immediate(output, CODE, next, 32, x86::register::RAX, 60, 0);
+    next = x86::encode::move_register(output, CODE, next, x86::register::WIDTH_32, x86::register::RDI, x86::register::RAX);
+    next = x86::encode::immediate(output, CODE, next, x86::register::WIDTH_32,
+        x86::register::RAX, LINUX_EXIT_SYSCALL, 0);
     next = x86::control::syscall(output, CODE, next);
     next = x86::control::trap(output, CODE, next);
-    if (next < 0) { return -1; }
+    if (next <= -1) { return -1; }
     // ELF identification, fixed-width header fields, and program headers.
-    output[0] = 127; output[1] = 69; output[2] = 76; output[3] = 70;
-    output[4] = 2; output[5] = 1; output[6] = 1;
-    output[16] = 2; output[18] = 62;
-    x86::buffer::store_word(output, 20, 1);
-    x86::buffer::store_word(output, 24, BASE + ENTRY);
-    x86::buffer::store_word(output, 32, 64);
-    output[52] = 64; output[54] = 56; output[56] = 2;
-    x86::buffer::store_word(output, 64, 1); // PT_LOAD
-    x86::buffer::store_word(output, 68, 5); // PF_R | PF_X
-    x86::buffer::store_word(output, 80, BASE);
-    x86::buffer::store_word(output, 88, BASE);
-    x86::buffer::store_word(output, 96, end);
-    x86::buffer::store_word(output, 104, end);
-    x86::buffer::store_word(output, 112, 4096);
-    x86::buffer::store_word(output, 120, 1685382481); // PT_GNU_STACK
-    x86::buffer::store_word(output, 124, 6); // PF_R | PF_W, no PF_X
-    x86::buffer::store_word(output, 168, 16);
+    output[ELF_MAGIC_OFFSET + x86::buffer::FIRST_BYTE] = ELF_MAGIC_0;
+    output[ELF_MAGIC_OFFSET + x86::buffer::SECOND_BYTE] = ELF_MAGIC_1;
+    output[ELF_MAGIC_OFFSET + x86::buffer::THIRD_BYTE] = ELF_MAGIC_2;
+    output[ELF_MAGIC_OFFSET + x86::buffer::FOURTH_BYTE] = ELF_MAGIC_3;
+    output[ELF_CLASS_OFFSET] = ELF_CLASS_64;
+    output[ELF_DATA_OFFSET] = ELF_LITTLE_ENDIAN;
+    output[ELF_IDENT_VERSION_OFFSET] = ELF_CURRENT_VERSION;
+    output[ELF_TYPE_OFFSET] = ELF_EXECUTABLE;
+    output[ELF_MACHINE_OFFSET] = ELF_X86_64;
+    x86::buffer::store_word(output, ELF_VERSION_OFFSET, ELF_CURRENT_VERSION);
+    x86::buffer::store_word(output, ELF_ENTRY_OFFSET, BASE + ENTRY);
+    x86::buffer::store_word(output, ELF_PROGRAM_HEADER_OFFSET,
+        ELF_HEADER_BYTES);
+    output[ELF_HEADER_SIZE_OFFSET] = ELF_HEADER_BYTES;
+    output[ELF_PROGRAM_HEADER_SIZE_OFFSET] = ELF_PROGRAM_HEADER_BYTES;
+    output[ELF_PROGRAM_HEADER_COUNT_OFFSET] = ELF_PROGRAM_HEADER_COUNT;
+    x86::buffer::store_word(output,
+        LOAD_HEADER_OFFSET + PROGRAM_TYPE_OFFSET, PROGRAM_TYPE_LOAD);
+    x86::buffer::store_word(output,
+        LOAD_HEADER_OFFSET + PROGRAM_FLAGS_OFFSET,
+        PROGRAM_FLAGS_READ_EXECUTE);
+    x86::buffer::store_word(output,
+        LOAD_HEADER_OFFSET + PROGRAM_VIRTUAL_ADDRESS_OFFSET, BASE);
+    x86::buffer::store_word(output,
+        LOAD_HEADER_OFFSET + PROGRAM_PHYSICAL_ADDRESS_OFFSET, BASE);
+    x86::buffer::store_word(output,
+        LOAD_HEADER_OFFSET + PROGRAM_FILE_SIZE_OFFSET, end);
+    x86::buffer::store_word(output,
+        LOAD_HEADER_OFFSET + PROGRAM_MEMORY_SIZE_OFFSET, end);
+    x86::buffer::store_word(output,
+        LOAD_HEADER_OFFSET + PROGRAM_ALIGNMENT_OFFSET, LOAD_ALIGNMENT);
+    x86::buffer::store_word(output,
+        STACK_HEADER_OFFSET + PROGRAM_TYPE_OFFSET, PROGRAM_TYPE_GNU_STACK);
+    x86::buffer::store_word(output,
+        STACK_HEADER_OFFSET + PROGRAM_FLAGS_OFFSET,
+        PROGRAM_FLAGS_READ_WRITE);
+    x86::buffer::store_word(output,
+        STACK_HEADER_OFFSET + STACK_ALIGNMENT_OFFSET, STACK_ALIGNMENT);
     return end;
 }

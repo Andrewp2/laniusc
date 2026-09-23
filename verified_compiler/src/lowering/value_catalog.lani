@@ -1,0 +1,195 @@
+module lowering::value_catalog;
+
+import lowering::allocation;
+import lowering::declarations;
+
+// Caller-local value resolution is authenticated before body lowering.  A
+// row identifies the spelling token, semantic kind, namespace scope, global
+// owner ID, optional member ordinal, and payload arity. This is private
+// native workspace state, not part of the serialized Core transport.
+const FIELD_BYTES: i32 = 8;
+pub const RECORD_BYTES: i32 = 6 * FIELD_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+
+pub enum ValueBindingKind {
+    InvalidBinding,
+    CallableBinding,
+    EnumVariantBinding,
+}
+
+pub fn binding_code(kind: ValueBindingKind) -> i32 {
+    return match (kind) {
+        InvalidBinding -> -1,
+        CallableBinding -> 0,
+        EnumVariantBinding -> 1,
+    };
+}
+
+pub enum ValueBindingScope {
+    InvalidScope,
+    LocalBinding,
+    ImportedBinding,
+}
+
+pub fn scope_code(scope: ValueBindingScope) -> i32 {
+    return match (scope) {
+        InvalidScope -> -1,
+        LocalBinding -> 0,
+        ImportedBinding -> 1,
+    };
+}
+
+pub struct ValueBinding {
+    token: i32,
+    kind: ValueBindingKind,
+    scope: ValueBindingScope,
+    id: i32,
+    member: i32,
+    arity: i32,
+}
+
+pub fn binding(token: i32, kind: ValueBindingKind,
+    scope: ValueBindingScope, id: i32, member: i32, arity: i32)
+    -> ValueBinding {
+    return ValueBinding {
+        token: token,
+        kind: kind,
+        scope: scope,
+        id: id,
+        member: member,
+        arity: arity,
+    };
+}
+
+pub struct ValueTable {
+    data: [ValueBinding],
+    count: i32,
+}
+
+pub fn table(data: [ValueBinding], count: i32) -> ValueTable {
+    return ValueTable { data: data, count: count };
+}
+
+pub fn from_raw_parts(memory: ptr, count: i32) -> ValueTable {
+    let first: ptr = memory;
+    if (count > 0) {
+        first = memory + count * RECORD_BYTES - FIELD_BYTES;
+    }
+    return table(slice_from_raw_parts(first, count), count);
+}
+
+pub fn read_binding(values: ValueTable, slot: i32) -> ValueBinding {
+    return values.data[slot];
+}
+
+pub fn binding_token(binding: ValueBinding) -> i32 { return binding.token; }
+
+pub fn binding_is_kind(binding: ValueBinding,
+    expected: ValueBindingKind) -> bool {
+    return binding_code(binding.kind) == binding_code(expected);
+}
+
+pub fn binding_is_scope(binding: ValueBinding,
+    expected: ValueBindingScope) -> bool {
+    return scope_code(binding.scope) == scope_code(expected);
+}
+
+pub fn binding_id(binding: ValueBinding) -> i32 { return binding.id; }
+pub fn binding_member(binding: ValueBinding) -> i32 { return binding.member; }
+pub fn binding_arity(binding: ValueBinding) -> i32 { return binding.arity; }
+
+pub fn write_binding(output: ValueTable, slot: i32,
+    value: ValueBinding) -> i32 {
+    if (slot <= -1 || slot >= output.count) { return -1; }
+    let rows: [ValueBinding] = output.data;
+    rows[slot] = value;
+    return slot + 1;
+}
+
+pub fn copy_rows(input: ValueTable, offset: i32, count: i32,
+    output: ValueTable) -> bool {
+    if (offset <= -1 || count <= -1 || offset > input.count
+        || count > input.count - offset || count > output.count) {
+        return false;
+    }
+    let source: [ValueBinding] = input.data;
+    let destination: [ValueBinding] = output.data;
+    let row: i32 = 0;
+    while (row != count) {
+        destination[row] = source[offset + row];
+        row += 1;
+    }
+    return true;
+}
+
+pub fn valid(values: ValueTable, token_count: i32,
+    allocated: lowering::allocation::Table) -> bool {
+    return valid_slice(values, 0, values.count, token_count,
+        allocated);
+}
+
+// Validate exactly one unit's span. The producer emits token order, with a
+// local row before an imported row when both exist. Checking adjacent rows
+// authenticates that order and rejects duplicate token/scope keys in linear
+// time; other units may sit on either side of this span.
+pub fn valid_slice(values: ValueTable, offset: i32, count: i32,
+    token_count: i32, allocated: lowering::allocation::Table) -> bool {
+    if (values.count <= -1 || offset <= -1 || count <= -1
+        || offset > values.count || count > values.count - offset
+        || token_count <= -1
+        || !lowering::allocation::table_has_exact_rows(allocated)) {
+        return false;
+    }
+    let allocation_rows: i32 = lowering::allocation::table_header(allocated).rows;
+    let row: i32 = offset;
+    let finish: i32 = offset + count;
+    while (row < finish) {
+        let binding: ValueBinding = read_binding(values, row);
+        let token: i32 = binding_token(binding);
+        let id: i32 = binding_id(binding);
+        let member: i32 = binding_member(binding);
+        let arity: i32 = binding_arity(binding);
+        if (token <= -1 || token >= token_count || id <= -1
+            || (!binding_is_kind(binding, CallableBinding)
+                && !binding_is_kind(binding, EnumVariantBinding))
+            || (!binding_is_scope(binding, LocalBinding)
+                && !binding_is_scope(binding, ImportedBinding))) {
+            return false;
+        }
+        if ((binding_is_kind(binding, CallableBinding)
+                && (member != -1 || arity != -1))
+            || (binding_is_kind(binding, EnumVariantBinding)
+                && (member <= -1 || arity <= -1))) { return false; }
+        if (row > offset) {
+            let previous: ValueBinding = read_binding(values, row - 1);
+            let previous_token: i32 = binding_token(previous);
+            if (token < previous_token
+                || (token == previous_token
+                    && (!binding_is_scope(previous, LocalBinding)
+                        || !binding_is_scope(binding, ImportedBinding)))) {
+                return false;
+            }
+        }
+        let allocation_index: i32 = 0;
+        let found: bool = false;
+        while (allocation_index < allocation_rows) {
+            let allocation: lowering::allocation::AllocationRow =
+                lowering::allocation::table_row(allocated, allocation_index);
+            if ((binding_is_kind(binding, CallableBinding)
+                    && lowering::allocation::row_core_id(allocation) == id
+                    && (lowering::allocation::row_has_kind(allocation,
+                            lowering::declarations::Function)
+                        || lowering::allocation::row_has_kind(allocation,
+                            lowering::declarations::External)))
+                || (binding_is_kind(binding, EnumVariantBinding)
+                    && lowering::allocation::row_declaration_id(allocation)
+                        == id
+                    && lowering::allocation::row_has_kind(allocation,
+                        lowering::declarations::Enumeration))) { found = true; }
+            allocation_index += 1;
+        }
+        if (!found) { return false; }
+        row += 1;
+    }
+    return true;
+}

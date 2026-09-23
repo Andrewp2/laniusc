@@ -91,8 +91,11 @@ static const uint SEMANTIC_LIR_OP_CALL_SYMBOL = 39u;
 // when only some pattern forms require an intermediate machine operation.
 // IR_OPCODE
 static const uint SEMANTIC_LIR_OP_NOP = 40u;
+// Terminate an impossible or unmatched path without producing a value.
 // IR_OPCODE
-static const uint SEMANTIC_LIR_OP_COUNT = 41u;
+static const uint SEMANTIC_LIR_OP_TRAP = 41u;
+// IR_OPCODE
+static const uint SEMANTIC_LIR_OP_COUNT = 42u;
 
 // Semantic operation metadata is indexed directly by opcode. Rust consumes
 // the same rows through crates/laniusc-compiler/build.rs; adding an opcode
@@ -355,6 +358,8 @@ static const SemanticLirOpProperties
 { 97u, 0xaaau, 6u, 9u, 0u, 5u, 1u, 0u },
 // IR_SEMANTIC_OP SEMANTIC_LIR_OP_NOP
 { 2048u, 0x000u, 0u, 0u, 0u, 0u, 0u, 0u },
+// IR_SEMANTIC_OP SEMANTIC_LIR_OP_TRAP
+{ 38u, 0x000u, 0u, 0u, 7u, 2u, 0u, 0u },
 };
 
 SemanticLirOpProperties semantic_lir_op_properties(uint op)
@@ -477,6 +482,14 @@ static const uint INTRINSIC_I32_SLICE_FROM_RAW_PARTS = 4u;
 static const uint INTRINSIC_I32_SLICE_DATA_PTR = 5u;
 // IR_OPCODE
 static const uint INTRINSIC_STRING_DATA_PTR = 6u;
+// Concrete typed slices and i32 slices share the pointer-length value ABI.
+static const uint INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS = 7u;
+
+bool intrinsic_slice_from_raw_parts(uint tag)
+{
+    return tag == INTRINSIC_I32_SLICE_FROM_RAW_PARTS ||
+        tag == INTRINSIC_TYPED_SLICE_FROM_RAW_PARTS;
+}
 // IR_OPCODE
 static const uint HOST_SERVICE_FILL_SECURE_BYTES = 53u;
 // IR_OPCODE
@@ -658,6 +671,8 @@ static const uint LOWERING_DIAGNOSTIC_X86_LEGACY_RESULT_LAYOUT = 42u;
 static const uint LOWERING_DIAGNOSTIC_DETAIL_NONE = 0u;
 static const uint LOWERING_DIAGNOSTIC_DETAIL_TOKEN = 1u;
 static const uint LOWERING_DIAGNOSTIC_DETAIL_HIR = 2u;
+// Packed OptIR SSA source for optimizer-internal diagnostics only.
+static const uint LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE = 3u;
 
 // x86 target LIR is the backend's uniform virtual-instruction vocabulary.
 // IR_OPCODE
@@ -745,6 +760,9 @@ static const uint X86_LIR_OP_AGGREGATE_COPY_WORD = 42u;
 // first two SysV argument registers.
 // IR_OPCODE
 static const uint X86_LIR_OP_INTRINSIC_SLICE_FROM_RAW_PARTS = 43u;
+// Guaranteed invalid instruction for a non-exhaustive match path.
+// IR_OPCODE
+static const uint X86_LIR_OP_TRAP = 44u;
 // Compiler intrinsic lowered to the native runtime's shared signed-decimal
 // printer. Its argument arrives through the ordinary CALL_ARG ABI rows.
 // IR_OPCODE
@@ -974,6 +992,15 @@ static const uint X86_LIR_METADATA_ARRAY_LEN = 0x01000000u;
 // The semantic aggregate width remains word-based so existing frame and ABI
 // bounds stay conservative while the target owns the concrete byte layout.
 static const uint X86_LIR_METADATA_PACKED_I32_ARRAY = 0x00800000u;
+// A runtime slice expression is represented by the address of its two-word
+// (data, length) value, rather than by two direct declaration homes. Member
+// projections and slice-producing calls use this representation.
+static const uint X86_LIR_METADATA_INDIRECT_ARRAY_PAIR = 0x00400000u;
+// FIELD_STORE receives an address of one aggregate word, not a scalar value.
+static const uint X86_LIR_METADATA_FIELD_AGGREGATE_WORD = 0x00200000u;
+// INDEX_STORE copies a complete typed aggregate element. The store's
+// result_or_target field carries its element width in eight-byte words.
+static const uint X86_LIR_METADATA_INDEX_AGGREGATE_COPY = 0x00100000u;
 
 // Semantic AGGREGATE_NEW metadata. The high bit distinguishes tagged enums;
 // the remaining bits contain the checked variant ordinal.
@@ -1070,6 +1097,8 @@ struct SemanticLirAggregateElement
     uint value_metadata;
     uint word_offset;
     uint word_count;
+    // Static array length only when a field initializer must form a slice.
+    uint slice_array_length;
 };
 
 struct TargetSemanticPage

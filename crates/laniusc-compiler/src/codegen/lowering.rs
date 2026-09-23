@@ -150,6 +150,8 @@ struct SemanticPasses {
     function_mark: PassData,
     function_layout_clear: PassData,
     function_layout_collect: PassData,
+    function_layout_enum_variants: PassData,
+    function_layout_enum_fields: PassData,
     function_layout_words: PassData,
     function_scatter: PassData,
     function_params: PassData,
@@ -177,6 +179,10 @@ impl SemanticPasses {
             function_mark: load("codegen/lir/semantic/function_mark"),
             function_layout_clear: load("codegen/lir/semantic/function_layout_clear"),
             function_layout_collect: load("codegen/lir/semantic/function_layout_collect"),
+            function_layout_enum_variants: load(
+                "codegen/lir/semantic/function_layout_enum_variants",
+            ),
+            function_layout_enum_fields: load("codegen/lir/semantic/function_layout_enum_fields"),
             function_layout_words: load("codegen/lir/semantic/function_layout_words"),
             function_scatter: load("codegen/lir/semantic/function_scatter"),
             function_params: load("codegen/lir/semantic/function_params"),
@@ -659,6 +665,8 @@ struct GpuSemanticLoweringOperations {
     local_scan: GpuResidentExclusiveScan,
     function_layout_clear: ComputeOperation,
     function_layout_collect: ComputeOperation,
+    function_layout_enum_variants: ComputeOperation,
+    function_layout_enum_fields: ComputeOperation,
     function_layout_words: ComputeOperation,
     function_scatter: ComputeOperation,
     function_params: ComputeOperation,
@@ -921,6 +929,14 @@ impl GpuSemanticLoweringStage {
             (
                 "lir.semantic.functions.layout.collect",
                 passes.function_layout_collect.reflection.as_ref(),
+            ),
+            (
+                "lir.semantic.functions.layout.enum_variants",
+                passes.function_layout_enum_variants.reflection.as_ref(),
+            ),
+            (
+                "lir.semantic.functions.layout.enum_fields",
+                passes.function_layout_enum_fields.reflection.as_ref(),
             ),
             (
                 "lir.semantic.functions.layout.words",
@@ -1254,6 +1270,18 @@ impl GpuSemanticLoweringStage {
                 &function_params,
                 hir_nodes.max(capacities.aggregate_elements),
             )?,
+            function_layout_enum_variants: direct_uniform!(
+                "lir.semantic.functions.layout.enum_variants",
+                &passes.function_layout_enum_variants,
+                &function_params,
+                hir_nodes,
+            )?,
+            function_layout_enum_fields: direct_uniform!(
+                "lir.semantic.functions.layout.enum_fields",
+                &passes.function_layout_enum_fields,
+                &function_params,
+                capacities.aggregate_elements,
+            )?,
             function_layout_words: direct_uniform!(
                 "lir.semantic.functions.layout.words",
                 &passes.function_layout_words,
@@ -1432,6 +1460,8 @@ impl GpuSemanticLoweringStage {
         stamp!("lowering.semantic.locals.scan.done");
         operations.function_layout_clear.record(encoder)?;
         operations.function_layout_collect.record(encoder)?;
+        operations.function_layout_enum_variants.record(encoder)?;
+        operations.function_layout_enum_fields.record(encoder)?;
         operations.function_layout_words.record(encoder)?;
         operations.function_scatter.record(encoder)?;
         operations.function_params.record(encoder)?;

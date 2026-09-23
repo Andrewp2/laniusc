@@ -3,109 +3,217 @@ import x86::register;
 import x86::buffer;
 import x86::encode;
 
-// Intel condition-code low nibble, shared by Jcc and SETcc.
-pub const OVERFLOW: i32 = 0;
-pub const NO_OVERFLOW: i32 = 1;
-pub const BELOW: i32 = 2;
-pub const ABOVE_EQUAL: i32 = 3;
-pub const EQUAL: i32 = 4;
-pub const NOT_EQUAL: i32 = 5;
-pub const BELOW_EQUAL: i32 = 6;
-pub const ABOVE: i32 = 7;
-pub const SIGN: i32 = 8;
-pub const NO_SIGN: i32 = 9;
-pub const PARITY: i32 = 10;
-pub const NO_PARITY: i32 = 11;
-pub const LESS: i32 = 12;
-pub const GREATER_EQUAL: i32 = 13;
-pub const LESS_EQUAL: i32 = 14;
-pub const GREATER: i32 = 15;
+const CONDITION_COUNT: i32 = 16;
+const EXTENDED_OPCODE: i32 = 15;
+const JUMP_CONDITION_BASE: i32 = 128;
+const RELATIVE_WORD_BYTES: i32 = 4;
+const RELATIVE_OPCODE_BYTES: i32 = 1;
+const EXTENDED_RELATIVE_OPCODE_BYTES: i32 = 2;
+const JUMP_RELATIVE_OPCODE: i32 = 233;
+const CALL_RELATIVE_OPCODE: i32 = 232;
+const EXTENDED_REGISTER_PREFIX: i32 = 65;
+const PUSH_REGISTER_BASE: i32 = 80;
+const POP_REGISTER_BASE: i32 = 88;
+const RETURN_NEAR_OPCODE: i32 = 195;
+const SYSTEM_OPCODE: i32 = 5;
+const TRAP_OPCODE: i32 = 11;
+const REX_W_PREFIX: i32 = 72;
+const SIGN_EXTEND_ACCUMULATOR_OPCODE: i32 = 153;
+const SET_CONDITION_OPCODE_BASE: i32 = 3984;
+const LOW_REGISTER_COUNT: i32 = 8;
+const SINGLE_BYTE_INSTRUCTION: i32 = 1;
+const TWO_BYTE_INSTRUCTION: i32 = 2;
+
+// Intel condition-code low nibble, shared by Jcc and SETcc. The enum is the
+// semantic API; condition_code is the sole numeric encoding boundary.
+pub enum Condition {
+    Overflow,
+    NoOverflow,
+    Below,
+    AboveEqual,
+    Equal,
+    NotEqual,
+    BelowEqual,
+    Above,
+    Sign,
+    NoSign,
+    Parity,
+    NoParity,
+    Less,
+    GreaterEqual,
+    LessEqual,
+    Greater,
+    InvalidCondition,
+}
+
+pub fn condition_code(condition: Condition) -> i32 {
+    return match (condition) {
+        Overflow -> 0,
+        NoOverflow -> 1,
+        Below -> 2,
+        AboveEqual -> 3,
+        Equal -> 4,
+        NotEqual -> 5,
+        BelowEqual -> 6,
+        Above -> 7,
+        Sign -> 8,
+        NoSign -> 9,
+        Parity -> 10,
+        NoParity -> 11,
+        Less -> 12,
+        GreaterEqual -> 13,
+        LessEqual -> 14,
+        Greater -> 15,
+        InvalidCondition -> -1,
+    };
+}
+
+pub fn condition_from_code(value: i32) -> Condition {
+    if (value == condition_code(Overflow)) { return Overflow; }
+    if (value == condition_code(NoOverflow)) { return NoOverflow; }
+    if (value == condition_code(Below)) { return Below; }
+    if (value == condition_code(AboveEqual)) { return AboveEqual; }
+    if (value == condition_code(Equal)) { return Equal; }
+    if (value == condition_code(NotEqual)) { return NotEqual; }
+    if (value == condition_code(BelowEqual)) { return BelowEqual; }
+    if (value == condition_code(Above)) { return Above; }
+    if (value == condition_code(Sign)) { return Sign; }
+    if (value == condition_code(NoSign)) { return NoSign; }
+    if (value == condition_code(Parity)) { return Parity; }
+    if (value == condition_code(NoParity)) { return NoParity; }
+    if (value == condition_code(Less)) { return Less; }
+    if (value == condition_code(GreaterEqual)) { return GreaterEqual; }
+    if (value == condition_code(LessEqual)) { return LessEqual; }
+    if (value == condition_code(Greater)) { return Greater; }
+    return InvalidCondition;
+}
+
+pub fn valid_condition(condition: Condition) -> bool {
+    let code: i32 = condition_code(condition);
+    return code >= 0 && code <= CONDITION_COUNT - 1;
+}
 
 pub fn set_condition(output: [i32], capacity: i32, cursor: i32,
-    condition: i32, destination: i32) -> i32 {
-    if (condition < 0 || condition > 15) { return -1; }
+    condition: Condition, destination: i32) -> i32 {
+    if (!valid_condition(condition)) { return -1; }
     return x86::encode::register_form(output, capacity, cursor,
-        32, 3984 + condition, 0, destination, destination >= 4);
+        x86::register::WIDTH_32,
+        SET_CONDITION_OPCODE_BASE + condition_code(condition),
+        0, destination, destination >= x86::register::RSP);
 }
 
 fn relative(output: [i32], capacity: i32, cursor: i32,
-    opcode: i32, condition: i32, target: i32) -> i32 {
-    let size: i32 = 5;
-    if (opcode == 15) { size = 6; }
-    if (target < 0 || !x86::buffer::fits(capacity, cursor, size)) { return -1; }
+    opcode: i32, condition: Condition, target: i32) -> i32 {
+    let size: i32 = RELATIVE_OPCODE_BYTES + RELATIVE_WORD_BYTES;
+    if (opcode == EXTENDED_OPCODE) {
+        size = EXTENDED_RELATIVE_OPCODE_BYTES + RELATIVE_WORD_BYTES;
+    }
+    if (target <= -1 || !x86::buffer::fits(capacity, cursor, size)) { return -1; }
     let next: i32 = cursor + size;
     output[cursor] = opcode;
-    if (opcode == 15) { output[cursor + 1] = 128 + condition; }
-    return x86::buffer::store_word(output, next - 4, target - next);
+    if (opcode == EXTENDED_OPCODE) {
+        if (!valid_condition(condition)) { return -1; }
+        output[cursor + RELATIVE_OPCODE_BYTES] = JUMP_CONDITION_BASE
+            + condition_code(condition);
+    }
+    return x86::buffer::store_word(
+        output, next - RELATIVE_WORD_BYTES, target - next);
 }
 
 pub fn jump(output: [i32], capacity: i32, cursor: i32, target: i32) -> i32 {
-    return relative(output, capacity, cursor, 233, 0, target);
+    return relative(output, capacity, cursor, JUMP_RELATIVE_OPCODE,
+        InvalidCondition, target);
 }
 
 pub fn call(output: [i32], capacity: i32, cursor: i32, target: i32) -> i32 {
-    return relative(output, capacity, cursor, 232, 0, target);
+    return relative(output, capacity, cursor, CALL_RELATIVE_OPCODE,
+        InvalidCondition, target);
 }
 
-pub fn branch(output: [i32], capacity: i32, cursor: i32, condition: i32, target: i32) -> i32 {
-    if (condition < 0 || condition > 15) { return -1; }
-    return relative(output, capacity, cursor, 15, condition, target);
+pub fn branch(output: [i32], capacity: i32, cursor: i32,
+    condition: Condition, target: i32) -> i32 {
+    if (!valid_condition(condition)) { return -1; }
+    return relative(output, capacity, cursor, EXTENDED_OPCODE,
+        condition, target);
+}
+
+// Continue when the condition holds; otherwise execute UD2. Reserve both
+// instructions before writing either one, so a short buffer is unchanged.
+pub fn branch_over_trap(output: [i32], capacity: i32, cursor: i32,
+    condition: Condition) -> i32 {
+    let bytes: i32 = EXTENDED_RELATIVE_OPCODE_BYTES
+        + RELATIVE_WORD_BYTES + TWO_BYTE_INSTRUCTION;
+    if (!valid_condition(condition)
+        || !x86::buffer::fits(capacity, cursor, bytes)) { return -1; }
+    let next: i32 = branch(output, capacity, cursor, condition,
+        cursor + bytes);
+    return trap(output, capacity, next);
 }
 
 // Patch an existing rel32 field after layout. length is the emitted prefix,
 // not the buffer capacity. A target at length can name an end/data label;
 // proving an executable target requires the later control-flow layout proof.
 pub fn patch_relative(output: [i32], length: i32, field: i32, target: i32) -> i32 {
-    if (!x86::buffer::fits(length, field, 4) || target < 0 || target > length) { return -1; }
-    return x86::buffer::store_word(output, field, target - (field + 4));
+    if (!x86::buffer::fits(length, field, RELATIVE_WORD_BYTES)
+        || target <= -1 || target > length) { return -1; }
+    return x86::buffer::store_word(output, field,
+        target - (field + RELATIVE_WORD_BYTES));
 }
 
 fn stack_register(output: [i32], capacity: i32, cursor: i32, opcode: i32, register: i32) -> i32 {
     if (!x86::register::valid(register)) { return -1; }
-    let size: i32 = 1;
-    if (register >= 8) { size = 2; }
+    let size: i32 = SINGLE_BYTE_INSTRUCTION;
+    if (register >= LOW_REGISTER_COUNT) { size = TWO_BYTE_INSTRUCTION; }
     if (!x86::buffer::fits(capacity, cursor, size)) { return -1; }
     let next: i32 = cursor;
-    if (register >= 8) { output[next] = 65; next += 1; }
-    output[next] = opcode + register % 8;
-    return next + 1;
+    if (register >= LOW_REGISTER_COUNT) {
+        output[next] = EXTENDED_REGISTER_PREFIX;
+        next += SINGLE_BYTE_INSTRUCTION;
+    }
+    output[next] = opcode + register % LOW_REGISTER_COUNT;
+    return next + SINGLE_BYTE_INSTRUCTION;
 }
 
 pub fn push(output: [i32], capacity: i32, cursor: i32, register: i32) -> i32 {
-    return stack_register(output, capacity, cursor, 80, register);
+    return stack_register(output, capacity, cursor, PUSH_REGISTER_BASE, register);
 }
 
 pub fn pop(output: [i32], capacity: i32, cursor: i32, register: i32) -> i32 {
-    return stack_register(output, capacity, cursor, 88, register);
+    return stack_register(output, capacity, cursor, POP_REGISTER_BASE, register);
 }
 
 pub fn return_near(output: [i32], capacity: i32, cursor: i32) -> i32 {
-    if (!x86::buffer::fits(capacity, cursor, 1)) { return -1; }
-    output[cursor] = 195;
-    return cursor + 1;
+    if (!x86::buffer::fits(capacity, cursor, SINGLE_BYTE_INSTRUCTION)) {
+        return -1;
+    }
+    output[cursor] = RETURN_NEAR_OPCODE;
+    return cursor + SINGLE_BYTE_INSTRUCTION;
 }
 
 pub fn syscall(output: [i32], capacity: i32, cursor: i32) -> i32 {
-    if (!x86::buffer::fits(capacity, cursor, 2)) { return -1; }
-    output[cursor] = 15;
-    output[cursor + 1] = 5;
-    return cursor + 2;
+    if (!x86::buffer::fits(capacity, cursor, TWO_BYTE_INSTRUCTION)) { return -1; }
+    output[cursor] = EXTENDED_OPCODE;
+    output[cursor + SINGLE_BYTE_INSTRUCTION] = SYSTEM_OPCODE;
+    return cursor + TWO_BYTE_INSTRUCTION;
 }
 
 pub fn trap(output: [i32], capacity: i32, cursor: i32) -> i32 {
-    if (!x86::buffer::fits(capacity, cursor, 2)) { return -1; }
-    output[cursor] = 15;
-    output[cursor + 1] = 11;
-    return cursor + 2;
+    if (!x86::buffer::fits(capacity, cursor, TWO_BYTE_INSTRUCTION)) { return -1; }
+    output[cursor] = EXTENDED_OPCODE;
+    output[cursor + SINGLE_BYTE_INSTRUCTION] = TRAP_OPCODE;
+    return cursor + TWO_BYTE_INSTRUCTION;
 }
 
 pub fn sign_extend_dividend(output: [i32], capacity: i32, cursor: i32, width: i32) -> i32 {
     if (!x86::register::width_valid(width)) { return -1; }
-    let size: i32 = 1;
-    if (width == 64) { size = 2; }
+    let size: i32 = SINGLE_BYTE_INSTRUCTION;
+    if (width == x86::register::WIDTH_64) { size = TWO_BYTE_INSTRUCTION; }
     if (!x86::buffer::fits(capacity, cursor, size)) { return -1; }
     let next: i32 = cursor;
-    if (width == 64) { output[next] = 72; next += 1; }
-    output[next] = 153;
-    return next + 1;
+    if (width == x86::register::WIDTH_64) {
+        output[next] = REX_W_PREFIX;
+        next += SINGLE_BYTE_INSTRUCTION;
+    }
+    output[next] = SIGN_EXTEND_ACCUMULATOR_OPCODE;
+    return next + SINGLE_BYTE_INSTRUCTION;
 }

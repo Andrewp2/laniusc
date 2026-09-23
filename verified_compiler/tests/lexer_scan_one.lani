@@ -12,23 +12,34 @@ fn main() -> i32 {
 
     let identifier = verified::raw_lexer::scan_one(source, 21, 0);
     if (!verified::token_scan::succeeded(identifier)) { return 1; }
-    if (verified::token_scan::kind(identifier) != verified::token::IDENTIFIER) { return 2; }
+    if (verified::token_scan::token_kind(identifier)
+        != verified::token::Identifier) {
+        return 2;
+    }
     if (verified::token_scan::end_offset(identifier) != 3) { return 3; }
 
     let integer = verified::raw_lexer::scan_one(source, 21, 4);
-    if (verified::token_scan::kind(integer) != verified::token::INTEGER) { return 4; }
+    if (verified::token_scan::token_kind(integer)
+        != verified::token::Integer) { return 4; }
     if (verified::token_scan::end_offset(integer) != 6) { return 5; }
 
     let range = verified::raw_lexer::scan_one(source, 21, 6);
-    if (verified::token_scan::kind(range) != verified::token::DOT_DOT) { return 6; }
+    if (verified::token_scan::token_kind(range)
+        != verified::token::DotDot) { return 6; }
     if (verified::token_scan::end_offset(range) != 8) { return 7; }
 
     let comment = verified::raw_lexer::scan_one(source, 21, 11);
-    if (verified::token_scan::kind(comment) != verified::token::LINE_COMMENT) { return 8; }
+    if (verified::token_scan::token_kind(comment)
+        != verified::token::LineComment) {
+        return 8;
+    }
     if (verified::token_scan::end_offset(comment) != 14) { return 9; }
 
     let string = verified::raw_lexer::scan_one(source, 21, 15);
-    if (verified::token_scan::kind(string) != verified::token::STRING) { return 10; }
+    if (verified::token_scan::token_kind(string)
+        != verified::token::StringLiteral) {
+        return 10;
+    }
     if (verified::token_scan::end_offset(string) != 19) { return 11; }
 
     let invalid = verified::raw_lexer::scan_one(source, 21, 20);
@@ -37,7 +48,10 @@ fn main() -> i32 {
 
     let leading_dot: [i32; 2] = [46, 53];
     let float = verified::raw_lexer::scan_one(leading_dot, 2, 0);
-    if (verified::token_scan::kind(float) != verified::token::FLOAT) { return 14; }
+    if (verified::token_scan::token_kind(float)
+        != verified::token::FloatLiteral) {
+        return 14;
+    }
     if (verified::token_scan::end_offset(float) != 2) { return 15; }
     return 0;
 }

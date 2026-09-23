@@ -1845,6 +1845,9 @@ fn lowering_error_to_compile_error_for_source(
     else {
         return CompileError::GpuCodegen(error.to_string());
     };
+    if let Some(diagnostic) = optimizer_incoming_failure(failure.status) {
+        return CompileError::Diagnostic(diagnostic);
+    }
     let Some(message) = lowering_diagnostic_message(failure.status.diagnostic_reason) else {
         return CompileError::GpuCodegen(error.to_string());
     };
@@ -1883,6 +1886,9 @@ fn lowering_error_to_compile_error_for_source_pack(
     else {
         return CompileError::GpuCodegen(error.to_string());
     };
+    if let Some(diagnostic) = optimizer_incoming_failure(failure.status) {
+        return CompileError::Diagnostic(diagnostic);
+    }
     let Some(message) = lowering_diagnostic_message(failure.status.diagnostic_reason) else {
         return CompileError::GpuCodegen(error.to_string());
     };
@@ -1916,6 +1922,32 @@ fn lowering_error_to_compile_error_for_source_pack(
         ));
     }
     CompileError::Diagnostic(diagnostic)
+}
+
+fn optimizer_incoming_failure(
+    status: crate::codegen::lowering_ir::LoweringStatus,
+) -> Option<Diagnostic> {
+    if status.diagnostic_reason
+        != crate::codegen::lowering_ir::opcode::LOWERING_DIAGNOSTIC_OPT_SSA_INCOMING_REWRITE
+    {
+        return None;
+    }
+    let mut diagnostic = Diagnostic::error("LNC0057", "compiler optimizer failed")
+            .with_note("the SSA incoming-value rewrite could not resolve a reaching definition")
+            .with_note(format!(
+                "first unresolved incoming relation row: {}",
+                status.first_unsupported_opt_row
+            ))
+            .with_help("this is an internal compiler failure, not unsupported Lanius syntax");
+    if status.diagnostic_detail_kind
+        == crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE
+    {
+        diagnostic = diagnostic.with_note(format!(
+            "sample unresolved packed SSA source: 0x{:08x}",
+            status.diagnostic_detail
+        ));
+    }
+    Some(diagnostic)
 }
 
 fn lowering_diagnostic_message(reason: u32) -> Option<&'static str> {
@@ -1973,6 +2005,20 @@ fn lowering_diagnostic_token(
     hir: &crate::parser::buffers::GpuHirView,
     status: crate::codegen::lowering_ir::LoweringStatus,
 ) -> Result<u32, String> {
+    // Generic target failures can be reported by many lanes at once. The
+    // diagnostic-detail lane is nondeterministic, but first_unsupported_hir
+    // is an atomic minimum and gives a stable source location.
+    if status.diagnostic_reason
+        == crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_X86_UNSUPPORTED_OPERATION
+        && status.first_unsupported_hir != u32::MAX
+    {
+        return read_hir_token_start_for_diagnostic(
+            device,
+            queue,
+            hir,
+            status.first_unsupported_hir,
+        );
+    }
     match status.diagnostic_detail_kind {
         crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_TOKEN => {
             Ok(status.diagnostic_detail)
@@ -2832,6 +2878,7 @@ fn call_mismatch_diagnostic(
     const CALL_MISMATCH_UNSUPPORTED_METHOD_WHERE: u32 = 0xffffff03;
     const CALL_MISMATCH_GENERIC_CLAIM_CAPACITY: u32 = 0xffffff04;
     const CALL_MISMATCH_ARITY: u32 = 0xffffff05;
+    const CALL_MISMATCH_TYPED_SLICE_RETURN: u32 = 0xffffff06;
     let (label, note) = match detail {
         CALL_MISMATCH_UNSUPPORTED_METHOD_RETURN_REF => (
             "method return type is not supported for generic method dispatch here",
@@ -2852,6 +2899,10 @@ fn call_mismatch_diagnostic(
         CALL_MISMATCH_ARITY => (
             "call has the wrong number of arguments",
             "match the argument list to the resolved function or method signature",
+        ),
+        CALL_MISMATCH_TYPED_SLICE_RETURN => (
+            "slice_from_raw_parts must return a slice type",
+            "declare its return type as [Element], matching the intended element layout",
         ),
         _ => (
             "call does not match a resolved function or method",
@@ -2939,6 +2990,32 @@ fn read_single_token_from_buffer(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unresolved_ssa_incoming_is_a_compiler_failure_not_an_unsupported_feature() {
+        let status = crate::codegen::lowering_ir::LoweringStatus {
+            diagnostic_reason:
+                crate::codegen::lowering_ir::opcode::LOWERING_DIAGNOSTIC_OPT_SSA_INCOMING_REWRITE,
+            first_unsupported_opt_row: 7,
+            first_unsupported_target_op: 31,
+            ..Default::default()
+        };
+        let diagnostic = optimizer_incoming_failure(status).expect("SSA failure diagnostic");
+        assert_eq!(diagnostic.code, "LNC0057");
+        let rendered = diagnostic.render();
+        assert!(rendered.contains("first unresolved incoming relation row: 7"));
+        assert!(!rendered.contains("unsupported target LIR opcode"));
+        let with_source = crate::codegen::lowering_ir::LoweringStatus {
+            diagnostic_detail_kind:
+                crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE,
+            ..status
+        };
+        let rendered = optimizer_incoming_failure(with_source)
+            .expect("SSA source diagnostic")
+            .render();
+        assert!(rendered.contains("sample unresolved packed SSA source: 0x00000000"));
+        assert!(optimizer_incoming_failure(Default::default()).is_none());
+    }
 
     #[test]
     fn parser_growth_retains_parser_capacity_history() {

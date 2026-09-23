@@ -1,22 +1,46 @@
 module app::main;
+import lowering::allocation;
+import lowering::aliases;
 import lowering::declarations;
 import lowering::signatures;
+import lowering::signature_producer;
+import lowering::signature_index;
+import lowering::types;
+import lowering::unit_context;
 import lowering::units;
 import verified::parser;
 import verified::host;
+import verified::surface_type;
+import verified::syntax_tree;
+import verified::token;
+
+const UNIT_DECLARATION_WORDS: i32 =
+    lowering::declarations::HEADER + 2 * lowering::declarations::ROW;
+const DECLARATION_WORDS: i32 = 2 * UNIT_DECLARATION_WORDS;
+const UNIT_ALLOCATION_WORDS: i32 =
+    lowering::allocation::HEADER + 2 * lowering::allocation::ROW;
+const ALLOCATION_WORDS: i32 =
+    lowering::allocation::HEADER + 4 * lowering::allocation::ROW;
 fn record(records:[i32], base: i32, node: i32, production: i32, children: i32) {
     let offset: i32 = base + node * 28;
     records[offset] = production;
+    records[offset + 1] = 0;
+    records[offset + 2] = 0;
     records[offset + 3] = children;
+    let index: i32 = 0;
+    while (index <= children - 1) {
+        token(records, base, node, index, 0);
+        index += 1;
+    }
 }
 fn state(records:[i32], base: i32, node: i32, index: i32, child: i32) {
     let offset: i32 = base + node * 28 + 4 + index * 3;
-    records[offset] = verified::parser::CHILD_STATE;
+    records[offset] = verified::parser::child_code(verified::parser::StateChild);
     records[offset + 1] = child;
 }
 fn token(records:[i32], base: i32, node: i32, index: i32, value: i32) {
     let offset: i32 = base + node * 28 + 4 + index * 3;
-    records[offset] = verified::parser::CHILD_TOKEN;
+    records[offset] = verified::parser::child_code(verified::parser::TokenChild);
     records[offset + 1] = value;
 }
 fn make_tree(records:[i32], offsets:[i32], record_base: i32, offset_base: i32) {
@@ -53,85 +77,116 @@ fn make_tree(records:[i32], offsets:[i32], record_base: i32, offset_base: i32) {
     state(records, record_base, 9, 7, 7);
 }
 fn main() -> i32 {
-    let descriptor_memory: ptr = verified::host::alloc(32, 4);
-    let context_memory: ptr = verified::host::alloc(96, 4);
-    let declaration_memory: ptr = verified::host::alloc(192, 4);
-    let module_memory: ptr = verified::host::alloc(32, 4);
-    let declarations_memory: ptr = verified::host::alloc(192, 4);
-    let modules_memory: ptr = verified::host::alloc(32, 4);
-    let allocated_memory: ptr = verified::host::alloc(192, 4);
+    let descriptor_memory: ptr = verified::host::alloc(
+        2 * lowering::declarations::TABLE_REF_BYTES,
+        lowering::declarations::TABLE_REF_ALIGNMENT);
+    let context_memory: ptr = verified::host::alloc(
+        2 * lowering::unit_context::RECORD_BYTES,
+        lowering::unit_context::ALIGNMENT);
+    let declaration_memory: ptr = verified::host::alloc(
+        DECLARATION_WORDS * verified::host::I32_BYTES,
+        lowering::declarations::ALIGNMENT);
+    let allocated_memory: ptr = verified::host::alloc(
+        ALLOCATION_WORDS * verified::host::I32_BYTES,
+        lowering::allocation::ALIGNMENT);
     let source_memory: ptr = verified::host::alloc(72, 4);
     let token_memory: ptr = verified::host::alloc(48, 4);
+    let native_token_memory: ptr = verified::host::alloc(
+        4 * verified::token::RECORD_BYTES, verified::token::ALIGNMENT);
     let record_memory: ptr = verified::host::alloc(2240, 4);
     let offsets_memory: ptr = verified::host::alloc(80, 4);
-    let arena_memory: ptr = verified::host::alloc(512, 4);
-    let resolution_memory: ptr = verified::host::alloc(4, 4);
+    let tree_memory: ptr = verified::host::alloc(
+        2 * verified::syntax_tree::TREE_BYTES,
+        verified::syntax_tree::ALIGNMENT);
+    let resolution_memory: ptr = verified::host::alloc(
+        lowering::types::RESOLUTION_RECORD_BYTES,
+        lowering::types::RESOLUTION_ALIGNMENT);
     let type_output_memory: ptr = verified::host::alloc(256, 4);
-    let source_scratch_memory: ptr = verified::host::alloc(64, 4);
-    let token_scratch_memory: ptr = verified::host::alloc(48, 4);
-    let record_scratch_memory: ptr = verified::host::alloc(1120, 4);
-    let offsets_scratch_memory: ptr = verified::host::alloc(48, 4);
-    let arena_scratch_memory: ptr = verified::host::alloc(256, 4);
-    let resolution_scratch_memory: ptr = verified::host::alloc(4, 4);
-    let declaration_scratch_memory: ptr = verified::host::alloc(96, 4);
-    let allocation_scratch_memory: ptr = verified::host::alloc(112, 4);
-    let signature_scratch_memory: ptr = verified::host::alloc(256, 4);
-    let output_memory: ptr = verified::host::alloc(512, 4);
-    if (descriptor_memory == 0 || context_memory == 0 || declaration_memory == 0 || module_memory == 0 || declarations_memory == 0 || modules_memory == 0 || allocated_memory == 0 || source_memory == 0 || token_memory == 0 || record_memory == 0 || offsets_memory == 0 || arena_memory == 0 || resolution_memory == 0 || type_output_memory == 0 || source_scratch_memory == 0 || token_scratch_memory == 0 || record_scratch_memory == 0 || offsets_scratch_memory == 0 || arena_scratch_memory == 0 || resolution_scratch_memory == 0 || declaration_scratch_memory == 0 || allocation_scratch_memory == 0 || signature_scratch_memory == 0 || output_memory == 0) {
+    let arena_scratch_memory: ptr = verified::host::alloc(
+        verified::surface_type::allocation_bytes(7),
+        verified::surface_type::ALIGNMENT);
+    let alias_path_memory: ptr = verified::host::alloc_i32(16);
+    let resolution_scratch_memory: ptr = verified::host::alloc(
+        lowering::types::RESOLUTION_RECORD_BYTES,
+        lowering::types::RESOLUTION_ALIGNMENT);
+    let declaration_scratch_memory: ptr = verified::host::alloc(
+        UNIT_DECLARATION_WORDS * verified::host::I32_BYTES,
+        lowering::declarations::ALIGNMENT);
+    let allocation_scratch_memory: ptr = verified::host::alloc(
+        UNIT_ALLOCATION_WORDS * verified::host::I32_BYTES,
+        lowering::allocation::ALIGNMENT);
+    let signature_capacity: lowering::signature_index::Requirements =
+        lowering::signature_index::Requirements {
+            entries: 2, members: 0, variants: 0, fields: 0,
+            constants: 0, bytes: 0, valid: true,
+        };
+    let index_memory: ptr = verified::host::alloc(
+        lowering::signature_index::allocation_bytes(signature_capacity),
+        lowering::signature_index::ALIGNMENT);
+    let cursor_memory: ptr = verified::host::alloc(
+        lowering::signature_index::WRITER_BYTES,
+        lowering::signature_index::ALIGNMENT);
+    if (descriptor_memory == 0 || context_memory == 0 || declaration_memory == 0 || allocated_memory == 0 || source_memory == 0 || token_memory == 0 || native_token_memory == 0 || record_memory == 0 || offsets_memory == 0 || tree_memory == 0 || resolution_memory == 0 || type_output_memory == 0 || arena_scratch_memory == 0 || alias_path_memory == 0 || resolution_scratch_memory == 0 || declaration_scratch_memory == 0 || allocation_scratch_memory == 0 || index_memory == 0 || cursor_memory == 0) {
         return 1;
     }
-    let descriptors:[i32] = verified::host::i32_slice_from_raw_parts(descriptor_memory, 8);
-    let contexts:[i32] = verified::host::i32_slice_from_raw_parts(context_memory, 24);
-    let declaration_catalog:[i32] = verified::host::i32_slice_from_raw_parts(declaration_memory, 48);
-    let module_catalog:[i32] = verified::host::i32_slice_from_raw_parts(module_memory, 8);
-    let declarations:[i32] = verified::host::i32_slice_from_raw_parts(declarations_memory, 48);
-    let modules:[i32] = verified::host::i32_slice_from_raw_parts(modules_memory, 8);
-    let allocated:[i32] = verified::host::i32_slice_from_raw_parts(allocated_memory, 48);
+    let descriptor_table: lowering::declarations::Catalog =
+        lowering::declarations::catalog_from_raw_parts(descriptor_memory, 2);
+    let context_table: lowering::unit_context::Table =
+        lowering::unit_context::from_raw_parts(context_memory, 2);
+    let contexts: [lowering::unit_context::UnitContext] =
+        context_table.data;
+    let allocated: lowering::allocation::Table =
+        lowering::allocation::from_raw_parts(allocated_memory, 4);
     let source_catalog:[i32] = verified::host::i32_slice_from_raw_parts(source_memory, 18);
     let token_catalog:[i32] = verified::host::i32_slice_from_raw_parts(token_memory, 12);
     let record_catalog:[i32] = verified::host::i32_slice_from_raw_parts(record_memory, 560);
     let offsets_catalog:[i32] = verified::host::i32_slice_from_raw_parts(offsets_memory, 20);
-    let type_arena_catalog:[i32] = verified::host::i32_slice_from_raw_parts(arena_memory, 128);
-    let resolution_catalog:[i32] = verified::host::i32_slice_from_raw_parts(resolution_memory, 1);
+    let tree_catalog: verified::syntax_tree::Catalog =
+        verified::syntax_tree::catalog_from_raw_parts(tree_memory, 2);
+    let trees: [verified::syntax_tree::Tree] = tree_catalog.data;
+    let resolution_catalog: lowering::types::ResolutionTable =
+        lowering::types::from_raw_parts(resolution_memory, 0,
+            lowering::types::IdentifierToken);
     let type_output:[i32] = verified::host::i32_slice_from_raw_parts(type_output_memory, 64);
-    let source_scratch:[i32] = verified::host::i32_slice_from_raw_parts(source_scratch_memory, 16);
-    let token_scratch:[i32] = verified::host::i32_slice_from_raw_parts(token_scratch_memory, 12);
-    let record_scratch:[i32] = verified::host::i32_slice_from_raw_parts(record_scratch_memory, 280);
-    let offsets_scratch:[i32] = verified::host::i32_slice_from_raw_parts(offsets_scratch_memory, 12);
-    let type_arena_scratch:[i32] = verified::host::i32_slice_from_raw_parts(arena_scratch_memory, 64);
-    let resolution_scratch:[i32] = verified::host::i32_slice_from_raw_parts(resolution_scratch_memory, 1);
-    let declaration_scratch:[i32] = verified::host::i32_slice_from_raw_parts(declaration_scratch_memory, 24);
-    let allocation_scratch:[i32] = verified::host::i32_slice_from_raw_parts(allocation_scratch_memory, 28);
-    let signature_scratch:[i32] = verified::host::i32_slice_from_raw_parts(signature_scratch_memory, 64);
-    let output:[i32] = verified::host::i32_slice_from_raw_parts(output_memory, 128);
-    descriptors[0] = 0;
-    descriptors[1] = 24;
-    descriptors[2] = 0;
-    descriptors[3] = 4;
-    descriptors[4] = 24;
-    descriptors[5] = 24;
-    descriptors[6] = 4;
-    descriptors[7] = 4;
+    let type_arena_scratch: verified::surface_type::TypeArena =
+        verified::surface_type::from_raw_parts(arena_scratch_memory, 7);
+    let alias_path_scratch: [i32] =
+        verified::host::i32_slice_from_raw_parts(alias_path_memory, 16);
+    let resolution_scratch: lowering::types::ResolutionTable =
+        lowering::types::from_raw_parts(resolution_scratch_memory, 1,
+            lowering::types::IdentifierToken);
+    let declaration_scratch: lowering::declarations::Table =
+        lowering::declarations::from_raw_parts(declaration_scratch_memory,
+            (UNIT_DECLARATION_WORDS - lowering::declarations::HEADER)
+                / lowering::declarations::ROW);
+    let allocation_scratch: lowering::allocation::Table =
+        lowering::allocation::from_raw_parts(allocation_scratch_memory,
+            (UNIT_ALLOCATION_WORDS - lowering::allocation::HEADER)
+                / lowering::allocation::ROW);
     let unit: i32 = 0;
     while (unit <= 1) {
-        let declaration_base: i32 = unit * 24;
-        declaration_catalog[declaration_base] = 2;
-        declaration_catalog[declaration_base + 4] = 1;
-        declaration_catalog[declaration_base + 6] = 1;
-        let module_slot: i32 = declaration_base + 8;
-        declaration_catalog[module_slot] = unit;
-        declaration_catalog[module_slot + 1] = lowering::declarations::MODULE;
-        declaration_catalog[module_slot + 3] = 2;
-        declaration_catalog[module_slot + 4] = 1;
-        declaration_catalog[module_slot + 5] = -1;
-        declaration_catalog[module_slot + 6] = 0;
-        let function_slot: i32 = module_slot + 8;
-        declaration_catalog[function_slot] = unit;
-        declaration_catalog[function_slot + 1] = lowering::declarations::FUNCTION;
-        declaration_catalog[function_slot + 3] = 10;
-        declaration_catalog[function_slot + 4] = 9;
-        declaration_catalog[function_slot + 5] = 1;
-        declaration_catalog[function_slot + 6] = -1;
+        let unit_memory: ptr = declaration_memory
+            + unit * UNIT_DECLARATION_WORDS * verified::host::I32_BYTES;
+        let table: lowering::declarations::Table =
+            lowering::declarations::from_raw_parts(unit_memory, 2);
+        lowering::declarations::table_write_header(table,
+            lowering::declarations::DeclarationCounts {
+            rows: 2, structures: 0, enumerations: 0, aliases: 0,
+            constants: 0, functions: 1, externals: 0, modules: 1,
+            imports: 0,
+        });
+        lowering::declarations::table_write_row(table, 0,
+            lowering::declarations::DeclarationRow {
+                unit: unit, kind: lowering::declarations::Module,
+                is_public: false, item: 2, declaration: 1,
+                name: -1, target: 0, ordinal: 0,
+            });
+        lowering::declarations::table_write_row(table, 1,
+            lowering::declarations::DeclarationRow {
+                unit: unit, kind: lowering::declarations::Function,
+                is_public: false, item: 10, declaration: 9,
+                name: 1, target: -1, ordinal: 0,
+            });
         let source_base: i32 = unit * 9;
         source_catalog[source_base] = 105;
         source_catalog[source_base + 1] = 51;
@@ -150,39 +205,139 @@ fn main() -> i32 {
         token_catalog[token_base + 4] = 4;
         token_catalog[token_base + 5] = 9;
         make_tree(record_catalog, offsets_catalog, unit * 280, unit * 10);
-        contexts[unit * 12] = source_base;
-        contexts[unit * 12 + 1] = 9;
-        contexts[unit * 12 + 2] = token_base;
-        contexts[unit * 12 + 3] = 2;
-        contexts[unit * 12 + 4] = unit * 280;
-        contexts[unit * 12 + 5] = 280;
-        contexts[unit * 12 + 6] = unit * 10;
-        contexts[unit * 12 + 7] = 10;
-        contexts[unit * 12 + 8] = unit * 64;
-        contexts[unit * 12 + 9] = 64;
-        contexts[unit * 12 + 10] = 0;
-        contexts[unit * 12 + 11] = 0;
+        let unit_records: [i32] = verified::host::i32_slice_from_raw_parts(
+            record_memory + unit * 280 * verified::host::I32_BYTES, 280);
+        let unit_offsets: [i32] = verified::host::i32_slice_from_raw_parts(
+            offsets_memory + unit * 10 * verified::host::I32_BYTES, 10);
+        let decoded: verified::syntax_tree::Tree =
+            verified::syntax_tree::decode(unit_records, 280,
+                unit_offsets, 10, 2);
+        if (decoded.node_count != 10) { return 42 + unit; }
+        trees[unit] = decoded;
+        let stored: verified::syntax_tree::Tree = trees[unit];
+        if (stored.node_count != 10) { return 52 + unit; }
+        contexts[unit].source_offset = source_base;
+        contexts[unit].source_length = 9;
+        contexts[unit].token_offset = unit * 2;
+        contexts[unit].token_count = 2;
+        contexts[unit].node_count = 10;
+        contexts[unit].resolution_row_offset = 0;
+        contexts[unit].resolution_count = 0;
         unit += 1;
     }
-    module_catalog[0] = 0;
-    module_catalog[1] = 0;
-    module_catalog[2] = 0;
-    module_catalog[3] = 4;
-    module_catalog[4] = 1;
-    module_catalog[5] = 0;
-    module_catalog[6] = 0;
-    module_catalog[7] = 4;
-    let collected = lowering::units::accumulate(descriptors, 8, 2, declaration_catalog, 48, module_catalog, 8, declarations, 48, modules, 8, allocated, 48);
-    if (lowering::units::units_stage(collected) != lowering::units::SUCCESS || allocated[18 + 9] != 0 || allocated[38 + 9] != 1) {
-        return 2;
+    lowering::declarations::catalog_write_table(descriptor_table, 0,
+        lowering::declarations::from_raw_parts(declaration_memory, 2));
+    let second_declaration_memory: ptr = declaration_memory
+        + UNIT_DECLARATION_WORDS * verified::host::I32_BYTES;
+    lowering::declarations::catalog_write_table(descriptor_table, 1,
+        lowering::declarations::from_raw_parts(second_declaration_memory, 2));
+    if (lowering::declarations::table_capacity(
+            lowering::declarations::catalog_table(descriptor_table, 0))
+            != 2) { return 40; }
+    if (lowering::declarations::count_rows(
+            lowering::declarations::table_header(
+                lowering::declarations::catalog_table(descriptor_table, 1)))
+            != 2) { return 41; }
+    if (lowering::declarations::count_rows(
+            lowering::declarations::table_header(
+                lowering::declarations::catalog_table(descriptor_table, 0))) != 2) {
+        return 44;
     }
-    let words: i32 = lowering::signatures::lower_units(descriptors, 8, 2, contexts, 24, declaration_catalog, 48, source_catalog, 18, token_catalog, 12, record_catalog, 560, offsets_catalog, 20, type_arena_catalog, 128, resolution_catalog, 0, type_arena_catalog, 0, 0, type_arena_scratch, 64, allocated, 48, 48, type_output, 64, source_scratch, 16, token_scratch, 12, record_scratch, 280, offsets_scratch, 12, type_arena_scratch, 64, resolution_scratch, 1, declaration_scratch, 24, allocation_scratch, 28, signature_scratch, 64, output, 128);
-    if (words != 20 || output[1] != 2 || output[4] != 2 || output[8] != 0 || output[10] != lowering::signatures::INTERNAL_SHAPE || output[14] != 1 || output[16] != lowering::signatures::INTERNAL_SHAPE) {
+    let collected = lowering::units::accumulate(descriptor_table,
+        lowering::allocation::from_raw_parts(allocated_memory, 4));
+    if (!lowering::units::stage_succeeded(lowering::units::units_stage(collected))) {
+        return 20 + lowering::units::stage_code(
+            lowering::units::units_stage(collected))
+            + 10 * lowering::units::units_count(collected);
+    }
+    if (lowering::allocation::row_core_id(
+            lowering::allocation::table_row(allocated, 1)) != 0) { return 25; }
+    if (lowering::allocation::row_core_id(
+            lowering::allocation::table_row(allocated, 3)) != 1) { return 26; }
+    let token_table: verified::token::TokenTable =
+        verified::token::from_raw_parts(native_token_memory, 4);
+    if (!verified::token::decode_packed(token_catalog, 12, 4,
+            token_table, 0)) { return 1; }
+    let inputs: lowering::signature_producer::SignatureUnitInputs =
+        lowering::signature_producer::SignatureUnitInputs {
+            unit_count: 2,
+            unit_declarations: descriptor_table,
+            contexts: context_table,
+            sources: lowering::signature_producer::region(source_catalog, 18),
+            tokens: token_table,
+            trees: tree_catalog,
+            resolutions: resolution_catalog,
+            aliases: lowering::aliases::from_raw_parts(0, 0),
+            allocations: lowering::allocation::from_raw_parts(allocated_memory,
+                (ALLOCATION_WORDS - lowering::allocation::HEADER)
+                    / lowering::allocation::ROW),
+            expected_declaration_words: DECLARATION_WORDS,
+        };
+    let index: lowering::signature_index::Table =
+        lowering::signature_index::from_raw_parts(index_memory,
+            signature_capacity);
+    let writer: lowering::signature_index::Writer =
+        lowering::signature_index::writer(index, cursor_memory);
+    let workspace: lowering::signature_producer::SignatureUnitWorkspace =
+        lowering::signature_producer::SignatureUnitWorkspace {
+            alias_path_scratch: lowering::signature_producer::region(
+                alias_path_scratch, 16),
+            type_output: lowering::signature_producer::region(type_output, 64),
+            type_arena: type_arena_scratch,
+            resolutions: resolution_scratch,
+            declarations: declaration_scratch,
+            allocations: allocation_scratch,
+            writer: writer,
+        };
+    if (!lowering::signature_producer::lower_units(inputs, workspace)) {
         return 3;
     }
+    let signatures: lowering::signature_index::Table =
+        lowering::signature_index::finish(writer);
+    if (!lowering::signature_index::has_shape(signatures, 0,
+            lowering::signatures::InternalFunctionShape)
+        || !lowering::signature_index::has_shape(signatures, 1,
+            lowering::signatures::InternalFunctionShape)
+        || lowering::signatures::record_arity(
+            lowering::signature_index::record_at(signatures, 0)) != 0
+        || lowering::signatures::record_result_type(
+            lowering::signature_index::record_at(signatures, 1)) != 1) {
+        return 3;
+    }
+    workspace.declarations = lowering::declarations::table_with_rows(
+        declaration_scratch, 1);
+    workspace.writer = lowering::signature_index::writer(index,
+        cursor_memory);
+    if (lowering::signature_producer::lower_units(inputs, workspace)) {
+        return 6;
+    }
+    workspace.declarations = declaration_scratch;
+    workspace.allocations = lowering::allocation::table_with_rows(
+        allocation_scratch, 1);
+    workspace.writer = lowering::signature_index::writer(index,
+        cursor_memory);
+    if (lowering::signature_producer::lower_units(inputs, workspace)) {
+        return 7;
+    }
+    workspace.allocations = allocation_scratch;
+    // Direct native emission must still reject a second unit that tries
+    // to reuse the first unit's canonical function ID.
+    let second: lowering::allocation::AllocationRow =
+        lowering::allocation::table_row(allocated, 3);
+    let duplicate: lowering::allocation::AllocationRow = second;
+    duplicate.core_id = 0;
+    lowering::allocation::table_write_row(allocated, 3, duplicate);
+    workspace.writer = lowering::signature_index::writer(index,
+        cursor_memory);
+    if (lowering::signature_producer::lower_units(inputs, workspace)) {
+        return 5;
+    }
+    lowering::allocation::table_write_row(allocated, 3, second);
     // Reusing one unit's context range is rejected instead of compiling it twice.
-    contexts[12] = 0;
-    if (lowering::signatures::lower_units(descriptors, 8, 2, contexts, 24, declaration_catalog, 48, source_catalog, 18, token_catalog, 12, record_catalog, 560, offsets_catalog, 20, type_arena_catalog, 128, resolution_catalog, 0, type_arena_catalog, 0, 0, type_arena_scratch, 64, allocated, 48, 48, type_output, 64, source_scratch, 16, token_scratch, 12, record_scratch, 280, offsets_scratch, 12, type_arena_scratch, 64, resolution_scratch, 1, declaration_scratch, 24, allocation_scratch, 28, signature_scratch, 64, output, 128) != -1) {
+    contexts[1].source_offset = 0;
+    workspace.writer = lowering::signature_index::writer(index,
+        cursor_memory);
+    if (lowering::signature_producer::lower_units(inputs, workspace)) {
         return 4;
     }
     return 0;

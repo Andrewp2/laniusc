@@ -1,0 +1,15 @@
+module app::main;
+
+fn add_one(value: i32) -> i32 {
+    let copy: i32 = value;
+    return copy + 1;
+}
+
+fn main() -> i32 {
+    let value: i32 = 41;
+    {
+        let value: i32 = 1;
+        if (value != 1) { return 99; }
+    }
+    return add_one(value);
+}

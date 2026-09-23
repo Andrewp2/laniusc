@@ -67,6 +67,7 @@ static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_INVALID_OWNER = 3u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_MODULE = 5u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
+static const uint PATH_RESOLVE_STATUS_MISSING_IMPORT_EDGE = 7u;
 static const uint HIR_ITEM_VIS_PUBLIC = 1u;
 static const uint IMPORT_STATUS_OK = 0u;
 static const uint HIR_ITEM_NAMESPACE_VALUE = 2u;
@@ -185,7 +186,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!module_prefix_visible_from_path(path_i, module_i))
     {
         resolved_decl[path_i] = INVALID;
-        resolved_status[path_i] = PATH_RESOLVE_STATUS_UNRESOLVED_MODULE;
+        resolved_status[path_i] = PATH_RESOLVE_STATUS_MISSING_IMPORT_EDGE;
         return;
     }
 

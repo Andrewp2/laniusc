@@ -1,0 +1,101 @@
+module app::main;
+
+import backend::compile;
+import backend::constant_index;
+import backend::frame;
+import backend::function_index;
+import backend::layout_index;
+import backend::syntax;
+import verified::host;
+
+// Compile a complete enum match directly through the verified x86 backend:
+// match Some(42) { Some(value) -> value, None -> 0 }.
+fn main() -> i32 {
+    let program: [i32; 13] = [3,64,0,1,0,1, 6,0,1,2, 1,1,0];
+    let input: [i32; 22] = [0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0];
+    let header: backend::syntax::FunctionHeader =
+        backend::syntax::FunctionHeader {
+            kind: backend::syntax::DefinedFunction,
+            pointer_bits: backend::syntax::POINTER_BITS,
+            id: 0,
+            result_type: backend::syntax::type_code(
+                backend::syntax::TypeI32),
+            parameters: 0,
+            body_words: 22,
+        };
+    let function: backend::function_index::Function =
+        backend::function_index::Function {
+            header: header,
+            input_offset: 0,
+            word_count: 28,
+            parameter_start: 0,
+        };
+    let cursor: i32 = 0;
+    input[cursor] = backend::syntax::statement_code(
+        backend::syntax::StatementReturn);
+    input[cursor + 1] = 1;
+    input[cursor + 2] = backend::syntax::expression_code(
+        backend::syntax::ExprMatch);
+    input[cursor + 3] = backend::syntax::type_code(
+        backend::syntax::TypeI32);
+    input[cursor + 4] = 2;
+    input[cursor + 5] = backend::syntax::expression_code(
+        backend::syntax::ExprEnumeration);
+    input[cursor + 6] = backend::syntax::NOMINAL_TYPE_BASE;
+    input[cursor + 7] = 0;
+    input[cursor + 8] = 1;
+    input[cursor + 9] = backend::syntax::expression_code(
+        backend::syntax::ExprValue);
+    input[cursor + 10] = backend::syntax::type_code(
+        backend::syntax::TypeI32);
+    input[cursor + 11] = 42;
+    input[cursor + 12] = 0;
+    input[cursor + 13] = 1;
+    input[cursor + 14] = 7;
+    input[cursor + 15] = backend::syntax::expression_code(
+        backend::syntax::ExprLocal);
+    input[cursor + 16] = 7;
+    input[cursor + 17] = 1;
+    input[cursor + 18] = 0;
+    input[cursor + 19] = backend::syntax::expression_code(
+        backend::syntax::ExprValue);
+    input[cursor + 20] = backend::syntax::type_code(
+        backend::syntax::TypeI32);
+    input[cursor + 21] = 0;
+    let work_memory: ptr = verified::host::alloc(1024,
+        backend::frame::WORK_ALIGNMENT);
+    let output_memory: ptr = verified::host::alloc(16384, 4);
+    if (work_memory == 0 || output_memory == 0) { return 2; }
+    let work: backend::frame::Workspace = backend::frame::from_raw_parts(
+        work_memory, 256);
+    let required: backend::layout_index::Requirements =
+        backend::layout_index::measure(program, 13);
+    if (!required.valid) { return 2; }
+    let layout_memory: ptr = verified::host::alloc(
+        backend::layout_index::allocation_bytes(required),
+        backend::layout_index::ALIGNMENT);
+    if (layout_memory == 0) { return 2; }
+    let layout: backend::layout_index::Table =
+        backend::layout_index::from_raw_parts(layout_memory, required);
+    if (!backend::layout_index::build(program, 13, layout)) { return 2; }
+    let constants: backend::constant_index::Table =
+        backend::constant_index::from_raw_parts(work_memory, 0);
+    let functions: backend::function_index::Table =
+        backend::function_index::from_raw_parts(work_memory,
+            backend::function_index::Requirements {
+                functions: 0, parameters: 0, end: 13, valid: true,
+            });
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(output_memory,
+        4096);
+    state[0].stride = 13;
+    let written: i32 = backend::compile::function(
+        backend::compile::region(input, 22), function,
+        work,
+        backend::compile::cursor(output, 4096, 0),
+        backend::compile::region(program, 13), layout, constants,
+        functions);
+    if (written <= 0 || state[0].input != 22) { return 1; }
+    return 0;
+}

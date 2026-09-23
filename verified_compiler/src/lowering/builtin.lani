@@ -1,0 +1,132 @@
+module lowering::builtin;
+
+import backend::syntax;
+import verified::host;
+
+// Keep the spelling-to-Core mapping explicit. Core type codes are a wire
+// format, not an ordinal inferred from the ordering of builtin names.
+pub enum LookupState {
+    UnknownName,
+    SupportedType,
+    UnsupportedType,
+}
+
+// Keep this as a struct until the native backend preserves the full pointer
+// width of enum payloads across aggregate returns and copies.
+pub struct Lookup {
+    state: LookupState,
+    type_tag: i32,
+}
+
+pub fn is_unknown(result: Lookup) -> bool {
+    return match (result.state) {
+        UnknownName -> true,
+        SupportedType -> false,
+        UnsupportedType -> false,
+    };
+}
+
+pub fn is_supported(result: Lookup) -> bool {
+    return match (result.state) {
+        UnknownName -> false,
+        SupportedType -> true,
+        UnsupportedType -> false,
+    };
+}
+
+pub fn is_unsupported(result: Lookup) -> bool {
+    return match (result.state) {
+        UnknownName -> false,
+        SupportedType -> false,
+        UnsupportedType -> true,
+    };
+}
+
+pub fn has_state(result: Lookup, expected: LookupState) -> bool {
+    return match (expected) {
+        UnknownName -> is_unknown(result),
+        SupportedType -> is_supported(result),
+        UnsupportedType -> is_unsupported(result),
+    };
+}
+
+pub fn type_tag(result: Lookup) -> i32 {
+    return result.type_tag;
+}
+
+fn result(state: LookupState, type_tag: i32) -> Lookup {
+    return Lookup { state: state, type_tag: type_tag };
+}
+
+fn name_is(source: [i32], start: i32, length: i32,
+    spelling: str) -> bool {
+    let words: [i32] = verified::host::i32_slice_from_raw_parts(
+        verified::host::string_data_ptr(spelling),
+        (length + verified::host::I32_BYTES - 1)
+            / verified::host::I32_BYTES);
+    let index: i32 = 0;
+    while (index < length) {
+        let byte: i32 = (words[index / verified::host::I32_BYTES]
+            >> ((index % verified::host::I32_BYTES)
+                * verified::host::BITS_PER_BYTE)) & verified::host::BYTE_MASK;
+        if (source[start + index] != byte) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+pub fn lookup(source: [i32], source_length: i32, start: i32,
+    finish: i32) -> Lookup {
+    if (start <= -1 || finish <= start || finish > source_length) {
+        return result(UnknownName, -1);
+    }
+    let length: i32 = finish - start;
+    if (length == 2) {
+        if (name_is(source, start, length, "i8")
+            || name_is(source, start, length, "u8")) {
+            return result(UnsupportedType, -1);
+        }
+    }
+    if (length == 3) {
+        if (name_is(source, start, length, "i32")) {
+            return result(SupportedType, backend::syntax::type_code(
+                backend::syntax::TypeI32));
+        }
+        if (name_is(source, start, length, "ptr")) {
+            return result(SupportedType, backend::syntax::type_code(
+                backend::syntax::TypePointer));
+        }
+        if (name_is(source, start, length, "str")) {
+            return result(SupportedType, backend::syntax::type_code(
+                backend::syntax::TypeString));
+        }
+        if (name_is(source, start, length, "i16")
+            || name_is(source, start, length, "i64")
+            || name_is(source, start, length, "u16")
+            || name_is(source, start, length, "u32")
+            || name_is(source, start, length, "u64")
+            || name_is(source, start, length, "f32")
+            || name_is(source, start, length, "f64")) {
+            return result(UnsupportedType, -1);
+        }
+    }
+    if (length == 4) {
+        if (name_is(source, start, length, "bool")) {
+            return result(SupportedType, backend::syntax::type_code(
+                backend::syntax::TypeBool));
+        }
+        if (name_is(source, start, length, "char")) {
+            return result(UnsupportedType, -1);
+        }
+    }
+    if (length == 5) {
+        if (name_is(source, start, length, "usize")) {
+            return result(SupportedType, backend::syntax::type_code(
+                backend::syntax::TypeUsize));
+        }
+        if (name_is(source, start, length, "isize")) {
+            return result(UnsupportedType, -1);
+        }
+    }
+    return result(UnknownName, -1);
+}

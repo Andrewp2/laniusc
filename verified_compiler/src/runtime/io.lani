@@ -3,65 +3,101 @@ import x86::register;
 import x86::encode;
 import x86::control;
 
+pub const STDOUT_HANDLE: i32 = 1;
+pub const FIRST_FILE_HANDLE: i32 = 3;
+const PATH_BUFFER_BYTES: i32 = 4096;
+const MAX_PATH_BYTES: i32 = PATH_BUFFER_BYTES - 1;
+const OPEN_CLOEXEC_FLAG: i32 = 524288;
+const DUPFD_CLOEXEC_COMMAND: i32 = 1030;
+const NEGATIVE_EINTR: i32 = -4;
+
+enum LinuxSyscall {
+    ReadSyscall,
+    WriteSyscall,
+    OpenSyscall,
+    CloseSyscall,
+    FcntlSyscall,
+}
+
+fn syscall_number(operation: LinuxSyscall) -> i32 {
+    return match (operation) {
+        ReadSyscall -> 0,
+        WriteSyscall -> 1,
+        OpenSyscall -> 2,
+        CloseSyscall -> 3,
+        FcntlSyscall -> 72,
+    };
+}
+
 pub fn transfer(output: [i32], capacity: i32, cursor: i32, writing: bool) -> i32 {
     let next: i32 = cursor;
     // Fill the request (or read through EOF). Retry EINTR and finish short writes.
     // Other OS errors normalize to -1; partial effects on failure remain explicit.
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::R8, 0, 0);
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32, x86::register::R8, 0, 0);
     let empty: i32 = -1;
     if (writing) {
-        next = x86::encode::binary(output, capacity, next, 64, x86::encode::TEST, x86::register::RDX, x86::register::RDX);
+        next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Test, x86::register::RDX, x86::register::RDX);
         empty = next + 2;
-        next = x86::control::branch(output, capacity, next, x86::control::EQUAL, 0);
+        next = x86::control::branch(output, capacity, next, x86::control::Equal, 0);
     }
     // A zero-byte read still checks the handle. Returning early would wrongly
     // turn an invalid/closed handle into success instead of Core's -1 result.
     let loop_start: i32 = next;
-    if (writing) { next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, 1, 0); } else { next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, 0, 0); }
+    let operation: LinuxSyscall = ReadSyscall;
+    if (writing) { operation = WriteSyscall; }
+    next = x86::encode::immediate(output, capacity, next,
+        x86::register::WIDTH_32, x86::register::RAX,
+        syscall_number(operation), 0);
     next = x86::control::syscall(output, capacity, next);
-    next = x86::encode::immediate(output, capacity, next, 64, x86::register::R10, -4, -1);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::CMP, x86::register::RAX, x86::register::R10);
-    next = x86::control::branch(output, capacity, next, x86::control::EQUAL, loop_start);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::TEST, x86::register::RAX, x86::register::RAX);
+    next = x86::encode::immediate(output, capacity, next,
+        x86::register::WIDTH_64, x86::register::R10, NEGATIVE_EINTR, -1);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Compare, x86::register::RAX, x86::register::R10);
+    next = x86::control::branch(output, capacity, next, x86::control::Equal, loop_start);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Test, x86::register::RAX, x86::register::RAX);
     let failed: i32 = next + 2;
-    next = x86::control::branch(output, capacity, next, x86::control::SIGN, 0);
+    next = x86::control::branch(output, capacity, next, x86::control::Sign, 0);
     let zero: i32 = next + 2;
-    next = x86::control::branch(output, capacity, next, x86::control::EQUAL, 0);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::ADD, x86::register::R8, x86::register::RAX);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::ADD, x86::register::RSI, x86::register::RAX);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::SUB, x86::register::RDX, x86::register::RAX);
-    next = x86::control::branch(output, capacity, next, x86::control::NOT_EQUAL, loop_start);
+    next = x86::control::branch(output, capacity, next, x86::control::Equal, 0);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Add, x86::register::R8, x86::register::RAX);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Add, x86::register::RSI, x86::register::RAX);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Subtract, x86::register::RDX, x86::register::RAX);
+    next = x86::control::branch(output, capacity, next, x86::control::NotEqual, loop_start);
     let success: i32 = next;
-    next = x86::encode::move_register(output, capacity, next, 32, x86::register::RAX, x86::register::R8);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_32, x86::register::RAX, x86::register::R8);
     next = x86::control::return_near(output, capacity, next);
     if (empty >= 0) {
-        if (x86::control::patch_relative(output, next, empty, success) < 0) { return -1; }
+        if (x86::control::patch_relative(output, next, empty, success) <= -1) { return -1; }
     }
-    if (x86::control::patch_relative(output, next, zero, next) < 0) { return -1; }
-    if (!writing) { next = x86::encode::move_register(output, capacity, next, 32, x86::register::RAX, x86::register::R8);
-    next = x86::control::return_near(output, capacity, next);
+    if (x86::control::patch_relative(output, next, zero, next) <= -1) { return -1; }
+    if (!writing) {
+        next = x86::encode::move_register(output, capacity, next,
+            x86::register::WIDTH_32, x86::register::RAX, x86::register::R8);
+        next = x86::control::return_near(output, capacity, next);
     }
-    if (x86::control::patch_relative(output, next, failed, next) < 0) { return -1; }
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, -1, 0);
+    if (x86::control::patch_relative(output, next, failed, next) <= -1) { return -1; }
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32, x86::register::RAX, -1, 0);
     next = x86::control::return_near(output, capacity, next);
     return next;
 }
 
 pub fn close(output: [i32], capacity: i32, cursor: i32) -> i32 {
     let next: i32 = cursor;
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::R10, 3, 0);
-    next = x86::encode::binary(output, capacity, next, 32, x86::encode::CMP, x86::register::RDI, x86::register::R10);
+    next = x86::encode::immediate(output, capacity, next,
+        x86::register::WIDTH_32, x86::register::R10, FIRST_FILE_HANDLE, 0);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_32, x86::encode::Compare, x86::register::RDI, x86::register::R10);
     let invalid: i32 = next + 2;
-    next = x86::control::branch(output, capacity, next, x86::control::LESS, 0);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, 3, 0);
+    next = x86::control::branch(output, capacity, next, x86::control::Less, 0);
+    next = x86::encode::immediate(output, capacity, next,
+        x86::register::WIDTH_32, x86::register::RAX,
+        syscall_number(CloseSyscall), 0);
     next = x86::control::syscall(output, capacity, next);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::TEST, x86::register::RAX, x86::register::RAX);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Test, x86::register::RAX, x86::register::RAX);
     let failed: i32 = next + 2;
-    next = x86::control::branch(output, capacity, next, x86::control::SIGN, 0);
+    next = x86::control::branch(output, capacity, next, x86::control::Sign, 0);
     next = x86::control::return_near(output, capacity, next);
-    if (x86::control::patch_relative(output, next, invalid, next) < 0) { return -1; }
-    if (x86::control::patch_relative(output, next, failed, next) < 0) { return -1; }
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, -1, 0);
+    if (x86::control::patch_relative(output, next, invalid, next) <= -1) { return -1; }
+    if (x86::control::patch_relative(output, next, failed, next) <= -1) { return -1; }
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32, x86::register::RAX, -1, 0);
     next = x86::control::return_near(output, capacity, next);
     return next;
 }
@@ -70,73 +106,84 @@ pub fn open_read(output: [i32], capacity: i32, cursor: i32) -> i32 {
     let next: i32 = cursor;
     // Copy exactly path_len bytes and add the OS terminator; never read past it.
     // Linux's PATH_MAX and NUL-free filenames delimit the native host domain.
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::R10, 4095, 0);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::CMP, x86::register::RSI, x86::register::R10);
+    next = x86::encode::immediate(output, capacity, next,
+        x86::register::WIDTH_32, x86::register::R10, MAX_PATH_BYTES, 0);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Compare, x86::register::RSI, x86::register::R10);
     let oversize: i32 = next + 2;
-    next = x86::control::branch(output, capacity, next, x86::control::ABOVE, 0);
+    next = x86::control::branch(output, capacity, next, x86::control::Above, 0);
     next = x86::control::push(output, capacity, next, x86::register::RBP);
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::RBP, x86::register::RSP);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::R10, 4096, 0);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::SUB, x86::register::RSP, x86::register::R10);
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::R8, x86::register::RDI);
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::R9, x86::register::RSP);
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::R10, x86::register::RSI);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::RBP, x86::register::RSP);
+    next = x86::encode::immediate(output, capacity, next,
+        x86::register::WIDTH_32, x86::register::R10, PATH_BUFFER_BYTES, 0);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Subtract, x86::register::RSP, x86::register::R10);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::R8, x86::register::RDI);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::R9, x86::register::RSP);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::R10, x86::register::RSI);
     let copy_start: i32 = next;
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::TEST, x86::register::R10, x86::register::R10);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Test, x86::register::R10, x86::register::R10);
     let copied: i32 = next + 2;
-    next = x86::control::branch(output, capacity, next, x86::control::EQUAL, 0);
+    next = x86::control::branch(output, capacity, next, x86::control::Equal, 0);
     next = x86::encode::load_byte(output, capacity, next, x86::register::RAX, x86::register::R8, 0);
-    next = x86::encode::binary(output, capacity, next, 32, x86::encode::TEST, x86::register::RAX, x86::register::RAX);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_32, x86::encode::Test, x86::register::RAX, x86::register::RAX);
     let embedded_nul: i32 = next + 2;
-    next = x86::control::branch(output, capacity, next, x86::control::EQUAL, 0);
+    next = x86::control::branch(output, capacity, next, x86::control::Equal, 0);
     next = x86::encode::store_byte(output, capacity, next, x86::register::RAX, x86::register::R9, 0);
     next = x86::encode::address(output, capacity, next, x86::register::R8, x86::register::R8, 1);
     next = x86::encode::address(output, capacity, next, x86::register::R9, x86::register::R9, 1);
     next = x86::encode::address(output, capacity, next, x86::register::R10, x86::register::R10, -1);
     next = x86::control::jump(output, capacity, next, copy_start);
-    if (x86::control::patch_relative(output, next, copied, next) < 0) { return -1; }
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, 0, 0);
+    if (x86::control::patch_relative(output, next, copied, next) <= -1) { return -1; }
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32, x86::register::RAX, 0, 0);
     next = x86::encode::store_byte(output, capacity, next, x86::register::RAX, x86::register::R9, 0);
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::RDI, x86::register::RSP);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RSI, 524288, 0);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RDX, 0, 0);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, 2, 0);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::RDI, x86::register::RSP);
+    next = x86::encode::immediate(output, capacity, next,
+        x86::register::WIDTH_32, x86::register::RSI, OPEN_CLOEXEC_FLAG, 0);
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32, x86::register::RDX, 0, 0);
+    next = x86::encode::immediate(output, capacity, next,
+        x86::register::WIDTH_32, x86::register::RAX,
+        syscall_number(OpenSyscall), 0);
     next = x86::control::syscall(output, capacity, next);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::TEST, x86::register::RAX, x86::register::RAX);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Test, x86::register::RAX, x86::register::RAX);
     let open_failed: i32 = next + 2;
-    next = x86::control::branch(output, capacity, next, x86::control::SIGN, 0);
+    next = x86::control::branch(output, capacity, next, x86::control::Sign, 0);
     // Do not recycle a closed handle: Core's file identities increase monotonically.
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::R8, x86::register::RAX);
-    next = x86::encode::load(output, capacity, next, 64, x86::register::R9, x86::register::R15, 8);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::CMP, x86::register::RAX, x86::register::R9);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::R8, x86::register::RAX);
+    next = x86::encode::load(output, capacity, next, x86::register::WIDTH_64, x86::register::R9, x86::register::R15, 8);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Compare, x86::register::RAX, x86::register::R9);
     let accepted: i32 = next + 2;
-    next = x86::control::branch(output, capacity, next, x86::control::ABOVE_EQUAL, 0);
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::RDI, x86::register::RAX);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RSI, 1030, 0);
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::RDX, x86::register::R9);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, 72, 0);
+    next = x86::control::branch(output, capacity, next, x86::control::AboveEqual, 0);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::RDI, x86::register::RAX);
+    next = x86::encode::immediate(output, capacity, next,
+        x86::register::WIDTH_32, x86::register::RSI,
+        DUPFD_CLOEXEC_COMMAND, 0);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::RDX, x86::register::R9);
+    next = x86::encode::immediate(output, capacity, next,
+        x86::register::WIDTH_32, x86::register::RAX,
+        syscall_number(FcntlSyscall), 0);
     next = x86::control::syscall(output, capacity, next);
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::R9, x86::register::RAX);
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::RDI, x86::register::R8);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, 3, 0);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::R9, x86::register::RAX);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::RDI, x86::register::R8);
+    next = x86::encode::immediate(output, capacity, next,
+        x86::register::WIDTH_32, x86::register::RAX,
+        syscall_number(CloseSyscall), 0);
     next = x86::control::syscall(output, capacity, next);
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::RAX, x86::register::R9);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::TEST, x86::register::RAX, x86::register::RAX);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::RAX, x86::register::R9);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Test, x86::register::RAX, x86::register::RAX);
     let dup_failed: i32 = next + 2;
-    next = x86::control::branch(output, capacity, next, x86::control::SIGN, 0);
-    if (x86::control::patch_relative(output, next, accepted, next) < 0) { return -1; }
+    next = x86::control::branch(output, capacity, next, x86::control::Sign, 0);
+    if (x86::control::patch_relative(output, next, accepted, next) <= -1) { return -1; }
     next = x86::encode::address(output, capacity, next, x86::register::R10, x86::register::RAX, 1);
-    next = x86::encode::store(output, capacity, next, 64, x86::register::R10, x86::register::R15, 8);
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::RSP, x86::register::RBP);
+    next = x86::encode::store(output, capacity, next, x86::register::WIDTH_64, x86::register::R10, x86::register::R15, 8);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::RSP, x86::register::RBP);
     next = x86::control::pop(output, capacity, next, x86::register::RBP);
     next = x86::control::return_near(output, capacity, next);
-    if (x86::control::patch_relative(output, next, embedded_nul, next) < 0) { return -1; }
-    if (x86::control::patch_relative(output, next, open_failed, next) < 0) { return -1; }
-    if (x86::control::patch_relative(output, next, dup_failed, next) < 0) { return -1; }
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::RSP, x86::register::RBP);
+    if (x86::control::patch_relative(output, next, embedded_nul, next) <= -1) { return -1; }
+    if (x86::control::patch_relative(output, next, open_failed, next) <= -1) { return -1; }
+    if (x86::control::patch_relative(output, next, dup_failed, next) <= -1) { return -1; }
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::RSP, x86::register::RBP);
     next = x86::control::pop(output, capacity, next, x86::register::RBP);
-    if (x86::control::patch_relative(output, next, oversize, next) < 0) { return -1; }
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RAX, -1, 0);
+    if (x86::control::patch_relative(output, next, oversize, next) <= -1) { return -1; }
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32, x86::register::RAX, -1, 0);
     next = x86::control::return_near(output, capacity, next);
     return next;
 }

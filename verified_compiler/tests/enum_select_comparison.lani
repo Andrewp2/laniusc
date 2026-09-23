@@ -1,0 +1,17 @@
+module enum_select_comparison;
+
+enum Kind { Other, LineComment, }
+
+fn choose(kind: Kind, value: i32) -> i32 {
+    let result: i32 = 0;
+    if (kind == LineComment) {
+        result = value + 17;
+    } else {
+        result = value - 23;
+    }
+    return result;
+}
+
+fn main() -> i32 {
+    return choose(LineComment, -5) + choose(Other, 30) - 19;
+}

@@ -1,0 +1,105 @@
+module lowering::unit_context;
+
+import verified::host;
+import verified::token;
+
+// One unit's source/token spans and typed-tree size within the aggregate
+// compiler bundle. Token, resolution, and value spans count rows; source
+// lengths count words. Parser record offsets stay at the decode boundary.
+// Native Lanius aggregate fields occupy eight-byte slots, including i32s.
+const FIELD_BYTES: i32 = 8;
+const FIELD_COUNT: i32 = 9;
+pub const RECORD_BYTES: i32 = FIELD_COUNT * FIELD_BYTES;
+pub const RECORD_WORDS: i32 = RECORD_BYTES / verified::host::I32_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+
+pub struct UnitContext {
+    source_offset: i32,
+    source_length: i32,
+    token_offset: i32,
+    token_count: i32,
+    node_count: i32,
+    resolution_row_offset: i32,
+    resolution_count: i32,
+    value_row_offset: i32,
+    value_count: i32,
+}
+
+pub struct Table {
+    data: [UnitContext],
+    count: i32,
+}
+
+// Parser records are decoded before semantic lowering. Later stages need
+// only bounded source and token views alongside the native syntax tree.
+pub struct LexicalCatalogs {
+    sources: [i32],
+    source_words: i32,
+    tokens: verified::token::TokenTable,
+}
+
+pub struct UnitLexical {
+    valid: bool,
+    source: [i32],
+    source_length: i32,
+    tokens: verified::token::TokenTable,
+    token_count: i32,
+}
+
+fn fits(offset: i32, words: i32, length: i32) -> bool {
+    return offset >= 0 && words >= 0 && length >= 0
+        && offset <= length && words <= length - offset;
+}
+
+pub fn lexical(catalogs: LexicalCatalogs,
+    context: UnitContext) -> UnitLexical {
+    let valid: bool = fits(context.source_offset,
+            context.source_length, catalogs.source_words)
+        && fits(context.token_offset, context.token_count,
+            catalogs.tokens.count);
+    let source_base: ptr = verified::host::i32_slice_data_ptr(
+        catalogs.sources);
+    if (!valid) {
+        return UnitLexical {
+            valid: false,
+            source: verified::host::i32_slice_from_raw_parts(source_base, 0),
+            source_length: 0,
+            tokens: verified::token::subtable(catalogs.tokens, 0, 0),
+            token_count: 0,
+        };
+    }
+    let source_pointer: ptr = source_base
+        + context.source_offset * verified::host::I32_BYTES;
+    return UnitLexical {
+        valid: true,
+        source: verified::host::i32_slice_from_raw_parts(source_pointer,
+            context.source_length),
+        source_length: context.source_length,
+        tokens: verified::token::subtable(catalogs.tokens,
+            context.token_offset, context.token_count),
+        token_count: context.token_count,
+    };
+}
+
+pub fn empty() -> UnitContext {
+    return UnitContext {
+        source_offset: 0,
+        source_length: 0,
+        token_offset: 0,
+        token_count: 0,
+        node_count: 0,
+        resolution_row_offset: 0,
+        resolution_count: 0,
+        value_row_offset: 0,
+        value_count: 0,
+    };
+}
+
+pub fn from_raw_parts(memory: ptr, count: i32) -> Table {
+    let first: ptr = memory;
+    if (count > 0) {
+        first = memory + count * RECORD_BYTES - FIELD_BYTES;
+    }
+    return Table { data: slice_from_raw_parts(first, count),
+        count: count };
+}

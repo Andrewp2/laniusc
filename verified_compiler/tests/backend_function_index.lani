@@ -1,0 +1,49 @@
+module app::main;
+
+import backend::function_index;
+import backend::syntax;
+import verified::host;
+
+fn main() -> i32 {
+    let input: [i32; 32] = [
+        3,64,0,0,0,2,
+        11,1,64,0,1,0,5,1,1,1,1,0,
+        13,1,64,1,1,1,5,7,1,1,1,1,1,1,
+    ];
+    let required: backend::function_index::Requirements =
+        backend::function_index::measure(input, 32, 6, 2);
+    if (!required.valid || required.functions != 2
+        || required.parameters != 1 || required.end != 32) {
+        return 1;
+    }
+    let memory: ptr = verified::host::alloc(
+        backend::function_index::allocation_bytes(required),
+        backend::function_index::ALIGNMENT);
+    if (memory == 0) { return 2; }
+    let functions: backend::function_index::Table =
+        backend::function_index::from_raw_parts(memory, required);
+    if (!backend::function_index::build(input, 32, 6, functions)
+        || backend::function_index::find(functions, 0) != 0
+        || backend::function_index::find(functions, 1) != 1
+        || backend::function_index::find(functions, 2) != -1) {
+        return 3;
+    }
+    let helper: backend::function_index::Function =
+        backend::function_index::at(functions, 1);
+    if (helper.header.kind != backend::syntax::DefinedFunction
+        || helper.header.id != 1 || helper.header.parameters != 1
+        || helper.input_offset != 19 || helper.word_count != 13
+        || backend::function_index::parameter_kind(functions, 1, 0)
+            != backend::syntax::type_code(backend::syntax::TypeI32)) {
+        return 4;
+    }
+    input[21] = 0;
+    if (backend::function_index::build(input, 32, 6, functions)) {
+        return 5;
+    }
+    input[21] = 1;
+    if (backend::function_index::measure(input, 31, 6, 2).valid) {
+        return 6;
+    }
+    return 0;
+}

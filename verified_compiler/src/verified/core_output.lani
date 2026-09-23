@@ -2,16 +2,20 @@ module verified::core_output;
 
 import verified::output;
 
+const I32_MIN: i32 = -2147483648;
+const I32_MIN_TEXT_LENGTH: i32 = 11;
+
 // Emit the canonical transport as Lean data and let the existing verified
 // decoder reconstruct Core.Program. The generated subtype witness is `⟨_, rfl⟩`:
 // if the transport is not accepted by decodeProgram, Lean rejects the emitted
 // source instead of selecting a default program.
 fn integer(output:[i32], capacity: i32, position: i32, value: i32) -> i32 {
-    if (value == -2147483648) {
+    if (value == I32_MIN) {
         let min_value: str = "-2147483648";
-        return verified::output::text(output, capacity, position, min_value, 11);
+        return verified::output::text(output, capacity, position, min_value,
+            I32_MIN_TEXT_LENGTH);
     }
-    if (value < 0) {
+    if (value <= -1) {
         let next: i32 = verified::output::byte(output, capacity, position, 45);
         return verified::output::natural(output, capacity, next, 0 - value);
     }
@@ -20,7 +24,7 @@ fn integer(output:[i32], capacity: i32, position: i32, value: i32) -> i32 {
 
 pub fn emit_program(transport_words: i32, transport:[i32], output:[i32],
     capacity: i32, position: i32) -> i32 {
-    if (transport_words <= 0 || capacity <= 0 || position < 0 || position >= capacity) {
+    if (transport_words <= 0 || capacity <= 0 || position <= -1 || position >= capacity) {
         return -1;
     }
     let prefix: str = "import Lanius.X86.TransportDecode\n\ndef extractedTransportWords : List Int :=\n  [";

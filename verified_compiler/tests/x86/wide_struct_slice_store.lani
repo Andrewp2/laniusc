@@ -1,0 +1,34 @@
+module app::main;
+
+import lowering::unit_context;
+import verified::host;
+
+fn main() -> i32 {
+    let memory: ptr = verified::host::alloc(
+        lowering::unit_context::RECORD_BYTES,
+        lowering::unit_context::ALIGNMENT);
+    if (memory == 0) { return 2; }
+    let values: [lowering::unit_context::UnitContext] =
+        lowering::unit_context::from_raw_parts(memory, 1).data;
+    let index: i32 = 0;
+    values[index] = lowering::unit_context::UnitContext {
+        source_offset: 11,
+        source_length: 13,
+            token_offset: 0,
+            token_count: 0,
+            node_count: 0,
+            resolution_row_offset: 0,
+            resolution_count: 0,
+            value_row_offset: 0,
+        value_count: 17,
+    };
+    if (values[index].source_offset != 11 || values[index].source_length != 13
+        || values[index].value_count != 17) {
+        return 3;
+    }
+    values[index].value_count = 7;
+    if (values[index].source_length != 13 || values[index].value_count != 7) {
+        return 4;
+    }
+    return 0;
+}

@@ -129,6 +129,12 @@ uint parallel_register_location(uint row, uint position, uint total)
     OptIrNodeCore core = opt_ir_core[row];
     uint op = opt_ir_op(core);
     if (!produces_scalar_value(op)) return INVALID;
+    // A raw-parts slice is a pointer-and-length pair even when its source
+    // type tag looks scalar. Its emitter needs three adjacent stack slots:
+    // one result address and two payload words. Never assign it a GPR.
+    if (op == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
+        intrinsic_slice_from_raw_parts(opt_ir_operands[row].a))
+        return INVALID;
     // Aggregate values are represented by an address, even when their payload
     // is returned in RAX/RDX.  That address must remain stable while the
     // aggregate's individual words are loaded.  Treating a CALL's dynamic
@@ -193,7 +199,7 @@ uint aggregate_copy_word_count(uint row, uint total, uint function_total)
     OptIrNodeCore core = opt_ir_core[row];
     OptIrNodeOperands operands = opt_ir_operands[row];
     uint op = opt_ir_op(core);
-    if ((op != SEMANTIC_LIR_OP_VALUE_SET && op != SEMANTIC_LIR_OP_STORE) ||
+    if (x86_lir_opcode(core) != X86_LIR_OP_STORE_LOCAL ||
         operands.b >= total)
         return 0u;
     OptIrNodeCore value_core = opt_ir_core[operands.b];
@@ -256,7 +262,7 @@ uint spill_word_count(uint row, uint total, uint function_total)
         return (operands.a == INTRINSIC_I32_ARRAY_DATA_PTR ||
                 operands.a == INTRINSIC_I32_SLICE_DATA_PTR ||
                 operands.a == INTRINSIC_STRING_DATA_PTR) ? 1u :
-            operands.a == INTRINSIC_I32_SLICE_FROM_RAW_PARTS ?
+            intrinsic_slice_from_raw_parts(operands.a) ?
                 3u : 0u;
     return produces_scalar_value(op) ? 1u : 0u;
 }

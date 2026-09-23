@@ -1,80 +1,192 @@
 module verified::semantic_tokens;
 import verified::parser;
-import verified::output;
 import verified::host;
+import verified::grammar;
+import verified::token;
 
-// Recover semantic token assignments from materialized records. Two slots
-// per physical token hold [ordinary_or_inner_kind, outer_kind_or_minus_one].
+const NATIVE_KIND_CAPACITY: i32 = 65536;
+const NATIVE_RECORD_CAPACITY: i32 = 1048576;
+const NATIVE_NODE_CAPACITY: i32 = 131072;
+const NATIVE_ASSIGNMENT_CAPACITY: i32 = NATIVE_KIND_CAPACITY;
+const FIELD_BYTES: i32 = 8;
+pub const ASSIGNMENT_BYTES: i32 = 2 * FIELD_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+pub const SEMANTIC_KIND_RADIX: i32 = 32768;
+
+pub struct SemanticInput {
+    grammar: [i32],
+    grammar_length: i32,
+    kinds: [i32],
+    token_count: i32,
+    records: [i32],
+    record_length: i32,
+    offsets: [i32],
+    node_count: i32,
+}
+
+pub struct AssignmentBuffer {
+    data: [Assignment],
+    capacity: i32,
+}
+
+pub struct Assignment {
+    inner: i32,
+    outer: i32,
+}
+
+pub fn allocation_bytes(capacity: i32) -> i32 {
+    if (capacity <= -1
+        || capacity > verified::host::I32_MAX / ASSIGNMENT_BYTES) {
+        return -1;
+    }
+    return capacity * ASSIGNMENT_BYTES;
+}
+
+pub fn from_raw_parts(memory: ptr, capacity: i32) -> AssignmentBuffer {
+    let first: ptr = memory;
+    if (capacity > 0) {
+        first = memory + capacity * ASSIGNMENT_BYTES - FIELD_BYTES;
+    }
+    return AssignmentBuffer {
+        data: slice_from_raw_parts(first, capacity),
+        capacity: capacity,
+    };
+}
+
+// Recover semantic token assignments from materialized records. Each row
+// holds an ordinary or inner kind and an optional outer kind.
 // Lattice positions, not postorder visitation order, distinguish split uses.
 // This avoids signed-i32 overflow from prematurely packing the u32 high bit.
 // Return 0 on success, -1 for malformed evidence, -2 for output capacity.
-pub fn collect(grammar:[i32], grammar_length: i32, kinds:[i32], token_count: i32,
-    records:[i32], records_length: i32, offsets:[i32], node_count: i32,
-    assignments:[i32], assignments_length: i32,) -> i32 {
-    if (grammar_length <= 16 || token_count <= -1 || token_count >= 1073741824
+pub fn collect(input: SemanticInput, output: AssignmentBuffer) -> i32 {
+    let grammar: [i32] = input.grammar;
+    let grammar_length: i32 = input.grammar_length;
+    let kinds: [i32] = input.kinds;
+    let token_count: i32 = input.token_count;
+    let records: [i32] = input.records;
+    let records_length: i32 = input.record_length;
+    let offsets: [i32] = input.offsets;
+    let node_count: i32 = input.node_count;
+    let assignments: [Assignment] = output.data;
+    let assignments_length: i32 = output.capacity;
+    if (grammar_length <= verified::parser::GRAMMAR_HEADER_WORDS - 1
+        || token_count <= -1
+        || token_count > verified::host::I32_MAX
+            / verified::parser::LATTICE_POSITIONS_PER_TOKEN
         || node_count <= -1 || records_length <= -1) { return -1; }
-    if (assignments_length <= -1 || !(token_count <= assignments_length / 2)) { return -2; }
-    let kind_count: i32 = grammar[1];
-    let canonical: i32 = grammar[7];
-    if (kind_count <= 0 || kind_count >= 32769 || canonical <= -1
+    if (assignments_length <= -1 || token_count > assignments_length) {
+        return -2;
+    }
+    let kind_count: i32 = grammar[verified::parser::HEADER_KIND_COUNT];
+    let canonical: i32 = grammar[
+        verified::parser::HEADER_CANONICAL_KINDS_OFFSET];
+    if (kind_count <= 0 || kind_count > SEMANTIC_KIND_RADIX
+        || canonical <= -1
         || !(canonical <= grammar_length) || !(kind_count <= grammar_length - canonical)) { return -1; }
     let index: i32 = 0;
-    while (index != token_count * 2) { assignments[index] = -1; index += 1; }
+    while (index != token_count) {
+        assignments[index] = Assignment { inner: -1, outer: -1 };
+        index += 1;
+    }
     let node: i32 = 0;
     while (node != node_count) {
         let record: i32 = offsets[node];
-        if (record <= -1 || !(record <= records_length) || records_length - record <= 3) { return -1; }
-        let count: i32 = records[record + 3];
-        let position: i32 = records[record + 1];
-        if (count <= -1 || !(count <= (records_length - record - 4) / 3)
-            || position <= -1 || !(position <= token_count * 2)) { return -1; }
+        if (record <= -1 || !(record <= records_length)
+            || records_length - record
+                <= verified::parser::DERIVATION_HEADER_WORDS - 1) { return -1; }
+        let count: i32 = records[record
+            + verified::parser::DERIVATION_CHILD_COUNT_FIELD];
+        let position: i32 = records[record
+            + verified::parser::DERIVATION_ORIGIN_FIELD];
+        if (count <= -1 || !(count <= (records_length - record
+                - verified::parser::DERIVATION_HEADER_WORDS)
+                / verified::parser::DERIVATION_CHILD_WORDS)
+            || position <= -1
+            || !(position <= token_count
+                * verified::parser::LATTICE_POSITIONS_PER_TOKEN)) { return -1; }
         let child: i32 = 0;
         while (child != count) {
-            let slot: i32 = record + 4 + child * 3;
-            let payload: i32 = records[slot + 1];
+            let slot: i32 = record + verified::parser::DERIVATION_HEADER_WORDS
+                + child * verified::parser::DERIVATION_CHILD_WORDS;
+            let payload: i32 = records[slot
+                + verified::parser::DERIVATION_CHILD_PAYLOAD_FIELD];
             if (payload <= -1) { return -1; }
-            if (records[slot] == verified::parser::CHILD_TOKEN) {
-                let kind: i32 = records[slot + 2];
-                if (payload >= token_count || payload != position / 2
+            if (records[slot + verified::parser::DERIVATION_CHILD_TAG_FIELD]
+                    == verified::parser::child_code(
+                        verified::parser::TokenChild)) {
+                let kind: i32 = records[slot
+                    + verified::parser::DERIVATION_CHILD_KIND_FIELD];
+                if (payload >= token_count || payload != position
+                        / verified::parser::LATTICE_POSITIONS_PER_TOKEN
                     || kind <= -1 || kind >= kind_count) { return -1; }
                 let raw: i32 = kinds[payload];
                 let canonical_kind: i32 = grammar[canonical + kind];
-                let assignment: i32 = payload * 2 + position % 2;
-                if (assignments[assignment] != -1) { return -1; }
-                assignments[assignment] = kind;
-                if (position % 2 == 1) {
-                    if (raw != grammar[5] || canonical_kind != grammar[6]) { return -1; }
+                if (position % verified::parser::LATTICE_POSITIONS_PER_TOKEN
+                        == 1) {
+                    if (assignments[payload].outer != -1) { return -1; }
+                    assignments[payload].outer = kind;
+                } else {
+                    if (assignments[payload].inner != -1) { return -1; }
+                    assignments[payload].inner = kind;
+                }
+                if (position % verified::parser::LATTICE_POSITIONS_PER_TOKEN
+                        == 1) {
+                    if (raw != grammar[
+                            verified::parser::HEADER_SPLIT_TOKEN_KIND]
+                        || canonical_kind != grammar[
+                            verified::parser::HEADER_SPLIT_COMPONENT_KIND]) { return -1; }
                     position += 1;
                 } else {
-                    if (raw == canonical_kind) { position += 2; }
+                    if (verified::token::raw_matches_canonical(raw,
+                            canonical_kind)) { position += 2; }
                     else {
-                        if (raw != grammar[5] || canonical_kind != grammar[6]) { return -1; }
+                        if (raw != grammar[
+                                verified::parser::HEADER_SPLIT_TOKEN_KIND]
+                            || canonical_kind != grammar[
+                                verified::parser::HEADER_SPLIT_COMPONENT_KIND]) { return -1; }
                         position += 1;
                     }
                 }
             } else {
-                if (records[slot] != verified::parser::CHILD_STATE || payload >= node) { return -1; }
+                if (records[slot
+                        + verified::parser::DERIVATION_CHILD_TAG_FIELD]
+                        != verified::parser::child_code(
+                            verified::parser::StateChild)
+                    || payload >= node) { return -1; }
                 let nested: i32 = offsets[payload];
                 if (nested <= -1 || !(nested <= records_length) || records_length - nested <= 3) { return -1; }
-                if (records[nested + 1] != position || !(position <= records[nested + 2])
-                    || !(records[nested + 2] <= token_count * 2)) { return -1; }
-                position = records[nested + 2];
+                if (records[nested + verified::parser::DERIVATION_ORIGIN_FIELD]
+                        != position
+                    || !(position <= records[nested
+                        + verified::parser::DERIVATION_END_FIELD])
+                    || !(records[nested
+                            + verified::parser::DERIVATION_END_FIELD]
+                        <= token_count
+                            * verified::parser::LATTICE_POSITIONS_PER_TOKEN)) { return -1; }
+                position = records[nested
+                    + verified::parser::DERIVATION_END_FIELD];
             }
             child += 1;
         }
-        if (position != records[record + 2]) { return -1; }
+        if (position != records[record
+                + verified::parser::DERIVATION_END_FIELD]) { return -1; }
         node += 1;
     }
     index = 0;
     while (index != token_count) {
-        let first: i32 = assignments[index * 2];
-        let second: i32 = assignments[index * 2 + 1];
+        let first: i32 = assignments[index].inner;
+        let second: i32 = assignments[index].outer;
         if (first <= -1) { return -1; }
         if (second == -1) {
-            if (grammar[canonical + first] != kinds[index]) { return -1; }
+            if (!verified::token::raw_matches_canonical(kinds[index],
+                    grammar[canonical + first])) { return -1; }
         } else {
-            if (kinds[index] != grammar[5] || grammar[canonical + first] != grammar[6]
-                || grammar[canonical + second] != grammar[6]) { return -1; }
+            if (kinds[index] != grammar[
+                    verified::parser::HEADER_SPLIT_TOKEN_KIND]
+                || grammar[canonical + first] != grammar[
+                    verified::parser::HEADER_SPLIT_COMPONENT_KIND]
+                || grammar[canonical + second] != grammar[
+                    verified::parser::HEADER_SPLIT_COMPONENT_KIND]) { return -1; }
         }
         index += 1;
     }
@@ -85,39 +197,25 @@ pub fn collect(grammar:[i32], grammar_length: i32, kinds:[i32], token_count: i32
 // the same bounds used by compiler/extractor allocations.
 pub fn collect_raw(grammar: ptr, kinds: ptr, token_count: i32, node_count: i32,
     records: ptr, offsets: ptr, assignments: ptr) -> i32 {
-    let grammar_view:[i32] = verified::host::i32_slice_from_raw_parts(grammar, 2179);
-    let kinds_view:[i32] = verified::host::i32_slice_from_raw_parts(kinds, 65536);
-    let records_view:[i32] = verified::host::i32_slice_from_raw_parts(records, 1048576);
-    let offsets_view:[i32] = verified::host::i32_slice_from_raw_parts(offsets, 131072);
-    let assignments_view:[i32] = verified::host::i32_slice_from_raw_parts(assignments, 131072);
-    return collect(grammar_view, 2179, kinds_view, token_count, records_view,
-        1048576, offsets_view, node_count, assignments_view, 131072);
-}
-
-// Emit packed semantic codes as List Nat. Split codes are expressed in Lean
-// arithmetic so no unsigned value is ever forced through a signed i32.
-pub fn emit(assignments:[i32], assignments_length: i32, token_count: i32,
-    output:[i32], capacity: i32, position: i32,) -> i32 {
-    if (assignments_length <= -1 || token_count <= -1
-        || !(token_count <= assignments_length / 2)) { return -1; }
-    let prefix: str = "(2147483648+";
-    let suffix: str = "*32768)";
-    let next: i32 = verified::output::byte(output, capacity, position, 91);
-    let token: i32 = 0;
-    while (token != token_count) {
-        let first: i32 = assignments[token * 2];
-        let second: i32 = assignments[token * 2 + 1];
-        if (first <= -1 || first >= 32768 || second <= -2 || second >= 32768) { return -1; }
-        if (token != 0) { next = verified::output::byte(output, capacity, next, 44); }
-        if (second != -1) { next = verified::output::text(output, capacity, next, prefix, 12); }
-        next = verified::output::natural(output, capacity, next, first);
-        if (second != -1) {
-            next = verified::output::byte(output, capacity, next, 43);
-            next = verified::output::natural(output, capacity, next, second);
-            next = verified::output::text(output, capacity, next, suffix, 7);
-        }
-        if (next == -1) { return -1; }
-        token += 1;
-    }
-    return verified::output::byte(output, capacity, next, 93);
+    let grammar_view:[i32] = verified::host::i32_slice_from_raw_parts(grammar,
+        verified::grammar::WORDS);
+    let kinds_view:[i32] = verified::host::i32_slice_from_raw_parts(kinds,
+        NATIVE_KIND_CAPACITY);
+    let records_view:[i32] = verified::host::i32_slice_from_raw_parts(records,
+        NATIVE_RECORD_CAPACITY);
+    let offsets_view:[i32] = verified::host::i32_slice_from_raw_parts(offsets,
+        NATIVE_NODE_CAPACITY);
+    let input: SemanticInput = SemanticInput {
+        grammar: grammar_view,
+        grammar_length: verified::grammar::WORDS,
+        kinds: kinds_view,
+        token_count: token_count,
+        records: records_view,
+        record_length: NATIVE_RECORD_CAPACITY,
+        offsets: offsets_view,
+        node_count: node_count,
+    };
+    let output: AssignmentBuffer = from_raw_parts(assignments,
+        NATIVE_ASSIGNMENT_CAPACITY);
+    return collect(input, output);
 }

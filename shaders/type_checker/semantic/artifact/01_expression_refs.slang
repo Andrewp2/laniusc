@@ -26,6 +26,7 @@ StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> decl_name_token;
+StructuredBuffer<uint> type_decl_hir_node_by_token;
 StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_ref_payload;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
@@ -51,6 +52,8 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
+static const uint HIR_STRUCT_ITEM = 27u;
+static const uint HIR_ENUM_ITEM = 26u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
@@ -110,6 +113,34 @@ uint resolved_path_decl_token(uint node)
     if (decl == INVALID || decl >= gParams.n_tokens) return INVALID;
     uint token = decl_name_token[decl];
     return valid_token(token) ? token : INVALID;
+}
+
+uint scalar_nominal_decl_token(uint payload)
+{
+    uint hir_count = active_hir_count();
+    if (payload >= TY_STRUCT_BASE)
+    {
+        uint token = payload - TY_STRUCT_BASE;
+        if (valid_token(token))
+        {
+            uint declaration = type_decl_hir_node_by_token[token];
+            if (declaration < hir_count &&
+                compact_hir_core[declaration].kind == HIR_STRUCT_ITEM)
+                return token;
+        }
+    }
+    if (payload >= TY_ENUM_BASE)
+    {
+        uint token = payload - TY_ENUM_BASE;
+        if (valid_token(token))
+        {
+            uint declaration = type_decl_hir_node_by_token[token];
+            if (declaration < hir_count &&
+                compact_hir_core[declaration].kind == HIR_ENUM_ITEM)
+                return token;
+        }
+    }
+    return INVALID;
 }
 
 [shader("compute")]
@@ -233,15 +264,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint canonical_aggregate_decl =
         tag == TYPE_REF_INSTANCE && valid_token(payload)
             ? type_instance_decl_token[payload]
-        : tag == TYPE_REF_SCALAR && payload >= TY_STRUCT_BASE &&
-                payload < TY_ENUM_BASE && valid_token(payload - TY_STRUCT_BASE)
-                ? payload - TY_STRUCT_BASE
-        : tag == TYPE_REF_SCALAR && payload >= TY_ENUM_BASE &&
-                valid_token(payload - TY_ENUM_BASE)
-                ? payload - TY_ENUM_BASE : INVALID;
-    semantic_aggregate_decl_token_by_hir[node] =
-        valid_token(canonical_aggregate_decl) ? canonical_aggregate_decl
-        : explicit_aggregate_decl;
+        : tag == TYPE_REF_SCALAR ? scalar_nominal_decl_token(payload) : INVALID;
+    // A primitive scalar's source token names its spelling, not an aggregate
+    // declaration. Leaving that token here makes enum-payload layout try to
+    // resolve `i32` (and other scalars) as a local struct or enum.
+    uint fallback_aggregate_decl = tag == TYPE_REF_SCALAR &&
+        payload < TY_STRUCT_BASE ? INVALID : explicit_aggregate_decl;
+    // Struct-literal field validation already used the resolved constructor
+    // declaration. Keep that same identity for lowering: decoding a scalar
+    // type code through the old struct/enum windows can turn a large token
+    // index into a different (but still in-range) declaration token.
+    bool resolved_struct_literal = valid_hir(node) &&
+        compact_hir_core[node].kind == HIR_STRUCT_LITERAL_EXPR &&
+        valid_token(explicit_aggregate_decl) && tag != TYPE_REF_INSTANCE;
+    semantic_aggregate_decl_token_by_hir[node] = resolved_struct_literal
+        ? explicit_aggregate_decl
+        : valid_token(canonical_aggregate_decl) ? canonical_aggregate_decl
+        : fallback_aggregate_decl;
     semantic_aggregate_word_count_by_hir[node] =
         valid_hir(node) && compact_hir_core[node].kind == HIR_CALL_EXPR
             ? semantic_aggregate_word_count_by_hir[node]

@@ -104,6 +104,13 @@ bool direct_i32_constant(uint semantic_row, uint semantic_count,
     return analysis.known != 0u;
 }
 
+bool single_word_compare_operands(uint left, uint right, uint semantic_count)
+{
+    if (left >= semantic_count || right >= semantic_count) return false;
+    return opt_ir_core[left].value_word_count == 1u &&
+        opt_ir_core[right].value_word_count == 1u;
+}
+
 bool direct_packed_i32_array(uint semantic_row, uint semantic_count)
 {
     if (semantic_row >= semantic_count) return false;
@@ -172,8 +179,19 @@ void write_call_arg(uint page_row, uint row, uint semantic_row, uint source_hir,
         argument.value_metadata & SEMANTIC_LIR_VALUE_TYPE_MASK;
     bool string_value =
         (argument.value_metadata & SEMANTIC_LIR_VALUE_STRING) != 0u;
+    bool direct_slice_intrinsic = false;
+    if (argument.value_instruction < semantic_count)
+    {
+        OptIrNodeCore argument_core = opt_ir_core[argument.value_instruction];
+        OptIrNodeOperands argument_operands =
+            opt_ir_operands[argument.value_instruction];
+        direct_slice_intrinsic =
+            opt_ir_op(argument_core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
+            intrinsic_slice_from_raw_parts(argument_operands.a);
+    }
     bool array_value =
-        (argument.value_metadata & SEMANTIC_LIR_VALUE_ARRAY_PAIR) != 0u;
+        (argument.value_metadata & SEMANTIC_LIR_VALUE_ARRAY_PAIR) != 0u ||
+        direct_slice_intrinsic;
     operands.metadata = (argument_type & 0xffu) |
         ((argument.value_metadata & SEMANTIC_LIR_VALUE_AGGREGATE) != 0u
             ? X86_LIR_METADATA_AGGREGATE : 0u) |
@@ -187,6 +205,15 @@ void write_call_arg(uint page_row, uint row, uint semantic_row, uint source_hir,
         operands.metadata |= X86_LIR_METADATA_ARRAY_PAIR |
             (component == 0u ? X86_LIR_METADATA_WIDE
                              : X86_LIR_METADATA_ARRAY_LEN);
+    // A projected slice field is an address of the in-struct (data, length)
+    // pair. VALUE_GET slice declarations instead already occupy two direct
+    // value slots. Passing the field address itself would turn the pair's
+    // stack address into the callee's data pointer and length.
+    if (array_value && argument.value_instruction < semantic_count &&
+        (direct_slice_intrinsic ||
+         x86_lir_opcode(opt_ir_core[argument.value_instruction]) ==
+            X86_LIR_OP_FIELD_LOAD))
+        operands.metadata |= X86_LIR_METADATA_INDIRECT_ARRAY_PAIR;
     if (argument_type == SEMANTIC_LIR_TY_POINTER)
         operands.metadata |= X86_LIR_METADATA_WIDE;
     // Narrow scalar spill slots contain only four initialized bytes. A
@@ -263,7 +290,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         args.a < function_count ? semantic_lir_functions[args.a].result_word_count :
         opt_ir_op(source) == SEMANTIC_LIR_OP_CALL_SYMBOL ? source.value_word_count :
         opt_ir_op(source) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
-        args.a == INTRINSIC_I32_SLICE_FROM_RAW_PARTS ? 2u : 0u;
+        intrinsic_slice_from_raw_parts(args.a) ? 2u : 0u;
     // A call expands to argument-move rows followed by the value-producing
     // call row. Semantic operands name values, so their target projection must
     // point at the producer rather than the beginning of the expansion.
@@ -379,10 +406,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
             ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
         return;
     }
+    uint op = x86_lir_opcode(source);
     uint copy_words = 0u;
     bool store_array_pair = false;
-    if ((opt_ir_op(source) == SEMANTIC_LIR_OP_VALUE_SET ||
-         opt_ir_op(source) == SEMANTIC_LIR_OP_STORE) &&
+    // Match count.slang: only declaration stores expand into aggregate-copy
+    // rows. In a field/index STORE, args.b is not the stored value.
+    if (x86_lir_opcode(source) == X86_LIR_OP_STORE_LOCAL &&
         args.b < semantic_count)
     {
         OptIrNodeCore value_core = opt_ir_core[args.b];
@@ -390,7 +419,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         store_array_pair =
             (value_core.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) != 0u ||
             (opt_ir_op(value_core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
-             value_operands.a == INTRINSIC_I32_SLICE_FROM_RAW_PARTS);
+             intrinsic_slice_from_raw_parts(value_operands.a));
         uint call_words = opt_ir_op(value_core) == SEMANTIC_LIR_OP_CALL &&
             value_operands.a < function_count
             ? semantic_lir_functions[value_operands.a].result_word_count : 0u;
@@ -398,6 +427,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
             x86_aggregate_value_word_count(value_core, value_operands));
         if (x86_semantic_type_is_aggregate(source) || value_words != 0u)
             copy_words = max(source.value_word_count, value_words);
+    }
+    uint index_copy_words = 0u;
+    if (op == X86_LIR_OP_INDEX_STORE &&
+        x86_semantic_type_is_aggregate(source) && args.c < semantic_count)
+    {
+        OptIrNodeCore value_core = opt_ir_core[args.c];
+        OptIrNodeOperands value_operands = opt_ir_operands[args.c];
+        uint call_words = opt_ir_op(value_core) == SEMANTIC_LIR_OP_CALL &&
+            value_operands.a < function_count
+            ? semantic_lir_functions[value_operands.a].result_word_count : 0u;
+        index_copy_words = max(source.value_word_count,
+            max(call_words, x86_aggregate_value_word_count(
+                value_core, value_operands)));
     }
     if (copy_words != 0u && operation_row != 0u)
     {
@@ -433,6 +475,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         element.value_metadata = 0u;
         element.word_offset = INVALID;
         element.word_count = 0u;
+        element.slice_array_length = INVALID;
         uint element_total = semantic_lir_aggregate_element_total[0u];
         for (uint element_i = 0u; element_i < args.b; element_i += 1u)
         {
@@ -461,11 +504,53 @@ void main(uint3 dtid: SV_DispatchThreadID)
             gParams.semantic_capacity
                 ? opt_ir_core[element.value_instruction].type_id
                 : source.type_id;
+        bool aggregate_value =
+            (element.value_metadata & SEMANTIC_LIR_VALUE_AGGREGATE) != 0u;
+        if (element.value_instruction < gParams.semantic_capacity)
+        {
+            OptIrNodeCore value = opt_ir_core[element.value_instruction];
+            OptIrNodeOperands value_operands =
+                opt_ir_operands[element.value_instruction];
+            // A checked call can return an aggregate even when its HIR
+            // expression reference has no nominal type payload. Use the
+            // resolved callee's result ABI to copy from the returned address.
+            // Other producers' value_word_count can describe a containing
+            // aggregate rather than this scalar element, so do not use it
+            // to classify every struct/array initializer.
+            aggregate_value |= opt_ir_op(value) == SEMANTIC_LIR_OP_AGGREGATE_NEW &&
+                value.value_word_count != 0u;
+            aggregate_value |= opt_ir_op(value) == SEMANTIC_LIR_OP_CALL &&
+                value_operands.a < function_count &&
+                semantic_lir_functions[value_operands.a].result_word_count != 0u;
+            // A raw-parts slice intrinsic returns a pointer-and-length pair
+            // in aggregate storage. A struct field must copy both values,
+            // not store the address of that pair in each field word.
+            aggregate_value |= opt_ir_op(value) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
+                intrinsic_slice_from_raw_parts(value_operands.a);
+        }
         operands.metadata = element_type |
-            ((element.value_metadata & SEMANTIC_LIR_VALUE_AGGREGATE) != 0u
+            (aggregate_value
                 ? X86_LIR_METADATA_AGGREGATE : 0u) |
             (packed_i32_array
                 ? X86_LIR_METADATA_PACKED_I32_ARRAY : 0u);
+        if (element.value_instruction < gParams.semantic_capacity)
+        {
+            OptIrNodeCore value = opt_ir_core[element.value_instruction];
+            if (opt_ir_op(value) == SEMANTIC_LIR_OP_VALUE_GET &&
+                (value.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) != 0u)
+                operands.metadata |= X86_LIR_METADATA_ARRAY_PAIR;
+        }
+        if (element.slice_array_length != INVALID)
+        {
+            // A fixed array is an aggregate address; a slice field stores
+            // that address followed by the array's static element count.
+            operands.metadata &= ~X86_LIR_METADATA_AGGREGATE;
+            if (operands.b == 1u)
+            {
+                operands.a = element.slice_array_length;
+                operands.metadata |= X86_LIR_METADATA_IMMEDIATE;
+            }
+        }
         if (enum_discriminant)
         {
             operands.a = args.c & SEMANTIC_LIR_AGGREGATE_TAG_MASK;
@@ -545,7 +630,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
             ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
         return;
     }
-    uint op = x86_lir_opcode(source);
     uint result = args.result;
     uint a = args.a;
     uint b = args.b;
@@ -558,7 +642,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if ((opt_ir_op(source) == SEMANTIC_LIR_OP_VALUE_SET ||
          opt_ir_op(source) == SEMANTIC_LIR_OP_STORE) &&
         x86_semantic_type_is_aggregate(source) &&
-        source.value_word_count != 0u && copy_words == 0u)
+        source.value_word_count != 0u && copy_words == 0u &&
+        x86_lir_opcode(source) != X86_LIR_OP_FIELD_STORE &&
+        index_copy_words == 0u)
+        flags |= TARGET_LIR_FLAG_UNSUPPORTED;
+    if (op == X86_LIR_OP_INDEX_STORE &&
+        x86_semantic_type_is_aggregate(source) &&
+        (index_copy_words == 0u || index_copy_words > 0x0fffffffu))
         flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     if (opt_ir_op(source) == SEMANTIC_LIR_OP_CALL_HOST &&
         (args.a == HOST_SERVICE_I32_TO_F32 || x86_runtime_service_supported(args.a)))
@@ -567,7 +657,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         args.a != 1u && args.a != INTRINSIC_I32_ARRAY_DATA_PTR &&
         args.a != INTRINSIC_I32_SLICE_DATA_PTR &&
         args.a != INTRINSIC_STRING_DATA_PTR &&
-        args.a != INTRINSIC_I32_SLICE_FROM_RAW_PARTS)
+        !intrinsic_slice_from_raw_parts(args.a))
         flags = TARGET_LIR_FLAG_UNSUPPORTED;
     uint metadata = (source.type_id & 0xffu) | (source.flags << 8u) |
         (x86_semantic_type_is_aggregate(source) || copy_words != 0u
@@ -586,6 +676,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // as slice parameter homes. The source value remains a pointer to
         // aggregate storage until STORE_LOCAL materializes both components.
         metadata |= X86_LIR_METADATA_ARRAY_PAIR;
+    if (index_copy_words != 0u)
+        metadata |= X86_LIR_METADATA_INDEX_AGGREGATE_COPY;
+    if ((op == X86_LIR_OP_INDEX_LOAD || op == X86_LIR_OP_INDEX_STORE) &&
+        semantic_lir_layout_word_offset[semantic_row] ==
+            SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME && args.a < semantic_count)
+    {
+        OptIrNodeCore base = opt_ir_core[args.a];
+        // VALUE_GET of a slice reads the direct declaration pair. Other
+        // slice-producing expressions yield an address of pair storage.
+        if (opt_ir_op(base) != SEMANTIC_LIR_OP_VALUE_GET ||
+            (base.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) == 0u)
+            metadata |= X86_LIR_METADATA_INDIRECT_ARRAY_PAIR;
+    }
 
     bool select_store =
         x86_live_by_semantic[semantic_row] == X86_SEMANTIC_SELECT;
@@ -605,13 +708,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             OptIrNodeCore compare_core = opt_ir_core[info.condition];
             OptIrNodeOperands compare = opt_ir_operands[info.condition];
+            bool aggregate_compare = x86_semantic_type_is_aggregate(compare_core);
+            if (aggregate_compare &&
+                (compare_core.value_word_count > 1u ||
+                 !single_word_compare_operands(compare.a, compare.b,
+                     semantic_count)))
+                flags |= TARGET_LIR_FLAG_UNSUPPORTED;
             uint left = 0u;
             uint immediate = 0u;
             bool left_constant = direct_i32_constant(
                 compare.a, semantic_count, left);
             bool right_constant = direct_i32_constant(
                 compare.b, semantic_count, immediate);
-            bool immediate_compare = (right_constant || left_constant) &&
+            bool immediate_compare = !aggregate_compare &&
+                (right_constant || left_constant) &&
                 x86_integer_immediate_operation(
                     SEMANTIC_LIR_OP_COMPARE, compare_core.type_id,
                     right_constant ? immediate : left);
@@ -622,7 +732,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             b = immediate_compare
                 ? (right_constant ? immediate : left) : compare.b;
             c = info.true_value;
-            metadata = compare_core.type_id & 0xffu;
+            metadata = (compare_core.type_id & 0xffu) |
+                (aggregate_compare ? X86_LIR_METADATA_AGGREGATE : 0u);
             if (immediate_compare)
                 metadata |= X86_LIR_METADATA_IMMEDIATE;
             local_ordinal = immediate_compare && left_constant
@@ -645,7 +756,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         a = 0u; b = 0u; c = 0u;
     }
     else if (opt_ir_op(source) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
-             args.a == INTRINSIC_I32_SLICE_FROM_RAW_PARTS)
+             intrinsic_slice_from_raw_parts(args.a))
     {
         op = X86_LIR_OP_INTRINSIC_SLICE_FROM_RAW_PARTS;
         a = 0u; b = 0u; c = 2u;
@@ -677,7 +788,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         a = args.a;
         b = args.b;
         c = args.c;
-        if (args.c < semantic_count &&
+        if (index_copy_words == 0u && args.c < semantic_count &&
             opt_ir_core[args.c].type_id == 3u)
         {
             metadata = (metadata & 0xffffff00u) | 3u |
@@ -687,9 +798,27 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (op == X86_LIR_OP_FIELD_STORE)
     {
         a = args.a;
-        b = semantic_lir_layout_word_offset[semantic_row];
+        b = semantic_lir_layout_word_offset[semantic_row] + operation_row;
         c = args.c;
+        local_ordinal = operation_row;
+        bool aggregate_field =
+            (metadata & X86_LIR_METADATA_AGGREGATE) != 0u;
+        if (args.c < semantic_count)
+        {
+            OptIrNodeCore field_value = opt_ir_core[args.c];
+            OptIrNodeOperands field_operands = opt_ir_operands[args.c];
+            uint call_words = opt_ir_op(field_value) == SEMANTIC_LIR_OP_CALL &&
+                field_operands.a < function_count
+                ? semantic_lir_functions[field_operands.a].result_word_count : 0u;
+            aggregate_field |= max(call_words,
+                x86_aggregate_value_word_count(field_value,
+                    field_operands)) != 0u;
+        }
         metadata = (metadata & 0x00ffffffu) | (8u << 24u);
+        if (aggregate_field)
+            metadata |= X86_LIR_METADATA_FIELD_AGGREGATE_WORD;
+        else if (operation_row != 0u)
+            flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     }
     else if (op == X86_LIR_OP_BINARY)
     {
@@ -747,6 +876,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     else if (op == X86_LIR_OP_COMPARE)
     {
+        bool aggregate_compare = x86_semantic_type_is_aggregate(source);
+        if (aggregate_compare &&
+            (source.value_word_count > 1u ||
+             !single_word_compare_operands(args.a, args.b, semantic_count)))
+            flags |= TARGET_LIR_FLAG_UNSUPPORTED;
         c = args.b; b = args.a; a = args.c;
         uint left = 0u;
         uint immediate = 0u;
@@ -755,7 +889,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             args.a, semantic_count, left);
         bool right_constant = direct_i32_constant(
             args.b, semantic_count, immediate);
-        if (left_constant && right_constant &&
+        if (!aggregate_compare && left_constant && right_constant &&
             x86_fold_integer_binary(SEMANTIC_LIR_OP_COMPARE, source.type_id,
                 args.c, left, immediate, folded))
         {
@@ -764,7 +898,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             b = 0u;
             c = 0u;
         }
-        else if ((right_constant || left_constant) &&
+        else if (!aggregate_compare && (right_constant || left_constant) &&
             x86_integer_immediate_operation(
                 SEMANTIC_LIR_OP_COMPARE, source.type_id,
                 right_constant ? immediate : left))
@@ -805,6 +939,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (a == INVALID) op = X86_LIR_OP_RETURN_VOID;
         if (return_words != 0u) op = X86_LIR_OP_RETURN;
     }
+    else if (op == X86_LIR_OP_TRAP)
+    {
+        result = INVALID; a = INVALID; b = INVALID; c = INVALID;
+    }
     else if (op == X86_LIR_OP_BRANCH)
     {
         result = INVALID;
@@ -823,13 +961,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             OptIrNodeCore compare_core = opt_ir_core[comparison];
             OptIrNodeOperands compare = opt_ir_operands[comparison];
+            bool aggregate_compare = x86_semantic_type_is_aggregate(compare_core);
+            if (aggregate_compare &&
+                (compare_core.value_word_count > 1u ||
+                 !single_word_compare_operands(compare.a, compare.b,
+                     semantic_count)))
+                flags |= TARGET_LIR_FLAG_UNSUPPORTED;
             uint left = 0u;
             uint immediate = 0u;
             bool left_constant = direct_i32_constant(
                 compare.a, semantic_count, left);
             bool right_constant = direct_i32_constant(
                 compare.b, semantic_count, immediate);
-            bool immediate_compare = (right_constant || left_constant) &&
+            bool immediate_compare = !aggregate_compare &&
+                (right_constant || left_constant) &&
                 x86_integer_immediate_operation(
                     SEMANTIC_LIR_OP_COMPARE, compare_core.type_id,
                     right_constant ? immediate : left);
@@ -840,7 +985,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 ? (right_constant ? immediate : left) : compare.b;
             c = opt_ir_op(source) == SEMANTIC_LIR_OP_IF_BEGIN
                 ? args.c : 0u;
-            metadata = compare_core.type_id & 0xffu;
+            metadata = (compare_core.type_id & 0xffu) |
+                (aggregate_compare ? X86_LIR_METADATA_AGGREGATE : 0u);
             if (immediate_compare)
                 metadata |= X86_LIR_METADATA_IMMEDIATE;
             local_ordinal = immediate_compare && left_constant
@@ -883,7 +1029,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     X86LirCore core;
     core.source_hir = source_hir;
     core.local_ordinal = op == X86_LIR_OP_COMPARE_BRANCH_FALSE ||
-        op == X86_LIR_OP_SELECT_STORE
+        op == X86_LIR_OP_SELECT_STORE || op == X86_LIR_OP_FIELD_STORE
         ? local_ordinal
         : (op == X86_LIR_OP_INDEX_LOAD || op == X86_LIR_OP_INDEX_STORE)
         ? semantic_lir_layout_word_offset[semantic_row]
@@ -896,7 +1042,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // have inserted CALL_ARG rows before this operation, so machine emission
     // must address the concrete target row for the result value and any
     // caller-owned aggregate storage derived from it.
-    core.result_or_target = op == X86_LIR_OP_COMPARE_BRANCH_FALSE ||
+    core.result_or_target = index_copy_words != 0u
+        ? index_copy_words
+        : op == X86_LIR_OP_COMPARE_BRANCH_FALSE ||
         op == X86_LIR_OP_SELECT_STORE
         ? result : result == INVALID ? INVALID : row;
     X86LirOperands operands;

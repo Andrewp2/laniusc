@@ -1,0 +1,26 @@
+module enum_local_comparison;
+
+enum Kind { Other, LineComment, }
+
+struct Match { kind: Kind, }
+
+fn select() -> Kind {
+    let value: Match = Match { kind: LineComment };
+    return value.kind;
+}
+
+fn equals(left: Kind, right: Kind) -> bool {
+    return left == right;
+}
+
+fn main() -> i32 {
+    let kind: Kind = select();
+    if (kind != LineComment) { return 1; }
+    if (!equals(kind, LineComment)) { return 2; }
+    if (equals(kind, Other)) { return 3; }
+    let selected: i32 = 0;
+    if (kind == LineComment) { selected = 7; }
+    else { selected = 9; }
+    if (selected != 7) { return 4; }
+    return 0;
+}

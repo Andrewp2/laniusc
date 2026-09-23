@@ -27,7 +27,7 @@ uint x86_aggregate_value_word_count(OptIrNodeCore core,
     // contract here so every aggregate consumer (counting, scattering, local
     // copies, and returns) sees the same pointer-and-length pair.
     if (op == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
-        operands.a == INTRINSIC_I32_SLICE_FROM_RAW_PARTS)
+        intrinsic_slice_from_raw_parts(operands.a))
         return 2u;
     return core.value_word_count;
 }
@@ -36,6 +36,17 @@ static const uint X86_LIR_TY_FLOAT = 5u;
 static const uint X86_CONSTANT_DIVISOR_NONE = 0u;
 static const uint X86_CONSTANT_DIVISOR_POWER_OF_TWO = 1u;
 static const uint X86_CONSTANT_DIVISOR_SIGNED = 2u;
+
+bool x86_scalar_float(uint metadata)
+{
+    // Nominal aggregate type IDs can have the same low byte as the scalar
+    // float code. Their values are addresses, not values in an XMM register.
+    uint non_scalar = X86_LIR_METADATA_AGGREGATE |
+        X86_LIR_METADATA_WIDE | X86_LIR_METADATA_STRING_PAIR |
+        X86_LIR_METADATA_ARRAY_PAIR | X86_LIR_METADATA_PACKED_I32_ARRAY;
+    return (metadata & non_scalar) == 0u &&
+        (metadata & 0xffu) == X86_LIR_TY_FLOAT;
+}
 
 bool x86_scalar_immediate_type(uint type_id)
 {
@@ -324,6 +335,7 @@ uint x86_lir_opcode(OptIrNodeCore core)
         opt_ir_op(core) == SEMANTIC_LIR_OP_CONTROL_END)
         return X86_LIR_OP_LABEL;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_RETURN) return X86_LIR_OP_RETURN;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_TRAP) return X86_LIR_OP_TRAP;
     return 0u;
 }
 

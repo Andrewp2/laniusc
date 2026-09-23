@@ -1,0 +1,57 @@
+module app::main;
+
+import lowering::unit_context;
+import verified::host;
+import verified::token;
+
+fn main() -> i32 {
+    let sources: [i32] = verified::host::i32_slice_from_raw_parts(
+        verified::host::alloc_i32(8), 8);
+    let token_memory: ptr = verified::host::alloc(
+        4 * verified::token::RECORD_BYTES, verified::token::ALIGNMENT);
+    if (token_memory == 0) { return 14; }
+    let tokens: verified::token::TokenTable =
+        verified::token::from_raw_parts(token_memory, 4);
+    let token_rows: [verified::token::TokenRow] = tokens.data;
+    sources[0] = 11;
+    sources[4] = 44;
+    token_rows[0].kind = 10;
+    token_rows[2].kind = 60;
+    let catalogs: lowering::unit_context::LexicalCatalogs =
+        lowering::unit_context::LexicalCatalogs {
+            sources: sources,
+            source_words: 8,
+            tokens: tokens,
+        };
+    let source_base: ptr = verified::host::i32_slice_data_ptr(sources);
+    let whole: [i32] = verified::host::i32_slice_from_raw_parts(source_base, 8);
+    if (whole[4] != 44) { return 10; }
+    let source_four: ptr = source_base + 4 * verified::host::I32_BYTES;
+    let tail: [i32] = verified::host::i32_slice_from_raw_parts(source_four, 4);
+    if (tail[0] != 44) { return 11; }
+    let context: lowering::unit_context::UnitContext =
+        lowering::unit_context::empty();
+    context.source_offset = 4;
+    context.source_length = 4;
+    context.token_offset = 2;
+    context.token_count = 2;
+    let view: lowering::unit_context::UnitLexical =
+        lowering::unit_context::lexical(catalogs, context);
+    if (!view.valid) { return 1; }
+    if (view.source_length != 4) { return 12; }
+    if (view.token_count != 2) { return 13; }
+    let unit_source: [i32] = view.source;
+    let unit_tokens: [verified::token::TokenRow] = view.tokens.data;
+    if (unit_source[0] != 44) { return 2; }
+    if (unit_tokens[0].kind != 60) { return 3; }
+    context.token_count = 3;
+    if (lowering::unit_context::lexical(catalogs, context).valid) {
+        return 6;
+    }
+    context.token_count = 2;
+    context.source_offset = 7;
+    if (lowering::unit_context::lexical(catalogs, context).valid) {
+        return 7;
+    }
+    return 0;
+}

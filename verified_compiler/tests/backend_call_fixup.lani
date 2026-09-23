@@ -1,0 +1,52 @@
+module app::main;
+
+import backend::call;
+import backend::frame;
+import verified::host;
+
+fn main() -> i32 {
+    let stride: i32 = 4;
+    let work_words: i32 = backend::frame::HEADER
+        + stride * backend::frame::WORK_WORDS_PER_STRIDE;
+    let work_memory: ptr = verified::host::alloc(
+        work_words * verified::host::I32_BYTES,
+        backend::frame::WORK_ALIGNMENT);
+    let output_memory: ptr = verified::host::alloc(256, 4);
+    if (work_memory == 0 || output_memory == 0) { return 2; }
+    let work: backend::frame::Workspace = backend::frame::from_raw_parts(
+        work_memory, work_words);
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(
+        output_memory, 64);
+    state[0].stride = stride;
+    state[0].code = 0;
+    backend::frame::write_break_patch(work, 0, 123);
+    backend::frame::write_break_patch(work, 3, 789);
+    backend::frame::set_function_code_start(work, 3, 456);
+
+    if (backend::call::relative(output, 256, work, 42) != 5
+        || backend::call::relative(output, 256, work, -1) != 10
+        || backend::call::relative(output, 256, work, 77) != 15
+        || backend::call::relative(output, 256, work, 99) != 20) {
+        return 1;
+    }
+    let first: backend::call::CallFixup = backend::call::read_fixup(
+        work, 0);
+    let second: backend::call::CallFixup = backend::call::read_fixup(
+        work, 1);
+    let last: backend::call::CallFixup = backend::call::read_fixup(
+        work, 3);
+    if (first.field != 1 || first.target != 42
+        || second.field != 6 || second.target != -1
+        || last.field != 16 || last.target != 99
+        || state[0].fixup_count != stride
+        || backend::frame::read_break_patch(work, 0) != 123
+        || backend::frame::read_break_patch(work, 3) != 789
+        || backend::frame::function_code_start(work, 3) != 456) {
+        return 1;
+    }
+    if (backend::call::relative(output, 256, work, 100) != -1
+        || state[0].fixup_count != stride
+        || state[0].failed != 1) { return 1; }
+    return 0;
+}

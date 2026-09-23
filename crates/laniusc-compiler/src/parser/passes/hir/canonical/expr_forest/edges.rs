@@ -49,6 +49,19 @@ impl Pass<ParserBuffers, crate::parser::debug::DebugOutput> for HirCanonicalExpr
             ),
             ("call_args".into(), b.hir_call_args.as_entire_binding()),
             (
+                "field_count".into(),
+                b.hir_field_table_count.as_entire_binding(),
+            ),
+            ("fields".into(), b.hir_field_rows.as_entire_binding()),
+            (
+                "array_element_count".into(),
+                b.hir_array_element_table_count.as_entire_binding(),
+            ),
+            (
+                "array_elements".into(),
+                b.hir_array_element_rows.as_entire_binding(),
+            ),
+            (
                 "expr_parent_encoded".into(),
                 b.hir_canonical_expr_parent_encoded.as_entire_binding(),
             ),

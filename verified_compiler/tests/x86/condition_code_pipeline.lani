@@ -1,0 +1,7 @@
+module app::main;
+
+import x86::control;
+
+fn main() -> i32 {
+    return x86::control::condition_code(x86::control::Equal) - 4;
+}

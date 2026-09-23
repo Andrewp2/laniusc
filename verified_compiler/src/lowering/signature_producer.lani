@@ -1,0 +1,971 @@
+module lowering::signature_producer;
+
+import backend::syntax;
+import verified::production;
+import lowering::declarations;
+import lowering::allocation;
+import lowering::aliases;
+import lowering::types;
+import lowering::signatures;
+import lowering::signature_index;
+import verified::surface_type;
+import verified::syntax_tree;
+import verified::surface_atoms;
+import verified::parser;
+import verified::token;
+import verified::ascii;
+import verified::host;
+import lowering::unit_context;
+
+const DECIMAL_RADIX: i32 = 10;
+// Child positions follow grammar/lanius.bnf.
+const CONSTANT_TYPE_CHILD: i32 = 3;
+const CONSTANT_VALUE_CHILD: i32 = 5;
+const STRUCTURE_FIELDS_CHILD: i32 = 5;
+const ENUMERATION_VARIANTS_CHILD: i32 = 5;
+const LIST_ITEM_CHILD: i32 = 0;
+const LIST_TAIL_CHILD: i32 = 1;
+const MEMBER_NAME_CHILD: i32 = 0;
+const MEMBER_TYPE_CHILD: i32 = 2;
+const ENUM_VARIANT_NAME_CHILD: i32 = 0;
+const ENUM_VARIANT_PAYLOAD_CHILD: i32 = 1;
+const ENUM_VARIANT_TUPLE_FIELDS_CHILD: i32 = 1;
+const UNARY_OPERAND_CHILD: i32 = 1;
+const EXPRESSION_HEAD_CHILD: i32 = 0;
+const GROUP_VALUE_CHILD: i32 = 1;
+const FUNCTION_PARAMETERS_CHILD: i32 = 4;
+const FUNCTION_RESULT_CHILD: i32 = 6;
+const EXTERNAL_PARAMETERS_CHILD: i32 = 6;
+const EXTERNAL_RESULT_CHILD: i32 = 8;
+
+struct CallableChildren {
+    parameters: i32,
+    result_type: i32,
+}
+
+fn callable_children(kind: lowering::declarations::DeclarationKind)
+    -> CallableChildren {
+    if (lowering::declarations::same_kind(kind,
+            lowering::declarations::External)) {
+        return CallableChildren {
+            parameters: EXTERNAL_PARAMETERS_CHILD,
+            result_type: EXTERNAL_RESULT_CHILD,
+        };
+    }
+    return CallableChildren {
+        parameters: FUNCTION_PARAMETERS_CHILD,
+        result_type: FUNCTION_RESULT_CHILD,
+    };
+}
+
+enum MemberListKind {
+    StructureFields,
+    Parameters,
+}
+
+fn member_list_code(kind: MemberListKind) -> i32 {
+    return match (kind) {
+        StructureFields -> 0,
+        Parameters -> 1,
+    };
+}
+
+fn member_list_is(kind: MemberListKind, expected: MemberListKind) -> bool {
+    return member_list_code(kind) == member_list_code(expected);
+}
+
+// A signature unit context is ordered with lowering::units descriptors and
+// points into bounded unit views of the flat syntax catalogs. Tree indices
+// stay local while allocation IDs remain global.
+
+struct SignatureContext {
+    source: [i32],
+    source_length: i32,
+    tokens: verified::token::TokenTable,
+    token_count: i32,
+    tree: verified::syntax_tree::Tree,
+    declarations: lowering::declarations::Table,
+    type_arena: verified::surface_type::TypeArena,
+    resolutions: lowering::types::ResolutionTable,
+    aliases: lowering::aliases::Catalog,
+    alias_scratch: [i32],
+    alias_scratch_capacity: i32,
+    type_output: [i32],
+    type_capacity: i32,
+    allocations: lowering::allocation::Table,
+    writer: lowering::signature_index::Writer,
+}
+
+fn child(context: SignatureContext, node: i32, index: i32) -> i32 {
+    return verified::syntax_tree::child(context.tree, node, index,
+        verified::parser::StateChild);
+}
+fn token_child(context: SignatureContext, node: i32, index: i32) -> i32 {
+    return verified::syntax_tree::child(context.tree, node, index,
+        verified::parser::TokenChild);
+}
+fn production(context: SignatureContext, node: i32) -> i32 {
+    return verified::syntax_tree::production(context.tree, node);
+}
+fn lower_type(context: SignatureContext, type_node: i32, depth: i32) -> i32 {
+    let type_input: verified::surface_type::TypeInput =
+        verified::surface_type::TypeInput {
+            tree: context.tree,
+            root: type_node,
+            depth: depth,
+        };
+    let type_output: verified::surface_type::TypeArena =
+        context.type_arena;
+    let root: i32 = verified::surface_type::extract(type_input, type_output);
+    if (root <= -1) {
+        return -1;
+    }
+    let source_region: lowering::types::WordRegion =
+        lowering::types::region(context.source, context.source_length);
+    let tokens: verified::token::TokenTable = context.tokens;
+    let resolution_table: lowering::types::ResolutionTable =
+        context.resolutions;
+    let input: lowering::types::TypeInput = lowering::types::TypeInput {
+        source: source_region,
+        tokens: tokens,
+        arena: type_output,
+        root: root,
+        resolutions: resolution_table,
+        aliases: context.aliases,
+    };
+    let workspace: lowering::types::TypeWorkspace =
+        lowering::types::TypeWorkspace {
+            alias_scratch: lowering::types::region(context.alias_scratch,
+                context.alias_scratch_capacity),
+            output: lowering::types::region(context.type_output,
+                context.type_capacity),
+        };
+    return lowering::types::lower(input, workspace);
+}
+fn result_type(context: SignatureContext, declaration: i32,
+    return_index: i32, depth: i32) -> i32 {
+    let return_node: i32 = child(context, declaration, return_index);
+    let return_production: i32 = production(context, return_node);
+    if (return_production == verified::production::RET_VOID) {
+        return 0;
+    }
+    if (return_production != verified::production::RET_TYPE) {
+        return -1;
+    }
+    return lower_type(context, child(context, return_node, 1), depth);
+}
+fn decimal_literal(source:[i32], source_length: i32, start: i32, finish: i32) -> i32 {
+    if (start <= -1 || finish <= start || finish>source_length) {
+        return -1;
+    }
+    let value: i32 = 0;
+    let index: i32 = start;
+    let digits: i32 = 0;
+    while (index <= finish - 1) {
+        let byte: i32 = source[index];
+        if (byte == verified::ascii::UNDERSCORE) {
+            index += 1;
+        } else {
+            if (byte < verified::ascii::ZERO
+                || byte > verified::ascii::NINE) {
+                return -1;
+            }
+            let digit: i32 = byte - verified::ascii::ZERO;
+            if (value > (verified::host::I32_MAX - digit) / DECIMAL_RADIX) {
+                return -1;
+            }
+            value = value * DECIMAL_RADIX + digit;
+            digits += 1;
+            index += 1;
+        }
+    }
+    if (digits <= 0) {
+        return -1;
+    }
+    return value;
+}
+fn literal_node(context: SignatureContext, node: i32, depth: i32) -> i32 {
+    let current: i32 = node;
+    let remaining: i32 = depth;
+    while (remaining != 0) {
+        remaining -= 1;
+        let production: i32 = production(context, current);
+        if ((production >= verified::production::INT
+                && production <= verified::production::CHAR)
+            || production == verified::production::TRUE
+            || production == verified::production::FALSE) {
+            return current;
+        }
+        if (production >= verified::production::POS
+            && production <= verified::production::NOT) {
+            current = child(context, current, UNARY_OPERAND_CHILD);
+        } else {
+        if ((production >= verified::production::OREXPR
+                && production <= verified::production::MUL_END)
+                || production == verified::production::EXPR || production == verified::production::ASSIGN
+                || production == verified::production::BASE || production == verified::production::POSTFIX) {
+            current = child(context, current, EXPRESSION_HEAD_CHILD);
+        } else {
+            if (production == verified::production::GROUP) {
+                current = child(context, current, GROUP_VALUE_CHILD);
+            } else {
+                return -1;
+            }
+        }
+        }
+    }
+    return -1;
+}
+fn append_constant(context: SignatureContext, declaration: i32, id: i32,
+    depth: i32) -> bool {
+    let source: [i32] = context.source;
+    let tokens: [verified::token::TokenRow] = context.tokens.data;
+    let source_length: i32 = context.source_length;
+    let token_count: i32 = context.token_count;
+    let output: lowering::signature_index::Writer = context.writer;
+    if (id <= -1) { return false; }
+    let type_tag: i32 = lower_type(context,
+        child(context, declaration, CONSTANT_TYPE_CHILD), depth);
+    if (type_tag <= -1) { return false; }
+    let expression_node: i32 = literal_node(context,
+        child(context, declaration, CONSTANT_VALUE_CHILD), depth);
+    if (expression_node <= -1) { return false; }
+    let production: i32 = production(context, expression_node);
+    let token: i32 = token_child(context, expression_node, 0);
+    if (token <= -1 || token >= token_count) { return false; }
+    let token_start: i32 = tokens[token].start;
+    let token_finish: i32 = tokens[token].finish;
+    let constant_start: i32 = -1;
+    if (production == verified::production::TRUE
+        || production == verified::production::FALSE) {
+        if (type_tag != backend::syntax::type_code(
+                backend::syntax::TypeBool)) { return false; }
+        let value: i32 = 0;
+        if (production == verified::production::TRUE) { value = 1; }
+        constant_start = lowering::signature_index::push_scalar(
+            output, value, 0);
+    }
+    if (production == verified::production::INT) {
+        if (type_tag != backend::syntax::type_code(backend::syntax::TypeI32)
+            && type_tag != backend::syntax::type_code(
+                backend::syntax::TypeUsize)
+            && type_tag != backend::syntax::type_code(
+                backend::syntax::TypePointer)) { return false; }
+        let value: i32 = decimal_literal(source, source_length,
+            token_start, token_finish);
+        if (value <= -1
+            || (type_tag == backend::syntax::type_code(
+                    backend::syntax::TypePointer) && value != 0)) {
+            return false;
+        }
+        constant_start = lowering::signature_index::push_scalar(
+            output, value, 0);
+    }
+    if (production == verified::production::STRING) {
+        if (type_tag != backend::syntax::type_code(
+                backend::syntax::TypeString)
+            || token_finish - token_start <= 1
+            || source[token_start] != verified::ascii::QUOTE
+            || source[token_finish - 1] != verified::ascii::QUOTE
+            || !verified::surface_atoms::valid_utf8(source, source_length,
+                token_start + 1, token_finish - 1)) { return false; }
+        let index: i32 = token_start + 1;
+        while (index < token_finish - 1) {
+            if (source[index] == verified::ascii::BACKSLASH) {
+                return false;
+            }
+            index += 1;
+        }
+        let count: i32 = token_finish - token_start - 2;
+        constant_start = lowering::signature_index::push_string(output,
+            source, source_length, token_start + 1, count);
+    }
+    if (constant_start <= -1) { return false; }
+    let record: lowering::signatures::SignatureRecord =
+        lowering::signatures::SignatureRecord {
+            id: id,
+            declaration_kind: lowering::declarations::Constant,
+            shape: lowering::signatures::ConstantShape,
+            arity: 0,
+            result_type: type_tag,
+        };
+    return lowering::signature_index::push_record(output, record,
+        -1, -1, constant_start);
+}
+// Append one Surface field/parameter list. The two grammar families differ
+// only in their list productions and in the declaration's list child index.
+fn append_members(context: SignatureContext, list: i32,
+    mode: MemberListKind, depth: i32) -> i32 {
+    let output: lowering::signature_index::Writer = context.writer;
+    let list_kind: i32 = production(context, list);
+    if ((member_list_is(mode, StructureFields)
+            && list_kind == verified::production::STRUCT_FIELDS_NONE)
+        || (member_list_is(mode, Parameters)
+            && list_kind == verified::production::PARAMS_NONE)) {
+        return 0;
+    }
+    let current: i32 = list;
+    let remaining: i32 = depth;
+    let count: i32 = 0;
+    while (remaining != 0) {
+        remaining -= 1;
+        let current_kind: i32 = production(context, current);
+        if ((member_list_is(mode, StructureFields)
+                && current_kind
+                    != verified::production::STRUCT_FIELDS_SOME
+                && current_kind
+                    != verified::production::STRUCT_FIELDS_AFTER_COMMA_MORE)
+            || (member_list_is(mode, Parameters)
+                && current_kind
+                    != verified::production::PARAMS_SOME
+                && current_kind
+                    != verified::production::PARAMS_AFTER_COMMA_MORE)) {
+            return -1;
+        }
+        let member: i32 = child(context, current, LIST_ITEM_CHILD);
+        let member_kind: i32 = production(context, member);
+        if ((member_list_is(mode, StructureFields)
+                && member_kind != verified::production::STRUCT_FIELD)
+            || (member_list_is(mode, Parameters)
+                && member_kind != verified::production::PARAM_NAMED)) {
+            return -1;
+        }
+        let tag: i32 = lower_type(context,
+            child(context, member, MEMBER_TYPE_CHILD), depth);
+        let name: i32 = token_child(context, member, MEMBER_NAME_CHILD);
+        if (tag <= -1 || name <= -1
+            || !lowering::signature_index::push_member(output,
+                lowering::signatures::SignatureMember {
+                    name: name, type_tag: tag,
+                })) { return -1; }
+        count += 1;
+        let tail: i32 = child(context, current, LIST_TAIL_CHILD);
+        let tail_kind: i32 = production(context, tail);
+        if ((member_list_is(mode, StructureFields)
+                && tail_kind
+                    == verified::production::STRUCT_FIELDS_END)
+            || (member_list_is(mode, Parameters)
+                && tail_kind == verified::production::PARAMS_END)) {
+            return count;
+        }
+        if ((member_list_is(mode, StructureFields)
+                && tail_kind
+                    != verified::production::STRUCT_FIELDS_MORE)
+            || (member_list_is(mode, Parameters)
+                && tail_kind != verified::production::PARAMS_MORE)) {
+            return -1;
+        }
+        let after: i32 = child(context, tail, LIST_TAIL_CHILD);
+        let after_kind: i32 = production(context, after);
+        if ((member_list_is(mode, StructureFields)
+                && after_kind
+                    == verified::production::STRUCT_FIELDS_AFTER_COMMA_TRAILING)
+            || (member_list_is(mode, Parameters)
+                && after_kind
+                    == verified::production::PARAMS_AFTER_COMMA_TRAILING)) {
+            return count;
+        }
+        if ((member_list_is(mode, StructureFields)
+                && after_kind
+                    != verified::production::STRUCT_FIELDS_AFTER_COMMA_MORE)
+            || (member_list_is(mode, Parameters)
+                && after_kind
+                    != verified::production::PARAMS_AFTER_COMMA_MORE)) {
+            return -1;
+        }
+        current = after;
+    }
+    return -1;
+}
+fn append_enum_fields(context: SignatureContext, list: i32, depth: i32,
+    variant_slot: i32) -> i32 {
+    let output: lowering::signature_index::Writer = context.writer;
+    let list_kind: i32 = production(context, list);
+    if (list_kind == verified::production::ENUM_VARIANT_FIELDS_NONE) {
+        return 0;
+    }
+    if (list_kind != verified::production::ENUM_VARIANT_FIELDS_SOME
+        || depth <= 0) { return -1; }
+    let current: i32 = list;
+    let remaining: i32 = depth;
+    let count: i32 = 0;
+    while (remaining > 0) {
+        remaining -= 1;
+        let current_kind: i32 = production(context, current);
+        if (current_kind
+                    != verified::production::ENUM_VARIANT_FIELDS_SOME
+                && current_kind
+                    != verified::production::ENUM_VARIANT_FIELDS_AFTER_COMMA_MORE) {
+            return -1;
+        }
+        let type_node: i32 = child(context, current, LIST_ITEM_CHILD);
+        let tag: i32 = lower_type(context, type_node, depth);
+        if (tag <= -1 || !lowering::signature_index::push_field(
+                output, variant_slot, tag)) { return -1; }
+        count += 1;
+        let tail: i32 = child(context, current, LIST_TAIL_CHILD);
+        let tail_kind: i32 = production(context, tail);
+        if (tail_kind
+            == verified::production::ENUM_VARIANT_FIELDS_END) {
+            return count;
+        }
+        if (tail_kind
+            != verified::production::ENUM_VARIANT_FIELDS_MORE) {
+            return -1;
+        }
+        let after: i32 = child(context, tail, LIST_TAIL_CHILD);
+        let after_kind: i32 = production(context, after);
+        if (after_kind
+            == verified::production::ENUM_VARIANT_FIELDS_AFTER_COMMA_TRAILING) {
+            return count;
+        }
+        if (after_kind
+            != verified::production::ENUM_VARIANT_FIELDS_AFTER_COMMA_MORE) {
+            return -1;
+        }
+        current = after;
+    }
+    return -1;
+}
+fn append_enumeration(context: SignatureContext, declaration: i32,
+    id: i32, depth: i32) -> bool {
+    let output: lowering::signature_index::Writer = context.writer;
+    if (id <= -1 || depth <= 0) { return false; }
+    let variant_start: i32 =
+        lowering::signature_index::variant_position(output);
+    let list: i32 = child(context, declaration,
+        ENUMERATION_VARIANTS_CHILD);
+    let list_kind: i32 = production(context, list);
+    let arity: i32 = 0;
+    if (list_kind != verified::production::ENUM_VARIANTS_NONE) {
+        if (list_kind != verified::production::ENUM_VARIANTS_SOME) {
+            return false;
+        }
+        let current: i32 = child(context, list, LIST_ITEM_CHILD);
+        let tail: i32 = child(context, list, LIST_TAIL_CHILD);
+        let remaining: i32 = depth;
+        let finished: bool = false;
+        while (remaining > 0 && !finished) {
+            remaining -= 1;
+            if (production(context, current)
+                    != verified::production::ENUM_VARIANT) { return false; }
+            let name: i32 = token_child(context, current,
+                ENUM_VARIANT_NAME_CHILD);
+            let variant_slot: i32 =
+                lowering::signature_index::push_variant(output, name);
+            if (variant_slot <= -1) { return false; }
+            arity += 1;
+            let fields: i32 = 0;
+            let payload: i32 = child(context, current,
+                ENUM_VARIANT_PAYLOAD_CHILD);
+            let payload_kind: i32 = production(context, payload);
+            if (payload_kind
+                    == verified::production::ENUM_VARIANT_TUPLE) {
+                fields = append_enum_fields(context,
+                    child(context, payload,
+                        ENUM_VARIANT_TUPLE_FIELDS_CHILD),
+                    depth - 1, variant_slot);
+                if (fields <= -1) { return false; }
+            } else {
+                if (payload_kind
+                        != verified::production::ENUM_VARIANT_UNIT) {
+                    return false;
+                }
+            }
+            let tail_kind: i32 = production(context, tail);
+            if (tail_kind
+                    == verified::production::ENUM_VARIANTS_END) {
+                finished = true;
+            } else {
+                if (tail_kind
+                        != verified::production::ENUM_VARIANTS_MORE) {
+                    return false;
+                }
+                let after: i32 = child(context, tail, LIST_TAIL_CHILD);
+                let after_kind: i32 = production(context, after);
+                if (after_kind
+                        == verified::production::ENUM_VARIANTS_AFTER_COMMA_TRAILING) {
+                    finished = true;
+                } else {
+                    if (after_kind
+                            != verified::production::ENUM_VARIANTS_AFTER_COMMA_MORE) {
+                        return false;
+                    }
+                    current = child(context, after, LIST_ITEM_CHILD);
+                    tail = child(context, after, LIST_TAIL_CHILD);
+                }
+            }
+        }
+        if (!finished) { return false; }
+    }
+    let record: lowering::signatures::SignatureRecord =
+        lowering::signatures::SignatureRecord {
+            id: id,
+            declaration_kind: lowering::declarations::Enumeration,
+            shape: lowering::signatures::EnumerationShape,
+            arity: arity,
+            result_type: -1,
+        };
+    return lowering::signature_index::push_record(output, record,
+        -1, variant_start, -1);
+}
+fn append_signature(context: SignatureContext, declaration: i32,
+    kind: lowering::declarations::DeclarationKind,
+    id: i32, depth: i32) -> bool {
+    if (id <= -1) { return false; }
+    let shape: lowering::signatures::SignatureShape =
+        lowering::signatures::StructureShape;
+    let return_tag: i32 = -1;
+    let list_index: i32 = STRUCTURE_FIELDS_CHILD;
+    let mode: MemberListKind = StructureFields;
+    if (lowering::declarations::same_kind(kind,
+            lowering::declarations::Function)
+        || lowering::declarations::same_kind(kind,
+            lowering::declarations::External)) {
+        if (lowering::declarations::same_kind(kind,
+                lowering::declarations::Function)) {
+            shape = lowering::signatures::InternalFunctionShape;
+        } else {
+            shape = lowering::signatures::ExternalFunctionShape;
+        }
+        let children: CallableChildren = callable_children(kind);
+        list_index = children.parameters;
+        return_tag = result_type(context, declaration,
+            children.result_type, depth);
+        if (return_tag <= -1) { return false; }
+        mode = Parameters;
+    }
+    let output: lowering::signature_index::Writer = context.writer;
+    let member_start: i32 =
+        lowering::signature_index::member_position(output);
+    let arity: i32 = append_members(context,
+        child(context, declaration, list_index), mode, depth);
+    if (arity <= -1) { return false; }
+    let record: lowering::signatures::SignatureRecord =
+        lowering::signatures::SignatureRecord {
+            id: id,
+            declaration_kind: kind,
+            shape: shape,
+            arity: arity,
+            result_type: return_tag,
+        };
+    return lowering::signature_index::push_record(output, record,
+        member_start, -1, -1);
+}
+fn lower(context: SignatureContext) -> bool {
+    let source_length: i32 = context.source_length;
+    let token_count: i32 = context.token_count;
+    let node_count: i32 = context.tree.node_count;
+    let declaration_table: lowering::declarations::Table =
+        context.declarations;
+    let type_arena: verified::surface_type::TypeArena = context.type_arena;
+    let resolution_count: i32 = context.resolutions.count;
+    let allocated: lowering::allocation::Table = context.allocations;
+    if (source_length <= -1 || token_count <= -1
+        || node_count <= 0
+        || type_arena.capacity <= 0 || resolution_count <= -1
+        || context.alias_scratch_capacity <= -1
+        || context.type_capacity <= 0
+        || !lowering::declarations::table_has_exact_rows(
+            declaration_table)
+        || !lowering::allocation::table_has_exact_rows(allocated)) {
+        return false;
+    }
+    let rows: i32 = lowering::declarations::count_rows(
+        lowering::declarations::table_header(declaration_table));
+    if (rows <= 0 || lowering::allocation::table_header(allocated).rows
+            != rows) { return false; }
+    let row: i32 = 0;
+    while (row < rows) {
+        let allocation: lowering::allocation::AllocationRow =
+            lowering::allocation::table_row(allocated, row);
+        let kind: lowering::declarations::DeclarationKind =
+            lowering::allocation::row_kind(allocation);
+        if (!lowering::declarations::same_row(
+                lowering::declarations::table_row(declaration_table, row),
+                lowering::allocation::row_source(allocation))) {
+            return false;
+        }
+        if (lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Constant)
+            && !append_constant(context,
+                lowering::allocation::row_declaration(allocation),
+                lowering::allocation::row_declaration_id(allocation),
+                node_count)) { return false; }
+        if (lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Enumeration)
+            && !append_enumeration(context,
+                lowering::allocation::row_declaration(allocation),
+                lowering::allocation::row_declaration_id(allocation),
+                node_count)) { return false; }
+        if (lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Structure)
+            || lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Function)
+            || lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::External)) {
+            let signature_id: i32 =
+                lowering::allocation::row_declaration_id(allocation);
+            if (lowering::allocation::row_has_kind(allocation,
+                    lowering::declarations::Function)
+                || lowering::allocation::row_has_kind(allocation,
+                    lowering::declarations::External)) {
+                signature_id = lowering::allocation::row_core_id(allocation);
+            }
+            if (!append_signature(context,
+                    lowering::allocation::row_declaration(allocation),
+                    kind, signature_id, node_count)) { return false; }
+        }
+        row += 1;
+    }
+    return true;
+}
+fn catalog_range(offset: i32, words: i32, length: i32) -> bool {
+    if (offset <= -1 || words <= -1 || length <= -1 || offset>length || words>length - offset) {
+        return false;
+    }
+    return true;
+}
+fn row_range(offset: i32, count: i32, stride: i32, length: i32) -> bool {
+    if (count <= -1 || stride <= 0
+        || count > verified::host::I32_MAX / stride) {
+        return false;
+    }
+    return catalog_range(offset, count * stride, length);
+}
+fn ranges_overlap(first: i32, first_words: i32, second: i32, second_words: i32) -> bool {
+    if (first_words <= 0 || second_words <= 0) {
+        return false;
+    }
+    if (first <= second) {
+        return second - first <= first_words - 1;
+    }
+    return first - second <= second_words - 1;
+}
+
+fn copy_declaration_table(source: lowering::declarations::Table,
+    rows: i32, output: lowering::declarations::Table) -> bool {
+    if (rows <= -1
+        || rows > lowering::declarations::table_capacity(output)
+        || rows != lowering::declarations::table_capacity(source)) {
+        return false;
+    }
+    lowering::declarations::table_write_header(output,
+        lowering::declarations::table_header(source));
+    let row: i32 = 0;
+    while (row != rows) {
+        lowering::declarations::table_write_row(output, row,
+            lowering::declarations::table_row(source, row));
+        row += 1;
+    }
+    return true;
+}
+fn valid_declaration_table(table: lowering::declarations::Table,
+    unit: i32) -> bool {
+    if (!lowering::declarations::table_has_exact_rows(table)) {
+        return false;
+    }
+    let rows: i32 = lowering::declarations::count_rows(
+        lowering::declarations::table_header(table));
+    if (rows <= 0 || rows > (verified::host::I32_MAX
+            - lowering::declarations::HEADER)
+            / lowering::declarations::ROW) {
+        return false;
+    }
+    let row: i32 = 0;
+    while (row <= rows - 1) {
+        let declaration: lowering::declarations::DeclarationRow =
+            lowering::declarations::table_row(table, row);
+        if (lowering::declarations::row_unit(declaration) != unit) {
+            return false;
+        }
+        row += 1;
+    }
+    return true;
+}
+pub struct ContextCatalogLengths {
+    sources: i32,
+    tokens: i32,
+    resolutions: i32,
+}
+
+pub fn context_catalog_lengths(sources: i32, tokens: i32,
+    resolutions: i32) -> ContextCatalogLengths {
+    return ContextCatalogLengths {
+        sources: sources,
+        tokens: tokens,
+        resolutions: resolutions,
+    };
+}
+
+pub fn context_valid(context: lowering::unit_context::UnitContext,
+    lengths: ContextCatalogLengths) -> bool {
+    let source_offset: i32 = context.source_offset;
+    let source_words: i32 = context.source_length;
+    let token_offset: i32 = context.token_offset;
+    let token_count: i32 = context.token_count;
+    let node_count: i32 = context.node_count;
+    let resolution_offset: i32 = context.resolution_row_offset;
+    let resolution_count: i32 = context.resolution_count;
+    if (!catalog_range(source_offset, source_words, lengths.sources)
+        || !row_range(token_offset, token_count, 1, lengths.tokens)
+        || !catalog_range(resolution_offset, resolution_count,
+            lengths.resolutions)) {
+        return false;
+    }
+    if (token_count <= -1 || node_count <= 0
+        || resolution_count <= -1) {
+        return false;
+    }
+    return true;
+}
+pub struct WordRegion {
+    data: [i32],
+    words: i32,
+}
+
+pub fn region(data: [i32], words: i32) -> WordRegion {
+    return WordRegion { data: data, words: words };
+}
+
+pub struct SignatureUnitInputs {
+    unit_count: i32,
+    unit_declarations: lowering::declarations::Catalog,
+    contexts: lowering::unit_context::Table,
+    sources: WordRegion,
+    tokens: verified::token::TokenTable,
+    trees: verified::syntax_tree::Catalog,
+    resolutions: lowering::types::ResolutionTable,
+    aliases: lowering::aliases::Table,
+    allocations: lowering::allocation::Table,
+    expected_declaration_words: i32,
+}
+
+pub struct SignatureUnitWorkspace {
+    alias_path_scratch: WordRegion,
+    type_output: WordRegion,
+    type_arena: verified::surface_type::TypeArena,
+    resolutions: lowering::types::ResolutionTable,
+    declarations: lowering::declarations::Table,
+    allocations: lowering::allocation::Table,
+    writer: lowering::signature_index::Writer,
+}
+
+// Lower every descriptor-ordered unit against one allocation table. The
+// declaration catalog must contain the same exact per-unit tables consumed by
+// lowering::units::accumulate; allocation rows are selected by the cumulative
+// declaration-row cursor, so callable Core IDs remain globally assigned.
+// Each unit reads bounded source/token views and its decoded syntax tree.
+// Native signature rows are written in unit order.
+pub fn lower_units(input: SignatureUnitInputs,
+    workspace: SignatureUnitWorkspace) -> bool {
+    let unit_count: i32 = input.unit_count;
+    let declaration_catalog: lowering::declarations::Catalog =
+        input.unit_declarations;
+    let context_region: lowering::unit_context::Table = input.contexts;
+    let source_region: WordRegion = input.sources;
+    let token_region: verified::token::TokenTable = input.tokens;
+    let tree_catalog: verified::syntax_tree::Catalog = input.trees;
+    let resolution_region: lowering::types::ResolutionTable =
+        input.resolutions;
+    let alias_region: lowering::aliases::Table = input.aliases;
+    let allocated: lowering::allocation::Table = input.allocations;
+    let descriptor_count: i32 = declaration_catalog.count;
+    let contexts: [lowering::unit_context::UnitContext] =
+        context_region.data;
+    let context_count: i32 = context_region.count;
+    let source_catalog: [i32] = source_region.data;
+    let source_catalog_length: i32 = source_region.words;
+    let token_catalog: verified::token::TokenTable = token_region;
+    let token_catalog_length: i32 = token_region.count;
+    let trees: [verified::syntax_tree::Tree] = tree_catalog.data;
+    let lexical_catalogs: lowering::unit_context::LexicalCatalogs =
+        lowering::unit_context::LexicalCatalogs {
+            sources: source_catalog,
+            source_words: source_catalog_length,
+            tokens: token_catalog,
+        };
+    let resolution_catalog_length: i32 = resolution_region.count;
+    let alias_catalog: [lowering::aliases::Catalog] = alias_region.data;
+    let alias_catalog_count: i32 = alias_region.count;
+    let declaration_words: i32 = input.expected_declaration_words;
+    let alias_path_region: WordRegion = workspace.alias_path_scratch;
+    let type_output_region: WordRegion = workspace.type_output;
+    let type_arena_work: verified::surface_type::TypeArena =
+        workspace.type_arena;
+    let resolution_work: lowering::types::ResolutionTable =
+        workspace.resolutions;
+    let declaration_scratch: lowering::declarations::Table =
+        workspace.declarations;
+    let allocation_scratch: lowering::allocation::Table =
+        workspace.allocations;
+    let alias_path_scratch: [i32] = alias_path_region.data;
+    let alias_path_capacity: i32 = alias_path_region.words;
+    let type_output: [i32] = type_output_region.data;
+    let type_capacity: i32 = type_output_region.words;
+    let type_arena_capacity: i32 = type_arena_work.capacity;
+    let resolution_scratch: [lowering::types::ResolutionRow] =
+        resolution_work.data;
+    let resolution_capacity: i32 = resolution_work.count;
+    let declaration_capacity: i32 =
+        lowering::declarations::table_capacity(declaration_scratch);
+    let allocation_capacity: i32 =
+        lowering::allocation::table_capacity(allocation_scratch);
+    let writer: lowering::signature_index::Writer = workspace.writer;
+    if (unit_count <= 0 || descriptor_count != unit_count || context_count != unit_count || tree_catalog.count != unit_count || source_catalog_length <= -1 || token_catalog_length <= -1 || (alias_catalog_count != 0 && alias_catalog_count != unit_count) || alias_path_capacity <= -1 || !lowering::allocation::table_has_exact_rows(allocated) || declaration_words <= lowering::declarations::HEADER - 1 || type_capacity <= 0 || type_arena_capacity <= 0 || resolution_capacity <= -1 || declaration_capacity <= 0 || allocation_capacity <= 0) {
+        return false;
+    }
+    let allocation_header: lowering::allocation::AllocationHeader =
+        lowering::allocation::table_header(allocated);
+    if (allocation_header.units != unit_count
+        || allocation_header.rows <= 0
+        || allocation_header.rows
+            > (verified::host::I32_MAX - lowering::allocation::HEADER)
+                / lowering::allocation::ROW) {
+        return false;
+    }
+    let total_rows: i32 = 0;
+    let total_declaration_words: i32 = 0;
+    let catalog_lengths: ContextCatalogLengths = context_catalog_lengths(
+        source_catalog_length, token_catalog_length,
+        resolution_catalog_length);
+    let unit: i32 = 0;
+    while (unit <= unit_count - 1) {
+        let context: i32 = unit;
+        let declaration_table: lowering::declarations::Table =
+            lowering::declarations::catalog_table(declaration_catalog, unit);
+        if (!valid_declaration_table(declaration_table, unit)
+            || !context_valid(contexts[context], catalog_lengths)) {
+            return false;
+        }
+        let local_rows: i32 = lowering::declarations::count_rows(
+            lowering::declarations::table_header(declaration_table));
+        let local_words: i32 = lowering::declarations::HEADER
+            + local_rows * lowering::declarations::ROW;
+        if (local_rows > verified::host::I32_MAX - total_rows) {
+            return false;
+        }
+        if (local_words > verified::host::I32_MAX
+                - total_declaration_words) {
+            return false;
+        }
+        total_rows += local_rows;
+        total_declaration_words += local_words;
+        unit += 1;
+    }
+    if (total_rows > (verified::host::I32_MAX
+            - lowering::declarations::HEADER)
+            / lowering::declarations::ROW
+        || declaration_words != total_declaration_words
+        || allocation_header.rows != total_rows) {
+        return false;
+    }
+    // Descriptor ranges are not allowed to alias another unit's input. This
+    // prevents a repeated catalog slice from silently compiling one unit twice.
+    unit = 0;
+    while (unit <= unit_count - 1) {
+        let context: i32 = unit;
+        let source_offset: i32 = contexts[context].source_offset;
+        let source_words: i32 = contexts[context].source_length;
+        let token_offset: i32 = contexts[context].token_offset;
+        let token_rows: i32 = contexts[context].token_count;
+        let resolution_offset: i32 = contexts[context].resolution_row_offset;
+        let resolution_count: i32 = contexts[context].resolution_count;
+        let previous: i32 = 0;
+        while (previous <= unit - 1) {
+            let previous_context: i32 = previous;
+        if (ranges_overlap(source_offset, source_words, contexts[previous_context].source_offset, contexts[previous_context].source_length) || ranges_overlap(token_offset, token_rows, contexts[previous_context].token_offset, contexts[previous_context].token_count) || ranges_overlap(resolution_offset, resolution_count, contexts[previous_context].resolution_row_offset, contexts[previous_context].resolution_count)) {
+                return false;
+            }
+            previous += 1;
+        }
+        unit += 1;
+    }
+    let allocation_row: i32 = 0;
+    unit = 0;
+    while (unit <= unit_count - 1) {
+        let context: i32 = unit;
+        let declaration_table: lowering::declarations::Table =
+            lowering::declarations::catalog_table(declaration_catalog, unit);
+        let rows: i32 = lowering::declarations::count_rows(
+            lowering::declarations::table_header(declaration_table));
+        if (rows > declaration_capacity || rows > allocation_capacity
+            || rows > (verified::host::I32_MAX
+                - lowering::allocation::HEADER)
+                / lowering::allocation::ROW) {
+            return false;
+        }
+        let source_length: i32 = contexts[context].source_length;
+        let token_count: i32 = contexts[context].token_count;
+        let node_count: i32 = contexts[context].node_count;
+        let resolution_count: i32 = contexts[context].resolution_count;
+        let lexical: lowering::unit_context::UnitLexical =
+            lowering::unit_context::lexical(lexical_catalogs,
+                contexts[context]);
+        let unit_tree: verified::syntax_tree::Tree = trees[unit];
+        if (!lexical.valid || unit_tree.node_count != node_count
+            || !lowering::types::copy_rows(resolution_region,
+                contexts[context].resolution_row_offset, resolution_count,
+                resolution_work)
+            || !copy_declaration_table(declaration_table, rows,
+                declaration_scratch)) {
+            return false;
+        }
+        let aliases: lowering::aliases::Catalog = lowering::aliases::empty();
+        if (alias_catalog_count == unit_count) {
+            aliases = alias_catalog[unit];
+        }
+        let unit_source: [i32] = lexical.source;
+        let unit_tokens: verified::token::TokenTable = lexical.tokens;
+        if (alias_catalog_count == unit_count
+            && !lowering::aliases::valid(aliases, unit_tokens)) {
+            return false;
+        }
+        let local_declarations: lowering::declarations::Table =
+            lowering::declarations::table_with_rows(declaration_scratch,
+                rows);
+        let local_allocations: lowering::allocation::Table =
+            lowering::allocation::table_with_rows(allocation_scratch, rows);
+        let scratch_header: lowering::allocation::AllocationHeader =
+            lowering::allocation::table_header(allocated);
+        scratch_header.units = 1;
+        scratch_header.rows = rows;
+        lowering::allocation::table_write_header(local_allocations,
+            scratch_header);
+        let row: i32 = 0;
+        while (row <= rows - 1) {
+            let allocation: lowering::allocation::AllocationRow =
+                lowering::allocation::table_row(allocated,
+                    allocation_row + row);
+            if (!lowering::declarations::same_row(
+                    lowering::declarations::table_row(local_declarations,
+                        row),
+                    lowering::allocation::row_source(allocation))) { return false; }
+            lowering::allocation::table_write_row(local_allocations, row,
+                allocation);
+            row += 1;
+        }
+        let signature_context: SignatureContext = SignatureContext {
+            source: unit_source,
+            source_length: source_length,
+            tokens: unit_tokens,
+            token_count: token_count,
+            tree: unit_tree,
+            declarations: local_declarations,
+            type_arena: type_arena_work,
+            resolutions: lowering::types::resolutions(resolution_scratch,
+                resolution_count, lowering::types::IdentifierToken),
+            aliases: aliases,
+            alias_scratch: alias_path_scratch,
+            alias_scratch_capacity: alias_path_capacity,
+            type_output: type_output,
+            type_capacity: type_capacity,
+            allocations: local_allocations,
+            writer: writer,
+        };
+        if (!lower(signature_context)) { return false; }
+        allocation_row += rows;
+        unit += 1;
+    }
+    return true;
+}

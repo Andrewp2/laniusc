@@ -1,0 +1,8 @@
+module app::main;
+
+fn main() -> i32 {
+    let value: i32 = match (4) {
+        0 -> 7,
+    };
+    return value;
+}

@@ -1,0 +1,7 @@
+module app::main;
+
+pub extern "lanius" fn close(fd: i32) -> i32;
+
+fn main() -> i32 {
+    return close(1);
+}

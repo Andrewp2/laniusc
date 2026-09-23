@@ -51,7 +51,7 @@ pub(crate) struct GpuX86ArtifactStage {
     layout_op: ComputeOperation,
     clear: ComputeOperation,
     safety_emits: Vec<ComputeOperation>,
-    packed_emits: Vec<ComputeOperation>,
+    specialized_emits: Vec<ComputeOperation>,
     emits: Vec<ComputeOperation>,
     runtime_emit: ComputeOperation,
     byte_scan: GpuResidentExclusiveScan,
@@ -151,10 +151,10 @@ impl GpuX86ArtifactStage {
             "codegen/lir/x86/artifact_clear",
         )?;
         let emit_pass = load(kernels, "lir.x86.emit", "codegen/lir/x86/emit")?;
-        let packed_emit_pass = load(
+        let specialized_emit_pass = load(
             kernels,
-            "lir.x86.packed.emit",
-            "codegen/lir/x86/packed_emit",
+            "lir.x86.specialized.emit",
+            "codegen/lir/x86/specialized_emit",
         )?;
         let safety_emit_pass = load(
             kernels,
@@ -292,7 +292,7 @@ impl GpuX86ArtifactStage {
                 )
             })
             .collect::<Result<Vec<_>>>()?;
-        let packed_emits = params
+        let specialized_emits = params
             .iter()
             .enumerate()
             .take(target_capacity.div_ceil(TARGET_LIR_PAGE_ROWS) as usize)
@@ -302,8 +302,8 @@ impl GpuX86ArtifactStage {
                     device,
                     &context,
                     &resources,
-                    "lir.x86.packed.emit",
-                    &packed_emit_pass,
+                    "lir.x86.specialized.emit",
+                    &specialized_emit_pass,
                     params,
                     target_capacity
                         .saturating_sub(target_start)
@@ -351,7 +351,7 @@ impl GpuX86ArtifactStage {
             layout_op,
             clear,
             safety_emits,
-            packed_emits,
+            specialized_emits,
             emits,
             runtime_emit,
             byte_scan,
@@ -402,9 +402,9 @@ impl GpuX86ArtifactStage {
             .get(page_id)
             .context("x86 target page has no safety-emit operation")?
             .record(encoder)?;
-        self.packed_emits
+        self.specialized_emits
             .get(page_id)
-            .context("x86 target page has no packed-emit operation")?
+            .context("x86 target page has no specialized-emit operation")?
             .record(encoder)?;
         self.emits
             .get(page_id)

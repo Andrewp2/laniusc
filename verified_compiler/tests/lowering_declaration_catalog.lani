@@ -1,0 +1,65 @@
+module app::main;
+
+import lowering::declarations;
+import verified::host;
+
+fn main() -> i32 {
+    let first_memory: ptr = verified::host::alloc(
+        lowering::declarations::HEADER_BYTES
+            + lowering::declarations::ROW_BYTES,
+        lowering::declarations::ALIGNMENT);
+    let second_memory: ptr = verified::host::alloc(
+        lowering::declarations::HEADER_BYTES
+            + lowering::declarations::ROW_BYTES,
+        lowering::declarations::ALIGNMENT);
+    let catalog_memory: ptr = verified::host::alloc(
+        2 * lowering::declarations::TABLE_REF_BYTES,
+        lowering::declarations::TABLE_REF_ALIGNMENT);
+    if (first_memory == 0 || second_memory == 0
+        || catalog_memory == 0) { return 1; }
+    let first: lowering::declarations::Table =
+        lowering::declarations::from_raw_parts(first_memory, 1);
+    let second: lowering::declarations::Table =
+        lowering::declarations::from_raw_parts(second_memory, 1);
+    let first_header: lowering::declarations::DeclarationCounts =
+        lowering::declarations::empty_counts();
+    first_header.rows = 1;
+    first_header.functions = 1;
+    let second_header: lowering::declarations::DeclarationCounts =
+        lowering::declarations::empty_counts();
+    second_header.rows = 1;
+    second_header.structures = 1;
+    lowering::declarations::table_write_header(first, first_header);
+    lowering::declarations::table_write_header(second, second_header);
+    lowering::declarations::table_write_row(first, 0,
+        lowering::declarations::DeclarationRow {
+            unit: 0, kind: lowering::declarations::Function,
+            is_public: false, item: 2, declaration: 1,
+            name: 0, target: -1, ordinal: 0,
+        });
+    lowering::declarations::table_write_row(second, 0,
+        lowering::declarations::DeclarationRow {
+            unit: 1, kind: lowering::declarations::Structure,
+            is_public: true, item: 3, declaration: 2,
+            name: 1, target: -1, ordinal: 0,
+        });
+    let catalog: lowering::declarations::Catalog =
+        lowering::declarations::catalog_from_raw_parts(catalog_memory, 2);
+    lowering::declarations::catalog_write_table(catalog, 0, first);
+    lowering::declarations::catalog_write_table(catalog, 1, second);
+    let selected: lowering::declarations::Table =
+        lowering::declarations::catalog_table(catalog, 1);
+    let row: lowering::declarations::DeclarationRow =
+        lowering::declarations::table_row(selected, 0);
+    if (!lowering::declarations::table_has_exact_rows(selected)
+        || !lowering::declarations::row_has_kind(row,
+            lowering::declarations::Structure)
+        || lowering::declarations::row_unit(row) != 1) { return 2; }
+    selected = lowering::declarations::catalog_table(catalog, 0);
+    row = lowering::declarations::table_row(selected, 0);
+    if (!lowering::declarations::table_has_exact_rows(selected)
+        || !lowering::declarations::row_has_kind(row,
+            lowering::declarations::Function)
+        || lowering::declarations::row_unit(row) != 0) { return 3; }
+    return 0;
+}

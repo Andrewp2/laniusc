@@ -1,0 +1,78 @@
+module app::main;
+
+import backend::syntax;
+import lowering::declarations;
+import lowering::signature_index;
+import lowering::signatures;
+import verified::host;
+
+fn main() -> i32 {
+    let required: lowering::signature_index::Requirements =
+        lowering::signature_index::Requirements {
+            entries: 4, members: 0, variants: 0, fields: 0,
+            constants: 0, bytes: 0, valid: true,
+        };
+    let memory: ptr = verified::host::alloc(
+        lowering::signature_index::allocation_bytes(required),
+        lowering::signature_index::ALIGNMENT);
+    let cursor: ptr = verified::host::alloc(
+        lowering::signature_index::WRITER_BYTES,
+        lowering::signature_index::ALIGNMENT);
+    if (memory == 0 || cursor == 0) { return 1; }
+    let table: lowering::signature_index::Table =
+        lowering::signature_index::from_raw_parts(memory, required);
+    let output: lowering::signature_index::Writer =
+        lowering::signature_index::writer(table, cursor);
+    if (!lowering::signature_index::push_record(output,
+            lowering::signatures::SignatureRecord {
+                id: 0, declaration_kind: lowering::declarations::Structure,
+                shape: lowering::signatures::StructureShape,
+                arity: 0, result_type: -1,
+            }, 0, -1, -1)
+        || !lowering::signature_index::push_record(output,
+            lowering::signatures::SignatureRecord {
+                id: 3, declaration_kind: lowering::declarations::Function,
+                shape: lowering::signatures::InternalFunctionShape,
+                arity: 0,
+                result_type: backend::syntax::type_code(
+                    backend::syntax::TypeI32),
+            }, 0, -1, -1)) { return 2; }
+    let index: lowering::signature_index::Table =
+        lowering::signature_index::finish(output);
+    if (!lowering::signature_index::has_shape(index, 0,
+            lowering::signatures::StructureShape)
+        || !lowering::signature_index::has_shape(index, 3,
+            lowering::signatures::InternalFunctionShape)
+        || lowering::signature_index::has_shape(index, 3,
+            lowering::signatures::EnumerationShape)
+        || lowering::signature_index::contains(index, 2)) { return 3; }
+    let record: lowering::signatures::SignatureRecord =
+        lowering::signature_index::record_at(index, 3);
+    if (lowering::signatures::record_id(record) != 3
+        || lowering::signatures::record_arity(record) != 0
+        || lowering::signatures::record_result_type(record)
+            != backend::syntax::type_code(backend::syntax::TypeI32)) {
+        return 4;
+    }
+    if (lowering::signature_index::push_record(output,
+            lowering::signatures::SignatureRecord {
+                id: 0, declaration_kind: lowering::declarations::Structure,
+                shape: lowering::signatures::StructureShape,
+                arity: 0, result_type: -1,
+            }, 0, -1, -1)) { return 5; }
+    if (lowering::signature_index::push_record(output,
+            lowering::signatures::SignatureRecord {
+                id: 4, declaration_kind: lowering::declarations::Function,
+                shape: lowering::signatures::InternalFunctionShape,
+                arity: 0,
+                result_type: backend::syntax::type_code(
+                    backend::syntax::TypeI32),
+            }, 0, -1, -1)) { return 6; }
+    if (lowering::signature_index::push_record(output,
+            lowering::signatures::SignatureRecord {
+                id: 2, declaration_kind: lowering::declarations::Structure,
+                shape: lowering::signatures::StructureShape,
+                arity: 1, result_type: -1,
+            }, 0, -1, -1)) { return 7; }
+    return 0;
+}

@@ -1,116 +1,170 @@
 module backend::program;
 import backend::compile;
 import backend::frame;
-import backend::layout;
+import backend::layout_index;
+import backend::constant_index;
+import backend::function_index;
 import backend::call;
 import backend::syntax;
 import backend::literal;
 import x86::control;
 import runtime::service;
 import runtime::string;
+import verified::host;
 
-// Program transport: [2,64,entry,struct_count,constant_count,function_count],
-// then (id,field_count,field_types...), constants (see backend::literal),
-// then (word_count,Core-function words...) for each function. No x86 decisions
-// or physical layout are supplied by the serializer.
-pub fn compile(input: [i32], length: i32, function_input: [i32], function_capacity: i32,
-    work: [i32], work_length: i32, output: [i32], capacity: i32, cursor: i32) -> i32 {
-    if (length < 6 || length > backend::compile::MAX_WORDS || function_capacity < length ||
-        work_length < backend::frame::HEADER + length * 8) { return -1; }
-    if (input[0] != 2 || input[1] != 64 || input[2] < 0 || input[3] < 0 || input[4] < 0 || input[5] < 1) { return -1; }
-    work[backend::frame::STRIDE] = length;
-    work[backend::frame::FIXUP_COUNT] = 0;
-    work[backend::frame::FUNCTION_COUNT] = 0;
-    let position: i32 = 6;
+// Program transport: [3,64,entry,type_count,constant_count,function_count],
+// then self-delimiting tagged nominal-type records, constants (see
+// backend::literal), and (word_count,Core-function words...) for each
+// function. No x86 decisions or physical layout are supplied by the
+// serializer.
+pub fn compile(program: backend::compile::WordRegion,
+    function_workspace: backend::compile::WordRegion,
+    workspace: backend::frame::Workspace,
+    destination: backend::compile::CodeCursor) -> i32 {
+    let input: [i32] = program.data;
+    let length: i32 = program.words;
+    let function_input: [i32] = function_workspace.data;
+    let function_capacity: i32 = function_workspace.words;
+    let work: backend::frame::Workspace = workspace;
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    let work_length: i32 = workspace.words;
+    let output: [i32] = destination.data;
+    let capacity: i32 = destination.capacity;
+    let cursor: i32 = destination.position;
+    if (length <= backend::syntax::PROGRAM_HEADER_WORDS - 1
+        || length > backend::compile::MAX_WORDS || length > function_capacity
+        || backend::frame::HEADER + length
+            * backend::frame::WORK_WORDS_PER_STRIDE
+            > work_length) { return -1; }
+    let header: backend::syntax::ProgramHeader =
+        backend::syntax::read_program_header(input);
+    let entry_id: i32 = header.entry;
+    let type_count: i32 = header.types;
+    let constant_count: i32 = header.constants;
+    let function_count: i32 = header.functions;
+    if (header.version != backend::syntax::PROGRAM_VERSION
+        || header.pointer_bits != backend::syntax::POINTER_BITS
+        || entry_id <= -1 || type_count <= -1 || constant_count <= -1
+        || function_count <= 0) { return -1; }
+    state[0].stride = length;
+    state[0].fixup_count = 0;
+    state[0].function_count = 0;
+    let required: backend::layout_index::Requirements =
+        backend::layout_index::measure(input, length);
+    if (!required.valid) { return -1; }
+    let position: i32 = required.type_end;
     let index: i32 = 0;
-    while (index < input[3]) {
-        if (position > length - 2) { return -1; }
-        let count: i32 = input[position + 1];
-        if (input[position] < 0 || input[position] > 2147483631 || count < 0 || count > length - position - 2) { return -1; }
-        if (backend::layout::record(input, length, input[position] + backend::syntax::STRUCT_BASE) != position) { return -1; }
-        position += 2 + count;
-        index += 1;
-    }
-    work[backend::frame::STRUCT_END] = position;
-    if (input[4] > (length - position) / 3) { return -1; }
+    let constant_bytes: i32 =
+        backend::constant_index::allocation_bytes(constant_count);
+    if (constant_bytes <= 0 || constant_count > (length - position)
+            / backend::literal::CONSTANT_HEADER_WORDS) { return -1; }
+    let constant_memory: ptr = verified::host::alloc(constant_bytes,
+        backend::constant_index::ALIGNMENT);
+    if (constant_memory == 0) { return -1; }
+    let constants: backend::constant_index::Table =
+        backend::constant_index::from_raw_parts(constant_memory,
+            constant_count);
+    position = backend::constant_index::build(input, length, position,
+        constants);
+    if (position <= -1) { return -1; }
+    let function_requirements: backend::function_index::Requirements =
+        backend::function_index::measure(input, length, position,
+            function_count);
+    if (!function_requirements.valid
+        || function_requirements.end != length) { return -1; }
+    let function_bytes: i32 = backend::function_index::allocation_bytes(
+        function_requirements);
+    if (function_bytes <= 0) { return -1; }
+    let function_memory: ptr = verified::host::alloc(function_bytes,
+        backend::function_index::ALIGNMENT);
+    if (function_memory == 0) { return -1; }
+    let functions: backend::function_index::Table =
+        backend::function_index::from_raw_parts(function_memory,
+            function_requirements);
+    if (!backend::function_index::build(input, length, position,
+            functions)) { return -1; }
+    state[0].function_count = function_count;
     index = 0;
-    while (index < input[4]) {
-        let size: i32 = backend::literal::constant_size(input, length, position);
-        if (size < 0) { return -1; }
-        let earlier: i32 = work[backend::frame::STRUCT_END];
-        while (earlier < position) {
-            if (input[earlier] == input[position]) { return -1; }
-            earlier += backend::literal::constant_size(input, length, earlier);
-        }
-        position += size;
+    while (index < function_count) {
+        let function: backend::function_index::Function =
+            backend::function_index::at(functions, index);
+        backend::frame::set_function_input_offset(work, index,
+            function.input_offset);
         index += 1;
     }
-    work[backend::frame::CONST_END] = position;
-    index = 0;
-    while (index < input[5]) {
-        if (position >= length || index >= length) { return -1; }
-        let count: i32 = input[position];
-        if (count < 6 || count > length - position - 1) { return -1; }
-        let first: i32 = position + 1;
-        if ((input[first] != 1 && input[first] != 2) || input[first + 1] != 64 || input[first + 2] < 0) { return -1; }
-        let parameters: i32 = input[first + 4];
-        if (parameters <= -1 || parameters > (count - 6) / 2 || input[first + 5] != count - 6 - parameters * 2) { return -1; }
-        if (input[first] == 2 && !runtime::service::valid(input, first, count)) { return -1; }
-        if (backend::call::find(input, work, input[first + 2]) >= 0) { return -1; }
-        work[backend::frame::HEADER + length * 6 + index] = first;
-        work[backend::frame::FUNCTION_COUNT] = index + 1;
-        position += 1 + count;
-        index += 1;
-    }
-    if (position != length) { return -1; }
-    let entry: i32 = backend::call::find(input, work, input[2]);
-    if (entry < 0) { return -1; }
+    let entry: i32 = backend::function_index::find(functions, entry_id);
+    if (entry <= -1) { return -1; }
+    state[0].entry_index = entry;
+    let layout_bytes: i32 = backend::layout_index::allocation_bytes(required);
+    if (layout_bytes <= 0) { return -1; }
+    let layout_memory: ptr = verified::host::alloc(layout_bytes,
+        backend::layout_index::ALIGNMENT);
+    if (layout_memory == 0) { return -1; }
+    let layout: backend::layout_index::Table =
+        backend::layout_index::from_raw_parts(layout_memory, required);
+    if (!backend::layout_index::build(input, length, layout)) { return -1; }
     let next: i32 = x86::control::jump(output, capacity, cursor, 0);
     index = 0;
-    while (index < work[backend::frame::FUNCTION_COUNT]) {
-        if (next < 0) { return -1; }
-        let first: i32 = work[backend::frame::HEADER + length * 6 + index];
-        let count: i32 = input[first - 1];
-        work[backend::frame::HEADER + length * 7 + index] = next;
-        let word: i32 = 0;
-        while (word < count) {
-            function_input[word] = input[first + word];
-            word += 1;
-        }
-        if (input[first] == 2) {
-            next = runtime::service::emit(output, capacity, next, input[first + count - 1]);
+    while (index != state[0].function_count) {
+        if (next <= -1) { return -1; }
+        let function: backend::function_index::Function =
+            backend::function_index::at(functions, index);
+        let first: i32 = function.input_offset;
+        backend::frame::set_function_code_start(work, index, next);
+        let header: backend::syntax::FunctionHeader = function.header;
+        if (header.kind == backend::syntax::RuntimeFunction) {
+            next = runtime::service::emit(output, capacity, next,
+                input[first + function.word_count - 1]);
         } else {
-            next = backend::compile::function(function_input, count, work, work_length, output, capacity, next, input, length);
+            let body_start: i32 = first
+                + backend::syntax::FUNCTION_HEADER_WORDS
+                + header.parameters
+                    * backend::syntax::PARAMETER_ROW_WORDS;
+            let word: i32 = 0;
+            while (word != header.body_words) {
+                function_input[word] = input[body_start + word];
+                word += 1;
+            }
+            next = backend::compile::function(
+                backend::compile::region(function_input, header.body_words),
+                function, workspace,
+                backend::compile::cursor(output, capacity, next), program,
+                layout, constants, functions);
         }
         index += 1;
     }
-    if (next < 0) { return -1; }
+    if (next <= -1) { return -1; }
     // Keep the function region boundary before any runtime data is appended.
     // Certificate mode derives ordered start/length pairs from these slots.
-    work[backend::frame::FUNCTION_END] = next;
+    state[0].function_end = next;
     let string_pointer: i32 = -1;
     index = 0;
-    while (index < work[backend::frame::FIXUP_COUNT]) {
-        if (work[backend::frame::HEADER + length * 5 + index] == -1 && string_pointer < 0) {
+    while (index != state[0].fixup_count) {
+        let fixup: backend::call::CallFixup = backend::call::read_fixup(
+            work, index);
+        if (fixup.target == -1
+            && string_pointer <= -1) {
             string_pointer = next;
             next = runtime::string::pointer(output, capacity, next);
-            if (next < 0) { return -1; }
+            if (next <= -1) { return -1; }
         }
         index += 1;
     }
-    let entry_code: i32 = work[backend::frame::HEADER + length * 7 + entry];
-    if (x86::control::patch_relative(output, next, cursor + 1, entry_code) < 0) { return -1; }
+    let entry_code: i32 = backend::frame::function_code_start(work, entry);
+    if (x86::control::patch_relative(output, next, cursor + 1, entry_code) <= -1) { return -1; }
     index = 0;
-    while (index < work[backend::frame::FIXUP_COUNT]) {
-        let id: i32 = work[backend::frame::HEADER + length * 5 + index];
+    while (index != state[0].fixup_count) {
+        let fixup: backend::call::CallFixup = backend::call::read_fixup(
+            work, index);
+        let id: i32 = fixup.target;
         let target_code: i32 = string_pointer;
         if (id != -1) {
-            let target: i32 = backend::call::find(input, work, id);
-            if (target < 0) { return -1; }
-            target_code = work[backend::frame::HEADER + length * 7 + target];
+            let target: i32 = backend::function_index::find(functions, id);
+            if (target <= -1) { return -1; }
+            target_code = backend::frame::function_code_start(work, target);
         }
-        let field: i32 = work[backend::frame::HEADER + length * 4 + index];
-        if (x86::control::patch_relative(output, next, field, target_code) < 0) { return -1; }
+        if (x86::control::patch_relative(output, next, fixup.field,
+            target_code) <= -1) { return -1; }
         index += 1;
     }
     return next;

@@ -1,9 +1,17 @@
 module x86::buffer;
 
+const BYTE_MASK: i32 = 255;
+const BYTE_BITS: i32 = 8;
+pub const WORD_BYTES: i32 = 4;
+pub const FIRST_BYTE: i32 = 0;
+pub const SECOND_BYTE: i32 = 1;
+pub const THIRD_BYTE: i32 = 2;
+pub const FOURTH_BYTE: i32 = 3;
+
 // Capacities are bounded by the actual slice length by the owning caller.
 // Subtract only after checking the cursor, avoiding signed-i32 overflow.
 pub fn fits(capacity: i32, cursor: i32, count: i32) -> bool {
-    if (capacity < 0 || cursor < 0 || count < 0 || cursor > capacity) {
+    if (capacity <= -1 || cursor <= -1 || count <= -1 || cursor > capacity) {
         return false;
     }
     return count <= capacity - cursor;
@@ -12,9 +20,11 @@ pub fn fits(capacity: i32, cursor: i32, count: i32) -> bool {
 // Internal storage primitive: the caller has reserved all four positions.
 // Arithmetic right shift followed by masking also handles negative words.
 pub fn store_word(output: [i32], cursor: i32, value: i32) -> i32 {
-    output[cursor] = value & 255;
-    output[cursor + 1] = (value >> 8) & 255;
-    output[cursor + 2] = (value >> 16) & 255;
-    output[cursor + 3] = (value >> 24) & 255;
-    return cursor + 4;
+    output[cursor + FIRST_BYTE] = value & BYTE_MASK;
+    output[cursor + SECOND_BYTE] = (value >> BYTE_BITS) & BYTE_MASK;
+    output[cursor + THIRD_BYTE] = (value >> (BYTE_BITS * THIRD_BYTE))
+        & BYTE_MASK;
+    output[cursor + FOURTH_BYTE] = (value >> (BYTE_BITS * FOURTH_BYTE))
+        & BYTE_MASK;
+    return cursor + WORD_BYTES;
 }

@@ -80,7 +80,13 @@ void emit_guards(inout uint cursor, X86LirCore core, X86LirOperands operands,
         load_value32(cursor, locations.b, 1u, function);
         if (core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
         {
-            load_value32(cursor, locations.length, 0u, function);
+            if ((operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u)
+            {
+                load_value64(cursor, locations.a, 0u, function);
+                emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x40u);
+                emit_u8(cursor, 0xf8u); // mov eax, [rax - 8]
+            }
+            else load_value32(cursor, locations.length, 0u, function);
             emit_u8(cursor, 0x39u); emit_u8(cursor, 0xc1u);
         }
         else

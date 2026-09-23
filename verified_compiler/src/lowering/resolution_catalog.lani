@@ -1,0 +1,200 @@
+module lowering::resolution_catalog;
+
+import backend::syntax;
+import lowering::allocation;
+import lowering::declarations;
+import lowering::token_names;
+import lowering::types;
+import lowering::unit_context;
+import verified::surface_type;
+import verified::syntax_tree;
+import verified::token;
+
+// Resolve a spelling against the allocated nominal-type namespace. A local
+// declaration wins over an imported one; otherwise exactly one global struct
+// or enum spelling is accepted. This keeps qualified cross-unit names
+// conservative when the final component is ambiguous.
+fn nominal_tag(unit: i32, token: i32, catalog: lowering::token_names::Catalog,
+    allocated: lowering::allocation::Table)
+    -> lowering::types::NominalLookup {
+    let local_tag: i32 = -1;
+    let local_matches: i32 = 0;
+    let global_tag: i32 = -1;
+    let global_matches: i32 = 0;
+    let row: i32 = 0;
+    let allocation_rows: i32 = lowering::allocation::table_header(
+        allocated).rows;
+    while (row != allocation_rows) {
+        let allocation: lowering::allocation::AllocationRow =
+            lowering::allocation::table_row(allocated, row);
+        if (lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Structure)
+            || lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Enumeration)) {
+            let owner: i32 = lowering::allocation::row_unit(allocation);
+            if (lowering::token_names::same(catalog, unit, token, owner,
+                    lowering::allocation::row_name(allocation))) {
+                if (owner == unit) {
+                    local_tag = backend::syntax::NOMINAL_TYPE_BASE
+                        + lowering::allocation::row_core_id(allocation);
+                    local_matches += 1;
+                } else {
+                    global_tag = backend::syntax::NOMINAL_TYPE_BASE
+                        + lowering::allocation::row_core_id(allocation);
+                    global_matches += 1;
+                }
+            }
+        }
+        row += 1;
+    }
+    if (local_matches > 1 || global_matches > 1) {
+        return lowering::types::nominal_result(lowering::types::Ambiguous, 0);
+    }
+    if (local_matches == 1) {
+        return lowering::types::nominal_result(lowering::types::Found,
+            local_tag);
+    }
+    if (global_matches == 1) {
+        return lowering::types::nominal_result(lowering::types::Found,
+            global_tag);
+    }
+    return lowering::types::nominal_result(lowering::types::Missing, 0);
+}
+
+fn alias_target_token(input: verified::surface_type::TypeInput,
+    output: verified::surface_type::TypeArena) -> i32 {
+    let arena: [verified::surface_type::TypeNode] = output.data;
+    let root: i32 = verified::surface_type::extract(input, output);
+    if (root <= -1) { return -1; }
+    let path: i32 = root;
+    if (verified::surface_type::kind_is(arena[root].kind,
+            verified::surface_type::PathType)) {
+        path = arena[root].first;
+    } else {
+        if (!verified::surface_type::kind_is(arena[root].kind,
+                verified::surface_type::Path)) { return -1; }
+    }
+    if (path <= -1 || path >= root
+        || !verified::surface_type::kind_is(arena[path].kind,
+            verified::surface_type::Path)) { return -1; }
+    let segment: i32 = arena[path].first;
+    let answer: i32 = -1;
+    while (segment != -1) {
+        if (segment <= -1 || segment >= root
+            || !verified::surface_type::kind_is(arena[segment].kind,
+                verified::surface_type::Segment)) { return -1; }
+        answer = arena[segment].token;
+        segment = arena[segment].next;
+    }
+    return answer;
+}
+
+// The existing nominal resolution table is keyed by the source unit's token
+// IDs.  Populate one such table from the global allocation and declaration
+// catalogs; no second symbol format is introduced.
+pub struct ResolutionInput {
+    unit: i32,
+    contexts: lowering::unit_context::Table,
+    sources: [i32],
+    tokens: verified::token::TokenTable,
+    tree: verified::syntax_tree::Tree,
+    declarations: lowering::declarations::Table,
+    allocations: lowering::allocation::Table,
+}
+
+pub struct ResolutionWorkspace {
+    output: [lowering::types::ResolutionRow],
+    output_offset: i32,
+    output_capacity: i32,
+    type_arena: verified::surface_type::TypeArena,
+}
+
+pub fn build(input: ResolutionInput,
+    workspace: ResolutionWorkspace) -> i32 {
+    let unit: i32 = input.unit;
+    let context_table: lowering::unit_context::Table = input.contexts;
+    let contexts: [lowering::unit_context::UnitContext] =
+        context_table.data;
+    if (unit <= -1 || unit >= context_table.count) { return -1; }
+    let source_catalog: [i32] = input.sources;
+    let token_catalog: verified::token::TokenTable = input.tokens;
+    let tree: verified::syntax_tree::Tree = input.tree;
+    let declarations: lowering::declarations::Table = input.declarations;
+    let allocated: lowering::allocation::Table = input.allocations;
+    let output: [lowering::types::ResolutionRow] = workspace.output;
+    let output_offset: i32 = workspace.output_offset;
+    let capacity: i32 = workspace.output_capacity;
+    let type_arena: verified::surface_type::TypeArena =
+        workspace.type_arena;
+    let token_names: lowering::token_names::Catalog =
+        lowering::token_names::catalog(context_table, source_catalog,
+            token_catalog);
+    let context: i32 = unit;
+    let token_count: i32 = contexts[context].token_count;
+    let node_count: i32 = tree.node_count;
+    if (capacity <= -1 || token_count <= 0
+        || !lowering::declarations::table_has_exact_rows(declarations)) {
+        return -1;
+    }
+    let written: i32 = 0;
+    let token: i32 = 0;
+    while (token != token_count) {
+        let resolved: lowering::types::NominalLookup = nominal_tag(unit, token, token_names,
+            allocated);
+        if (resolved.stage == lowering::types::Ambiguous) { return -1; }
+        let row: i32 = 0;
+        let declaration_rows: i32 = lowering::declarations::count_rows(
+            lowering::declarations::table_header(declarations));
+        while (row != declaration_rows) {
+            let declaration: lowering::declarations::DeclarationRow =
+                lowering::declarations::table_row(declarations, row);
+            if (lowering::declarations::row_unit(declaration) == unit
+                && lowering::declarations::row_has_kind(declaration,
+                    lowering::declarations::Alias)
+                && lowering::declarations::row_name(declaration) == token) {
+                let target_type: verified::surface_type::TypeInput =
+                    verified::surface_type::TypeInput {
+                        tree: tree,
+                        root: lowering::declarations::row_target(declaration),
+                        depth: node_count,
+                    };
+                let target_token: i32 = alias_target_token(target_type,
+                    type_arena);
+                if (target_token >= 0) {
+                    let alias_lookup: lowering::types::NominalLookup = nominal_tag(unit,
+                        target_token,
+                        token_names, allocated);
+                    if (alias_lookup.stage == lowering::types::Ambiguous) {
+                        return -1;
+                    }
+                    if (alias_lookup.stage == lowering::types::Found) {
+                        resolved = alias_lookup;
+                    }
+                }
+            }
+            row += 1;
+        }
+        if (resolved.stage == lowering::types::Found) {
+            let duplicate: bool = false;
+            let prior: i32 = 0;
+            while (prior != written) {
+                if (lowering::token_names::same(token_names, unit, token, unit,
+                        output[output_offset + prior].key)) {
+                    duplicate = true;
+                }
+                prior += 1;
+            }
+            if (!duplicate) {
+                if (written >= capacity) { return -1; }
+                output[output_offset + written]
+                    = lowering::types::ResolutionRow {
+                        key: token,
+                        type_tag: resolved.tag,
+                    };
+                written += 1;
+            }
+        }
+        token += 1;
+    }
+    return written;
+}

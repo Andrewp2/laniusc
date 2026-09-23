@@ -1,0 +1,124 @@
+module app::main;
+
+import backend::layout_index;
+import backend::syntax;
+import verified::host;
+
+const CHAIN_TYPES: i32 = 64;
+const TYPE_WORDS: i32 = 5;
+const CHAIN_WORDS: i32 = backend::syntax::PROGRAM_HEADER_WORDS
+    + CHAIN_TYPES * TYPE_WORDS;
+
+fn main() -> i32 {
+    let program: [i32; 20] = [
+        3,64,0,2,0,1,
+        5,0,0,2,1,6,
+        7,1,1,2,2,16,2,0,
+    ];
+    let required: backend::layout_index::Requirements =
+        backend::layout_index::measure(program, 20);
+    if (!required.valid || required.types != 2
+        || required.variants != 2 || required.fields != 4
+        || required.type_end != 20) { return 1; }
+    let memory: ptr = verified::host::alloc(
+        backend::layout_index::allocation_bytes(required),
+        backend::layout_index::ALIGNMENT);
+    if (memory == 0) { return 2; }
+    let table: backend::layout_index::Table =
+        backend::layout_index::from_raw_parts(memory, required);
+    if (!backend::layout_index::build(program, 20, table)) { return 3; }
+    let structure: i32 = backend::syntax::NOMINAL_TYPE_BASE;
+    let enumeration: i32 = structure + 1;
+    if (!backend::layout_index::is_structure(table, structure)
+        || !backend::layout_index::is_enumeration(table, enumeration)
+        || backend::layout_index::member_count(table, structure) != 2
+        || backend::layout_index::field_kind(table, structure, 1) != 6
+        || backend::layout_index::field_offset(table, structure, 1) != 8
+        || backend::layout_index::variant_field_count(table,
+            enumeration, 0) != 2
+        || backend::layout_index::variant_field_count(table,
+            enumeration, 1) != 0
+        || backend::layout_index::variant_field_kind(table,
+            enumeration, 0, 0) != structure
+        || backend::layout_index::variant_field_offset(table,
+            enumeration, 0, 0) != 8
+        || backend::layout_index::variant_field_offset(table,
+            enumeration, 0, 1) != 32
+        || backend::layout_index::words(table, structure) != 3
+        || backend::layout_index::words(table, enumeration) != 5
+        || backend::layout_index::words(table,
+            backend::syntax::type_code(backend::syntax::TypeString)) != 2) {
+        return 4;
+    }
+    program[10] = enumeration;
+    if (backend::layout_index::build(program, 20, table)) { return 5; }
+    let empty: [i32; 6] = [3,64,0,0,0,1];
+    let empty_required: backend::layout_index::Requirements =
+        backend::layout_index::measure(empty, 6);
+    if (!empty_required.valid
+        || empty_required.type_end != 6) { return 6; }
+    let empty_memory: ptr = verified::host::alloc(
+        backend::layout_index::allocation_bytes(empty_required),
+        backend::layout_index::ALIGNMENT);
+    if (empty_memory == 0) { return 7; }
+    let empty_layout: backend::layout_index::Table =
+        backend::layout_index::from_raw_parts(empty_memory, empty_required);
+    if (!backend::layout_index::build(empty, 6, empty_layout)
+        || backend::layout_index::words(empty_layout,
+            backend::syntax::type_code(backend::syntax::TypeI32)) != 1) {
+        return 8;
+    }
+    let chain_memory: ptr = verified::host::alloc_i32(CHAIN_WORDS);
+    if (chain_memory == 0) { return 9; }
+    let chain: [i32] = verified::host::i32_slice_from_raw_parts(
+        chain_memory, CHAIN_WORDS);
+    chain[0] = backend::syntax::PROGRAM_VERSION;
+    chain[1] = backend::syntax::POINTER_BITS;
+    chain[2] = 0;
+    chain[3] = CHAIN_TYPES - 1;
+    chain[4] = 0;
+    chain[5] = 1;
+    let index: i32 = 0;
+    while (index < CHAIN_TYPES) {
+        let start: i32 = backend::syntax::PROGRAM_HEADER_WORDS
+            + index * TYPE_WORDS;
+        chain[start] = TYPE_WORDS - 1;
+        chain[start + 1] = index;
+        chain[start + 2] = backend::syntax::layout_code(
+            backend::syntax::StructureLayout);
+        chain[start + 3] = 1;
+        chain[start + 4] = backend::syntax::NOMINAL_TYPE_BASE
+            + index + 1;
+        index += 1;
+    }
+    chain[CHAIN_WORDS - 1 - TYPE_WORDS] =
+        backend::syntax::type_code(backend::syntax::TypeI32);
+    let shallow_required: backend::layout_index::Requirements =
+        backend::layout_index::measure(chain, CHAIN_WORDS - TYPE_WORDS);
+    if (!shallow_required.valid) { return 10; }
+    let shallow_memory: ptr = verified::host::alloc(
+        backend::layout_index::allocation_bytes(shallow_required),
+        backend::layout_index::ALIGNMENT);
+    if (shallow_memory == 0) { return 11; }
+    let shallow: backend::layout_index::Table =
+        backend::layout_index::from_raw_parts(shallow_memory,
+            shallow_required);
+    if (!backend::layout_index::build(chain, CHAIN_WORDS - TYPE_WORDS,
+            shallow)) { return 12; }
+    chain[3] = CHAIN_TYPES;
+    chain[CHAIN_WORDS - 1 - TYPE_WORDS] =
+        backend::syntax::NOMINAL_TYPE_BASE + CHAIN_TYPES - 1;
+    chain[CHAIN_WORDS - 1] =
+        backend::syntax::type_code(backend::syntax::TypeI32);
+    let deep_required: backend::layout_index::Requirements =
+        backend::layout_index::measure(chain, CHAIN_WORDS);
+    if (!deep_required.valid) { return 13; }
+    let deep_memory: ptr = verified::host::alloc(
+        backend::layout_index::allocation_bytes(deep_required),
+        backend::layout_index::ALIGNMENT);
+    if (deep_memory == 0) { return 14; }
+    let deep: backend::layout_index::Table =
+        backend::layout_index::from_raw_parts(deep_memory, deep_required);
+    if (backend::layout_index::build(chain, CHAIN_WORDS, deep)) { return 15; }
+    return 0;
+}

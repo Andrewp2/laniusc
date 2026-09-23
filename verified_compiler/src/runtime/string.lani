@@ -4,41 +4,58 @@ import x86::register;
 import x86::encode;
 import x86::control;
 
+const STACK_FRAME_BYTES: i32 = 32;
+const DESCRIPTOR_DATA_OFFSET: i32 = 0;
+const DESCRIPTOR_LENGTH_OFFSET: i32 = 8;
+const SAVED_DATA_OFFSET: i32 = -8;
+const SAVED_LENGTH_OFFSET: i32 = -16;
+const STRING_ALIGNMENT: i32 = 4;
+const GUARD_SEQUENCE_BYTES: i32 = 8;
+
 // Internal ABI: RDI points to an immutable [data, byte_length] descriptor;
 // RAX returns a fresh four-aligned copy, including for empty strings. Borrow
 // metadata remains a storage obligation; this helper does not implement free.
 pub fn pointer(output: [i32], capacity: i32, cursor: i32) -> i32 {
     let next: i32 = x86::control::push(output, capacity, cursor, x86::register::RBP);
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::RBP, x86::register::RSP);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::R10, 32, 0);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::SUB, x86::register::RSP, x86::register::R10);
-    next = x86::encode::load(output, capacity, next, 64, x86::register::R10, x86::register::RDI, 0);
-    next = x86::encode::store(output, capacity, next, 64, x86::register::R10, x86::register::RBP, -8);
-    next = x86::encode::load(output, capacity, next, 64, x86::register::RDI, x86::register::RDI, 8);
-    next = x86::encode::store(output, capacity, next, 64, x86::register::RDI, x86::register::RBP, -16);
-    next = x86::encode::immediate(output, capacity, next, 32, x86::register::RSI, 4, 0);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::RBP, x86::register::RSP);
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32,
+        x86::register::R10, STACK_FRAME_BYTES, 0);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Subtract, x86::register::RSP, x86::register::R10);
+    next = x86::encode::load(output, capacity, next, x86::register::WIDTH_64, x86::register::R10,
+        x86::register::RDI, DESCRIPTOR_DATA_OFFSET);
+    next = x86::encode::store(output, capacity, next, x86::register::WIDTH_64, x86::register::R10,
+        x86::register::RBP, SAVED_DATA_OFFSET);
+    next = x86::encode::load(output, capacity, next, x86::register::WIDTH_64, x86::register::RDI,
+        x86::register::RDI, DESCRIPTOR_LENGTH_OFFSET);
+    next = x86::encode::store(output, capacity, next, x86::register::WIDTH_64, x86::register::RDI,
+        x86::register::RBP, SAVED_LENGTH_OFFSET);
+    next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32,
+        x86::register::RSI, STRING_ALIGNMENT, 0);
     let allocation: i32 = next + 1;
     next = x86::control::call(output, capacity, next, 0);
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::TEST, x86::register::RAX, x86::register::RAX);
-    next = x86::control::branch(output, capacity, next, x86::control::NOT_EQUAL, next + 8);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Test, x86::register::RAX, x86::register::RAX);
+    next = x86::control::branch(output, capacity, next,
+        x86::control::NotEqual, next + GUARD_SEQUENCE_BYTES);
     next = x86::control::trap(output, capacity, next);
-    next = x86::encode::load(output, capacity, next, 64, x86::register::RCX, x86::register::RBP, -8);
-    next = x86::encode::load(output, capacity, next, 64, x86::register::RDX, x86::register::RBP, -16);
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::R8, x86::register::RAX);
+    next = x86::encode::load(output, capacity, next, x86::register::WIDTH_64, x86::register::RCX,
+        x86::register::RBP, SAVED_DATA_OFFSET);
+    next = x86::encode::load(output, capacity, next, x86::register::WIDTH_64, x86::register::RDX,
+        x86::register::RBP, SAVED_LENGTH_OFFSET);
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::R8, x86::register::RAX);
     let loop_start: i32 = next;
-    next = x86::encode::binary(output, capacity, next, 64, x86::encode::TEST, x86::register::RDX, x86::register::RDX);
+    next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Test, x86::register::RDX, x86::register::RDX);
     let done: i32 = next + 2;
-    next = x86::control::branch(output, capacity, next, x86::control::EQUAL, 0);
+    next = x86::control::branch(output, capacity, next, x86::control::Equal, 0);
     next = x86::encode::load_byte(output, capacity, next, x86::register::R10, x86::register::RCX, 0);
     next = x86::encode::store_byte(output, capacity, next, x86::register::R10, x86::register::R8, 0);
     next = x86::encode::address(output, capacity, next, x86::register::RCX, x86::register::RCX, 1);
     next = x86::encode::address(output, capacity, next, x86::register::R8, x86::register::R8, 1);
     next = x86::encode::address(output, capacity, next, x86::register::RDX, x86::register::RDX, -1);
     next = x86::control::jump(output, capacity, next, loop_start);
-    if (x86::control::patch_relative(output, next, done, next) < 0) { return -1; }
-    next = x86::encode::move_register(output, capacity, next, 64, x86::register::RSP, x86::register::RBP);
+    if (x86::control::patch_relative(output, next, done, next) <= -1) { return -1; }
+    next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::RSP, x86::register::RBP);
     next = x86::control::pop(output, capacity, next, x86::register::RBP);
     next = x86::control::return_near(output, capacity, next);
-    if (x86::control::patch_relative(output, next, allocation, next) < 0) { return -1; }
+    if (x86::control::patch_relative(output, next, allocation, next) <= -1) { return -1; }
     return runtime::heap::allocate(output, capacity, next);
 }

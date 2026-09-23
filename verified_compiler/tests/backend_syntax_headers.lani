@@ -1,0 +1,63 @@
+module app::main;
+
+import backend::syntax;
+
+fn main() -> i32 {
+    let words: [i32; 16] = [0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0];
+    let program: backend::syntax::ProgramHeader =
+        backend::syntax::ProgramHeader {
+            version: backend::syntax::PROGRAM_VERSION,
+            pointer_bits: backend::syntax::POINTER_BITS,
+            entry: 7, types: 2, constants: 3, functions: 4,
+        };
+    backend::syntax::write_program_header(words, program);
+    let decoded_program: backend::syntax::ProgramHeader =
+        backend::syntax::read_program_header(words);
+    if (decoded_program.version != program.version
+        || decoded_program.pointer_bits != program.pointer_bits
+        || decoded_program.entry != program.entry
+        || decoded_program.types != program.types
+        || decoded_program.constants != program.constants
+        || decoded_program.functions != program.functions
+        || backend::syntax::program_type_count(words) != 2) {
+        return 1;
+    }
+    backend::syntax::set_program_entry(words, 9);
+    if (backend::syntax::program_entry(words) != 9) { return 2; }
+
+    let function: backend::syntax::FunctionHeader =
+        backend::syntax::FunctionHeader {
+            kind: backend::syntax::DefinedFunction,
+            pointer_bits: backend::syntax::POINTER_BITS,
+            id: 5, result_type: backend::syntax::type_code(
+                backend::syntax::TypeI32),
+            parameters: 2, body_words: 3,
+        };
+    backend::syntax::write_function_header(words,
+        backend::syntax::PROGRAM_HEADER_WORDS, function);
+    let decoded_function: backend::syntax::FunctionHeader =
+        backend::syntax::read_function_header(words,
+            backend::syntax::PROGRAM_HEADER_WORDS);
+    if (decoded_function.kind != backend::syntax::DefinedFunction
+        || decoded_function.pointer_bits != function.pointer_bits
+        || decoded_function.id != function.id
+        || decoded_function.result_type != function.result_type
+        || decoded_function.parameters != function.parameters
+        || decoded_function.body_words != function.body_words
+        || backend::syntax::function_id_at(words,
+            backend::syntax::PROGRAM_HEADER_WORDS) != 5) {
+        return 3;
+    }
+    backend::syntax::set_function_body_words_at(words,
+        backend::syntax::PROGRAM_HEADER_WORDS, 8);
+    if (backend::syntax::read_function_header(words,
+            backend::syntax::PROGRAM_HEADER_WORDS).body_words != 8) {
+        return 4;
+    }
+    words[backend::syntax::PROGRAM_HEADER_WORDS] = 99;
+    if (backend::syntax::read_function_header(words,
+            backend::syntax::PROGRAM_HEADER_WORDS).kind
+        != backend::syntax::InvalidFunction) { return 5; }
+    return 0;
+}

@@ -3,6 +3,12 @@ module verified::number;
 import verified::digits;
 import verified::decimal;
 import verified::token_scan;
+import verified::ascii;
+
+const BINARY_RADIX: i32 = 2;
+const OCTAL_RADIX: i32 = 8;
+const DECIMAL_RADIX: i32 = 10;
+const HEXADECIMAL_RADIX: i32 = 16;
 
 // Numeric scanning is intentionally expressed without the production GPU
 // lexer's dot-range repair. An integer stops before `..`, so the symbol
@@ -14,17 +20,21 @@ pub fn scan_number(
     source_length: i32,
     start: i32,
 ) -> verified::token_scan::TokenScan {
-    if (source[start] == 48 && start + 1 < source_length) {
+    if (source[start] == verified::ascii::ZERO
+        && start + 1 < source_length) {
         let prefix: i32 = source[start + 1];
         let base: i32 = 0;
-        if (prefix == 120 || prefix == 88) {
-            base = 16;
+        if (prefix == verified::ascii::LOWER_X
+            || prefix == verified::ascii::UPPER_X) {
+            base = HEXADECIMAL_RADIX;
         } else {
-            if (prefix == 98 || prefix == 66) {
-                base = 2;
+            if (prefix == verified::ascii::LOWER_B
+                || prefix == verified::ascii::UPPER_B) {
+                base = BINARY_RADIX;
             } else {
-                if (prefix == 111 || prefix == 79) {
-                    base = 8;
+                if (prefix == verified::ascii::LOWER_O
+                    || prefix == verified::ascii::UPPER_O) {
+                    base = OCTAL_RADIX;
                 }
             }
         }
@@ -40,7 +50,8 @@ pub fn scan_number(
         }
     }
 
-    let integer = verified::digits::scan_digit_run(source, source_length, start, 10);
+    let integer = verified::digits::scan_digit_run(
+        source, source_length, start, DECIMAL_RADIX);
     if (!verified::digits::digit_scan_succeeded(integer)) {
         return verified::decimal::number_failure(
             verified::digits::digit_scan_error_offset(integer));
@@ -56,7 +67,8 @@ pub fn scan_leading_dot_number(
     source_length: i32,
     start: i32,
 ) -> verified::token_scan::TokenScan {
-    let fraction = verified::digits::scan_digit_run(source, source_length, start + 1, 10);
+    let fraction = verified::digits::scan_digit_run(
+        source, source_length, start + 1, DECIMAL_RADIX);
     if (!verified::digits::digit_scan_succeeded(fraction)) {
         return verified::decimal::number_failure(
             verified::digits::digit_scan_error_offset(fraction));
@@ -64,7 +76,8 @@ pub fn scan_leading_dot_number(
     let fraction_end: i32 = verified::digits::digit_scan_end_offset(fraction);
     if (fraction_end <= source_length - 1) {
         let exponent: i32 = source[fraction_end];
-        if (exponent == 101 || exponent == 69) {
+        if (exponent == verified::ascii::LOWER_E
+            || exponent == verified::ascii::UPPER_E) {
             return verified::decimal::scan_exponent(source, source_length, fraction_end);
         }
     }
