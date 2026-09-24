@@ -1,0 +1,67 @@
+module app::main;
+
+import verified::canonical_tokens;
+import verified::host;
+import verified::raw_lexer;
+import verified::token;
+
+const TOKEN_CAPACITY: i32 = 16;
+
+fn main() -> i32 {
+    let source: [i32; 10] = [102, 110, 32, 120, 32, 46, 46, 61, 32, 49];
+    let memory: ptr = verified::host::alloc(
+        TOKEN_CAPACITY * verified::token::RECORD_BYTES,
+        verified::token::ALIGNMENT);
+    if (memory == 0) { return 1; }
+    let native: verified::token::TokenTable =
+        verified::token::from_raw_parts(memory, TOKEN_CAPACITY);
+    let lexed: verified::raw_lexer::LexResult =
+        verified::raw_lexer::lex_into_rows(source, 10, native);
+    let raw_count: i32 = verified::raw_lexer::lex_token_count(lexed);
+    if (!verified::raw_lexer::lex_succeeded(lexed)
+        || raw_count != 8) { return 2; }
+    let rows: [verified::token::TokenRow] = native.data;
+    if (rows[0].kind != verified::token::Identifier
+        || rows[0].start != 0 || rows[0].finish != 2
+        || rows[4].kind != verified::token::DotDot
+        || rows[4].start != 5 || rows[4].finish != 7
+        || rows[5].kind != verified::token::Assign
+        || rows[5].start != 7 || rows[5].finish != 8) { return 3; }
+    let packed: [i32; 48] = [0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0];
+    if (!verified::token::encode_packed(native, raw_count,
+            packed, 48)
+        || packed[0] != verified::token::kind_code(
+            verified::token::Identifier)
+        || packed[1] != 0 || packed[2] != 2
+        || packed[12] != verified::token::kind_code(
+            verified::token::DotDot)
+        || packed[13] != 5 || packed[14] != 7) { return 4; }
+    let canonical_count: i32 =
+        verified::canonical_tokens::canonicalize_rows_in_place(source,
+            native, raw_count);
+    if (canonical_count != 5 || rows[0].kind != verified::token::FnKeyword
+        || rows[2].kind != verified::token::DotDotEqual
+        || rows[2].start != 5 || rows[2].finish != 7) { return 5; }
+    if (!verified::token::encode_packed(native, canonical_count,
+            packed, 48)
+        || packed[0] != verified::token::kind_code(
+            verified::token::FnKeyword)
+        || packed[6] != verified::token::kind_code(
+            verified::token::DotDotEqual)
+        || packed[7] != 5 || packed[8] != 7) { return 6; }
+    rows[0].kind = verified::token::InvalidToken;
+    if (verified::token::encode_packed(native, 1, packed, 48)) {
+        return 7;
+    }
+    let short: verified::token::TokenTable =
+        verified::token::from_raw_parts(memory, 2);
+    let failed: verified::raw_lexer::LexResult =
+        verified::raw_lexer::lex_into_rows(source, 10, short);
+    if (!verified::raw_lexer::lex_has_stage(failed,
+            verified::raw_lexer::TokenStorageFull)
+        || verified::raw_lexer::lex_token_count(failed) != 2) { return 8; }
+    return 0;
+}

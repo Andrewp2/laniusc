@@ -1,0 +1,78 @@
+module app::main;
+
+import verified::host;
+import verified::parser;
+import verified::production;
+import verified::surface_path;
+import verified::syntax_tree;
+
+fn node(kind: i32, first: i32, count: i32)
+    -> verified::syntax_tree::Node {
+    return verified::syntax_tree::Node {
+        production: kind, origin: 0, end: 1,
+        first_child: first, child_count: count,
+    };
+}
+
+fn child(kind: verified::parser::ChildKind, payload: i32)
+    -> verified::syntax_tree::Child {
+    return verified::syntax_tree::Child {
+        kind: kind, payload: payload, semantic_kind: 0,
+    };
+}
+
+fn main() -> i32 {
+    let node_count: i32 = 5;
+    let child_count: i32 = 8;
+    let node_memory: ptr = verified::host::alloc(
+        node_count * verified::syntax_tree::NODE_BYTES,
+        verified::syntax_tree::ALIGNMENT);
+    let child_memory: ptr = verified::host::alloc(
+        child_count * verified::syntax_tree::CHILD_BYTES,
+        verified::syntax_tree::ALIGNMENT);
+    if (node_memory == 0 || child_memory == 0) { return 1; }
+    let nodes: [verified::syntax_tree::Node] = slice_from_raw_parts(
+        node_memory + node_count * verified::syntax_tree::NODE_BYTES
+            - verified::syntax_tree::ALIGNMENT, node_count);
+    let children: [verified::syntax_tree::Child] = slice_from_raw_parts(
+        child_memory + child_count * verified::syntax_tree::CHILD_BYTES
+            - verified::syntax_tree::ALIGNMENT, child_count);
+    nodes[0] = node(verified::production::PATH_IDENT, 0, 1);
+    nodes[1] = node(verified::production::PATH_IDENT, 1, 1);
+    nodes[2] = node(verified::production::PATH_END, 2, 0);
+    nodes[3] = node(verified::production::PATH_MORE, 2, 4);
+    nodes[4] = node(verified::production::PATH, 6, 2);
+    children[0] = child(verified::parser::TokenChild, 1);
+    children[1] = child(verified::parser::TokenChild, 3);
+    children[2] = child(verified::parser::TokenChild, 2);
+    children[3] = child(verified::parser::TokenChild, 2);
+    children[4] = child(verified::parser::StateChild, 1);
+    children[5] = child(verified::parser::StateChild, 2);
+    children[6] = child(verified::parser::StateChild, 0);
+    children[7] = child(verified::parser::StateChild, 3);
+    let tree: verified::syntax_tree::Tree = verified::syntax_tree::Tree {
+        nodes: nodes, children: children,
+        node_count: node_count, child_count: child_count,
+    };
+    let first: verified::surface_path::Segment =
+        verified::surface_path::first(tree, 4);
+    if (!first.valid || first.token != 1 || first.last) { return 2; }
+    let second: verified::surface_path::Segment =
+        verified::surface_path::next(tree, first);
+    if (!second.valid || second.token != 3 || !second.last
+        || verified::surface_path::next(tree, second).valid) { return 3; }
+    nodes[1].production = verified::production::PATH_IDENT_ARGS;
+    if (verified::surface_path::next(tree, first).valid) { return 4; }
+    nodes[1].production = verified::production::PATH_IDENT;
+    children[4].kind = verified::parser::TokenChild;
+    if (verified::surface_path::first(tree, 4).valid) { return 5; }
+    children[4].kind = verified::parser::StateChild;
+    children[5].payload = 3;
+    if (verified::surface_path::first(tree, 4).valid) { return 7; }
+    children[5].payload = 2;
+    children[7].payload = 2;
+    let single: verified::surface_path::Segment =
+        verified::surface_path::first(tree, 4);
+    if (!single.valid || single.token != 1 || !single.last) { return 6; }
+    return 0;
+}

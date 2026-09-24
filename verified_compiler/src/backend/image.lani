@@ -3,6 +3,9 @@ import backend::compile;
 import backend::program;
 import backend::frame;
 import backend::syntax;
+import ir::function_catalog;
+import ir::type_ref;
+import ir::program;
 import x86::buffer;
 import x86::encode;
 import x86::control;
@@ -60,11 +63,31 @@ const STACK_HEADER_OFFSET: i32 = LOAD_HEADER_OFFSET + ELF_PROGRAM_HEADER_BYTES;
 const STACK_ALIGNMENT_OFFSET: i32 = PROGRAM_ALIGNMENT_OFFSET;
 const STACK_ALIGNMENT: i32 = 16;
 
-pub fn compile(program: backend::compile::WordRegion,
-    function_workspace: backend::compile::WordRegion,
+fn typed_entry_valid(source: backend::program::TypedSource,
+    entry: i32) -> bool {
+    let native: ir::program::Storage = source.native;
+    let functions: ir::function_catalog::Table = native.functions;
+    let entry_function: ir::function_catalog::Function =
+        ir::function_catalog::at(functions, entry);
+    return entry_function.kind == ir::function_catalog::DefinedFunction
+        && ir::type_ref::code(entry_function.result_type)
+            == backend::syntax::type_code(backend::syntax::TypeI32)
+        && entry_function.parameters == 0;
+}
+
+fn core_entry_valid(source: backend::program::CoreSource,
+    work: backend::frame::Workspace, entry: i32) -> bool {
+    let first: i32 = backend::frame::function_input_offset(work, entry);
+    let header: backend::syntax::FunctionHeader =
+        backend::syntax::read_function_header(source.program.data, first);
+    return header.kind == backend::syntax::DefinedFunction
+        && ir::type_ref::same(header.result_type, ir::type_ref::I32)
+        && header.parameters == 0;
+}
+
+pub fn compile(source: backend::program::Source,
     workspace: backend::frame::Workspace,
     destination: backend::compile::WordRegion) -> i32 {
-    let input: [i32] = program.data;
     let work: backend::frame::Workspace = workspace;
     let state: [backend::frame::State] = backend::frame::state_view(work);
     let output: [i32] = destination.data;
@@ -72,19 +95,18 @@ pub fn compile(program: backend::compile::WordRegion,
     if (!x86::buffer::fits(capacity, 0, CODE)) { return -1; }
     let index: i32 = 0;
     while (index < CODE) { output[index] = 0; index += 1; }
-    let end: i32 = backend::program::compile(program, function_workspace,
-        workspace, backend::compile::cursor(output, capacity, CODE));
+    let end: i32 = backend::program::compile(source, workspace,
+        backend::compile::cursor(output, capacity, CODE));
     if (end <= -1) { return -1; }
     let entry: i32 = state[0].entry_index;
     if (entry <= -1) { return -1; }
-    let first: i32 = backend::frame::function_input_offset(work, entry);
-    let header: backend::syntax::FunctionHeader =
-        backend::syntax::read_function_header(input, first);
-    if (header.kind != backend::syntax::DefinedFunction
-        || header.result_type
-            != backend::syntax::type_code(
-            backend::syntax::TypeI32)
-        || header.parameters != 0) { return -1; }
+    let valid_entry: bool = match (source) {
+        backend::program::SerializedCore(core_value) ->
+            core_entry_valid(core_value, work, entry),
+        backend::program::TypedProgram(typed_value) ->
+            typed_entry_valid(typed_value, entry),
+    };
+    if (!valid_entry) { return -1; }
     let next: i32 = x86::encode::move_register(output, CODE, ENTRY, x86::register::WIDTH_64, x86::register::R10, x86::register::RSP);
     next = x86::encode::immediate(output, CODE, next, x86::register::WIDTH_32,
         x86::register::RAX, INITIAL_FILE_HANDLE, 0);

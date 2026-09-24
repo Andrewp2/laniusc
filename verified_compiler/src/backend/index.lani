@@ -1,8 +1,8 @@
 module backend::index;
 import backend::frame;
 import backend::value;
-import backend::syntax;
 import backend::layout;
+import ir::type_ref;
 import x86::encode;
 import x86::control;
 import x86::register;
@@ -11,11 +11,14 @@ import x86::register;
 // descriptor. Compare all 64 length bits before loading any array element.
 // A live nonwrapping packed i32 allocation has at most 2^62 elements. Thus a
 // negative sign-extended i32 always fails the same unsigned length check.
-pub fn address(output: [i32], capacity: i32, work: backend::frame::Workspace, slot: i32, kind: i32) -> i32 {
+pub fn address(output: [i32], capacity: i32,
+    work: backend::frame::Workspace, slot: i32,
+    kind: ir::type_ref::TypeRef) -> i32 {
     let state: [backend::frame::State] = backend::frame::state_view(work);
-    if (kind != backend::syntax::type_code(backend::syntax::TypeI32) && kind != backend::syntax::type_code(backend::syntax::TypeUsize)) { return -1; }
+    if (!ir::type_ref::same(kind, ir::type_ref::I32)
+        && !ir::type_ref::same(kind, ir::type_ref::Usize)) { return -1; }
     let next: i32 = state[0].code;
-    if (kind == backend::syntax::type_code(backend::syntax::TypeI32)) {
+    if (ir::type_ref::same(kind, ir::type_ref::I32)) {
         next = x86::encode::sign_extend_i32(output, capacity, next, x86::register::RAX, x86::register::RAX);
     }
     state[0].code = next;

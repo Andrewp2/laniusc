@@ -1,0 +1,76 @@
+module ir::function_catalog;
+
+import runtime::service;
+import ir::type_ref;
+import verified::host;
+
+// Semantic function order, parameter metadata, and runtime services retained
+// alongside Core serialization. Wire headers and body lengths do not belong
+// to a native function.
+const FIELD_BYTES: i32 = 8;
+const FUNCTION_FIELDS: i32 = 7;
+const PARAMETER_FIELDS: i32 = 3;
+const FUNCTION_BYTES: i32 = FUNCTION_FIELDS * FIELD_BYTES;
+const PARAMETER_BYTES: i32 = PARAMETER_FIELDS * FIELD_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+
+pub enum FunctionKind {
+    DefinedFunction,
+    RuntimeFunction,
+}
+
+pub struct Parameter {
+    id: i32,
+    type_tag: ir::type_ref::TypeRef,
+}
+
+pub struct Function {
+    kind: FunctionKind,
+    id: i32,
+    result_type: ir::type_ref::TypeRef,
+    parameters: i32,
+    parameter_start: i32,
+    service: runtime::service::RuntimeService,
+}
+
+pub struct Table {
+    functions: [Function],
+    count: i32,
+    parameters: [Parameter],
+    parameter_count: i32,
+}
+
+fn slice_first(base: ptr, count: i32, bytes: i32) -> ptr {
+    if (count <= 0) { return base; }
+    return base + count * bytes - FIELD_BYTES;
+}
+
+pub fn allocation_bytes(functions: i32, parameters: i32) -> i32 {
+    if (functions <= 0 || parameters <= -1
+        || functions > verified::host::I32_MAX / FUNCTION_BYTES) {
+        return -1;
+    }
+    let bytes: i32 = functions * FUNCTION_BYTES;
+    if (parameters > (verified::host::I32_MAX - bytes)
+            / PARAMETER_BYTES) { return -1; }
+    return bytes + parameters * PARAMETER_BYTES;
+}
+
+pub fn from_raw_parts(memory: ptr, functions: i32,
+    parameters: i32) -> Table {
+    let parameter_base: ptr = memory + functions * FUNCTION_BYTES;
+    return Table {
+        functions: slice_from_raw_parts(
+            slice_first(memory, functions, FUNCTION_BYTES), functions),
+        count: functions,
+        parameters: slice_from_raw_parts(
+            slice_first(parameter_base, parameters, PARAMETER_BYTES),
+            parameters),
+        parameter_count: parameters,
+    };
+}
+
+pub fn at(table: Table, index: i32) -> Function {
+    let functions: [Function] = table.functions;
+    return functions[index];
+}

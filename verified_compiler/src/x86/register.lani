@@ -1,31 +1,78 @@
 module x86::register;
 
-pub const RAX: i32 = 0;
-pub const RCX: i32 = 1;
-pub const RDX: i32 = 2;
-pub const RBX: i32 = 3;
-pub const RSP: i32 = 4;
-pub const RBP: i32 = 5;
-pub const RSI: i32 = 6;
-pub const RDI: i32 = 7;
-pub const R8: i32 = 8;
-pub const R9: i32 = 9;
-pub const R10: i32 = 10;
-pub const R11: i32 = 11;
-pub const R12: i32 = 12;
-pub const R13: i32 = 13;
-pub const R14: i32 = 14;
-pub const R15: i32 = 15;
+pub enum Register {
+    RAX,
+    RCX,
+    RDX,
+    RBX,
+    RSP,
+    RBP,
+    RSI,
+    RDI,
+    R8,
+    R9,
+    R10,
+    R11,
+    R12,
+    R13,
+    R14,
+    R15,
+    InvalidRegister,
+}
+
+// x86 encoding order, not the SysV argument order or DWARF register order.
+pub fn code(register: Register) -> i32 {
+    return match (register) {
+        RAX -> 0,
+        RCX -> 1,
+        RDX -> 2,
+        RBX -> 3,
+        RSP -> 4,
+        RBP -> 5,
+        RSI -> 6,
+        RDI -> 7,
+        R8 -> 8,
+        R9 -> 9,
+        R10 -> 10,
+        R11 -> 11,
+        R12 -> 12,
+        R13 -> 13,
+        R14 -> 14,
+        R15 -> 15,
+        InvalidRegister -> -1,
+    };
+}
+
+pub fn from_code(value: i32) -> Register {
+    if (value == 0) { return RAX; }
+    if (value == 1) { return RCX; }
+    if (value == 2) { return RDX; }
+    if (value == 3) { return RBX; }
+    if (value == 4) { return RSP; }
+    if (value == 5) { return RBP; }
+    if (value == 6) { return RSI; }
+    if (value == 7) { return RDI; }
+    if (value == 8) { return R8; }
+    if (value == 9) { return R9; }
+    if (value == 10) { return R10; }
+    if (value == 11) { return R11; }
+    if (value == 12) { return R12; }
+    if (value == 13) { return R13; }
+    if (value == 14) { return R14; }
+    if (value == 15) { return R15; }
+    return InvalidRegister;
+}
 
 pub const WIDTH_32: i32 = 32;
 pub const WIDTH_64: i32 = 64;
-const REGISTER_COUNT: i32 = 16;
+pub const REGISTER_COUNT: i32 = 16;
 const LEGACY_REGISTER_COUNT: i32 = 8;
 const REX_BASE: i32 = 64;
 const REX_W: i32 = 8;
 const REX_R: i32 = 4;
 
-pub fn valid(value: i32) -> bool {
+pub fn valid(register: Register) -> bool {
+    let value: i32 = code(register);
     return value >= 0 && value < REGISTER_COUNT;
 }
 pub fn width_valid(width: i32) -> bool {
@@ -34,10 +81,27 @@ pub fn width_valid(width: i32) -> bool {
 
 // Intel SDM volume 2, section 2.2.1: 0100WRXB. No indexed SIB operand
 // is used here, so X is zero. A zero return means no prefix is needed.
-pub fn rex(width: i32, reg: i32, base: i32, byte_register: bool) -> i32 {
-    let value: i32 = REX_BASE + (reg / LEGACY_REGISTER_COUNT) * REX_R
+pub fn needs_byte_rex(register: Register) -> bool {
+    return code(register) >= code(RSP);
+}
+
+fn rex_code(width: i32, reg: i32, base: i32,
+    byte_register: bool) -> i32 {
+    let value: i32 = REX_BASE
+        + (reg / LEGACY_REGISTER_COUNT) * REX_R
         + base / LEGACY_REGISTER_COUNT;
     if (width == WIDTH_64) { value += REX_W; }
     if (value == REX_BASE && !byte_register) { return 0; }
     return value;
+}
+
+pub fn rex(width: i32, reg: Register, base: Register,
+    byte_register: bool) -> i32 {
+    return rex_code(width, code(reg), code(base), byte_register);
+}
+
+// A ModRM group opcode uses the reg field as an extension, not a register.
+pub fn rex_extension(width: i32, extension: i32, base: Register,
+    byte_register: bool) -> i32 {
+    return rex_code(width, extension, code(base), byte_register);
 }

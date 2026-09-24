@@ -1,0 +1,224 @@
+module lowering::body_serialization;
+
+import backend::syntax;
+import ir::body_events;
+import ir::type_ref;
+import verified::host;
+
+type Event = ir::body_events::Event;
+type Region = ir::body_events::Region;
+
+pub struct WordRegion {
+    words: [i32],
+    capacity: i32,
+}
+
+pub fn word_region(data: [i32], capacity: i32) -> WordRegion {
+    return WordRegion { words: data, capacity: capacity };
+}
+
+fn fits(output: WordRegion, position: i32, words: i32) -> bool {
+    return position >= 0 && words >= 0
+        && position <= output.capacity
+        && words <= output.capacity - position;
+}
+
+fn one(output: WordRegion, position: i32, first: i32) -> i32 {
+    if (!fits(output, position, 1)) { return -1; }
+    let words: [i32] = output.words;
+    words[position] = first;
+    return position + 1;
+}
+
+fn two(output: WordRegion, position: i32, first: i32, second: i32) -> i32 {
+    if (!fits(output, position, 2)) { return -1; }
+    let words: [i32] = output.words;
+    words[position] = first;
+    words[position + 1] = second;
+    return position + 2;
+}
+
+fn three(output: WordRegion, position: i32, first: i32, second: i32,
+    third: i32) -> i32 {
+    if (!fits(output, position, 3)) { return -1; }
+    let words: [i32] = output.words;
+    words[position] = first;
+    words[position + 1] = second;
+    words[position + 2] = third;
+    return position + 3;
+}
+
+fn four(output: WordRegion, position: i32, first: i32, second: i32,
+    third: i32, fourth: i32) -> i32 {
+    if (!fits(output, position, 4)) { return -1; }
+    let words: [i32] = output.words;
+    words[position] = first;
+    words[position + 1] = second;
+    words[position + 2] = third;
+    words[position + 3] = fourth;
+    return position + 4;
+}
+
+fn serialize_string(output: WordRegion, position: i32,
+    value: ir::body_events::StringValue) -> i32 {
+    if (value.length <= -1
+        || !fits(output, position, 3)
+        || !fits(output, position + 3, value.length)) {
+        return -1;
+    }
+    let bytes: [i32] = value.data;
+    let index: i32 = 0;
+    while (index < value.length) {
+        if (bytes[index] <= -1
+            || bytes[index] > verified::host::BYTE_MASK) { return -1; }
+        index += 1;
+    }
+    let words: [i32] = output.words;
+    words[position] =
+        backend::syntax::expression_code(backend::syntax::ExprValue);
+    words[position + 1] =
+        backend::syntax::type_code(backend::syntax::TypeString);
+    words[position + 2] = value.length;
+    index = 0;
+    while (index < value.length) {
+        words[position + 3 + index] = bytes[index];
+        index += 1;
+    }
+    return position + 3 + value.length;
+}
+
+// Core words exist only at this certificate/backend transport boundary.
+// Every event is written atomically: failure leaves the target event's word
+// span untouched, and the caller discards the entire scratch buffer.
+fn serialize_typed_slice(output: WordRegion, position: i32,
+    element: ir::body_events::SliceElement) -> i32 {
+    let kind: i32 = match (element.kind) {
+        ir::body_events::I32Slice -> 2,
+        ir::body_events::StructureSlice -> 0,
+        ir::body_events::EnumerationSlice -> 1,
+    };
+    return three(output, position,
+        backend::syntax::expression_code(backend::syntax::ExprTypedSliceFromRawParts),
+        kind, element.id);
+}
+
+fn serialize_event(output: WordRegion, position: i32,
+    event: Event) -> i32 {
+    let binary: i32 = backend::syntax::binary_event_code(event);
+    if (binary >= 0) {
+        return two(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprBinary), binary);
+    }
+    let assignment: i32 = backend::syntax::assignment_event_code(event);
+    if (assignment >= 0) {
+        return two(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprAssign), assignment);
+    }
+    return match (event) {
+        ir::body_events::ExpressionInteger(integer_value) -> three(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprValue),
+            backend::syntax::type_code(backend::syntax::TypeI32), integer_value),
+        ir::body_events::ExpressionBoolean(boolean_value) -> three(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprValue),
+            backend::syntax::type_code(backend::syntax::TypeBool),
+            backend::syntax::boolean_code(boolean_value)),
+        ir::body_events::ExpressionString(value) ->
+            serialize_string(output, position, value),
+        ir::body_events::ExpressionLocal(expression_local) -> two(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprLocal),
+            expression_local.id),
+        ir::body_events::ExpressionConstant(constant_id) ->
+            two(output, position,
+                backend::syntax::expression_code(backend::syntax::ExprConstant),
+                constant_id),
+        ir::body_events::ExpressionUnaryPositive -> two(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprUnary),
+            backend::syntax::unary_code(backend::syntax::UnaryPositive)),
+        ir::body_events::ExpressionUnaryNot -> two(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprUnary),
+            backend::syntax::unary_code(backend::syntax::UnaryNot)),
+        ir::body_events::ExpressionUnaryNegate -> two(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprUnary),
+            backend::syntax::unary_code(backend::syntax::UnaryNegate)),
+        ir::body_events::ExpressionIndex -> one(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprIndex)),
+        ir::body_events::ExpressionStruct(fields) -> three(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprStruct),
+            backend::syntax::nominal_type(fields.type_id), fields.count),
+        ir::body_events::ExpressionEnumeration(variant) ->
+            four(output, position,
+                backend::syntax::expression_code(backend::syntax::ExprEnumeration),
+                backend::syntax::nominal_type(variant.type_id),
+                variant.ordinal, variant.payload_count),
+        ir::body_events::ExpressionMatch(header) -> three(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprMatch),
+            ir::type_ref::code(header.result_kind), header.arm_count),
+        ir::body_events::ExpressionField(expression_field) -> two(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprField),
+            expression_field.index),
+        ir::body_events::ExpressionCall(call) -> three(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprCall),
+            call.function_id, call.argument_count),
+        ir::body_events::ExpressionI32SliceFromRawParts -> one(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprSliceFromRawParts)),
+        ir::body_events::ExpressionI32SliceDataPointer -> one(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprSliceDataPointer)),
+        ir::body_events::ExpressionStringDataPointer -> one(output, position,
+            backend::syntax::expression_code(backend::syntax::ExprStringDataPointer)),
+        ir::body_events::ExpressionTypedSliceFromRawParts(element) ->
+            serialize_typed_slice(output, position, element),
+        ir::body_events::MatchArmHeader(arm) -> two(output, position,
+            arm.ordinal, arm.binding_count),
+        ir::body_events::MatchBinding(binding) -> one(output, position,
+            binding.id),
+        ir::body_events::PlaceLocal(place_local) -> two(output, position,
+            backend::syntax::place_code(backend::syntax::PlaceLocal),
+            place_local.id),
+        ir::body_events::PlaceIndex -> one(output, position,
+            backend::syntax::place_code(backend::syntax::PlaceIndex)),
+        ir::body_events::PlaceField(place_field) -> two(output, position,
+            backend::syntax::place_code(backend::syntax::PlaceField),
+            place_field.index),
+        ir::body_events::StatementSkip -> one(output, position,
+            backend::syntax::statement_code(backend::syntax::StatementSkip)),
+        ir::body_events::StatementExpression -> one(output, position,
+            backend::syntax::statement_code(backend::syntax::StatementExpression)),
+        ir::body_events::StatementSequence -> one(output, position,
+            backend::syntax::statement_code(backend::syntax::StatementSequence)),
+        ir::body_events::StatementLet(local) -> three(output, position,
+            backend::syntax::statement_code(backend::syntax::StatementLet),
+            local.id, ir::type_ref::code(local.kind)),
+        ir::body_events::StatementLetUninitialized(uninitialized) ->
+            three(output, position,
+                backend::syntax::statement_code(
+                    backend::syntax::StatementLetUninitialized),
+                uninitialized.id,
+                ir::type_ref::code(uninitialized.kind)),
+        ir::body_events::StatementIf -> one(output, position,
+            backend::syntax::statement_code(backend::syntax::StatementIf)),
+        ir::body_events::StatementWhile -> one(output, position,
+            backend::syntax::statement_code(backend::syntax::StatementWhile)),
+        ir::body_events::StatementReturnVoid -> two(output, position,
+            backend::syntax::statement_code(backend::syntax::StatementReturn),
+            backend::syntax::presence_code(backend::syntax::Absent)),
+        ir::body_events::StatementReturnValue -> two(output, position,
+            backend::syntax::statement_code(backend::syntax::StatementReturn),
+            backend::syntax::presence_code(backend::syntax::Present)),
+        _ -> -1,
+    };
+}
+
+pub fn serialize(events: Region, count: i32,
+    output: WordRegion, position: i32) -> i32 {
+    if (count <= -1 || count > events.capacity
+        || position <= -1 || position > output.capacity) { return -1; }
+    let rows: [Event] = events.events;
+    let next: i32 = position;
+    let index: i32 = 0;
+    while (index != count) {
+        next = serialize_event(output, next, rows[index]);
+        if (next <= -1) { return -1; }
+        index += 1;
+    }
+    return next;
+}

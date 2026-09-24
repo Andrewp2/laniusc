@@ -1,0 +1,8 @@
+module app::main;
+
+fn main() -> i32 {
+    let value: i32 = -7;
+    let enabled: bool = !false;
+    if (!enabled) { return 1; }
+    return +7 + value;
+}

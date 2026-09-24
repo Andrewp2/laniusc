@@ -1,5 +1,7 @@
 module app::main;
 
+import test_support::syntax_tree_decode;
+
 import verified::parser;
 import verified::host;
 import verified::syntax_tree;
@@ -11,7 +13,7 @@ fn main() -> i32 {
     ];
     let offsets: [i32; 2] = [0, 7];
     let tree: verified::syntax_tree::Tree =
-        verified::syntax_tree::decode(records, 14, offsets, 2, 1);
+        test_support::syntax_tree_decode::decode(records, 14, offsets, 2, 1);
     let nodes: [verified::syntax_tree::Node] = tree.nodes;
     let children: [verified::syntax_tree::Child] = tree.children;
     if (tree.node_count != 2 || tree.child_count != 2
@@ -46,13 +48,13 @@ fn main() -> i32 {
     }
     records[4] = verified::parser::child_code(
         verified::parser::StateChild);
-    if (verified::syntax_tree::decode(records, 14, offsets, 2, 1).node_count != 0) {
+    if (test_support::syntax_tree_decode::decode(records, 14, offsets, 2, 1).node_count != 0) {
         return 2;
     }
     records[4] = verified::parser::child_code(
         verified::parser::TokenChild);
     records[3] = 2;
-    if (verified::syntax_tree::decode(records, 14, offsets, 2, 1).node_count != 0) {
+    if (test_support::syntax_tree_decode::decode(records, 14, offsets, 2, 1).node_count != 0) {
         return 3;
     }
     return 0;

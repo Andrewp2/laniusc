@@ -1,6 +1,7 @@
 module lowering::signatures;
 
 import lowering::declarations;
+import ir::type_ref;
 
 pub enum SignatureShape {
     InvalidShape,
@@ -13,7 +14,7 @@ pub enum SignatureShape {
 
 pub struct SignatureMember {
     name: i32,
-    type_tag: i32,
+    type_tag: ir::type_ref::TypeRef,
 }
 
 pub struct SignatureRecord {
@@ -21,7 +22,7 @@ pub struct SignatureRecord {
     declaration_kind: lowering::declarations::DeclarationKind,
     shape: SignatureShape,
     arity: i32,
-    result_type: i32,
+    result_type: ir::type_ref::TypeRef,
 }
 
 pub fn record_id(record: SignatureRecord) -> i32 { return record.id; }
@@ -48,6 +49,7 @@ pub fn record_has_shape(record: SignatureRecord,
 
 pub fn record_arity(record: SignatureRecord) -> i32 { return record.arity; }
 
-pub fn record_result_type(record: SignatureRecord) -> i32 {
+pub fn record_result_type(record: SignatureRecord)
+    -> ir::type_ref::TypeRef {
     return record.result_type;
 }

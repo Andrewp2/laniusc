@@ -2,6 +2,7 @@ module app::main;
 
 import verified::parser;
 import verified::parse_tree;
+import verified::syntax_tree;
 import verified::parse_output;
 import verified::output;
 import verified::host;
@@ -88,9 +89,11 @@ fn main() -> i32 {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     let tree_offsets: [i32; 4] = [0, 0, 0, 0];
-    let tree = verified::parse_tree::materialize(
-        accepted, verified::parse_tree::input(parser_storage, 2, 8),
-        verified::parse_tree::storage(tree_records, 32, tree_offsets, 4));
+    let native_tree: verified::syntax_tree::Tree =
+        verified::syntax_tree::materialize_native(accepted, parser_storage,
+            2, 8, 4, 32);
+    let tree = verified::parse_tree::serialize_native(native_tree, 2,
+        verified::parse_tree::storage(tree_records, 32, tree_offsets, 4), 8);
     if (!verified::parse_tree::tree_succeeded(tree)
         || verified::parse_tree::tree_node_count(tree) != 3
         || verified::parse_tree::tree_root(tree) != 2
@@ -120,22 +123,19 @@ fn main() -> i32 {
         if (lean_bytes[emitted_index] != expected_lean[emitted_index]) { return 29; }
         emitted_index += 1;
     }
-    let shallow = verified::parse_tree::materialize(
-        accepted, verified::parse_tree::input(parser_storage, 2, 2),
-        verified::parse_tree::storage(tree_records, 32, tree_offsets, 4));
+    let shallow = verified::parse_tree::serialize_native(native_tree, 2,
+        verified::parse_tree::storage(tree_records, 32, tree_offsets, 4), 2);
     if (!verified::parse_tree::tree_has_stage(shallow,
             verified::parse_tree::DepthLimitReached)
         || verified::parse_tree::tree_root(shallow) != -1) { return 22; }
-    let full_tree = verified::parse_tree::materialize(
-        accepted, verified::parse_tree::input(parser_storage, 2, 8),
-        verified::parse_tree::storage(tree_records, 32, tree_offsets, 2));
+    let full_tree = verified::parse_tree::serialize_native(native_tree, 2,
+        verified::parse_tree::storage(tree_records, 32, tree_offsets, 2), 8);
     if (!verified::parse_tree::tree_has_stage(full_tree,
             verified::parse_tree::OutputStorageFull)) {
         return 23;
     }
-    let full_records = verified::parse_tree::materialize(
-        accepted, verified::parse_tree::input(parser_storage, 2, 8),
-        verified::parse_tree::storage(tree_records, 23, tree_offsets, 4));
+    let full_records = verified::parse_tree::serialize_native(native_tree, 2,
+        verified::parse_tree::storage(tree_records, 23, tree_offsets, 4), 8);
     if (!verified::parse_tree::tree_has_stage(full_records,
             verified::parse_tree::OutputStorageFull)) {
         return 24;
@@ -156,9 +156,12 @@ fn main() -> i32 {
         || verified::parser::parse_error_position(rejected) != 4) {
         return 3;
     }
-    let rejected_tree = verified::parse_tree::materialize(
-        rejected, verified::parse_tree::input(parser_storage, 2, 8),
-        verified::parse_tree::storage(tree_records, 32, tree_offsets, 4));
+    let rejected_native: verified::syntax_tree::Tree =
+        verified::syntax_tree::materialize_native(rejected, parser_storage,
+            2, 8, 4, 32);
+    let rejected_tree = verified::parse_tree::serialize_native(
+        rejected_native, 2,
+        verified::parse_tree::storage(tree_records, 32, tree_offsets, 4), 8);
     if (!verified::parse_tree::tree_has_stage(rejected_tree,
             verified::parse_tree::InvalidInput)) {
         return 25;
@@ -230,9 +233,11 @@ fn main() -> i32 {
         return 16;
     }
 
-    let split_tree = verified::parse_tree::materialize(
-        split, verified::parse_tree::input(parser_storage, 1, 8),
-        verified::parse_tree::storage(tree_records, 32, tree_offsets, 4));
+    let split_native: verified::syntax_tree::Tree =
+        verified::syntax_tree::materialize_native(split, parser_storage,
+            1, 8, 4, 32);
+    let split_tree = verified::parse_tree::serialize_native(split_native, 1,
+        verified::parse_tree::storage(tree_records, 32, tree_offsets, 4), 8);
     if (!verified::parse_tree::tree_succeeded(split_tree)
         || verified::parse_tree::tree_node_count(split_tree) != 1
         || verified::parse_tree::tree_words_used(split_tree) != 10
@@ -262,9 +267,11 @@ fn main() -> i32 {
     ];
     let repeated = verified::parser::recognize(repeated_grammar, 32,
         no_tokens, 0, parser_storage);
-    let repeated_tree = verified::parse_tree::materialize(
-        repeated, verified::parse_tree::input(parser_storage, 0, 8),
-        verified::parse_tree::storage(tree_records, 32, tree_offsets, 4));
+    let repeated_native: verified::syntax_tree::Tree =
+        verified::syntax_tree::materialize_native(repeated, parser_storage,
+            0, 8, 4, 32);
+    let repeated_tree = verified::parse_tree::serialize_native(repeated_native,
+        0, verified::parse_tree::storage(tree_records, 32, tree_offsets, 4), 8);
     if (!verified::parse_tree::tree_succeeded(repeated_tree)
         || verified::parse_tree::tree_node_count(repeated_tree) != 3
         || verified::parse_tree::tree_words_used(repeated_tree) != 18

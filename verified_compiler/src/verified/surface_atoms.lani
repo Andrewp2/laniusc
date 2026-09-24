@@ -4,6 +4,7 @@ import verified::output;
 import verified::utf8;
 import verified::host;
 import verified::token;
+import verified::ascii;
 
 pub struct TokenSpelling {
     source: [i32],
@@ -66,7 +67,10 @@ pub fn token_text(input: TokenSpelling,
     let next: i32 = verified::output::text(output, capacity, position, string_start, 35);
     let index: i32 = start;
     while (index != finish) {
-        if (index != start) { next = verified::output::byte(output, capacity, next, 44); }
+        if (index != start) {
+            next = verified::output::byte(output, capacity, next,
+                verified::ascii::COMMA);
+        }
         next = verified::output::natural(output, capacity, next, source[index]);
         if (next == -1) { return -1; }
         index += 1;
@@ -83,7 +87,8 @@ pub fn name(input: TokenSpelling,
     let closing: str = "⟩";
     let next: i32 = verified::output::text(output, capacity, position, opening, 3);
     next = verified::output::natural(output, capacity, next, input.token);
-    next = verified::output::byte(output, capacity, next, 44);
+    next = verified::output::byte(output, capacity, next,
+        verified::ascii::COMMA);
     next = token_text(input, verified::output::cursor(output, capacity, next));
     return verified::output::text(output, capacity, next, closing, 3);
 }
@@ -116,7 +121,9 @@ pub fn literal(production: i32, input: TokenSpelling,
         }
     }
     next = verified::output::natural(output, capacity, next, input.token);
-    next = verified::output::byte(output, capacity, next, 32);
+    next = verified::output::byte(output, capacity, next,
+        verified::ascii::SPACE);
     next = token_text(input, verified::output::cursor(output, capacity, next));
-    return verified::output::byte(output, capacity, next, 41);
+    return verified::output::byte(output, capacity, next,
+        verified::ascii::RIGHT_PAREN);
 }

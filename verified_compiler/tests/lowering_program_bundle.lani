@@ -2,7 +2,36 @@ module app::main;
 
 import lowering::program_transport;
 import verified::host;
+import verified::parser;
+import verified::syntax_tree;
 import verified::token;
+
+fn tree(production: i32, end: i32) -> verified::syntax_tree::Tree {
+    let node_memory: ptr = verified::host::alloc(
+        verified::syntax_tree::NODE_BYTES,
+        verified::syntax_tree::ALIGNMENT);
+    let child_memory: ptr = verified::host::alloc(
+        verified::syntax_tree::CHILD_BYTES,
+        verified::syntax_tree::ALIGNMENT);
+    let nodes: [verified::syntax_tree::Node] = slice_from_raw_parts(
+        node_memory + verified::syntax_tree::NODE_BYTES
+            - verified::syntax_tree::ALIGNMENT, 1);
+    let children: [verified::syntax_tree::Child] = slice_from_raw_parts(
+        child_memory + verified::syntax_tree::CHILD_BYTES
+            - verified::syntax_tree::ALIGNMENT, 1);
+    nodes[0] = verified::syntax_tree::Node {
+        production: production, origin: 0, end: end,
+        first_child: 0, child_count: 1,
+    };
+    children[0] = verified::syntax_tree::Child {
+        kind: verified::parser::TokenChild,
+        payload: 0, semantic_kind: 0,
+    };
+    return verified::syntax_tree::Tree {
+        nodes: nodes, children: children,
+        node_count: 1, child_count: 1,
+    };
+}
 
 fn main() -> i32 {
     let count: i32 = 2;
@@ -16,74 +45,57 @@ fn main() -> i32 {
         lowering::program_transport::from_raw_parts(memory, count);
     let source: [i32] = verified::host::i32_slice_from_raw_parts(
         verified::host::alloc_i32(2), 2);
-    let tokens: [i32] = verified::host::i32_slice_from_raw_parts(
-        verified::host::alloc_i32(verified::token::ROW_WORDS),
-        verified::token::ROW_WORDS);
-    let records: [i32] = verified::host::i32_slice_from_raw_parts(
-        verified::host::alloc_i32(4), 4);
-    let offsets: [i32] = verified::host::i32_slice_from_raw_parts(
-        verified::host::alloc_i32(1), 1);
     source[0] = 11;
     source[1] = 12;
-    tokens[0] = 13;
-    tokens[1] = 1;
-    tokens[2] = 2;
-    records[0] = 14;
-    offsets[0] = 15;
-    let source_region: lowering::program_transport::WordRegion =
-        lowering::program_transport::region(source, 2);
-    let token_rows: lowering::program_transport::PackedTokenRows =
-        lowering::program_transport::PackedTokenRows {
-            data: tokens, words: verified::token::ROW_WORDS, count: 1 };
-    let offset_region: lowering::program_transport::WordRegion =
-        lowering::program_transport::region(offsets, 1);
-    let parsed: lowering::program_transport::ParsedUnit =
-        lowering::program_transport::ParsedUnit {
-            source: source_region,
-            canonical_tokens: token_rows,
-            parse_records: records,
-            node_offsets: offset_region,
-            record_words: 4,
-            raw_token_count: 1,
-            path_length: 1,
+    let first_tokens: verified::token::TokenTable =
+        lowering::program_transport::native_token_storage(bundle, 0);
+    let first_rows: [verified::token::TokenRow] = first_tokens.data;
+    first_rows[0] = verified::token::TokenRow {
+        kind: verified::token::Greater, start: 1, finish: 2,
+    };
+    let first_unit: lowering::program_transport::NativeUnit =
+        lowering::program_transport::NativeUnit {
+            source: lowering::program_transport::region(source, 2),
+            token_count: 1, tree: tree(7, 2),
         };
-    if (!lowering::program_transport::append_parsed_unit(bundle, 0,
-            parsed)) { return 3; }
+    if (!lowering::program_transport::append_native_unit(bundle, 0,
+            first_unit)) { return 3; }
     source[0] = 21;
-    tokens[0] = 23;
-    tokens[1] = 0;
-    tokens[2] = 1;
-    records[0] = 24;
-    offsets[0] = 25;
-    if (!lowering::program_transport::append_parsed_unit(bundle, 1,
-            parsed)) { return 4; }
+    let second_tokens: verified::token::TokenTable =
+        lowering::program_transport::native_token_storage(bundle, 1);
+    let second_rows: [verified::token::TokenRow] = second_tokens.data;
+    second_rows[0] = verified::token::TokenRow {
+        kind: verified::token::RightBrace, start: 0, finish: 1,
+    };
+    let second_unit: lowering::program_transport::NativeUnit =
+        lowering::program_transport::NativeUnit {
+            source: lowering::program_transport::region(source, 2),
+            token_count: 1, tree: tree(24, 1),
+        };
+    if (!lowering::program_transport::append_native_unit(bundle, 1,
+            second_unit)) { return 4; }
     let stored_sources: [i32] = bundle.sources;
     let stored_tokens: [verified::token::TokenRow] = bundle.tokens.data;
-    let stored_records: [i32] = bundle.records;
-    let stored_offsets: [i32] = bundle.offsets;
+    let trees: [verified::syntax_tree::Tree] = bundle.trees.data;
     if (stored_sources[0] != 11 || stored_sources[1] != 12
-        || stored_sources[lowering::program_transport::BUNDLE_SOURCE_CAP] != 21) {
-        return 5;
-    }
-    if (stored_tokens[0].kind != 13 || stored_tokens[0].start != 1
-        || stored_tokens[0].finish != 2
-        || stored_tokens[lowering::program_transport::BUNDLE_TOKEN_CAP].kind != 23
-        || stored_tokens[lowering::program_transport::BUNDLE_TOKEN_CAP].start != 0
-        || stored_tokens[lowering::program_transport::BUNDLE_TOKEN_CAP].finish != 1) {
-        return 6;
-    }
-    if (stored_records[0] != 14
-        || stored_records[lowering::program_transport::BUNDLE_RECORD_CAP] != 24) {
+        || stored_sources[lowering::program_transport::BUNDLE_SOURCE_CAP]
+            != 21) { return 5; }
+    if (stored_tokens[0].kind != verified::token::Greater
+        || stored_tokens[0].start != 1 || stored_tokens[0].finish != 2
+        || stored_tokens[lowering::program_transport::BUNDLE_TOKEN_CAP].kind
+            != verified::token::RightBrace) { return 6; }
+    if (verified::syntax_tree::production(trees[0], 0) != 7
+        || verified::syntax_tree::production(trees[1], 0) != 24) {
         return 7;
     }
-    if (stored_offsets[0] != 15
-        || stored_offsets[lowering::program_transport::BUNDLE_OFFSETS_CAP] != 25) {
-        return 8;
-    }
-    if (lowering::program_transport::append_parsed_unit(bundle, count,
-            parsed)) { return 9; }
-    parsed.canonical_tokens.words = verified::token::ROW_WORDS - 1;
-    if (lowering::program_transport::append_parsed_unit(bundle, 1,
-            parsed)) { return 10; }
+    source[0] = -1;
+    if (stored_sources[0] != 11
+        || stored_sources[lowering::program_transport::BUNDLE_SOURCE_CAP]
+            != 21) { return 8; }
+    if (lowering::program_transport::append_native_unit(bundle, count,
+            first_unit)) { return 9; }
+    first_unit.token_count = lowering::program_transport::BUNDLE_TOKEN_CAP + 1;
+    if (lowering::program_transport::append_native_unit(bundle, 1,
+            first_unit)) { return 10; }
     return 0;
 }

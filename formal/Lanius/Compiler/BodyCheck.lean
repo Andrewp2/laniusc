@@ -1,6 +1,7 @@
 import Lanius.Compiler.ProgramLowering
 import Lanius.Compiler.ConstantCheck
 import Lanius.Compiler.DirectCallCheck
+import Lanius.Compiler.NameResolutionCheck
 import Lanius.Typing.Check
 
 namespace Lanius.Compiler.BodyCheck
@@ -16,7 +17,7 @@ from the reconstructed Surface body, then stores the existing
 `StmtsLower`/`ExprLowers` relation and an independent Core typing proof in
 `FunctionBodyLowering`.
 
-The deliberately closed fragment is scalar literals (i32 and bool), simple
+The deliberately closed fragment is scalar literals (i32, bool, and string), simple
 local paths, indexed array/slice places, scalar unary/binary expressions,
 assignments, sequences, nested blocks, boolean-guarded `if` statements,
 boolean-guarded `while` statements, and scalar-valued returns.  A sequence may
@@ -63,6 +64,25 @@ theorem resolveLocal_resolves
         subst binding
         exact same ▸ .head
       · exact .tail (by assumption) (induction found)
+
+private theorem noLocalNamed_of_all
+    (locals : List SurfaceElaboration.LocalBinding) (name : Surface.Name)
+    (clear : locals.all (fun binding => decide (binding.name ≠ name)) = true) :
+    SurfaceElaboration.NoLocalNamed locals name := by
+  intro binding member
+  exact of_decide_eq_true (List.all_eq_true.mp clear binding member)
+
+private def checkNotShadowed (context : SurfaceElaboration.Context)
+    (path : Surface.Path) :
+    Option { _witness : Unit // SurfaceElaboration.GlobalPathNotShadowed context path } :=
+  match named : SurfaceElaboration.unqualifiedPathName? path with
+  | none => some ⟨(), by simp [SurfaceElaboration.GlobalPathNotShadowed, named]⟩
+  | some name =>
+      if clear : context.locals.all (fun binding => decide (binding.name ≠ name)) then
+        some ⟨(), by
+          simpa [SurfaceElaboration.GlobalPathNotShadowed, named] using
+            noLocalNamed_of_all context.locals name clear⟩
+      else none
 
 structure LoweredExpr
     (context : SurfaceElaboration.Context)
@@ -139,6 +159,12 @@ def checkExpr (context : SurfaceElaboration.Context) :
           groundType := .scalar .bool
           lowers := .literal .boolean rfl }
       else none
+  | .literal (.string value), .value (.string actual) =>
+      if equal : actual = value then
+        equal ▸ some {
+          groundType := .scalar .string
+          lowers := .literal .string rfl }
+      else none
   | .literal (.integer text), .value (.signed .i32 actual) =>
       match parsed : Elaboration.parseUnsignedInteger text with
       | none => none
@@ -162,6 +188,31 @@ def checkExpr (context : SurfaceElaboration.Context) :
                   groundType := selected.type
                   lowers := .local name single (resolveLocal_resolves found) }
               else none
+  | .path path, .constant id =>
+      match checkNotShadowed context path with
+      | none => none
+      | some notShadowed =>
+          match NameResolutionCheck.checkGlobal context .value path with
+          | none => none
+          | some resolved =>
+              match found : context.constants.find?
+                  (fun entry => decide (entry.declaration = resolved.symbol.declaration)) with
+              | none => none
+              | some entry =>
+                  if sameId : entry.constant = id then
+                    some {
+                      groundType := entry.type
+                      lowers := by
+                        have member : entry ∈ context.constants :=
+                          List.mem_of_find?_eq_some found
+                        have declaration : entry.declaration = resolved.symbol.declaration :=
+                          of_decide_eq_true (List.find?_eq_some_iff_getElem.mp found).1
+                        have lowered : SurfaceElaboration.ExprLowers context
+                            (.path path) entry.type (.constant entry.constant) :=
+                          .constant (.intro notShadowed.property resolved.symbol
+                            resolved.resolved member declaration)
+                        simpa only [sameId] using lowered }
+                  else none
   | .unary surfaceOp surfaceOperand, .unary candidateOp candidateOperand =>
       if equal : SurfaceElaboration.lowerUnaryOp surfaceOp = candidateOp then
         match checkExpr context surfaceOperand candidateOperand with
@@ -306,8 +357,8 @@ def checkStmts (context : SurfaceElaboration.Context) (next : VarId) :
               some { finalNext := tail.finalNext, lowers := .expression head.lowers tail.lowers }
   | .letLocal name none (some surfaceInitializer) :: surfaceTail,
       .letLocal id (.scalar scalar) candidateInitializer candidateTail =>
-      if idEqual : id = next then
-        match checkFreshLocal context.locals next with
+      if lower : next ≤ id then
+        match checkFreshLocal context.locals id with
         | none => none
         | some fresh =>
             match checkExpr context surfaceInitializer candidateInitializer with
@@ -315,7 +366,7 @@ def checkStmts (context : SurfaceElaboration.Context) (next : VarId) :
             | some ⟨.scalar initializerScalar, initializerLowers⟩ =>
                 if initializerType : initializerScalar = scalar then
                   let groundType : Static.GroundTy := .scalar scalar
-                  match checkStmts (context.bindLocal name next groundType) (next + 1)
+                  match checkStmts (context.bindLocal name id groundType) (id + 1)
                       surfaceTail candidateTail with
                   | none => none
                   | some tail =>
@@ -323,29 +374,29 @@ def checkStmts (context : SurfaceElaboration.Context) (next : VarId) :
                           SurfaceElaboration.ExprLowers context surfaceInitializer
                             groundType candidateInitializer := by
                         simpa [groundType, initializerType] using initializerLowers
-                      idEqual ▸ some {
+                      some {
                         finalNext := tail.finalNext
-                        lowers := .letInferred (type := groundType)
-                          (loweredType := .scalar scalar) (idEqual ▸ fresh.proof)
-                          initializerInferred rfl (idEqual ▸ tail.lowers) }
+                        lowers := .letInferred (id := id) (type := groundType)
+                          (loweredType := .scalar scalar) lower fresh.proof
+                          initializerInferred rfl tail.lowers }
                 else none
             | some ⟨_, _⟩ => none
       else none
   | .letLocal name (some surfaceType) (some surfaceInitializer) :: surfaceTail,
       .letLocal id (.scalar scalar) candidateInitializer candidateTail =>
-      if idEqual : id = next then
+      if lower : next ≤ id then
         let groundType : Static.GroundTy := .scalar scalar
         match ConstantCheck.checkTypeGrounds context surfaceType groundType with
         | none => none
         | some annotation =>
-            match checkFreshLocal context.locals next with
+            match checkFreshLocal context.locals id with
             | none => none
             | some fresh =>
                 match checkExpr context surfaceInitializer candidateInitializer with
                 | none => none
                 | some ⟨.scalar initializerScalar, initializerLowers⟩ =>
                     if initializerType : initializerScalar = scalar then
-                      match checkStmts (context.bindLocal name next groundType) (next + 1)
+                      match checkStmts (context.bindLocal name id groundType) (id + 1)
                           surfaceTail candidateTail with
                       | none => none
                       | some tail =>
@@ -354,33 +405,40 @@ def checkStmts (context : SurfaceElaboration.Context) (next : VarId) :
                                 groundType candidateInitializer := by
                             simpa [initializerType] using
                               (SurfaceElaboration.ExprChecks.exact initializerLowers)
-                          idEqual ▸ some {
+                          some {
                             finalNext := tail.finalNext
-                            lowers := .letAnnotated (idEqual ▸ fresh.proof) annotation.down
-                              initializerChecked rfl (idEqual ▸ tail.lowers) }
+                            lowers := .letAnnotated (id := id) lower fresh.proof annotation.down
+                              initializerChecked rfl tail.lowers }
                     else none
                 | some ⟨_, _⟩ => none
       else none
   | .letLocal name (some surfaceType) none :: surfaceTail,
       .letUninitialized id (.scalar scalar) candidateTail =>
-      if idEqual : id = next then
+      if lower : next ≤ id then
         let groundType : Static.GroundTy := .scalar scalar
         match ConstantCheck.checkTypeGrounds context surfaceType groundType with
         | none => none
         | some annotation =>
-            match checkFreshLocal context.locals next with
+            match checkFreshLocal context.locals id with
             | none => none
             | some fresh =>
-                match checkStmts (context.bindLocal name next groundType) (next + 1)
+                match checkStmts (context.bindLocal name id groundType) (id + 1)
                     surfaceTail candidateTail with
                 | none => none
                 | some tail =>
-                    idEqual ▸ some {
+                    some {
                       finalNext := tail.finalNext
-                      lowers := .letUninitialized (type := groundType)
-                        (loweredType := .scalar scalar) (idEqual ▸ fresh.proof)
-                        annotation.down rfl (idEqual ▸ tail.lowers) }
+                      lowers := .letUninitialized (id := id) (type := groundType)
+                        (loweredType := .scalar scalar) lower fresh.proof
+                        annotation.down rfl tail.lowers }
       else none
+  | [.returnValue none], .returnValue none =>
+      some { finalNext := next, lowers := .terminalReturnUnit }
+  | [.returnValue (some surfaceValue)], .returnValue (some candidateValue) =>
+      match checkExpr context surfaceValue candidateValue with
+      | none => none
+      | some value =>
+          some { finalNext := next, lowers := .terminalReturnValue (.exact value.lowers) }
   | .returnValue (some surfaceValue) :: surfaceTail,
       .sequence (.returnValue (some candidateValue)) candidateTail =>
       match checkExpr context surfaceValue candidateValue with

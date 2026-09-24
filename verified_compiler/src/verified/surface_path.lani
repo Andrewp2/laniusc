@@ -1,0 +1,91 @@
+module verified::surface_path;
+
+import verified::parser;
+import verified::production;
+import verified::syntax_tree;
+
+// grammar/lanius.bnf: path -> path_segment path_tail;
+// path_tail -> ':' ':' path_segment path_tail | empty.
+// Consumers see a token and a typed continuation, not production IDs or
+// grammar child positions. Generic path segments are intentionally rejected.
+const FIRST_SEGMENT_CHILD: i32 = 0;
+const FIRST_TAIL_CHILD: i32 = 1;
+const SEGMENT_NAME_CHILD: i32 = 0;
+const MORE_SEGMENT_CHILD: i32 = 2;
+const MORE_TAIL_CHILD: i32 = 3;
+const PATH_CHILDREN: i32 = 2;
+const SEGMENT_CHILDREN: i32 = 1;
+const MORE_CHILDREN: i32 = 4;
+
+pub struct Segment {
+    valid: bool,
+    token: i32,
+    last: bool,
+    next_segment: i32,
+    next_tail: i32,
+}
+
+fn invalid() -> Segment {
+    return Segment {
+        valid: false, token: -1, last: false,
+        next_segment: -1, next_tail: -1,
+    };
+}
+
+fn read_pair(tree: verified::syntax_tree::Tree,
+    segment: i32, tail: i32) -> Segment {
+    let bad: Segment = invalid();
+    if (verified::syntax_tree::production(tree, segment)
+            != verified::production::PATH_IDENT
+        || verified::syntax_tree::child_count(tree, segment)
+            != SEGMENT_CHILDREN) { return bad; }
+    let name: i32 = verified::syntax_tree::child(tree, segment,
+        SEGMENT_NAME_CHILD, verified::parser::TokenChild);
+    if (name <= -1) { return bad; }
+    let kind: i32 = verified::syntax_tree::production(tree, tail);
+    if (kind == verified::production::PATH_END) {
+        if (verified::syntax_tree::child_count(tree, tail) != 0) {
+            return bad;
+        }
+        return Segment {
+            valid: true, token: name, last: true,
+            next_segment: -1, next_tail: -1,
+        };
+    }
+    if (kind != verified::production::PATH_MORE
+        || verified::syntax_tree::child_count(tree, tail)
+            != MORE_CHILDREN) { return bad; }
+    let next_segment: i32 = verified::syntax_tree::child(tree, tail,
+        MORE_SEGMENT_CHILD, verified::parser::StateChild);
+    let next_tail: i32 = verified::syntax_tree::child(tree, tail,
+        MORE_TAIL_CHILD, verified::parser::StateChild);
+    // Both materializers store state children before their parent. Enforce
+    // that order here so a malformed tail cannot create a path cycle.
+    if (next_segment <= -1 || next_tail <= -1
+        || next_segment >= tail || next_tail >= tail) { return bad; }
+    return Segment {
+        valid: true, token: name, last: false,
+        next_segment: next_segment, next_tail: next_tail,
+    };
+}
+
+pub fn first(tree: verified::syntax_tree::Tree, root: i32) -> Segment {
+    let bad: Segment = invalid();
+    if (verified::syntax_tree::production(tree, root)
+            != verified::production::PATH
+        || verified::syntax_tree::child_count(tree, root)
+            != PATH_CHILDREN) { return bad; }
+    let segment: i32 = verified::syntax_tree::child(tree, root,
+        FIRST_SEGMENT_CHILD, verified::parser::StateChild);
+    let tail: i32 = verified::syntax_tree::child(tree, root,
+        FIRST_TAIL_CHILD, verified::parser::StateChild);
+    if (segment <= -1 || tail <= -1
+        || segment >= root || tail >= root) { return bad; }
+    return read_pair(tree, segment, tail);
+}
+
+pub fn next(tree: verified::syntax_tree::Tree,
+    previous: Segment) -> Segment {
+    if (!previous.valid || previous.last) { return invalid(); }
+    return read_pair(tree, previous.next_segment, previous.next_tail);
+}

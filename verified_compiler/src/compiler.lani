@@ -1,16 +1,20 @@
 module app::main;
 
 import lowering::program_transport;
+import ir::body_catalog;
 import lowering::transport;
 import verified::byte_io;
 import verified::certificate_output_native;
+import verified::certificate_functions_native;
 import verified::compact_artifact_output;
 import verified::extraction;
 import verified::grammar;
 import verified::host;
 import verified::output;
+import verified::parse_tree;
 import verified::parser;
 import verified::semantic_tokens;
+import verified::syntax_tree;
 import verified::token;
 import backend::image_boundary;
 import driver::arguments;
@@ -18,7 +22,11 @@ import driver::arguments;
 const PATH_BYTE_CAPACITY: i32 = 1024;
 const PACKED_PATH_WORD_CAPACITY: i32 =
     PATH_BYTE_CAPACITY / verified::host::I32_BYTES;
-const TRANSPORT_WORD_CAPACITY: i32 = 262144;
+const TRANSPORT_WORD_CAPACITY: i32 =
+    lowering::program_transport::BUNDLE_TRANSPORT_CAP;
+// Binary mode keeps the shared allocation path nonempty, but native lowering
+// never reads or writes this placeholder word.
+const UNUSED_TRANSPORT_WORD_CAPACITY: i32 = 1;
 const COMPACT_OUTPUT_CAPACITY: i32 =
     verified::extraction::PARSER_WORK_WORD_CAPACITY;
 const CERTIFICATE_OPTION_LENGTH: i32 = 13;
@@ -101,6 +109,13 @@ fn main() -> i32 {
         packed_path = verified::host::i32_slice_from_raw_parts(
             allocation, PACKED_PATH_WORD_CAPACITY);
     }
+    let path_pointer: ptr = verified::host::i32_slice_data_ptr(packed_path);
+    let path_index: i32 = 1;
+    if (driver::arguments::matches(1, packed_path, "--certificate",
+        CERTIFICATE_OPTION_LENGTH)) {
+        mode = CertificateMode;
+        path_index = 2;
+    }
     let source:[i32];
     {
         let allocation: ptr = verified::host::alloc_i32(
@@ -117,22 +132,22 @@ fn main() -> i32 {
         grammar = verified::host::i32_slice_from_raw_parts(
             allocation, verified::grammar::WORDS);
     }
-    let raw:[i32];
-    {
-        let allocation: ptr = verified::host::alloc_i32(
-            verified::token::TOKEN_WORD_CAPACITY);
-        if (allocation == 0) { return exit_code(AllocationFailed); }
-        raw = verified::host::i32_slice_from_raw_parts(allocation,
-            verified::token::TOKEN_WORD_CAPACITY);
+    let packed_token_capacity: i32 = 0;
+    let raw_allocation: ptr = 0;
+    let canonical_allocation: ptr = 0;
+    if (emits_certificate(mode)) {
+        packed_token_capacity = verified::token::TOKEN_WORD_CAPACITY;
+        raw_allocation = verified::host::alloc_i32(packed_token_capacity);
+        canonical_allocation = verified::host::alloc_i32(
+            packed_token_capacity);
+        if (raw_allocation == 0 || canonical_allocation == 0) {
+            return exit_code(AllocationFailed);
+        }
     }
-    let canonical:[i32];
-    {
-        let allocation: ptr = verified::host::alloc_i32(
-            verified::token::TOKEN_WORD_CAPACITY);
-        if (allocation == 0) { return exit_code(AllocationFailed); }
-        canonical = verified::host::i32_slice_from_raw_parts(allocation,
-            verified::token::TOKEN_WORD_CAPACITY);
-    }
+    let raw: [i32] = verified::host::i32_slice_from_raw_parts(
+        raw_allocation, packed_token_capacity);
+    let canonical: [i32] = verified::host::i32_slice_from_raw_parts(
+        canonical_allocation, packed_token_capacity);
     let kinds:[i32];
     {
         let allocation: ptr = verified::host::alloc_i32(
@@ -150,38 +165,32 @@ fn main() -> i32 {
             allocation,
             verified::extraction::PARSER_WORK_WORD_CAPACITY);
     }
-    let records:[i32];
-    {
-        let allocation: ptr = verified::host::alloc_i32(
-            verified::extraction::PARSE_RECORD_WORD_CAPACITY);
-        if (allocation == 0) { return exit_code(AllocationFailed); }
-        records = verified::host::i32_slice_from_raw_parts(allocation,
-            verified::extraction::PARSE_RECORD_WORD_CAPACITY);
+    let record_capacity: i32 = 0;
+    let offset_capacity: i32 = 0;
+    let record_allocation: ptr = 0;
+    let offset_allocation: ptr = 0;
+    if (emits_certificate(mode)) {
+        record_capacity = verified::extraction::PARSE_RECORD_WORD_CAPACITY;
+        offset_capacity = verified::extraction::PARSE_NODE_CAPACITY;
+        record_allocation = verified::host::alloc_i32(record_capacity);
+        offset_allocation = verified::host::alloc_i32(offset_capacity);
+        if (record_allocation == 0 || offset_allocation == 0) {
+            return exit_code(AllocationFailed);
+        }
     }
-    let offsets:[i32];
-    {
-        let allocation: ptr = verified::host::alloc_i32(
-            verified::extraction::PARSE_NODE_CAPACITY);
-        if (allocation == 0) { return exit_code(AllocationFailed); }
-        offsets = verified::host::i32_slice_from_raw_parts(allocation,
-            verified::extraction::PARSE_NODE_CAPACITY);
+    let records: [i32] = verified::host::i32_slice_from_raw_parts(
+        record_allocation, record_capacity);
+    let offsets: [i32] = verified::host::i32_slice_from_raw_parts(
+        offset_allocation, offset_capacity);
+    let transport_capacity: i32 = UNUSED_TRANSPORT_WORD_CAPACITY;
+    if (emits_certificate(mode)) {
+        transport_capacity = TRANSPORT_WORD_CAPACITY;
     }
-    let transport:[i32];
-    {
-        let allocation: ptr = verified::host::alloc_i32(
-            TRANSPORT_WORD_CAPACITY);
-        if (allocation == 0) { return exit_code(AllocationFailed); }
-        transport = verified::host::i32_slice_from_raw_parts(
-            allocation, TRANSPORT_WORD_CAPACITY);
-    }
-    let function_input:[i32];
-    {
-        let allocation: ptr = verified::host::alloc_i32(
-            backend::image_boundary::FUNCTION_INPUT_CAPACITY);
-        if (allocation == 0) { return exit_code(AllocationFailed); }
-        function_input = verified::host::i32_slice_from_raw_parts(
-            allocation, backend::image_boundary::FUNCTION_INPUT_CAPACITY);
-    }
+    let transport_allocation: ptr = verified::host::alloc_i32(
+        transport_capacity);
+    if (transport_allocation == 0) { return exit_code(AllocationFailed); }
+    let transport: [i32] = verified::host::i32_slice_from_raw_parts(
+        transport_allocation, transport_capacity);
     let backend_work:[i32];
     {
         let bytes: usize = backend::image_boundary::WORK_CAPACITY
@@ -207,13 +216,6 @@ fn main() -> i32 {
         if (allocation == 0) { return exit_code(AllocationFailed); }
         packed_io = verified::host::i32_slice_from_raw_parts(
             allocation, verified::byte_io::PACKED_IO_WORDS);
-    }
-    let path_pointer: ptr = verified::host::i32_slice_data_ptr(packed_path);
-    let path_index: i32 = 1;
-    if (driver::arguments::matches(1, packed_path, "--certificate",
-        CERTIFICATE_OPTION_LENGTH)) {
-        mode = CertificateMode;
-        path_index = 2;
     }
     let compact_bundle: [i32] = verified::host::i32_slice_from_raw_parts(
         path_pointer, 0);
@@ -283,67 +285,80 @@ fn main() -> i32 {
                     grammar: verified::extraction::buffer(grammar,
                         verified::grammar::WORDS),
                 };
-            let syntax_workspace: verified::extraction::SyntaxWorkspace =
-                verified::extraction::SyntaxWorkspace {
-                    raw_tokens: verified::extraction::buffer(raw,
-                        verified::token::TOKEN_WORD_CAPACITY),
-                    canonical_tokens: verified::extraction::buffer(canonical,
-                        verified::token::TOKEN_WORD_CAPACITY),
-                    token_kinds: verified::extraction::buffer(kinds,
-                        verified::extraction::TOKEN_KIND_CAPACITY),
-                    parser_workspace: verified::parser::storage(
-                        verified::host::i32_slice_data_ptr(
-                            extraction_workspace),
-                        verified::extraction::PARSER_WORK_WORD_CAPACITY),
-                    parse_records: verified::extraction::buffer(records,
-                        verified::extraction::PARSE_RECORD_WORD_CAPACITY),
-                    node_offsets: verified::extraction::buffer(offsets,
-                        verified::extraction::PARSE_NODE_CAPACITY),
-                    depth_limit: verified::extraction::DEFAULT_PARSE_DEPTH_LIMIT,
-                };
-            let extracted: verified::extraction::SyntaxResult =
-                verified::extraction::extract_syntax(syntax_input,
-                    syntax_workspace);
-            if (!verified::extraction::extraction_has_stage(extracted,
-                    verified::extraction::Extracted)) {
-                return exit_code(ExtractionFailed);
-            }
-            let raw_count: i32 = verified::extraction::raw_count(extracted);
-            let token_count: i32 = verified::extraction::token_count(extracted);
-            let node_count: i32 = verified::extraction::node_count(extracted);
-            let record_words: i32 = verified::extraction::tree_words(extracted);
+            let parser_storage: verified::parser::WorkspaceStorage =
+                verified::parser::storage(
+                    verified::host::i32_slice_data_ptr(
+                        extraction_workspace),
+                    verified::extraction::PARSER_WORK_WORD_CAPACITY);
             let source_region: lowering::program_transport::WordRegion =
                 lowering::program_transport::region(source, source_length);
-            let canonical_tokens: lowering::program_transport::PackedTokenRows =
-                lowering::program_transport::PackedTokenRows {
-                    data: canonical,
-                    words: verified::token::TOKEN_WORD_CAPACITY,
-                    count: token_count,
+            let native_tokens: verified::token::TokenTable =
+                lowering::program_transport::native_token_storage(
+                    bundle, unit);
+            let native_workspace:
+                verified::extraction::NativeRecognitionWorkspace =
+                verified::extraction::NativeRecognitionWorkspace {
+                    tokens: native_tokens,
+                    raw_tokens: verified::extraction::buffer(raw,
+                        packed_token_capacity),
+                    canonical_tokens: verified::extraction::buffer(
+                        canonical, packed_token_capacity),
+                    token_kinds: verified::extraction::buffer(kinds,
+                        verified::extraction::TOKEN_KIND_CAPACITY),
+                    parser_workspace: parser_storage,
                 };
-            let offset_region: lowering::program_transport::WordRegion =
-                lowering::program_transport::region(offsets, node_count);
-            let parsed_unit: lowering::program_transport::ParsedUnit =
-                lowering::program_transport::ParsedUnit {
+            let recognized: verified::extraction::SyntaxRecognition =
+                verified::extraction::recognize_native_syntax(
+                    syntax_input, native_workspace);
+            if (!verified::extraction::recognition_succeeded(recognized)) {
+                return exit_code(ExtractionFailed);
+            }
+            let raw_count: i32 =
+                verified::extraction::recognition_raw_count(recognized);
+            let token_count: i32 =
+                verified::extraction::recognition_token_count(recognized);
+            let tree: verified::syntax_tree::Tree =
+                verified::syntax_tree::materialize_native(
+                    verified::extraction::recognition_parse(recognized),
+                    parser_storage, token_count,
+                    verified::extraction::DEFAULT_PARSE_DEPTH_LIMIT,
+                    verified::extraction::PARSE_NODE_CAPACITY,
+                    verified::extraction::PARSE_RECORD_WORD_CAPACITY);
+            if (tree.node_count <= 0) { return exit_code(ExtractionFailed); }
+            let node_count: i32 = tree.node_count;
+            let native_unit: lowering::program_transport::NativeUnit =
+                lowering::program_transport::NativeUnit {
                     source: source_region,
-                    canonical_tokens: canonical_tokens,
-                    parse_records: records,
-                    node_offsets: offset_region,
-                    record_words: record_words,
-                    raw_token_count: raw_count,
-                    path_length: path_length,
+                    token_count: token_count,
+                    tree: tree,
                 };
-            if (!lowering::program_transport::append_parsed_unit(
-                bundle, unit, parsed_unit)) { return exit_code(BundleFailed); }
+            if (!lowering::program_transport::append_native_unit(
+                bundle, unit, native_unit)) {
+                return exit_code(BundleFailed);
+            }
+            let record_words: i32 = 0;
             if (emits_certificate(mode)) {
-                if (verified::semantic_tokens::collect_raw(
-                    verified::host::i32_slice_data_ptr(grammar),
-                    verified::host::i32_slice_data_ptr(kinds),
-                    token_count, node_count,
-                    verified::host::i32_slice_data_ptr(records),
-                    verified::host::i32_slice_data_ptr(offsets),
-                    verified::host::i32_slice_data_ptr(backend_work)) != 0) {
+                let assignments:
+                    verified::semantic_tokens::AssignmentBuffer =
+                    verified::semantic_tokens::from_raw_parts(
+                        verified::host::i32_slice_data_ptr(backend_work),
+                        verified::extraction::TOKEN_KIND_CAPACITY);
+                if (verified::semantic_tokens::collect_native(grammar,
+                        verified::grammar::WORDS, kinds, token_count,
+                        tree, assignments) != 0) {
                     return exit_code(SemanticFailed);
                 }
+                let serialized: verified::parse_tree::TreeResult =
+                    verified::parse_tree::serialize_native(tree,
+                        token_count,
+                        verified::parse_tree::storage(records,
+                            record_capacity, offsets, offset_capacity),
+                        verified::extraction::DEFAULT_PARSE_DEPTH_LIMIT);
+                if (!verified::parse_tree::tree_succeeded(serialized)) {
+                    return exit_code(ExtractionFailed);
+                }
+                record_words = verified::parse_tree::tree_words_used(
+                    serialized);
                 let path_region: verified::compact_artifact_output::WordRegion =
                     verified::compact_artifact_output::WordRegion {
                         data: packed_io, length: path_length };
@@ -407,17 +422,29 @@ fn main() -> i32 {
                 compact_copy += 1;
             }
         }
-        let transport_words: i32 = lowering::program_transport::lower_units(
+        let output_mode: lowering::transport::OutputMode =
+            lowering::transport::NativeOnly;
+        if (emits_certificate(mode)) {
+            output_mode = lowering::transport::NativeAndCore;
+        }
+        let lowered: lowering::program_transport::LoweredProgram =
+            lowering::program_transport::lower_units(
             bundle,
-            verified::host::i32_slice_data_ptr(transport));
-        if (transport_words <= lowering::transport::HEADER - 1) {
+            verified::host::i32_slice_data_ptr(transport), output_mode);
+        let transport_words: i32 = lowered.transport_words;
+        if (!lowering::program_transport::succeeded(lowered.status)) {
             return exit_code(CoreLoweringFailure);
         }
+        if (ir::body_catalog::length(lowered.bodies) <= 0) {
+            return exit_code(CoreLoweringFailure);
+        }
+        // Native codegen consumes the retained typed catalogs. Core words
+        // remain available for certificates but are not its input.
         let emitted: i32 = backend::image_boundary::compile_raw(
-            verified::host::i32_slice_data_ptr(transport), transport_words,
-            verified::host::i32_slice_data_ptr(function_input),
             verified::host::i32_slice_data_ptr(backend_work),
-            verified::host::i32_slice_data_ptr(code));
+            verified::host::i32_slice_data_ptr(code),
+            ir::body_catalog::raw_memory(lowered.bodies),
+            lowered.bodies.capacity, lowered.native);
         if (emitted <= 0) { return exit_code(BackendFailed); }
         if (emits_certificate(mode)) {
             let certificate_length: i32 =
@@ -441,13 +468,9 @@ fn main() -> i32 {
                 verified::extraction::PARSER_WORK_WORD_CAPACITY,
                 certificate_length);
             if (certificate_length <= -1) { return exit_code(CertificateImageFailed); }
-            let function_count: i32 =
-                backend::image_boundary::function_count_raw(
-                    verified::host::i32_slice_data_ptr(backend_work));
-            certificate_length = verified::certificate_output_native::emit_functions_raw(
+            certificate_length = verified::certificate_functions_native::emit_functions_raw(
                 verified::host::i32_slice_data_ptr(backend_work),
-                backend::image_boundary::WORK_CAPACITY, transport_words,
-                function_count,
+                backend::image_boundary::WORK_CAPACITY,
                 verified::host::i32_slice_data_ptr(extraction_workspace),
                 verified::extraction::PARSER_WORK_WORD_CAPACITY,
                 certificate_length);

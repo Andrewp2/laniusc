@@ -1,11 +1,11 @@
 module app::main;
 
-import backend::syntax;
+import ir::type_ref;
 import lowering::builtin;
 import verified::host;
 
-fn check(spelling: str, length: i32,
-    expected: lowering::builtin::LookupState, tag: i32) -> bool {
+fn lookup_spelling(spelling: str, length: i32)
+    -> lowering::builtin::Lookup {
     let packed: [i32] = verified::host::i32_slice_from_raw_parts(
         verified::host::string_data_ptr(spelling),
         (length + verified::host::I32_BYTES - 1)
@@ -18,36 +18,52 @@ fn check(spelling: str, length: i32,
                 * verified::host::BITS_PER_BYTE)) & verified::host::BYTE_MASK;
         index += 1;
     }
-    let found: lowering::builtin::Lookup = lowering::builtin::lookup(
-        source, length, 0, length);
-    return lowering::builtin::has_state(found, expected)
-        && lowering::builtin::type_tag(found) == tag;
+    return lowering::builtin::lookup(source, length, 0, length);
+}
+
+fn check_supported(spelling: str, length: i32,
+    expected: ir::type_ref::TypeRef) -> bool {
+    let found: lowering::builtin::Lookup = lookup_spelling(spelling, length);
+    return match (found) {
+        lowering::builtin::Supported(actual) ->
+            ir::type_ref::code(actual) == ir::type_ref::code(expected),
+        _ -> false,
+    };
+}
+
+fn check_unsupported(spelling: str, length: i32) -> bool {
+    return match (lookup_spelling(spelling, length)) {
+        lowering::builtin::UnsupportedType -> true,
+        _ -> false,
+    };
+}
+
+fn check_unknown(spelling: str, length: i32) -> bool {
+    return match (lookup_spelling(spelling, length)) {
+        lowering::builtin::UnknownName -> true,
+        _ -> false,
+    };
 }
 
 fn main() -> i32 {
-    if (!check("i32", 3, lowering::builtin::SupportedType,
-        backend::syntax::type_code(backend::syntax::TypeI32))) { return 1; }
-    if (!check("bool", 4, lowering::builtin::SupportedType,
-        backend::syntax::type_code(backend::syntax::TypeBool))) { return 2; }
-    if (!check("usize", 5, lowering::builtin::SupportedType,
-        backend::syntax::type_code(backend::syntax::TypeUsize))) { return 3; }
-    if (!check("ptr", 3, lowering::builtin::SupportedType,
-        backend::syntax::type_code(backend::syntax::TypePointer))) { return 4; }
-    if (!check("str", 3, lowering::builtin::SupportedType,
-        backend::syntax::type_code(backend::syntax::TypeString))) { return 5; }
-    if (!check("i8", 2, lowering::builtin::UnsupportedType, -1)) { return 6; }
-    if (!check("i16", 3, lowering::builtin::UnsupportedType, -1)) { return 7; }
-    if (!check("i64", 3, lowering::builtin::UnsupportedType, -1)) { return 8; }
-    if (!check("isize", 5, lowering::builtin::UnsupportedType, -1)) { return 9; }
-    if (!check("u8", 2, lowering::builtin::UnsupportedType, -1)) { return 10; }
-    if (!check("u16", 3, lowering::builtin::UnsupportedType, -1)) { return 11; }
-    if (!check("u32", 3, lowering::builtin::UnsupportedType, -1)) { return 12; }
-    if (!check("u64", 3, lowering::builtin::UnsupportedType, -1)) { return 13; }
-    if (!check("f32", 3, lowering::builtin::UnsupportedType, -1)) { return 14; }
-    if (!check("f64", 3, lowering::builtin::UnsupportedType, -1)) { return 15; }
-    if (!check("char", 4, lowering::builtin::UnsupportedType, -1)) { return 16; }
-    if (!check("i3x", 3, lowering::builtin::UnknownName, -1)) { return 17; }
-    if (!check("i32x", 4, lowering::builtin::UnknownName, -1)) { return 18; }
-    if (!check("Answer", 6, lowering::builtin::UnknownName, -1)) { return 19; }
+    if (!check_supported("i32", 3, ir::type_ref::I32)) { return 1; }
+    if (!check_supported("bool", 4, ir::type_ref::Bool)) { return 2; }
+    if (!check_supported("usize", 5, ir::type_ref::Usize)) { return 3; }
+    if (!check_supported("ptr", 3, ir::type_ref::Pointer)) { return 4; }
+    if (!check_supported("str", 3, ir::type_ref::String)) { return 5; }
+    if (!check_unsupported("i8", 2)) { return 6; }
+    if (!check_unsupported("i16", 3)) { return 7; }
+    if (!check_unsupported("i64", 3)) { return 8; }
+    if (!check_unsupported("isize", 5)) { return 9; }
+    if (!check_unsupported("u8", 2)) { return 10; }
+    if (!check_unsupported("u16", 3)) { return 11; }
+    if (!check_unsupported("u32", 3)) { return 12; }
+    if (!check_unsupported("u64", 3)) { return 13; }
+    if (!check_unsupported("f32", 3)) { return 14; }
+    if (!check_unsupported("f64", 3)) { return 15; }
+    if (!check_unsupported("char", 4)) { return 16; }
+    if (!check_unknown("i3x", 3)) { return 17; }
+    if (!check_unknown("i32x", 4)) { return 18; }
+    if (!check_unknown("Answer", 6)) { return 19; }
     return 0;
 }

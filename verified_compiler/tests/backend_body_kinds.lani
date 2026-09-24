@@ -1,0 +1,67 @@
+module app::main;
+
+import backend::syntax;
+
+fn expression_round_trip(kind: backend::syntax::ExpressionKind) -> bool {
+    return backend::syntax::expression_from_code(
+        backend::syntax::expression_code(kind)) == kind;
+}
+
+fn place_round_trip(kind: backend::syntax::PlaceKind) -> bool {
+    return backend::syntax::place_from_code(
+        backend::syntax::place_code(kind)) == kind;
+}
+
+fn statement_round_trip(kind: backend::syntax::StatementKind) -> bool {
+    return backend::syntax::statement_from_code(
+        backend::syntax::statement_code(kind)) == kind;
+}
+
+fn main() -> i32 {
+    if (backend::syntax::presence_from_code(
+            backend::syntax::presence_code(backend::syntax::Absent))
+            != backend::syntax::Absent) { return 5; }
+    if (backend::syntax::presence_from_code(
+            backend::syntax::presence_code(backend::syntax::Present))
+            != backend::syntax::Present) { return 5; }
+    if (backend::syntax::presence_from_code(2)
+            != backend::syntax::InvalidPresence) { return 5; }
+    if (!expression_round_trip(backend::syntax::ExprValue)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprLocal)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprCast)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprUnary)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprBinary)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprIndex)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprStruct)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprField)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprAssign)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprConstant)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprCall)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprSliceFromRawParts)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprSliceDataPointer)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprStringDataPointer)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprEnumeration)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprEnumTag)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprEnumField)) { return 1; }
+    if (!expression_round_trip(backend::syntax::ExprMatch)) { return 1; }
+    if (!place_round_trip(backend::syntax::PlaceLocal)) { return 2; }
+    if (!place_round_trip(backend::syntax::PlaceField)) { return 2; }
+    if (!place_round_trip(backend::syntax::PlaceIndex)) { return 2; }
+    if (!statement_round_trip(backend::syntax::StatementSkip)) { return 3; }
+    if (!statement_round_trip(backend::syntax::StatementExpression)) { return 3; }
+    if (!statement_round_trip(backend::syntax::StatementSequence)) { return 3; }
+    if (!statement_round_trip(backend::syntax::StatementLet)) { return 3; }
+    if (!statement_round_trip(backend::syntax::StatementLetUninitialized)) { return 3; }
+    if (!statement_round_trip(backend::syntax::StatementIf)) { return 3; }
+    if (!statement_round_trip(backend::syntax::StatementWhile)) { return 3; }
+    if (!statement_round_trip(backend::syntax::StatementReturn)) { return 3; }
+    if (!statement_round_trip(backend::syntax::StatementBreak)) { return 3; }
+    if (!statement_round_trip(backend::syntax::StatementContinue)) { return 3; }
+    if (backend::syntax::expression_from_code(5) != backend::syntax::InvalidExpression) { return 4; }
+    if (backend::syntax::expression_from_code(6) != backend::syntax::InvalidExpression) { return 4; }
+    if (backend::syntax::expression_from_code(22) != backend::syntax::InvalidExpression) { return 4; }
+    if (backend::syntax::place_from_code(3) != backend::syntax::InvalidPlace) { return 4; }
+    if (backend::syntax::statement_from_code(7) != backend::syntax::InvalidStatement) { return 4; }
+    if (backend::syntax::statement_from_code(13) != backend::syntax::InvalidStatement) { return 4; }
+    return 0;
+}

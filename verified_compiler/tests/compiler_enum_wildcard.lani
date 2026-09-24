@@ -1,0 +1,20 @@
+module app::main;
+
+enum Choice {
+    Value(i32),
+    Empty,
+}
+
+fn select(choice: Choice) -> i32 {
+    return match (choice) {
+        Value(number) -> number,
+        _ -> 13,
+    };
+}
+
+fn main() -> i32 {
+    if (select(Value(7)) == 7 && select(Empty) == 13) {
+        return 0;
+    }
+    return 1;
+}

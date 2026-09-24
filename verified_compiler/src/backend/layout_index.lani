@@ -2,6 +2,11 @@ module backend::layout_index;
 
 import backend::layout;
 import backend::syntax;
+import lowering::allocation;
+import lowering::declarations;
+import lowering::signature_index;
+import lowering::signatures;
+import ir::type_ref;
 import verified::host;
 
 // Decode the Core type section once. These are native semantic rows, not
@@ -9,7 +14,9 @@ import verified::host;
 const FIELD_BYTES: i32 = 8;
 const TYPE_BYTES: i32 = 8 * FIELD_BYTES;
 const VARIANT_BYTES: i32 = 2 * FIELD_BYTES;
-const MEMBER_BYTES: i32 = 2 * FIELD_BYTES;
+// A resolved field stores its type and one offset word.
+const MEMBER_BYTES: i32 = (ir::type_ref::STORAGE_WORDS + 1)
+    * FIELD_BYTES;
 const TAG_WORDS: i32 = 1;
 const SCALAR_WORDS: i32 = 1;
 const FAT_POINTER_WORDS: i32 = 2;
@@ -20,6 +27,20 @@ enum ResolutionState {
     Unvisited,
     Visiting,
     Ready,
+}
+
+enum NativeTypePass {
+    StructuresPass,
+    EnumerationsPass,
+    FinishedPass,
+}
+
+fn next_native_type_pass(pass: NativeTypePass) -> NativeTypePass {
+    return match (pass) {
+        StructuresPass -> EnumerationsPass,
+        EnumerationsPass -> FinishedPass,
+        FinishedPass -> FinishedPass,
+    };
 }
 
 pub struct TypeRow {
@@ -39,7 +60,7 @@ pub struct VariantRow {
 }
 
 pub struct FieldRow {
-    kind: i32,
+    kind: ir::type_ref::TypeRef,
     offset_words: i32,
 }
 
@@ -139,6 +160,117 @@ pub fn measure(input: [i32], length: i32) -> Requirements {
     return required;
 }
 
+// The compiler's native lowering result is authoritative for layouts. The
+// corresponding Core words are still emitted for certificates, but codegen
+// need not parse them back into type rows.
+pub fn measure_native(signatures: lowering::signature_index::Table,
+    allocations: lowering::allocation::Table) -> Requirements {
+    let required: Requirements = invalid_requirements();
+    if (!lowering::allocation::table_has_exact_rows(allocations)) {
+        return required;
+    }
+    let header: lowering::allocation::AllocationHeader =
+        lowering::allocation::table_header(allocations);
+    if (header.structures <= -1 || header.enumerations <= -1
+        || header.structures > verified::host::I32_MAX
+            - header.enumerations) { return required; }
+    let type_count: i32 = header.structures + header.enumerations;
+    let type_id: i32 = 0;
+    let end: i32 = backend::syntax::PROGRAM_HEADER_WORDS;
+    let variants: i32 = 0;
+    let fields: i32 = 0;
+    let pass: NativeTypePass = StructuresPass;
+    while (pass != FinishedPass) {
+        let kind: lowering::declarations::DeclarationKind =
+            lowering::declarations::Structure;
+        let shape: lowering::signatures::SignatureShape =
+            lowering::signatures::StructureShape;
+        if (pass == EnumerationsPass) {
+            kind = lowering::declarations::Enumeration;
+            shape = lowering::signatures::EnumerationShape;
+        }
+        let row: i32 = 0;
+        while (row < header.rows) {
+            let allocation: lowering::allocation::AllocationRow =
+                lowering::allocation::table_row(allocations, row);
+            if (lowering::allocation::row_has_kind(allocation, kind)) {
+                let declaration: i32 =
+                    lowering::allocation::row_declaration_id(allocation);
+                if (lowering::allocation::row_core_id(allocation)
+                        != type_id
+                    || !lowering::signature_index::has_shape(signatures,
+                        declaration, shape)) {
+                    return invalid_requirements();
+                }
+                let signature: lowering::signatures::SignatureRecord =
+                    lowering::signature_index::record_at(signatures,
+                        declaration);
+                let arity: i32 =
+                    lowering::signatures::record_arity(signature);
+                if (arity <= -1 || arity > verified::host::I32_MAX
+                        - end - backend::layout::TYPE_RECORD_HEADER_WORDS) {
+                    return invalid_requirements();
+                }
+                end += backend::layout::TYPE_RECORD_HEADER_WORDS + arity;
+                if (pass == StructuresPass) {
+                    if (arity > verified::host::I32_MAX - fields) {
+                        return invalid_requirements();
+                    }
+                    fields += arity;
+                    let field: i32 = 0;
+                    while (field < arity) {
+                        let member: lowering::signatures::SignatureMember =
+                            lowering::signature_index::member_at(signatures,
+                                declaration, field);
+                        if (!ir::type_ref::valid(member.type_tag)) {
+                            return invalid_requirements();
+                        }
+                        field += 1;
+                    }
+                } else {
+                    if (arity > verified::host::I32_MAX - variants) {
+                        return invalid_requirements();
+                    }
+                    variants += arity;
+                    let variant: i32 = 0;
+                    while (variant < arity) {
+                        let entry: lowering::signature_index::Variant =
+                            lowering::signature_index::variant_at(signatures,
+                                declaration, variant);
+                        let count: i32 = entry.field_count;
+                        if (count <= -1
+                            || count > verified::host::I32_MAX - fields
+                            || count > verified::host::I32_MAX - end) {
+                            return invalid_requirements();
+                        }
+                        fields += count;
+                        end += count;
+                        let field: i32 = 0;
+                        while (field != count) {
+                            if (!ir::type_ref::valid(
+                                    lowering::signature_index::enum_field_type(
+                                        signatures, declaration, variant,
+                                        field))) {
+                                return invalid_requirements();
+                            }
+                            field += 1;
+                        }
+                        variant += 1;
+                    }
+                }
+                type_id += 1;
+            }
+            row += 1;
+        }
+        pass = next_native_type_pass(pass);
+    }
+    if (type_id != type_count) { return invalid_requirements(); }
+    return Requirements {
+        types: type_count, variants: variants, fields: fields,
+        type_end: end, valid: true,
+    };
+}
+
 pub fn allocation_bytes(required: Requirements) -> i32 {
     if (!required.valid || required.types <= -1
         || required.variants <= -1 || required.fields <= -1) {
@@ -184,23 +316,35 @@ pub fn from_raw_parts(memory: ptr, required: Requirements) -> Table {
     };
 }
 
-fn nominal_id(table: Table, kind: i32) -> i32 {
-    if (kind <= backend::syntax::NOMINAL_TYPE_BASE - 1) { return -1; }
-    let id: i32 = kind - backend::syntax::NOMINAL_TYPE_BASE;
-    if (id >= table.type_count) { return -1; }
+fn nominal_id_type(table: Table, kind: ir::type_ref::TypeRef) -> i32 {
+    let id: i32 = match (kind) {
+        ir::type_ref::Nominal(value) -> value,
+        _ -> -1,
+    };
+    if (id < 0 || id >= table.type_count) { return -1; }
     return id;
 }
 
-fn resolve_words(table: Table, kind: i32, depth: i32) -> i32 {
+fn primitive_words(kind: ir::type_ref::TypeRef) -> i32 {
+    let scalar_words: i32 = SCALAR_WORDS;
+    let fat_pointer_words: i32 = FAT_POINTER_WORDS;
+    return match (kind) {
+        ir::type_ref::I32 -> scalar_words,
+        ir::type_ref::Bool -> scalar_words,
+        ir::type_ref::Usize -> scalar_words,
+        ir::type_ref::Pointer -> scalar_words,
+        ir::type_ref::Slice -> fat_pointer_words,
+        ir::type_ref::String -> fat_pointer_words,
+        _ -> -1,
+    };
+}
+
+fn resolve_words(table: Table, kind: ir::type_ref::TypeRef,
+    depth: i32) -> i32 {
     if (depth >= MAX_DEPTH) { return -1; }
-    if (kind >= backend::syntax::type_code(backend::syntax::TypeI32)
-        && kind <= backend::syntax::type_code(
-            backend::syntax::TypePointer)) { return SCALAR_WORDS; }
-    if (backend::syntax::type_is(kind, backend::syntax::TypeSlice)
-        || backend::syntax::type_is(kind, backend::syntax::TypeString)) {
-        return FAT_POINTER_WORDS;
-    }
-    let id: i32 = nominal_id(table, kind);
+    let primitive: i32 = primitive_words(kind);
+    if (primitive > 0) { return primitive; }
+    let id: i32 = nominal_id_type(table, kind);
     if (id <= -1) { return -1; }
     let types: [TypeRow] = table.types;
     if (types[id].state == Ready) {
@@ -221,7 +365,7 @@ fn resolve_words(table: Table, kind: i32, depth: i32) -> i32 {
             if (size <= 0 || size > backend::layout::MAX_VALUE_WORDS
                     - total) { return -1; }
             let nested: i32 = 1;
-            let child_id: i32 = nominal_id(table, fields[slot].kind);
+            let child_id: i32 = nominal_id_type(table, fields[slot].kind);
             if (child_id >= 0) { nested = types[child_id].depth; }
             if (nested >= MAX_DEPTH) { return -1; }
             if (nested + 1 > height) { height = nested + 1; }
@@ -246,7 +390,7 @@ fn resolve_words(table: Table, kind: i32, depth: i32) -> i32 {
                 if (size <= 0 || size > backend::layout::MAX_VALUE_WORDS
                         - payload - TAG_WORDS) { return -1; }
                 let nested: i32 = 1;
-                let child_id: i32 = nominal_id(table, fields[slot].kind);
+                let child_id: i32 = nominal_id_type(table, fields[slot].kind);
                 if (child_id >= 0) { nested = types[child_id].depth; }
                 if (nested >= MAX_DEPTH) { return -1; }
                 if (nested + 1 > height) { height = nested + 1; }
@@ -299,7 +443,8 @@ pub fn build(input: [i32], length: i32, table: Table) -> bool {
             let field: i32 = 0;
             while (field < members) {
                 fields[field_cursor] = FieldRow {
-                    kind: input[cursor + field], offset_words: -1,
+                    kind: ir::type_ref::from_code(input[cursor + field]),
+                    offset_words: -1,
                 };
                 field_cursor += 1;
                 field += 1;
@@ -323,7 +468,8 @@ pub fn build(input: [i32], length: i32, table: Table) -> bool {
                 let field: i32 = 0;
                 while (field < count) {
                     fields[field_cursor] = FieldRow {
-                        kind: input[cursor + 1 + field],
+                        kind: ir::type_ref::from_code(
+                            input[cursor + 1 + field]),
                         offset_words: -1,
                     };
                     field_cursor += 1;
@@ -341,8 +487,7 @@ pub fn build(input: [i32], length: i32, table: Table) -> bool {
         || variant_cursor != table.variant_count) { return false; }
     id = 0;
     while (id < table.type_count) {
-        if (resolve_words(table,
-                backend::syntax::NOMINAL_TYPE_BASE + id, 0) <= 0) {
+        if (resolve_words(table, ir::type_ref::Nominal(id), 0) <= 0) {
             return false;
         }
         id += 1;
@@ -350,59 +495,161 @@ pub fn build(input: [i32], length: i32, table: Table) -> bool {
     return true;
 }
 
-pub fn words(table: Table, kind: i32) -> i32 {
-    if (kind >= backend::syntax::type_code(backend::syntax::TypeI32)
-        && kind <= backend::syntax::type_code(
-            backend::syntax::TypePointer)) { return SCALAR_WORDS; }
-    if (backend::syntax::type_is(kind, backend::syntax::TypeSlice)
-        || backend::syntax::type_is(kind, backend::syntax::TypeString)) {
-        return FAT_POINTER_WORDS;
+pub fn build_native(signatures: lowering::signature_index::Table,
+    allocations: lowering::allocation::Table, table: Table) -> bool {
+    let required: Requirements = measure_native(signatures, allocations);
+    if (!required.valid || required.types != table.type_count
+        || required.variants != table.variant_count
+        || required.fields != table.field_count
+        || required.type_end != table.type_end) { return false; }
+    let header: lowering::allocation::AllocationHeader =
+        lowering::allocation::table_header(allocations);
+    let types: [TypeRow] = table.types;
+    let variants: [VariantRow] = table.variants;
+    let fields: [FieldRow] = table.fields;
+    let type_id: i32 = 0;
+    let variant_cursor: i32 = 0;
+    let field_cursor: i32 = 0;
+    let pass: NativeTypePass = StructuresPass;
+    while (pass != FinishedPass) {
+        let kind: lowering::declarations::DeclarationKind =
+            lowering::declarations::Structure;
+        if (pass == EnumerationsPass) {
+            kind = lowering::declarations::Enumeration;
+        }
+        let row: i32 = 0;
+        while (row < header.rows) {
+            let allocation: lowering::allocation::AllocationRow =
+                lowering::allocation::table_row(allocations, row);
+            if (lowering::allocation::row_has_kind(allocation, kind)) {
+                let declaration: i32 =
+                    lowering::allocation::row_declaration_id(allocation);
+                let signature: lowering::signatures::SignatureRecord =
+                    lowering::signature_index::record_at(signatures,
+                        declaration);
+                let arity: i32 =
+                    lowering::signatures::record_arity(signature);
+                if (pass == StructuresPass) {
+                    types[type_id] = TypeRow {
+                        kind: backend::syntax::StructureLayout,
+                        field_start: field_cursor, field_count: arity,
+                        variant_start: -1, variant_count: 0,
+                        words: -1, depth: 0, state: Unvisited,
+                    };
+                    let field: i32 = 0;
+                    while (field < arity) {
+                        let member: lowering::signatures::SignatureMember =
+                            lowering::signature_index::member_at(signatures,
+                                declaration, field);
+                        fields[field_cursor] = FieldRow {
+                            kind: member.type_tag,
+                            offset_words: -1,
+                        };
+                        field_cursor += 1;
+                        field += 1;
+                    }
+                } else {
+                    types[type_id] = TypeRow {
+                        kind: backend::syntax::EnumerationLayout,
+                        field_start: -1, field_count: 0,
+                        variant_start: variant_cursor,
+                        variant_count: arity,
+                        words: -1, depth: 0, state: Unvisited,
+                    };
+                    let variant: i32 = 0;
+                    while (variant < arity) {
+                        let entry: lowering::signature_index::Variant =
+                            lowering::signature_index::variant_at(signatures,
+                                declaration, variant);
+                        let count: i32 = entry.field_count;
+                        variants[variant_cursor] = VariantRow {
+                            field_start: field_cursor, field_count: count,
+                        };
+                        variant_cursor += 1;
+                        let field: i32 = 0;
+                        while (field != count) {
+                            fields[field_cursor] = FieldRow {
+                                kind: lowering::signature_index::enum_field_type(
+                                    signatures, declaration, variant, field),
+                                offset_words: -1,
+                            };
+                            field_cursor += 1;
+                            field += 1;
+                        }
+                        variant += 1;
+                    }
+                }
+                type_id += 1;
+            }
+            row += 1;
+        }
+        pass = next_native_type_pass(pass);
     }
-    let id: i32 = nominal_id(table, kind);
+    if (type_id != table.type_count
+        || variant_cursor != table.variant_count
+        || field_cursor != table.field_count) { return false; }
+    type_id = 0;
+    while (type_id < table.type_count) {
+        if (resolve_words(table, ir::type_ref::Nominal(type_id),
+                0) <= 0) {
+            return false;
+        }
+        type_id += 1;
+    }
+    return true;
+}
+
+pub fn words(table: Table, kind: ir::type_ref::TypeRef) -> i32 {
+    let primitive: i32 = primitive_words(kind);
+    if (primitive > 0) { return primitive; }
+    let id: i32 = nominal_id_type(table, kind);
     if (id <= -1) { return -1; }
     let types: [TypeRow] = table.types;
     if (types[id].state != Ready) { return -1; }
     return types[id].words;
 }
 
-pub fn is_structure(table: Table, kind: i32) -> bool {
-    let id: i32 = nominal_id(table, kind);
+pub fn is_structure(table: Table, kind: ir::type_ref::TypeRef) -> bool {
+    let id: i32 = nominal_id_type(table, kind);
     if (id <= -1) { return false; }
     let types: [TypeRow] = table.types;
     return types[id].state == Ready
         && types[id].kind == backend::syntax::StructureLayout;
 }
 
-pub fn is_enumeration(table: Table, kind: i32) -> bool {
-    let id: i32 = nominal_id(table, kind);
+pub fn is_enumeration(table: Table, kind: ir::type_ref::TypeRef) -> bool {
+    let id: i32 = nominal_id_type(table, kind);
     if (id <= -1) { return false; }
     let types: [TypeRow] = table.types;
     return types[id].state == Ready
         && types[id].kind == backend::syntax::EnumerationLayout;
 }
 
-pub fn member_count(table: Table, kind: i32) -> i32 {
+pub fn member_count(table: Table, kind: ir::type_ref::TypeRef) -> i32 {
     if (!is_structure(table, kind)) { return -1; }
     let types: [TypeRow] = table.types;
-    return types[nominal_id(table, kind)].field_count;
+    return types[nominal_id_type(table, kind)].field_count;
 }
 
-fn structure_field(table: Table, kind: i32, field: i32) -> i32 {
+fn structure_field(table: Table, kind: ir::type_ref::TypeRef,
+    field: i32) -> i32 {
     if (!is_structure(table, kind)) { return -1; }
     let types: [TypeRow] = table.types;
-    let row: TypeRow = types[nominal_id(table, kind)];
+    let row: TypeRow = types[nominal_id_type(table, kind)];
     if (field <= -1 || field >= row.field_count) { return -1; }
     return row.field_start + field;
 }
 
-pub fn field_kind(table: Table, kind: i32, field: i32) -> i32 {
+pub fn field_kind(table: Table, kind: ir::type_ref::TypeRef, field: i32)
+    -> ir::type_ref::TypeRef {
     let slot: i32 = structure_field(table, kind, field);
-    if (slot <= -1) { return -1; }
+    if (slot <= -1) { return ir::type_ref::Invalid; }
     let fields: [FieldRow] = table.fields;
     return fields[slot].kind;
 }
 
-pub fn field_offset(table: Table, kind: i32, field: i32) -> i32 {
+pub fn field_offset(table: Table, kind: ir::type_ref::TypeRef,
+    field: i32) -> i32 {
     let slot: i32 = structure_field(table, kind, field);
     if (slot <= -1) { return -1; }
     let fields: [FieldRow] = table.fields;
@@ -410,15 +657,16 @@ pub fn field_offset(table: Table, kind: i32, field: i32) -> i32 {
         * backend::layout::VALUE_WORD_BYTES;
 }
 
-fn variant_row(table: Table, kind: i32, variant: i32) -> i32 {
+fn variant_row(table: Table, kind: ir::type_ref::TypeRef,
+    variant: i32) -> i32 {
     if (!is_enumeration(table, kind)) { return -1; }
     let types: [TypeRow] = table.types;
-    let row: TypeRow = types[nominal_id(table, kind)];
+    let row: TypeRow = types[nominal_id_type(table, kind)];
     if (variant <= -1 || variant >= row.variant_count) { return -1; }
     return row.variant_start + variant;
 }
 
-pub fn variant_field_count(table: Table, kind: i32,
+pub fn variant_field_count(table: Table, kind: ir::type_ref::TypeRef,
     variant: i32) -> i32 {
     let slot: i32 = variant_row(table, kind, variant);
     if (slot <= -1) { return -1; }
@@ -426,7 +674,7 @@ pub fn variant_field_count(table: Table, kind: i32,
     return variants[slot].field_count;
 }
 
-fn variant_field(table: Table, kind: i32, variant: i32,
+fn variant_field(table: Table, kind: ir::type_ref::TypeRef, variant: i32,
     field: i32) -> i32 {
     let slot: i32 = variant_row(table, kind, variant);
     if (slot <= -1) { return -1; }
@@ -436,15 +684,15 @@ fn variant_field(table: Table, kind: i32, variant: i32,
     return row.field_start + field;
 }
 
-pub fn variant_field_kind(table: Table, kind: i32,
-    variant: i32, field: i32) -> i32 {
+pub fn variant_field_kind(table: Table, kind: ir::type_ref::TypeRef,
+    variant: i32, field: i32) -> ir::type_ref::TypeRef {
     let slot: i32 = variant_field(table, kind, variant, field);
-    if (slot <= -1) { return -1; }
+    if (slot <= -1) { return ir::type_ref::Invalid; }
     let fields: [FieldRow] = table.fields;
     return fields[slot].kind;
 }
 
-pub fn variant_field_offset(table: Table, kind: i32,
+pub fn variant_field_offset(table: Table, kind: ir::type_ref::TypeRef,
     variant: i32, field: i32) -> i32 {
     let slot: i32 = variant_field(table, kind, variant, field);
     if (slot <= -1) { return -1; }

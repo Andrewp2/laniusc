@@ -1,0 +1,39 @@
+module ir::program;
+
+import ir::function_catalog;
+import lowering::allocation;
+import lowering::signature_index;
+
+// Native lowering result handed directly to code generation. The serialized
+// Core transport is a separate certificate artifact, not this program view.
+pub struct Storage {
+    signatures: lowering::signature_index::Table,
+    allocations: lowering::allocation::Table,
+    functions: ir::function_catalog::Table,
+}
+
+pub fn empty() -> Storage {
+    let nowhere: ptr = 0;
+    let no_signatures: lowering::signature_index::Requirements =
+        lowering::signature_index::Requirements {
+            entries: 0, members: 0, variants: 0, fields: 0,
+            constants: 0, bytes: 0, valid: false,
+        };
+    return Storage {
+        signatures: lowering::signature_index::from_raw_parts(
+            nowhere, no_signatures),
+        allocations: lowering::allocation::from_raw_parts(nowhere, 0),
+        functions: ir::function_catalog::from_raw_parts(nowhere, 0, 0),
+    };
+}
+
+pub fn valid(storage: Storage) -> bool {
+    let signatures: lowering::signature_index::Table = storage.signatures;
+    let allocations: lowering::allocation::Table = storage.allocations;
+    let functions: ir::function_catalog::Table = storage.functions;
+    return signatures.count > 0 && signatures.member_count >= 0
+        && signatures.variant_count >= 0 && signatures.field_count >= 0
+        && signatures.constant_count >= 0 && signatures.byte_count >= 0
+        && allocations.memory != 0 && allocations.count > 0
+        && functions.count > 0 && functions.parameter_count >= 0;
+}

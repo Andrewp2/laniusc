@@ -42,36 +42,58 @@ pub fn same(catalog: Catalog, unit: i32, token: i32,
     let other_source_length: i32 = contexts[other_context].source_length;
     let other_token_offset: i32 = contexts[other_context].token_offset;
     let other_count: i32 = contexts[other_context].token_count;
-    if (token <= -1 || token >= token_count || other_token <= -1
-        || other_token >= other_count) { return false; }
+    let token_capacity: i32 = catalog.tokens.count;
+    if (token_offset <= -1 || other_token_offset <= -1
+        || token_count <= -1 || other_count <= -1
+        || token_offset > token_capacity
+        || other_token_offset > token_capacity
+        || token_count > token_capacity - token_offset
+        || other_count > token_capacity - other_token_offset
+        || token <= -1 || token >= token_count
+        || other_token <= -1 || other_token >= other_count) {
+        return false;
+    }
     let left: i32 = token_offset + token;
     let right: i32 = other_token_offset + other_token;
-    if (!verified::token::kind_is(tokens[left].kind,
-            verified::token::Identifier)
-        || !verified::token::kind_is(tokens[right].kind,
-            verified::token::Identifier)) {
-        return false;
+    let first_source: verified::token::SourceSpan =
+        verified::token::source_span(source, source_offset, source_length);
+    let second_source: verified::token::SourceSpan =
+        verified::token::source_span(source, other_source_offset,
+            other_source_length);
+    return verified::token::same_spelling(
+        verified::token::identifier_spelling(first_source, tokens[left]),
+        verified::token::identifier_spelling(second_source, tokens[right]));
+}
+
+// A coarse bucket key only: users of this key must still compare the entire
+// spelling. Equal valid identifiers always have equal keys.
+pub fn spelling_bucket(catalog: Catalog, unit: i32, token: i32,
+    bucket_count: i32) -> i32 {
+    let context_table: lowering::unit_context::Table = catalog.contexts;
+    let contexts: [lowering::unit_context::UnitContext] =
+        context_table.data;
+    if (unit <= -1 || unit >= context_table.count || bucket_count <= 0) {
+        return -1;
     }
-    let left_start: i32 = tokens[left].start;
-    let left_finish: i32 = tokens[left].finish;
-    let right_start: i32 = tokens[right].start;
-    let right_finish: i32 = tokens[right].finish;
-    if (left_start <= -1 || left_finish <= left_start
-        || right_start <= -1 || right_finish <= right_start
-        || left_finish - left_start != right_finish - right_start) {
-        return false;
+    let context: lowering::unit_context::UnitContext = contexts[unit];
+    if (context.token_offset <= -1 || context.token_count <= -1
+        || context.token_offset > catalog.tokens.count
+        || context.token_count > catalog.tokens.count
+            - context.token_offset
+        || token <= -1 || token >= context.token_count) {
+        return -1;
     }
-    let count: i32 = left_finish - left_start;
-    if (left_finish > source_length || right_finish > other_source_length) {
-        return false;
-    }
-    let index: i32 = 0;
-    while (index != count) {
-        if (source[source_offset + left_start + index]
-            != source[other_source_offset + right_start + index]) {
-            return false;
-        }
-        index += 1;
-    }
-    return true;
+    let rows: [verified::token::TokenRow] = catalog.tokens.data;
+    let spelling: verified::token::IdentifierSpelling =
+        verified::token::identifier_spelling(
+            verified::token::source_span(catalog.sources,
+                context.source_offset, context.source_length),
+            rows[context.token_offset + token]);
+    if (!spelling.valid) { return -1; }
+    let first: i32 = spelling.source[spelling.start];
+    let last: i32 = spelling.source[spelling.start + spelling.length - 1];
+    let key: i32 = (spelling.length * 131 + first * 31 + last)
+        % bucket_count;
+    if (key <= -1) { return key + bucket_count; }
+    return key;
 }

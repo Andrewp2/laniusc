@@ -1,0 +1,11 @@
+module app::main;
+
+enum Recursive { Stop, Again(Recursive) }
+
+fn main() -> i32 {
+    let value: Recursive = Stop;
+    return match (value) {
+        Stop -> 0,
+        Again(inner) -> 1,
+    };
+}

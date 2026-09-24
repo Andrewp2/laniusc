@@ -2,16 +2,17 @@ module lowering::signature_index;
 
 import lowering::declarations;
 import lowering::signatures;
+import ir::type_ref;
 import verified::host;
 
 // Native signature rows, members, variants, field types, and constants
 // indexed by the allocator's Core ID. No compact signature catalog exists.
 const FIELD_BYTES: i32 = 8;
-const ENTRY_FIELDS: i32 = 8;
+const ENTRY_FIELDS: i32 = 9;
 pub const ENTRY_BYTES: i32 = ENTRY_FIELDS * FIELD_BYTES;
-const MEMBER_BYTES: i32 = 2 * FIELD_BYTES;
+const MEMBER_BYTES: i32 = 3 * FIELD_BYTES;
 const VARIANT_BYTES: i32 = 3 * FIELD_BYTES;
-const ENUM_FIELD_BYTES: i32 = FIELD_BYTES;
+const ENUM_FIELD_BYTES: i32 = 2 * FIELD_BYTES;
 const CONSTANT_BYTES: i32 = 5 * FIELD_BYTES;
 const CONSTANT_BYTE_BYTES: i32 = verified::host::I32_BYTES;
 pub const ALIGNMENT: i32 = FIELD_BYTES;
@@ -21,7 +22,7 @@ pub struct Entry {
     declaration_kind: lowering::declarations::DeclarationKind,
     shape: lowering::signatures::SignatureShape,
     arity: i32,
-    result_type: i32,
+    result_type: ir::type_ref::TypeRef,
     member_start: i32,
     variant_start: i32,
     constant_start: i32,
@@ -34,7 +35,7 @@ pub struct Variant {
 }
 
 pub struct EnumField {
-    type_tag: i32,
+    type_tag: ir::type_ref::TypeRef,
 }
 
 pub enum ConstantEncoding {
@@ -179,7 +180,7 @@ fn empty_entry() -> Entry {
         declaration_kind: lowering::declarations::Invalid,
         shape: lowering::signatures::InvalidShape,
         arity: -1,
-        result_type: -1,
+        result_type: ir::type_ref::Invalid,
         member_start: -1,
         variant_start: -1,
         constant_start: -1,
@@ -247,7 +248,7 @@ pub fn member_at(table: Table, id: i32, ordinal: i32)
     -> lowering::signatures::SignatureMember {
     let invalid: lowering::signatures::SignatureMember =
         lowering::signatures::SignatureMember {
-            name: -1, type_tag: -1,
+            name: -1, type_tag: ir::type_ref::Invalid,
         };
     if (!contains(table, id)) { return invalid; }
     let entries: [Entry] = table.data;
@@ -281,12 +282,12 @@ pub fn variant_at(table: Table, id: i32, ordinal: i32) -> Variant {
 }
 
 pub fn enum_field_type(table: Table, id: i32,
-    ordinal: i32, field: i32) -> i32 {
+    ordinal: i32, field: i32) -> ir::type_ref::TypeRef {
     let variant: Variant = variant_at(table, id, ordinal);
     if (field <= -1 || field >= variant.field_count
         || variant.field_start <= -1
         || variant.field_start > table.field_count - field - 1) {
-        return -1;
+        return ir::type_ref::Invalid;
     }
     let fields: [EnumField] = table.fields;
     return fields[variant.field_start + field].type_tag;
@@ -375,7 +376,8 @@ pub fn push_member(output: Writer,
     let table: Table = output.table;
     let slot: i32 = cursors[0].members;
     if (slot <= -1 || slot >= table.member_count
-        || value.name <= -1 || value.type_tag <= 0) { return false; }
+        || value.name <= -1
+        || !ir::type_ref::valid(value.type_tag)) { return false; }
     let members: [lowering::signatures::SignatureMember] =
         table.members;
     members[slot] = value;
@@ -401,19 +403,21 @@ pub fn push_variant(output: Writer, name: i32) -> i32 {
 }
 
 pub fn push_field(output: Writer, variant_slot: i32,
-    type_tag: i32) -> bool {
+    type_tag: ir::type_ref::TypeRef) -> bool {
     let cursors: [WriterCursor] = output.cursor;
     let table: Table = output.table;
     let slot: i32 = cursors[0].fields;
     if (variant_slot <= -1 || variant_slot != cursors[0].variants - 1
         || variant_slot < cursors[0].committed_variants
         || slot <= -1 || slot >= table.field_count
-        || type_tag <= 0) { return false; }
+        || !ir::type_ref::valid(type_tag)) { return false; }
     let variants: [Variant] = table.variants;
     if (variants[variant_slot].field_start
         + variants[variant_slot].field_count != slot) { return false; }
     let fields: [EnumField] = table.fields;
-    fields[slot] = EnumField { type_tag: type_tag };
+    fields[slot] = EnumField {
+        type_tag: type_tag,
+    };
     variants[variant_slot].field_count += 1;
     cursors[0].fields = slot + 1;
     return true;

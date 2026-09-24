@@ -1569,6 +1569,40 @@ fn main() {
 }
 
 #[test]
+fn type_checker_checks_enum_field_assignment_categories() {
+    let valid = r#"
+enum Kind { Empty, Nominal(i32) }
+struct Cell { kind: Kind }
+
+fn main() -> i32 {
+    let cell: Cell = Cell { kind: Empty };
+    cell.kind = Nominal(1);
+    return 0;
+}
+"#;
+    assert_gpu_type_check_ok(valid);
+
+    let invalid = valid.replace("cell.kind = Nominal(1);", "cell.kind = 0;");
+    assert_gpu_type_check_diagnostic(
+        &invalid,
+        "LNC0006",
+        &["cell.kind = 0;", "value type does not match this context"],
+    );
+
+    let indexed = valid.replace(
+        "cell.kind = Nominal(1);",
+        "let cells: [Cell; 1] = [cell];\n    cells[0].kind = Nominal(1);",
+    );
+    assert_gpu_type_check_ok(&indexed);
+    let invalid_indexed = indexed.replace("cells[0].kind = Nominal(1);", "cells[0].kind = 0;");
+    assert_gpu_type_check_diagnostic(
+        &invalid_indexed,
+        "LNC0006",
+        &["cells[0].kind = 0;", "value type does not match this context"],
+    );
+}
+
+#[test]
 fn type_checker_type_decl_index_ignores_expression_payload_kinds() {
     let sources = (0..12)
         .map(|module| {
@@ -5347,6 +5381,50 @@ fn main() {
 }
 
 #[test]
+fn type_checker_types_struct_field_enum_payloads_on_gpu() {
+    assert_gpu_type_check_ok(
+        r#"
+struct Row {
+    value: i32,
+}
+
+enum Choice {
+    Item(i32),
+}
+
+fn make(row: Row) -> Choice {
+    return Item(row.value);
+}
+
+fn main() {
+    let row: Row = Row { value: 7 };
+    let choice: Choice = make(row);
+    return 0;
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+struct Row {
+    value: bool,
+}
+
+enum Choice {
+    Item(i32),
+}
+
+fn make(row: Row) -> Choice {
+    return Item(row.value);
+}
+
+fn main() {
+    return 0;
+}
+"#,
+    );
+}
+
+#[test]
 fn type_checker_checks_multi_payload_enum_constructor_ordinals_on_gpu() {
     assert_gpu_type_check_ok(
         r#"
@@ -5449,6 +5527,103 @@ fn score(value: OuterEvent) -> i32 {
 
 fn main() -> i32 {
     return 0;
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_accepts_imported_unit_variant_as_enum_payload() {
+    assert_gpu_type_check_pack_ok(&[
+        r#"
+module types::event;
+pub enum Inner { Empty, Number(i32) }
+"#,
+        r#"
+module app::main;
+import types::event;
+
+type Inner = types::event::Inner;
+enum Outer { Missing, Wrapped(Inner) }
+
+fn main() -> i32 {
+    let value: Outer = Wrapped(types::event::Empty);
+    return match (value) {
+        Missing -> 1,
+        Wrapped(inner) -> 0,
+    };
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_requires_enum_value_for_concrete_enum_parameter() {
+    assert_gpu_type_check_ok(
+        r#"
+enum Register { RAX, RCX }
+
+fn select(register: Register) -> i32 {
+    return match (register) {
+        RAX -> 0,
+        RCX -> 1,
+    };
+}
+
+fn main() -> i32 {
+    let register: Register = RCX;
+    return select(register);
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+enum Register { RAX, RCX }
+
+fn select(register: Register) -> i32 {
+    return match (register) {
+        RAX -> 0,
+        RCX -> 1,
+    };
+}
+
+fn main() -> i32 {
+    let raw: i32 = 1;
+    return select(raw);
+}
+"#,
+    );
+    assert_gpu_type_check_rejects(
+        r#"
+enum Register { RAX, RCX }
+
+fn select(register: Register) -> i32 {
+    return match (register) {
+        RAX -> 0,
+        RCX -> 1,
+    };
+}
+
+fn main() -> i32 {
+    return select(1);
+}
+"#,
+    );
+}
+
+#[test]
+fn type_checker_requires_struct_value_for_concrete_struct_parameter() {
+    assert_gpu_type_check_rejects(
+        r#"
+struct Pair { value: i32 }
+
+fn read(pair: Pair) -> i32 {
+    return pair.value;
+}
+
+fn main() -> i32 {
+    let raw: i32 = 1;
+    return read(raw);
 }
 "#,
     );

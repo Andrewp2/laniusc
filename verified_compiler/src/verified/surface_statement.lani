@@ -1,0 +1,208 @@
+module verified::surface_statement;
+import verified::parser;
+import verified::production;
+import verified::syntax_tree;
+const RETURN_OPTIONAL_CHILD: i32 = 1;
+const RETURN_EXPRESSION_CHILD: i32 = 0;
+const EXPRESSION_CHILD: i32 = 0;
+const LET_NAME_CHILD: i32 = 1;
+const LET_TYPE_CHILD: i32 = 2;
+const LET_INITIALIZER_CHILD: i32 = 3;
+const OPTIONAL_VALUE_CHILD: i32 = 1;
+const BLOCK_CHILD: i32 = 0;
+const BLOCK_STATEMENTS_CHILD: i32 = 1;
+const CONDITION_CHILD: i32 = 2;
+const BODY_CHILD: i32 = 4;
+const ELSE_OPTIONAL_CHILD: i32 = 5;
+const ELSE_BLOCK_CHILD: i32 = 1;
+const LIST_FIRST_CHILD: i32 = 0;
+const LIST_REST_CHILD: i32 = 1;
+pub enum Annotation {
+    Inferred,
+    Explicit(i32),
+}
+pub enum Initializer {
+    Uninitialized,
+    Initialized(i32),
+}
+pub struct Binding {
+    name: i32,
+    annotation: Annotation,
+    initializer: Initializer,
+}
+pub struct ConditionalBlock {
+    condition: i32,
+    body: i32,
+}
+pub enum ElseBranch {
+    NoElse,
+    ElseBlock(i32),
+}
+pub struct Branch {
+    condition: i32,
+    then_block: i32,
+    otherwise: ElseBranch,
+}
+pub enum Statement {
+    ReturnVoid,
+    ReturnValue(i32),
+    Expression(i32),
+    Let(Binding),
+    Block(i32),
+    While(ConditionalBlock),
+    If(Branch),
+    Unsupported,
+}
+pub struct ListEntry {
+    first: i32,
+    rest: i32,
+}
+pub enum StatementList {
+    ListEnd,
+    ListMore(ListEntry),
+    InvalidList,
+}
+fn state_child(tree: verified::syntax_tree::Tree, node: i32, slot: i32) -> i32 {
+    return verified::syntax_tree::child(tree, node, slot, verified::parser::StateChild);
+}
+fn token_child(tree: verified::syntax_tree::Tree, node: i32, slot: i32) -> i32 {
+    return verified::syntax_tree::child(tree, node, slot, verified::parser::TokenChild);
+}
+pub fn block_statements(tree: verified::syntax_tree::Tree, block: i32) -> i32 {
+    let kind: i32 = verified::syntax_tree::production(tree, block);
+    if (kind != verified::production::FN_BLOCK && kind != verified::production::IMPL_FN_BLOCK && kind != verified::production::BLOCK && kind != verified::production::IF_BLOCK && kind != verified::production::BLOCK_STMT) {
+        return -1;
+    }
+    return state_child(tree, block, BLOCK_STATEMENTS_CHILD);
+}
+pub fn statement_list(tree: verified::syntax_tree::Tree, node: i32) -> StatementList {
+    let kind: i32 = verified::syntax_tree::production(tree, node);
+    if (kind == verified::production::STMTS_END) {
+        return ListEnd;
+    }
+    if (kind != verified::production::STMTS_MORE) {
+        return InvalidList;
+    }
+    let first: i32 = state_child(tree, node, LIST_FIRST_CHILD);
+    let rest: i32 = state_child(tree, node, LIST_REST_CHILD);
+    if (first <= -1 || rest <= -1) {
+        return InvalidList;
+    }
+    let entry: ListEntry = ListEntry {
+        first: first,
+        rest: rest
+    };
+    return ListMore(entry);
+}
+pub fn read(tree: verified::syntax_tree::Tree, node: i32) -> Statement {
+    let kind: i32 = verified::syntax_tree::production(tree, node);
+    if (kind == verified::production::RETURN_STMT) {
+        let optional: i32 = state_child(tree, node, RETURN_OPTIONAL_CHILD);
+        let value_kind: i32 = verified::syntax_tree::production(tree, optional);
+        if (value_kind == verified::production::RETURN_VOID) {
+            return ReturnVoid;
+        }
+        if (value_kind != verified::production::RETURN_VALUE) {
+            return Unsupported;
+        }
+        let value: i32 = state_child(tree, optional, RETURN_EXPRESSION_CHILD);
+        if (value <= -1) {
+            return Unsupported;
+        }
+        return ReturnValue(value);
+    }
+    if (kind == verified::production::EXPR_STMT) {
+        let value: i32 = state_child(tree, node, EXPRESSION_CHILD);
+        if (value <= -1) {
+            return Unsupported;
+        }
+        return Expression(value);
+    }
+    if (kind == verified::production::LET_STMT) {
+        let name: i32 = token_child(tree, node, LET_NAME_CHILD);
+        let type_node: i32 = state_child(tree, node, LET_TYPE_CHILD);
+        let init_node: i32 = state_child(tree, node, LET_INITIALIZER_CHILD);
+        let type_kind: i32 = verified::syntax_tree::production(tree, type_node);
+        let init_kind: i32 = verified::syntax_tree::production(tree, init_node);
+        if (name <= -1 || type_node <= -1 || init_node <= -1) {
+            return Unsupported;
+        }
+        let annotation: Annotation = Inferred;
+        if (type_kind == verified::production::LET_TYPE) {
+            let type_value: i32 = state_child(tree, type_node, OPTIONAL_VALUE_CHILD);
+            if (type_value <= -1) {
+                return Unsupported;
+            }
+            annotation = Explicit(type_value);
+        } else {
+            if (type_kind != verified::production::LET_TYPE_NONE) {
+                return Unsupported;
+            }
+        }
+        let initializer: Initializer = Uninitialized;
+        if (init_kind == verified::production::LET_INIT) {
+            let value: i32 = state_child(tree, init_node, OPTIONAL_VALUE_CHILD);
+            if (value <= -1) {
+                return Unsupported;
+            }
+            initializer = Initialized(value);
+        } else {
+            if (init_kind != verified::production::LET_INIT_NONE) {
+                return Unsupported;
+            }
+        }
+        let binding: Binding = Binding {
+            name: name,
+            annotation: annotation,
+            initializer: initializer,
+        };
+        return Let(binding);
+    }
+    if (kind == verified::production::BLOCK_STMT) {
+        let block: i32 = state_child(tree, node, BLOCK_CHILD);
+        if (block <= -1) {
+            return Unsupported;
+        }
+        return Block(block);
+    }
+    if (kind == verified::production::WHILE_STMT) {
+        let condition: i32 = state_child(tree, node, CONDITION_CHILD);
+        let body: i32 = state_child(tree, node, BODY_CHILD);
+        if (condition <= -1 || body <= -1) {
+            return Unsupported;
+        }
+        let loop: ConditionalBlock = ConditionalBlock {
+            condition: condition,
+            body: body,
+        };
+        return While(loop);
+    }
+    if (kind == verified::production::IF_STMT) {
+        let condition: i32 = state_child(tree, node, CONDITION_CHILD);
+        let then_block: i32 = state_child(tree, node, BODY_CHILD);
+        let optional: i32 = state_child(tree, node, ELSE_OPTIONAL_CHILD);
+        let else_kind: i32 = verified::syntax_tree::production(tree, optional);
+        if (condition <= -1 || then_block <= -1 || optional <= -1) {
+            return Unsupported;
+        }
+        let otherwise: ElseBranch = NoElse;
+        if (else_kind == verified::production::ELSE_STMT) {
+            let else_block: i32 = state_child(tree, optional, ELSE_BLOCK_CHILD);
+            if (else_block <= -1) {
+                return Unsupported;
+            }
+            otherwise = ElseBlock(else_block);
+        } else {
+            if (else_kind != verified::production::ELSE_NONE) {
+                return Unsupported;
+            }
+        }
+        let branch: Branch = Branch {
+            condition: condition,
+            then_block: then_block,
+            otherwise: otherwise,
+        };
+        return If(branch);
+    }
+    return Unsupported;
+}

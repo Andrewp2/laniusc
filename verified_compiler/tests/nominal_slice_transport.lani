@@ -1,0 +1,22 @@
+module app::main;
+
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn identity(items: [Pair]) -> [Pair] {
+    return items;
+}
+
+fn from_raw_parts(data: ptr, length: i32) -> [Pair] {
+    return slice_from_raw_parts(data, length);
+}
+
+fn nested_raw_parts(data: ptr, length: i32) -> [Pair] {
+    return identity(slice_from_raw_parts(data, length));
+}
+
+fn main() -> i32 {
+    return 0;
+}

@@ -1,0 +1,169 @@
+module verified::surface_declaration;
+
+import verified::parser;
+import verified::production;
+import verified::syntax_tree;
+
+// These slots are defined by grammar/lanius.bnf. Lowering consumes the
+// resulting declaration shapes, not the grammar's positional children.
+const NAME_CHILD: i32 = 1;
+const GENERICS_CHILD: i32 = 2;
+const BOUNDS_CHILD: i32 = 3;
+const NOMINAL_MEMBERS_CHILD: i32 = 5;
+const ALIAS_TARGET_CHILD: i32 = 5;
+const CONSTANT_TYPE_CHILD: i32 = 3;
+const CONSTANT_VALUE_CHILD: i32 = 5;
+const FUNCTION_PARAMETERS_CHILD: i32 = 4;
+const FUNCTION_RESULT_CHILD: i32 = 6;
+const FUNCTION_BOUNDS_CHILD: i32 = 7;
+const FUNCTION_BODY_CHILD: i32 = 8;
+const EXTERNAL_NAME_CHILD: i32 = 3;
+const EXTERNAL_GENERICS_CHILD: i32 = 4;
+const EXTERNAL_PARAMETERS_CHILD: i32 = 6;
+const EXTERNAL_RESULT_CHILD: i32 = 8;
+const EXTERNAL_BOUNDS_CHILD: i32 = 9;
+const PATH_CHILD: i32 = 1;
+const IMPORT_PATH_CHILD: i32 = 0;
+
+pub struct Nominal {
+    name: i32,
+    generics: i32,
+    bounds: i32,
+    members: i32,
+}
+
+pub struct AliasDeclaration {
+    name: i32,
+    generics: i32,
+    bounds: i32,
+    target: i32,
+}
+
+pub struct ConstantDeclaration {
+    name: i32,
+    value_type: i32,
+    value: i32,
+}
+
+pub struct Callable {
+    name: i32,
+    generics: i32,
+    bounds: i32,
+    parameters: i32,
+    result_type: i32,
+}
+
+pub struct ExternalCallable {
+    name: i32,
+    generics: i32,
+    bounds: i32,
+    parameters: i32,
+    result_type: i32,
+}
+
+pub struct PathDeclaration {
+    target: i32,
+}
+
+pub enum Declaration {
+    Structure(Nominal),
+    Enumeration(Nominal),
+    AliasItem(AliasDeclaration),
+    Constant(ConstantDeclaration),
+    Function(Callable),
+    External(ExternalCallable),
+    Module(PathDeclaration),
+    Import(PathDeclaration),
+    Unsupported,
+}
+
+fn state_child(tree: verified::syntax_tree::Tree, node: i32,
+    slot: i32) -> i32 {
+    return verified::syntax_tree::child(tree, node, slot,
+        verified::parser::StateChild);
+}
+
+fn token_child(tree: verified::syntax_tree::Tree, node: i32,
+    slot: i32) -> i32 {
+    return verified::syntax_tree::child(tree, node, slot,
+        verified::parser::TokenChild);
+}
+
+pub fn read(tree: verified::syntax_tree::Tree, node: i32) -> Declaration {
+    let kind: i32 = verified::syntax_tree::production(tree, node);
+    if (kind == verified::production::STRUCT
+        || kind == verified::production::ENUM) {
+        let nominal: Nominal = Nominal {
+            name: token_child(tree, node, NAME_CHILD),
+            generics: state_child(tree, node, GENERICS_CHILD),
+            bounds: state_child(tree, node, BOUNDS_CHILD),
+            members: state_child(tree, node, NOMINAL_MEMBERS_CHILD),
+        };
+        if (kind == verified::production::STRUCT) {
+            return Structure(nominal);
+        }
+        return Enumeration(nominal);
+    }
+    if (kind == verified::production::TYPE_ALIAS) {
+        let alias: AliasDeclaration = AliasDeclaration {
+            name: token_child(tree, node, NAME_CHILD),
+            generics: state_child(tree, node, GENERICS_CHILD),
+            bounds: state_child(tree, node, BOUNDS_CHILD),
+            target: state_child(tree, node, ALIAS_TARGET_CHILD),
+        };
+        return AliasItem(alias);
+    }
+    if (kind == verified::production::CONST) {
+        let constant: ConstantDeclaration = ConstantDeclaration {
+            name: token_child(tree, node, NAME_CHILD),
+            value_type: state_child(tree, node, CONSTANT_TYPE_CHILD),
+            value: state_child(tree, node, CONSTANT_VALUE_CHILD),
+        };
+        return Constant(constant);
+    }
+    if (kind == verified::production::FN) {
+        let callable: Callable = Callable {
+            name: token_child(tree, node, NAME_CHILD),
+            generics: state_child(tree, node, GENERICS_CHILD),
+            bounds: state_child(tree, node, FUNCTION_BOUNDS_CHILD),
+            parameters: state_child(tree, node, FUNCTION_PARAMETERS_CHILD),
+            result_type: state_child(tree, node, FUNCTION_RESULT_CHILD),
+        };
+        return Function(callable);
+    }
+    if (kind == verified::production::EXTERN_FN) {
+        let callable: ExternalCallable = ExternalCallable {
+            name: token_child(tree, node, EXTERNAL_NAME_CHILD),
+            generics: state_child(tree, node, EXTERNAL_GENERICS_CHILD),
+            bounds: state_child(tree, node, EXTERNAL_BOUNDS_CHILD),
+            parameters: state_child(tree, node, EXTERNAL_PARAMETERS_CHILD),
+            result_type: state_child(tree, node, EXTERNAL_RESULT_CHILD),
+        };
+        return External(callable);
+    }
+    if (kind == verified::production::MODULE) {
+        let target: i32 = state_child(tree, node, PATH_CHILD);
+        if (verified::syntax_tree::production(tree, target)
+            != verified::production::PATH) { return Unsupported; }
+        let path: PathDeclaration = PathDeclaration { target: target };
+        return Module(path);
+    }
+    if (kind == verified::production::IMPORT) {
+        let tail: i32 = state_child(tree, node, PATH_CHILD);
+        if (verified::syntax_tree::production(tree, tail)
+            != verified::production::IMPORT_PATH) { return Unsupported; }
+        let target: i32 = state_child(tree, tail, IMPORT_PATH_CHILD);
+        if (verified::syntax_tree::production(tree, target)
+            != verified::production::PATH) { return Unsupported; }
+        let path: PathDeclaration = PathDeclaration { target: target };
+        return Import(path);
+    }
+    return Unsupported;
+}
+
+pub fn function_body(tree: verified::syntax_tree::Tree,
+    declaration: i32) -> i32 {
+    if (verified::syntax_tree::production(tree, declaration)
+        != verified::production::FN) { return -1; }
+    return state_child(tree, declaration, FUNCTION_BODY_CHILD);
+}

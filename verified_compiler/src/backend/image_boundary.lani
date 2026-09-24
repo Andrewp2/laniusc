@@ -1,8 +1,11 @@
 module backend::image_boundary;
 
 import backend::image;
+import backend::program;
 import backend::compile;
 import backend::frame;
+import ir::body_catalog;
+import ir::program;
 import verified::host;
 
 pub const WORK_CAPACITY: i32 = backend::frame::HEADER
@@ -14,25 +17,16 @@ pub const FUNCTION_INPUT_CAPACITY: i32 = backend::compile::MAX_WORDS;
 
 // Raw-pointer entry avoids passing slice values across the application/backend
 // native boundary. The views are reconstructed only inside this module.
-pub fn compile_raw(input: ptr, length: i32, function_input: ptr,
-    work: ptr, output: ptr) -> i32 {
-    let input_view:[i32] = verified::host::i32_slice_from_raw_parts(input, length);
-    let function_view:[i32] = verified::host::i32_slice_from_raw_parts(
-        function_input, FUNCTION_INPUT_CAPACITY);
+pub fn compile_raw(work: ptr, output: ptr, body_memory: ptr,
+    body_capacity: i32,
+    native: ir::program::Storage) -> i32 {
     let workspace: backend::frame::Workspace =
         backend::frame::from_raw_parts(work, WORK_CAPACITY);
     let output_view:[i32] = verified::host::i32_slice_from_raw_parts(output,
         OUTPUT_CAPACITY);
-    return backend::image::compile(
-        backend::compile::region(input_view, length),
-        backend::compile::region(function_view, FUNCTION_INPUT_CAPACITY),
-        workspace,
-        backend::compile::region(output_view, OUTPUT_CAPACITY));
-}
-
-pub fn function_count_raw(work: ptr) -> i32 {
-    let workspace: backend::frame::Workspace =
-        backend::frame::from_raw_parts(work, WORK_CAPACITY);
-    let state: [backend::frame::State] = backend::frame::state_view(workspace);
-    return state[0].function_count;
+    let bodies: ir::body_catalog::Catalog =
+        ir::body_catalog::view_from_raw_parts(body_memory, body_capacity);
+    if (ir::body_catalog::length(bodies) <= 0) { return -1; }
+    return backend::image::compile(backend::program::typed(bodies, native),
+        workspace, backend::compile::region(output_view, OUTPUT_CAPACITY));
 }

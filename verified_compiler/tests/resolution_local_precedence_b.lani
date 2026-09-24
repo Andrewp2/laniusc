@@ -1,0 +1,3 @@
+module example::second;
+
+struct Thing { second: i32 }

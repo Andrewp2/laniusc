@@ -10,7 +10,8 @@ const CAPACITY: i32 = 4096;
 // Emit a comparison and retain the displacement-field offset for a failure
 // edge. All destinations are resolved after layout, using the production
 // patcher rather than precomputed instruction byte offsets.
-fn check_equal(output: [i32], cursor: i32, width: i32, left: i32, right: i32,
+fn check_equal(output: [i32], cursor: i32, width: i32,
+    left: x86::register::Register, right: x86::register::Register,
     fixups: [i32], index: i32) -> i32 {
     let next: i32 = x86::encode::binary(output, CAPACITY, cursor, width, x86::encode::Compare, left, right);
     next = x86::control::branch(output, CAPACITY, next, x86::control::NotEqual, 0);

@@ -281,7 +281,7 @@ example : (checkAuthenticated emittedExecutable emittedImage).isSome = true := b
 private def certificateDirectProgram : Program :=
   { functions := [directCaller, directCallee] }
 private def certificateDirectWords : List Int :=
-  [2, 64, 43, 0, 0, 2,
+  [3, 64, 43, 0, 0, 2,
    11, 1, 64, 43, 1, 0, 5, 10, 1, 14, 42, 0,
    11, 1, 64, 42, 1, 0, 5, 10, 1, 0, 1, 7]
 private def certificateDirectElf : List UInt8 :=

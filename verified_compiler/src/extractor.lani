@@ -1,6 +1,8 @@
 module app::main;
 import verified::extraction;
 import verified::parser;
+import verified::parse_tree;
+import verified::syntax_tree;
 import verified::byte_io;
 import verified::semantic_tokens;
 import verified::token;
@@ -21,7 +23,11 @@ const CORE_OPTION_LENGTH: i32 = 6;
 const LEAN_CORE_OPTION_LENGTH: i32 = 11;
 const MODE_SCRATCH_WORDS: i32 = 3;
 const TRANSPORT_WORD_CAPACITY: i32 = 262144;
-const OUTPUT_BYTE_CAPACITY: i32 = 67108864;
+const OUTPUT_BYTE_CAPACITY: i32 = 83886080;
+// Also holds the packed output after parsing; this exceeds the parser's
+// 64 MiB scratch requirement.
+const WORK_WORD_CAPACITY: i32 =
+    OUTPUT_BYTE_CAPACITY / verified::host::I32_BYTES;
 
 enum ExtractorMode {
     CompactMode,
@@ -122,9 +128,9 @@ fn main() -> i32 {
         return exit_code(InvalidArguments);
     }
     // `--core` retains its one-unit v3 certificate contract. `--lean-core`
-    // accepts the extractor's complete source closure and lowers it through
-    // the same aggregate bundle used by compiler.lani. Ordinary mode remains
-    // compact-only.
+    // uses the same aggregate bundle as compiler.lani; support for the full
+    // extractor closure still depends on completing typed Core lowering.
+    // Ordinary mode remains compact-only.
     let mode_memory: ptr = verified::host::alloc_i32(MODE_SCRATCH_WORDS);
     if (mode_memory == 0) { return exit_code(AllocationFailed); }
     let mode_scratch: [i32] = verified::host::i32_slice_from_raw_parts(
@@ -190,6 +196,11 @@ fn main() -> i32 {
         canonical = verified::host::i32_slice_from_raw_parts(allocation,
             verified::token::TOKEN_WORD_CAPACITY);
     }
+    let token_memory: ptr = verified::host::alloc(
+        lowering::program_transport::BUNDLE_TOKEN_CAP
+            * verified::token::RECORD_BYTES,
+        verified::token::ALIGNMENT);
+    if (token_memory == 0) { return exit_code(AllocationFailed); }
     let kinds:[i32];
     {
         let allocation: ptr = verified::host::alloc_i32(
@@ -201,10 +212,10 @@ fn main() -> i32 {
     let workspace:[i32];
     {
         let allocation: ptr = verified::host::alloc_i32(
-            verified::extraction::PARSER_WORK_WORD_CAPACITY);
+            WORK_WORD_CAPACITY);
         if (allocation == 0) { return exit_code(AllocationFailed); }
         workspace = verified::host::i32_slice_from_raw_parts(allocation,
-            verified::extraction::PARSER_WORK_WORD_CAPACITY);
+            WORK_WORD_CAPACITY);
     }
     let records:[i32];
     {
@@ -325,69 +336,89 @@ fn main() -> i32 {
                 grammar: verified::extraction::buffer(grammar,
                     verified::grammar::WORDS),
             };
-        let syntax_workspace: verified::extraction::SyntaxWorkspace =
-            verified::extraction::SyntaxWorkspace {
+        let unit: i32 = argument - first_argument;
+        let native_tokens: verified::token::TokenTable =
+            verified::token::from_raw_parts(token_memory,
+                lowering::program_transport::BUNDLE_TOKEN_CAP);
+        if (emits_core(mode)) {
+            native_tokens = lowering::program_transport::native_token_storage(
+                bundle, unit);
+        }
+        let parser_storage: verified::parser::WorkspaceStorage =
+            verified::parser::storage(
+                verified::host::i32_slice_data_ptr(workspace),
+                verified::extraction::PARSER_WORK_WORD_CAPACITY);
+        let artifact_token_words: i32 = 0;
+        if (!emits_lean_core(mode)) {
+            artifact_token_words = verified::token::TOKEN_WORD_CAPACITY;
+        }
+        let recognition_workspace:
+            verified::extraction::NativeRecognitionWorkspace =
+            verified::extraction::NativeRecognitionWorkspace {
+                tokens: native_tokens,
                 raw_tokens: verified::extraction::buffer(raw,
-                    verified::token::TOKEN_WORD_CAPACITY),
+                    artifact_token_words),
                 canonical_tokens: verified::extraction::buffer(canonical,
-                    verified::token::TOKEN_WORD_CAPACITY),
+                    artifact_token_words),
                 token_kinds: verified::extraction::buffer(kinds,
                     verified::extraction::TOKEN_KIND_CAPACITY),
-                parser_workspace: verified::parser::storage(
-                    verified::host::i32_slice_data_ptr(workspace),
-                    verified::extraction::PARSER_WORK_WORD_CAPACITY),
-                parse_records: verified::extraction::buffer(records,
-                    verified::extraction::PARSE_RECORD_WORD_CAPACITY),
-                node_offsets: verified::extraction::buffer(offsets,
-                    verified::extraction::PARSE_NODE_CAPACITY),
-                depth_limit: verified::extraction::DEFAULT_PARSE_DEPTH_LIMIT,
+                parser_workspace: parser_storage,
             };
-        let extracted: verified::extraction::SyntaxResult =
-            verified::extraction::extract_syntax(syntax_input,
-                syntax_workspace);
-        if (!verified::extraction::extraction_has_stage(extracted,
-                verified::extraction::Extracted)) {
+        let recognized: verified::extraction::SyntaxRecognition =
+            verified::extraction::recognize_native_syntax(syntax_input,
+                recognition_workspace);
+        if (!verified::extraction::recognition_succeeded(recognized)) {
             return exit_code(ExtractionFailed);
         }
-        let raw_count: i32 = verified::extraction::raw_count(extracted);
-        let tokens: i32 = verified::extraction::token_count(extracted);
-        let nodes: i32 = verified::extraction::node_count(extracted);
-        let record_words: i32 = verified::extraction::tree_words(extracted);
-        if (verified::semantic_tokens::collect_raw(
-            verified::host::i32_slice_data_ptr(grammar),
-            verified::host::i32_slice_data_ptr(kinds), tokens, nodes,
-            verified::host::i32_slice_data_ptr(records),
-            verified::host::i32_slice_data_ptr(offsets),
-            semantic_memory) != 0) {
-            return exit_code(SemanticFailed);
+        let raw_count: i32 = recognized.raw_count;
+        let tokens: i32 =
+            verified::extraction::recognition_token_count(recognized);
+        let tree: verified::syntax_tree::Tree =
+            verified::syntax_tree::materialize_native(
+                verified::extraction::recognition_parse(recognized),
+                parser_storage, tokens,
+                verified::extraction::DEFAULT_PARSE_DEPTH_LIMIT,
+                verified::extraction::PARSE_NODE_CAPACITY,
+                verified::extraction::PARSE_RECORD_WORD_CAPACITY);
+        if (tree.node_count <= 0) { return exit_code(ExtractionFailed); }
+        let nodes: i32 = tree.node_count;
+        let record_words: i32 = 0;
+        if (!emits_lean_core(mode)) {
+            let semantic_output:
+                verified::semantic_tokens::AssignmentBuffer =
+                verified::semantic_tokens::from_raw_parts(semantic_memory,
+                    verified::extraction::TOKEN_KIND_CAPACITY);
+            if (verified::semantic_tokens::collect_native(grammar,
+                    verified::grammar::WORDS, kinds, tokens,
+                    tree, semantic_output) != 0) {
+                return exit_code(SemanticFailed);
+            }
+            let serialized: verified::parse_tree::TreeResult =
+                verified::parse_tree::serialize_native(tree, tokens,
+                    verified::parse_tree::storage(records,
+                        verified::extraction::PARSE_RECORD_WORD_CAPACITY,
+                        offsets, verified::extraction::PARSE_NODE_CAPACITY),
+                    verified::extraction::DEFAULT_PARSE_DEPTH_LIMIT);
+            if (!verified::parse_tree::tree_succeeded(serialized)) {
+                return exit_code(ExtractionFailed);
+            }
+            record_words = verified::parse_tree::tree_words_used(serialized);
         }
         if (emits_core(mode)) {
-            let unit: i32 = argument - first_argument;
             let source_region: lowering::program_transport::WordRegion =
                 lowering::program_transport::region(source, source_length);
-            let canonical_tokens: lowering::program_transport::PackedTokenRows =
-                lowering::program_transport::PackedTokenRows {
-                    data: canonical,
-                    words: verified::token::TOKEN_WORD_CAPACITY,
-                    count: tokens,
-                };
-            let offset_region: lowering::program_transport::WordRegion =
-                lowering::program_transport::region(offsets, nodes);
-            let parsed_unit: lowering::program_transport::ParsedUnit =
-                lowering::program_transport::ParsedUnit {
+            let native_unit: lowering::program_transport::NativeUnit =
+                lowering::program_transport::NativeUnit {
                     source: source_region,
-                    canonical_tokens: canonical_tokens,
-                    parse_records: records,
-                    node_offsets: offset_region,
-                    record_words: record_words,
-                    raw_token_count: raw_count,
-                    path_length: path_length,
+                    token_count: tokens,
+                    tree: tree,
                 };
-            if (!lowering::program_transport::append_parsed_unit(
-                bundle, unit, parsed_unit)) {
+            if (!lowering::program_transport::append_native_unit(
+                bundle, unit, native_unit)) {
                 return exit_code(BundleFailed);
             }
-        } else {
+        }
+        if (!emits_lean_core(mode)) {
             let path_region: verified::compact_artifact_output::WordRegion =
                 verified::compact_artifact_output::WordRegion {
                     data: path, length: path_length };
@@ -432,13 +463,19 @@ fn main() -> i32 {
         argument += 1;
     }
     if (emits_core(mode)) {
-        transport_length = lowering::program_transport::lower_units(
+        let lowered: lowering::program_transport::LoweredProgram =
+            lowering::program_transport::lower_units(
             bundle,
-            verified::host::i32_slice_data_ptr(transport));
-        if (!lowering::transport::header_format_valid(transport,
+            verified::host::i32_slice_data_ptr(transport),
+            lowering::transport::NativeAndCore);
+        transport_length = lowered.transport_words;
+        if (!lowering::program_transport::succeeded(lowered.status)
+            || !lowering::transport::header_format_valid(transport,
                 transport_length)) {
-            if (transport_length <= -1) {
-                verified::byte_io::write_stderr_natural(0 - transport_length);
+            let error: i32 = lowering::program_transport::error_code(
+                lowered.status);
+            if (error > 0) {
+                verified::byte_io::write_stderr_natural(error);
             }
             return exit_code(LoweringFailed);
         }
@@ -490,7 +527,7 @@ fn main() -> i32 {
         }
         output_length = certificate_length;
     }
-    // Extraction is complete, so its 64 MiB workspace can become the packed
+    // Extraction is complete, so its workspace can become the packed
     // byte buffer for one atomic logical host write.
     let output_words: i32 = verified::host::packed_words(output_length);
     let output_word: i32 = 0;

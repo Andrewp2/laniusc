@@ -3,6 +3,8 @@ import verified::extraction;
 import verified::host;
 import verified::token;
 import verified::parser;
+import verified::parse_tree;
+import verified::syntax_tree;
 import verified::parse_output;
 import verified::output;
 import verified::source_output;
@@ -10,6 +12,7 @@ import verified::semantic_tokens;
 import verified::semantic_token_output;
 import verified::syntax_artifact_output;
 import verified::canonical_tokens;
+import test_support::syntax_tree_decode;
 // Enough room for three typed lattice charts and the Earley states they own.
 const TEST_PARSER_WORK_WORDS: i32 = 128;
 fn main() -> i32 {
@@ -32,25 +35,43 @@ fn main() -> i32 {
         source: verified::extraction::buffer(source, 2),
         grammar: verified::extraction::buffer(grammar, 25),
     };
-    let buffers: verified::extraction::SyntaxWorkspace =
-        verified::extraction::SyntaxWorkspace {
+    let token_memory: ptr = verified::host::alloc(
+        2 * verified::token::RECORD_BYTES,
+        verified::token::ALIGNMENT);
+    if (token_memory == 0) { return 36; }
+    let tokens: verified::token::TokenTable =
+        verified::token::from_raw_parts(token_memory, 2);
+    let buffers: verified::extraction::NativeRecognitionWorkspace =
+        verified::extraction::NativeRecognitionWorkspace {
+        tokens: tokens,
         raw_tokens: verified::extraction::buffer(raw, 6),
         canonical_tokens: verified::extraction::buffer(canonical, 6),
         token_kinds: verified::extraction::buffer(kinds, 2),
         parser_workspace: parser_storage,
-        parse_records: verified::extraction::buffer(records, 8),
-        node_offsets: verified::extraction::buffer(offsets, 2),
-        depth_limit: 8,
     };
-    let extracted = verified::extraction::extract_syntax(input, buffers);
-    if (!verified::extraction::extraction_has_stage(extracted,
-            verified::extraction::Extracted)) {
-        return 160 + verified::extraction::extraction_detail(extracted);
+    let recognized: verified::extraction::SyntaxRecognition =
+        verified::extraction::recognize_native_syntax(input, buffers);
+    if (!verified::extraction::recognition_succeeded(recognized)) {
+        return 160 + verified::extraction::recognition_detail(recognized);
     }
-    if (verified::extraction::raw_count(extracted) != 2) { return 101; }
-    if (verified::extraction::token_count(extracted) != 1) { return 102; }
-    if (verified::extraction::node_count(extracted) != 1) { return 103; }
-    if (verified::extraction::tree_words(extracted) != 7) { return 104; }
+    let tree: verified::syntax_tree::Tree =
+        verified::syntax_tree::materialize_native(
+            verified::extraction::recognition_parse(recognized),
+            parser_storage, 1, 8, 2, 8);
+    let serialized: verified::parse_tree::TreeResult =
+        verified::parse_tree::serialize_native(tree, 1,
+            verified::parse_tree::storage(records, 8, offsets, 2), 8);
+    if (verified::extraction::recognition_raw_count(recognized) != 2) {
+        return 101;
+    }
+    if (verified::extraction::recognition_token_count(recognized) != 1) {
+        return 102;
+    }
+    if (tree.node_count != 1) { return 103; }
+    if (!verified::parse_tree::tree_succeeded(serialized)
+        || verified::parse_tree::tree_words_used(serialized) != 7) {
+        return 104;
+    }
     if (raw[3] != verified::token::kind_code(verified::token::Whitespace)
         || raw[4] != 1 || raw[5] != 2
         || canonical[0] != verified::token::kind_code(
@@ -159,23 +180,14 @@ fn main() -> i32 {
     let assignments: verified::semantic_tokens::AssignmentBuffer =
         verified::semantic_tokens::from_raw_parts(semantic_memory, 2);
     let semantic: [verified::semantic_tokens::Assignment] = assignments.data;
-    let semantic_input: verified::semantic_tokens::SemanticInput =
-        verified::semantic_tokens::SemanticInput {
-            grammar: grammar,
-            grammar_length: 25,
-            kinds: kinds,
-            token_count: 1,
-            records: records,
-            record_length: 8,
-            offsets: offsets,
-            node_count: 1,
-        };
-    if (verified::semantic_tokens::collect(semantic_input, assignments) != 0
+    if (verified::semantic_tokens::collect_native(grammar, 25, kinds, 1,
+            tree, assignments) != 0
         || semantic[0].inner != 0 || semantic[0].outer != -1) {
         return 23;
     }
     assignments.capacity = 0;
-    if (verified::semantic_tokens::collect(semantic_input, assignments) != -2) {
+    if (verified::semantic_tokens::collect_native(grammar, 25, kinds, 1,
+            tree, assignments) != -2) {
         return 24;
     }
     assignments.capacity = 2;
@@ -227,48 +239,59 @@ fn main() -> i32 {
         return 34;
     }
     buffers.raw_tokens = verified::extraction::buffer(raw, 3);
-    let no_space = verified::extraction::extract_syntax(input, buffers);
-    if (!verified::extraction::extraction_has_stage(no_space,
-        verified::extraction::LexingFailed)) {
+    let no_space = verified::extraction::recognize_native_syntax(input,
+        buffers);
+    if (!verified::extraction::recognition_has_stage(no_space,
+            verified::extraction::TokenStorageFull)) {
         return 3;
     }
     buffers.raw_tokens = verified::extraction::buffer(raw, 6);
-    buffers.canonical_tokens = verified::extraction::buffer(canonical, 3);
-    let no_canonical = verified::extraction::extract_syntax(input, buffers);
-    if (!verified::extraction::extraction_has_stage(no_canonical,
-        verified::extraction::TokenStorageFull)) {
+    buffers.canonical_tokens = verified::extraction::buffer(canonical, 2);
+    let no_canonical = verified::extraction::recognize_native_syntax(input,
+        buffers);
+    if (!verified::extraction::recognition_has_stage(no_canonical,
+            verified::extraction::TokenStorageFull)) {
         return 4;
     }
     let invalid:[i32; 1] =[96];
     input.source = verified::extraction::buffer(invalid, 1);
     buffers.canonical_tokens = verified::extraction::buffer(canonical, 6);
-    let bad_lex = verified::extraction::extract_syntax(input, buffers);
-    if (!verified::extraction::extraction_has_stage(bad_lex,
-        verified::extraction::LexingFailed) || verified::extraction::error_position(bad_lex) != 0) {
+    let bad_lex = verified::extraction::recognize_native_syntax(input,
+        buffers);
+    if (!verified::extraction::recognition_has_stage(bad_lex,
+            verified::extraction::LexingFailed)
+        || verified::extraction::recognition_error_position(bad_lex) != 0) {
         return 5;
     }
     let number:[i32; 1] =[49];
     input.source = verified::extraction::buffer(number, 1);
-    let rejected = verified::extraction::extract_syntax(input, buffers);
-    if (!verified::extraction::extraction_has_stage(rejected,
-        verified::extraction::ParsingFailed) || verified::extraction::extraction_detail(rejected) != verified::parser::stage_code(verified::parser::Rejected)) {
+    let rejected = verified::extraction::recognize_native_syntax(input,
+        buffers);
+    if (!verified::extraction::recognition_has_stage(rejected,
+            verified::extraction::ParsingFailed)
+        || verified::extraction::recognition_detail(rejected)
+            != verified::parser::stage_code(
+            verified::parser::Rejected)) {
         return 6;
     }
     input.source = verified::extraction::buffer(source, 2);
-    buffers.parse_records = verified::extraction::buffer(records, 6);
-    let no_tree = verified::extraction::extract_syntax(input, buffers);
-    if (!verified::extraction::extraction_has_stage(no_tree,
-        verified::extraction::TreeMaterializationFailed)) {
+    let restored = verified::extraction::recognize_native_syntax(input,
+        buffers);
+    let restored_tree = verified::syntax_tree::materialize_native(
+        verified::extraction::recognition_parse(restored),
+        parser_storage, 1, 8, 2, 8);
+    let no_tree = verified::parse_tree::serialize_native(restored_tree, 1,
+        verified::parse_tree::storage(records, 6, offsets, 2), 8);
+    if (verified::parse_tree::tree_succeeded(no_tree)) {
         return 7;
     }
     // Keyword retagging must happen between raw emission and parsing.
     let keyword:[i32; 2] =[102, 110];
     grammar[17] = verified::token::kind_code(verified::token::FnKeyword);
     input.source = verified::extraction::buffer(keyword, 2);
-    buffers.parse_records = verified::extraction::buffer(records, 8);
-    let retagged = verified::extraction::extract_syntax(input, buffers);
-    if (!verified::extraction::extraction_has_stage(retagged,
-        verified::extraction::Extracted)
+    let retagged = verified::extraction::recognize_native_syntax(input,
+        buffers);
+    if (!verified::extraction::recognition_succeeded(retagged)
         || raw[0] != verified::token::kind_code(verified::token::Identifier)
         || canonical[0] != verified::token::kind_code(
             verified::token::FnKeyword)
@@ -277,9 +300,11 @@ fn main() -> i32 {
         return 8;
     }
     buffers.token_kinds = verified::extraction::buffer(kinds, 0);
-    let no_kinds = verified::extraction::extract_syntax(input, buffers);
-    if (!verified::extraction::extraction_has_stage(no_kinds,
-        verified::extraction::TokenStorageFull) || verified::extraction::extraction_detail(no_kinds) != 1) {
+    let no_kinds = verified::extraction::recognize_native_syntax(input,
+        buffers);
+    if (!verified::extraction::recognition_has_stage(no_kinds,
+            verified::extraction::TokenStorageFull)
+        || verified::extraction::recognition_detail(no_kinds) != 1) {
         return 9;
     }
     let split_grammar:[i32; 26] =[1, 1, 1, 1, 0, 44, 13, 17, 18, 19, 20, 21, 2, 23, 24, 25, 1, 13, 0, 0, 2, 0, 0, 0, 1, 0,];
@@ -289,11 +314,17 @@ fn main() -> i32 {
     input.grammar = verified::extraction::buffer(split_grammar, 26);
     buffers.token_kinds = verified::extraction::buffer(kinds, 2);
     buffers.parser_workspace = parser_storage;
-    buffers.parse_records = verified::extraction::buffer(split_records, 10);
-    let split = verified::extraction::extract_syntax(input, buffers);
-    if (!verified::extraction::extraction_has_stage(split,
-        verified::extraction::Extracted)
-        || verified::extraction::token_count(split) != 1
+    let split = verified::extraction::recognize_native_syntax(input,
+        buffers);
+    let split_tree: verified::syntax_tree::Tree =
+        verified::syntax_tree::materialize_native(
+        verified::extraction::recognition_parse(split),
+        parser_storage, 1, 8, 2, 10);
+    let split_result = verified::parse_tree::serialize_native(split_tree, 1,
+        verified::parse_tree::storage(split_records, 10, offsets, 2), 8);
+    if (!verified::extraction::recognition_succeeded(split)
+        || !verified::parse_tree::tree_succeeded(split_result)
+        || verified::extraction::recognition_token_count(split) != 1
         || canonical[0] != verified::token::kind_code(
             verified::token::ShiftRight)
         || canonical[2] != 2 || split_records[3] != 2
@@ -301,27 +332,14 @@ fn main() -> i32 {
         || split_records[6] != 0 || split_records[9] != 0) {
         return 10;
     }
-    let split_semantic_input: verified::semantic_tokens::SemanticInput =
-        verified::semantic_tokens::SemanticInput {
-            grammar: split_grammar,
-            grammar_length: 26,
-            kinds: kinds,
-            token_count: 1,
-            records: split_records,
-            record_length: 10,
-            offsets: offsets,
-            node_count: 1,
-        };
     assignments.capacity = 2;
-    if (verified::semantic_tokens::collect(split_semantic_input,
-            assignments) != 0 || semantic[0].inner != 0
-            || semantic[0].outer != 0) {
-        return 25;
-    }
-    split_records[3] = 1;
-    split_records[2] = 1;
-    if (verified::semantic_tokens::collect(split_semantic_input,
-            assignments) != -1) {
+    if (verified::semantic_tokens::collect_native(split_grammar, 26, kinds,
+            1, split_tree, assignments) != 0 || semantic[0].inner != 0
+            || semantic[0].outer != 0) { return 25; }
+    let split_nodes: [verified::syntax_tree::Node] = split_tree.nodes;
+    split_nodes[0].end = 1;
+    if (verified::semantic_tokens::collect_native(split_grammar, 26, kinds,
+            1, split_tree, assignments) != -1) {
         return 26;
     }
     // Outer semantic kind 1 is visited first (in the child node); the inner
@@ -330,19 +348,12 @@ fn main() -> i32 {
     let nested_records:[i32; 17] =[0, 1, 2, 1, 1, 0, 1, 0, 0, 2, 2, 1, 0, 0, 2, 0, -1,];
     offsets[0] = 0;
     offsets[1] = 7;
-    let nested_semantic_input: verified::semantic_tokens::SemanticInput =
-        verified::semantic_tokens::SemanticInput {
-            grammar: nested_grammar,
-            grammar_length: 19,
-            kinds: kinds,
-            token_count: 1,
-            records: nested_records,
-            record_length: 17,
-            offsets: offsets,
-            node_count: 2,
-        };
-    if (verified::semantic_tokens::collect(nested_semantic_input,
-            assignments) != 0 || semantic[0].inner != 0
+    let nested_tree: verified::syntax_tree::Tree =
+        test_support::syntax_tree_decode::decode(nested_records, 17,
+            offsets, 2, 1);
+    if (verified::semantic_tokens::collect_native(nested_grammar, 19,
+            kinds, 1, nested_tree, assignments) != 0
+        || semantic[0].inner != 0
             || semantic[0].outer != 1) {
         return 27;
     }
@@ -377,13 +388,12 @@ fn main() -> i32 {
     let struct_keyword:[i32; 6] =[115, 116, 114, 117, 99, 116];
     let struct_prefix:[i32; 7] =[115, 116, 114, 117, 99, 116, 115];
     let continue_keyword:[i32; 8] =[99, 111, 110, 116, 105, 110, 117, 101];
-    if (verified::canonical_tokens::keyword_kind(struct_keyword, 0, 6)
-            != verified::token::kind_code(verified::token::StructKeyword)
-        || verified::canonical_tokens::keyword_kind(struct_prefix, 0, 7)
-            != verified::token::kind_code(verified::token::Identifier)
-        || verified::canonical_tokens::keyword_kind(continue_keyword, 0, 8)
-            != verified::token::kind_code(
-                verified::token::ContinueKeyword)) {
+    if (verified::canonical_tokens::keyword_token(struct_keyword, 0, 6)
+            != verified::token::StructKeyword
+        || verified::canonical_tokens::keyword_token(struct_prefix, 0, 7)
+            != verified::token::Identifier
+        || verified::canonical_tokens::keyword_token(continue_keyword, 0, 8)
+            != verified::token::ContinueKeyword) {
         return 35;
     }
     return 0;

@@ -56,7 +56,11 @@ uint local_payload_word_count(uint type_node, uint hir_count, out bool supported
     supported = type_node < hir_count;
     if (!supported) return 0u;
     uint words = semantic_aggregate_word_count_by_hir[type_node];
-    if (words != 0u) return words;
+    if (words != 0u)
+    {
+        supported = words != LIR_INVALID;
+        return supported ? words : 0u;
+    }
     uint array_length = semantic_array_length_by_hir[type_node];
     if (array_length != LIR_INVALID) return array_length;
 
@@ -79,15 +83,17 @@ uint local_payload_word_count(uint type_node, uint hir_count, out bool supported
     if (compact_hir_core[declaration].kind == HIR_STRUCT_ITEM)
     {
         words = semantic_struct_word_count_by_hir[declaration];
-        supported = words != 0u;
-        return words;
+        supported = words != 0u && words != LIR_INVALID;
+        return supported ? words : 0u;
     }
-    // Nested enum payload layouts need the enum-layout fixed point rather
-    // than silently treating an aggregate as one scalar word.
+    // The bounded aggregate-layout fixed point has already run before
+    // function scattering. Use its checked enum width for an enum-valued
+    // payload instead of dropping the enclosing function's result layout.
     if (compact_hir_core[declaration].kind == HIR_ENUM_ITEM)
     {
-        supported = false;
-        return 0u;
+        words = semantic_struct_word_count_by_hir[declaration];
+        supported = words != 0u && words != LIR_INVALID;
+        return supported ? words : 0u;
     }
     return 1u;
 }

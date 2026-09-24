@@ -1,5 +1,8 @@
 module app::main;
+
+import test_support::syntax_tree_decode;
 import lowering::allocation;
+import ir::type_ref;
 import lowering::aliases;
 import lowering::declarations;
 import lowering::signatures;
@@ -90,7 +93,6 @@ fn main() -> i32 {
         ALLOCATION_WORDS * verified::host::I32_BYTES,
         lowering::allocation::ALIGNMENT);
     let source_memory: ptr = verified::host::alloc(72, 4);
-    let token_memory: ptr = verified::host::alloc(48, 4);
     let native_token_memory: ptr = verified::host::alloc(
         4 * verified::token::RECORD_BYTES, verified::token::ALIGNMENT);
     let record_memory: ptr = verified::host::alloc(2240, 4);
@@ -101,7 +103,9 @@ fn main() -> i32 {
     let resolution_memory: ptr = verified::host::alloc(
         lowering::types::RESOLUTION_RECORD_BYTES,
         lowering::types::RESOLUTION_ALIGNMENT);
-    let type_output_memory: ptr = verified::host::alloc(256, 4);
+    let type_output_memory: ptr = verified::host::alloc(
+        lowering::types::result_allocation_bytes(64),
+        lowering::types::RESULT_ALIGNMENT);
     let arena_scratch_memory: ptr = verified::host::alloc(
         verified::surface_type::allocation_bytes(7),
         verified::surface_type::ALIGNMENT);
@@ -126,7 +130,7 @@ fn main() -> i32 {
     let cursor_memory: ptr = verified::host::alloc(
         lowering::signature_index::WRITER_BYTES,
         lowering::signature_index::ALIGNMENT);
-    if (descriptor_memory == 0 || context_memory == 0 || declaration_memory == 0 || allocated_memory == 0 || source_memory == 0 || token_memory == 0 || native_token_memory == 0 || record_memory == 0 || offsets_memory == 0 || tree_memory == 0 || resolution_memory == 0 || type_output_memory == 0 || arena_scratch_memory == 0 || alias_path_memory == 0 || resolution_scratch_memory == 0 || declaration_scratch_memory == 0 || allocation_scratch_memory == 0 || index_memory == 0 || cursor_memory == 0) {
+    if (descriptor_memory == 0 || context_memory == 0 || declaration_memory == 0 || allocated_memory == 0 || source_memory == 0 || native_token_memory == 0 || record_memory == 0 || offsets_memory == 0 || tree_memory == 0 || resolution_memory == 0 || type_output_memory == 0 || arena_scratch_memory == 0 || alias_path_memory == 0 || resolution_scratch_memory == 0 || declaration_scratch_memory == 0 || allocation_scratch_memory == 0 || index_memory == 0 || cursor_memory == 0) {
         return 1;
     }
     let descriptor_table: lowering::declarations::Catalog =
@@ -138,7 +142,9 @@ fn main() -> i32 {
     let allocated: lowering::allocation::Table =
         lowering::allocation::from_raw_parts(allocated_memory, 4);
     let source_catalog:[i32] = verified::host::i32_slice_from_raw_parts(source_memory, 18);
-    let token_catalog:[i32] = verified::host::i32_slice_from_raw_parts(token_memory, 12);
+    let token_table: verified::token::TokenTable =
+        verified::token::from_raw_parts(native_token_memory, 4);
+    let token_rows: [verified::token::TokenRow] = token_table.data;
     let record_catalog:[i32] = verified::host::i32_slice_from_raw_parts(record_memory, 560);
     let offsets_catalog:[i32] = verified::host::i32_slice_from_raw_parts(offsets_memory, 20);
     let tree_catalog: verified::syntax_tree::Catalog =
@@ -147,7 +153,8 @@ fn main() -> i32 {
     let resolution_catalog: lowering::types::ResolutionTable =
         lowering::types::from_raw_parts(resolution_memory, 0,
             lowering::types::IdentifierToken);
-    let type_output:[i32] = verified::host::i32_slice_from_raw_parts(type_output_memory, 64);
+    let type_output: lowering::types::Results =
+        lowering::types::results_from_raw_parts(type_output_memory, 64);
     let type_arena_scratch: verified::surface_type::TypeArena =
         verified::surface_type::from_raw_parts(arena_scratch_memory, 7);
     let alias_path_scratch: [i32] =
@@ -197,20 +204,20 @@ fn main() -> i32 {
         source_catalog[source_base + 6] = 112;
         source_catalog[source_base + 7] = 104;
         source_catalog[source_base + 8] = 97;
-        let token_base: i32 = unit * 6;
-        token_catalog[token_base] = 1;
-        token_catalog[token_base + 1] = 0;
-        token_catalog[token_base + 2] = 3;
-        token_catalog[token_base + 3] = 1;
-        token_catalog[token_base + 4] = 4;
-        token_catalog[token_base + 5] = 9;
+        let token_base: i32 = unit * 2;
+        token_rows[token_base] = verified::token::TokenRow {
+            kind: verified::token::Identifier, start: 0, finish: 3,
+        };
+        token_rows[token_base + 1] = verified::token::TokenRow {
+            kind: verified::token::Identifier, start: 4, finish: 9,
+        };
         make_tree(record_catalog, offsets_catalog, unit * 280, unit * 10);
         let unit_records: [i32] = verified::host::i32_slice_from_raw_parts(
             record_memory + unit * 280 * verified::host::I32_BYTES, 280);
         let unit_offsets: [i32] = verified::host::i32_slice_from_raw_parts(
             offsets_memory + unit * 10 * verified::host::I32_BYTES, 10);
         let decoded: verified::syntax_tree::Tree =
-            verified::syntax_tree::decode(unit_records, 280,
+            test_support::syntax_tree_decode::decode(unit_records, 280,
                 unit_offsets, 10, 2);
         if (decoded.node_count != 10) { return 42 + unit; }
         trees[unit] = decoded;
@@ -254,10 +261,6 @@ fn main() -> i32 {
             lowering::allocation::table_row(allocated, 1)) != 0) { return 25; }
     if (lowering::allocation::row_core_id(
             lowering::allocation::table_row(allocated, 3)) != 1) { return 26; }
-    let token_table: verified::token::TokenTable =
-        verified::token::from_raw_parts(native_token_memory, 4);
-    if (!verified::token::decode_packed(token_catalog, 12, 4,
-            token_table, 0)) { return 1; }
     let inputs: lowering::signature_producer::SignatureUnitInputs =
         lowering::signature_producer::SignatureUnitInputs {
             unit_count: 2,
@@ -282,7 +285,7 @@ fn main() -> i32 {
         lowering::signature_producer::SignatureUnitWorkspace {
             alias_path_scratch: lowering::signature_producer::region(
                 alias_path_scratch, 16),
-            type_output: lowering::signature_producer::region(type_output, 64),
+            type_output: type_output,
             type_arena: type_arena_scratch,
             resolutions: resolution_scratch,
             declarations: declaration_scratch,
@@ -300,8 +303,8 @@ fn main() -> i32 {
             lowering::signatures::InternalFunctionShape)
         || lowering::signatures::record_arity(
             lowering::signature_index::record_at(signatures, 0)) != 0
-        || lowering::signatures::record_result_type(
-            lowering::signature_index::record_at(signatures, 1)) != 1) {
+        || ir::type_ref::code(lowering::signatures::record_result_type(
+            lowering::signature_index::record_at(signatures, 1))) != 1) {
         return 3;
     }
     workspace.declarations = lowering::declarations::table_with_rows(

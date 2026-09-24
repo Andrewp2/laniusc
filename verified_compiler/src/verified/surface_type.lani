@@ -70,19 +70,8 @@ struct BuildContext {
     arena: TypeArena,
 }
 
-pub fn kind_code(kind: SurfaceTypeKind) -> i32 {
-    return match (kind) {
-        Segment -> 0,
-        Path -> 1,
-        PathType -> 2,
-        Array -> 3,
-        Slice -> 4,
-        Reference -> 5,
-    };
-}
-
 pub fn kind_is(actual: SurfaceTypeKind, expected: SurfaceTypeKind) -> bool {
-    return kind_code(actual) == kind_code(expected);
+    return actual == expected;
 }
 
 fn append(arena: TypeArena, kind: SurfaceTypeKind,

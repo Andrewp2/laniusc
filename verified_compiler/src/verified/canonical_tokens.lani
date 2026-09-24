@@ -3,10 +3,10 @@ module verified::canonical_tokens;
 import verified::token;
 import verified::host;
 
-pub fn is_trivia(kind: i32) -> bool {
-    return verified::token::kind_is(kind, verified::token::Whitespace)
-        || verified::token::kind_is(kind, verified::token::LineComment)
-        || verified::token::kind_is(kind, verified::token::BlockComment);
+pub fn is_trivia(kind: verified::token::TokenKind) -> bool {
+    return kind == verified::token::Whitespace
+        || kind == verified::token::LineComment
+        || kind == verified::token::BlockComment;
 }
 
 fn matches_ascii(source: [i32], start: i32, length: i32,
@@ -29,153 +29,131 @@ fn matches_ascii(source: [i32], start: i32, length: i32,
 // Retags an identifier span only when its complete spelling is a keyword.
 // Length dispatch prevents prefix matches such as `letter` becoming `let` and
 // limits the number of literal comparisons performed for each identifier.
-pub fn keyword_kind(
+pub fn keyword_token(
     source: [i32],
     start: i32,
     end: i32,
-) -> i32 {
+) -> verified::token::TokenKind {
     let length: i32 = end - start;
     if (length == 2) {
         if (matches_ascii(source, start, length, "fn")) {
-            return verified::token::kind_code(verified::token::FnKeyword);
+            return verified::token::FnKeyword;
         }
         if (matches_ascii(source, start, length, "if")) {
-            return verified::token::kind_code(verified::token::IfKeyword);
+            return verified::token::IfKeyword;
         }
         if (matches_ascii(source, start, length, "in")) {
-            return verified::token::kind_code(verified::token::InKeyword);
+            return verified::token::InKeyword;
         }
     }
     if (length == 3) {
         if (matches_ascii(source, start, length, "pub")) {
-            return verified::token::kind_code(verified::token::PubKeyword);
+            return verified::token::PubKeyword;
         }
         if (matches_ascii(source, start, length, "let")) {
-            return verified::token::kind_code(verified::token::LetKeyword);
+            return verified::token::LetKeyword;
         }
         if (matches_ascii(source, start, length, "for")) {
-            return verified::token::kind_code(verified::token::ForKeyword);
+            return verified::token::ForKeyword;
         }
     }
     if (length == 4) {
         if (matches_ascii(source, start, length, "else")) {
-            return verified::token::kind_code(verified::token::ElseKeyword);
+            return verified::token::ElseKeyword;
         }
         if (matches_ascii(source, start, length, "true")) {
-            return verified::token::kind_code(verified::token::TrueKeyword);
+            return verified::token::TrueKeyword;
         }
         if (matches_ascii(source, start, length, "enum")) {
-            return verified::token::kind_code(verified::token::EnumKeyword);
+            return verified::token::EnumKeyword;
         }
         if (matches_ascii(source, start, length, "impl")) {
-            return verified::token::kind_code(verified::token::ImplKeyword);
+            return verified::token::ImplKeyword;
         }
         if (matches_ascii(source, start, length, "self")) {
-            return verified::token::kind_code(verified::token::SelfValueKeyword);
+            return verified::token::SelfValueKeyword;
         }
         if (matches_ascii(source, start, length, "type")) {
-            return verified::token::kind_code(verified::token::TypeKeyword);
+            return verified::token::TypeKeyword;
         }
     }
     if (length == 5) {
         if (matches_ascii(source, start, length, "false")) {
-            return verified::token::kind_code(verified::token::FalseKeyword);
+            return verified::token::FalseKeyword;
         }
         if (matches_ascii(source, start, length, "const")) {
-            return verified::token::kind_code(verified::token::ConstKeyword);
+            return verified::token::ConstKeyword;
         }
         if (matches_ascii(source, start, length, "match")) {
-            return verified::token::kind_code(verified::token::MatchKeyword);
+            return verified::token::MatchKeyword;
         }
         if (matches_ascii(source, start, length, "trait")) {
-            return verified::token::kind_code(verified::token::TraitKeyword);
+            return verified::token::TraitKeyword;
         }
         if (matches_ascii(source, start, length, "where")) {
-            return verified::token::kind_code(verified::token::WhereKeyword);
+            return verified::token::WhereKeyword;
         }
         if (matches_ascii(source, start, length, "while")) {
-            return verified::token::kind_code(verified::token::WhileKeyword);
+            return verified::token::WhileKeyword;
         }
         if (matches_ascii(source, start, length, "break")) {
-            return verified::token::kind_code(verified::token::BreakKeyword);
+            return verified::token::BreakKeyword;
         }
     }
     if (length == 6) {
         if (matches_ascii(source, start, length, "return")) {
-            return verified::token::kind_code(verified::token::ReturnKeyword);
+            return verified::token::ReturnKeyword;
         }
         if (matches_ascii(source, start, length, "struct")) {
-            return verified::token::kind_code(verified::token::StructKeyword);
+            return verified::token::StructKeyword;
         }
         if (matches_ascii(source, start, length, "extern")) {
-            return verified::token::kind_code(verified::token::ExternKeyword);
+            return verified::token::ExternKeyword;
         }
         if (matches_ascii(source, start, length, "import")) {
-            return verified::token::kind_code(verified::token::ImportKeyword);
+            return verified::token::ImportKeyword;
         }
         if (matches_ascii(source, start, length, "module")) {
-            return verified::token::kind_code(verified::token::ModuleKeyword);
+            return verified::token::ModuleKeyword;
         }
     }
     if (length == 8) {
         if (matches_ascii(source, start, length, "continue")) {
-            return verified::token::kind_code(verified::token::ContinueKeyword);
+            return verified::token::ContinueKeyword;
         }
     }
-    return verified::token::kind_code(verified::token::Identifier);
+    return verified::token::Identifier;
 }
 
-pub fn canonical_kind(
-    source: [i32],
-    raw_kind: i32,
-    start: i32,
-    end: i32,
-) -> i32 {
-    if (verified::token::kind_is(raw_kind, verified::token::Identifier)) {
-        return keyword_kind(source, start, end);
-    }
-    return raw_kind;
-}
-
-// Compacts non-trivia records in place. Each input and output row is
-// `{ kind, start, exclusive_end }`; output never overtakes unread input.
-pub fn canonicalize_in_place(
-    source: [i32],
-    records: [i32],
-    raw_token_count: i32,
-) -> i32 {
+// Each row keeps its kind and span together; only artifact output packs
+// the canonical stream into triples.
+pub fn canonicalize_rows_in_place(source: [i32],
+    table: verified::token::TokenTable, raw_token_count: i32) -> i32 {
+    let rows: [verified::token::TokenRow] = table.data;
     let input_index: i32 = 0;
     let output_count: i32 = 0;
     while (input_index < raw_token_count) {
-        let input_row: i32 = input_index * verified::token::ROW_WORDS;
-        let kind: i32 = records[input_row + verified::token::KIND_FIELD];
-        if (!is_trivia(kind)) {
-            let start: i32 = records[input_row + verified::token::START_FIELD];
-            let end: i32 = records[input_row + verified::token::END_FIELD];
-            let output_row: i32 = output_count * verified::token::ROW_WORDS;
-            records[output_row + verified::token::KIND_FIELD]
-                = canonical_kind(source, kind, start, end);
-            records[output_row + verified::token::START_FIELD] = start;
-            records[output_row + verified::token::END_FIELD] = end;
+        let row: verified::token::TokenRow = rows[input_index];
+        if (!is_trivia(row.kind)) {
+            let kind: verified::token::TokenKind = row.kind;
+            if (kind == verified::token::Identifier) {
+                kind = keyword_token(source, row.start, row.finish);
+            }
+            rows[output_count] = verified::token::TokenRow {
+                kind: kind,
+                start: row.start, finish: row.finish,
+            };
             output_count += 1;
         }
         input_index += 1;
     }
     let range_index: i32 = 0;
     while (range_index + 1 < output_count) {
-        let current_row: i32 = range_index * verified::token::ROW_WORDS;
-        let next_row: i32 = current_row + verified::token::ROW_WORDS;
-        if (verified::token::kind_is(
-                records[current_row + verified::token::KIND_FIELD],
-                verified::token::DotDot)
-            && verified::token::kind_is(
-                records[next_row + verified::token::KIND_FIELD],
-                verified::token::Assign)
-            && records[next_row + verified::token::START_FIELD]
-                == records[current_row + verified::token::END_FIELD]) {
-            records[current_row + verified::token::KIND_FIELD]
-                = verified::token::kind_code(
-                verified::token::DotDotEqual);
+        if (rows[range_index].kind == verified::token::DotDot
+            && rows[range_index + 1].kind == verified::token::Assign
+            && rows[range_index + 1].start
+                == rows[range_index].finish) {
+            rows[range_index].kind = verified::token::DotDotEqual;
         }
         range_index += 1;
     }

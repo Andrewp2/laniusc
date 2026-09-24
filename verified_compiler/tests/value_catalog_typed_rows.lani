@@ -17,8 +17,8 @@ fn main() -> i32 {
         lowering::value_catalog::from_raw_parts(destination_memory, 1);
     let invalid: lowering::value_catalog::ValueBinding =
         lowering::value_catalog::binding(5,
-            lowering::value_catalog::InvalidBinding,
-            lowering::value_catalog::InvalidScope, 7, -1, -1);
+            lowering::value_catalog::InvalidScope,
+            lowering::value_catalog::InvalidTarget);
     if (lowering::value_catalog::write_binding(source, 0, invalid) != 1) {
         return 1;
     }
@@ -33,10 +33,14 @@ fn main() -> i32 {
         || lowering::value_catalog::binding_is_scope(checked,
             lowering::value_catalog::ImportedBinding)) { return 1; }
 
+    let variant_target: lowering::value_catalog::VariantTarget =
+        lowering::value_catalog::VariantTarget {
+            type_id: 7, ordinal: 2, field_count: 1,
+        };
     let valid: lowering::value_catalog::ValueBinding =
         lowering::value_catalog::binding(5,
-            lowering::value_catalog::EnumVariantBinding,
-            lowering::value_catalog::ImportedBinding, 7, 2, 1);
+            lowering::value_catalog::ImportedBinding,
+            lowering::value_catalog::Variant(variant_target));
     if (lowering::value_catalog::write_binding(source, 1, valid) != 2
         || lowering::value_catalog::write_binding(source, 2, valid) != -1
         || !lowering::value_catalog::copy_rows(source, 1, 1,
@@ -47,13 +51,16 @@ fn main() -> i32 {
     }
     let decoded: lowering::value_catalog::ValueBinding =
         lowering::value_catalog::read_binding(destination, 0);
+    let correct_variant: bool = match (decoded.target) {
+        lowering::value_catalog::Variant(value) -> value.type_id == 7
+            && value.ordinal == 2 && value.field_count == 1,
+        _ -> false,
+    };
     if (!lowering::value_catalog::binding_is_kind(decoded,
             lowering::value_catalog::EnumVariantBinding)
         || !lowering::value_catalog::binding_is_scope(decoded,
             lowering::value_catalog::ImportedBinding)
         || lowering::value_catalog::binding_token(decoded) != 5
-        || lowering::value_catalog::binding_id(decoded) != 7
-        || lowering::value_catalog::binding_member(decoded) != 2
-        || lowering::value_catalog::binding_arity(decoded) != 1) { return 3; }
+        || !correct_variant) { return 3; }
     return 0;
 }

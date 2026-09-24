@@ -2363,6 +2363,96 @@ fn main() -> i32 {
 }
 
 #[test]
+fn x86_executes_nominal_struct_enum_payloads() {
+    assert_source_exit(
+        "nominal struct enum payload",
+        include_str!("../verified_compiler/tests/nominal_enum_payload.lani"),
+        0,
+    );
+    assert_source_exit(
+        "nominal struct then scalar enum payload",
+        include_str!("../verified_compiler/tests/nominal_enum_multi_payload.lani"),
+        0,
+    );
+    assert_source_exit(
+        "enum payload containing an enum field",
+        include_str!("../verified_compiler/tests/nominal_enum_nested_payload.lani"),
+        0,
+    );
+    assert_source_exit(
+        "enum payload containing another enum",
+        include_str!("../verified_compiler/tests/nominal_enum_nested_direct.lani"),
+        0,
+    );
+    assert_source_exit(
+        "nested enum payload across a function return",
+        include_str!("../verified_compiler/tests/nominal_enum_nested_return.lani"),
+        0,
+    );
+}
+
+#[test]
+fn x86_rejects_recursive_enum_value_layout() {
+    let source = include_str!("../verified_compiler/tests/nominal_enum_cycle.lani");
+    let result = common::run_gpu_codegen_with_timeout(
+        "recursive enum value layout",
+        move || pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(source)),
+    );
+    assert!(result.is_err(), "recursive by-value enum must not emit x86");
+}
+
+#[test]
+fn x86_executes_imported_enum_struct_payload_member_matches() {
+    let sources = [
+        r#"
+module helpers::events;
+
+pub struct Payload { value: i32, offset: i32 }
+pub enum Event { Empty, Data(Payload) }
+"#,
+        r#"
+module app::main;
+
+import helpers::events;
+
+struct Wrapper { event: helpers::events::Event }
+
+fn field(value: helpers::events::Event) -> i32 {
+    return match (value) {
+        helpers::events::Data(payload) -> payload.value,
+        _ -> -1,
+    };
+}
+
+fn main() -> i32 {
+    let payload: helpers::events::Payload =
+        helpers::events::Payload { value: 7, offset: 3 };
+    let event: helpers::events::Event = helpers::events::Data(payload);
+    if (field(event) != 7) { return 1; }
+    let wrapper: Wrapper = Wrapper { event: event };
+    return match (wrapper.event) {
+        helpers::events::Data(inner) -> inner.value + inner.offset - 10,
+        _ -> 2,
+    };
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "imported enum struct payload member matches",
+        move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
+    )
+    .expect("imported enum struct payload member matches should compile");
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "imported enum struct payload member matches",
+        "x86_imported_enum_struct_payload_member_matches",
+        &bytes,
+        0,
+    );
+}
+
+#[test]
 fn x86_executes_char_literals() {
     assert_source_exit(
         "char_literals",
@@ -2411,6 +2501,15 @@ fn main() -> i32 {
     return n;
 }
 "#, 3);
+}
+
+#[test]
+fn x86_executes_short_circuit_enum_comparison_as_scalar_bool() {
+    assert_source_exit(
+        "short_circuit_enum_comparison_as_scalar_bool",
+        include_str!("../verified_compiler/tests/gpu_enum_bool_or.lani"),
+        0,
+    );
 }
 
 #[test]

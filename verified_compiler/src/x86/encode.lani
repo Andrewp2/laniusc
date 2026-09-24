@@ -85,10 +85,13 @@ const DISP32_BYTES: i32 = 4;
 
 fn modrm_form(output: [i32], capacity: i32, cursor: i32,
     width: i32, opcode: i32, reg_field: i32,
-    rm: i32, byte_register: bool) -> i32 {
-    if (!x86::register::valid(reg_field) || !x86::register::valid(rm)
+    rm: x86::register::Register, byte_register: bool) -> i32 {
+    if (reg_field < 0 || reg_field >= x86::register::REGISTER_COUNT
+        || !x86::register::valid(rm)
         || !x86::register::width_valid(width)) { return -1; }
-    let rex_byte: i32 = x86::register::rex(width, reg_field, rm, byte_register);
+    let rm_code: i32 = x86::register::code(rm);
+    let rex_byte: i32 = x86::register::rex_extension(width,
+        reg_field, rm, byte_register);
     let size: i32 = 2;
     if (rex_byte != 0) { size += 1; }
     if (opcode > BYTE_MASK) { size += 1; }
@@ -102,63 +105,72 @@ fn modrm_form(output: [i32], capacity: i32, cursor: i32,
     output[next] = opcode & BYTE_MASK;
     output[next + x86::buffer::SECOND_BYTE] = MODRM_REGISTER_BASE
         + (reg_field % LEGACY_REGISTER_COUNT) * MODRM_REGISTER_FACTOR
-        + rm % LEGACY_REGISTER_COUNT;
+        + rm_code % LEGACY_REGISTER_COUNT;
     return next + 2;
 }
 
 pub fn register_form(output: [i32], capacity: i32, cursor: i32,
-    width: i32, opcode: i32, reg: i32,
-    rm: i32, byte_register: bool) -> i32 {
+    width: i32, opcode: i32, reg: x86::register::Register,
+    rm: x86::register::Register, byte_register: bool) -> i32 {
+    if (!x86::register::valid(reg)) { return -1; }
     return modrm_form(output, capacity, cursor, width, opcode,
-        reg, rm, byte_register);
+        x86::register::code(reg), rm, byte_register);
 }
 
 // Intel group opcodes encode an operation selector in the ModRM reg field.
 // Keep that architectural integer at this low-level boundary.
 pub fn extension_form(output: [i32], capacity: i32, cursor: i32,
     width: i32, opcode: i32, extension: i32,
-    rm: i32, byte_register: bool) -> i32 {
+    rm: x86::register::Register, byte_register: bool) -> i32 {
     if (extension < 0 || extension >= LEGACY_REGISTER_COUNT) { return -1; }
     return modrm_form(output, capacity, cursor, width, opcode,
         extension, rm, byte_register);
 }
 
 pub fn move_register(output: [i32], capacity: i32, cursor: i32,
-    width: i32, destination: i32, source: i32) -> i32 {
+    width: i32, destination: x86::register::Register,
+    source: x86::register::Register) -> i32 {
     return register_form(output, capacity, cursor, width,
         MOVE_REGISTER_OPCODE, source, destination, false);
 }
 
 pub fn binary(output: [i32], capacity: i32, cursor: i32,
-    width: i32, operation: BinaryOperation, destination: i32, source: i32) -> i32 {
+    width: i32, operation: BinaryOperation,
+    destination: x86::register::Register,
+    source: x86::register::Register) -> i32 {
     if (!valid_binary_operation(operation)) { return -1; }
     return register_form(output, capacity, cursor, width,
         binary_opcode(operation), source, destination, false);
 }
 
 pub fn multiply(output: [i32], capacity: i32, cursor: i32,
-    width: i32, destination: i32, source: i32) -> i32 {
+    width: i32, destination: x86::register::Register,
+    source: x86::register::Register) -> i32 {
     return register_form(output, capacity, cursor, width,
         MULTIPLY_OPCODE, destination, source, false);
 }
 
 pub fn sign_extend_i32(output: [i32], capacity: i32, cursor: i32,
-    destination: i32, source: i32) -> i32 {
+    destination: x86::register::Register,
+    source: x86::register::Register) -> i32 {
     return register_form(output, capacity, cursor, x86::register::WIDTH_64,
         SIGN_EXTEND_I32_OPCODE, destination, source, false);
 }
 
 pub fn zero_extend_byte(output: [i32], capacity: i32, cursor: i32,
-    destination: i32, source: i32) -> i32 {
+    destination: x86::register::Register,
+    source: x86::register::Register) -> i32 {
     return register_form(output, capacity, cursor, x86::register::WIDTH_32,
         ZERO_EXTEND_BYTE_OPCODE, destination, source,
-        source >= x86::register::RSP);
+        x86::register::needs_byte_rex(source));
 }
 
 pub fn immediate(output: [i32], capacity: i32, cursor: i32,
-    width: i32, destination: i32, low: i32, high: i32) -> i32 {
+    width: i32, destination: x86::register::Register,
+    low: i32, high: i32) -> i32 {
     if (!x86::register::valid(destination) || !x86::register::width_valid(width)) { return -1; }
-    let rex_byte: i32 = x86::register::rex(width, 0, destination, false);
+    let rex_byte: i32 = x86::register::rex(width,
+        x86::register::RAX, destination, false);
     let size: i32 = 5;
     if (width == x86::register::WIDTH_64) { size += DISP32_BYTES; }
     if (rex_byte != 0) { size += 1; }
@@ -166,7 +178,7 @@ pub fn immediate(output: [i32], capacity: i32, cursor: i32,
     let next: i32 = cursor;
     if (rex_byte != 0) { output[next] = rex_byte; next += 1; }
     output[next] = IMMEDIATE_REGISTER_BASE
-        + destination % LEGACY_REGISTER_COUNT;
+        + x86::register::code(destination) % LEGACY_REGISTER_COUNT;
     next = x86::buffer::store_word(output, next + 1, low);
     if (width == x86::register::WIDTH_64) {
         next = x86::buffer::store_word(output, next, high);
@@ -177,13 +189,14 @@ pub fn immediate(output: [i32], capacity: i32, cursor: i32,
 // RIP-relative LEA uses mod=00,r/m=101 and a signed displacement from the
 // end of this seven-byte instruction (Intel SDM 2A, 2.2.1.6 and LEA).
 pub fn relative_address(output: [i32], capacity: i32, cursor: i32,
-    destination: i32, displacement: i32) -> i32 {
+    destination: x86::register::Register, displacement: i32) -> i32 {
     if (!x86::register::valid(destination) || !x86::buffer::fits(capacity, cursor, 7)) { return -1; }
+    let destination_code: i32 = x86::register::code(destination);
     output[cursor] = REX_W_PREFIX
-        + (destination / LEGACY_REGISTER_COUNT) * REX_REGISTER_FACTOR;
+        + (destination_code / LEGACY_REGISTER_COUNT) * REX_REGISTER_FACTOR;
     output[cursor + x86::buffer::SECOND_BYTE] = LEA_OPCODE;
     output[cursor + x86::buffer::THIRD_BYTE]
-        = (destination % LEGACY_REGISTER_COUNT)
+        = (destination_code % LEGACY_REGISTER_COUNT)
         * MODRM_REGISTER_FACTOR + RIP_RELATIVE_BASE;
     return x86::buffer::store_word(output,
         cursor + x86::buffer::FOURTH_BYTE, displacement);
@@ -194,8 +207,8 @@ pub fn relative_address(output: [i32], capacity: i32, cursor: i32,
 struct MemoryForm {
     width: i32,
     opcode: i32,
-    reg: i32,
-    base: i32,
+    reg: x86::register::Register,
+    base: x86::register::Register,
     displacement: i32,
     byte_register: bool,
 }
@@ -210,10 +223,10 @@ fn memory_form(output: [i32], capacity: i32, cursor: i32,
     let size: i32 = 6;
     if (rex_byte != 0) { size += 1; }
     if (form.opcode > BYTE_MASK) { size += 1; }
-    let register_code: i32 = form.reg;
-    let base_code: i32 = form.base;
+    let register_code: i32 = x86::register::code(form.reg);
+    let base_code: i32 = x86::register::code(form.base);
     if (base_code % LEGACY_REGISTER_COUNT
-        == x86::register::RSP) { size += 1; }
+        == x86::register::code(x86::register::RSP)) { size += 1; }
     if (!x86::buffer::fits(capacity, cursor, size)) { return -1; }
     let next: i32 = cursor;
     if (rex_byte != 0) { output[next] = rex_byte; next += 1; }
@@ -227,7 +240,7 @@ fn memory_form(output: [i32], capacity: i32, cursor: i32,
         + base_code % LEGACY_REGISTER_COUNT;
     next += 2;
     if (base_code % LEGACY_REGISTER_COUNT
-        == x86::register::RSP) {
+        == x86::register::code(x86::register::RSP)) {
         output[next] = SIB_NO_INDEX;
         next += 1;
     }
@@ -235,7 +248,8 @@ fn memory_form(output: [i32], capacity: i32, cursor: i32,
 }
 
 pub fn load(output: [i32], capacity: i32, cursor: i32, width: i32,
-    destination: i32, base: i32, displacement: i32) -> i32 {
+    destination: x86::register::Register,
+    base: x86::register::Register, displacement: i32) -> i32 {
     return memory_form(output, capacity, cursor, MemoryForm {
         width: width, opcode: LOAD_OPCODE,
         reg: destination, base: base,
@@ -243,7 +257,8 @@ pub fn load(output: [i32], capacity: i32, cursor: i32, width: i32,
 }
 
 pub fn store(output: [i32], capacity: i32, cursor: i32, width: i32,
-    source: i32, base: i32, displacement: i32) -> i32 {
+    source: x86::register::Register,
+    base: x86::register::Register, displacement: i32) -> i32 {
     return memory_form(output, capacity, cursor, MemoryForm {
         width: width, opcode: STORE_OPCODE,
         reg: source, base: base,
@@ -251,7 +266,8 @@ pub fn store(output: [i32], capacity: i32, cursor: i32, width: i32,
 }
 
 pub fn address(output: [i32], capacity: i32, cursor: i32,
-    destination: i32, base: i32, displacement: i32) -> i32 {
+    destination: x86::register::Register,
+    base: x86::register::Register, displacement: i32) -> i32 {
     return memory_form(output, capacity, cursor, MemoryForm {
         width: x86::register::WIDTH_64, opcode: LEA_OPCODE,
         reg: destination, base: base,
@@ -261,30 +277,35 @@ pub fn address(output: [i32], capacity: i32, cursor: i32,
 // LEA with a base, scaled index, and signed disp32. RSP cannot be an index;
 // R12 can, because REX.X distinguishes it from the no-index SIB encoding.
 pub fn indexed_address(output: [i32], capacity: i32, cursor: i32,
-    destination: i32, base: i32, index: i32,
+    destination: x86::register::Register,
+    base: x86::register::Register, index: x86::register::Register,
     scale_log2: i32, displacement: i32) -> i32 {
     if (!x86::register::valid(destination) || !x86::register::valid(base) ||
         !x86::register::valid(index) || index == x86::register::RSP ||
         scale_log2 <= -1 || scale_log2 > 3) { return -1; }
     if (!x86::buffer::fits(capacity, cursor, 8)) { return -1; }
+    let destination_code: i32 = x86::register::code(destination);
+    let base_code: i32 = x86::register::code(base);
+    let index_code: i32 = x86::register::code(index);
     let rex_byte: i32 = x86::register::rex(
         x86::register::WIDTH_64, destination, base, false);
-    if (index >= LEGACY_REGISTER_COUNT) { rex_byte += 2; }
+    if (index_code >= LEGACY_REGISTER_COUNT) { rex_byte += 2; }
     output[cursor] = rex_byte;
     output[cursor + x86::buffer::SECOND_BYTE] = LEA_OPCODE;
     output[cursor + x86::buffer::THIRD_BYTE]
         = MODRM_DISPLACEMENT_BASE + MODRM_SIB_BASE
-        + (destination % LEGACY_REGISTER_COUNT) * MODRM_REGISTER_FACTOR;
+        + (destination_code % LEGACY_REGISTER_COUNT) * MODRM_REGISTER_FACTOR;
     output[cursor + x86::buffer::FOURTH_BYTE]
         = scale_log2 * MODRM_SCALE_FACTOR
-        + (index % LEGACY_REGISTER_COUNT) * MODRM_REGISTER_FACTOR
-        + base % LEGACY_REGISTER_COUNT;
+        + (index_code % LEGACY_REGISTER_COUNT) * MODRM_REGISTER_FACTOR
+        + base_code % LEGACY_REGISTER_COUNT;
     return x86::buffer::store_word(output, cursor + x86::buffer::WORD_BYTES,
         displacement);
 }
 
 pub fn load_byte(output: [i32], capacity: i32, cursor: i32,
-    destination: i32, base: i32, displacement: i32) -> i32 {
+    destination: x86::register::Register,
+    base: x86::register::Register, displacement: i32) -> i32 {
     return memory_form(output, capacity, cursor, MemoryForm {
         width: x86::register::WIDTH_32, opcode: ZERO_EXTEND_BYTE_OPCODE,
         reg: destination, base: base,
@@ -292,18 +313,20 @@ pub fn load_byte(output: [i32], capacity: i32, cursor: i32,
 }
 
 pub fn store_byte(output: [i32], capacity: i32, cursor: i32,
-    source: i32, base: i32, displacement: i32) -> i32 {
+    source: x86::register::Register,
+    base: x86::register::Register, displacement: i32) -> i32 {
     return memory_form(output, capacity, cursor, MemoryForm {
         width: x86::register::WIDTH_32, opcode: STORE_BYTE_OPCODE,
         reg: source, base: base,
         displacement: displacement,
-        byte_register: source >= x86::register::RSP });
+        byte_register: x86::register::needs_byte_rex(source) });
 }
 
 // Count is in CL. Core lowering must separately implement language rules
 // for shift counts; x86 masks the hardware count to five or six bits.
 pub fn shift(output: [i32], capacity: i32, cursor: i32,
-    width: i32, operation: ShiftOperation, destination: i32) -> i32 {
+    width: i32, operation: ShiftOperation,
+    destination: x86::register::Register) -> i32 {
     let extension: i32 = shift_extension(operation);
     if (extension < 0) { return -1; }
     return extension_form(output, capacity, cursor, width,
@@ -313,7 +336,8 @@ pub fn shift(output: [i32], capacity: i32, cursor: i32,
 // Dividend is edx:eax or rdx:rax. Division-by-zero and quotient overflow
 // trap in hardware; callers must establish the Core operation's preconditions.
 pub fn divide(output: [i32], capacity: i32, cursor: i32,
-    width: i32, divisor: i32, signed: bool) -> i32 {
+    width: i32, divisor: x86::register::Register,
+    signed: bool) -> i32 {
     let extension: i32 = UNSIGNED_DIVIDE_EXTENSION;
     if (signed) { extension = SIGNED_DIVIDE_EXTENSION; }
     return extension_form(output, capacity, cursor, width,
@@ -321,7 +345,7 @@ pub fn divide(output: [i32], capacity: i32, cursor: i32,
 }
 
 pub fn negate(output: [i32], capacity: i32, cursor: i32,
-    width: i32, register: i32) -> i32 {
+    width: i32, register: x86::register::Register) -> i32 {
     return extension_form(output, capacity, cursor, width,
         UNARY_GROUP_OPCODE, NEGATE_EXTENSION, register, false);
 }

@@ -6,10 +6,10 @@ open Lanius Lanius.Core
 open Lanius.Compiler.BackendBoundary
 
 private def literalWords : List Int :=
-  [2, 64, 7, 0, 0, 1, 11, 1, 64, 7, 1, 0, 5, 10, 1, 0, 1, 42]
+  [3, 64, 7, 0, 0, 1, 11, 1, 64, 7, 1, 0, 5, 10, 1, 0, 1, 42]
 
 private def parameterWords : List Int :=
-  [2, 64, 7, 0, 0, 1, 12, 1, 64, 7, 1, 1, 4, 3, 1, 10, 1, 1, 3]
+  [3, 64, 7, 0, 0, 1, 12, 1, 64, 7, 1, 1, 4, 3, 1, 10, 1, 1, 3]
 
 /- These executable checks exercise the trusted boundary with one accepted
    literal and two rejected emissions (a parameterized entrypoint and a

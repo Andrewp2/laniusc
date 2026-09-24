@@ -1,0 +1,9 @@
+module unrelated::name;
+
+pub enum Other {
+    Nominal(i32),
+}
+
+pub fn code(value: i32) -> i32 {
+    return value + 100;
+}

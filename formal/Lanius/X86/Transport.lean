@@ -17,8 +17,19 @@ def typeTag : Ty → Option Int
   | .scalar .rawPtr => some 4
   | .scalar .string => some 5
   | .slice (.scalar (.signed .i32)) => some 6
-  | .structure id => some (16 + Int.ofNat id)
+  | .slice (.structure id) =>
+      if id < 1073741808 then some (1073741824 + Int.ofNat id) else none
+  | .slice (.enumeration id) =>
+      if id < 1073741808 then some (1073741824 + Int.ofNat id) else none
+  | .structure id =>
+      if id < 1073741808 then some (16 + Int.ofNat id) else none
+  | .enumeration id =>
+      if id < 1073741808 then some (16 + Int.ofNat id) else none
   | _ => none
+
+abbrev resultTypeTag : Ty → Option Int
+  | .unit => some 0
+  | type => typeTag type
 
 def signedWord (value : Nat) : Int :=
   let word := value % (2 ^ 32)
@@ -104,6 +115,13 @@ mutual
         return [14, Int.ofNat function, Int.ofNat arguments.length] ++ encoded.flatten
     | .i32SliceFromRawParts pointer length =>
         return [15] ++ (← encodeExpr pointer) ++ (← encodeExpr length)
+    | .typedSliceFromRawParts element pointer length => do
+        let (kind, id) ← match element with
+          | .structure id => some (0, Int.ofNat id)
+          | .enumeration id => some (1, Int.ofNat id)
+          | .scalar (.signed .i32) => some (2, 0)
+          | _ => none
+        return [22, kind, id] ++ (← encodeExpr pointer) ++ (← encodeExpr length)
     | .i32SliceDataPtr slice => return [16] ++ (← encodeExpr slice)
     | .stringDataPtr string => return [17] ++ (← encodeExpr string)
     | _ => none
@@ -129,6 +147,7 @@ def encodeStmt : Stmt → Option (List Int)
         (← encodeStmt elseBranch)
   | .whileLoop condition body => return [6] ++ (← encodeExpr condition) ++ (← encodeStmt body)
   | .returnValue (some value) => return [10, 1] ++ (← encodeExpr value)
+  | .returnValue none => some [10, 0]
   | .breakLoop => some [11]
   | .continueLoop => some [12]
   | _ => none
@@ -151,7 +170,7 @@ def serviceTag : HostService → Option Int
   | _ => none
 
 def encodeFunction (function : Function) : Option (List Int) := do
-  let result ← typeTag function.returnType
+  let result ← resultTypeTag function.returnType
   let parameters ← encodeParameters function.parameters
   match function.body, function.external with
   | some body, none =>
@@ -168,7 +187,16 @@ def encodeFunction (function : Function) : Option (List Int) := do
 
 def encodeStructure (declaration : StructDecl) : Option (List Int) := do
   let fields ← declaration.fields.mapM typeTag
-  return [Int.ofNat declaration.id, Int.ofNat fields.length] ++ fields
+  let layout := [Int.ofNat declaration.id, 0, Int.ofNat fields.length] ++ fields
+  return Int.ofNat layout.length :: layout
+
+def encodeEnumeration (declaration : EnumDecl) : Option (List Int) := do
+  let variants ← declaration.variants.mapM fun fields => do
+    let types ← fields.mapM typeTag
+    return Int.ofNat types.length :: types
+  let layout := [Int.ofNat declaration.id, 1, Int.ofNat variants.length] ++
+    variants.flatten
+  return Int.ofNat layout.length :: layout
 
 def encodeConstant (constant : Constant) : Option (List Int) :=
   match constant.type, constant.value with
@@ -184,14 +212,15 @@ def encodeConstant (constant : Constant) : Option (List Int) :=
   | _, _ => none
 
 def encodeProgram (entrypoint : FunctionId) (program : Program) : Option (List Int) := do
-  if program.target != Target.x86_64 || !program.enumerations.isEmpty then none else
+  if program.target != Target.x86_64 then none else
   let structures ← program.structures.mapM encodeStructure
+  let enumerations ← program.enumerations.mapM encodeEnumeration
   let constants ← program.constants.mapM encodeConstant
   let functions ← program.functions.mapM encodeFunction
   let functions := functions.map fun function => Int.ofNat function.length :: function
-  return [2, 64, Int.ofNat entrypoint, Int.ofNat structures.length,
+  return [3, 64, Int.ofNat entrypoint, Int.ofNat (structures.length + enumerations.length),
     Int.ofNat constants.length, Int.ofNat functions.length] ++
-    structures.flatten ++ constants.flatten ++ functions.flatten
+    structures.flatten ++ enumerations.flatten ++ constants.flatten ++ functions.flatten
 
 def EncodesProgram (entrypoint : FunctionId) (program : Program)
     (words : List Int) : Prop := encodeProgram entrypoint program = some words

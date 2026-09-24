@@ -1,0 +1,13 @@
+module app::main;
+
+import resolution::left;
+import resolution::right;
+
+fn combine(left: resolution::left::Pair,
+    right: resolution::right::Pair) -> i32 {
+    return 0;
+}
+
+fn main() -> i32 {
+    return 0;
+}

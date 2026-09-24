@@ -279,6 +279,9 @@ mutual
     /-- Unsafe compiler intrinsic constructing a pointer/length i32 slice.
         Evaluation validates and protects the complete backing block. -/
     | i32SliceFromRawParts (pointer length : Expr)
+    /-- A raw pointer/length slice whose element type is explicit in the
+        transport. Its memory semantics are not yet admitted by the checker. -/
+    | typedSliceFromRawParts (element : Ty) (pointer length : Expr)
     /-- Compiler intrinsic exposing the data pointer of an i32 slice. -/
     | i32SliceDataPtr (slice : Expr)
     /-- Compiler intrinsic exposing stable read-only UTF-8 string storage. -/
@@ -338,6 +341,8 @@ mutual
     | .intrinsic a0 a1, .intrinsic b0 b1 => a0 == b0 && Expr.beq a1 b1
     | .i32ArrayDataPtr a0, .i32ArrayDataPtr b0 => Expr.beq a0 b0
     | .i32SliceFromRawParts a0 a1, .i32SliceFromRawParts b0 b1 => Expr.beq a0 b0 && Expr.beq a1 b1
+    | .typedSliceFromRawParts a0 a1 a2, .typedSliceFromRawParts b0 b1 b2 =>
+        a0 == b0 && Expr.beq a1 b1 && Expr.beq a2 b2
     | .i32SliceDataPtr a0, .i32SliceDataPtr b0 => Expr.beq a0 b0
     | .stringDataPtr a0, .stringDataPtr b0 => Expr.beq a0 b0
     | .alloc a0 a1, .alloc b0 b1 => Expr.beq a0 b0 && Expr.beq a1 b1

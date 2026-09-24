@@ -83,6 +83,37 @@ example :
   rfl
 
 example :
+    (checkExpr context (.literal (.string "A\n"))
+      (.value (.string "A\n"))).isSome = true := by
+  rfl
+
+def sparseLocalSource : List Surface.Stmt :=
+  [.letLocal "x" none (some (.literal (.integer "7"))),
+   .returnValue (some (.path { segments := [.mk "x" []] }))]
+
+def sparseLocalCore : Core.Stmt :=
+  .letLocal 14 (.scalar (.signed .i32)) (.value (.signed .i32 7))
+    (.sequence (.returnValue (some (.local 14))) .skip)
+
+example : (checkStmts context 0 sparseLocalSource sparseLocalCore).isSome = true := by
+  decide
+
+example : (checkStmts context 15 sparseLocalSource sparseLocalCore).isSome = false := by
+  decide
+
+example :
+    (checkStmts context 0 sparseLocalSource
+      (.letLocal 14 (.scalar (.signed .i32)) (.value (.signed .i32 7))
+        (.returnValue (some (.local 14))))).isSome = true := by
+  decide
+
+example :
+    (checkStmts context 0
+      [.returnValue (some (.literal (.integer "7")))]
+      (.returnValue (some (.value (.signed .i32 7))))).isSome = true := by
+  decide
+
+example :
     (checkStmts context 0
       [.returnValue (some (.literal (.boolean true)))]
       (.sequence (.returnValue (some (.value (.boolean true)))) .skip)).isSome = true := by
@@ -94,6 +125,73 @@ def localContext : SurfaceElaboration.Context :=
 
 def localPath : Surface.Expr :=
   .path { segments := [.mk "x" []] }
+
+def constantPath : Surface.Path := { segments := [.mk "LIMIT" []] }
+
+def constantSymbol : Names.Symbol := {
+  moduleId := 0, lookupNamespace := .value, name := "LIMIT",
+  visibility := .modulePrivate, declaration := 51 }
+
+def constantContext : SurfaceElaboration.Context := {
+  context with
+    names := { modules := [{ id := 0, path := [] }], symbols := [constantSymbol] }
+    modulesHaveUniquePaths := none
+    symbolsAreUnique := none
+    constants := [{ declaration := 51, constant := 7, type := .scalar (.signed .i32) }] }
+
+example : (checkExpr constantContext (.path constantPath) (.constant 7)).isSome = true := by
+  decide
+
+example : (checkExpr constantContext (.path constantPath) (.constant 8)).isSome = false := by
+  decide
+
+example :
+    (checkExpr { constantContext with
+        locals := [{ name := "LIMIT", id := 3, type := .scalar (.signed .i32) }] }
+      (.path constantPath) (.constant 7)).isSome = false := by
+  decide
+
+example :
+    (checkExpr constantContext
+      (.binary .add (.literal (.integer "3")) (.path constantPath))
+      (.binary .add (.value (.signed .i32 3)) (.constant 7))).isSome = true := by
+  decide
+
+def importedConstantContext : SurfaceElaboration.Context := {
+  context with
+    names := {
+      modules := [{ id := 0, path := ["app"] },
+        { id := 1, path := ["resolution", "left"] },
+        { id := 2, path := ["resolution", "right"] }]
+      symbols := [
+        { moduleId := 1, lookupNamespace := .value, name := "LIMIT",
+          visibility := .exported, declaration := 61 },
+        { moduleId := 2, lookupNamespace := .value, name := "LIMIT",
+          visibility := .exported, declaration := 62 }]
+      imports := [{ importer := 0, imported := 1 }, { importer := 0, imported := 2 }] }
+    modulesHaveUniquePaths := none
+    symbolsAreUnique := none
+    constants := [
+      { declaration := 61, constant := 7, type := .scalar (.signed .i32) },
+      { declaration := 62, constant := 8, type := .scalar (.signed .i32) }] }
+
+def qualifiedConstantPath : Surface.Path :=
+  { segments := [.mk "resolution" [], .mk "left" [], .mk "LIMIT" []] }
+
+example :
+    (checkExpr importedConstantContext (.path qualifiedConstantPath) (.constant 7)).isSome =
+      true := by
+  decide
+
+example :
+    (checkExpr importedConstantContext (.path constantPath) (.constant 7)).isSome = false := by
+  decide
+
+example :
+    (checkExpr { importedConstantContext with
+        locals := [{ name := "LIMIT", id := 3, type := .scalar (.signed .i32) }] }
+      (.path qualifiedConstantPath) (.constant 7)).isSome = true := by
+  decide
 
 example : (checkExpr localContext localPath (.local 3)).isSome = true := by
   rfl

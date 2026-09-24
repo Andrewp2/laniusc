@@ -12,6 +12,9 @@ import backend::index;
 import backend::literal;
 import backend::local;
 import backend::parameter;
+import backend::body_reader;
+import ir::body_events;
+import ir::type_ref;
 import x86::register;
 import x86::encode;
 import x86::control;
@@ -44,49 +47,50 @@ pub fn cursor(data: [i32], capacity: i32, position: i32) -> CodeCursor {
 }
 
 struct CompilerContext {
-    input: [i32],
-    input_length: i32,
+    source: backend::body_reader::Source,
     work: backend::frame::Workspace,
     output: [i32],
     output_capacity: i32,
-    program: WordRegion,
     layout: backend::layout_index::Table,
     constants: backend::constant_index::Table,
     functions: backend::function_index::Table,
 }
 
 fn string_value(input: [i32], length: i32, start: i32, count: i32,
-    work: backend::frame::Workspace, output: [i32], capacity: i32) -> i32 {
+    work: backend::frame::Workspace, output: [i32], capacity: i32)
+    -> ir::type_ref::TypeRef {
     let state: [backend::frame::State] = backend::frame::state_view(work);
     state[0].code = backend::literal::string(input, length, start, count, output, capacity, state[0].code);
-    if (state[0].code <= -1) { return -1; }
+    if (state[0].code <= -1) { return ir::type_ref::Invalid; }
     let slot: i32 = backend::frame::allocate(work, 2);
-    if (slot <= -1) { return -1; }
+    if (slot <= -1) { return ir::type_ref::Invalid; }
     backend::value::save_word(output, capacity, work, slot, x86::register::RAX);
     state[0].code = x86::encode::immediate(output, capacity, state[0].code, x86::register::WIDTH_64, x86::register::RAX, count, 0);
     backend::value::save_word(output, capacity, work, slot - 1, x86::register::RAX);
     backend::value::address(output, capacity, work, slot, x86::register::RAX);
-    return backend::syntax::type_code(backend::syntax::TypeString);
+    return ir::type_ref::String;
 }
 
-fn enumeration_value(compiler: CompilerContext, active: i32,
-    depth: i32) -> i32 {
-    let input: [i32] = compiler.input;
-    let length: i32 = compiler.input_length;
+fn enumeration_value(compiler: CompilerContext,
+    node: backend::body_reader::Expression, active: i32,
+    depth: i32) -> ir::type_ref::TypeRef {
+    let source: backend::body_reader::Source = compiler.source;
     let work: backend::frame::Workspace = compiler.work;
     let state: [backend::frame::State] = backend::frame::state_view(work);
     let output: [i32] = compiler.output;
     let capacity: i32 = compiler.output_capacity;
     let layout: backend::layout_index::Table = compiler.layout;
-    let kind: i32 = backend::frame::take(input, length, work);
-    let variant: i32 = backend::frame::take(input, length, work);
-    let count: i32 = backend::frame::take(input, length, work);
+    let constructor: backend::body_reader::EnumConstructor =
+        backend::body_reader::enum_constructor(source, work, node);
+    let kind: ir::type_ref::TypeRef = constructor.kind;
+    let variant: i32 = constructor.variant;
+    let count: i32 = constructor.payload_count;
     if (!backend::layout_index::is_enumeration(layout, kind)
         || count != backend::layout_index::variant_field_count(layout,
-            kind, variant)) { return -1; }
+            kind, variant)) { return ir::type_ref::Invalid; }
     let size: i32 = backend::layout_index::words(layout, kind);
     let slot: i32 = backend::frame::allocate(work, size);
-    if (slot <= -1) { return -1; }
+    if (slot <= -1) { return ir::type_ref::Invalid; }
     let word: i32 = 0;
     while (word != size) {
         state[0].code = x86::encode::immediate(output, capacity,
@@ -102,34 +106,40 @@ fn enumeration_value(compiler: CompilerContext, active: i32,
     let keep: i32 = state[0].top;
     let field: i32 = 0;
     while (field < count) {
-        let expected: i32 = backend::layout_index::variant_field_kind(layout,
-            kind, variant, field);
+        let expected: ir::type_ref::TypeRef =
+            backend::layout_index::variant_field_kind(layout,
+                kind, variant, field);
         let offset: i32 = backend::layout_index::variant_field_offset(layout,
             kind, variant, field);
-        let actual: i32 = expression(compiler, active, depth + 1);
-        if (actual != expected || offset <= 0) { return -1; }
+        let actual: ir::type_ref::TypeRef =
+            expression(compiler, active, depth + 1);
+        if (!ir::type_ref::same(actual, expected) || offset <= 0) {
+            return ir::type_ref::Invalid;
+        }
         backend::value::put(layout, output, capacity, work,
-            slot - offset / backend::layout::VALUE_WORD_BYTES, actual);
+            slot - offset / backend::layout::VALUE_WORD_BYTES,
+            actual);
         state[0].top = keep;
         field += 1;
     }
     backend::value::address(output, capacity, work, slot,
         x86::register::RAX);
-    return kind;
+    return constructor.kind;
 }
 
 fn enumeration_tag(compiler: CompilerContext, active: i32,
-    depth: i32) -> i32 {
+    depth: i32) -> ir::type_ref::TypeRef {
     let work: backend::frame::Workspace = compiler.work;
     let state: [backend::frame::State] = backend::frame::state_view(work);
     let output: [i32] = compiler.output;
-    let kind: i32 = expression(compiler, active, depth + 1);
+    let kind: ir::type_ref::TypeRef =
+        expression(compiler, active, depth + 1);
     if (!backend::layout_index::is_enumeration(compiler.layout,
-        kind)) { return -1; }
+        kind)) { return ir::type_ref::Invalid; }
     state[0].code = x86::encode::load(output,
         compiler.output_capacity, state[0].code, x86::register::WIDTH_32,
         x86::register::RAX, x86::register::RAX, 0);
-    return backend::syntax::type_code(backend::syntax::TypeI32);
+    return ir::type_ref::I32;
 }
 
 fn require_enumeration_variant(compiler: CompilerContext,
@@ -150,139 +160,165 @@ fn require_enumeration_variant(compiler: CompilerContext,
     return state[0].code >= 0;
 }
 
-fn enumeration_field(compiler: CompilerContext, active: i32,
-    depth: i32) -> i32 {
-    let input: [i32] = compiler.input;
+fn enumeration_field(compiler: CompilerContext,
+    node: backend::body_reader::Expression, active: i32,
+    depth: i32) -> ir::type_ref::TypeRef {
+    let source: backend::body_reader::Source = compiler.source;
     let work: backend::frame::Workspace = compiler.work;
     let state: [backend::frame::State] = backend::frame::state_view(work);
     let output: [i32] = compiler.output;
-    let variant: i32 = backend::frame::take(input, compiler.input_length,
-        work);
-    let field: i32 = backend::frame::take(input, compiler.input_length, work);
-    let kind: i32 = expression(compiler, active, depth + 1);
-    let result: i32 = backend::layout_index::variant_field_kind(
-        compiler.layout, kind, variant, field);
+    let access: backend::body_reader::EnumField =
+        backend::body_reader::enum_field(source, work, node);
+    let variant: i32 = access.variant;
+    let field: i32 = access.field;
+    let kind: ir::type_ref::TypeRef =
+        expression(compiler, active, depth + 1);
+    let result_kind: ir::type_ref::TypeRef =
+        backend::layout_index::variant_field_kind(
+            compiler.layout, kind, variant, field);
     let offset: i32 = backend::layout_index::variant_field_offset(
         compiler.layout, kind, variant, field);
-    if (result <= -1 || offset <= 0
-        || !require_enumeration_variant(compiler, variant)) { return -1; }
-    if (backend::layout::aggregate(result)) {
+    if (!ir::type_ref::valid(result_kind) || offset <= 0
+        || !require_enumeration_variant(compiler, variant)) {
+        return ir::type_ref::Invalid;
+    }
+    if (backend::layout::aggregate(result_kind)) {
         state[0].code = x86::encode::address(output,
             compiler.output_capacity, state[0].code,
             x86::register::RAX, x86::register::RAX, offset);
     } else {
         state[0].code = x86::encode::load(output,
             compiler.output_capacity, state[0].code,
-            backend::layout::width(result), x86::register::RAX,
+            backend::layout::width(result_kind), x86::register::RAX,
             x86::register::RAX, offset);
     }
-    return result;
+    return result_kind;
 }
 
-fn match_value(compiler: CompilerContext, active: i32, depth: i32) -> i32 {
-    let input: [i32] = compiler.input;
+fn match_value(compiler: CompilerContext,
+    node: backend::body_reader::Expression, active: i32,
+    depth: i32) -> ir::type_ref::TypeRef {
+    let source: backend::body_reader::Source = compiler.source;
     let work: backend::frame::Workspace = compiler.work;
     let state: [backend::frame::State] = backend::frame::state_view(work);
     let output: [i32] = compiler.output;
     let capacity: i32 = compiler.output_capacity;
     let layout: backend::layout_index::Table = compiler.layout;
-    let result_kind: i32 = backend::frame::take(input,
-        compiler.input_length, work);
-    let arm_count: i32 = backend::frame::take(input,
-        compiler.input_length, work);
+    let match_header: ir::body_events::MatchHeader =
+        backend::body_reader::match_header(source, work, node);
+    let result_kind: ir::type_ref::TypeRef = match_header.result_kind;
+    let arm_count: i32 = match_header.arm_count;
     let result_words: i32 = backend::layout_index::words(layout,
         result_kind);
-    if (arm_count <= 0 || result_words <= 0) { return -1; }
-    let scrutinee_kind: i32 = expression(compiler, active, depth + 1);
+    if (arm_count <= 0 || result_words <= 0) {
+        return ir::type_ref::Invalid;
+    }
+    let scrutinee_kind: ir::type_ref::TypeRef =
+        expression(compiler, active, depth + 1);
     if (!backend::layout_index::is_enumeration(layout,
-        scrutinee_kind)) { return -1; }
+        scrutinee_kind)) { return ir::type_ref::Invalid; }
     let scrutinee_words: i32 = backend::layout_index::words(layout,
         scrutinee_kind);
     let scrutinee_slot: i32 = backend::frame::allocate(work,
         scrutinee_words);
-    if (scrutinee_slot <= -1) { return -1; }
+    if (scrutinee_slot <= -1) { return ir::type_ref::Invalid; }
     backend::value::put(layout, output, capacity, work,
         scrutinee_slot, scrutinee_kind);
     let result_slot: i32 = backend::frame::allocate(work, result_words);
-    if (result_slot <= -1) { return -1; }
+    if (result_slot <= -1) { return ir::type_ref::Invalid; }
     let base_top: i32 = state[0].top;
     let saved_patches: i32 = state[0].break_count;
     let arm: i32 = 0;
     while (arm < arm_count) {
-        let variant: i32 = backend::frame::take(input,
-            compiler.input_length, work);
-        let bindings: i32 = backend::frame::take(input,
-            compiler.input_length, work);
-        if (bindings <= -1 || bindings
-            != backend::layout_index::variant_field_count(layout,
-                scrutinee_kind, variant)
-            || active > state[0].stride - bindings) {
-            return -1;
+        let header: backend::body_reader::MatchArm =
+            backend::body_reader::match_arm(source, work);
+        let variant: i32 = header.ordinal;
+        let bindings: i32 = header.bindings;
+        let wildcard: bool = variant == -1;
+        let expected_bindings: i32 = 0;
+        if (!wildcard) {
+            expected_bindings = backend::layout_index::variant_field_count(
+                layout, scrutinee_kind, variant);
         }
-        backend::value::address(output, capacity, work, scrutinee_slot,
-            x86::register::RAX);
-        let next: i32 = x86::encode::load(output, capacity,
-            state[0].code, x86::register::WIDTH_32, x86::register::R11,
-            x86::register::RAX, 0);
-        next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32,
-            x86::register::R10, variant, 0);
-        next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_32,
-            x86::encode::Compare, x86::register::R11, x86::register::R10);
-        let mismatch: i32 = next;
-        state[0].code = x86::control::branch(output, capacity,
-            mismatch, x86::control::NotEqual, 0);
+        if (!header.valid || bindings <= -1 || bindings
+            != expected_bindings
+            || (wildcard && arm != arm_count - 1)
+            || active > state[0].stride - bindings) {
+            return ir::type_ref::Invalid;
+        }
+        let mismatch: i32 = -1;
+        if (!wildcard) {
+            backend::value::address(output, capacity, work, scrutinee_slot,
+                x86::register::RAX);
+            let next: i32 = x86::encode::load(output, capacity,
+                state[0].code, x86::register::WIDTH_32, x86::register::R11,
+                x86::register::RAX, 0);
+            next = x86::encode::immediate(output, capacity, next, x86::register::WIDTH_32,
+                x86::register::R10, variant, 0);
+            next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_32,
+                x86::encode::Compare, x86::register::R11, x86::register::R10);
+            mismatch = next;
+            state[0].code = x86::control::branch(output, capacity,
+                mismatch, x86::control::NotEqual, 0);
+        }
         let field: i32 = 0;
         while (field < bindings) {
-            let id: i32 = backend::frame::take(input,
-                compiler.input_length, work);
-            let kind: i32 = backend::layout_index::variant_field_kind(layout,
-                scrutinee_kind, variant, field);
+            let binding: ir::body_events::LocalReference =
+                backend::body_reader::match_binding(source, work);
+            let id: i32 = binding.id;
+            let field_kind: ir::type_ref::TypeRef =
+                backend::layout_index::variant_field_kind(layout,
+                    scrutinee_kind, variant, field);
             let offset: i32 = backend::layout_index::variant_field_offset(
                 layout, scrutinee_kind, variant, field);
-            let field_words: i32 = backend::layout_index::words(layout, kind);
-            if (id <= -1 || kind <= -1 || offset <= 0
+            let field_words: i32 = backend::layout_index::words(layout,
+                field_kind);
+            if (id <= -1 || !ir::type_ref::valid(field_kind) || offset <= 0
                 || field_words <= 0) {
-                return -1;
+                return ir::type_ref::Invalid;
             }
             let slot: i32 = backend::frame::allocate(work, field_words);
             backend::value::address(output, capacity, work, scrutinee_slot,
                 x86::register::RAX);
-            if (backend::layout::aggregate(kind)) {
+            if (backend::layout::aggregate(field_kind)) {
                 state[0].code = x86::encode::address(output,
                     capacity, state[0].code,
                     x86::register::RAX, x86::register::RAX, offset);
             } else {
                 state[0].code = x86::encode::load(output,
                     capacity, state[0].code,
-                    backend::layout::width(kind), x86::register::RAX,
+                    backend::layout::width(field_kind), x86::register::RAX,
                     x86::register::RAX, offset);
             }
             backend::value::put(layout, output, capacity,
-                work, slot, kind);
+                work, slot, field_kind);
             backend::local::write(work, active + field,
-                backend::local::binding(id, kind, slot));
+                backend::local::binding(id, field_kind, slot, false));
             field += 1;
         }
-        if (expression(compiler, active + bindings, depth + 1)
-            != result_kind) { return -1; }
+        if (!ir::type_ref::same(
+                expression(compiler, active + bindings, depth + 1),
+                match_header.result_kind)) { return ir::type_ref::Invalid; }
         backend::value::put(layout, output, capacity, work,
-            result_slot, result_kind);
+            result_slot, match_header.result_kind);
         state[0].top = base_top;
         let jump: i32 = state[0].code;
         state[0].code = x86::control::jump(output, capacity,
             jump, 0);
         let patch: i32 = state[0].break_count;
         if (patch >= state[0].stride
-            || state[0].code <= -1) { return -1; }
+            || state[0].code <= -1) { return ir::type_ref::Invalid; }
         backend::frame::write_break_patch(work, patch, jump + 1);
         state[0].break_count = patch + 1;
-        x86::control::patch_relative(output, state[0].code,
-            mismatch + 2, state[0].code);
+        if (!wildcard) {
+            x86::control::patch_relative(output, state[0].code,
+                mismatch + 2, state[0].code);
+        }
         arm += 1;
     }
     state[0].code = x86::control::trap(output, capacity,
         state[0].code);
-    if (state[0].code <= -1) { return -1; }
+    if (state[0].code <= -1) { return ir::type_ref::Invalid; }
     let patch: i32 = saved_patches;
     while (patch < state[0].break_count) {
         x86::control::patch_relative(output, state[0].code,
@@ -291,64 +327,88 @@ fn match_value(compiler: CompilerContext, active: i32, depth: i32) -> i32 {
         patch += 1;
     }
     state[0].break_count = saved_patches;
-    backend::value::get(output, capacity, work, result_slot, result_kind);
-    return result_kind;
+    backend::value::get(output, capacity, work, result_slot,
+        match_header.result_kind);
+    return match_header.result_kind;
 }
 
 fn emit_expression(compiler: CompilerContext, active: i32,
-    depth: i32) -> i32 {
-    let input: [i32] = compiler.input;
-    let length: i32 = compiler.input_length;
+    depth: i32) -> ir::type_ref::TypeRef {
+    let source: backend::body_reader::Source = compiler.source;
     let work: backend::frame::Workspace = compiler.work;
     let state: [backend::frame::State] = backend::frame::state_view(work);
     let output: [i32] = compiler.output;
     let capacity: i32 = compiler.output_capacity;
     let layout: backend::layout_index::Table = compiler.layout;
-    let context: [i32] = compiler.program.data;
-    let context_length: i32 = compiler.program.words;
-    if (depth >= MAX_DEPTH || state[0].failed != 0 || state[0].code <= -1) { return -1; }
-    let tag: i32 = backend::frame::take(input, length, work);
-    if (tag == backend::syntax::expression_code(
-        backend::syntax::ExprEnumeration)) {
-        return enumeration_value(compiler, active, depth);
+    if (depth >= MAX_DEPTH || state[0].failed || state[0].code <= -1) {
+        return ir::type_ref::Invalid;
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprEnumTag)) {
+    let node: backend::body_reader::Expression =
+        backend::body_reader::expression(source, work);
+    let tag: backend::syntax::ExpressionKind = node.kind;
+    if (tag == backend::syntax::ExprEnumeration) {
+        return enumeration_value(compiler, node, active, depth);
+    }
+    if (tag == backend::syntax::ExprEnumTag) {
         return enumeration_tag(compiler, active, depth);
     }
-    if (tag == backend::syntax::expression_code(
-        backend::syntax::ExprEnumField)) {
-        return enumeration_field(compiler, active, depth);
+    if (tag == backend::syntax::ExprEnumField) {
+        return enumeration_field(compiler, node, active, depth);
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprMatch)) {
-        return match_value(compiler, active, depth);
+    if (tag == backend::syntax::ExprMatch) {
+        return match_value(compiler, node, active, depth);
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprValue)) {
-        let kind: i32 = backend::frame::take(input, length, work);
-        let value: i32 = backend::frame::take(input, length, work);
-        if (kind == backend::syntax::type_code(backend::syntax::TypeString)) {
-            let result: i32 = string_value(input, length, state[0].input, value, work, output, capacity);
-            if (result <= -1) { return -1; }
+    if (tag == backend::syntax::ExprValue) {
+        let literal: backend::body_reader::Literal =
+            backend::body_reader::literal(source, work, node);
+        let kind: ir::type_ref::TypeRef = literal.kind;
+        let value: i32 = literal.low;
+        if (ir::type_ref::same(kind, ir::type_ref::String)) {
+            if (!backend::body_reader::is_wire(source)) {
+                let data: ptr = backend::body_reader::string_data(node);
+                if (data == 0 || value <= -1) {
+                    return ir::type_ref::Invalid;
+                }
+                let bytes: [i32] = slice_from_raw_parts(data, value);
+                return string_value(bytes, value, 0, value,
+                    work, output, capacity);
+            }
+            let wire: backend::body_reader::WireInput =
+                backend::body_reader::wire_input(source);
+            let result: ir::type_ref::TypeRef = string_value(wire.data,
+                wire.words,
+                state[0].input, value, work, output, capacity);
+            if (!ir::type_ref::valid(result)) {
+                return ir::type_ref::Invalid;
+            }
             state[0].input += value;
             return result;
         }
-        if (kind <= backend::syntax::type_code(backend::syntax::TypeI32) - 1 || kind > backend::syntax::type_code(backend::syntax::TypePointer) || (kind == backend::syntax::type_code(backend::syntax::TypeBool) && value != 0 && value != 1)) { return -1; }
-        let high: i32 = 0;
-        if (backend::layout::width(kind) == backend::layout::MACHINE_WIDTH) {
-            high = backend::frame::take(input, length, work);
+        if ((!ir::type_ref::same(kind, ir::type_ref::I32)
+                && !ir::type_ref::same(kind, ir::type_ref::Bool)
+                && !ir::type_ref::same(kind, ir::type_ref::Usize)
+                && !ir::type_ref::same(kind, ir::type_ref::Pointer))
+            || (ir::type_ref::same(kind, ir::type_ref::Bool)
+                && value != 0 && value != 1)) {
+            return ir::type_ref::Invalid;
         }
-        state[0].code = x86::encode::immediate(output, capacity, state[0].code, backend::layout::width(kind), x86::register::RAX, value, high);
+        state[0].code = x86::encode::immediate(output, capacity,
+            state[0].code, backend::layout::width(kind),
+            x86::register::RAX, value, literal.high);
         return kind;
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprLocal)) {
-        let id: i32 = backend::frame::take(input, length, work);
+    if (tag == backend::syntax::ExprLocal) {
+        let reference: ir::body_events::LocalReference =
+            backend::body_reader::local_expression(source, work, node);
+        let id: i32 = reference.id;
         let binding: i32 = backend::local::lookup(work, active, id);
-        if (binding <= -1) { return -1; }
+        if (binding <= -1) { return ir::type_ref::Invalid; }
         let local: backend::local::LocalBinding =
             backend::local::read(work, binding);
-        let kind: i32 = backend::local::binding_kind(local);
+        let kind: ir::type_ref::TypeRef =
+            backend::local::binding_kind(local);
         let slot: i32 = backend::local::binding_slot(local);
-        if (kind <= -1) {
-            kind = 0 - kind;
+        if (backend::local::needs_init_check(local)) {
             backend::local::require(output, capacity, work,
                 slot - backend::layout_index::words(layout, kind));
         }
@@ -358,18 +418,25 @@ fn emit_expression(compiler: CompilerContext, active: i32,
             // operands may assign that local or call another function.
             let snapshot: i32 = backend::frame::allocate(work,
                 backend::layout_index::words(layout, kind));
-            backend::value::put(layout, output, capacity, work, snapshot, kind);
+            backend::value::put(layout, output, capacity, work, snapshot,
+                kind);
             backend::value::address(output, capacity, work, snapshot, x86::register::RAX);
         }
         return kind;
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprCast)) {
-        let target: i32 = backend::frame::take(input, length, work);
-        let source: i32 = expression(compiler, active, depth + 1);
-        if ((target != backend::syntax::type_code(backend::syntax::TypeI32) && target != backend::syntax::type_code(backend::syntax::TypeUsize)) ||
-            (source != backend::syntax::type_code(backend::syntax::TypeI32) && source != backend::syntax::type_code(backend::syntax::TypeUsize))) { return -1; }
-        if (source != target) {
-            if (target == backend::syntax::type_code(backend::syntax::TypeUsize)) {
+    if (tag == backend::syntax::ExprCast) {
+        let target: ir::type_ref::TypeRef =
+            backend::body_reader::cast_target(source, work, node);
+        let source_kind: ir::type_ref::TypeRef =
+            expression(compiler, active, depth + 1);
+        if ((!ir::type_ref::same(target, ir::type_ref::I32)
+                && !ir::type_ref::same(target, ir::type_ref::Usize))
+            || (!ir::type_ref::same(source_kind, ir::type_ref::I32)
+                && !ir::type_ref::same(source_kind, ir::type_ref::Usize))) {
+            return ir::type_ref::Invalid;
+        }
+        if (!ir::type_ref::same(source_kind, target)) {
+            if (ir::type_ref::same(target, ir::type_ref::Usize)) {
                 state[0].code = x86::encode::sign_extend_i32(output, capacity, state[0].code, x86::register::RAX, x86::register::RAX);
             } else {
                 state[0].code = x86::encode::move_register(output, capacity, state[0].code, x86::register::WIDTH_32, x86::register::RAX, x86::register::RAX);
@@ -377,53 +444,68 @@ fn emit_expression(compiler: CompilerContext, active: i32,
         }
         return target;
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprUnary)) {
-        let operation: i32 = backend::frame::take(input, length, work);
-        let kind: i32 = expression(compiler, active, depth + 1);
-        if (operation == backend::syntax::unary_code(backend::syntax::UnaryPositive) && kind == backend::syntax::type_code(backend::syntax::TypeI32)) { return kind; }
-        if (operation == backend::syntax::unary_code(backend::syntax::UnaryNegate) && kind == backend::syntax::type_code(backend::syntax::TypeI32)) {
+    if (tag == backend::syntax::ExprUnary) {
+        let operation: backend::syntax::UnaryOperation =
+            backend::body_reader::unary_operation(source, work, node);
+        let kind: ir::type_ref::TypeRef =
+            expression(compiler, active, depth + 1);
+        if (operation == backend::syntax::UnaryPositive
+            && ir::type_ref::same(kind, ir::type_ref::I32)) { return kind; }
+        if (operation == backend::syntax::UnaryNegate
+            && ir::type_ref::same(kind, ir::type_ref::I32)) {
             state[0].code = x86::encode::negate(output, capacity, state[0].code, x86::register::WIDTH_32, x86::register::RAX);
             return kind;
         }
-        if (operation == backend::syntax::unary_code(backend::syntax::UnaryNot) && kind == backend::syntax::type_code(backend::syntax::TypeBool)) {
+        if (operation == backend::syntax::UnaryNot
+            && ir::type_ref::same(kind, ir::type_ref::Bool)) {
             let next: i32 = x86::encode::binary(output, capacity, state[0].code, x86::register::WIDTH_32, x86::encode::Test, x86::register::RAX, x86::register::RAX);
             state[0].code = backend::operation::boolean(output, capacity, next, x86::control::Equal);
             return kind;
         }
-        return -1;
+        return ir::type_ref::Invalid;
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprBinary)) {
+    if (tag == backend::syntax::ExprBinary) {
         let operation: backend::syntax::BinaryOperation =
-            backend::syntax::binary_from_code(
-                backend::frame::take(input, length, work));
-        let left: i32 = expression(compiler, active, depth + 1);
-        if (left <= 0) { return -1; }
+            backend::body_reader::binary_operation(source, work, node);
+        let left: ir::type_ref::TypeRef =
+            expression(compiler, active, depth + 1);
+        if (!ir::type_ref::valid(left)) { return ir::type_ref::Invalid; }
         if (operation == backend::syntax::BinaryAndThen
             || operation == backend::syntax::BinaryOrElse) {
-            if (left != backend::syntax::type_code(backend::syntax::TypeBool)) { return -1; }
+            if (!ir::type_ref::same(left, ir::type_ref::Bool)) {
+                return ir::type_ref::Invalid;
+            }
             state[0].code = x86::encode::binary(output, capacity, state[0].code, x86::register::WIDTH_32, x86::encode::Test, x86::register::RAX, x86::register::RAX);
             let jump: i32 = state[0].code;
             let condition: x86::control::Condition = x86::control::Equal;
             if (operation == backend::syntax::BinaryOrElse) { condition = x86::control::NotEqual; }
             state[0].code = x86::control::branch(output, capacity, jump, condition, 0);
-            let right: i32 = expression(compiler, active, depth + 1);
-            if (right != backend::syntax::type_code(backend::syntax::TypeBool) || state[0].code <= -1) { return -1; }
+            let right: ir::type_ref::TypeRef =
+                expression(compiler, active, depth + 1);
+            if (!ir::type_ref::same(right, ir::type_ref::Bool)
+                || state[0].code <= -1) { return ir::type_ref::Invalid; }
             x86::control::patch_relative(output, state[0].code, jump + 2, state[0].code);
-            return backend::syntax::type_code(backend::syntax::TypeBool);
+            return ir::type_ref::Bool;
         }
-        if (left == backend::syntax::type_code(backend::syntax::TypeUsize) || left == backend::syntax::type_code(backend::syntax::TypePointer)) {
+        if (ir::type_ref::same(left, ir::type_ref::Usize)
+            || ir::type_ref::same(left, ir::type_ref::Pointer)) {
             // Null checks and other pointer/usize equality compare all bits.
             // Save the left operand before the right expression can call out.
             if (operation != backend::syntax::BinaryEqual
-                && operation != backend::syntax::BinaryNotEqual) { return -1; }
+                && operation != backend::syntax::BinaryNotEqual) {
+                return ir::type_ref::Invalid;
+            }
             let saved: i32 = backend::frame::allocate(work, 1);
             backend::value::save_word(output, capacity, work, saved, x86::register::RAX);
-            if (expression(compiler, active, depth + 1) != left) { return -1; }
+            if (!ir::type_ref::same(
+                    expression(compiler, active, depth + 1), left)) {
+                return ir::type_ref::Invalid;
+            }
             backend::value::load_word(output, capacity, work, saved, x86::register::RCX);
             let next: i32 = x86::encode::binary(output, capacity, state[0].code, x86::register::WIDTH_64,
                 x86::encode::Compare, x86::register::RCX, x86::register::RAX);
             state[0].code = backend::operation::boolean(output, capacity, next, backend::operation::condition(operation));
-            return backend::syntax::type_code(backend::syntax::TypeBool);
+            return ir::type_ref::Bool;
         }
         if (backend::layout_index::is_enumeration(layout, left)) {
             // A payload-free enum is represented by one tag word. Compare the
@@ -432,16 +514,19 @@ fn emit_expression(compiler: CompilerContext, active: i32,
             if (backend::layout_index::words(layout, left) != 1
                 || (operation != backend::syntax::BinaryEqual
                     && operation != backend::syntax::BinaryNotEqual)) {
-                return -1;
+                return ir::type_ref::Invalid;
             }
             let saved: i32 = backend::frame::allocate(work, 1);
-            if (saved <= -1) { return -1; }
+            if (saved <= -1) { return ir::type_ref::Invalid; }
             state[0].code = x86::encode::load(output, capacity, state[0].code,
                 x86::register::WIDTH_32, x86::register::RAX,
                 x86::register::RAX, 0);
             backend::value::save_word(output, capacity, work, saved,
                 x86::register::RAX);
-            if (expression(compiler, active, depth + 1) != left) { return -1; }
+            if (!ir::type_ref::same(
+                    expression(compiler, active, depth + 1), left)) {
+                return ir::type_ref::Invalid;
+            }
             state[0].code = x86::encode::load(output, capacity, state[0].code,
                 x86::register::WIDTH_32, x86::register::RAX,
                 x86::register::RAX, 0);
@@ -453,75 +538,104 @@ fn emit_expression(compiler: CompilerContext, active: i32,
                 x86::register::RAX);
             state[0].code = backend::operation::boolean(output, capacity,
                 next, backend::operation::condition(operation));
-            return backend::syntax::type_code(backend::syntax::TypeBool);
+            return ir::type_ref::Bool;
         }
-        if (!backend::syntax::scalar(left)) { return -1; }
+        if (!ir::type_ref::same(left, ir::type_ref::I32)
+            && !ir::type_ref::same(left, ir::type_ref::Bool)) {
+            return ir::type_ref::Invalid;
+        }
         let saved: i32 = backend::frame::allocate(work, 1);
         backend::frame::store(output, capacity, work, saved, x86::register::RAX);
-        let right: i32 = expression(compiler, active, depth + 1);
-        if (left != right || (left != backend::syntax::type_code(backend::syntax::TypeI32)
+        let right: ir::type_ref::TypeRef =
+            expression(compiler, active, depth + 1);
+        if (!ir::type_ref::same(left, right)
+            || (!ir::type_ref::same(left, ir::type_ref::I32)
             && operation != backend::syntax::BinaryEqual
-            && operation != backend::syntax::BinaryNotEqual)) { return -1; }
+            && operation != backend::syntax::BinaryNotEqual)) {
+            return ir::type_ref::Invalid;
+        }
         state[0].code = backend::operation::from_slot(output, capacity, state[0].code, saved, operation);
         if (backend::syntax::binary_is_comparison(operation)) {
-            return backend::syntax::type_code(backend::syntax::TypeBool);
+            return ir::type_ref::Bool;
         }
-        return backend::syntax::type_code(backend::syntax::TypeI32);
+        return ir::type_ref::I32;
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprAssign)) {
+    if (tag == backend::syntax::ExprAssign) {
         let operation: backend::syntax::AssignmentOperation =
-            backend::syntax::assignment_from_code(
-                backend::frame::take(input, length, work));
+            backend::body_reader::assignment_operation(source, work, node);
         if (operation == backend::syntax::InvalidAssignmentOperation) {
-            return -1;
+            return ir::type_ref::Invalid;
         }
-        let kind: i32 = place(compiler, active, depth + 1,
+        let place_kind: ir::type_ref::TypeRef = place(compiler, active, depth + 1,
             operation != backend::syntax::AssignmentSet);
-        if (kind <= 0) {
-            return -1;
+        if (!ir::type_ref::valid(place_kind)) {
+            return ir::type_ref::Invalid;
         }
-        let initialization: i32 = state[0].place_flag;
+        let initialization: backend::frame::InitializationFlag =
+            state[0].place_flag;
         let target: i32 = backend::frame::allocate(work, 1);
         backend::value::save_word(output, capacity, work, target, x86::register::RAX);
         let saved: i32 = backend::frame::allocate(work, 1);
         if (operation != backend::syntax::AssignmentSet) {
             // Core resolves the old value before evaluating the RHS.
-            if (kind != backend::syntax::type_code(backend::syntax::TypeI32)) { return -1; }
+            if (!ir::type_ref::same(place_kind, ir::type_ref::I32)) {
+                return ir::type_ref::Invalid;
+            }
             state[0].code = x86::encode::load(output, capacity, state[0].code, x86::register::WIDTH_32,
                 x86::register::RAX, x86::register::RAX, 0);
             backend::frame::store(output, capacity, work, saved, x86::register::RAX);
         }
-        let right: i32 = expression(compiler, active, depth + 1);
-        if (right != kind) { return -1; }
+        let right: ir::type_ref::TypeRef =
+            expression(compiler, active, depth + 1);
+        if (!ir::type_ref::same(right, place_kind)) {
+            return ir::type_ref::Invalid;
+        }
         if (operation != backend::syntax::AssignmentSet) {
-            if (kind != backend::syntax::type_code(backend::syntax::TypeI32)) { return -1; }
+            if (!ir::type_ref::same(place_kind, ir::type_ref::I32)) {
+                return ir::type_ref::Invalid;
+            }
             state[0].code = backend::operation::from_slot(output, capacity, state[0].code, saved, backend::syntax::assignment_binary(operation));
         }
         backend::value::load_word(output, capacity, work, target, x86::register::R11);
-        if (backend::layout::aggregate(kind)) {
+        if (backend::layout::aggregate(place_kind)) {
             backend::value::copy(output, capacity, work,
-                backend::layout_index::words(layout, kind));
+                backend::layout_index::words(layout, place_kind));
         } else {
             state[0].code = x86::encode::store(output, capacity, state[0].code,
-                backend::layout::width(kind), x86::register::RAX, x86::register::R11, 0);
+                backend::layout::width(place_kind), x86::register::RAX, x86::register::R11, 0);
         }
         // Mark only after RHS evaluation and the actual store. In particular
         // `x = x` must still trap if x was never initialized.
-        if (initialization >= 0) { backend::local::mark(output, capacity, work, initialization, true); }
-        return 0; // Core assignment expressions return unit.
+        let marked: bool = match (initialization) {
+            backend::frame::NoFlag -> true,
+            backend::frame::FlagSlot(flag_slot) ->
+                backend::local::mark(output, capacity, work, flag_slot,
+                    true) >= 0,
+        };
+        if (!marked) { return ir::type_ref::Invalid; }
+        return ir::type_ref::Void; // Core assignment expressions return unit.
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprIndex)) {
-        if (expression(compiler, active, depth + 1) != backend::syntax::type_code(backend::syntax::TypeSlice)) { return -1; }
-        if (!indexed(compiler, active, depth + 1)) { return -1; }
+    if (tag == backend::syntax::ExprIndex) {
+        if (!ir::type_ref::same(
+                expression(compiler, active, depth + 1),
+                ir::type_ref::Slice)) { return ir::type_ref::Invalid; }
+        if (!indexed(compiler, active, depth + 1)) {
+            return ir::type_ref::Invalid;
+        }
         state[0].code = x86::encode::load(output, capacity, state[0].code, x86::register::WIDTH_32,
             x86::register::RAX, x86::register::RAX, 0);
-        return backend::syntax::type_code(backend::syntax::TypeI32);
+        return ir::type_ref::I32;
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprSliceDataPointer) || tag == backend::syntax::expression_code(backend::syntax::ExprStringDataPointer)) {
-        let kind: i32 = expression(compiler, active, depth + 1);
-        if ((tag == backend::syntax::expression_code(backend::syntax::ExprSliceDataPointer) && kind != backend::syntax::type_code(backend::syntax::TypeSlice)) ||
-            (tag == backend::syntax::expression_code(backend::syntax::ExprStringDataPointer) && kind != backend::syntax::type_code(backend::syntax::TypeString))) { return -1; }
-        if (tag == backend::syntax::expression_code(backend::syntax::ExprStringDataPointer)) {
+    if (tag == backend::syntax::ExprSliceDataPointer || tag == backend::syntax::ExprStringDataPointer) {
+        let kind: ir::type_ref::TypeRef =
+            expression(compiler, active, depth + 1);
+        if ((tag == backend::syntax::ExprSliceDataPointer
+                && !ir::type_ref::same(kind, ir::type_ref::Slice))
+            || (tag == backend::syntax::ExprStringDataPointer
+                && !ir::type_ref::same(kind, ir::type_ref::String))) {
+            return ir::type_ref::Invalid;
+        }
+        if (tag == backend::syntax::ExprStringDataPointer) {
             // Core maps a fresh borrowed block on every call. Returning the
             // literal's address would break pointer equality and allow mutation
             // through one raw view to change later views of an immutable string.
@@ -533,14 +647,18 @@ fn emit_expression(compiler: CompilerContext, active: i32,
             state[0].code = x86::encode::load(output, capacity, state[0].code, x86::register::WIDTH_64,
                 x86::register::RAX, x86::register::RAX, 0);
         }
-        return backend::syntax::type_code(backend::syntax::TypePointer);
+        return ir::type_ref::Pointer;
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprSliceFromRawParts)) {
-        if (expression(compiler, active, depth + 1) != backend::syntax::type_code(backend::syntax::TypePointer)) { return -1; }
+    if (tag == backend::syntax::ExprSliceFromRawParts) {
+        if (!ir::type_ref::same(
+                expression(compiler, active, depth + 1),
+                ir::type_ref::Pointer)) { return ir::type_ref::Invalid; }
         let slot: i32 = backend::frame::allocate(work, 2);
-        if (slot <= -1) { return -1; }
+        if (slot <= -1) { return ir::type_ref::Invalid; }
         backend::value::save_word(output, capacity, work, slot, x86::register::RAX);
-        if (expression(compiler, active, depth + 1) != backend::syntax::type_code(backend::syntax::TypeI32)) { return -1; }
+        if (!ir::type_ref::same(
+                expression(compiler, active, depth + 1),
+                ir::type_ref::I32)) { return ir::type_ref::Invalid; }
         // Preserve Core's signed-length rejection. Allocation provenance,
         // exact backing size and lifetime remain the runtime/storage domain;
         // constructing this descriptor does not establish those conditions.
@@ -552,117 +670,143 @@ fn emit_expression(compiler: CompilerContext, active: i32,
             x86::register::RAX, x86::register::RAX);
         backend::value::save_word(output, capacity, work, slot - 1, x86::register::RAX);
         backend::value::address(output, capacity, work, slot, x86::register::RAX);
-        return backend::syntax::type_code(backend::syntax::TypeSlice);
+        return ir::type_ref::Slice;
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprStruct)) {
-        let kind: i32 = backend::frame::take(input, length, work);
-        let count: i32 = backend::frame::take(input, length, work);
+    if (tag == backend::syntax::ExprStruct) {
+        let constructor: backend::body_reader::StructConstructor =
+            backend::body_reader::struct_constructor(source, work, node);
+        let kind: ir::type_ref::TypeRef = constructor.kind;
+        let count: i32 = constructor.field_count;
         if (!backend::layout_index::is_structure(layout, kind)
             || count != backend::layout_index::member_count(layout,
-                kind)) { return -1; }
+                kind)) { return ir::type_ref::Invalid; }
         let size: i32 = backend::layout_index::words(layout, kind);
         let slot: i32 = backend::frame::allocate(work, size);
-        if (slot <= -1) { return -1; }
+        if (slot <= -1) { return ir::type_ref::Invalid; }
         let keep: i32 = state[0].top;
         let index: i32 = 0;
         while (index <= count - 1) {
-            let expected: i32 = backend::layout_index::field_kind(
-                layout, kind, index);
+            let expected: ir::type_ref::TypeRef =
+                backend::layout_index::field_kind(layout, kind, index);
             let offset: i32 = backend::layout_index::field_offset(
                 layout, kind, index);
-            let actual: i32 = expression(compiler, active, depth + 1);
-            if (actual != expected || offset <= -1) { return -1; }
+            let actual: ir::type_ref::TypeRef =
+                expression(compiler, active, depth + 1);
+            if (!ir::type_ref::same(actual, expected) || offset <= -1) {
+                return ir::type_ref::Invalid;
+            }
             backend::value::put(layout, output, capacity, work,
-                slot - offset / backend::layout::VALUE_WORD_BYTES, actual);
+                slot - offset / backend::layout::VALUE_WORD_BYTES,
+                actual);
             state[0].top = keep;
             index += 1;
         }
         backend::value::address(output, capacity, work, slot, x86::register::RAX);
-        return kind;
+        return constructor.kind;
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprField)) {
-        let field: i32 = backend::frame::take(input, length, work);
-        let kind: i32 = expression(compiler, active, depth + 1);
-        let result: i32 = backend::layout_index::field_kind(layout, kind,
-            field);
+    if (tag == backend::syntax::ExprField) {
+        let reference: ir::body_events::FieldReference =
+            backend::body_reader::field_expression(source, work, node);
+        let field: i32 = reference.index;
+        let kind: ir::type_ref::TypeRef =
+            expression(compiler, active, depth + 1);
+        let result_kind: ir::type_ref::TypeRef =
+            backend::layout_index::field_kind(layout, kind, field);
         let offset: i32 = backend::layout_index::field_offset(layout, kind,
             field);
-        if (result <= -1 || offset <= -1) { return -1; }
-        if (backend::layout::aggregate(result)) {
+        if (!ir::type_ref::valid(result_kind) || offset <= -1) {
+            return ir::type_ref::Invalid;
+        }
+        if (backend::layout::aggregate(result_kind)) {
             state[0].code = x86::encode::address(output, capacity, state[0].code, x86::register::RAX, x86::register::RAX, offset);
         } else {
-            state[0].code = x86::encode::load(output, capacity, state[0].code, backend::layout::width(result), x86::register::RAX, x86::register::RAX, offset);
+            state[0].code = x86::encode::load(output, capacity, state[0].code, backend::layout::width(result_kind), x86::register::RAX, x86::register::RAX, offset);
         }
-        return result;
+        return result_kind;
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprConstant)) {
-        let id: i32 = backend::frame::take(input, length, work);
+    if (tag == backend::syntax::ExprConstant) {
+        let reference: backend::body_reader::ConstantReference =
+            backend::body_reader::constant_expression(source, work, node);
+        let id: i32 = reference.id;
         let position: i32 = backend::constant_index::find(
             compiler.constants, id);
-        if (position <= -1) { return -1; }
+        if (position <= -1) { return ir::type_ref::Invalid; }
         let constant: backend::constant_index::Row =
             backend::constant_index::at(compiler.constants, position);
         if (constant.kind == backend::syntax::TypeString) {
-            return string_value(context, context_length,
+            return string_value(compiler.constants.bytes,
+                compiler.constants.byte_count,
                 constant.byte_start, constant.byte_count,
                 work, output, capacity);
         }
-        let kind: i32 = backend::syntax::type_code(constant.kind);
+        let result_kind: ir::type_ref::TypeRef =
+            backend::syntax::value_type_ref(constant.kind);
         state[0].code = x86::encode::immediate(output,
-            capacity, state[0].code, backend::layout::width(kind),
+            capacity, state[0].code, backend::layout::width(result_kind),
             x86::register::RAX, constant.low, constant.high);
-        return kind;
+        return result_kind;
     }
-    if (tag == backend::syntax::expression_code(backend::syntax::ExprCall)) {
-        let id: i32 = backend::frame::take(input, length, work);
-        let count: i32 = backend::frame::take(input, length, work);
+    if (tag == backend::syntax::ExprCall) {
+        let call: ir::body_events::CallHeader =
+            backend::body_reader::call_header(source, work, node);
+        let id: i32 = call.function_id;
+        let count: i32 = call.argument_count;
         let found: i32 = backend::function_index::find(
             compiler.functions, id);
-        if (found <= -1) { return -1; }
+        if (found <= -1) { return ir::type_ref::Invalid; }
         let callee: backend::function_index::Function =
             backend::function_index::at(compiler.functions, found);
         if (count != callee.header.parameters || count <= -1) {
-            return -1;
+            return ir::type_ref::Invalid;
         }
-        let result: i32 = callee.header.result_type;
+        let result_kind: ir::type_ref::TypeRef =
+            callee.header.result_type;
         let returned: i32 = -1;
         let hidden: i32 = 0;
-        if (backend::layout::aggregate(result)) {
+        if (backend::layout::aggregate(result_kind)) {
             hidden = 1;
             returned = backend::frame::allocate(work,
-                backend::layout_index::words(layout, result));
+                backend::layout_index::words(layout, result_kind));
         }
         let keep: i32 = state[0].top;
         let argument_words: i32 = count + hidden;
         if (argument_words == 0) { argument_words = 1; }
         let staged: i32 = backend::frame::allocate(work, argument_words);
-        if (staged <= -1) { return -1; }
+        if (staged <= -1) { return ir::type_ref::Invalid; }
         if (hidden != 0) {
             backend::value::address(output, capacity, work, returned, x86::register::RAX);
             backend::value::save_word(output, capacity, work, staged, x86::register::RAX);
         }
         let index: i32 = 0;
         while (index <= count - 1) {
-            let kind: i32 = expression(compiler, active, depth + 1);
-            if (kind != backend::function_index::parameter_kind(
-                    compiler.functions, found, index)) { return -1; }
+            let kind: ir::type_ref::TypeRef =
+                expression(compiler, active, depth + 1);
+            if (!ir::type_ref::same(kind,
+                    backend::function_index::parameter_kind(
+                        compiler.functions, found, index))) {
+                return ir::type_ref::Invalid;
+            }
             backend::value::save_word(output, capacity, work, staged - index - hidden, x86::register::RAX);
             index += 1;
         }
         backend::call::emit(output, capacity, work, staged, count + hidden, id);
         state[0].top = keep;
         if (hidden != 0) { backend::value::address(output, capacity, work, returned, x86::register::RAX); }
-        return result;
+        return result_kind;
     }
-    return -1;
+    return ir::type_ref::Invalid;
 }
 
-fn expression(compiler: CompilerContext, active: i32, depth: i32) -> i32 {
+fn expression(compiler: CompilerContext, active: i32, depth: i32)
+    -> ir::type_ref::TypeRef {
     let work: backend::frame::Workspace = compiler.work;
     let state: [backend::frame::State] = backend::frame::state_view(work);
     let top: i32 = state[0].top;
-    let kind: i32 = emit_expression(compiler, active, depth);
-    if (!backend::layout::aggregate(kind)) { state[0].top = top; }
+    let kind: ir::type_ref::TypeRef =
+        emit_expression(compiler, active, depth);
+    if (!backend::layout::aggregate(kind)) {
+        state[0].top = top;
+    }
     return kind;
 }
 
@@ -675,116 +819,150 @@ fn indexed(compiler: CompilerContext, active: i32, depth: i32) -> bool {
     let saved: i32 = backend::frame::allocate(work, 1);
     if (saved <= -1) { return false; }
     backend::value::save_word(output, capacity, work, saved, x86::register::RAX);
-    let kind: i32 = expression(compiler, active, depth);
-    return backend::index::address(output, capacity, work, saved, kind) >= 0;
+    let kind: ir::type_ref::TypeRef =
+        expression(compiler, active, depth);
+    return backend::index::address(output, capacity, work, saved,
+        kind) >= 0;
 }
 
 // Resolve a typed assignment target once, before the RHS runs. The returned
 // RAX is an address, unlike expression's scalar value / aggregate snapshot.
 fn place(compiler: CompilerContext, active: i32, depth: i32,
-    read_old: bool) -> i32 {
-    let input: [i32] = compiler.input;
-    let length: i32 = compiler.input_length;
+    read_old: bool) -> ir::type_ref::TypeRef {
+    let source: backend::body_reader::Source = compiler.source;
     let work: backend::frame::Workspace = compiler.work;
     let state: [backend::frame::State] = backend::frame::state_view(work);
     let output: [i32] = compiler.output;
     let capacity: i32 = compiler.output_capacity;
     let layout: backend::layout_index::Table = compiler.layout;
-    if (depth >= MAX_DEPTH || state[0].failed != 0 || state[0].code <= -1) { return -1; }
-    let tag: i32 = backend::frame::take(input, length, work);
-    if (tag == backend::syntax::place_code(backend::syntax::PlaceLocal)) {
-        let id: i32 = backend::frame::take(input, length, work);
+    if (depth >= MAX_DEPTH || state[0].failed || state[0].code <= -1) {
+        return ir::type_ref::Invalid;
+    }
+    let node: backend::body_reader::Place =
+        backend::body_reader::place(source, work);
+    let tag: backend::syntax::PlaceKind = node.kind;
+    if (tag == backend::syntax::PlaceLocal) {
+        let reference: ir::body_events::LocalReference =
+            backend::body_reader::local_place(source, work, node);
+        let id: i32 = reference.id;
         let binding: i32 = backend::local::lookup(work, active, id);
-        if (binding <= -1) { return -1; }
+        if (binding <= -1) { return ir::type_ref::Invalid; }
         let local: backend::local::LocalBinding =
             backend::local::read(work, binding);
         let slot: i32 = backend::local::binding_slot(local);
-        let kind: i32 = backend::local::binding_kind(local);
-        state[0].place_flag = -1;
-        if (kind <= -1) {
-            kind = 0 - kind;
-            state[0].place_flag = slot
-                - backend::layout_index::words(layout, kind);
-            if (read_old) { backend::local::require(output, capacity, work, state[0].place_flag); }
+        let kind: ir::type_ref::TypeRef =
+            backend::local::binding_kind(local);
+        if (!ir::type_ref::valid(kind)) { return ir::type_ref::Invalid; }
+        let kind_words: i32 = backend::layout_index::words(layout,
+            kind);
+        if (kind_words <= 0) { return ir::type_ref::Invalid; }
+        state[0].place_flag = backend::frame::NoFlag;
+        if (backend::local::needs_init_check(local)) {
+            let flag_slot: i32 = slot - kind_words;
+            state[0].place_flag = backend::frame::FlagSlot(flag_slot);
+            if (read_old) { backend::local::require(output, capacity, work, flag_slot); }
         }
         backend::value::address(output, capacity, work, slot, x86::register::RAX);
         return kind;
     }
-    if (tag == backend::syntax::place_code(backend::syntax::PlaceField)) {
-        let field: i32 = backend::frame::take(input, length, work);
-        let kind: i32 = place(compiler, active, depth + 1, true);
-        let result: i32 = backend::layout_index::field_kind(layout, kind,
-            field);
-        let offset: i32 = backend::layout_index::field_offset(layout, kind,
-            field);
-        if (result <= -1 || offset <= -1) { return -1; }
+    if (tag == backend::syntax::PlaceField) {
+        let reference: ir::body_events::FieldReference =
+            backend::body_reader::field_place(source, work, node);
+        let field: i32 = reference.index;
+        let parent_kind: ir::type_ref::TypeRef = place(compiler, active,
+            depth + 1, true);
+        let result: ir::type_ref::TypeRef =
+            backend::layout_index::field_kind(layout, parent_kind, field);
+        let offset: i32 = backend::layout_index::field_offset(layout,
+            parent_kind, field);
+        if (!ir::type_ref::valid(result) || offset <= -1) {
+            return ir::type_ref::Invalid;
+        }
         state[0].code = x86::encode::address(output, capacity, state[0].code,
             x86::register::RAX, x86::register::RAX, offset);
-        state[0].place_flag = -1;
+        state[0].place_flag = backend::frame::NoFlag;
         return result;
     }
-    if (tag == backend::syntax::place_code(backend::syntax::PlaceIndex)) {
-        if (place(compiler, active, depth + 1, true) != backend::syntax::type_code(backend::syntax::TypeSlice)) { return -1; }
-        let snapshot: i32 = backend::frame::allocate(work, 2);
-        if (snapshot <= -1) { return -1; }
+    if (tag == backend::syntax::PlaceIndex) {
+        if (!ir::type_ref::same(place(compiler, active, depth + 1,
+                true), ir::type_ref::Slice)) {
+            return ir::type_ref::Invalid;
+        }
+        let snapshot_words: i32 = backend::layout_index::words(layout,
+            ir::type_ref::Slice);
+        if (snapshot_words <= 0) { return ir::type_ref::Invalid; }
+        let snapshot: i32 = backend::frame::allocate(work, snapshot_words);
+        if (snapshot <= -1) { return ir::type_ref::Invalid; }
         backend::value::put(layout, output, capacity, work, snapshot,
-            backend::syntax::type_code(backend::syntax::TypeSlice));
+            ir::type_ref::Slice);
         backend::value::address(output, capacity, work, snapshot, x86::register::RAX);
-        if (!indexed(compiler, active, depth + 1)) { return -1; }
-        state[0].place_flag = -1;
-        return backend::syntax::type_code(backend::syntax::TypeI32);
+        if (!indexed(compiler, active, depth + 1)) {
+            return ir::type_ref::Invalid;
+        }
+        state[0].place_flag = backend::frame::NoFlag;
+        return ir::type_ref::I32;
     }
-    return -1;
+    return ir::type_ref::Invalid;
 }
 
 fn statement(compiler: CompilerContext, active: i32, depth: i32,
     loop_head: i32) -> bool {
-    let input: [i32] = compiler.input;
-    let length: i32 = compiler.input_length;
+    let source: backend::body_reader::Source = compiler.source;
     let work: backend::frame::Workspace = compiler.work;
     let state: [backend::frame::State] = backend::frame::state_view(work);
     let output: [i32] = compiler.output;
     let capacity: i32 = compiler.output_capacity;
     let layout: backend::layout_index::Table = compiler.layout;
-    if (depth >= MAX_DEPTH || state[0].failed != 0 || state[0].code <= -1) { return false; }
-    let tag: i32 = backend::frame::take(input, length, work);
-    if (tag == backend::syntax::statement_code(backend::syntax::StatementSkip)) { return true; }
-    if (tag == backend::syntax::statement_code(backend::syntax::StatementExpression)) {
+    if (depth >= MAX_DEPTH || state[0].failed || state[0].code <= -1) { return false; }
+    let node: backend::body_reader::Statement =
+        backend::body_reader::statement(source, work);
+    let tag: backend::syntax::StatementKind = node.kind;
+    if (tag == backend::syntax::StatementSkip) { return true; }
+    if (tag == backend::syntax::StatementExpression) {
         let top: i32 = state[0].top;
-        let kind: i32 = expression(compiler, active, 0);
+        let kind: ir::type_ref::TypeRef =
+            expression(compiler, active, 0);
         state[0].top = top;
-        return kind >= 0;
+        return ir::type_ref::valid_result(kind);
     }
-    if (tag == backend::syntax::statement_code(backend::syntax::StatementSequence)) {
+    if (tag == backend::syntax::StatementSequence) {
         if (!statement(compiler, active, depth + 1, loop_head)) { return false; }
         return statement(compiler, active, depth + 1, loop_head);
     }
-    if (tag == backend::syntax::statement_code(backend::syntax::StatementLet) || tag == backend::syntax::statement_code(backend::syntax::StatementLetUninitialized)) {
-        let id: i32 = backend::frame::take(input, length, work);
-        let kind: i32 = backend::frame::take(input, length, work);
-        let size: i32 = backend::layout_index::words(layout, kind);
-        if (id <= -1 || size <= 0 || active >= length) { return false; }
+    if (tag == backend::syntax::StatementLet || tag == backend::syntax::StatementLetUninitialized) {
+        let declaration: ir::body_events::LocalDeclaration =
+            backend::body_reader::local_declaration(source, work, node);
+        let id: i32 = declaration.id;
+        let kind_ref: ir::type_ref::TypeRef = declaration.kind;
+        let size: i32 = backend::layout_index::words(layout, kind_ref);
+        if (id <= -1 || size <= 0 || active >= state[0].stride) {
+            return false;
+        }
         let top: i32 = state[0].top;
-        if (tag == backend::syntax::statement_code(backend::syntax::StatementLet)) {
-            if (expression(compiler, active, 0) != kind) { return false; }
+        if (tag == backend::syntax::StatementLet) {
+            if (!ir::type_ref::same(expression(compiler, active, 0),
+                    kind_ref)) { return false; }
         } else { size += 1; }
         let slot: i32 = backend::frame::allocate(work, size);
         if (slot <= -1) { return false; }
-        if (tag == backend::syntax::statement_code(backend::syntax::StatementLet)) {
-            backend::value::put(layout, output, capacity, work, slot, kind);
+        if (tag == backend::syntax::StatementLet) {
+            backend::value::put(layout, output, capacity, work, slot,
+                kind_ref);
         } else {
             backend::local::mark(output, capacity, work, slot - size + 1, false);
-            kind = 0 - kind;
         }
         backend::local::write(work, active,
-            backend::local::binding(id, kind, slot));
+            backend::local::binding(id, kind_ref, slot,
+                tag == backend::syntax::StatementLetUninitialized));
         let result: bool = statement(compiler, active + 1, depth + 1, loop_head);
         state[0].top = top;
         return result;
     }
-    if (tag == backend::syntax::statement_code(backend::syntax::StatementReturn)) {
-        if (backend::frame::take(input, length, work) != 1) { return false; }
-        if (expression(compiler, active, 0) != state[0].result) { return false; }
+    if (tag == backend::syntax::StatementReturn) {
+        if (backend::body_reader::return_presence(source, work, node)
+                != backend::syntax::Present) { return false; }
+        if (!ir::type_ref::same(expression(compiler, active, 0),
+                state[0].result)) { return false; }
         if (backend::layout::aggregate(state[0].result)) {
             backend::value::load_word(output, capacity, work, state[0].sret, x86::register::R11);
             backend::value::copy(output, capacity, work,
@@ -794,23 +972,24 @@ fn statement(compiler: CompilerContext, active: i32, depth: i32,
         state[0].code = backend::frame::return_value(output, capacity, state[0].code);
         return state[0].code >= 0;
     }
-    if (tag == backend::syntax::statement_code(backend::syntax::StatementIf) || tag == backend::syntax::statement_code(backend::syntax::StatementWhile)) {
+    if (tag == backend::syntax::StatementIf || tag == backend::syntax::StatementWhile) {
         let head: i32 = state[0].code;
-        if (expression(compiler, active, 0) != backend::syntax::type_code(backend::syntax::TypeBool)) { return false; }
+        if (!ir::type_ref::same(expression(compiler, active, 0),
+                ir::type_ref::Bool)) { return false; }
         state[0].code = x86::encode::binary(output, capacity, state[0].code, x86::register::WIDTH_32, x86::encode::Test, x86::register::RAX, x86::register::RAX);
         let branch: i32 = state[0].code;
         state[0].code = x86::control::branch(output, capacity, branch, x86::control::Equal, 0);
         let body_head: i32 = loop_head;
         let breaks: i32 = state[0].break_count;
-        if (tag == backend::syntax::statement_code(backend::syntax::StatementWhile)) { body_head = head; }
+        if (tag == backend::syntax::StatementWhile) { body_head = head; }
         if (!statement(compiler, active, depth + 1, body_head)) { return false; }
         let jump: i32 = state[0].code;
         let target: i32 = 0;
-        if (tag == backend::syntax::statement_code(backend::syntax::StatementWhile)) { target = head; }
+        if (tag == backend::syntax::StatementWhile) { target = head; }
         state[0].code = x86::control::jump(output, capacity, jump, target);
         if (state[0].code <= -1) { return false; }
         x86::control::patch_relative(output, state[0].code, branch + 2, state[0].code);
-        if (tag == backend::syntax::statement_code(backend::syntax::StatementIf)) {
+        if (tag == backend::syntax::StatementIf) {
             if (!statement(compiler, active, depth + 1, loop_head)) { return false; }
             if (state[0].code <= -1) { return false; }
             x86::control::patch_relative(output, state[0].code, jump + 1, state[0].code);
@@ -826,13 +1005,13 @@ fn statement(compiler: CompilerContext, active: i32, depth: i32,
         }
         return true;
     }
-    if (tag == backend::syntax::statement_code(backend::syntax::StatementBreak) || tag == backend::syntax::statement_code(backend::syntax::StatementContinue)) {
+    if (tag == backend::syntax::StatementBreak || tag == backend::syntax::StatementContinue) {
         if (loop_head <= -1) { return false; }
         let jump: i32 = state[0].code;
         state[0].code = x86::control::jump(output, capacity, jump, loop_head);
-        if (tag == backend::syntax::statement_code(backend::syntax::StatementBreak)) {
+        if (tag == backend::syntax::StatementBreak) {
             let count: i32 = state[0].break_count;
-            if (count >= length) { return false; }
+            if (count >= state[0].stride) { return false; }
             backend::frame::write_break_patch(work, count, jump + 1);
             state[0].break_count = count + 1;
         }
@@ -844,16 +1023,16 @@ fn statement(compiler: CompilerContext, active: i32, depth: i32,
 // Input, workspace, and output are separate caller-owned buffers. On failure
 // the output/workspace are scratch, never an executable or published prefix.
 // The driver publishes only a successful complete function.
-pub fn function(function_input: WordRegion,
+fn function_source(function_input: WordRegion,
+    source: backend::body_reader::Source,
     indexed: backend::function_index::Function,
     workspace: backend::frame::Workspace,
     destination: CodeCursor,
-    program: WordRegion,
     layout: backend::layout_index::Table,
     constants: backend::constant_index::Table,
     functions: backend::function_index::Table) -> i32 {
     let input: [i32] = function_input.data;
-    let length: i32 = function_input.words;
+    let length: i32 = backend::body_reader::length(source);
     let work: backend::frame::Workspace = workspace;
     let state: [backend::frame::State] = backend::frame::state_view(work);
     let work_length: i32 = workspace.words;
@@ -870,22 +1049,26 @@ pub fn function(function_input: WordRegion,
     let header: backend::syntax::FunctionHeader = indexed.header;
     if (header.kind != backend::syntax::DefinedFunction
         || header.pointer_bits != backend::syntax::POINTER_BITS
-        || header.id <= -1 || header.body_words != length
+        || header.id <= -1
+        || (backend::body_reader::is_wire(source)
+            && header.body_words != length)
         || !backend::function_index::parameter_span_valid(functions,
             indexed)) { return -1; }
-    let literal: i32 = backend::literal::return_value(input, length,
-        header, output, capacity, cursor);
-    if (literal >= 0) { return literal; }
-    let parameters: backend::syntax::FunctionParameters =
-        backend::syntax::FunctionParameters {
-            header: header,
-            data: functions.parameters,
-            start: indexed.parameter_start,
-            length: functions.parameter_count,
-        };
-    let fast: i32 = backend::parameter::compile(input, length,
-        parameters, output, capacity, cursor);
-    if (fast >= 0) { return fast; }
+    if (backend::body_reader::is_wire(source)) {
+        let literal: i32 = backend::literal::return_value(input, length,
+            header, output, capacity, cursor);
+        if (literal >= 0) { return literal; }
+        let parameters: backend::syntax::FunctionParameters =
+            backend::syntax::FunctionParameters {
+                header: header,
+                data: functions.parameters,
+                start: indexed.parameter_start,
+                length: functions.parameter_count,
+            };
+        let fast: i32 = backend::parameter::compile(input, length,
+            parameters, output, capacity, cursor);
+        if (fast >= 0) { return fast; }
+    }
     if (backend::layout_index::words(layout, header.result_type)
             <= 0) { return -1; }
     let count: i32 = header.parameters;
@@ -893,7 +1076,7 @@ pub fn function(function_input: WordRegion,
     state[0].code = cursor;
     state[0].slots = 0;
     state[0].result = header.result_type;
-    state[0].failed = 0;
+    state[0].failed = false;
     state[0].break_count = 0;
     state[0].top = 0;
     let next: i32 = x86::control::push(output, capacity, cursor, x86::register::RBP);
@@ -917,13 +1100,13 @@ pub fn function(function_input: WordRegion,
             backend::function_index::parameter_at(functions, indexed,
                 index);
         let id: i32 = parameter.id;
-        let kind: i32 = parameter.kind;
-        let size: i32 = backend::layout_index::words(layout, kind);
+        let size: i32 = backend::layout_index::words(layout,
+            parameter.kind);
         if (id <= -1 || size <= 0 || backend::local::lookup(work, index, id) >= 0) { return -1; }
         let slot: i32 = backend::frame::allocate(work, size);
         if (slot <= -1) { return -1; }
         backend::local::write(work, index,
-            backend::local::binding(id, kind, slot));
+            backend::local::binding(id, parameter.kind, slot, false));
         let argument: i32 = index + hidden;
         if (argument < backend::parameter::INTEGER_ARGUMENT_REGISTERS) {
             state[0].code = x86::encode::move_register(output, capacity, state[0].code, x86::register::WIDTH_64,
@@ -936,29 +1119,75 @@ pub fn function(function_input: WordRegion,
                         - backend::parameter::INTEGER_ARGUMENT_REGISTERS)
                         * backend::layout::VALUE_WORD_BYTES);
         }
-        if (kind == backend::syntax::type_code(backend::syntax::TypeBool)) {
+        if (ir::type_ref::same(parameter.kind, ir::type_ref::Bool)) {
             state[0].code = x86::encode::immediate(output, capacity, state[0].code, x86::register::WIDTH_32, x86::register::R11, 1, 0);
             state[0].code = x86::encode::binary(output, capacity, state[0].code, x86::register::WIDTH_32, x86::encode::And, x86::register::RAX, x86::register::R11);
         }
-        backend::value::put(layout, output, capacity, work, slot, kind);
+        backend::value::put(layout, output, capacity, work, slot,
+            parameter.kind);
         index += 1;
     }
     let compiler: CompilerContext = CompilerContext {
-        input: input,
-        input_length: length,
+        source: source,
         work: work,
         output: output,
         output_capacity: capacity,
-        program: program,
         layout: layout,
         constants: constants,
         functions: functions,
     };
     if (!statement(compiler, count, 0, -1)) { return -1; }
-    if (state[0].failed != 0 || state[0].input != length || state[0].code <= -1) { return -1; }
+    if (state[0].failed || state[0].input != length || state[0].code <= -1) { return -1; }
     // Reaching the end of a non-unit Core function is missingReturn.
     state[0].code = x86::control::trap(output, capacity, state[0].code);
     if (state[0].code <= -1) { return -1; }
     x86::buffer::store_word(output, frame_field, backend::frame::bytes(state[0].slots));
     return state[0].code;
+}
+
+pub fn function(function_input: WordRegion,
+    indexed: backend::function_index::Function,
+    workspace: backend::frame::Workspace,
+    destination: CodeCursor,
+    layout: backend::layout_index::Table,
+    constants: backend::constant_index::Table,
+    functions: backend::function_index::Table) -> i32 {
+    return function_source(function_input,
+        backend::body_reader::wire(function_input.data,
+            function_input.words), indexed, workspace, destination,
+        layout, constants, functions);
+}
+
+pub fn function_events(body: ir::body_events::Region,
+    indexed: backend::function_index::Function,
+    workspace: backend::frame::Workspace,
+    destination: CodeCursor,
+    layout: backend::layout_index::Table,
+    constants: backend::constant_index::Table,
+    functions: backend::function_index::Table) -> i32 {
+    let header: backend::syntax::FunctionHeader = indexed.header;
+    if (!backend::function_index::parameter_span_valid(functions, indexed)) {
+        return -1;
+    }
+    let output: [i32] = destination.data;
+    let capacity: i32 = destination.capacity;
+    let cursor: i32 = destination.position;
+    let literal: i32 = backend::literal::return_event(body, header,
+        output, capacity, cursor);
+    if (literal >= 0) { return literal; }
+    let parameters: backend::syntax::FunctionParameters =
+        backend::syntax::FunctionParameters {
+            header: header,
+            data: functions.parameters,
+            start: indexed.parameter_start,
+            length: functions.parameter_count,
+        };
+    let fast: i32 = backend::parameter::compile_event(body, parameters,
+        output, capacity, cursor);
+    if (fast >= 0) { return fast; }
+    let nowhere: ptr = 0;
+    let empty: [i32] = slice_from_raw_parts(nowhere, 0);
+    return function_source(region(empty, 0),
+        backend::body_reader::events(body), indexed, workspace,
+        destination, layout, constants, functions);
 }

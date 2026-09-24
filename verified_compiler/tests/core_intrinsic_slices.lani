@@ -1,0 +1,17 @@
+module app::main;
+
+fn from_raw(data: ptr, length: i32) -> [i32] {
+    return i32_slice_from_raw_parts(data, length);
+}
+
+fn data_pointer(values: [i32]) -> ptr {
+    return i32_slice_data_ptr(values);
+}
+
+fn text_pointer(text: str) -> ptr {
+    return string_data_ptr(text);
+}
+
+fn main() -> i32 {
+    return 0;
+}

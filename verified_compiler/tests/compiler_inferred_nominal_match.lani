@@ -1,0 +1,26 @@
+module app::main;
+
+// Lanius-written compiler regression: inferred bindings retain scalar,
+// enum, and struct types through a member access and an enum match.
+
+enum Choice {
+    Payload(i32),
+    Empty,
+}
+
+struct Holder {
+    choice: Choice,
+}
+
+fn main() -> i32 {
+    let number = 6 + 7;
+    let good = number == 13;
+    let choice = Payload(number);
+    let holder = Holder { choice: choice };
+    let selected = match (holder.choice) {
+        Payload(value) -> value,
+        Empty -> 0,
+    };
+    if (good && selected == 13) { return 0; }
+    return 1;
+}

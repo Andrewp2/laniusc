@@ -2,6 +2,7 @@ module verified::surface_expr;
 import verified::production;
 import verified::parser;
 import verified::host;
+import verified::surface_path;
 import verified::syntax_tree;
 
 // Semantic children precede parents. Segment left fields instead link to the
@@ -26,34 +27,120 @@ pub enum SurfaceExprKind {
     PatternLiteral,
 }
 
-pub fn kind_code(kind: SurfaceExprKind) -> i32 {
-    return match (kind) {
-        Literal -> 0,
-        Unary -> 1,
-        Binary -> 2,
-        Assign -> 3,
-        PathSegment -> 4,
-        Path -> 5,
-        PathExpression -> 6,
-        Index -> 7,
-        Member -> 8,
-        Call -> 9,
-        Array -> 10,
-        StructField -> 11,
-        StructValue -> 12,
-        MatchValue -> 13,
-        MatchArm -> 14,
-        PatternPath -> 15,
-        PatternLiteral -> 16,
-    };
+// A semantic node carries its operation, not the parser-table production ID.
+// These payload-free cases occupy the same one-word slot as the old ID.
+pub enum ExpressionOperator {
+    NoOperator,
+    LiteralInteger,
+    LiteralFloat,
+    LiteralString,
+    LiteralCharacter,
+    LiteralTrue,
+    LiteralFalse,
+    UnaryPositive,
+    UnaryNegate,
+    UnaryNot,
+    BinaryOrElse,
+    BinaryAndThen,
+    BinaryBitOr,
+    BinaryBitXor,
+    BinaryBitAnd,
+    BinaryEqual,
+    BinaryNotEqual,
+    BinaryLess,
+    BinaryGreater,
+    BinaryLessEqual,
+    BinaryGreaterEqual,
+    BinaryShiftLeft,
+    BinaryShiftRight,
+    BinaryAdd,
+    BinarySubtract,
+    BinaryMultiply,
+    BinaryDivide,
+    BinaryRemainder,
+    AssignmentSet,
+    AssignmentAdd,
+    AssignmentSubtract,
+    AssignmentMultiply,
+    AssignmentDivide,
+    AssignmentRemainder,
+    AssignmentBitXor,
+    AssignmentShiftLeft,
+    AssignmentShiftRight,
+    AssignmentBitAnd,
+    AssignmentBitOr,
+    PatternInteger,
+    PatternTrue,
+    PatternFalse,
+}
+
+fn literal_operator(production: i32) -> ExpressionOperator {
+    if (production == verified::production::INT) { return LiteralInteger; }
+    if (production == verified::production::FLOAT) { return LiteralFloat; }
+    if (production == verified::production::STRING) { return LiteralString; }
+    if (production == verified::production::CHAR) { return LiteralCharacter; }
+    if (production == verified::production::TRUE) { return LiteralTrue; }
+    if (production == verified::production::FALSE) { return LiteralFalse; }
+    return NoOperator;
+}
+
+fn unary_operator(production: i32) -> ExpressionOperator {
+    if (production == verified::production::POS) { return UnaryPositive; }
+    if (production == verified::production::NEG) { return UnaryNegate; }
+    if (production == verified::production::NOT) { return UnaryNot; }
+    return NoOperator;
+}
+
+fn binary_operator(production: i32) -> ExpressionOperator {
+    if (production == verified::production::OR_TAIL) { return BinaryOrElse; }
+    if (production == verified::production::AND_TAIL) { return BinaryAndThen; }
+    if (production == verified::production::BOR_TAIL) { return BinaryBitOr; }
+    if (production == verified::production::XOR_TAIL) { return BinaryBitXor; }
+    if (production == verified::production::BAND_TAIL) { return BinaryBitAnd; }
+    if (production == verified::production::EQ_TAIL) { return BinaryEqual; }
+    if (production == verified::production::NE_TAIL) { return BinaryNotEqual; }
+    if (production == verified::production::LT_TAIL) { return BinaryLess; }
+    if (production == verified::production::GT_TAIL) { return BinaryGreater; }
+    if (production == verified::production::LE_TAIL) { return BinaryLessEqual; }
+    if (production == verified::production::GE_TAIL) { return BinaryGreaterEqual; }
+    if (production == verified::production::SHL_TAIL) { return BinaryShiftLeft; }
+    if (production == verified::production::SHR_TAIL) { return BinaryShiftRight; }
+    if (production == verified::production::ADD_TAIL) { return BinaryAdd; }
+    if (production == verified::production::SUB_TAIL) { return BinarySubtract; }
+    if (production == verified::production::MUL_TAIL) { return BinaryMultiply; }
+    if (production == verified::production::DIV_TAIL) { return BinaryDivide; }
+    if (production == verified::production::MOD_TAIL) { return BinaryRemainder; }
+    return NoOperator;
+}
+
+fn assignment_operator(production: i32) -> ExpressionOperator {
+    if (production == verified::production::ASSIGN_SET) { return AssignmentSet; }
+    if (production == verified::production::ASSIGN_ADD) { return AssignmentAdd; }
+    if (production == verified::production::ASSIGN_SUB) { return AssignmentSubtract; }
+    if (production == verified::production::ASSIGN_MUL) { return AssignmentMultiply; }
+    if (production == verified::production::ASSIGN_DIV) { return AssignmentDivide; }
+    if (production == verified::production::ASSIGN_MOD) { return AssignmentRemainder; }
+    if (production == verified::production::ASSIGN_XOR) { return AssignmentBitXor; }
+    if (production == verified::production::ASSIGN_SHL) { return AssignmentShiftLeft; }
+    if (production == verified::production::ASSIGN_SHR) { return AssignmentShiftRight; }
+    if (production == verified::production::ASSIGN_BAND) { return AssignmentBitAnd; }
+    if (production == verified::production::ASSIGN_BOR) { return AssignmentBitOr; }
+    return NoOperator;
+}
+
+fn pattern_operator(production: i32) -> ExpressionOperator {
+    if (production == verified::production::PATTERN_INT) { return PatternInteger; }
+    if (production == verified::production::PATTERN_TRUE) { return PatternTrue; }
+    if (production == verified::production::PATTERN_FALSE) { return PatternFalse; }
+    return NoOperator;
 }
 
 pub fn has_kind(actual: SurfaceExprKind, expected: SurfaceExprKind) -> bool {
-    return kind_code(actual) == kind_code(expected);
+    return actual == expected;
 }
 
 const FIELD_BYTES: i32 = 8;
-pub const NODE_FIELDS: i32 = 7;
+pub const NODE_FIELDS: i32 = 6;
 pub const NODE_BYTES: i32 = NODE_FIELDS * FIELD_BYTES;
 pub const ALIGNMENT: i32 = FIELD_BYTES;
 pub const MAX_CAPACITY: i32 =
@@ -61,8 +148,7 @@ pub const MAX_CAPACITY: i32 =
 
 pub struct ExpressionNode {
     kind: SurfaceExprKind,
-    origin: i32,
-    production: i32,
+    operator: ExpressionOperator,
     left: i32,
     right: i32,
     token: i32,
@@ -124,31 +210,18 @@ struct BuildContext {
     arena: ExpressionArena,
 }
 
-fn mode_code(mode: BuildMode) -> i32 {
-    return match (mode) {
-        ExpressionMode -> 0,
-        ArgumentListMode -> 1,
-        ArrayListMode -> 2,
-        StructFieldListMode -> 3,
-        MatchArmListMode -> 4,
-        PatternMode -> 5,
-        PatternListMode -> 6,
-    };
-}
-
 fn mode_is(mode: BuildMode, expected: BuildMode) -> bool {
-    return mode_code(mode) == mode_code(expected);
+    return mode == expected;
 }
 
-fn append(arena: ExpressionArena, kind: SurfaceExprKind, origin: i32,
-    production: i32, left: i32, right: i32, token: i32) -> i32 {
+fn append(arena: ExpressionArena, kind: SurfaceExprKind,
+    operator: ExpressionOperator, left: i32, right: i32, token: i32) -> i32 {
     let count: i32 = node_count(arena);
     if (count <= -1 || count >= arena.capacity) { return -1; }
     let nodes: [ExpressionNode] = arena.data;
     nodes[count] = ExpressionNode {
         kind: kind,
-        origin: origin,
-        production: production,
+        operator: operator,
         left: left,
         right: right,
         token: token,
@@ -266,36 +339,25 @@ fn binary_end(production: i32) -> i32 {
 fn path(context: BuildContext, node: i32, fuel: i32) -> i32 {
     let arena: ExpressionArena = context.arena;
     let nodes: [ExpressionNode] = arena.data;
-    if (production(context, node) != verified::production::PATH) {
-        return -1;
-    }
-    let segment: i32 = child(context, node, 0);
-    let tail: i32 = child(context, node, 1);
+    let segment: verified::surface_path::Segment =
+        verified::surface_path::first(context.tree, node);
     let first: i32 = -1;
     let previous: i32 = -1;
     let remaining: i32 = fuel;
     while (remaining >= 1) {
         remaining -= 1;
-        // Generic arguments will be handled by type extraction; never drop them.
-        if (production(context, segment) != verified::production::PATH_IDENT) {
-            return -1;
-        }
-        let token: i32 = token_child(context, segment, 0);
-        if (token <= -1) { return -1; }
-        let current: i32 = append(arena, PathSegment, segment,
-            verified::production::PATH_IDENT, -1, -1, token);
+        if (!segment.valid) { return -1; }
+        let current: i32 = append(arena, PathSegment,
+            NoOperator, -1, -1, segment.token);
         if (current <= -1) { return -1; }
         if (previous == -1) { first = current; }
         else { nodes[previous].left = current; }
         previous = current;
-        let tail_kind: i32 = production(context, tail);
-        if (tail_kind == verified::production::PATH_END) {
-            return append(arena, Path, node,
-                verified::production::PATH, first, -1, -1);
+        if (segment.last) {
+            return append(arena, Path,
+                NoOperator, first, -1, -1);
         }
-        if (tail_kind != verified::production::PATH_MORE) { return -1; }
-        segment = child(context, tail, 2);
-        tail = child(context, tail, 3);
+        segment = verified::surface_path::next(context.tree, segment);
     }
     return -1;
 }
@@ -360,8 +422,8 @@ fn build(context: BuildContext, node: i32, fuel: i32,
                 child(context, current, 2),
                 fuel - 1, ExpressionMode);
             if (name <= -1 || value <= -1) { return -2; }
-            let field: i32 = append(arena, StructField, current,
-                verified::production::STRUCT_LIT_FIELD, value, -1, name);
+            let field: i32 = append(arena, StructField,
+                NoOperator, value, -1, name);
             if (field <= -1) { return -2; }
             if (previous == -1) { first = field; }
             else { nodes[previous].next = field; }
@@ -408,7 +470,7 @@ fn build(context: BuildContext, node: i32, fuel: i32,
                 if (tail_kind
                     != verified::production::PATTERN_PLAIN) { return -2; }
             }
-            return append(arena, PatternPath, node, production,
+            return append(arena, PatternPath, NoOperator,
                 owner, payload, -1);
         }
         if (production == verified::production::PATTERN_INT
@@ -419,7 +481,8 @@ fn build(context: BuildContext, node: i32, fuel: i32,
                 token = token_child(context, node, 0);
                 if (token <= -1) { return -2; }
             }
-            return append(arena, PatternLiteral, node, production,
+            return append(arena, PatternLiteral,
+                pattern_operator(production),
                 -1, -1, token);
         }
         return -2;
@@ -492,8 +555,8 @@ fn build(context: BuildContext, node: i32, fuel: i32,
                 child(context, current, 2),
                 fuel - 1, ExpressionMode);
             if (pattern <= -1 || result <= -1) { return -2; }
-            let arm: i32 = append(arena, MatchArm, current,
-                verified::production::MATCH_ARM, pattern, result, -1);
+            let arm: i32 = append(arena, MatchArm,
+                NoOperator, pattern, result, -1);
             if (arm <= -1) { return -2; }
             if (previous == -1) { first = arm; }
             else { nodes[previous].next = arm; }
@@ -529,7 +592,7 @@ fn build(context: BuildContext, node: i32, fuel: i32,
             child(context, node, 1), fuel - 1,
             ArrayListMode);
         if (first <= -2) { return -1; }
-        return append(arena, Array, node, production, -1, first, -1);
+        return append(arena, Array, NoOperator, -1, first, -1);
     }
     if (production == verified::production::MATCH_EXPR) {
         let scrutinee: i32 = build(context,
@@ -539,7 +602,7 @@ fn build(context: BuildContext, node: i32, fuel: i32,
             child(context, node, 5), fuel - 1,
             MatchArmListMode);
         if (scrutinee <= -1 || arms <= -1) { return -1; }
-        return append(arena, MatchValue, node, production,
+        return append(arena, MatchValue, NoOperator,
             scrutinee, arms, -1);
     }
     if (production == verified::production::IDENT) {
@@ -550,16 +613,16 @@ fn build(context: BuildContext, node: i32, fuel: i32,
             child(context, node, 0), fuel - 1);
         if (value <= -1) { return -1; }
         if (tail_kind == verified::production::IDENT_PLAIN) {
-            return append(arena, PathExpression, node,
-                verified::production::IDENT, value, -1, -1);
+            return append(arena, PathExpression,
+                NoOperator, value, -1, -1);
         }
         if (tail_kind != verified::production::STRUCT_LIT) { return -1; }
         let fields: i32 = build(context,
             child(context, tail, 1), fuel - 1,
             StructFieldListMode);
         if (fields <= -2) { return -1; }
-        return append(arena, StructValue, node,
-            verified::production::IDENT, value, fields, -1);
+        return append(arena, StructValue,
+            NoOperator, value, fields, -1);
     }
     // A path can reach the expression grammar directly for a call base.  The
     // usual path-expression production (173) wraps this node, but preserving
@@ -568,14 +631,15 @@ fn build(context: BuildContext, node: i32, fuel: i32,
     if (production == verified::production::PATH) {
         let owner: i32 = path(context, node, fuel - 1);
         if (owner <= -1) { return -1; }
-        return append(arena, PathExpression, node, production,
+        return append(arena, PathExpression, NoOperator,
             owner, -1, -1);
     }
     if (literal_production(production)) {
         if (children(context, node) != 1) { return -1; }
         let token: i32 = token_child(context, node, 0);
         if (token <= -1) { return -1; }
-        return append(arena, Literal, node, production, -1, -1, token);
+        return append(arena, Literal,
+            literal_operator(production), -1, -1, token);
     }
     if (production == verified::production::EXPR || production == verified::production::BASE || production == verified::production::GROUP) {
         let index: i32 = 0;
@@ -589,7 +653,8 @@ fn build(context: BuildContext, node: i32, fuel: i32,
             child(context, node, 1), fuel - 1,
             ExpressionMode);
         if (operand <= -1) { return -1; }
-        return append(arena, Unary, node, production, operand, -1, -1);
+        return append(arena, Unary,
+            unary_operator(production), operand, -1, -1);
     }
     let end: i32 = binary_end(production);
     if (end == -1 && production != verified::production::ASSIGN && production != verified::production::POSTFIX) { return -1; }
@@ -613,7 +678,7 @@ fn build(context: BuildContext, node: i32, fuel: i32,
                     child(context, tail, 1),
                     fuel - 1, ArgumentListMode);
                 if (first <= -2) { return -1; }
-                left = append(arena, Call, tail, operation, left,
+                left = append(arena, Call, NoOperator, left,
                     first, -1);
                 tail = child(context, tail, 3);
             } else {
@@ -622,14 +687,14 @@ fn build(context: BuildContext, node: i32, fuel: i32,
                     child(context, tail, 1),
                     fuel - 1, ExpressionMode);
                 if (index <= -1) { return -1; }
-                left = append(arena, Index, tail, operation, left,
+                left = append(arena, Index, NoOperator, left,
                     index, -1);
                 tail = child(context, tail, 3);
             } else {
                 if (operation != verified::production::POSTFIX_MEMBER) { return -1; }
                 let name: i32 = token_child(context, tail, 1);
                 if (name <= -1) { return -1; }
-                left = append(arena, Member, tail, operation, left,
+                left = append(arena, Member, NoOperator, left,
                     -1, name);
                 tail = child(context, tail, 2);
             }
@@ -644,7 +709,8 @@ fn build(context: BuildContext, node: i32, fuel: i32,
                 child(context, tail, 1),
                 fuel - 1, ExpressionMode);
             if (right <= -1) { return -1; }
-            return append(arena, Assign, tail, operation, left,
+            return append(arena, Assign,
+                assignment_operator(operation), left,
                 right, -1);
         }
         if (operation == end) { return left; }
@@ -653,7 +719,8 @@ fn build(context: BuildContext, node: i32, fuel: i32,
             child(context, tail, 1), fuel - 1,
             ExpressionMode);
         if (right <= -1) { return -1; }
-        left = append(arena, Binary, tail, operation, left, right, -1);
+        left = append(arena, Binary,
+            binary_operator(operation), left, right, -1);
         if (left <= -1) { return -1; }
         tail = child(context, tail, 2);
         }
@@ -663,13 +730,22 @@ fn build(context: BuildContext, node: i32, fuel: i32,
 
 // Requires grammar-validated input. Build once in semantic traversal order.
 // Failure leaves partial arena contents which must be discarded.
-pub fn extract(input: ExpressionInput, output: ExpressionArena) -> i32 {
+pub fn extract_append(input: ExpressionInput, output: ExpressionArena) -> i32 {
     if (output.capacity <= 0) { return -1; }
     let count: [CountCell] = output.count;
-    count[0].value = 0;
+    if (count[0].value <= -1 || count[0].value > output.capacity) {
+        return -1;
+    }
     let context: BuildContext = BuildContext {
         tree: input.tree,
         arena: output,
     };
     return build(context, input.root, input.depth, ExpressionMode);
+}
+
+pub fn extract(input: ExpressionInput, output: ExpressionArena) -> i32 {
+    if (output.capacity <= 0) { return -1; }
+    let count: [CountCell] = output.count;
+    count[0].value = 0;
+    return extract_append(input, output);
 }

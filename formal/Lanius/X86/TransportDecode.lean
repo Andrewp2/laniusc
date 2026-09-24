@@ -54,7 +54,66 @@ def type? : Int → Option Ty
   | 4 => some (.scalar .rawPtr)
   | 5 => some (.scalar .string)
   | 6 => some (.slice (.scalar (.signed .i32)))
-  | tag => if 16 ≤ tag then some (.structure (tag - 16).toNat) else none
+  | tag =>
+      if 1073741824 ≤ tag ∧ tag < 2147483632 then
+        some (.slice (.structure (tag - 1073741824).toNat))
+      else if 16 ≤ tag ∧ tag < 1073741824 then
+        some (.structure (tag - 16).toNat)
+      else none
+
+def resultType? (tag : Int) : Option Ty :=
+  if tag = 0 then some .unit else type? tag
+
+/-- Nominal wire tags carry an ID, while declaration layouts carry the kind.
+    Resolve the kind once after parsing those layouts rather than guessing at
+    each occurrence of the type tag. -/
+def resolveNominalTy (enumerations : List EnumDecl) : Ty → Ty
+  | .structure id =>
+      if enumerations.any (fun declaration => declaration.id == id) then
+        .enumeration id
+      else .structure id
+  | .slice element => .slice (resolveNominalTy enumerations element)
+  | .array element length => .array (resolveNominalTy enumerations element) length
+  | .reference referent => .reference (resolveNominalTy enumerations referent)
+  | type => type
+
+def resolveNominalStmt (enumerations : List EnumDecl) : Stmt → Stmt
+  | .sequence first second =>
+      .sequence (resolveNominalStmt enumerations first)
+        (resolveNominalStmt enumerations second)
+  | .letLocal id type initializer body =>
+      .letLocal id (resolveNominalTy enumerations type) initializer
+        (resolveNominalStmt enumerations body)
+  | .letUninitialized id type body =>
+      .letUninitialized id (resolveNominalTy enumerations type)
+        (resolveNominalStmt enumerations body)
+  | .ifThenElse condition thenBranch elseBranch =>
+      .ifThenElse condition (resolveNominalStmt enumerations thenBranch)
+        (resolveNominalStmt enumerations elseBranch)
+  | .whileLoop condition body =>
+      .whileLoop condition (resolveNominalStmt enumerations body)
+  | .forValues id iterable body =>
+      .forValues id iterable (resolveNominalStmt enumerations body)
+  | .forRange id start stop inclusive body =>
+      .forRange id start stop inclusive (resolveNominalStmt enumerations body)
+  | statement => statement
+
+def resolveNominalProgram (program : Program) : Program :=
+  let enumerations := program.enumerations
+  { program with
+    structures := program.structures.map fun declaration =>
+      { declaration with fields := declaration.fields.map (resolveNominalTy enumerations) }
+    enumerations := enumerations.map fun declaration =>
+      { declaration with variants :=
+          declaration.variants.map (fun fields => fields.map (resolveNominalTy enumerations)) }
+    constants := program.constants.map fun constant =>
+      { constant with type := resolveNominalTy enumerations constant.type }
+    functions := program.functions.map fun function =>
+      { function with
+        parameters := function.parameters.map fun (id, type) =>
+          (id, resolveNominalTy enumerations type)
+        returnType := resolveNominalTy enumerations function.returnType
+        body := function.body.map (resolveNominalStmt enumerations) } }
 
 def scalar? : Int → Option ScalarTy
   | 1 => some (.signed .i32) | 3 => some (.unsigned .usize) | _ => none
@@ -86,7 +145,7 @@ def getNat (words : List Int) : Option (Nat × List Int) := do
   let (word, rest) ← get words; let word ← nat? word; return (word, rest)
 
 def structId? (tag : Int) : Option TypeId :=
-  if 16 ≤ tag then some (tag - 16).toNat else none
+  if 16 ≤ tag ∧ tag < 1073741824 then some (tag - 16).toNat else none
 
 def mkConstant (id : ConstantId) (type : Ty) (value : Value) (rest : List Int) :
     Option (Constant × List Int) := some ({
@@ -112,6 +171,17 @@ mutual
       | 15 => do let (x, rest) ← parseExpr fuel words; let (y, rest) ← parseExpr fuel rest; return (.i32SliceFromRawParts x y, rest)
       | 16 => do let (x, rest) ← parseExpr fuel words; return (.i32SliceDataPtr x, rest)
       | 17 => do let (x, rest) ← parseExpr fuel words; return (.stringDataPtr x, rest)
+      | 22 => do
+          let (kind, rest) ← get words
+          let (id, rest) ← getNat rest
+          let element ← match kind with
+            | 0 => some (.structure id)
+            | 1 => some (.enumeration id)
+            | 2 => if id = 0 then some (.scalar (.signed .i32)) else none
+            | _ => none
+          let (pointer, rest) ← parseExpr fuel rest
+          let (length, rest) ← parseExpr fuel rest
+          return (.typedSliceFromRawParts element pointer length, rest)
       | _ => none
     | _, [] => none
 
@@ -144,7 +214,13 @@ mutual
       | 4 => do let (id, rest) ← getNat words; let (tag, rest) ← get rest; let type ← type? tag; let (body, rest) ← parseStmt fuel rest; return (.letUninitialized id type body, rest)
       | 5 => do let (c, rest) ← parseExpr fuel words; let (x, rest) ← parseStmt fuel rest; let (y, rest) ← parseStmt fuel rest; return (.ifThenElse c x y, rest)
       | 6 => do let (c, rest) ← parseExpr fuel words; let (body, rest) ← parseStmt fuel rest; return (.whileLoop c body, rest)
-      | 10 => do let (present, rest) ← get words; if present ≠ 1 then none else do let (x, rest) ← parseExpr fuel rest; return (.returnValue (some x), rest)
+      | 10 => do
+          let (present, rest) ← get words
+          if present = 0 then return (.returnValue none, rest)
+          else if present = 1 then
+            let (x, rest) ← parseExpr fuel rest
+            return (.returnValue (some x), rest)
+          else none
       | 11 => some (.breakLoop, words)
       | 12 => some (.continueLoop, words)
       | _ => none
@@ -167,16 +243,43 @@ mutual
     | fuel + 1, count + 1, words => do
         let (id, rest) ← getNat words; let (tag, rest) ← get rest; let type ← type? tag; let (tail, rest) ← parseParams fuel count rest; return ((id, type) :: tail, rest)
 
-  def parseStructure : List Int → Option (StructDecl × List Int)
-    | id :: count :: words => do
-        let id ← nat? id; let count ← nat? count; let (fields, rest) ← parseTypes count words; return ({ id := id, fields := fields }, rest)
+  def parseVariants : Nat → List Int → Option (List (List Ty) × List Int)
+    | 0, words => some ([], words)
+    | count + 1, words => do
+        let (fieldCount, words) ← getNat words
+        let (fields, words) ← parseTypes fieldCount words
+        let (tail, words) ← parseVariants count words
+        return (fields :: tail, words)
+
+  def parseTypeLayout : List Int → Option (Sum StructDecl EnumDecl × List Int)
+    | length :: words => do
+        let length ← nat? length
+        let (layout, rest) ← takeWords length words
+        let id :: kind :: count :: fields := layout | none
+        let id ← nat? id
+        let count ← nat? count
+        match kind with
+        | 0 => do
+            let (fields, leftover) ← parseTypes count fields
+            if ¬ leftover.isEmpty then none else
+              return (.inl { id := id, fields := fields }, rest)
+        | 1 => do
+            let (variants, leftover) ← parseVariants count fields
+            if ¬ leftover.isEmpty then none else
+              return (.inr { id := id, variants := variants }, rest)
+        | _ => none
     | _ => none
 
-  def parseStructures : Nat → Nat → List Int → Option (List StructDecl × List Int)
-    | _, 0, words => some ([], words)
+  def parseTypeLayouts : Nat → Nat → List Int →
+      Option ((List StructDecl × List EnumDecl) × List Int)
+    | _, 0, words => some (([], []), words)
     | 0, _, _ => none
     | fuel + 1, count + 1, words => do
-        let (head, rest) ← parseStructure words; let (tail, rest) ← parseStructures fuel count rest; return (head :: tail, rest)
+        let (head, rest) ← parseTypeLayout words
+        let ((structures, enumerations), rest) ← parseTypeLayouts fuel count rest
+        match head with
+        | .inl declaration => return ((declaration :: structures, enumerations), rest)
+        | .inr declaration => return ((structures, declaration :: enumerations), rest)
 
   def parseConstant : List Int → Option (Constant × List Int)
     | id :: tag :: words => do
@@ -221,7 +324,7 @@ mutual
     | fuel + 1, kind :: target :: id :: result :: parameterCount :: bodyLength :: words => do
         if target ≠ 64 then none else
         let id ← nat? id
-        let result ← type? result
+        let result ← resultType? result
         let parameterCount ← nat? parameterCount
         let bodyLength ← nat? bodyLength
         let (parameters, words) ← parseParams fuel parameterCount words
@@ -265,21 +368,22 @@ mutual
 
   def parseProgram : Nat → List Int → Option ((FunctionId × Program) × List Int)
     | 0, _ => none
-    | fuel + 1, version :: target :: entry :: structureCount :: constantCount :: functionCount :: words => do
-        if version ≠ 2 ∨ target ≠ 64 then none else
+    | fuel + 1, version :: target :: entry :: typeCount :: constantCount :: functionCount :: words => do
+        if version ≠ 3 ∨ target ≠ 64 then none else
         let entry ← nat? entry
-        let structureCount ← nat? structureCount
+        let typeCount ← nat? typeCount
         let constantCount ← nat? constantCount
         let functionCount ← nat? functionCount
-        let (structures, words) ← parseStructures fuel structureCount words
+        let ((structures, enumerations), words) ← parseTypeLayouts fuel typeCount words
         let (constants, words) ← parseConstants fuel constantCount words
         let (functions, words) ← parseFunctions fuel functionCount words
         let program : Program := {
           target := Target.x86_64
           structures := structures
+          enumerations := enumerations
           constants := constants
           functions := functions }
-        return ((entry, program), words)
+        return ((entry, resolveNominalProgram program), words)
     | _, _ => none
 
 end

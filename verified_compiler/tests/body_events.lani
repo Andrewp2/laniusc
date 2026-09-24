@@ -1,0 +1,180 @@
+module app::main;
+
+import backend::syntax;
+import ir::body_events;
+import ir::type_ref;
+import lowering::body_event_write;
+import lowering::body_serialization;
+import verified::host;
+
+fn is_present_return(event: ir::body_events::Event) -> bool {
+    return match (event) {
+        ir::body_events::StatementReturnValue -> true,
+        _ -> false,
+    };
+}
+
+fn is_void_return(event: ir::body_events::Event) -> bool {
+    return match (event) {
+        ir::body_events::StatementReturnVoid -> true,
+        _ -> false,
+    };
+}
+
+fn main() -> i32 {
+    let event_bytes: i32 = ir::body_events::allocation_bytes(8);
+    if (event_bytes <= 0) { return 1; }
+    let event_memory: ptr = verified::host::alloc(event_bytes,
+        ir::body_events::ALIGNMENT);
+    let memory: ptr = verified::host::alloc_i32(32);
+    if (event_memory == 0 || memory == 0) { return 1; }
+    let words: [i32] = verified::host::i32_slice_from_raw_parts(
+        memory, 32);
+    let output: ir::body_events::Region =
+        ir::body_events::from_raw_parts(event_memory, 8);
+    let next: i32 = lowering::body_event_write::expression_value(output, 0,
+        ir::body_events::IntegerValue(42));
+    if (next != 1) { return 2; }
+    next = lowering::body_event_write::expression_enumeration(output, next,
+        ir::body_events::EnumVariant {
+            type_id: 7, ordinal: 2, payload_count: 1,
+        });
+    if (next != 2) { return 3; }
+    next = lowering::body_event_write::statement_let(output, next,
+        ir::body_events::LocalDeclaration {
+            id: 11, kind: ir::type_ref::I32,
+        });
+    if (next != 3) { return 4; }
+    next = lowering::body_event_write::statement_return(output, next,
+        backend::syntax::Present);
+    if (next != 4) { return 5; }
+    let typed: [ir::body_events::Event] = output.events;
+    if (!is_present_return(typed[3])) { return 11; }
+    let wire: lowering::body_serialization::WordRegion =
+        lowering::body_serialization::word_region(words, 32);
+    let serialized: i32 = lowering::body_serialization::serialize(output, next,
+        wire, 0);
+    if (serialized != 12
+        || words[0] != backend::syntax::expression_code(
+            backend::syntax::ExprValue)
+        || words[1] != backend::syntax::type_code(
+            backend::syntax::TypeI32)
+        || words[2] != 42) { return 2; }
+    if (words[3] != backend::syntax::expression_code(
+            backend::syntax::ExprEnumeration)
+        || words[4] != backend::syntax::NOMINAL_TYPE_BASE + 7
+        || words[5] != 2 || words[6] != 1) { return 3; }
+    if (words[7] != backend::syntax::statement_code(
+            backend::syntax::StatementLet)
+        || words[8] != 11
+        || words[9] != backend::syntax::type_code(
+            backend::syntax::TypeI32)) { return 4; }
+    if (words[10] != backend::syntax::statement_code(
+            backend::syntax::StatementReturn)
+        || words[11] != backend::syntax::presence_code(
+            backend::syntax::Present)) { return 5; }
+    if (lowering::body_event_write::expression_enumeration(output, 8,
+            ir::body_events::EnumVariant {
+                type_id: 7, ordinal: 2, payload_count: 1,
+            }) != -1) { return 6; }
+    words[11] = 77;
+    let short_wire: lowering::body_serialization::WordRegion =
+        lowering::body_serialization::word_region(words, 11);
+    if (lowering::body_serialization::serialize(output, next, short_wire, 0)
+        != -1 || words[11] != 77) { return 7; }
+    if (lowering::body_event_write::expression_value(output, 0,
+            ir::body_events::BooleanValue(false)) != 1
+        || lowering::body_serialization::serialize(output, 1, wire, 0) != 3
+        || words[1] != backend::syntax::type_code(backend::syntax::TypeBool)
+        || words[2] != 0) { return 8; }
+    if (lowering::body_event_write::expression_value(output, 0,
+            ir::body_events::BooleanValue(true)) != 1
+        || lowering::body_serialization::serialize(output, 1, wire, 0) != 3
+        || words[2] != 1) { return 14; }
+    if (lowering::body_event_write::statement_return(output, 0,
+            backend::syntax::Absent) != 1
+        || !is_void_return(typed[0])
+        || lowering::body_serialization::serialize(output, 1, wire, 0) != 2
+        || words[1] != backend::syntax::presence_code(
+            backend::syntax::Absent)) { return 15; }
+    next = lowering::body_event_write::expression_match(output, 0,
+        ir::body_events::MatchHeader {
+            result_kind: ir::type_ref::I32,
+            arm_count: 1,
+        });
+    next = lowering::body_event_write::match_arm(output, next,
+        ir::body_events::MatchArm {
+            ordinal: 2, binding_count: 1,
+        });
+    next = lowering::body_event_write::match_binding(output, next,
+        ir::body_events::LocalReference { id: 9 });
+    next = lowering::body_event_write::place_field(output, next,
+        ir::body_events::FieldReference { index: 3 });
+    next = lowering::body_event_write::statement_if(output, next);
+    if (next != 5) { return 9; }
+    let match_written: i32 = lowering::body_serialization::serialize(output,
+        next, wire, 0);
+    if (match_written != 9
+        || words[0] != backend::syntax::expression_code(
+            backend::syntax::ExprMatch)
+        || words[1] != backend::syntax::type_code(
+            backend::syntax::TypeI32)
+        || words[2] != 1 || words[3] != 2 || words[4] != 1
+        || words[5] != 9
+        || words[6] != backend::syntax::place_code(
+            backend::syntax::PlaceField)
+        || words[7] != 3
+        || words[8] != backend::syntax::statement_code(
+            backend::syntax::StatementIf)) { return 10; }
+
+    let binary_code: i32 = 0;
+    while (binary_code <= backend::syntax::binary_code(
+            backend::syntax::BinaryShiftRight)) {
+        let operation: backend::syntax::BinaryOperation =
+            backend::syntax::binary_from_code(binary_code);
+        if (lowering::body_event_write::expression_binary(output, 0,
+                operation) != 1
+            || lowering::body_serialization::serialize(output, 1,
+                wire, 0) != 2
+            || words[0] != backend::syntax::expression_code(
+                backend::syntax::ExprBinary)
+            || words[1] != binary_code) { return 12; }
+        binary_code += 1;
+    }
+    if (lowering::body_event_write::expression_binary(output, 0,
+            backend::syntax::InvalidBinaryOperation) != -1) {
+        return 13;
+    }
+
+    let assignment_code: i32 = 0;
+    while (assignment_code <= backend::syntax::assignment_code(
+            backend::syntax::AssignmentBitOr)) {
+        let operation: backend::syntax::AssignmentOperation =
+            backend::syntax::assignment_from_code(assignment_code);
+        if (lowering::body_event_write::expression_assignment(output, 0,
+                operation) != 1
+            || lowering::body_serialization::serialize(output, 1,
+                wire, 0) != 2
+            || words[0] != backend::syntax::expression_code(
+                backend::syntax::ExprAssign)
+            || words[1] != assignment_code) { return 14; }
+        assignment_code += 1;
+    }
+    if (lowering::body_event_write::expression_assignment(output, 0,
+            backend::syntax::InvalidAssignmentOperation) != -1) {
+        return 15;
+    }
+    if (lowering::body_event_write::statement_let_uninitialized(output, 0,
+            ir::body_events::LocalDeclaration {
+                id: 17,
+                kind: ir::type_ref::I32,
+            }) != 1
+        || lowering::body_serialization::serialize(output, 1,
+            wire, 0) != 3
+        || words[0] != backend::syntax::statement_code(
+            backend::syntax::StatementLetUninitialized)
+        || words[1] != 17
+        || words[2] != backend::syntax::type_code(
+            backend::syntax::TypeI32)) { return 16; }
+    return 0;
+}

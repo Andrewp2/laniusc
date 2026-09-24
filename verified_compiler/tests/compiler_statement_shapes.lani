@@ -1,0 +1,14 @@
+module app::main;
+fn main() -> i32 {
+    let index: i32 = 0;
+    let total: i32 = 0;
+    while (index<4) {
+        total += index;
+        index += 1;
+    }
+    if (total == 6) {
+        return 0;
+    } else {
+        return 1;
+    }
+}

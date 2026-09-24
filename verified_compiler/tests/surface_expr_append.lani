@@ -1,0 +1,63 @@
+module app::main;
+
+import verified::host;
+import verified::parser;
+import verified::production;
+import verified::surface_expr;
+import verified::syntax_tree;
+
+fn main() -> i32 {
+    let node_memory: ptr = verified::host::alloc(
+        verified::syntax_tree::NODE_BYTES,
+        verified::syntax_tree::ALIGNMENT);
+    let child_memory: ptr = verified::host::alloc(
+        verified::syntax_tree::CHILD_BYTES,
+        verified::syntax_tree::ALIGNMENT);
+    let arena_memory: ptr = verified::host::alloc(
+        verified::surface_expr::allocation_bytes(2),
+        verified::surface_expr::ALIGNMENT);
+    if (node_memory == 0 || child_memory == 0 || arena_memory == 0) {
+        return 1;
+    }
+    let nodes: [verified::syntax_tree::Node] = slice_from_raw_parts(
+        node_memory + verified::syntax_tree::NODE_BYTES
+            - verified::syntax_tree::ALIGNMENT, 1);
+    let children: [verified::syntax_tree::Child] = slice_from_raw_parts(
+        child_memory + verified::syntax_tree::CHILD_BYTES
+            - verified::syntax_tree::ALIGNMENT, 1);
+    nodes[0] = verified::syntax_tree::Node {
+        production: verified::production::INT,
+        origin: 0, end: 1, first_child: 0, child_count: 1,
+    };
+    children[0] = verified::syntax_tree::Child {
+        kind: verified::parser::TokenChild,
+        payload: 0, semantic_kind: 0,
+    };
+    let tree: verified::syntax_tree::Tree = verified::syntax_tree::Tree {
+        nodes: nodes, children: children, node_count: 1, child_count: 1,
+    };
+    let arena: verified::surface_expr::ExpressionArena =
+        verified::surface_expr::from_raw_parts(arena_memory, 2);
+    let input: verified::surface_expr::ExpressionInput =
+        verified::surface_expr::ExpressionInput {
+            tree: tree, root: 0, depth: 1,
+        };
+    let first: i32 = verified::surface_expr::extract(input, arena);
+    let second: i32 = verified::surface_expr::extract_append(input, arena);
+    let values: [verified::surface_expr::ExpressionNode] = arena.data;
+    if (first != 0 || second != 1
+        || verified::surface_expr::node_count(arena) != 2
+        || values[0].kind != verified::surface_expr::Literal
+        || values[1].kind != verified::surface_expr::Literal
+        || values[0].token != 0 || values[1].token != 0) {
+        return 2;
+    }
+    if (verified::surface_expr::extract_append(input, arena) != -1) {
+        return 3;
+    }
+    if (verified::surface_expr::extract(input, arena) != 0
+        || verified::surface_expr::node_count(arena) != 1) {
+        return 4;
+    }
+    return 0;
+}

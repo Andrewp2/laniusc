@@ -1,0 +1,31 @@
+module app::main;
+
+enum Target {
+    Unresolved,
+    Scalar(i32),
+    Nominal(i32),
+    DeferredNominal,
+}
+
+struct Row { target: Target }
+
+fn valid(row: Row) -> bool {
+    return match (row.target) {
+        Unresolved -> false,
+        Scalar(code) -> code > 0,
+        Nominal(ordinal) -> ordinal >= 0,
+        DeferredNominal -> true,
+    };
+}
+
+fn main() -> i32 {
+    let row: Row = Row { target: Scalar(1) };
+    if (!valid(row)) { return 1; }
+    row.target = Nominal(0);
+    if (!valid(row)) { return 2; }
+    row.target = DeferredNominal;
+    if (!valid(row)) { return 3; }
+    row.target = Unresolved;
+    if (valid(row)) { return 4; }
+    return 0;
+}

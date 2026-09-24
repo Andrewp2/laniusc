@@ -38,8 +38,8 @@ fn main() -> i32 {
     let rows: [lowering::unit_descriptor::UnitDescriptor] = table.data;
     rows[0].source_offset = 7;
     rows[0].source_length = 11;
-    rows[1].body_offset = 29;
-    rows[1].body_words = 31;
+    rows[1].source_offset = 29;
+    rows[1].source_length = 31;
     if (write_descriptors(table) != 0) { return 3; }
     if (container.id != 7 || table.count != 2) { return 10; }
     if (rows[0].source_offset != 7) { return 11; }
@@ -48,8 +48,8 @@ fn main() -> i32 {
     if (rows[0].token_count != 19) { return 14; }
     if (rows[1].token_offset != 23) { return 15; }
     if (rows[1].token_count != 27) { return 16; }
-    if (rows[1].body_offset != 29) { return 17; }
-    if (rows[1].body_words != 31) { return 18; }
+    if (rows[1].source_offset != 29) { return 17; }
+    if (rows[1].source_length != 31) { return 18; }
     if (guard[2 * record_bytes / verified::host::I32_BYTES] != 12345678) { return 19; }
     return 0;
 }

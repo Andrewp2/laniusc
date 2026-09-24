@@ -2,6 +2,7 @@ module app::main;
 
 import backend::frame;
 import backend::local;
+import ir::type_ref;
 import verified::host;
 
 fn main() -> i32 {
@@ -19,11 +20,11 @@ fn main() -> i32 {
     let state: [backend::frame::State] = backend::frame::state_view(work);
     state[0].stride = 4;
     backend::local::write(work, 0,
-        backend::local::binding(7, 3, 2));
+        backend::local::binding(7, ir::type_ref::I32, 2, false));
     backend::local::write(work, 1,
-        backend::local::binding(7, -4, 9));
+        backend::local::binding(7, ir::type_ref::Nominal(3), 9, true));
     backend::local::write(work, 3,
-        backend::local::binding(11, 8, 5));
+        backend::local::binding(11, ir::type_ref::Slice, 5, false));
     backend::frame::set_function_input_offset(work, 0, 17);
     backend::frame::set_function_code_start(work, 0, 512);
     backend::frame::set_function_input_offset(work, 3, 29);
@@ -36,10 +37,14 @@ fn main() -> i32 {
         backend::local::read(work, 3);
     if (backend::local::lookup(work, 1, 7) != 0
         || backend::local::lookup(work, 2, 7) != 1
-        || backend::local::binding_kind(shadow) != -4
+        || !ir::type_ref::same(backend::local::binding_kind(shadow),
+            ir::type_ref::Nominal(3))
         || backend::local::binding_slot(shadow) != 9
-        || backend::local::binding_kind(last) != 8
+        || !backend::local::needs_init_check(shadow)
+        || !ir::type_ref::same(backend::local::binding_kind(last),
+            ir::type_ref::Slice)
         || backend::local::binding_slot(last) != 5
+        || backend::local::needs_init_check(last)
         || backend::frame::function_input_offset(work, 0) != 17
         || backend::frame::function_code_start(work, 0) != 512
         || backend::frame::function_input_offset(work, 3) != 29

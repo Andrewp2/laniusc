@@ -178,10 +178,10 @@ structure Soundness (encoded : String)
       checked.program.Preserves coreBefore machineBefore loaded environment ripAtEntry
         returnAddress poppedReturn
 
-private theorem transport_shape
+private theorem transport_target
     {entrypoint : FunctionId} {program : Core.Program} {words : List Int}
     (encoded : X86.Transport.EncodesProgram entrypoint program words) :
-    program.target = Core.Target.x86_64 ∧ program.enumerations = [] := by
+    program.target = Core.Target.x86_64 := by
   unfold X86.Transport.EncodesProgram X86.Transport.encodeProgram at encoded
   split at encoded
   · simp_all
@@ -200,7 +200,13 @@ theorem check_sound {encoded : String}
     CertificateLoweringCheck.program_sound checked.certificateAccepted
   have imageMetadata :=
     X86.CertificateImageCheck.check_sound checked.imageMetadataAccepted
-  have transportShape := transport_shape certificate.2.2.2.2.2.2.2.2.2
+  have transportTarget := transport_target certificate.2.2.2.2.2.2.2.2.2
+  have noEnumerations :
+      checked.certificate.certificate.backend.executable.program.enumerations = [] := by
+    change checked.certificate.lowering.program =
+      checked.certificate.certificate.backend.executable.program at programLowering
+    rw [← programLowering]
+    exact checked.certificate.lowering.noEnumerations
   have loadedFromElf := fun (machine : X86.Machine.State)
       (mapped : X86.Machine.CodeAt machine.memory X86.ImageCheck.lanius.base
         checked.certificate.certificate.certificate.elf) =>
@@ -219,8 +225,8 @@ theorem check_sound {encoded : String}
     typed := certificate.2.2.2.2.2.2.2.1
     executableWellFormed := certificate.2.2.2.2.2.2.2.2.1
     canonicalTransport := certificate.2.2.2.2.2.2.2.2.2
-    programTarget := transportShape.1
-    enumerationsEmpty := transportShape.2
+    programTarget := transportTarget
+    enumerationsEmpty := noEnumerations
     spanCountExact := imageMetadata.1
     spansWellFormed := imageMetadata.2
     functionsExact := X86.ProgramCheck.Authenticated.functions_exact checked.program

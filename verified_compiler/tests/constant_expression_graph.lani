@@ -1,0 +1,98 @@
+module app::main;
+
+import lowering::constant_expression;
+import lowering::unit_context;
+import verified::host;
+import verified::surface_expr;
+import verified::token;
+
+fn main() -> i32 {
+    let arena_memory: ptr = verified::host::alloc(
+        verified::surface_expr::allocation_bytes(4),
+        verified::surface_expr::ALIGNMENT);
+    let context_memory: ptr = verified::host::alloc(
+        lowering::unit_context::RECORD_BYTES,
+        lowering::unit_context::ALIGNMENT);
+    let token_memory: ptr = verified::host::alloc(
+        2 * verified::token::RECORD_BYTES,
+        verified::token::ALIGNMENT);
+    if (arena_memory == 0 || context_memory == 0
+        || token_memory == 0) { return 1; }
+    let arena: verified::surface_expr::ExpressionArena =
+        verified::surface_expr::from_raw_parts(arena_memory, 4);
+    let count: [i32] = verified::host::i32_slice_from_raw_parts(
+        arena_memory, 1);
+    count[0] = 4;
+    let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
+    nodes[0] = verified::surface_expr::ExpressionNode {
+        kind: verified::surface_expr::Literal,
+        operator: verified::surface_expr::LiteralInteger,
+        left: -1, right: -1, token: 0, next: -1,
+    };
+    nodes[1] = verified::surface_expr::ExpressionNode {
+        kind: verified::surface_expr::PathExpression,
+        operator: verified::surface_expr::NoOperator,
+        left: -1, right: -1, token: -1, next: -1,
+    };
+    nodes[2] = verified::surface_expr::ExpressionNode {
+        kind: verified::surface_expr::Literal,
+        operator: verified::surface_expr::LiteralInteger,
+        left: -1, right: -1, token: 1, next: -1,
+    };
+    nodes[3] = verified::surface_expr::ExpressionNode {
+        kind: verified::surface_expr::Binary,
+        operator: verified::surface_expr::BinaryAdd,
+        left: 1, right: 2, token: -1, next: -1,
+    };
+    let source: [i32; 3] = [55, 32, 51];
+    let tokens: verified::token::TokenTable =
+        verified::token::from_raw_parts(token_memory, 2);
+    let token_rows: [verified::token::TokenRow] = tokens.data;
+    token_rows[0] = verified::token::TokenRow {
+        kind: verified::token::Integer, start: 0, finish: 1,
+    };
+    token_rows[1] = verified::token::TokenRow {
+        kind: verified::token::Integer, start: 2, finish: 3,
+    };
+    let contexts: lowering::unit_context::Table =
+        lowering::unit_context::from_raw_parts(context_memory, 1);
+    let context_rows: [lowering::unit_context::UnitContext] = contexts.data;
+    context_rows[0] = lowering::unit_context::UnitContext {
+        source_offset: 0, source_length: 3,
+        token_offset: 0, token_count: 2, node_count: 4,
+        resolution_row_offset: 0, resolution_count: 0,
+        value_row_offset: 0, value_count: 0,
+    };
+    let bindings: [i32; 4] = [-1, 0, -1, -1];
+    let roots: [i32; 2] = [0, 3];
+    let owners: [i32; 2] = [0, 0];
+    let input: lowering::constant_expression::Input =
+        lowering::constant_expression::Input {
+            arena: arena,
+            bindings: bindings, binding_count: 4,
+            roots: roots, owners: owners, constant_count: 2,
+            contexts: contexts,
+            lexical: lowering::unit_context::LexicalCatalogs {
+                sources: source, source_words: 3, tokens: tokens,
+            },
+        };
+    let result: lowering::constant_expression::Result =
+        lowering::constant_expression::constant(input, 1, 8);
+    if (!lowering::constant_expression::succeeded(result)
+        || lowering::constant_expression::value(result) != 10) {
+        return 2;
+    }
+    bindings[1] = 1;
+    if (lowering::constant_expression::succeeded(
+        lowering::constant_expression::constant(input, 1, 8))) {
+        return 3;
+    }
+    bindings[1] = 0;
+    nodes[3].operator = verified::surface_expr::BinaryDivide;
+    source[2] = 48;
+    if (lowering::constant_expression::succeeded(
+        lowering::constant_expression::constant(input, 1, 8))) {
+        return 4;
+    }
+    return 0;
+}

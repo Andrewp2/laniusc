@@ -1,6 +1,7 @@
 module lowering::value_collection;
 
 import verified::token;
+import verified::host;
 
 import lowering::allocation;
 import lowering::declarations;
@@ -10,7 +11,7 @@ import lowering::token_names;
 import lowering::unit_context;
 import lowering::value_catalog;
 
-type ValueBindingKind = lowering::value_catalog::ValueBindingKind;
+type ValueTarget = lowering::value_catalog::ValueTarget;
 
 pub struct WordRegion {
     data: [i32],
@@ -21,44 +22,81 @@ pub fn region(data: [i32], words: i32) -> WordRegion {
     return WordRegion { data: data, words: words };
 }
 
-struct ValueCandidate {
-    matches: i32,
-    kind: ValueBindingKind,
-    id: i32,
-    member: i32,
-    arity: i32,
+enum ValueCandidate {
+    Missing,
+    Unique(ValueTarget),
+    Ambiguous,
 }
 
-fn empty_value_candidate() -> ValueCandidate {
-    return ValueCandidate {
-        matches: 0,
-        kind: lowering::value_catalog::CallableBinding,
-        id: -1,
-        member: -1,
-        arity: -1,
+const NAME_BUCKETS: i32 = 8192;
+const NAME_ENTRY_BYTES: i32 = 7 * 8;
+
+struct NameEntry {
+    owner: i32,
+    token: i32,
+    target: ValueTarget,
+    next: i32,
+}
+
+struct NameIndex {
+    entries: [NameEntry],
+    buckets: [i32],
+    capacity: i32,
+}
+
+fn name_index(capacity: i32) -> NameIndex {
+    let empty: NameIndex = NameIndex {
+        entries: slice_from_raw_parts(0, 0),
+        buckets: verified::host::i32_slice_from_raw_parts(0, 0),
+        capacity: -1,
+    };
+    if (capacity <= 0 || capacity > verified::host::I32_MAX
+        / NAME_ENTRY_BYTES) { return empty; }
+    let entries_memory: ptr = verified::host::alloc(
+        capacity * NAME_ENTRY_BYTES, 8);
+    let buckets_memory: ptr = verified::host::alloc_i32(NAME_BUCKETS);
+    if (entries_memory == 0 || buckets_memory == 0) { return empty; }
+    let entries: [NameEntry] = slice_from_raw_parts(
+        entries_memory + capacity * NAME_ENTRY_BYTES - 8,
+        capacity);
+    let buckets: [i32] = verified::host::i32_slice_from_raw_parts(
+        buckets_memory, NAME_BUCKETS);
+    let bucket_count: i32 = NAME_BUCKETS;
+    let bucket: i32 = 0;
+    while (bucket != bucket_count) {
+        buckets[bucket] = -1;
+        bucket += 1;
+    }
+    return NameIndex {
+        entries: entries, buckets: buckets, capacity: capacity,
     };
 }
 
-fn add_value_candidate(candidate: ValueCandidate,
-    kind: lowering::value_catalog::ValueBindingKind, id: i32, member: i32,
-    arity: i32) -> ValueCandidate {
-    if (candidate.matches == 0) {
-        return ValueCandidate {
-            matches: 1,
-            kind: kind,
-            id: id,
-            member: member,
-            arity: arity,
-        };
+fn insert_name(index: NameIndex, names: lowering::token_names::Catalog,
+    slot: i32, owner: i32, token: i32, target: ValueTarget) -> i32 {
+    let bucket: i32 = lowering::token_names::spelling_bucket(names,
+        owner, token, NAME_BUCKETS);
+    if (bucket <= -1) { return slot; }
+    if (slot <= -1 || slot >= index.capacity) {
+        return -1;
     }
-    // Once ambiguous, the payload is never read. Keep the state explicit
-    // without carrying an arbitrary earlier candidate through more matches.
-    return ValueCandidate {
-        matches: candidate.matches + 1,
-        kind: lowering::value_catalog::CallableBinding,
-        id: -1,
-        member: -1,
-        arity: -1,
+    let entries: [NameEntry] = index.entries;
+    let buckets: [i32] = index.buckets;
+    entries[slot] = NameEntry {
+        owner: owner, token: token, target: target,
+        next: buckets[bucket],
+    };
+    buckets[bucket] = slot;
+    return slot + 1;
+}
+
+fn add_value_candidate(candidate: ValueCandidate,
+    target: ValueTarget) -> ValueCandidate {
+    // Once ambiguous, the payload is never read. Additional matches cannot
+    // change that state or overflow an integer match count.
+    return match (candidate) {
+        Missing -> Unique(target),
+        _ -> Ambiguous,
     };
 }
 
@@ -66,12 +104,12 @@ fn append_value_candidate(output: lowering::value_catalog::ValueTable,
     position: i32,
     token: i32, scope: lowering::value_catalog::ValueBindingScope,
     candidate: ValueCandidate) -> i32 {
-    if (candidate.matches != 1) { return position; }
-    let binding: lowering::value_catalog::ValueBinding =
-        lowering::value_catalog::binding(token, candidate.kind, scope, candidate.id,
-            candidate.member, candidate.arity);
-    return lowering::value_catalog::write_binding(output, position,
-        binding);
+    return match (candidate) {
+        Unique(target) ->
+            lowering::value_catalog::write_binding(output, position,
+                lowering::value_catalog::binding(token, scope, target)),
+        _ -> position,
+    };
 }
 
 pub struct ValueCatalogInput {
@@ -109,69 +147,85 @@ pub fn build_value_catalog(input: ValueCatalogInput,
     let token_names: lowering::token_names::Catalog =
         lowering::token_names::catalog(context_table, source_catalog,
             token_catalog);
-    let token: i32 = 0;
-    let written: i32 = 0;
-    while (token < token_count) {
-        let local: ValueCandidate = empty_value_candidate();
-        let imported: ValueCandidate = empty_value_candidate();
-        let row: i32 = 0;
-        while (row != allocation_rows) {
-            let allocation: lowering::allocation::AllocationRow =
-                lowering::allocation::table_row(allocated, row);
-            let owner: i32 = lowering::allocation::row_unit(allocation);
-            if (lowering::allocation::row_has_kind(allocation,
-                    lowering::declarations::Function)
-                || lowering::allocation::row_has_kind(allocation,
-                    lowering::declarations::External)) {
-                if (lowering::token_names::same(token_names, unit, token, owner,
-                        lowering::allocation::row_name(allocation))) {
-                    if (owner == unit) {
-                        local = add_value_candidate(local,
-                            lowering::value_catalog::CallableBinding,
-                            lowering::allocation::row_core_id(allocation),
-                            -1, -1);
-                    } else {
-                        imported = add_value_candidate(imported,
-                            lowering::value_catalog::CallableBinding,
-                            lowering::allocation::row_core_id(allocation),
-                            -1, -1);
-                    }
-                }
-            }
-            if (lowering::allocation::row_has_kind(allocation,
+    if (signatures.variant_count <= -1
+        || allocation_rows > verified::host::I32_MAX
+            - signatures.variant_count) { return -1; }
+    let index: NameIndex = name_index(allocation_rows
+        + signatures.variant_count);
+    if (index.capacity <= -1) { return -1; }
+    let used: i32 = 0;
+    let row: i32 = 0;
+    while (row < allocation_rows) {
+        let allocation: lowering::allocation::AllocationRow =
+            lowering::allocation::table_row(allocated, row);
+        let owner: i32 = lowering::allocation::row_unit(allocation);
+        if (lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Function)
+            || lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::External)) {
+            used = insert_name(index, token_names, used, owner,
+                lowering::allocation::row_name(allocation),
+                lowering::value_catalog::Callable(
+                    lowering::allocation::row_core_id(allocation)));
+            if (used <= -1) { return -1; }
+        }
+        if (lowering::allocation::row_has_kind(allocation,
                 lowering::declarations::Enumeration)) {
-                let type_id: i32 = lowering::allocation::row_declaration_id(
-                    allocation);
-                if (!lowering::signature_index::has_shape(signatures,
-                    type_id, lowering::signatures::EnumerationShape)) {
+            let type_id: i32 = lowering::allocation::row_declaration_id(
+                allocation);
+            if (!lowering::signature_index::has_shape(signatures,
+                type_id, lowering::signatures::EnumerationShape)) {
+                return -1;
+            }
+            let record: lowering::signatures::SignatureRecord =
+                lowering::signature_index::record_at(signatures, type_id);
+            let variant: i32 = 0;
+            while (variant < lowering::signatures::record_arity(record)) {
+                let native: lowering::signature_index::Variant =
+                    lowering::signature_index::variant_at(signatures,
+                        type_id, variant);
+                if (native.name <= -1 || native.field_count <= -1) {
                     return -1;
                 }
-                let record: lowering::signatures::SignatureRecord =
-                    lowering::signature_index::record_at(signatures, type_id);
-                let variant: i32 = 0;
-                while (variant < lowering::signatures::record_arity(record)) {
-                    let native: lowering::signature_index::Variant =
-                        lowering::signature_index::variant_at(signatures,
-                            type_id, variant);
-                    if (native.name <= -1 || native.field_count <= -1) {
-                        return -1;
-                    }
-                    if (lowering::token_names::same(token_names, unit, token,
-                            owner, native.name)) {
-                        if (owner == unit) {
-                            local = add_value_candidate(local,
-                                lowering::value_catalog::EnumVariantBinding,
-                                type_id, variant, native.field_count);
-                        } else {
-                            imported = add_value_candidate(imported,
-                                lowering::value_catalog::EnumVariantBinding,
-                                type_id, variant, native.field_count);
-                        }
-                    }
-                    variant += 1;
+                let variant_target:
+                    lowering::value_catalog::VariantTarget =
+                    lowering::value_catalog::VariantTarget {
+                        type_id: type_id,
+                        ordinal: variant,
+                        field_count: native.field_count,
+                    };
+                let target: ValueTarget =
+                    lowering::value_catalog::Variant(variant_target);
+                used = insert_name(index, token_names, used, owner,
+                    native.name, target);
+                if (used <= -1) { return -1; }
+                variant += 1;
+            }
+        }
+        row += 1;
+    }
+    let token: i32 = 0;
+    let written: i32 = 0;
+    let entries: [NameEntry] = index.entries;
+    let buckets: [i32] = index.buckets;
+    while (token < token_count) {
+        let local: ValueCandidate = Missing;
+        let imported: ValueCandidate = Missing;
+        let bucket: i32 = lowering::token_names::spelling_bucket(
+            token_names, unit, token, NAME_BUCKETS);
+        let candidate: i32 = -1;
+        if (bucket >= 0) { candidate = buckets[bucket]; }
+        while (candidate >= 0) {
+            let entry: NameEntry = entries[candidate];
+            if (lowering::token_names::same(token_names, unit, token,
+                    entry.owner, entry.token)) {
+                if (entry.owner == unit) {
+                    local = add_value_candidate(local, entry.target);
+                } else {
+                    imported = add_value_candidate(imported, entry.target);
                 }
             }
-            row += 1;
+            candidate = entry.next;
         }
         let next: i32 = append_value_candidate(output, written,
             token, lowering::value_catalog::LocalBinding, local);

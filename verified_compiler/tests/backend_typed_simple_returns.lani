@@ -1,0 +1,170 @@
+module app::main;
+
+import backend::literal;
+import backend::body_reader;
+import backend::frame;
+import backend::parameter;
+import backend::syntax;
+import ir::body_events;
+import ir::type_ref;
+import lowering::body_event_write;
+import lowering::body_serialization;
+import verified::host;
+
+fn same_bytes(left: [i32], right: [i32], count: i32) -> bool {
+    let index: i32 = 0;
+    while (index < count) {
+        if (left[index] != right[index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+fn main() -> i32 {
+    let event_memory: ptr = verified::host::alloc(
+        ir::body_events::allocation_bytes(4), ir::body_events::ALIGNMENT);
+    let wire_memory: ptr = verified::host::alloc_i32(8);
+    let old_memory: ptr = verified::host::alloc_i32(32);
+    let new_memory: ptr = verified::host::alloc_i32(32);
+    let parameter_memory: ptr = verified::host::alloc(48, 8);
+    if (event_memory == 0 || wire_memory == 0 || old_memory == 0
+        || new_memory == 0 || parameter_memory == 0) { return 1; }
+    let arena: ir::body_events::Region =
+        ir::body_events::from_raw_parts(event_memory, 4);
+    let wire: [i32] = verified::host::i32_slice_from_raw_parts(
+        wire_memory, 8);
+    let old_code: [i32] = verified::host::i32_slice_from_raw_parts(
+        old_memory, 32);
+    let new_code: [i32] = verified::host::i32_slice_from_raw_parts(
+        new_memory, 32);
+    let literal_header: backend::syntax::FunctionHeader =
+        backend::syntax::FunctionHeader {
+            kind: backend::syntax::DefinedFunction,
+            pointer_bits: backend::syntax::POINTER_BITS,
+            id: 7,
+            result_type: ir::type_ref::I32,
+            parameters: 0,
+            body_words: 5,
+        };
+    if (lowering::body_event_write::statement_return(arena, 0,
+            backend::syntax::Present) != 1
+        || lowering::body_event_write::expression_value(arena, 1,
+            ir::body_events::IntegerValue(42)) != 2) { return 2; }
+    let literal_body: ir::body_events::Region =
+        ir::body_events::region(arena.events, 2);
+    if (lowering::body_serialization::serialize(literal_body, 2,
+            lowering::body_serialization::word_region(wire, 8), 0)
+        != literal_header.body_words) { return 3; }
+    let old_end: i32 = backend::literal::return_value(wire, 5,
+        literal_header, old_code, 32, 0);
+    let native_literal_header: backend::syntax::FunctionHeader =
+        literal_header;
+    native_literal_header.body_words = 0;
+    let new_end: i32 = backend::literal::return_event(literal_body,
+        native_literal_header, new_code, 32, 0);
+    if (old_end <= 0 || old_end != new_end
+        || !same_bytes(old_code, new_code, old_end)) { return 4; }
+    let work_words: i32 = backend::frame::HEADER
+        + 8 * backend::frame::WORK_WORDS_PER_STRIDE;
+    let work_memory: ptr = verified::host::alloc(
+        work_words * verified::host::I32_BYTES,
+        backend::frame::WORK_ALIGNMENT);
+    if (work_memory == 0) { return 8; }
+    let work: backend::frame::Workspace =
+        backend::frame::from_raw_parts(work_memory, work_words);
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    state[0].input = 0;
+    state[0].failed = 0;
+    let source: backend::body_reader::Source =
+        backend::body_reader::events(literal_body);
+    let statement: backend::body_reader::Statement =
+        backend::body_reader::statement(source, work);
+    let expression: backend::body_reader::Expression =
+        backend::body_reader::expression(source, work);
+    let literal: backend::body_reader::Literal =
+        backend::body_reader::literal(source, work, expression);
+    let presence: backend::syntax::Presence = backend::body_reader::return_presence(
+        source, work, statement);
+    if (statement.kind != backend::syntax::StatementReturn
+        || presence != backend::syntax::Present
+        || expression.kind != backend::syntax::ExprValue
+        || !ir::type_ref::same(literal.kind, ir::type_ref::I32)
+        || literal.low != 42
+        || state[0].input != 2 || state[0].failed != 0) { return 9; }
+
+    let boolean_header: backend::syntax::FunctionHeader = literal_header;
+    boolean_header.result_type = ir::type_ref::Bool;
+    if (lowering::body_event_write::expression_value(arena, 1,
+            ir::body_events::BooleanValue(true)) != 2
+        || lowering::body_serialization::serialize(literal_body, 2,
+            lowering::body_serialization::word_region(wire, 8), 0)
+            != boolean_header.body_words) { return 10; }
+    old_end = backend::literal::return_value(wire, 5,
+        boolean_header, old_code, 32, 0);
+    let native_boolean_header: backend::syntax::FunctionHeader = boolean_header;
+    native_boolean_header.body_words = 0;
+    new_end = backend::literal::return_event(literal_body,
+        native_boolean_header, new_code, 32, 0);
+    state[0].input = 0;
+    state[0].failed = 0;
+    let boolean_statement: backend::body_reader::Statement =
+        backend::body_reader::statement(source, work);
+    let boolean_expression: backend::body_reader::Expression =
+        backend::body_reader::expression(source, work);
+    let boolean_literal: backend::body_reader::Literal =
+        backend::body_reader::literal(source, work, boolean_expression);
+    if (old_end <= 0 || old_end != new_end
+        || !same_bytes(old_code, new_code, old_end)
+        || backend::body_reader::return_presence(source, work,
+            boolean_statement) != backend::syntax::Present
+        || !ir::type_ref::same(boolean_literal.kind, ir::type_ref::Bool)
+        || boolean_literal.low != 1 || state[0].failed != 0) { return 11; }
+
+    let parameters: [backend::syntax::Parameter] =
+        slice_from_raw_parts(parameter_memory + 48, 2);
+    parameters[0] = backend::syntax::Parameter {
+        id: 11, kind: ir::type_ref::I32,
+    };
+    parameters[1] = backend::syntax::Parameter {
+        id: 12, kind: ir::type_ref::I32,
+    };
+    let parameter_header: backend::syntax::FunctionHeader =
+        backend::syntax::FunctionHeader {
+            kind: backend::syntax::DefinedFunction,
+            pointer_bits: backend::syntax::POINTER_BITS,
+            id: 8,
+            result_type: ir::type_ref::I32,
+            parameters: 2,
+            body_words: 6,
+        };
+    let parameter_view: backend::syntax::FunctionParameters =
+        backend::syntax::FunctionParameters {
+            header: parameter_header,
+            data: parameters,
+            start: 0,
+            length: 2,
+        };
+    if (lowering::body_event_write::statement_sequence(arena, 0) != 1
+        || lowering::body_event_write::statement_return(arena, 1,
+            backend::syntax::Present) != 2
+        || lowering::body_event_write::expression_local(arena, 2,
+            ir::body_events::LocalReference { id: 12 }) != 3
+        || lowering::body_event_write::statement_skip(arena, 3) != 4) {
+        return 5;
+    }
+    let parameter_body: ir::body_events::Region =
+        ir::body_events::region(arena.events, 4);
+    if (lowering::body_serialization::serialize(parameter_body, 4,
+            lowering::body_serialization::word_region(wire, 8), 0)
+        != parameter_header.body_words) { return 6; }
+    old_end = backend::parameter::compile(wire, 6, parameter_view,
+        old_code, 32, 0);
+    parameter_view.header.body_words = 0;
+    new_end = backend::parameter::compile_event(parameter_body,
+        parameter_view, new_code, 32, 0);
+    if (old_end <= 0 || old_end != new_end
+        || !same_bytes(old_code, new_code, old_end)
+        || backend::parameter::select_event(parameter_body,
+            parameter_view) != 1) { return 7; }
+    return 0;
+}

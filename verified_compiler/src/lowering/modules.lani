@@ -3,6 +3,7 @@ import verified::production;
 
 import lowering::declarations;
 import verified::parser;
+import verified::surface_path;
 import verified::syntax_tree;
 import verified::token;
 
@@ -33,47 +34,24 @@ fn path(context: ModuleContext, root: i32) -> bool {
     let tree: verified::syntax_tree::Tree = context.tree;
     let token_count: i32 = context.token_count;
     let source_length: i32 = context.source_length;
-    if (verified::syntax_tree::production(tree, root)
-            != verified::production::PATH
-        || verified::syntax_tree::child_count(tree, root) != 2) {
-        return false;
-    }
-    let segment: i32 = child(tree, root, 0);
-    let tail: i32 = child(tree, root, 1);
+    let segment: verified::surface_path::Segment =
+        verified::surface_path::first(tree, root);
     let previous_token: i32 = -1;
     let previous_finish: i32 = 0;
-    while (segment >= 0) {
-        if (verified::syntax_tree::production(tree, segment)
-                != verified::production::PATH_IDENT
-            || verified::syntax_tree::child_count(tree, segment) != 1) {
+    while (segment.valid) {
+        let name: i32 = segment.token;
+        if (name <= -1 || name >= token_count || name <= previous_token
+            || tokens[name].kind != verified::token::Identifier) {
             return false;
         }
-        let name: i32 = verified::syntax_tree::child(tree, segment, 0,
-            verified::parser::TokenChild);
-        if (name <= -1 || name <= previous_token
-            || !verified::token::kind_is(
-                tokens[name].kind,
-                verified::token::Identifier)) { return false; }
         let start: i32 = tokens[name].start;
         let finish: i32 = tokens[name].finish;
         if (start <= previous_finish - 1 || finish <= start
             || finish > source_length) { return false; }
         previous_token = name;
         previous_finish = finish;
-        let tail_production: i32 = verified::syntax_tree::production(tree, tail);
-        if (tail_production <= -1) { return false; }
-        if (tail_production == verified::production::PATH_END) {
-            if (verified::syntax_tree::child_count(tree, tail) != 0) {
-                return false;
-            }
-            return true;
-        }
-        if (tail_production != verified::production::PATH_MORE
-            || verified::syntax_tree::child_count(tree, tail) != 4) {
-            return false;
-        }
-        segment = child(tree, tail, 2);
-        tail = child(tree, tail, 3);
+        if (segment.last) { return true; }
+        segment = verified::surface_path::next(tree, segment);
     }
     return false;
 }
@@ -123,7 +101,7 @@ pub fn validate(input: ModuleInput) -> bool {
         tree: tree,
     };
     let row: i32 = 0;
-    while (row < rows) {
+    while (row <= rows - 1) {
         let declaration_row: lowering::declarations::DeclarationRow =
             lowering::declarations::table_row(table, row);
         if (lowering::declarations::row_unit(declaration_row) != unit

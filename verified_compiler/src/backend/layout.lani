@@ -1,5 +1,5 @@
 module backend::layout;
-import backend::syntax;
+import ir::type_ref;
 
 // Native value storage uses eight-byte words. Structures concatenate fields;
 // enumerations contain a tag and the largest variant payload. Slices and
@@ -17,15 +17,17 @@ pub const TYPE_RECORD_ID_FIELD: i32 = 1;
 pub const TYPE_RECORD_KIND_FIELD: i32 = 2;
 pub const TYPE_RECORD_MEMBER_COUNT_FIELD: i32 = 3;
 
-pub fn aggregate(kind: i32) -> bool {
-    return backend::syntax::type_is(kind, backend::syntax::TypeSlice)
-        || backend::syntax::type_is(kind, backend::syntax::TypeString)
-        || kind >= backend::syntax::NOMINAL_TYPE_BASE;
+pub fn aggregate(kind: ir::type_ref::TypeRef) -> bool {
+    return match (kind) {
+        ir::type_ref::Slice -> true,
+        ir::type_ref::String -> true,
+        _ -> ir::type_ref::is_nominal(kind),
+    };
 }
 
-pub fn width(kind: i32) -> i32 {
-    if (backend::syntax::type_is(kind, backend::syntax::TypeI32)
-        || backend::syntax::type_is(kind, backend::syntax::TypeBool)) {
+pub fn width(kind: ir::type_ref::TypeRef) -> i32 {
+    if (ir::type_ref::same(kind, ir::type_ref::I32)
+        || ir::type_ref::same(kind, ir::type_ref::Bool)) {
         return INTEGER_WIDTH;
     }
     return MACHINE_WIDTH;

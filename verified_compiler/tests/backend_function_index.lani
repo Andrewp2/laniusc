@@ -2,6 +2,9 @@ module app::main;
 
 import backend::function_index;
 import backend::syntax;
+import ir::function_catalog;
+import ir::type_ref;
+import runtime::service;
 import verified::host;
 
 fn main() -> i32 {
@@ -33,9 +36,87 @@ fn main() -> i32 {
     if (helper.header.kind != backend::syntax::DefinedFunction
         || helper.header.id != 1 || helper.header.parameters != 1
         || helper.input_offset != 19 || helper.word_count != 13
-        || backend::function_index::parameter_kind(functions, 1, 0)
-            != backend::syntax::type_code(backend::syntax::TypeI32)) {
+        || !ir::type_ref::same(
+            backend::function_index::parameter_kind(functions, 1, 0),
+            ir::type_ref::I32)) {
         return 4;
+    }
+    let native_memory: ptr = verified::host::alloc(
+        ir::function_catalog::allocation_bytes(2, 1),
+        ir::function_catalog::ALIGNMENT);
+    if (native_memory == 0) { return 7; }
+    let native: ir::function_catalog::Table =
+        ir::function_catalog::from_raw_parts(native_memory, 2, 1);
+    let source: [ir::function_catalog::Function] = native.functions;
+    let entry: backend::function_index::Function =
+        backend::function_index::at(functions, 0);
+    source[0] = ir::function_catalog::Function {
+        kind: ir::function_catalog::DefinedFunction,
+        id: entry.header.id,
+        result_type: entry.header.result_type,
+        parameters: entry.header.parameters,
+        parameter_start: entry.parameter_start,
+        service: runtime::service::NoService,
+    };
+    source[1] = ir::function_catalog::Function {
+        kind: ir::function_catalog::DefinedFunction,
+        id: helper.header.id,
+        result_type: helper.header.result_type,
+        parameters: helper.header.parameters,
+        parameter_start: helper.parameter_start,
+        service: runtime::service::NoService,
+    };
+    let source_parameters: [ir::function_catalog::Parameter] =
+        native.parameters;
+    let helper_parameter: backend::syntax::Parameter =
+        backend::function_index::parameter_at(
+        functions, helper, 0);
+    source_parameters[0] = ir::function_catalog::Parameter {
+        id: helper_parameter.id,
+        type_tag: helper_parameter.kind,
+    };
+    source[1].result_type = ir::type_ref::Void;
+    let native_required: backend::function_index::Requirements =
+        backend::function_index::measure_native(native);
+    if (!native_required.valid || native_required.end != 0
+        || native_required.parameters != 1) { return 8; }
+    let native_index_memory: ptr = verified::host::alloc(
+        backend::function_index::allocation_bytes(native_required),
+        backend::function_index::ALIGNMENT);
+    if (native_index_memory == 0) { return 9; }
+    let native_index: backend::function_index::Table =
+        backend::function_index::from_raw_parts(native_index_memory,
+            native_required);
+    if (!backend::function_index::build_native(native,
+            native_index)) { return 10; }
+    if (backend::function_index::find(native_index, 1) != 1) {
+        return 12;
+    }
+    let copied: backend::function_index::Function =
+        backend::function_index::at(native_index, 1);
+    if (copied.input_offset != -1 || copied.word_count != 0
+        || copied.header.kind != backend::syntax::DefinedFunction
+        || copied.header.pointer_bits != backend::syntax::POINTER_BITS
+        || copied.header.id != 1 || copied.header.body_words != 0
+        || !ir::type_ref::same(copied.header.result_type,
+            ir::type_ref::Void)) {
+        return 13;
+    }
+    if (!ir::type_ref::same(
+            backend::function_index::parameter_kind(native_index, 1, 0),
+            ir::type_ref::I32)) {
+        return 14;
+    }
+    source[1].kind = ir::function_catalog::RuntimeFunction;
+    if (backend::function_index::measure_native(native).valid) {
+        return 15;
+    }
+    source[1].kind = ir::function_catalog::DefinedFunction;
+    source[1].parameter_start = 1;
+    let malformed: backend::function_index::Requirements =
+        backend::function_index::measure_native(native);
+    if (malformed.valid) {
+        return 11;
     }
     input[21] = 0;
     if (backend::function_index::build(input, 32, 6, functions)) {

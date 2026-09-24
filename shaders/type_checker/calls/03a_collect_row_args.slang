@@ -961,7 +961,19 @@ bool check_concrete_instance_argument(
 
     uint actual_instance;
     if (!actual_arg_instance_ref(arg_node, actual_instance))
+    {
+        // A concrete nominal parameter must not silently accept a known
+        // scalar argument just because that argument has no instance ref.
+        // Calls and other expressions can have a nominal type without a
+        // direct instance ref, so compare their inferred type when known.
+        uint arg_ty = expr_type_no_nested_call(arg_node);
+        if (arg_ty != TY_UNKNOWN && !assignable(param_ty, arg_ty, arg_node))
+        {
+            record_error(error_token, ERR_ASSIGN_MISMATCH, param_ty * 256u + arg_ty);
+            return false;
+        }
         return true;
+    }
 
     if (!same_named_instance_decl(expected_instance, actual_instance) ||
         type_instance_arg_count[expected_instance] != type_instance_arg_count[actual_instance])
@@ -1251,7 +1263,15 @@ void collect_row_argument(uint row)
         if (!has_symbolic_instance_args)
         {
             if (param_ty >= TY_STRUCT_BASE && param_ty < TY_GENERIC_BASE)
+            {
+                // Instance identity was checked above when available. A
+                // known scalar argument has no such identity and cannot
+                // inhabit a concrete struct or enum parameter.
+                uint arg_ty = expr_type_no_nested_call(arg_node);
+                if (arg_ty != TY_UNKNOWN && arg_ty < TY_STRUCT_BASE)
+                    record_error(arg_token, ERR_ASSIGN_MISMATCH, param_ty * 256u + arg_ty);
                 return;
+            }
             uint arg_ty = expr_type_no_nested_call(arg_node);
             if (arg_ty != TY_UNKNOWN && !assignable(param_ty, arg_ty, arg_node))
             record_error(arg_token, ERR_ASSIGN_MISMATCH, param_ty * 256u + arg_ty);

@@ -6,10 +6,12 @@ import x86::encode;
 import x86::control;
 import x86::register;
 import backend::syntax;
+import ir::type_ref;
 
 // Runtime services are semantic values inside the compiler. Their integer
 // codes exist only in the serialized Core/backend transport.
 pub enum RuntimeService {
+    NoService,
     Allocate,
     OpenRead,
     Close,
@@ -23,6 +25,7 @@ pub enum RuntimeService {
 
 pub fn service_code(service: RuntimeService) -> i32 {
     return match (service) {
+        NoService -> 0,
         Allocate -> 1,
         OpenRead -> 2,
         Close -> 3,
@@ -35,21 +38,33 @@ pub fn service_code(service: RuntimeService) -> i32 {
     };
 }
 
+pub fn service_from_code(encoded: i32) -> RuntimeService {
+    if (encoded_service_is(encoded, Allocate)) { return Allocate; }
+    if (encoded_service_is(encoded, OpenRead)) { return OpenRead; }
+    if (encoded_service_is(encoded, Close)) { return Close; }
+    if (encoded_service_is(encoded, Read)) { return Read; }
+    if (encoded_service_is(encoded, WriteStdout)) { return WriteStdout; }
+    if (encoded_service_is(encoded, WriteByte)) { return WriteByte; }
+    if (encoded_service_is(encoded, ArgumentCount)) {
+        return ArgumentCount;
+    }
+    if (encoded_service_is(encoded, ArgumentLength)) {
+        return ArgumentLength;
+    }
+    if (encoded_service_is(encoded, ArgumentRead)) { return ArgumentRead; }
+    return NoService;
+}
+
 pub fn encoded_service_is(encoded: i32, expected: RuntimeService) -> bool {
     return encoded == service_code(expected);
 }
 
-fn known_service(encoded: i32) -> bool {
-    return encoded >= service_code(Allocate)
-        && encoded <= service_code(ArgumentRead);
-}
-
 struct ServiceSignature {
-    result_type: i32,
+    result_type: ir::type_ref::TypeRef,
     arity: i32,
-    first_type: i32,
-    second_type: i32,
-    third_type: i32,
+    first_type: ir::type_ref::TypeRef,
+    second_type: ir::type_ref::TypeRef,
+    third_type: ir::type_ref::TypeRef,
 }
 
 const MAX_SERVICE_PARAMETERS: i32 = 3;
@@ -60,61 +75,58 @@ fn parameter_slot(first: i32, index: i32) -> i32 {
         + index * backend::syntax::PARAMETER_ROW_WORDS;
 }
 
-fn signature(service: i32) -> ServiceSignature {
-    if (encoded_service_is(service, Allocate)) {
+fn signature(service: RuntimeService) -> ServiceSignature {
+    if (service == Allocate) {
         return ServiceSignature {
-            result_type: backend::syntax::type_code(backend::syntax::TypePointer),
+            result_type: ir::type_ref::Pointer,
             arity: 2,
-            first_type: backend::syntax::type_code(backend::syntax::TypeUsize),
-            second_type: backend::syntax::type_code(backend::syntax::TypeUsize),
-            third_type: 0,
+            first_type: ir::type_ref::Usize,
+            second_type: ir::type_ref::Usize,
+            third_type: ir::type_ref::Invalid,
         };
     }
-    if (encoded_service_is(service, OpenRead)
-        || encoded_service_is(service, WriteStdout)) {
+    if (service == OpenRead || service == WriteStdout) {
         return ServiceSignature {
-            result_type: backend::syntax::type_code(backend::syntax::TypeI32),
+            result_type: ir::type_ref::I32,
             arity: 2,
-            first_type: backend::syntax::type_code(backend::syntax::TypePointer),
-            second_type: backend::syntax::type_code(backend::syntax::TypeUsize),
-            third_type: 0,
+            first_type: ir::type_ref::Pointer,
+            second_type: ir::type_ref::Usize,
+            third_type: ir::type_ref::Invalid,
         };
     }
-    if (encoded_service_is(service, Close)
-        || encoded_service_is(service, ArgumentLength)) {
+    if (service == Close || service == ArgumentLength) {
         return ServiceSignature {
-            result_type: backend::syntax::type_code(backend::syntax::TypeI32),
+            result_type: ir::type_ref::I32,
             arity: 1,
-            first_type: backend::syntax::type_code(backend::syntax::TypeI32),
-            second_type: 0,
-            third_type: 0,
+            first_type: ir::type_ref::I32,
+            second_type: ir::type_ref::Invalid,
+            third_type: ir::type_ref::Invalid,
         };
     }
-    if (encoded_service_is(service, Read)
-        || encoded_service_is(service, ArgumentRead)) {
+    if (service == Read || service == ArgumentRead) {
         return ServiceSignature {
-            result_type: backend::syntax::type_code(backend::syntax::TypeI32),
+            result_type: ir::type_ref::I32,
             arity: 3,
-            first_type: backend::syntax::type_code(backend::syntax::TypeI32),
-            second_type: backend::syntax::type_code(backend::syntax::TypePointer),
-            third_type: backend::syntax::type_code(backend::syntax::TypeUsize),
+            first_type: ir::type_ref::I32,
+            second_type: ir::type_ref::Pointer,
+            third_type: ir::type_ref::Usize,
         };
     }
-    if (encoded_service_is(service, WriteByte)) {
+    if (service == WriteByte) {
         return ServiceSignature {
-            result_type: backend::syntax::type_code(backend::syntax::TypeI32),
+            result_type: ir::type_ref::I32,
             arity: 2,
-            first_type: backend::syntax::type_code(backend::syntax::TypeI32),
-            second_type: backend::syntax::type_code(backend::syntax::TypeI32),
-            third_type: 0,
+            first_type: ir::type_ref::I32,
+            second_type: ir::type_ref::I32,
+            third_type: ir::type_ref::Invalid,
         };
     }
     return ServiceSignature {
-        result_type: backend::syntax::type_code(backend::syntax::TypeI32),
+        result_type: ir::type_ref::I32,
         arity: 0,
-        first_type: 0,
-        second_type: 0,
-        third_type: 0,
+        first_type: ir::type_ref::Invalid,
+        second_type: ir::type_ref::Invalid,
+        third_type: ir::type_ref::Invalid,
     };
 }
 
@@ -130,11 +142,12 @@ pub fn valid(input: [i32], first: i32, count: i32) -> bool {
         || count != backend::syntax::FUNCTION_HEADER_WORDS
             + parameters * backend::syntax::PARAMETER_ROW_WORDS
             + RUNTIME_SERVICE_BODY_WORDS) { return false; }
-    let service: i32 = input[first + backend::syntax::FUNCTION_HEADER_WORDS
-        + parameters * backend::syntax::PARAMETER_ROW_WORDS];
-    if (!known_service(service)) { return false; }
+    let service: RuntimeService = service_from_code(
+        input[first + backend::syntax::FUNCTION_HEADER_WORDS
+            + parameters * backend::syntax::PARAMETER_ROW_WORDS]);
+    if (service == NoService) { return false; }
     let expected: ServiceSignature = signature(service);
-    if (header.result_type != expected.result_type
+    if (!ir::type_ref::same(header.result_type, expected.result_type)
         || parameters != expected.arity) { return false; }
     let first_parameter: i32 = parameter_slot(first, 0);
     let second_parameter: i32 = parameter_slot(first, 1);
@@ -142,11 +155,11 @@ pub fn valid(input: [i32], first: i32, count: i32) -> bool {
     if (expected.arity > 0
         && (input[first_parameter + backend::syntax::PARAMETER_ID_FIELD] <= -1
             || input[first_parameter + backend::syntax::PARAMETER_TYPE_FIELD]
-                != expected.first_type)) { return false; }
+                != ir::type_ref::code(expected.first_type))) { return false; }
     if (expected.arity > 1
         && (input[second_parameter + backend::syntax::PARAMETER_ID_FIELD] <= -1
             || input[second_parameter + backend::syntax::PARAMETER_TYPE_FIELD]
-                != expected.second_type
+                != ir::type_ref::code(expected.second_type)
             || input[second_parameter + backend::syntax::PARAMETER_ID_FIELD]
                 == input[first_parameter + backend::syntax::PARAMETER_ID_FIELD])) {
         return false;
@@ -154,7 +167,7 @@ pub fn valid(input: [i32], first: i32, count: i32) -> bool {
     if (expected.arity > 2
         && (input[third_parameter + backend::syntax::PARAMETER_ID_FIELD] <= -1
             || input[third_parameter + backend::syntax::PARAMETER_TYPE_FIELD]
-                != expected.third_type
+                != ir::type_ref::code(expected.third_type)
             || input[third_parameter + backend::syntax::PARAMETER_ID_FIELD]
                 == input[first_parameter + backend::syntax::PARAMETER_ID_FIELD]
             || input[third_parameter + backend::syntax::PARAMETER_ID_FIELD]
@@ -164,24 +177,25 @@ pub fn valid(input: [i32], first: i32, count: i32) -> bool {
     return true;
 }
 
-pub fn emit(output: [i32], capacity: i32, cursor: i32, service: i32) -> i32 {
-    if (encoded_service_is(service, Allocate)) { return runtime::heap::allocate(output, capacity, cursor); }
-    if (encoded_service_is(service, OpenRead)) { return runtime::io::open_read(output, capacity, cursor); }
-    if (encoded_service_is(service, Close)) { return runtime::io::close(output, capacity, cursor); }
-    if (encoded_service_is(service, ArgumentCount)) {
+pub fn emit(output: [i32], capacity: i32, cursor: i32,
+    service: RuntimeService) -> i32 {
+    if (service == Allocate) { return runtime::heap::allocate(output, capacity, cursor); }
+    if (service == OpenRead) { return runtime::io::open_read(output, capacity, cursor); }
+    if (service == Close) { return runtime::io::close(output, capacity, cursor); }
+    if (service == ArgumentCount) {
         return runtime::arguments::emit(output, capacity, cursor,
             runtime::arguments::Count);
     }
-    if (encoded_service_is(service, ArgumentLength)) {
+    if (service == ArgumentLength) {
         return runtime::arguments::emit(output, capacity, cursor,
             runtime::arguments::Length);
     }
-    if (encoded_service_is(service, ArgumentRead)) {
+    if (service == ArgumentRead) {
         return runtime::arguments::emit(output, capacity, cursor,
             runtime::arguments::Read);
     }
     let next: i32 = cursor;
-    if (encoded_service_is(service, Read)) {
+    if (service == Read) {
         next = x86::encode::immediate(output, capacity, next,
             x86::register::WIDTH_32, x86::register::R10,
             runtime::io::FIRST_FILE_HANDLE, 0);
@@ -196,7 +210,7 @@ pub fn emit(output: [i32], capacity: i32, cursor: i32, service: i32) -> i32 {
         if (x86::control::patch_relative(output, next, valid, next) <= -1) { return -1; }
         return runtime::io::transfer(output, capacity, next, false);
     }
-    if (encoded_service_is(service, WriteStdout)) {
+    if (service == WriteStdout) {
         next = x86::encode::move_register(output, capacity, next,
             x86::register::WIDTH_64, x86::register::RDX, x86::register::RSI);
         next = x86::encode::move_register(output, capacity, next,
@@ -206,7 +220,7 @@ pub fn emit(output: [i32], capacity: i32, cursor: i32, service: i32) -> i32 {
             runtime::io::STDOUT_HANDLE, 0);
         return runtime::io::transfer(output, capacity, next, true);
     }
-    if (encoded_service_is(service, WriteByte)) {
+    if (service == WriteByte) {
         next = x86::encode::binary(output, capacity, next,
             x86::register::WIDTH_32, x86::encode::Test,
             x86::register::RDI, x86::register::RDI);

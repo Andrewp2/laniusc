@@ -4,6 +4,9 @@ namespace Lanius.X86.TransportTests
 
 open Lanius Lanius.Core Lanius.X86.Transport
 
+example : typeTag (.slice (.structure 3)) = some 1073741827 := by rfl
+example : typeTag (.structure 1073741808) = none := by rfl
+
 private def parameterReturn : Function := {
   id := 7
   parameters := [(3, .scalar (.signed .i32))]
@@ -21,7 +24,7 @@ private def parameterProgram : Program := {
 }
 
 example : encodeProgram 7 parameterProgram =
-    some [2, 64, 7, 0, 0, 1,
+    some [3, 64, 7, 0, 0, 1,
       12, 1, 64, 7, 1, 1, 4, 3, 1, 10, 1, 1, 3] := by
     simp [parameterProgram, parameterReturn, encodeProgram, encodeFunction,
     encodeParameters, encodeStmt, encodeExpr, typeTag]
@@ -38,7 +41,7 @@ private def recordProgram : Program := {
 }
 
 example : encodeProgram 7 recordProgram =
-    some [2, 64, 7, 1, 1, 1, 4, 1, 1, 2, 1, 42, 0,
+    some [3, 64, 7, 1, 1, 1, 4, 4, 0, 1, 1, 2, 1, 42, 0,
       13, 1, 64, 7, 20, 0, 7, 10, 1, 8, 20, 1, 13, 2] := by
   simp [recordProgram, encodeProgram, encodeStructure, encodeConstant,
     encodeFunction, encodeParameters, encodeStmt, encodeExpr, typeTag]

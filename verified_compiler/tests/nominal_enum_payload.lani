@@ -1,0 +1,13 @@
+module app::main;
+
+struct Pair { left: i32, right: i32 }
+enum Event { Empty, PairEvent(Pair) }
+
+fn main() -> i32 {
+    let pair: Pair = Pair { left: 7, right: 11 };
+    let event: Event = PairEvent(pair);
+    return match (event) {
+        Empty -> 1,
+        PairEvent(payload) -> payload.left + payload.right - 18,
+    };
+}

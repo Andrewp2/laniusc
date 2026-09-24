@@ -884,6 +884,29 @@ impl GpuTypeChecker {
                     .bind_groups
                     .type_match_payloads
                     .record(encoder)?;
+                if members_required {
+                    bind_groups
+                        .type_instances
+                        .member_receivers
+                        .record_invocation(
+                            encoder,
+                            &bind_groups.type_instances.member_receivers_after_match,
+                        )?;
+                    bind_groups
+                        .type_instances
+                        .member_results
+                        .record_invocation(
+                            encoder,
+                            &bind_groups.type_instances.member_results_after_match,
+                        )?;
+                    bind_groups
+                        .type_instances
+                        .member_substitute
+                        .record_invocation(
+                            encoder,
+                            &bind_groups.type_instances.member_substitute_after_match,
+                        )?;
+                }
             }
             bind_groups.scope_hir.record(encoder)?;
             if let Some(timer) = timer.as_deref_mut() {
@@ -1035,6 +1058,13 @@ impl GpuTypeChecker {
                 }
             }
             if enums_required {
+                // A unit variant may itself be an argument to a payload-bearing
+                // variant constructor. Publish its type before validating the
+                // outer constructor's payloads.
+                module_path
+                    .bind_groups
+                    .consume_value_enum_units
+                    .record(encoder)?;
                 module_path
                     .bind_groups
                     .consume_value_enum_calls
@@ -1054,10 +1084,6 @@ impl GpuTypeChecker {
             module_path
                 .bind_groups
                 .consume_value_consts
-                .record(encoder)?;
-            module_path
-                .bind_groups
-                .consume_value_enum_units
                 .record(encoder)?;
             if methods_required {
                 bind_groups.methods.resolve.record(encoder)?;

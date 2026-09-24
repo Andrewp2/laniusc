@@ -1,7 +1,9 @@
 module app::main;
 
+import backend::layout;
 import backend::layout_index;
 import backend::syntax;
+import ir::type_ref;
 import verified::host;
 
 const CHAIN_TYPES: i32 = 64;
@@ -29,25 +31,30 @@ fn main() -> i32 {
     if (!backend::layout_index::build(program, 20, table)) { return 3; }
     let structure: i32 = backend::syntax::NOMINAL_TYPE_BASE;
     let enumeration: i32 = structure + 1;
-    if (!backend::layout_index::is_structure(table, structure)
-        || !backend::layout_index::is_enumeration(table, enumeration)
-        || backend::layout_index::member_count(table, structure) != 2
-        || backend::layout_index::field_kind(table, structure, 1) != 6
-        || backend::layout_index::field_offset(table, structure, 1) != 8
+    let structure_ref: ir::type_ref::TypeRef = ir::type_ref::Nominal(0);
+    let enumeration_ref: ir::type_ref::TypeRef = ir::type_ref::Nominal(1);
+    if (!backend::layout_index::is_structure(table, structure_ref)
+        || !backend::layout_index::is_enumeration(table, enumeration_ref)
+        || backend::layout_index::member_count(table, structure_ref) != 2
+        || !ir::type_ref::same(
+            backend::layout_index::field_kind(table, structure_ref, 1),
+            ir::type_ref::Slice)
+        || backend::layout_index::field_offset(table, structure_ref, 1) != 8
         || backend::layout_index::variant_field_count(table,
-            enumeration, 0) != 2
+            enumeration_ref, 0) != 2
         || backend::layout_index::variant_field_count(table,
-            enumeration, 1) != 0
-        || backend::layout_index::variant_field_kind(table,
-            enumeration, 0, 0) != structure
+            enumeration_ref, 1) != 0
+        || !ir::type_ref::same(
+            backend::layout_index::variant_field_kind(table,
+                enumeration_ref, 0, 0), ir::type_ref::Nominal(0))
         || backend::layout_index::variant_field_offset(table,
-            enumeration, 0, 0) != 8
+            enumeration_ref, 0, 0) != 8
         || backend::layout_index::variant_field_offset(table,
-            enumeration, 0, 1) != 32
-        || backend::layout_index::words(table, structure) != 3
-        || backend::layout_index::words(table, enumeration) != 5
+            enumeration_ref, 0, 1) != 32
+        || backend::layout_index::words(table, structure_ref) != 3
+        || backend::layout_index::words(table, enumeration_ref) != 5
         || backend::layout_index::words(table,
-            backend::syntax::type_code(backend::syntax::TypeString)) != 2) {
+            ir::type_ref::String) != 2) {
         return 4;
     }
     program[10] = enumeration;
@@ -65,7 +72,7 @@ fn main() -> i32 {
         backend::layout_index::from_raw_parts(empty_memory, empty_required);
     if (!backend::layout_index::build(empty, 6, empty_layout)
         || backend::layout_index::words(empty_layout,
-            backend::syntax::type_code(backend::syntax::TypeI32)) != 1) {
+            ir::type_ref::I32) != 1) {
         return 8;
     }
     let chain_memory: ptr = verified::host::alloc_i32(CHAIN_WORDS);
@@ -120,5 +127,20 @@ fn main() -> i32 {
     let deep: backend::layout_index::Table =
         backend::layout_index::from_raw_parts(deep_memory, deep_required);
     if (backend::layout_index::build(chain, CHAIN_WORDS, deep)) { return 15; }
+    let max_id: i32 = verified::host::I32_MAX;
+    let overflow_nominal: ir::type_ref::TypeRef =
+        ir::type_ref::Nominal(max_id);
+    if (backend::layout::aggregate(ir::type_ref::I32)
+        || !backend::layout::aggregate(ir::type_ref::String)
+        || !backend::layout::aggregate(ir::type_ref::Slice)
+        || !backend::layout::aggregate(ir::type_ref::Nominal(0))
+        || backend::layout::aggregate(ir::type_ref::Nominal(-1))
+        || backend::layout::aggregate(overflow_nominal)
+        || backend::layout::width(ir::type_ref::I32)
+            != backend::layout::INTEGER_WIDTH
+        || backend::layout::width(ir::type_ref::Bool)
+            != backend::layout::INTEGER_WIDTH
+        || backend::layout::width(ir::type_ref::Pointer)
+            != backend::layout::MACHINE_WIDTH) { return 16; }
     return 0;
 }

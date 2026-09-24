@@ -1,0 +1,3 @@
+module resolution::right;
+
+pub struct Pair { value: i32 }

@@ -1713,9 +1713,10 @@ inductive NamedRangeLowers (context : Context) (path : Surface.Path) :
       NamedRangeLowers context path (.field coreIterable startField.field)
         (.field coreIterable endField.field) true
 
-/-- A statement list is lowered with an explicit fresh-ID supply. `let` wraps
-    the remaining list, exactly matching lexical scope in `Core.Stmt`; branch
-    locals do not escape, while the maximum consumed ID is carried forward. -/
+/-- A statement list is lowered with an explicit lower bound for fresh IDs.
+    A `let` may use a larger ID (for example, its declaration token index).
+    It wraps the remaining list, exactly matching lexical scope in `Core.Stmt`;
+    branch locals do not escape, while the maximum consumed ID is carried forward. -/
 inductive StmtsLower :
     Context → VarId → List Surface.Stmt → Core.Stmt → VarId → Prop where
   | nil : StmtsLower context next [] .skip next
@@ -1725,42 +1726,54 @@ inductive StmtsLower :
       StmtsLower context next (.expression surfaceExpression :: surfaceTail)
         (.sequence (.expression coreExpression) coreTail) final
   | letInferred
-      (fresh : FreshLocalId context next)
+      (id : VarId)
+      (lower : next ≤ id)
+      (fresh : FreshLocalId context id)
       (initializer : ExprLowers context surfaceInitializer type coreInitializer)
       (coreType : type.toCore context.monomorphization = some loweredType)
-      (tail : StmtsLower (context.bindLocal name next type) (next + 1)
+      (tail : StmtsLower (context.bindLocal name id type) (id + 1)
         surfaceTail coreTail final) :
       StmtsLower context next
         (.letLocal name none (some surfaceInitializer) :: surfaceTail)
-        (.letLocal next loweredType coreInitializer coreTail) final
+        (.letLocal id loweredType coreInitializer coreTail) final
   | letAnnotated
-      (fresh : FreshLocalId context next)
+      (id : VarId)
+      (lower : next ≤ id)
+      (fresh : FreshLocalId context id)
       (annotation : TypeGrounds context surfaceType type)
       (initializer : ExprChecks context surfaceInitializer type coreInitializer)
       (coreType : type.toCore context.monomorphization = some loweredType)
-      (tail : StmtsLower (context.bindLocal name next type) (next + 1)
+      (tail : StmtsLower (context.bindLocal name id type) (id + 1)
         surfaceTail coreTail final) :
       StmtsLower context next
         (.letLocal name (some surfaceType) (some surfaceInitializer) :: surfaceTail)
-        (.letLocal next loweredType coreInitializer coreTail) final
+        (.letLocal id loweredType coreInitializer coreTail) final
   | letUninitialized
-      (fresh : FreshLocalId context next)
+      (id : VarId)
+      (lower : next ≤ id)
+      (fresh : FreshLocalId context id)
       (annotation : TypeGrounds context surfaceType type)
       (coreType : type.toCore context.monomorphization = some loweredType)
-      (tail : StmtsLower (context.bindLocal name next type) (next + 1)
+      (tail : StmtsLower (context.bindLocal name id type) (id + 1)
         surfaceTail coreTail final) :
       StmtsLower context next
         (.letLocal name (some surfaceType) none :: surfaceTail)
-        (.letUninitialized next loweredType coreTail) final
+        (.letUninitialized id loweredType coreTail) final
   | returnUnit
       (tail : StmtsLower context next surfaceTail coreTail final) :
       StmtsLower context next (.returnValue none :: surfaceTail)
         (.sequence (.returnValue none) coreTail) final
+  | terminalReturnUnit :
+      StmtsLower context next [.returnValue none] (.returnValue none) next
   | returnValue
       (value : ExprChecks context surfaceValue type coreValue)
       (tail : StmtsLower context next surfaceTail coreTail final) :
       StmtsLower context next (.returnValue (some surfaceValue) :: surfaceTail)
         (.sequence (.returnValue (some coreValue)) coreTail) final
+  | terminalReturnValue
+      (value : ExprChecks context surfaceValue type coreValue) :
+      StmtsLower context next [.returnValue (some surfaceValue)]
+        (.returnValue (some coreValue)) next
   | ifThenElse
       (condition : ExprChecks context surfaceCondition
         (.scalar .bool) coreCondition)

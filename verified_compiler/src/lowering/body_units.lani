@@ -1,8 +1,9 @@
 module lowering::body_units;
-import backend::syntax;
 import lowering::allocation;
 import lowering::bodies;
 import lowering::body_context;
+import ir::body_catalog;
+import ir::body_events;
 import lowering::value_catalog;
 import lowering::declarations;
 import lowering::aliases;
@@ -87,6 +88,47 @@ struct ValueCatalogValidation {
     signature_index: lowering::signature_index::Table,
 }
 
+fn callable_signature_valid(index: lowering::signature_index::Table,
+    id: i32) -> bool {
+    if (!lowering::signature_index::contains(index, id)) { return false; }
+    let record: lowering::signatures::SignatureRecord =
+        lowering::signature_index::record_at(index, id);
+    return lowering::signatures::record_has_shape(record,
+            lowering::signatures::InternalFunctionShape)
+        || lowering::signatures::record_has_shape(record,
+            lowering::signatures::ExternalFunctionShape);
+}
+
+fn variant_signature_valid(index: lowering::signature_index::Table,
+    value: lowering::value_catalog::VariantTarget) -> bool {
+    if (!lowering::signature_index::contains(index, value.type_id)) {
+        return false;
+    }
+    let record: lowering::signatures::SignatureRecord =
+        lowering::signature_index::record_at(index, value.type_id);
+    if (!lowering::signatures::record_has_shape(record,
+            lowering::signatures::EnumerationShape)
+        || value.ordinal <= -1
+        || value.ordinal >= lowering::signatures::record_arity(record)) {
+        return false;
+    }
+    let selected: lowering::signature_index::Variant =
+        lowering::signature_index::variant_at(index, value.type_id,
+            value.ordinal);
+    return selected.field_count == value.field_count;
+}
+
+fn binding_signature_valid(index: lowering::signature_index::Table,
+    target: lowering::value_catalog::ValueTarget) -> bool {
+    return match (target) {
+        lowering::value_catalog::InvalidTarget -> false,
+        lowering::value_catalog::Callable(id) ->
+            callable_signature_valid(index, id),
+        lowering::value_catalog::Variant(value) ->
+            variant_signature_valid(index, value),
+    };
+}
+
 fn valid_value_catalog(validation: ValueCatalogValidation) -> bool {
     let input: lowering::value_catalog::ValueTable = validation.catalog;
     let offset: i32 = validation.offset;
@@ -104,36 +146,9 @@ fn valid_value_catalog(validation: ValueCatalogValidation) -> bool {
     while (position < finish) {
         let binding: lowering::value_catalog::ValueBinding =
             lowering::value_catalog::read_binding(input, position);
-        let id: i32 = lowering::value_catalog::binding_id(binding);
-        let member: i32 = lowering::value_catalog::binding_member(binding);
-        let arity: i32 = lowering::value_catalog::binding_arity(binding);
-        if (!lowering::signature_index::contains(signature_index, id)) {
+        if (!binding_signature_valid(signature_index, binding.target)) {
             return false;
         }
-        let record: lowering::signatures::SignatureRecord =
-            lowering::signature_index::record_at(signature_index, id);
-        let signature_found: bool = false;
-        if (lowering::value_catalog::binding_is_kind(binding,
-                lowering::value_catalog::CallableBinding)) {
-            if (lowering::signatures::record_has_shape(record,
-                    lowering::signatures::InternalFunctionShape)
-                || lowering::signatures::record_has_shape(record,
-                    lowering::signatures::ExternalFunctionShape)) {
-                signature_found = true;
-            }
-        } else {
-            if (lowering::signatures::record_has_shape(record,
-                    lowering::signatures::EnumerationShape)
-                && member < lowering::signatures::record_arity(record)) {
-                let selected: lowering::signature_index::Variant =
-                    lowering::signature_index::variant_at(signature_index,
-                        id, member);
-                if (selected.field_count == arity) {
-                    signature_found = true;
-                }
-            }
-        }
-        if (!signature_found) { return false; }
         position += 1;
     }
     return position == finish;
@@ -158,37 +173,6 @@ fn valid_owned_context(validation: OwnedContextValidation) -> bool {
         signature_index: validation.signature_index,
     };
     return valid_value_catalog(value_validation);
-}
-fn prior_body_id(body_catalog:[i32], written: i32, id: i32) -> bool {
-    let table: i32 = 0;
-    while (table <= written - 1) {
-        let words: i32 = lowering::body_context::header_words_at(
-            body_catalog, table);
-        if (words <= lowering::body_context::HEADER - 1 || table + words>written) {
-            return true;
-        }
-        let position: i32 = table + lowering::body_context::HEADER;
-        let finish: i32 = table + words;
-        while (position <= finish - 1) {
-            let span: lowering::body_context::FunctionSpan =
-                lowering::body_context::read_function_span(body_catalog,
-                    position);
-            if (!lowering::body_context::span_fits(span, finish,
-                    lowering::body_context::RECORD_HEADER)) {
-                return true;
-            }
-            if (backend::syntax::function_id_at(body_catalog,
-                    span.function) == id) {
-                return true;
-            }
-            position = lowering::body_context::span_end(span);
-        }
-        if (position != finish) {
-            return true;
-        }
-        table += words;
-    }
-    return false;
 }
 fn valid_global_declarations(input: lowering::declarations::Table,
     unit_count: i32) -> bool {
@@ -254,9 +238,9 @@ pub struct BodyUnitWorkspace {
     resolutions: lowering::types::ResolutionTable,
     values: lowering::value_catalog::ValueTable,
     expressions: verified::surface_expr::ExpressionArena,
-    type_output: WordRegion,
-    body: WordRegion,
-    body_catalog: WordRegion,
+    type_output: lowering::types::Results,
+    events: ir::body_events::Region,
+    catalog: ir::body_catalog::Catalog,
     alias_work: WordRegion,
 }
 
@@ -313,9 +297,8 @@ pub fn lower_units_owned(input: BodyUnitInputs,
         input.signature_index;
     let expression_work: verified::surface_expr::ExpressionArena =
         workspace.expressions;
-    let type_output_work: WordRegion = workspace.type_output;
-    let body_work: WordRegion = workspace.body;
-    let body_catalog_region: WordRegion = workspace.body_catalog;
+    let type_output_work: lowering::types::Results =
+        workspace.type_output;
     let alias_resolution_work: WordRegion = workspace.alias_work;
     let type_arena_capacity: i32 = type_arena_work.capacity;
     let resolution_scratch: [lowering::types::ResolutionRow] =
@@ -324,12 +307,7 @@ pub fn lower_units_owned(input: BodyUnitInputs,
     let value_scratch: lowering::value_catalog::ValueTable = value_work;
     let value_scratch_capacity: i32 = value_work.count;
     let expression_capacity: i32 = expression_work.capacity;
-    let type_output: [i32] = type_output_work.data;
-    let type_output_capacity: i32 = type_output_work.words;
-    let body_scratch: [i32] = body_work.data;
-    let body_scratch_capacity: i32 = body_work.words;
-    let body_catalog: [i32] = body_catalog_region.data;
-    let body_capacity: i32 = body_catalog_region.words;
+    let type_output_capacity: i32 = type_output_work.count;
     let alias_work: [i32] = alias_resolution_work.data;
     let alias_work_capacity: i32 = alias_resolution_work.words;
     if (unit_count <= 0 || descriptor_count != unit_count
@@ -343,8 +321,8 @@ pub fn lower_units_owned(input: BodyUnitInputs,
         || type_arena_capacity <= 0 || resolution_capacity <= -1
         || value_scratch_capacity <= -1
         || expression_capacity <= 0 || type_output_capacity <= 0
-        || body_scratch_capacity <= lowering::body_context::HEADER
-        || body_capacity <= lowering::body_context::HEADER
+        || workspace.events.capacity <= 0
+        || workspace.catalog.capacity <= 0
         || alias_work_capacity <= -1) {
         return invalid();
     }
@@ -421,7 +399,8 @@ pub fn lower_units_owned(input: BodyUnitInputs,
         }
         check += 1;
     }
-    let written: i32 = 0;
+    ir::body_catalog::clear(workspace.catalog);
+    let lowered: i32 = 0;
     unit = 0;
     while (unit <= unit_count - 1) {
         let context: i32 = unit;
@@ -464,6 +443,11 @@ pub fn lower_units_owned(input: BodyUnitInputs,
                 aliases: aliases,
                 values: lowering::value_catalog::table(value_scratch.data,
                     value_count),
+                contexts: context_region,
+                source_catalog: source_catalog,
+                token_catalog: token_catalog,
+                global_declarations: global_declarations,
+                trees: tree_catalog,
             };
         let body_workspace: lowering::body_context::BodyLoweringWorkspace =
             lowering::body_context::BodyLoweringWorkspace {
@@ -471,50 +455,21 @@ pub fn lower_units_owned(input: BodyUnitInputs,
                 types: type_arena_work,
                 alias_scratch: lowering::body_context::region(alias_work,
                     alias_work_capacity),
-                type_output: lowering::body_context::region(type_output,
-                    type_output_capacity),
-                output: lowering::body_context::region(body_scratch,
-                    body_scratch_capacity),
+                type_output: type_output_work,
+                events: workspace.events,
+                catalog: workspace.catalog,
             };
-        let local_body_words: i32 = lowering::bodies::lower_owned(
+        let local_count: i32 = lowering::bodies::lower_owned(
             body_inputs, body_workspace);
-        if (local_body_words <= lowering::body_context::HEADER - 1
-            || lowering::body_context::header_words_at(body_scratch, 0)
-                != local_body_words
-            || local_body_words > body_scratch_capacity) {
-            return local_body_words;
-        }
-        let local_position: i32 = lowering::body_context::HEADER;
-        while (local_position <= local_body_words - 1) {
-            let span: lowering::body_context::FunctionSpan =
-                lowering::body_context::read_function_span(body_scratch,
-                    local_position);
-            if (!lowering::body_context::span_fits(span, local_body_words,
-                    lowering::body_context::RECORD_HEADER)
-                || backend::syntax::function_id_at(body_scratch,
-                    span.function) <= -1
-                || prior_body_id(body_catalog, written,
-                    backend::syntax::function_id_at(body_scratch,
-                        span.function))) {
-                return invalid();
-            }
-            local_position = lowering::body_context::span_end(span);
-        }
-        if (local_position != local_body_words) {
+        if (local_count <= -1
+            || local_count > allocation_header.functions - lowered
+            || ir::body_catalog::length(workspace.catalog)
+                != lowered + local_count) {
             return invalid();
         }
-        if (!(local_body_words <= body_capacity - written)) {
-            return invalid();
-        }
-        let word: i32 = 0;
-        while (word <= local_body_words - 1) {
-            body_catalog[written + word] = body_scratch[word];
-            word += 1;
-        }
-        transport_descriptors[unit].body_offset = written;
-        transport_descriptors[unit].body_words = local_body_words;
-        written += local_body_words;
+        lowered += local_count;
         unit += 1;
     }
-    return written;
+    if (lowered != allocation_header.functions) { return invalid(); }
+    return lowered;
 }

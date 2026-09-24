@@ -1,9 +1,11 @@
 module app::main;
 
+import test_support::syntax_tree_decode;
 import verified::host;
 import verified::output;
 import verified::semantic_token_output;
 import verified::semantic_tokens;
+import verified::syntax_tree;
 
 fn main() -> i32 {
     let grammar: [i32; 25] = [1, 1, 1, 1, 0, 99, 13, 17, 18, 19, 20,
@@ -17,75 +19,48 @@ fn main() -> i32 {
     if (memory == 0) { return 1; }
     let assignments: verified::semantic_tokens::AssignmentBuffer =
         verified::semantic_tokens::from_raw_parts(memory, 1);
-    let assignment_rows: [verified::semantic_tokens::Assignment] =
-        assignments.data;
-    let input: verified::semantic_tokens::SemanticInput =
-        verified::semantic_tokens::SemanticInput {
-            grammar: grammar,
-            grammar_length: 25,
-            kinds: kinds,
-            token_count: 1,
-            records: records,
-            record_length: 7,
-            offsets: offsets,
-            node_count: 1,
-        };
-    let status: i32 = verified::semantic_tokens::collect(input, assignments);
-    if (status != 0) { return 100 + status; }
-    if (assignment_rows[0].inner != 0) { return 5; }
-    if (assignment_rows[0].outer != -1) { return 6; }
+    let rows: [verified::semantic_tokens::Assignment] = assignments.data;
+    let tree: verified::syntax_tree::Tree =
+        test_support::syntax_tree_decode::decode(records, 7, offsets, 1, 1);
+    if (verified::semantic_tokens::collect_native(grammar, 25, kinds, 1,
+            tree, assignments) != 0 || rows[0].inner != 0
+        || rows[0].outer != -1) { return 2; }
     let bytes: [i32; 3] = [0, 0, 0];
-    let written: i32 = verified::semantic_token_output::emit(assignments, 1,
-        verified::output::cursor(bytes, 3, 0));
-    if (written != 3 || bytes[0] != 91 || bytes[1] != 48
-        || bytes[2] != 93) {
+    if (verified::semantic_token_output::emit(assignments, 1,
+            verified::output::cursor(bytes, 3, 0)) != 3
+        || bytes[0] != 91 || bytes[1] != 48 || bytes[2] != 93) {
         return 3;
     }
     assignments.capacity = 0;
-    if (verified::semantic_tokens::collect(input, assignments) != -2) {
-        return 4;
-    }
+    if (verified::semantic_tokens::collect_native(grammar, 25, kinds, 1,
+            tree, assignments) != -2) { return 4; }
     assignments.capacity = 1;
+
     let split_grammar: [i32; 26] = [1, 1, 1, 1, 0, 44, 13, 17, 18, 19,
         20, 21, 2, 23, 24, 25, 1, 13, 0, 0, 2, 0, 0, 0, 1, 0];
     let split_kinds: [i32; 1] = [44];
     let split_records: [i32; 10] = [0, 0, 2, 2, 1, 0, 0, 1, 0, 0];
-    let split_input: verified::semantic_tokens::SemanticInput =
-        verified::semantic_tokens::SemanticInput {
-            grammar: split_grammar,
-            grammar_length: 26,
-            kinds: split_kinds,
-            token_count: 1,
-            records: split_records,
-            record_length: 10,
-            offsets: offsets,
-            node_count: 1,
-        };
-    if (verified::semantic_tokens::collect(split_input, assignments) != 0
-        || assignment_rows[0].inner != 0
-        || assignment_rows[0].outer != 0) {
-        return 7;
-    }
+    let split_tree: verified::syntax_tree::Tree =
+        test_support::syntax_tree_decode::decode(split_records, 10,
+            offsets, 1, 1);
+    if (verified::semantic_tokens::collect_native(split_grammar, 26,
+            split_kinds, 1, split_tree, assignments) != 0
+        || rows[0].inner != 0 || rows[0].outer != 0) { return 5; }
+
     let nested_grammar: [i32; 19] = [1, 2, 0, 0, 0, 44, 13, 17, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 13, 13];
     let nested_records: [i32; 17] = [0, 1, 2, 1, 1, 0, 1, 0, 0, 2,
         2, 1, 0, 0, 2, 0, -1];
     let nested_offsets: [i32; 2] = [0, 7];
-    let nested_input: verified::semantic_tokens::SemanticInput =
-        verified::semantic_tokens::SemanticInput {
-            grammar: nested_grammar,
-            grammar_length: 19,
-            kinds: split_kinds,
-            token_count: 1,
-            records: nested_records,
-            record_length: 17,
-            offsets: nested_offsets,
-            node_count: 2,
-        };
-    if (verified::semantic_tokens::collect(nested_input, assignments) != 0
-        || assignment_rows[0].inner != 0
-        || assignment_rows[0].outer != 1) {
-        return 8;
-    }
+    let nested_tree: verified::syntax_tree::Tree =
+        test_support::syntax_tree_decode::decode(nested_records, 17,
+            nested_offsets, 2, 1);
+    if (verified::semantic_tokens::collect_native(nested_grammar, 19,
+            split_kinds, 1, nested_tree, assignments) != 0
+        || rows[0].inner != 0 || rows[0].outer != 1) { return 6; }
+    let children: [verified::syntax_tree::Child] = nested_tree.children;
+    children[0].semantic_kind = -1;
+    if (verified::semantic_tokens::collect_native(nested_grammar, 19,
+            split_kinds, 1, nested_tree, assignments) != -1) { return 7; }
     return 0;
 }

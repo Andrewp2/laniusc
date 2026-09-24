@@ -1,0 +1,11 @@
+module app::main;
+
+struct Pair { left: i32, right: i32 }
+
+fn main() -> i32 {
+    let number: i32;
+    number = 5;
+    let pair: Pair;
+    pair = Pair { left: 3, right: 4 };
+    return number + pair.left + pair.right - 12;
+}

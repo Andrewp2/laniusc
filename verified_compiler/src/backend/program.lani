@@ -7,37 +7,165 @@ import backend::function_index;
 import backend::call;
 import backend::syntax;
 import backend::literal;
+import ir::body_events;
+import ir::body_catalog;
+import ir::function_catalog;
+import ir::program;
+import lowering::allocation;
+import lowering::signature_index;
 import x86::control;
 import runtime::service;
 import runtime::string;
 import verified::host;
 
-// Program transport: [3,64,entry,type_count,constant_count,function_count],
-// then self-delimiting tagged nominal-type records, constants (see
-// backend::literal), and (word_count,Core-function words...) for each
-// function. No x86 decisions or physical layout are supplied by the
-// serializer.
-pub fn compile(program: backend::compile::WordRegion,
+// A standalone backend invocation reads serialized Core. The compiler instead
+// supplies typed catalogs and events; serialized Core is only a certificate
+// output in that path. Keep this choice explicit rather than inferring it from
+// an empty catalog or a dummy Core region.
+pub struct CoreSource {
+    program: backend::compile::WordRegion,
     function_workspace: backend::compile::WordRegion,
-    workspace: backend::frame::Workspace,
+}
+
+pub struct TypedSource {
+    bodies: ir::body_catalog::Catalog,
+    native: ir::program::Storage,
+}
+
+pub enum Source {
+    SerializedCore(CoreSource),
+    TypedProgram(TypedSource),
+}
+
+pub fn core(program: backend::compile::WordRegion,
+    function_workspace: backend::compile::WordRegion) -> Source {
+    let input: CoreSource = CoreSource {
+        program: program, function_workspace: function_workspace,
+    };
+    return SerializedCore(input);
+}
+
+pub fn typed(bodies: ir::body_catalog::Catalog,
+    native: ir::program::Storage) -> Source {
+    let input: TypedSource = TypedSource { bodies: bodies, native: native };
+    return TypedProgram(input);
+}
+
+pub fn is_typed(source: Source) -> bool {
+    return match (source) {
+        SerializedCore(core_value) -> false,
+        TypedProgram(typed_value) -> true,
+    };
+}
+
+fn core_input(source: Source) -> CoreSource {
+    let nowhere: ptr = 0;
+    let empty_words: [i32] = slice_from_raw_parts(nowhere, 0);
+    let absent: CoreSource = CoreSource {
+        program: backend::compile::region(empty_words, 0),
+        function_workspace: backend::compile::region(empty_words, 0),
+    };
+    return match (source) {
+        SerializedCore(core_value) -> core_value,
+        TypedProgram(typed_value) -> absent,
+    };
+}
+
+fn typed_input(source: Source) -> TypedSource {
+    let absent: TypedSource = TypedSource {
+        bodies: ir::body_catalog::empty(), native: ir::program::empty(),
+    };
+    return match (source) {
+        SerializedCore(core_value) -> absent,
+        TypedProgram(typed_value) -> typed_value,
+    };
+}
+fn native_stride(bodies: ir::body_catalog::Catalog,
+    functions: ir::function_catalog::Table) -> i32 {
+    // One event can create at most one local binding, call fixup, or break
+    // patch. Parameters and function positions occupy their own regions.
+    let remaining: i32 = backend::compile::MAX_WORDS
+        - backend::syntax::PROGRAM_HEADER_WORDS;
+    if (functions.count <= 0 || functions.count > remaining
+        || functions.parameter_count <= -1) { return -1; }
+    remaining -= functions.count;
+    if (functions.parameter_count > remaining) { return -1; }
+    remaining -= functions.parameter_count;
+    let count: i32 = ir::body_catalog::length(bodies);
+    let index: i32 = 0;
+    while (index < count) {
+        let body: ir::body_catalog::FunctionBody =
+            ir::body_catalog::at(bodies, index);
+        if (body.count <= 0 || body.count > remaining) { return -1; }
+        remaining -= body.count;
+        index += 1;
+    }
+    return backend::compile::MAX_WORDS - remaining;
+}
+
+pub fn compile(source: Source, workspace: backend::frame::Workspace,
     destination: backend::compile::CodeCursor) -> i32 {
-    let input: [i32] = program.data;
-    let length: i32 = program.words;
-    let function_input: [i32] = function_workspace.data;
-    let function_capacity: i32 = function_workspace.words;
+    let native_mode: bool = is_typed(source);
+    let core_data: CoreSource = core_input(source);
+    let typed_data: TypedSource = typed_input(source);
+    let input: [i32] = core_data.program.data;
+    let length: i32 = core_data.program.words;
+    let function_input: [i32] = core_data.function_workspace.data;
+    let function_capacity: i32 = core_data.function_workspace.words;
+    let bodies: ir::body_catalog::Catalog = typed_data.bodies;
+    let native: ir::program::Storage = typed_data.native;
     let work: backend::frame::Workspace = workspace;
     let state: [backend::frame::State] = backend::frame::state_view(work);
     let work_length: i32 = workspace.words;
     let output: [i32] = destination.data;
     let capacity: i32 = destination.capacity;
     let cursor: i32 = destination.position;
-    if (length <= backend::syntax::PROGRAM_HEADER_WORDS - 1
-        || length > backend::compile::MAX_WORDS || length > function_capacity
-        || backend::frame::HEADER + length
+    let typed_count: i32 = ir::body_catalog::length(bodies);
+    if (native_mode && (typed_count <= 0 || typed_count > bodies.capacity
+        || !ir::program::valid(native))) { return -1; }
+    let signatures: lowering::signature_index::Table = native.signatures;
+    let allocations: lowering::allocation::Table = native.allocations;
+    let native_functions: ir::function_catalog::Table = native.functions;
+    let stride: i32 = length;
+    if (native_mode) {
+        stride = native_stride(bodies, native_functions);
+    } else {
+        if (length <= backend::syntax::PROGRAM_HEADER_WORDS - 1
+            || length > backend::compile::MAX_WORDS
+            || length > function_capacity) { return -1; }
+    }
+    if (stride <= backend::syntax::PROGRAM_HEADER_WORDS - 1
+        || stride > backend::compile::MAX_WORDS
+        || backend::frame::HEADER + stride
             * backend::frame::WORK_WORDS_PER_STRIDE
-            > work_length) { return -1; }
-    let header: backend::syntax::ProgramHeader =
-        backend::syntax::read_program_header(input);
+        > work_length) { return -1; }
+    let header: backend::syntax::ProgramHeader;
+    if (native_mode) {
+        let native_header: lowering::allocation::AllocationHeader =
+            lowering::allocation::table_header(allocations);
+        if (native_header.functions != typed_count
+            || native_header.externals <= -1
+            || native_header.structures <= -1
+            || native_header.enumerations <= -1
+            || native_header.structures > verified::host::I32_MAX
+                - native_header.enumerations
+            || native_header.functions > verified::host::I32_MAX
+                - native_header.externals
+            || native_header.functions + native_header.externals
+                != native_functions.count) { return -1; }
+        let first_function: ir::function_catalog::Function =
+            ir::function_catalog::at(native_functions, 0);
+        header = backend::syntax::ProgramHeader {
+            version: backend::syntax::PROGRAM_VERSION,
+            pointer_bits: backend::syntax::POINTER_BITS,
+            entry: first_function.id,
+            types: native_header.structures + native_header.enumerations,
+            constants: native_header.constants,
+            functions: native_functions.count,
+        };
+    } else {
+        header = backend::syntax::read_program_header(input);
+    }
     let entry_id: i32 = header.entry;
     let type_count: i32 = header.types;
     let constant_count: i32 = header.constants;
@@ -46,32 +174,55 @@ pub fn compile(program: backend::compile::WordRegion,
         || header.pointer_bits != backend::syntax::POINTER_BITS
         || entry_id <= -1 || type_count <= -1 || constant_count <= -1
         || function_count <= 0) { return -1; }
-    state[0].stride = length;
+    state[0].stride = stride;
     state[0].fixup_count = 0;
     state[0].function_count = 0;
-    let required: backend::layout_index::Requirements =
-        backend::layout_index::measure(input, length);
+    let required: backend::layout_index::Requirements;
+    if (native_mode) {
+        required = backend::layout_index::measure_native(signatures,
+            allocations);
+    } else {
+        required = backend::layout_index::measure(input, length);
+    }
     if (!required.valid) { return -1; }
-    let position: i32 = required.type_end;
+    if (required.types != type_count) { return -1; }
+    let position: i32 = 0;
+    if (!native_mode) { position = required.type_end; }
     let index: i32 = 0;
     let constant_bytes: i32 =
         backend::constant_index::allocation_bytes(constant_count);
-    if (constant_bytes <= 0 || constant_count > (length - position)
-            / backend::literal::CONSTANT_HEADER_WORDS) { return -1; }
+    if (constant_bytes <= 0
+        || (!native_mode
+            && constant_count > (length - position)
+                / backend::literal::CONSTANT_HEADER_WORDS)) { return -1; }
     let constant_memory: ptr = verified::host::alloc(constant_bytes,
         backend::constant_index::ALIGNMENT);
     if (constant_memory == 0) { return -1; }
-    let constants: backend::constant_index::Table =
-        backend::constant_index::from_raw_parts(constant_memory,
-            constant_count);
-    position = backend::constant_index::build(input, length, position,
-        constants);
-    if (position <= -1) { return -1; }
-    let function_requirements: backend::function_index::Requirements =
-        backend::function_index::measure(input, length, position,
-            function_count);
+    let constants: backend::constant_index::Table;
+    if (native_mode) {
+        constants = backend::constant_index::from_raw_parts(
+            constant_memory, constant_count, signatures.bytes,
+            signatures.byte_count);
+        if (!backend::constant_index::build_native(signatures,
+                allocations, constants)) { return -1; }
+    } else {
+        constants = backend::constant_index::from_raw_parts(
+            constant_memory, constant_count, input, length);
+        position = backend::constant_index::build(input, length, position,
+            constants);
+    }
+    if (!native_mode && position <= -1) { return -1; }
+    let function_requirements: backend::function_index::Requirements;
+    if (native_mode) {
+        function_requirements = backend::function_index::measure_native(
+            native_functions);
+    } else {
+        function_requirements = backend::function_index::measure(input,
+            length, position, function_count);
+    }
     if (!function_requirements.valid
-        || function_requirements.end != length) { return -1; }
+        || (!native_mode
+            && function_requirements.end != length)) { return -1; }
     let function_bytes: i32 = backend::function_index::allocation_bytes(
         function_requirements);
     if (function_bytes <= 0) { return -1; }
@@ -81,16 +232,23 @@ pub fn compile(program: backend::compile::WordRegion,
     let functions: backend::function_index::Table =
         backend::function_index::from_raw_parts(function_memory,
             function_requirements);
-    if (!backend::function_index::build(input, length, position,
-            functions)) { return -1; }
+    if (native_mode) {
+        if (!backend::function_index::build_native(native_functions,
+                functions)) { return -1; }
+    } else {
+        if (!backend::function_index::build(input, length, position,
+                functions)) { return -1; }
+    }
     state[0].function_count = function_count;
-    index = 0;
-    while (index < function_count) {
-        let function: backend::function_index::Function =
-            backend::function_index::at(functions, index);
-        backend::frame::set_function_input_offset(work, index,
-            function.input_offset);
-        index += 1;
+    if (!native_mode) {
+        index = 0;
+        while (index < function_count) {
+            let function: backend::function_index::Function =
+                backend::function_index::at(functions, index);
+            backend::frame::set_function_input_offset(work, index,
+                function.input_offset);
+            index += 1;
+        }
     }
     let entry: i32 = backend::function_index::find(functions, entry_id);
     if (entry <= -1) { return -1; }
@@ -102,8 +260,16 @@ pub fn compile(program: backend::compile::WordRegion,
     if (layout_memory == 0) { return -1; }
     let layout: backend::layout_index::Table =
         backend::layout_index::from_raw_parts(layout_memory, required);
-    if (!backend::layout_index::build(input, length, layout)) { return -1; }
+    if (native_mode) {
+        if (!backend::layout_index::build_native(signatures,
+                allocations, layout)) { return -1; }
+    } else {
+        if (!backend::layout_index::build(input, length, layout)) {
+            return -1;
+        }
+    }
     let next: i32 = x86::control::jump(output, capacity, cursor, 0);
+    let used_bodies: i32 = 0;
     index = 0;
     while (index != state[0].function_count) {
         if (next <= -1) { return -1; }
@@ -114,25 +280,43 @@ pub fn compile(program: backend::compile::WordRegion,
         let header: backend::syntax::FunctionHeader = function.header;
         if (header.kind == backend::syntax::RuntimeFunction) {
             next = runtime::service::emit(output, capacity, next,
-                input[first + function.word_count - 1]);
+                function.service);
         } else {
-            let body_start: i32 = first
-                + backend::syntax::FUNCTION_HEADER_WORDS
-                + header.parameters
-                    * backend::syntax::PARAMETER_ROW_WORDS;
-            let word: i32 = 0;
-            while (word != header.body_words) {
-                function_input[word] = input[body_start + word];
-                word += 1;
+            let emitted: i32 = -1;
+            if (native_mode) {
+                let body_index: i32 = ir::body_catalog::find(bodies,
+                    header.id);
+                if (body_index <= -1) { return -1; }
+                let body: ir::body_catalog::FunctionBody =
+                    ir::body_catalog::at(bodies, body_index);
+                let events: ir::body_events::Region =
+                    ir::body_events::region(body.events, body.count);
+                emitted = backend::compile::function_events(events,
+                    function, workspace,
+                    backend::compile::cursor(output, capacity, next),
+                    layout, constants, functions);
+                used_bodies += 1;
+            } else {
+                let body_start: i32 = first
+                    + backend::syntax::FUNCTION_HEADER_WORDS
+                    + header.parameters
+                        * backend::syntax::PARAMETER_ROW_WORDS;
+                let word: i32 = 0;
+                while (word != header.body_words) {
+                    function_input[word] = input[body_start + word];
+                    word += 1;
+                }
+                emitted = backend::compile::function(
+                    backend::compile::region(function_input,
+                        header.body_words), function, workspace,
+                    backend::compile::cursor(output, capacity, next),
+                    layout, constants, functions);
             }
-            next = backend::compile::function(
-                backend::compile::region(function_input, header.body_words),
-                function, workspace,
-                backend::compile::cursor(output, capacity, next), program,
-                layout, constants, functions);
+            next = emitted;
         }
         index += 1;
     }
+    if (native_mode && used_bodies != typed_count) { return -1; }
     if (next <= -1) { return -1; }
     // Keep the function region boundary before any runtime data is appended.
     // Certificate mode derives ordered start/length pairs from these slots.

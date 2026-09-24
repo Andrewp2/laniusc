@@ -1,6 +1,7 @@
 module verified::parse_tree;
 
 import verified::parser;
+import verified::syntax_tree;
 
 pub enum TreeStage {
     Materialized,
@@ -24,18 +25,6 @@ pub struct TreeResult {
     words_used: i32,
 }
 
-pub struct TreeInput {
-    workspace: verified::parser::WorkspaceStorage,
-    token_count: i32,
-    depth_limit: i32,
-}
-
-pub fn input(workspace: verified::parser::WorkspaceStorage, token_count: i32,
-    depth_limit: i32) -> TreeInput {
-    return TreeInput { workspace: workspace,
-        token_count: token_count, depth_limit: depth_limit };
-}
-
 pub struct TreeStorage {
     records: [i32],
     record_capacity: i32,
@@ -49,18 +38,9 @@ pub fn storage(records: [i32], record_capacity: i32, offsets: [i32],
         offsets: offsets, offset_capacity: offset_capacity };
 }
 
-struct TreeContext {
-    workspace: verified::parser::WorkspaceStorage,
-    token_count: i32,
-    state_count: i32,
-    records: [i32],
-    record_capacity: i32,
-    offsets: [i32],
-    offset_capacity: i32,
-}
 pub fn tree_stage_code(result: TreeResult) -> i32 { return stage_code(result.stage); }
 pub fn tree_has_stage(result: TreeResult, expected: TreeStage) -> bool {
-    return stage_code(result.stage) == stage_code(expected);
+    return result.stage == expected;
 }
 pub fn tree_succeeded(result: TreeResult) -> bool {
     return tree_has_stage(result, Materialized);
@@ -76,86 +56,110 @@ fn result(stage: TreeStage, node_count: i32, words_used: i32) -> TreeResult {
         words_used: words_used };
 }
 
-// A record has the copy_derivation header followed by child triples.
-// Its state children are rewritten to dense output node IDs. offsets[node]
-// locates the record; IDs are postorder even though record storage is preorder.
-// Shared derivation states are expanded per occurrence, matching a syntax tree.
-fn visit(context: TreeContext, state_id: i32, node_count: i32,
-    words_used: i32, depth: i32) -> TreeResult {
-    let records: [i32] = context.records;
-    let offsets: [i32] = context.offsets;
-    if (depth <= 0) { return result(DepthLimitReached, node_count, words_used); }
-    if (node_count >= context.offset_capacity) {
-        return result(OutputStorageFull, node_count, words_used);
+// The artifact encoding is preorder, while native node IDs are postorder.
+// Serialize the retained native tree without returning to parser states.
+fn write_native(tree: verified::syntax_tree::Tree, node: i32,
+    token_count: i32, storage: TreeStorage, position: i32,
+    depth: i32) -> TreeResult {
+    if (depth <= 0) { return result(DepthLimitReached, 0, position); }
+    if (node <= -1 || node >= tree.node_count) {
+        return result(InvalidInput, 0, position);
     }
-    let derivation_input: verified::parser::DerivationInput =
-        verified::parser::DerivationInput {
-            workspace: context.workspace,
-            token_count: context.token_count,
-            state_count: context.state_count,
-            state_id: state_id,
-        };
-    let derivation_output: verified::parser::DerivationOutput =
-        verified::parser::DerivationOutput {
-            data: records,
-            capacity: context.record_capacity,
-            offset: words_used,
-        };
-    let count: i32 = verified::parser::copy_derivation(
-        derivation_input, derivation_output);
-    if (count == -2) { return result(OutputStorageFull, node_count, words_used); }
-    if (count <= -1) { return result(InvalidInput, node_count, words_used); }
-    let next_word: i32 = words_used
-        + verified::parser::DERIVATION_HEADER_WORDS
+    let records: [i32] = storage.records;
+    let offsets: [i32] = storage.offsets;
+    if (offsets[node] != -1) { return result(InvalidInput, 0, position); }
+    let nodes: [verified::syntax_tree::Node] = tree.nodes;
+    let children: [verified::syntax_tree::Child] = tree.children;
+    let current: verified::syntax_tree::Node = nodes[node];
+    let count: i32 = current.child_count;
+    if (current.production <= -1 || current.origin <= -1
+        || current.end <= current.origin - 1
+        || current.first_child <= -1
+        || count <= -1 || current.first_child > tree.child_count
+        || count > tree.child_count - current.first_child) {
+        return result(InvalidInput, 0, position);
+    }
+    if (position <= -1 || position > storage.record_capacity) {
+        return result(OutputStorageFull, 0, position);
+    }
+    let remaining: i32 = storage.record_capacity - position;
+    if (remaining <= verified::parser::DERIVATION_HEADER_WORDS - 1
+        || count > (remaining - verified::parser::DERIVATION_HEADER_WORDS)
+            / verified::parser::DERIVATION_CHILD_WORDS) {
+        return result(OutputStorageFull, 0, position);
+    }
+    records[position + verified::parser::DERIVATION_PRODUCTION_FIELD]
+        = current.production;
+    records[position + verified::parser::DERIVATION_ORIGIN_FIELD]
+        = current.origin;
+    records[position + verified::parser::DERIVATION_END_FIELD]
+        = current.end;
+    records[position + verified::parser::DERIVATION_CHILD_COUNT_FIELD]
+        = count;
+    let next: i32 = position + verified::parser::DERIVATION_HEADER_WORDS
         + count * verified::parser::DERIVATION_CHILD_WORDS;
-    let next_node: i32 = node_count;
     let child: i32 = 0;
     while (child != count) {
-        let slot: i32 = words_used
+        let item: verified::syntax_tree::Child =
+            children[current.first_child + child];
+        if ((item.kind == verified::parser::StateChild
+                && (item.payload <= -1 || item.payload >= node))
+            || (item.kind == verified::parser::TokenChild
+                && (item.payload <= -1 || item.payload >= token_count))
+            || item.kind == verified::parser::NoChild) {
+            return result(InvalidInput, 0, position);
+        }
+        let slot: i32 = position
             + verified::parser::DERIVATION_HEADER_WORDS
             + child * verified::parser::DERIVATION_CHILD_WORDS;
-        if (records[slot + verified::parser::DERIVATION_CHILD_TAG_FIELD]
-                == verified::parser::child_code(
-                    verified::parser::StateChild)) {
-            let nested: TreeResult = visit(context, records[slot
-                    + verified::parser::DERIVATION_CHILD_PAYLOAD_FIELD],
-                next_node, next_word, depth - 1);
+        records[slot + verified::parser::DERIVATION_CHILD_TAG_FIELD]
+            = verified::parser::child_code(item.kind);
+        records[slot + verified::parser::DERIVATION_CHILD_PAYLOAD_FIELD]
+            = item.payload;
+        records[slot + verified::parser::DERIVATION_CHILD_KIND_FIELD]
+            = item.semantic_kind;
+        child += 1;
+    }
+    let visited: i32 = 1;
+    child = 0;
+    while (child != count) {
+        let item: verified::syntax_tree::Child =
+            children[current.first_child + child];
+        if (item.kind == verified::parser::StateChild) {
+            let nested: TreeResult = write_native(tree, item.payload,
+                token_count, storage, next, depth - 1);
             if (!tree_succeeded(nested)) { return nested; }
-            records[slot + verified::parser::DERIVATION_CHILD_PAYLOAD_FIELD]
-                = nested.node_count - 1;
-            next_node = nested.node_count;
-            next_word = nested.words_used;
+            visited += nested.node_count;
+            next = nested.words_used;
         }
         child += 1;
     }
-    if (next_node >= context.offset_capacity) {
-        return result(OutputStorageFull, next_node, next_word);
-    }
-    offsets[next_node] = words_used;
-    return result(Materialized, next_node + 1, next_word);
+    offsets[node] = position;
+    return result(Materialized, visited, next);
 }
 
-// Consume an unchanged successful recognizer workspace. Buffers must be
-// disjoint, and the supplied lengths must describe their actual storage.
-// No allocation, token scanning, or grammar search occurs here. Partial
-// output after failure is not an accepted tree and must not be serialized.
-pub fn materialize(parsed: verified::parser::ParseResult, tree_input: TreeInput,
-    tree_storage: TreeStorage) -> TreeResult {
-    if (!verified::parser::parse_succeeded(parsed)
-        || tree_storage.record_capacity <= -1
-        || tree_storage.offset_capacity <= -1) {
+pub fn serialize_native(tree: verified::syntax_tree::Tree,
+    token_count: i32, storage: TreeStorage, depth_limit: i32) -> TreeResult {
+    if (tree.node_count <= 0 || tree.child_count <= -1
+        || token_count <= -1 || storage.record_capacity <= -1
+        || storage.offset_capacity <= -1) {
         return result(InvalidInput, 0, 0);
     }
-    let context: TreeContext = TreeContext {
-        workspace: tree_input.workspace,
-        token_count: tree_input.token_count,
-        state_count: verified::parser::parse_state_count(parsed),
-        records: tree_storage.records,
-        record_capacity: tree_storage.record_capacity,
-        offsets: tree_storage.offsets,
-        offset_capacity: tree_storage.offset_capacity,
-    };
-    return visit(context,
-        verified::parser::parse_root_state(parsed), 0, 0,
-        tree_input.depth_limit);
+    if (tree.node_count > storage.offset_capacity) {
+        return result(OutputStorageFull, 0, 0);
+    }
+    let offsets: [i32] = storage.offsets;
+    let node: i32 = 0;
+    let total_nodes: i32 = tree.node_count;
+    while (node != total_nodes) {
+        offsets[node] = -1;
+        node += 1;
+    }
+    let written: TreeResult = write_native(tree, tree.node_count - 1,
+        token_count, storage, 0, depth_limit);
+    if (!tree_succeeded(written)) { return written; }
+    if (written.node_count != tree.node_count) {
+        return result(InvalidInput, written.node_count, written.words_used);
+    }
+    return written;
 }

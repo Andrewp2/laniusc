@@ -40,7 +40,7 @@ private def addFunction : Function := {
 private def addProgram : Program := { target := .x86_64, functions := [addFunction] }
 
 private def addTransportWords : List Int :=
-  [2, 64, 0, 0, 0, 1, 16, 1, 64, 0, 1, 0, 10,
+  [3, 64, 0, 0, 0, 1, 16, 1, 64, 0, 1, 0, 10,
     10, 1, 4, 8, 0, 1, 2, 0, 1, 3]
 
 example : X86.Transport.encodeProgram 0 addProgram = some addTransportWords := by

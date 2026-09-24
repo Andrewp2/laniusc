@@ -1,9 +1,16 @@
 module backend::syntax;
 
+import ir::body_events;
+import ir::type_ref;
+
 // Core is serialized into i32 buffers at the lowering/backend boundary. The
 // compiler uses enums for every semantic category and converts to an integer
 // only when it reads or writes that representation.
-pub const NOMINAL_TYPE_BASE: i32 = 16;
+pub const NOMINAL_TYPE_BASE: i32 = ir::type_ref::NOMINAL_BASE;
+pub fn nominal_type(type_id: i32) -> i32 {
+    let nominal: ir::type_ref::TypeRef = ir::type_ref::Nominal(type_id);
+    return ir::type_ref::code(nominal);
+}
 pub const PROGRAM_VERSION: i32 = 3;
 pub const FUNCTION_VERSION: i32 = 1;
 pub const POINTER_BITS: i32 = 64;
@@ -97,14 +104,14 @@ pub struct FunctionHeader {
     kind: FunctionRecordKind,
     pointer_bits: i32,
     id: i32,
-    result_type: i32,
+    result_type: ir::type_ref::TypeRef,
     parameters: i32,
     body_words: i32,
 }
 
 pub struct Parameter {
     id: i32,
-    kind: i32,
+    kind: ir::type_ref::TypeRef,
 }
 
 // A decoded function's parameter span in the native parameter catalog.
@@ -121,7 +128,8 @@ pub fn read_function_header(input: [i32], position: i32)
         input[position + FUNCTION_KIND_FIELD]);
     let pointer_bits: i32 = input[position + FUNCTION_POINTER_BITS_FIELD];
     let id: i32 = input[position + FUNCTION_ID_FIELD];
-    let result_type: i32 = input[position + FUNCTION_RESULT_TYPE_FIELD];
+    let result_type: ir::type_ref::TypeRef = ir::type_ref::from_code(
+        input[position + FUNCTION_RESULT_TYPE_FIELD]);
     let parameters: i32 = input[position + FUNCTION_PARAMETER_COUNT_FIELD];
     let body_words: i32 = input[position + FUNCTION_BODY_WORDS_FIELD];
     return FunctionHeader {
@@ -136,7 +144,8 @@ pub fn write_function_header(output: [i32], position: i32,
     output[position + FUNCTION_KIND_FIELD] = function_code(header.kind);
     output[position + FUNCTION_POINTER_BITS_FIELD] = header.pointer_bits;
     output[position + FUNCTION_ID_FIELD] = header.id;
-    output[position + FUNCTION_RESULT_TYPE_FIELD] = header.result_type;
+    output[position + FUNCTION_RESULT_TYPE_FIELD] =
+        ir::type_ref::code(header.result_type);
     output[position + FUNCTION_PARAMETER_COUNT_FIELD] = header.parameters;
     output[position + FUNCTION_BODY_WORDS_FIELD] = header.body_words;
 }
@@ -151,19 +160,32 @@ pub fn set_function_body_words_at(output: [i32], position: i32,
 }
 
 pub enum Presence {
+    InvalidPresence,
     Absent,
     Present,
 }
 
 pub fn presence_code(value: Presence) -> i32 {
     return match (value) {
+        InvalidPresence -> -1,
         Absent -> 0,
         Present -> 1,
     };
 }
 
+pub fn presence_from_code(encoded: i32) -> Presence {
+    if (encoded == presence_code(Absent)) { return Absent; }
+    if (encoded == presence_code(Present)) { return Present; }
+    return InvalidPresence;
+}
+
 pub fn valid_boolean(encoded: i32) -> bool {
     return encoded == 0 || encoded == 1;
+}
+
+pub fn boolean_code(value: bool) -> i32 {
+    if (value) { return 1; }
+    return 0;
 }
 
 pub enum TypeLayoutKind {
@@ -191,23 +213,23 @@ pub enum ValueType {
     TypeSlice,
 }
 
-pub fn type_code(kind: ValueType) -> i32 {
+pub fn value_type_ref(kind: ValueType) -> ir::type_ref::TypeRef {
     return match (kind) {
-        TypeI32 -> 1,
-        TypeBool -> 2,
-        TypeUsize -> 3,
-        TypePointer -> 4,
-        TypeString -> 5,
-        TypeSlice -> 6,
+        TypeI32 -> ir::type_ref::I32,
+        TypeBool -> ir::type_ref::Bool,
+        TypeUsize -> ir::type_ref::Usize,
+        TypePointer -> ir::type_ref::Pointer,
+        TypeString -> ir::type_ref::String,
+        TypeSlice -> ir::type_ref::Slice,
     };
+}
+
+pub fn type_code(kind: ValueType) -> i32 {
+    return ir::type_ref::code(value_type_ref(kind));
 }
 
 pub fn type_is(encoded: i32, expected: ValueType) -> bool {
     return encoded == type_code(expected);
-}
-
-pub fn primitive_type(encoded: i32) -> bool {
-    return encoded >= type_code(TypeI32) && encoded <= type_code(TypeSlice);
 }
 
 pub fn scalar(encoded: i32) -> bool {
@@ -215,6 +237,7 @@ pub fn scalar(encoded: i32) -> bool {
 }
 
 pub enum ExpressionKind {
+    InvalidExpression,
     ExprValue,
     ExprLocal,
     ExprCast,
@@ -233,10 +256,12 @@ pub enum ExpressionKind {
     ExprEnumTag,
     ExprEnumField,
     ExprMatch,
+    ExprTypedSliceFromRawParts,
 }
 
 pub fn expression_code(kind: ExpressionKind) -> i32 {
     return match (kind) {
+        InvalidExpression -> -1,
         ExprValue -> 0,
         ExprLocal -> 1,
         ExprCast -> 2,
@@ -255,10 +280,35 @@ pub fn expression_code(kind: ExpressionKind) -> i32 {
         ExprEnumTag -> 19,
         ExprEnumField -> 20,
         ExprMatch -> 21,
+        ExprTypedSliceFromRawParts -> 22,
     };
 }
 
+pub fn expression_from_code(encoded: i32) -> ExpressionKind {
+    if (encoded == expression_code(ExprValue)) { return ExprValue; }
+    if (encoded == expression_code(ExprLocal)) { return ExprLocal; }
+    if (encoded == expression_code(ExprCast)) { return ExprCast; }
+    if (encoded == expression_code(ExprUnary)) { return ExprUnary; }
+    if (encoded == expression_code(ExprBinary)) { return ExprBinary; }
+    if (encoded == expression_code(ExprIndex)) { return ExprIndex; }
+    if (encoded == expression_code(ExprStruct)) { return ExprStruct; }
+    if (encoded == expression_code(ExprField)) { return ExprField; }
+    if (encoded == expression_code(ExprAssign)) { return ExprAssign; }
+    if (encoded == expression_code(ExprConstant)) { return ExprConstant; }
+    if (encoded == expression_code(ExprCall)) { return ExprCall; }
+    if (encoded == expression_code(ExprSliceFromRawParts)) { return ExprSliceFromRawParts; }
+    if (encoded == expression_code(ExprSliceDataPointer)) { return ExprSliceDataPointer; }
+    if (encoded == expression_code(ExprStringDataPointer)) { return ExprStringDataPointer; }
+    if (encoded == expression_code(ExprEnumeration)) { return ExprEnumeration; }
+    if (encoded == expression_code(ExprEnumTag)) { return ExprEnumTag; }
+    if (encoded == expression_code(ExprEnumField)) { return ExprEnumField; }
+    if (encoded == expression_code(ExprMatch)) { return ExprMatch; }
+    if (encoded == expression_code(ExprTypedSliceFromRawParts)) { return ExprTypedSliceFromRawParts; }
+    return InvalidExpression;
+}
+
 pub enum PlaceKind {
+    InvalidPlace,
     PlaceLocal,
     PlaceField,
     PlaceIndex,
@@ -266,13 +316,22 @@ pub enum PlaceKind {
 
 pub fn place_code(kind: PlaceKind) -> i32 {
     return match (kind) {
+        InvalidPlace -> -1,
         PlaceLocal -> 0,
         PlaceField -> 1,
         PlaceIndex -> 2,
     };
 }
 
+pub fn place_from_code(encoded: i32) -> PlaceKind {
+    if (encoded == place_code(PlaceLocal)) { return PlaceLocal; }
+    if (encoded == place_code(PlaceField)) { return PlaceField; }
+    if (encoded == place_code(PlaceIndex)) { return PlaceIndex; }
+    return InvalidPlace;
+}
+
 pub enum StatementKind {
+    InvalidStatement,
     StatementSkip,
     StatementExpression,
     StatementSequence,
@@ -287,6 +346,7 @@ pub enum StatementKind {
 
 pub fn statement_code(kind: StatementKind) -> i32 {
     return match (kind) {
+        InvalidStatement -> -1,
         StatementSkip -> 0,
         StatementExpression -> 1,
         StatementSequence -> 2,
@@ -300,10 +360,25 @@ pub fn statement_code(kind: StatementKind) -> i32 {
     };
 }
 
+pub fn statement_from_code(encoded: i32) -> StatementKind {
+    if (encoded == statement_code(StatementSkip)) { return StatementSkip; }
+    if (encoded == statement_code(StatementExpression)) { return StatementExpression; }
+    if (encoded == statement_code(StatementSequence)) { return StatementSequence; }
+    if (encoded == statement_code(StatementLet)) { return StatementLet; }
+    if (encoded == statement_code(StatementLetUninitialized)) { return StatementLetUninitialized; }
+    if (encoded == statement_code(StatementIf)) { return StatementIf; }
+    if (encoded == statement_code(StatementWhile)) { return StatementWhile; }
+    if (encoded == statement_code(StatementReturn)) { return StatementReturn; }
+    if (encoded == statement_code(StatementBreak)) { return StatementBreak; }
+    if (encoded == statement_code(StatementContinue)) { return StatementContinue; }
+    return InvalidStatement;
+}
+
 pub enum UnaryOperation {
     UnaryPositive,
     UnaryNot,
     UnaryNegate,
+    InvalidUnaryOperation,
 }
 
 pub fn unary_code(operation: UnaryOperation) -> i32 {
@@ -311,7 +386,15 @@ pub fn unary_code(operation: UnaryOperation) -> i32 {
         UnaryPositive -> 0,
         UnaryNot -> 1,
         UnaryNegate -> 2,
+        InvalidUnaryOperation -> -1,
     };
+}
+
+pub fn unary_from_code(encoded: i32) -> UnaryOperation {
+    if (encoded == unary_code(UnaryPositive)) { return UnaryPositive; }
+    if (encoded == unary_code(UnaryNot)) { return UnaryNot; }
+    if (encoded == unary_code(UnaryNegate)) { return UnaryNegate; }
+    return InvalidUnaryOperation;
 }
 
 pub enum BinaryOperation {
@@ -435,9 +518,66 @@ pub fn assignment_from_code(encoded: i32) -> AssignmentOperation {
     return InvalidAssignmentOperation;
 }
 
-pub fn valid_assignment_code(value: i32) -> bool {
-    return value >= assignment_code(AssignmentSet)
-        && value <= assignment_code(AssignmentBitOr);
+pub fn unary_event_operation(event: ir::body_events::Event)
+    -> UnaryOperation {
+    return match (event) {
+        ir::body_events::ExpressionUnaryPositive -> UnaryPositive,
+        ir::body_events::ExpressionUnaryNot -> UnaryNot,
+        ir::body_events::ExpressionUnaryNegate -> UnaryNegate,
+        _ -> InvalidUnaryOperation,
+    };
+}
+
+pub fn binary_event_operation(event: ir::body_events::Event)
+    -> BinaryOperation {
+    return match (event) {
+        ir::body_events::ExpressionBinaryAndThen -> BinaryAndThen,
+        ir::body_events::ExpressionBinaryOrElse -> BinaryOrElse,
+        ir::body_events::ExpressionBinaryEqual -> BinaryEqual,
+        ir::body_events::ExpressionBinaryNotEqual -> BinaryNotEqual,
+        ir::body_events::ExpressionBinaryLess -> BinaryLess,
+        ir::body_events::ExpressionBinaryLessEqual -> BinaryLessEqual,
+        ir::body_events::ExpressionBinaryGreater -> BinaryGreater,
+        ir::body_events::ExpressionBinaryGreaterEqual -> BinaryGreaterEqual,
+        ir::body_events::ExpressionBinaryAdd -> BinaryAdd,
+        ir::body_events::ExpressionBinarySubtract -> BinarySubtract,
+        ir::body_events::ExpressionBinaryMultiply -> BinaryMultiply,
+        ir::body_events::ExpressionBinaryDivide -> BinaryDivide,
+        ir::body_events::ExpressionBinaryRemainder -> BinaryRemainder,
+        ir::body_events::ExpressionBinaryBitAnd -> BinaryBitAnd,
+        ir::body_events::ExpressionBinaryBitOr -> BinaryBitOr,
+        ir::body_events::ExpressionBinaryBitXor -> BinaryBitXor,
+        ir::body_events::ExpressionBinaryShiftLeft -> BinaryShiftLeft,
+        ir::body_events::ExpressionBinaryShiftRight -> BinaryShiftRight,
+        _ -> InvalidBinaryOperation,
+    };
+}
+
+pub fn assignment_event_operation(event: ir::body_events::Event)
+    -> AssignmentOperation {
+    return match (event) {
+        ir::body_events::ExpressionAssignmentSet -> AssignmentSet,
+        ir::body_events::ExpressionAssignmentAdd -> AssignmentAdd,
+        ir::body_events::ExpressionAssignmentSubtract -> AssignmentSubtract,
+        ir::body_events::ExpressionAssignmentMultiply -> AssignmentMultiply,
+        ir::body_events::ExpressionAssignmentDivide -> AssignmentDivide,
+        ir::body_events::ExpressionAssignmentRemainder -> AssignmentRemainder,
+        ir::body_events::ExpressionAssignmentBitXor -> AssignmentBitXor,
+        ir::body_events::ExpressionAssignmentShiftLeft -> AssignmentShiftLeft,
+        ir::body_events::ExpressionAssignmentShiftRight -> AssignmentShiftRight,
+        ir::body_events::ExpressionAssignmentBitAnd -> AssignmentBitAnd,
+        ir::body_events::ExpressionAssignmentBitOr -> AssignmentBitOr,
+        _ -> InvalidAssignmentOperation,
+    };
+}
+
+// Numeric operation tags exist only at the serialized Core boundary.
+pub fn binary_event_code(event: ir::body_events::Event) -> i32 {
+    return binary_code(binary_event_operation(event));
+}
+
+pub fn assignment_event_code(event: ir::body_events::Event) -> i32 {
+    return assignment_code(assignment_event_operation(event));
 }
 
 pub fn assignment_binary(operation: AssignmentOperation) -> BinaryOperation {

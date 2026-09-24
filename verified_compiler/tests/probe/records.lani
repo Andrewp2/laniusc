@@ -1,0 +1,6 @@
+module probe::records;
+
+pub struct Pair {
+    left: i32,
+    right: i32,
+}

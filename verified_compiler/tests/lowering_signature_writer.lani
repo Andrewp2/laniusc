@@ -1,6 +1,6 @@
 module app::main;
 
-import backend::syntax;
+import ir::type_ref;
 import lowering::declarations;
 import lowering::signature_index;
 import lowering::signatures;
@@ -26,17 +26,17 @@ fn main() -> i32 {
     let member_start: i32 = lowering::signature_index::member_position(output);
     if (!lowering::signature_index::push_member(output,
             lowering::signatures::SignatureMember {
-                name: 7, type_tag: 1,
+                name: 7, type_tag: ir::type_ref::I32,
             })
         || !lowering::signature_index::push_member(output,
             lowering::signatures::SignatureMember {
-                name: 8, type_tag: 2,
+                name: 8, type_tag: ir::type_ref::Bool,
             })) { return 2; }
     let function: lowering::signatures::SignatureRecord =
         lowering::signatures::SignatureRecord {
             id: 0, declaration_kind: lowering::declarations::Function,
             shape: lowering::signatures::InternalFunctionShape,
-            arity: 2, result_type: 1,
+            arity: 2, result_type: ir::type_ref::I32,
         };
     let short_function: lowering::signatures::SignatureRecord = function;
     short_function.arity = 1;
@@ -52,9 +52,11 @@ fn main() -> i32 {
     }
     let variant_start: i32 = lowering::signature_index::variant_position(output);
     let variant: i32 = lowering::signature_index::push_variant(output, 9);
+    let integer_kind: ir::type_ref::TypeRef = ir::type_ref::I32;
+    let boolean_kind: ir::type_ref::TypeRef = ir::type_ref::Bool;
     if (variant != variant_start
-        || !lowering::signature_index::push_field(output, variant, 1)
-        || !lowering::signature_index::push_field(output, variant, 2)) {
+        || !lowering::signature_index::push_field(output, variant, integer_kind)
+        || !lowering::signature_index::push_field(output, variant, boolean_kind)) {
         return 4;
     }
     if (lowering::signature_index::push_record(output,
@@ -62,16 +64,16 @@ fn main() -> i32 {
                 id: 1,
                 declaration_kind: lowering::declarations::Enumeration,
                 shape: lowering::signatures::EnumerationShape,
-                arity: 0, result_type: -1,
+                arity: 0, result_type: ir::type_ref::Invalid,
             }, -1, variant_start, -1)
         || !lowering::signature_index::push_record(output,
             lowering::signatures::SignatureRecord {
                 id: 1,
                 declaration_kind: lowering::declarations::Enumeration,
                 shape: lowering::signatures::EnumerationShape,
-                arity: 1, result_type: -1,
+                arity: 1, result_type: ir::type_ref::Invalid,
             }, -1, variant_start, -1)
-        || lowering::signature_index::push_field(output, variant, 1)) {
+        || lowering::signature_index::push_field(output, variant, integer_kind)) {
         return 5;
     }
     let scalar: i32 = lowering::signature_index::push_scalar(output, 42, 0);
@@ -80,8 +82,7 @@ fn main() -> i32 {
             lowering::signatures::SignatureRecord {
                 id: 2, declaration_kind: lowering::declarations::Constant,
                 shape: lowering::signatures::ConstantShape,
-                arity: 0, result_type: backend::syntax::type_code(
-                    backend::syntax::TypeI32),
+                arity: 0, result_type: ir::type_ref::I32,
             }, -1, -1, scalar)) { return 6; }
     let bytes: [i32; 3] = [65, 66, 67];
     let string: i32 = lowering::signature_index::push_string(output,
@@ -91,8 +92,7 @@ fn main() -> i32 {
             lowering::signatures::SignatureRecord {
                 id: 3, declaration_kind: lowering::declarations::Constant,
                 shape: lowering::signatures::ConstantShape,
-                arity: 0, result_type: backend::syntax::type_code(
-                    backend::syntax::TypeString),
+                arity: 0, result_type: ir::type_ref::String,
             }, -1, -1, string)) { return 7; }
     if (!lowering::signature_index::complete(output)) { return 10; }
     let index: lowering::signature_index::Table =
@@ -101,14 +101,16 @@ fn main() -> i32 {
         || index.field_count != 2 || index.constant_count != 2
         || index.byte_count != 3
         || lowering::signature_index::member_at(index, 0, 1).name != 8
-        || lowering::signature_index::enum_field_type(index, 1, 0, 1) != 2
+        || !ir::type_ref::same(
+            lowering::signature_index::enum_field_type(index, 1, 0, 1),
+            ir::type_ref::Bool)
         || lowering::signature_index::constant_at(index, 2).low != 42
         || lowering::signature_index::constant_byte(index, 3, 2) != 67) {
         return 8;
     }
     if (!lowering::signature_index::push_member(output,
             lowering::signatures::SignatureMember {
-                name: 10, type_tag: 1,
+                name: 10, type_tag: ir::type_ref::I32,
             })
         || lowering::signature_index::complete(output)) { return 11; }
     return 0;

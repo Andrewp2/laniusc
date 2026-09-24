@@ -1,0 +1,70 @@
+module lowering::string_literal;
+
+import verified::ascii;
+import verified::host;
+import verified::token;
+
+fn escaped(byte: i32) -> i32 {
+    if (byte == verified::ascii::LOWER_N) {
+        return verified::ascii::LINE_FEED;
+    }
+    if (byte == verified::ascii::LOWER_R) {
+        return verified::ascii::CARRIAGE_RETURN;
+    }
+    if (byte == verified::ascii::LOWER_T) {
+        return verified::ascii::TAB;
+    }
+    if (byte == verified::ascii::ZERO) { return 0; }
+    return byte;
+}
+
+// Match the GPU compiler's string DFA: the first and last quotes are not
+// data, a backslash consumes the next byte, and known escapes map to ASCII.
+pub fn decode(source: [i32], source_length: i32,
+    tokens: verified::token::TokenTable, token_count: i32,
+    token: i32) -> ptr {
+    let invalid: ptr = 0;
+    if (token <= -1 || token >= token_count
+        || token_count > tokens.count || source_length <= -1) {
+        return invalid;
+    }
+    let rows: [verified::token::TokenRow] = tokens.data;
+    let row: verified::token::TokenRow = rows[token];
+    if (row.kind != verified::token::StringLiteral
+        || row.start <= -1 || row.start > source_length
+        || row.finish <= row.start || row.finish > source_length
+        || row.finish - row.start < 2
+        || source[row.start] != verified::ascii::QUOTE
+        || source[row.finish - 1] != verified::ascii::QUOTE) {
+        return invalid;
+    }
+    let raw_length: i32 = row.finish - row.start - 2;
+    let allocation: i32 = raw_length + 2;
+    let memory: ptr = verified::host::alloc_i32(allocation);
+    if (memory == 0) { return invalid; }
+    let bytes: [i32] = slice_from_raw_parts(memory, allocation);
+    let input: i32 = row.start + 1;
+    let end: i32 = row.finish - 1;
+    let length: i32 = 0;
+    while (input < end) {
+        let byte: i32 = source[input];
+        if (byte < 0 || byte > verified::host::BYTE_MASK) {
+            return invalid;
+        }
+        if (byte == verified::ascii::BACKSLASH) {
+            input += 1;
+            if (input >= end || source[input] < 0
+                || source[input] > verified::host::BYTE_MASK) {
+                return invalid;
+            }
+            bytes[length + 1] = escaped(source[input]);
+        } else {
+            bytes[length + 1] = byte;
+        }
+        length += 1;
+        input += 1;
+    }
+    bytes[0] = length;
+    bytes[length + 1] = 0;
+    return memory;
+}

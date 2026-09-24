@@ -1,0 +1,122 @@
+module ir::type_ref;
+
+import verified::host;
+
+// Core type tags are a serialization detail. Native compiler state retains
+// the distinction between a primitive and a nominal declaration ID.
+pub const NOMINAL_BASE: i32 = 16;
+// Keep nominal-slice tags disjoint from nominal tags in the flat Core wire
+// format. The native TypeRef still retains a semantic discriminant/payload.
+pub const NOMINAL_SLICE_BASE: i32 = 1073741824;
+// Native TypeRef values use one discriminant word and one payload word.
+pub const STORAGE_WORDS: i32 = 2;
+
+pub enum TypeRef {
+    Invalid,
+    Void,
+    I32,
+    Bool,
+    Usize,
+    Pointer,
+    String,
+    Slice,
+    Nominal(i32),
+    NominalSlice(i32),
+}
+
+fn is_invalid(value: TypeRef) -> bool {
+    return match (value) {
+        Invalid -> true,
+        _ -> false,
+    };
+}
+
+pub fn same(left: TypeRef, right: TypeRef) -> bool {
+    if (is_invalid(left)) { return is_invalid(right); }
+    let left_code: i32 = code(left);
+    let right_code: i32 = code(right);
+    return left_code >= 0 && right_code >= 0
+        && left_code == right_code;
+}
+
+pub fn from_code(encoded: i32) -> TypeRef {
+    if (encoded == 0) { return Void; }
+    if (encoded == 1) { return I32; }
+    if (encoded == 2) { return Bool; }
+    if (encoded == 3) { return Usize; }
+    if (encoded == 4) { return Pointer; }
+    if (encoded == 5) { return String; }
+    if (encoded == 6) { return Slice; }
+    if (encoded >= NOMINAL_SLICE_BASE) {
+        return NominalSlice(encoded - NOMINAL_SLICE_BASE);
+    }
+    if (encoded >= NOMINAL_BASE) { return Nominal(encoded - NOMINAL_BASE); }
+    return Invalid;
+}
+
+fn nominal_code(id: i32) -> i32 {
+    if (id < 0 || id >= NOMINAL_SLICE_BASE - NOMINAL_BASE) {
+        return -1;
+    }
+    return NOMINAL_BASE + id;
+}
+
+fn nominal_slice_code(id: i32) -> i32 {
+    if (id < 0 || id >= NOMINAL_SLICE_BASE - NOMINAL_BASE) {
+        return -1;
+    }
+    return NOMINAL_SLICE_BASE + id;
+}
+
+pub fn code(value: TypeRef) -> i32 {
+    return match (value) {
+        Invalid -> -1,
+        Void -> 0,
+        I32 -> 1,
+        Bool -> 2,
+        Usize -> 3,
+        Pointer -> 4,
+        String -> 5,
+        Slice -> 6,
+        Nominal(id) -> nominal_code(id),
+        NominalSlice(slice_id) -> nominal_slice_code(slice_id),
+    };
+}
+
+pub fn valid(value: TypeRef) -> bool {
+    return code(value) > 0;
+}
+
+pub fn primitive(value: TypeRef) -> bool {
+    return match (value) {
+        I32 -> true,
+        Bool -> true,
+        Usize -> true,
+        Pointer -> true,
+        String -> true,
+        Slice -> true,
+        NominalSlice(id) -> nominal_slice_code(id) > 0,
+        _ -> false,
+    };
+}
+
+// Void is a valid function result, but never a local, parameter, field, or
+// expression value type.
+pub fn valid_result(value: TypeRef) -> bool {
+    return code(value) >= 0;
+}
+
+pub fn is_nominal(value: TypeRef) -> bool {
+    return match (value) {
+        Nominal(id) -> nominal_code(id) > 0,
+        _ -> false,
+    };
+}
+
+pub fn is_slice(value: TypeRef) -> bool {
+    return match (value) {
+        Slice -> true,
+        NominalSlice(id) -> nominal_slice_code(id) > 0,
+        _ -> false,
+    };
+}

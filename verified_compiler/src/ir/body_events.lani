@@ -1,0 +1,171 @@
+module ir::body_events;
+
+import verified::host;
+import ir::type_ref;
+
+// These are semantic Core constructors in preorder. Children follow their
+// parent in source order. Only serialization converts them to certificate
+// words; lowering stores typed events, not packed word prefixes.
+
+pub enum LiteralValue {
+    IntegerValue(i32),
+    BooleanValue(bool),
+}
+
+pub struct LocalReference {
+    id: i32,
+}
+
+pub struct LocalDeclaration {
+    id: i32,
+    kind: ir::type_ref::TypeRef,
+}
+
+pub struct FieldReference {
+    index: i32,
+}
+
+pub struct StructFields {
+    type_id: i32,
+    count: i32,
+}
+
+pub struct EnumVariant {
+    type_id: i32,
+    ordinal: i32,
+    payload_count: i32,
+}
+
+pub struct MatchHeader {
+    result_kind: ir::type_ref::TypeRef,
+    arm_count: i32,
+}
+
+pub struct MatchArm {
+    ordinal: i32,
+    binding_count: i32,
+}
+
+pub struct CallHeader {
+    function_id: i32,
+    argument_count: i32,
+}
+
+pub enum SliceElementKind {
+    I32Slice,
+    StructureSlice,
+    EnumerationSlice,
+}
+
+pub struct SliceElement {
+    kind: SliceElementKind,
+    id: i32,
+}
+
+// The decoded allocation remains live for serialization and code generation.
+// Retain the slice as a typed payload so its native pointer/length ABI is
+// preserved when an event is copied through the body catalog.
+pub struct StringValue {
+    data: [i32],
+    length: i32,
+}
+
+pub enum Event {
+    ExpressionInteger(i32),
+    ExpressionBoolean(bool),
+    ExpressionString(StringValue),
+    ExpressionLocal(LocalReference),
+    ExpressionConstant(i32),
+    ExpressionUnaryPositive,
+    ExpressionUnaryNot,
+    ExpressionUnaryNegate,
+    ExpressionBinaryAndThen,
+    ExpressionBinaryOrElse,
+    ExpressionBinaryEqual,
+    ExpressionBinaryNotEqual,
+    ExpressionBinaryLess,
+    ExpressionBinaryLessEqual,
+    ExpressionBinaryGreater,
+    ExpressionBinaryGreaterEqual,
+    ExpressionBinaryAdd,
+    ExpressionBinarySubtract,
+    ExpressionBinaryMultiply,
+    ExpressionBinaryDivide,
+    ExpressionBinaryRemainder,
+    ExpressionBinaryBitAnd,
+    ExpressionBinaryBitOr,
+    ExpressionBinaryBitXor,
+    ExpressionBinaryShiftLeft,
+    ExpressionBinaryShiftRight,
+    ExpressionAssignmentSet,
+    ExpressionAssignmentAdd,
+    ExpressionAssignmentSubtract,
+    ExpressionAssignmentMultiply,
+    ExpressionAssignmentDivide,
+    ExpressionAssignmentRemainder,
+    ExpressionAssignmentBitXor,
+    ExpressionAssignmentShiftLeft,
+    ExpressionAssignmentShiftRight,
+    ExpressionAssignmentBitAnd,
+    ExpressionAssignmentBitOr,
+    ExpressionIndex,
+    ExpressionStruct(StructFields),
+    ExpressionEnumeration(EnumVariant),
+    ExpressionMatch(MatchHeader),
+    ExpressionField(FieldReference),
+    ExpressionCall(CallHeader),
+    ExpressionI32SliceFromRawParts,
+    ExpressionI32SliceDataPointer,
+    ExpressionStringDataPointer,
+    ExpressionTypedSliceFromRawParts(SliceElement),
+    MatchArmHeader(MatchArm),
+    MatchBinding(LocalReference),
+    PlaceLocal(LocalReference),
+    PlaceIndex,
+    PlaceField(FieldReference),
+    StatementSkip,
+    StatementExpression,
+    StatementSequence,
+    StatementLet(LocalDeclaration),
+    StatementLetUninitialized(LocalDeclaration),
+    StatementIf,
+    StatementWhile,
+    StatementReturnVoid,
+    StatementReturnValue,
+}
+
+// The widest event has a tag and three eight-byte payload fields.
+const FIELD_BYTES: i32 = 8;
+const EVENT_FIELDS: i32 = 4;
+pub const EVENT_BYTES: i32 = EVENT_FIELDS * FIELD_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+pub const MAX_CAPACITY: i32 = verified::host::I32_MAX / EVENT_BYTES;
+
+pub struct Region {
+    events: [Event],
+    capacity: i32,
+}
+
+pub fn region(events: [Event], capacity: i32) -> Region {
+    return Region { events: events, capacity: capacity };
+}
+
+pub fn allocation_bytes(capacity: i32) -> i32 {
+    if (capacity <= 0 || capacity > MAX_CAPACITY) { return -1; }
+    return capacity * EVENT_BYTES;
+}
+
+pub fn from_raw_parts(memory: ptr, capacity: i32) -> Region {
+    let first: ptr = memory + capacity * EVENT_BYTES - FIELD_BYTES;
+    return Region {
+        events: slice_from_raw_parts(first, capacity),
+        capacity: capacity,
+    };
+}
+
+pub fn append(output: Region, position: i32, event: Event) -> i32 {
+    if (position <= -1 || position >= output.capacity) { return -1; }
+    let events: [Event] = output.events;
+    events[position] = event;
+    return position + 1;
+}

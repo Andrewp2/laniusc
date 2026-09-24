@@ -1,6 +1,7 @@
 module app::main;
 
 import lowering::locals;
+import ir::type_ref;
 import verified::host;
 
 fn main() -> i32 {
@@ -22,25 +23,33 @@ fn main() -> i32 {
     let table: lowering::locals::Table = lowering::locals::from_raw_parts(
         memory, 3);
     if (lowering::locals::save(table) != 0
-        || lowering::locals::type_of(table, 7) != -1) { return 3; }
-    if (!lowering::locals::bind(table, 7, 10)
-        || !lowering::locals::bind(table, 8, 11)) { return 4; }
+        || !ir::type_ref::same(lowering::locals::type_of(table, 7),
+            ir::type_ref::Invalid)) { return 3; }
+    if (!lowering::locals::bind(table, 7, ir::type_ref::Nominal(0))
+        || !lowering::locals::bind(table, 8, ir::type_ref::Nominal(1))) { return 4; }
     let saved: i32 = lowering::locals::save(table);
     if (saved != 2 || lowering::locals::name_at(table, 0) != 7
         || lowering::locals::name_at(table, 1) != 8
-        || lowering::locals::kind_at(table, 0) != 10
-        || lowering::locals::kind_at(table, 1) != 11
-        || lowering::locals::type_of(table, 7) != 10) { return 5; }
-    if (!lowering::locals::bind(table, 7, 12)
-        || lowering::locals::type_of(table, 7) != 12
-        || lowering::locals::bind(table, 9, 13)) { return 6; }
+        || !ir::type_ref::same(lowering::locals::kind_at(table, 0),
+            ir::type_ref::Nominal(0))
+        || !ir::type_ref::same(lowering::locals::kind_at(table, 1),
+            ir::type_ref::Nominal(1))
+        || !ir::type_ref::same(lowering::locals::type_of(table, 7),
+            ir::type_ref::Nominal(0))) { return 5; }
+    if (!lowering::locals::bind(table, 7, ir::type_ref::Nominal(2))
+        || !ir::type_ref::same(lowering::locals::type_of(table, 7),
+            ir::type_ref::Nominal(2))
+        || lowering::locals::bind(table, 9, ir::type_ref::Nominal(3))) { return 6; }
     lowering::locals::restore(table, saved);
-    if (lowering::locals::type_of(table, 7) != 10
+    if (!ir::type_ref::same(lowering::locals::type_of(table, 7),
+            ir::type_ref::Nominal(0))
         || lowering::locals::name_at(table, 2) != -1
-        || lowering::locals::kind_at(table, 2) != -1
+        || !ir::type_ref::same(lowering::locals::kind_at(table, 2),
+            ir::type_ref::Invalid)
         || lowering::locals::save(table) != 2) { return 7; }
-    if (lowering::locals::bind(table, -1, 2)
-        || lowering::locals::bind(table, 9, 0)) { return 8; }
+    if (lowering::locals::bind(table, -1, ir::type_ref::Bool)
+        || lowering::locals::bind(table, 9, ir::type_ref::Void)
+        || lowering::locals::bind(table, 9, ir::type_ref::Invalid)) { return 8; }
     if (guard[bytes / verified::host::I32_BYTES] != 12345678) {
         return 11;
     }
@@ -50,8 +59,9 @@ fn main() -> i32 {
     let empty: lowering::locals::Table = lowering::locals::from_raw_parts(
         empty_memory, 0);
     if (lowering::locals::save(empty) != 0
-        || lowering::locals::type_of(empty, 7) != -1
-        || lowering::locals::bind(empty, 7, 10)) { return 10; }
+        || !ir::type_ref::same(lowering::locals::type_of(empty, 7),
+            ir::type_ref::Invalid)
+        || lowering::locals::bind(empty, 7, ir::type_ref::Nominal(0))) { return 10; }
     let large_bytes: usize = lowering::locals::allocation_bytes(64);
     let large_memory: ptr = verified::host::alloc(large_bytes, alignment);
     if (large_memory == 0) { return 12; }
@@ -59,13 +69,16 @@ fn main() -> i32 {
         large_memory, 64);
     let index: i32 = 0;
     while (index < 64) {
-        if (!lowering::locals::bind(large, index, index + 1)) {
+        if (!lowering::locals::bind(large, index,
+                ir::type_ref::Nominal(index))) {
             return 13;
         }
         index += 1;
     }
     if (lowering::locals::save(large) != 64
-        || lowering::locals::type_of(large, 63) != 64
-        || lowering::locals::bind(large, 64, 65)) { return 14; }
+        || !ir::type_ref::same(lowering::locals::type_of(large, 63),
+            ir::type_ref::Nominal(63))
+        || lowering::locals::bind(large, 64,
+            ir::type_ref::Nominal(64))) { return 14; }
     return 0;
 }

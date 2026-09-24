@@ -3,6 +3,7 @@ module app::main;
 import lowering::allocation;
 import lowering::declarations;
 import lowering::signature_index;
+import lowering::token_names;
 import lowering::value_collection;
 import lowering::unit_context;
 import lowering::value_catalog;
@@ -16,15 +17,17 @@ const ALLOCATION_WORDS: i32 = lowering::allocation::HEADER
 // as one callable through the aggregate value catalog.
 fn main() -> i32 {
     let source: [i32; 27] = [97,98,99,100,101,102,103,104,105,106,107,108,120,0,97,98,99,100,101,102,103,104,105,106,107,108,121];
-    let tokens: [i32; 6] = [1,0,13, 1,14,27];
+    // Token spans are unit-relative; UnitContext supplies source offsets.
     let token_memory: ptr = verified::host::alloc(
         2 * verified::token::RECORD_BYTES, verified::token::ALIGNMENT);
     if (token_memory == 0) { return 2; }
     let token_table: verified::token::TokenTable =
         verified::token::from_raw_parts(token_memory, 2);
-    if (!verified::token::decode_packed(tokens, 6, 2, token_table, 0)) {
-        return 2;
-    }
+    let token_rows: [verified::token::TokenRow] = token_table.data;
+    token_rows[0] = verified::token::TokenRow {
+        kind: verified::token::Identifier, start: 0, finish: 13,
+    };
+    token_rows[1] = token_rows[0];
     let context_memory: ptr = verified::host::alloc(
         2 * lowering::unit_context::RECORD_BYTES,
         lowering::unit_context::ALIGNMENT);
@@ -43,6 +46,18 @@ fn main() -> i32 {
     contexts[1].source_length = 13;
     contexts[1].token_offset = 1;
     contexts[1].token_count = 1;
+    let names: lowering::token_names::Catalog =
+        lowering::token_names::catalog(context_table, source, token_table);
+    if (lowering::token_names::same(names, 0, 0, 1, 0)) { return 7; }
+    source[26] = 120;
+    if (!lowering::token_names::same(names, 0, 0, 1, 0)) { return 8; }
+    contexts[1].source_length = 12;
+    if (lowering::token_names::same(names, 0, 0, 1, 0)) { return 9; }
+    contexts[1].source_length = 13;
+    contexts[1].token_count = 2;
+    if (lowering::token_names::same(names, 0, 0, 1, 0)) { return 10; }
+    contexts[1].token_count = 1;
+    source[26] = 121;
     let allocation_memory: ptr = verified::host::alloc(
         ALLOCATION_WORDS * verified::host::I32_BYTES,
         lowering::allocation::ALIGNMENT);
@@ -117,17 +132,37 @@ fn main() -> i32 {
         output);
     let found: lowering::value_catalog::ValueBinding =
         lowering::value_catalog::read_binding(output, 0);
+    let callable: bool = match (found.target) {
+        lowering::value_catalog::Callable(id) -> id == 10,
+        _ -> false,
+    };
     if (rows != 1 || lowering::value_catalog::binding_token(found) != 0
         || !lowering::value_catalog::binding_is_kind(found,
             lowering::value_catalog::CallableBinding)
         || !lowering::value_catalog::binding_is_scope(found,
             lowering::value_catalog::LocalBinding)
-        || lowering::value_catalog::binding_id(found) != 10
-        || lowering::value_catalog::binding_member(found) != -1
-        || lowering::value_catalog::binding_arity(found) != -1
+        || !callable
         || !lowering::value_catalog::valid_slice(output, 0, rows, 1,
             allocation_table)) {
         return 1;
+    }
+    // Two declarations with the same local name are ambiguous: no binding
+    // may be emitted, regardless of which allocation was visited first.
+    let duplicate_source: lowering::declarations::DeclarationRow =
+        lowering::declarations::DeclarationRow {
+            unit: 0, kind: lowering::declarations::Function,
+            is_public: false, item: 1, declaration: 1, name: 0,
+            target: -1, ordinal: 1,
+        };
+    let duplicate_allocation: lowering::allocation::AllocationRow =
+        lowering::allocation::AllocationRow {
+            source: duplicate_source, declaration_id: 1, core_id: 11,
+        };
+    lowering::allocation::table_write_row(allocation_table, 1,
+        duplicate_allocation);
+    if (lowering::value_collection::build_value_catalog(input, output)
+        != 0) {
+        return 6;
     }
     return 0;
 }

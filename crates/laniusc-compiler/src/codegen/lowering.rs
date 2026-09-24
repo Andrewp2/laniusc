@@ -47,6 +47,10 @@ use crate::{
 pub(crate) const LOWERING_KERNEL_PREFIXES: &[&str] =
     &["codegen/lir", "scan/counted", "scan/counted_pair", "radix"];
 
+// Matches the explicit struct traversal bound in function_layout_words.slang.
+// The final validation rejects aggregate graphs that have not converged.
+const AGGREGATE_LAYOUT_ROUNDS: usize = 64;
+
 #[repr(C)]
 #[derive(Clone, Copy, ShaderType)]
 struct SemanticProjectParams {
@@ -666,6 +670,7 @@ struct GpuSemanticLoweringOperations {
     function_layout_clear: ComputeOperation,
     function_layout_collect: ComputeOperation,
     function_layout_enum_variants: ComputeOperation,
+    function_layout_validate: ComputeOperation,
     function_layout_enum_fields: ComputeOperation,
     function_layout_words: ComputeOperation,
     function_scatter: ComputeOperation,
@@ -1105,6 +1110,16 @@ impl GpuSemanticLoweringStage {
                 local_capacity: capacities.local_capacity(),
             },
         );
+        let function_validation_params = uniform_from_val(
+            device,
+            "lir.semantic.functions.layout.validate.params",
+            &SemanticFunctionParams {
+                n_hir_nodes: hir_nodes,
+                param_capacity: capacities.parameters,
+                n_tokens: capacities.tokens,
+                local_capacity: 0,
+            },
+        );
 
         let graph_bindings = workspace.bindings(&graph).map_err(anyhow::Error::msg)?;
         let mut resources = ResourceMap::new();
@@ -1274,6 +1289,12 @@ impl GpuSemanticLoweringStage {
                 "lir.semantic.functions.layout.enum_variants",
                 &passes.function_layout_enum_variants,
                 &function_params,
+                hir_nodes,
+            )?,
+            function_layout_validate: direct_uniform!(
+                "lir.semantic.functions.layout.validate",
+                &passes.function_layout_enum_variants,
+                &function_validation_params,
                 hir_nodes,
             )?,
             function_layout_enum_fields: direct_uniform!(
@@ -1460,9 +1481,15 @@ impl GpuSemanticLoweringStage {
         stamp!("lowering.semantic.locals.scan.done");
         operations.function_layout_clear.record(encoder)?;
         operations.function_layout_collect.record(encoder)?;
-        operations.function_layout_enum_variants.record(encoder)?;
-        operations.function_layout_enum_fields.record(encoder)?;
+        // Struct widths that do not depend on enum fields are available to
+        // the variant pass; the second walk incorporates enum-valued fields.
         operations.function_layout_words.record(encoder)?;
+        for _ in 0..AGGREGATE_LAYOUT_ROUNDS {
+            operations.function_layout_enum_variants.record(encoder)?;
+            operations.function_layout_enum_fields.record(encoder)?;
+            operations.function_layout_words.record(encoder)?;
+        }
+        operations.function_layout_validate.record(encoder)?;
         operations.function_scatter.record(encoder)?;
         operations.function_params.record(encoder)?;
         stamp!("lowering.semantic.functions.layout.done");

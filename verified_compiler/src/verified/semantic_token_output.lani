@@ -2,6 +2,7 @@ module verified::semantic_token_output;
 
 import verified::output;
 import verified::semantic_tokens;
+import verified::ascii;
 
 // Emit packed semantic codes as List Nat. Split codes are expressed in Lean
 // arithmetic so no unsigned value is ever forced through a signed i32.
@@ -18,7 +19,8 @@ pub fn emit(assignments: verified::semantic_tokens::AssignmentBuffer,
     }
     let prefix: str = "(2147483648+";
     let suffix: str = "*32768)";
-    let next: i32 = verified::output::byte(output, capacity, position, 91);
+    let next: i32 = verified::output::byte(output, capacity, position,
+        verified::ascii::LEFT_BRACKET);
     let token: i32 = 0;
     let data: [verified::semantic_tokens::Assignment] = assignments.data;
     while (token != token_count) {
@@ -31,19 +33,22 @@ pub fn emit(assignments: verified::semantic_tokens::AssignmentBuffer,
             return -1;
         }
         if (token != 0) {
-            next = verified::output::byte(output, capacity, next, 44);
+            next = verified::output::byte(output, capacity, next,
+                verified::ascii::COMMA);
         }
         if (second != -1) {
             next = verified::output::text(output, capacity, next, prefix, 12);
         }
         next = verified::output::natural(output, capacity, next, first);
         if (second != -1) {
-            next = verified::output::byte(output, capacity, next, 43);
+            next = verified::output::byte(output, capacity, next,
+                verified::ascii::PLUS);
             next = verified::output::natural(output, capacity, next, second);
             next = verified::output::text(output, capacity, next, suffix, 7);
         }
         if (next == -1) { return -1; }
         token += 1;
     }
-    return verified::output::byte(output, capacity, next, 93);
+    return verified::output::byte(output, capacity, next,
+        verified::ascii::RIGHT_BRACKET);
 }

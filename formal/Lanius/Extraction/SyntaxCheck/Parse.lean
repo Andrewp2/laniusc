@@ -28,7 +28,9 @@ def semanticKindMatches (grammar : Grammar) (token : RawToken) (code : Nat) : Bo
       canonicalKind? grammar (packedOuter code) = some grammar.split_component_kind
   else
     code < grammar.n_kinds &&
-      canonicalKind? grammar code = some token.kind.gpuCode
+      (canonicalKind? grammar code = some token.kind.gpuCode ||
+        (token.kind == .arrow &&
+          canonicalKind? grammar code = some TokenKind.matchArrow.gpuCode))
 
 def semanticKindsLoop (grammar : Grammar) (tokens : Array RawToken)
     (semantic : Array Nat) : Nat → Bool

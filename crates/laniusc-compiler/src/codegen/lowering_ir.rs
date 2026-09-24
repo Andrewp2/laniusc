@@ -2149,29 +2149,39 @@ fn build_lowering_compiler_graph(
             ),
         ],
     })?;
+    let enum_variant_layout_accesses = vec![
+        PassAccess::read("compact_hir_count", hir_count),
+        PassAccess::read("compact_hir_core", hir_core),
+        PassAccess::read("compact_variant_count", hir_variant_count),
+        PassAccess::read("compact_variants", hir_variants),
+        PassAccess::read(
+            "compact_variant_payload_row_count",
+            hir_variant_payload_row_count,
+        ),
+        PassAccess::read("compact_variant_payload_start", hir_variant_payload_start),
+        PassAccess::read("compact_variant_payload_count", hir_variant_payload_count),
+        PassAccess::read("compact_variant_payloads", hir_variant_payloads),
+        PassAccess::read("semantic_expr_ref_tag", semantic_expr_ref_tags),
+        PassAccess::read("semantic_expr_ref_payload", semantic_expr_ref_payloads),
+        PassAccess::read(
+            "semantic_aggregate_decl_token",
+            semantic_aggregate_decl_tokens,
+        ),
+        PassAccess::read(
+            "semantic_aggregate_hir_by_name_token",
+            semantic_aggregate_hir_by_name_token,
+        ),
+        PassAccess::read_write(
+            "semantic_struct_word_count_by_hir",
+            semantic_struct_word_count_by_hir,
+        ),
+        PassAccess::read_write("lowering_status", lowering_status),
+    ];
     graph.add_pass(PassDesc {
         name: "lir.semantic.functions.layout.enum_variants",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::Declarations,
-        accesses: vec![
-            PassAccess::read("compact_hir_count", hir_count),
-            PassAccess::read("compact_hir_core", hir_core),
-            PassAccess::read("compact_variant_count", hir_variant_count),
-            PassAccess::read("compact_variants", hir_variants),
-            PassAccess::read(
-                "compact_variant_payload_row_count",
-                hir_variant_payload_row_count,
-            ),
-            PassAccess::read("compact_variant_payload_start", hir_variant_payload_start),
-            PassAccess::read("compact_variant_payload_count", hir_variant_payload_count),
-            PassAccess::read("compact_variant_payloads", hir_variant_payloads),
-            PassAccess::read("semantic_expr_ref_tag", semantic_expr_ref_tags),
-            PassAccess::read("semantic_expr_ref_payload", semantic_expr_ref_payloads),
-            PassAccess::read_write(
-                "semantic_struct_word_count_by_hir",
-                semantic_struct_word_count_by_hir,
-            ),
-        ],
+        accesses: enum_variant_layout_accesses.clone(),
     })?;
     graph.add_pass(PassDesc {
         name: "lir.semantic.functions.layout.enum_fields",
@@ -2240,6 +2250,12 @@ fn build_lowering_compiler_graph(
                 semantic_struct_field_word_count_by_row,
             ),
         ],
+    })?;
+    graph.add_pass(PassDesc {
+        name: "lir.semantic.functions.layout.validate",
+        phase: CompilerPhase::SemanticLowering,
+        dispatch_domain: ResourceDomain::Declarations,
+        accesses: enum_variant_layout_accesses,
     })?;
     graph.add_pass(PassDesc {
         name: "lir.semantic.functions.scatter",

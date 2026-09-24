@@ -1,0 +1,19 @@
+module app::main;
+
+enum Choice {
+    First,
+    Second,
+}
+
+fn left() -> bool {
+    return false;
+}
+
+fn chosen() -> Choice {
+    return Second;
+}
+
+fn main() -> i32 {
+    if (left() || chosen() != Second) { return 1; }
+    return 0;
+}

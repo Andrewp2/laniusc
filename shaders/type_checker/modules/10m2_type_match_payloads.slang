@@ -30,10 +30,12 @@ StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> decl_hir_node;
 StructuredBuffer<uint> decl_parent_type_decl;
-StructuredBuffer<uint> decl_type_ref_tag;
-StructuredBuffer<uint> decl_type_ref_payload;
+RWStructuredBuffer<uint> decl_type_ref_tag;
+RWStructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
+StructuredBuffer<uint> member_result_ref_tag;
+StructuredBuffer<uint> member_result_ref_payload;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_instance_arg_count;
 StructuredBuffer<uint> type_instance_arg_ref_tag;
@@ -53,6 +55,7 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint LEGACY_ARG_STRIDE = 4u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
+static const uint HIR_MEMBER_EXPR = 21u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
@@ -173,9 +176,22 @@ bool scrutinee_context_for_match(uint match_node, uint enum_token, out uint inst
     uint scrutinee_node = compact_hir_payload[match_node].a;
     if (!valid_hir(scrutinee_node))
         return false;
-    uint expr_token = compact_hir_core[scrutinee_node].token_start;
+    uint expr_token = compact_hir_core[scrutinee_node].kind == HIR_MEMBER_EXPR
+        ? compact_hir_payload[scrutinee_node].c
+        : compact_hir_core[scrutinee_node].token_start;
     if (!valid_token(expr_token))
         return false;
+    if (compact_hir_core[scrutinee_node].kind == HIR_MEMBER_EXPR)
+    {
+        uint tag = member_result_ref_tag[expr_token];
+        uint payload = member_result_ref_payload[expr_token];
+        if (tag == TYPE_REF_INSTANCE && valid_token(payload))
+        {
+            instance_i = payload;
+            return type_instance_decl_token[payload] == enum_token;
+        }
+        return type_ref_to_type_code(tag, payload) == TY_ENUM_BASE + enum_token;
+    }
     uint decl_token = visible_decl[expr_token];
     if (!valid_token(decl_token))
         return false;
@@ -239,13 +255,15 @@ void substituted_ref(uint instance_i, uint type_head, out uint tag, out uint pay
     }
 }
 
-uint payload_type(HirMatchPayload payload_row)
+bool payload_ref(HirMatchPayload payload_row, out uint tag, out uint ref_payload)
 {
+    tag = TYPE_REF_INVALID;
+    ref_payload = INVALID;
     if (payload_row.arm >= active_arm_count())
-        return TY_UNKNOWN;
+        return false;
     HirMatchArm arm = compact_match_arms[payload_row.arm];
     if (!valid_hir(payload_row.parent_pattern))
-        return TY_UNKNOWN;
+        return false;
     uint variant_token;
     uint enum_token;
     uint variant;
@@ -254,26 +272,24 @@ uint payload_type(HirMatchPayload payload_row)
             variant_token,
             enum_token,
             variant))
-        return TY_UNKNOWN;
+        return false;
     uint instance_i = INVALID;
     if (payload_row.parent_pattern == arm.pattern &&
         !scrutinee_context_for_match(arm.owner, enum_token, instance_i))
-        return TY_UNKNOWN;
+        return false;
     uint count = compact_variant_payload_count[variant];
     uint start = compact_variant_payload_start[variant];
     if (payload_row.ordinal >= count || start == INVALID ||
         start + payload_row.ordinal >= active_variant_payload_count())
-        return TY_UNKNOWN;
+        return false;
     HirVariantPayload variant_payload = compact_variant_payloads[start + payload_row.ordinal];
     if (variant_payload.variant != variant ||
         variant_payload.ordinal != payload_row.ordinal ||
         !valid_hir(variant_payload.type_node))
-        return TY_UNKNOWN;
+        return false;
     uint type_head = compact_hir_core[variant_payload.type_node].token_start;
-    uint tag;
-    uint ref_payload;
     substituted_ref(instance_i, type_head, tag, ref_payload);
-    return type_ref_to_type_code(tag, ref_payload);
+    return tag != TYPE_REF_INVALID && ref_payload != INVALID;
 }
 
 [shader("compute")]
@@ -301,7 +317,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     visible_decl[binder_token] = binder_token;
     module_value_path_status[binder_token] = INVALID;
-    uint ty = payload_type(payload);
+    uint tag;
+    uint ref_payload;
+    if (!payload_ref(payload, tag, ref_payload))
+        return;
+    decl_type_ref_tag[binder_token] = tag;
+    decl_type_ref_payload[binder_token] = ref_payload;
+    uint ty = type_ref_to_type_code(tag, ref_payload);
     if (ty != TY_UNKNOWN)
         visible_type[binder_token] = ty;
 }

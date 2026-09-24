@@ -1,0 +1,8 @@
+module app::main;
+
+struct Thing { value: i32 }
+
+fn main() -> i32 {
+    let item: Thing = Thing { value: 7 };
+    return item.value - 7;
+}

@@ -96,8 +96,7 @@ pub fn row_kind(row: AllocationRow) -> lowering::declarations::DeclarationKind {
 
 pub fn row_has_kind(row: AllocationRow,
     expected: lowering::declarations::DeclarationKind) -> bool {
-    return lowering::declarations::kind_code(row_kind(row))
-        == lowering::declarations::kind_code(expected);
+    return lowering::declarations::same_kind(row_kind(row), expected);
 }
 
 pub fn row_is_public(row: AllocationRow) -> bool {

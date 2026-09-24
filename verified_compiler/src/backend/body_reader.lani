@@ -1,0 +1,553 @@
+module backend::body_reader;
+
+import backend::frame;
+import backend::syntax;
+import ir::body_events;
+import ir::type_ref;
+import verified::host;
+
+type EventRegion = ir::body_events::Region;
+
+// The compiler supplies EventSource. WireSource is the public Core-transport
+// input accepted by the standalone backend tool. Neither path constructs a
+// packed body from typed events for code generation.
+pub struct WireInput {
+    data: [i32],
+    words: i32,
+}
+
+pub enum Source {
+    WireSource(WireInput),
+    EventSource(EventRegion),
+}
+
+pub struct Expression {
+    kind: backend::syntax::ExpressionKind,
+    event: ir::body_events::Event,
+}
+
+pub struct Statement {
+    kind: backend::syntax::StatementKind,
+    event: ir::body_events::Event,
+}
+
+pub struct Place {
+    kind: backend::syntax::PlaceKind,
+    event: ir::body_events::Event,
+}
+
+pub struct MatchArm {
+    ordinal: i32,
+    bindings: i32,
+    valid: bool,
+}
+
+pub struct StructConstructor {
+    kind: ir::type_ref::TypeRef,
+    field_count: i32,
+}
+
+pub struct EnumConstructor {
+    kind: ir::type_ref::TypeRef,
+    variant: i32,
+    payload_count: i32,
+}
+
+pub struct EnumField {
+    variant: i32,
+    field: i32,
+}
+
+pub struct Literal {
+    kind: ir::type_ref::TypeRef,
+    low: i32,
+    high: i32,
+}
+
+pub struct ConstantReference {
+    id: i32,
+}
+
+fn structure(kind: ir::type_ref::TypeRef, fields: i32)
+    -> StructConstructor {
+    return StructConstructor { kind: kind, field_count: fields };
+}
+
+fn nominal_kind(id: i32) -> ir::type_ref::TypeRef {
+    return ir::type_ref::Nominal(id);
+}
+
+fn enumeration(kind: ir::type_ref::TypeRef, variant: i32, payloads: i32)
+    -> EnumConstructor {
+    return EnumConstructor {
+        kind: kind, variant: variant, payload_count: payloads,
+    };
+}
+
+fn enum_field_values(variant: i32, field: i32) -> EnumField {
+    return EnumField { variant: variant, field: field };
+}
+
+fn literal_values(kind: ir::type_ref::TypeRef, low: i32, high: i32)
+    -> Literal {
+    return Literal { kind: kind, low: low, high: high };
+}
+
+fn constant_reference(id: i32) -> ConstantReference {
+    return ConstantReference { id: id };
+}
+
+fn match_fields(result_kind: ir::type_ref::TypeRef, arms: i32)
+    -> ir::body_events::MatchHeader {
+    return ir::body_events::MatchHeader {
+        result_kind: result_kind, arm_count: arms,
+    };
+}
+
+fn call_fields(function_id: i32, arguments: i32)
+    -> ir::body_events::CallHeader {
+    return ir::body_events::CallHeader {
+        function_id: function_id, argument_count: arguments,
+    };
+}
+
+fn local_fields(id: i32, kind: i32)
+    -> ir::body_events::LocalDeclaration {
+    return ir::body_events::LocalDeclaration {
+        id: id, kind: ir::type_ref::from_code(kind),
+    };
+}
+
+fn local_reference(id: i32) -> ir::body_events::LocalReference {
+    return ir::body_events::LocalReference { id: id };
+}
+
+fn field_reference(index: i32) -> ir::body_events::FieldReference {
+    return ir::body_events::FieldReference { index: index };
+}
+
+fn arm(ordinal: i32, bindings: i32, valid: bool) -> MatchArm {
+    return MatchArm {
+        ordinal: ordinal, bindings: bindings, valid: valid,
+    };
+}
+
+pub fn wire(words: [i32], length: i32) -> Source {
+    let input: WireInput = WireInput { data: words, words: length };
+    return WireSource(input);
+}
+
+pub fn events(body: ir::body_events::Region) -> Source {
+    return EventSource(body);
+}
+
+pub fn is_wire(source: Source) -> bool {
+    return match (source) {
+        WireSource(input) -> true,
+        EventSource(body) -> false,
+    };
+}
+
+pub fn wire_input(source: Source) -> WireInput {
+    let nowhere: ptr = 0;
+    let empty: WireInput = WireInput {
+        data: slice_from_raw_parts(nowhere, 0), words: 0,
+    };
+    return match (source) {
+        WireSource(input) -> input,
+        EventSource(body) -> empty,
+    };
+}
+
+pub fn length(source: Source) -> i32 {
+    return match (source) {
+        WireSource(input) -> input.words,
+        EventSource(body) -> body.capacity,
+    };
+}
+
+fn take(source: Source, work: backend::frame::Workspace) -> i32 {
+    let input: WireInput = wire_input(source);
+    return backend::frame::take(input.data, input.words, work);
+}
+
+fn next_event(source: Source, work: backend::frame::Workspace)
+    -> ir::body_events::Event {
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    let position: i32 = state[0].input;
+    let nowhere: ptr = 0;
+    let body: ir::body_events::Region = match (source) {
+        EventSource(events) -> events,
+        WireSource(input) -> ir::body_events::region(
+            slice_from_raw_parts(nowhere, 0), 0),
+    };
+    if (position <= -1 || position >= body.capacity) {
+        state[0].failed = true;
+        return ir::body_events::StatementSkip;
+    }
+    let values: [ir::body_events::Event] = body.events;
+    state[0].input = position + 1;
+    return values[position];
+}
+
+pub fn expression(source: Source, work: backend::frame::Workspace)
+    -> Expression {
+    if (is_wire(source)) {
+        return Expression {
+            kind: backend::syntax::expression_from_code(
+                take(source, work)),
+            event: ir::body_events::StatementSkip,
+        };
+    }
+    let event: ir::body_events::Event = next_event(source, work);
+    if (backend::syntax::binary_event_operation(event)
+        != backend::syntax::InvalidBinaryOperation) {
+        return Expression { kind: backend::syntax::ExprBinary, event: event };
+    }
+    if (backend::syntax::assignment_event_operation(event)
+        != backend::syntax::InvalidAssignmentOperation) {
+        return Expression { kind: backend::syntax::ExprAssign, event: event };
+    }
+    let kind: backend::syntax::ExpressionKind = match (event) {
+        ir::body_events::ExpressionInteger(integer_value) ->
+            backend::syntax::ExprValue,
+        ir::body_events::ExpressionBoolean(boolean_value) ->
+            backend::syntax::ExprValue,
+        ir::body_events::ExpressionString(string_value) ->
+            backend::syntax::ExprValue,
+        ir::body_events::ExpressionLocal(local_id) ->
+            backend::syntax::ExprLocal,
+        ir::body_events::ExpressionConstant(constant_id) ->
+            backend::syntax::ExprConstant,
+        ir::body_events::ExpressionUnaryPositive ->
+            backend::syntax::ExprUnary,
+        ir::body_events::ExpressionUnaryNot ->
+            backend::syntax::ExprUnary,
+        ir::body_events::ExpressionUnaryNegate ->
+            backend::syntax::ExprUnary,
+        ir::body_events::ExpressionIndex -> backend::syntax::ExprIndex,
+        ir::body_events::ExpressionStruct(struct_fields) ->
+            backend::syntax::ExprStruct,
+        ir::body_events::ExpressionEnumeration(enum_variant) ->
+            backend::syntax::ExprEnumeration,
+        ir::body_events::ExpressionMatch(match_header) ->
+            backend::syntax::ExprMatch,
+        ir::body_events::ExpressionField(field_index) ->
+            backend::syntax::ExprField,
+        ir::body_events::ExpressionCall(call_header) ->
+            backend::syntax::ExprCall,
+        ir::body_events::ExpressionI32SliceFromRawParts ->
+            backend::syntax::ExprSliceFromRawParts,
+        ir::body_events::ExpressionTypedSliceFromRawParts(element) ->
+            backend::syntax::ExprTypedSliceFromRawParts,
+        ir::body_events::ExpressionI32SliceDataPointer ->
+            backend::syntax::ExprSliceDataPointer,
+        ir::body_events::ExpressionStringDataPointer ->
+            backend::syntax::ExprStringDataPointer,
+        _ -> backend::syntax::InvalidExpression,
+    };
+    return Expression { kind: kind, event: event };
+}
+
+pub fn literal(source: Source, work: backend::frame::Workspace,
+    node: Expression) -> Literal {
+    if (is_wire(source)) {
+        let kind: i32 = take(source, work);
+        let low: i32 = take(source, work);
+        let high: i32 = 0;
+        if (backend::syntax::type_is(kind, backend::syntax::TypeUsize)
+            || backend::syntax::type_is(kind,
+                backend::syntax::TypePointer)) {
+            high = take(source, work);
+        }
+        return literal_values(ir::type_ref::from_code(kind), low, high);
+    }
+    return match (node.event) {
+        ir::body_events::ExpressionInteger(integer_value) ->
+            literal_values(ir::type_ref::I32, integer_value, 0),
+        ir::body_events::ExpressionBoolean(boolean_value) ->
+            literal_values(ir::type_ref::Bool,
+                backend::syntax::boolean_code(boolean_value), 0),
+        ir::body_events::ExpressionString(string_value) ->
+            literal_values(ir::type_ref::String, string_value.length, 0),
+        _ -> literal_values(ir::type_ref::Invalid, -1, -1),
+    };
+}
+
+pub fn string_data(node: Expression) -> ptr {
+    let nowhere: ptr = 0;
+    return match (node.event) {
+        ir::body_events::ExpressionString(value) ->
+            verified::host::i32_slice_data_ptr(value.data),
+        _ -> nowhere,
+    };
+}
+
+pub fn enum_field(source: Source, work: backend::frame::Workspace,
+    node: Expression) -> EnumField {
+    if (is_wire(source)) {
+        return enum_field_values(
+            take(source, work),
+            take(source, work));
+    }
+    return enum_field_values(-1, -1);
+}
+
+pub fn local_expression(source: Source, work: backend::frame::Workspace,
+    node: Expression) -> ir::body_events::LocalReference {
+    if (is_wire(source)) {
+        return local_reference(take(source, work));
+    }
+    return match (node.event) {
+        ir::body_events::ExpressionLocal(local_id) ->
+            local_id,
+        _ -> local_reference(-1),
+    };
+}
+
+pub fn cast_target(source: Source, work: backend::frame::Workspace,
+    node: Expression) -> ir::type_ref::TypeRef {
+    if (is_wire(source)) {
+        return ir::type_ref::from_code(take(source, work));
+    }
+    return ir::type_ref::Invalid;
+}
+
+pub fn unary_operation(source: Source, work: backend::frame::Workspace,
+    node: Expression) -> backend::syntax::UnaryOperation {
+    if (is_wire(source)) {
+        return backend::syntax::unary_from_code(take(source, work));
+    }
+    return backend::syntax::unary_event_operation(node.event);
+}
+
+pub fn binary_operation(source: Source, work: backend::frame::Workspace,
+    node: Expression) -> backend::syntax::BinaryOperation {
+    if (is_wire(source)) {
+        return backend::syntax::binary_from_code(take(source, work));
+    }
+    return backend::syntax::binary_event_operation(node.event);
+}
+
+pub fn assignment_operation(source: Source,
+    work: backend::frame::Workspace, node: Expression)
+    -> backend::syntax::AssignmentOperation {
+    if (is_wire(source)) {
+        return backend::syntax::assignment_from_code(take(source, work));
+    }
+    return backend::syntax::assignment_event_operation(node.event);
+}
+
+pub fn field_expression(source: Source, work: backend::frame::Workspace,
+    node: Expression) -> ir::body_events::FieldReference {
+    if (is_wire(source)) {
+        return field_reference(take(source, work));
+    }
+    return match (node.event) {
+        ir::body_events::ExpressionField(index) ->
+            index,
+        _ -> field_reference(-1),
+    };
+}
+
+pub fn constant_expression(source: Source,
+    work: backend::frame::Workspace, node: Expression)
+    -> ConstantReference {
+    if (is_wire(source)) {
+        return constant_reference(take(source, work));
+    }
+    return match (node.event) {
+        ir::body_events::ExpressionConstant(id) -> constant_reference(id),
+        _ -> constant_reference(-1),
+    };
+}
+
+pub fn struct_constructor(source: Source, work: backend::frame::Workspace,
+    node: Expression) -> StructConstructor {
+    if (is_wire(source)) {
+        return StructConstructor {
+            kind: ir::type_ref::from_code(take(source, work)),
+            field_count: take(source, work),
+        };
+    }
+    return match (node.event) {
+        ir::body_events::ExpressionStruct(fields) ->
+            structure(nominal_kind(fields.type_id),
+                fields.count),
+        _ -> structure(ir::type_ref::Invalid, -1),
+    };
+}
+
+pub fn enum_constructor(source: Source, work: backend::frame::Workspace,
+    node: Expression) -> EnumConstructor {
+    if (is_wire(source)) {
+        return EnumConstructor {
+            kind: ir::type_ref::from_code(take(source, work)),
+            variant: take(source, work),
+            payload_count: take(source, work),
+        };
+    }
+    return match (node.event) {
+        ir::body_events::ExpressionEnumeration(variant) ->
+            enumeration(nominal_kind(variant.type_id),
+                variant.ordinal, variant.payload_count),
+        _ -> enumeration(ir::type_ref::Invalid, -1, -1),
+    };
+}
+
+pub fn match_header(source: Source, work: backend::frame::Workspace,
+    node: Expression) -> ir::body_events::MatchHeader {
+    if (is_wire(source)) {
+        return ir::body_events::MatchHeader {
+            result_kind: ir::type_ref::from_code(
+                take(source, work)),
+            arm_count: take(source, work),
+        };
+    }
+    return match (node.event) {
+        ir::body_events::ExpressionMatch(header) -> header,
+        _ -> match_fields(ir::type_ref::Invalid, -1),
+    };
+}
+
+pub fn call_header(source: Source, work: backend::frame::Workspace,
+    node: Expression) -> ir::body_events::CallHeader {
+    if (is_wire(source)) {
+        return ir::body_events::CallHeader {
+            function_id: take(source, work),
+            argument_count: take(source, work),
+        };
+    }
+    return match (node.event) {
+        ir::body_events::ExpressionCall(header) -> header,
+        _ -> call_fields(-1, -1),
+    };
+}
+
+pub fn statement(source: Source, work: backend::frame::Workspace)
+    -> Statement {
+    if (is_wire(source)) {
+        return Statement {
+            kind: backend::syntax::statement_from_code(
+                take(source, work)),
+            event: ir::body_events::StatementSkip,
+        };
+    }
+    let event: ir::body_events::Event = next_event(source, work);
+    let kind: backend::syntax::StatementKind = match (event) {
+        ir::body_events::StatementSkip -> backend::syntax::StatementSkip,
+        ir::body_events::StatementExpression ->
+            backend::syntax::StatementExpression,
+        ir::body_events::StatementSequence ->
+            backend::syntax::StatementSequence,
+        ir::body_events::StatementLet(local) ->
+            backend::syntax::StatementLet,
+        ir::body_events::StatementLetUninitialized(uninitialized) ->
+            backend::syntax::StatementLetUninitialized,
+        ir::body_events::StatementIf -> backend::syntax::StatementIf,
+        ir::body_events::StatementWhile -> backend::syntax::StatementWhile,
+        ir::body_events::StatementReturnVoid ->
+            backend::syntax::StatementReturn,
+        ir::body_events::StatementReturnValue ->
+            backend::syntax::StatementReturn,
+        _ -> backend::syntax::InvalidStatement,
+    };
+    return Statement { kind: kind, event: event };
+}
+
+pub fn local_declaration(source: Source, work: backend::frame::Workspace,
+    node: Statement) -> ir::body_events::LocalDeclaration {
+    if (is_wire(source)) {
+        return local_fields(
+            take(source, work),
+            take(source, work));
+    }
+    return match (node.event) {
+        ir::body_events::StatementLet(local) -> local,
+        ir::body_events::StatementLetUninitialized(uninitialized) ->
+            uninitialized,
+        _ -> local_fields(-1, -1),
+    };
+}
+
+pub fn return_presence(source: Source, work: backend::frame::Workspace,
+    node: Statement) -> backend::syntax::Presence {
+    if (is_wire(source)) {
+        return backend::syntax::presence_from_code(
+            take(source, work));
+    }
+    return match (node.event) {
+        ir::body_events::StatementReturnVoid -> backend::syntax::Absent,
+        ir::body_events::StatementReturnValue -> backend::syntax::Present,
+        _ -> backend::syntax::InvalidPresence,
+    };
+}
+
+pub fn place(source: Source, work: backend::frame::Workspace) -> Place {
+    if (is_wire(source)) {
+        return Place {
+            kind: backend::syntax::place_from_code(
+                take(source, work)),
+            event: ir::body_events::StatementSkip,
+        };
+    }
+    let event: ir::body_events::Event = next_event(source, work);
+    let kind: backend::syntax::PlaceKind = match (event) {
+        ir::body_events::PlaceLocal(local_id) -> backend::syntax::PlaceLocal,
+        ir::body_events::PlaceField(field_index) -> backend::syntax::PlaceField,
+        ir::body_events::PlaceIndex -> backend::syntax::PlaceIndex,
+        _ -> backend::syntax::InvalidPlace,
+    };
+    return Place { kind: kind, event: event };
+}
+
+pub fn local_place(source: Source, work: backend::frame::Workspace,
+    node: Place) -> ir::body_events::LocalReference {
+    if (is_wire(source)) {
+        return local_reference(take(source, work));
+    }
+    return match (node.event) {
+        ir::body_events::PlaceLocal(local_id) -> local_id,
+        _ -> local_reference(-1),
+    };
+}
+
+pub fn field_place(source: Source, work: backend::frame::Workspace,
+    node: Place) -> ir::body_events::FieldReference {
+    if (is_wire(source)) {
+        return field_reference(take(source, work));
+    }
+    return match (node.event) {
+        ir::body_events::PlaceField(index) -> index,
+        _ -> field_reference(-1),
+    };
+}
+
+pub fn match_arm(source: Source, work: backend::frame::Workspace)
+    -> MatchArm {
+    if (is_wire(source)) {
+        return MatchArm {
+            ordinal: take(source, work),
+            bindings: take(source, work),
+            valid: true,
+        };
+    }
+    let event: ir::body_events::Event = next_event(source, work);
+    return match (event) {
+        ir::body_events::MatchArmHeader(header) ->
+            arm(header.ordinal, header.binding_count, true),
+        _ -> arm(-1, -1, false),
+    };
+}
+
+pub fn match_binding(source: Source, work: backend::frame::Workspace)
+    -> ir::body_events::LocalReference {
+    if (is_wire(source)) {
+        return local_reference(take(source, work));
+    }
+    let event: ir::body_events::Event = next_event(source, work);
+    return match (event) {
+        ir::body_events::MatchBinding(local) -> local,
+        _ -> local_reference(-1),
+    };
+}

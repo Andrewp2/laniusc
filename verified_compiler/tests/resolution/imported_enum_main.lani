@@ -1,0 +1,18 @@
+module app::main;
+
+import choice::types;
+
+fn select(choice: choice::types::Choice) -> i32 {
+    return match (choice) {
+        choice::types::Value(number) -> number,
+        _ -> 13,
+    };
+}
+
+fn main() -> i32 {
+    let value: choice::types::Choice = choice::types::Value(7);
+    let empty: choice::types::Choice = choice::types::Empty;
+    if (select(value) == 7 && select(empty) == 13
+        && choice::types::code(4) == 7) { return 0; }
+    return 1;
+}

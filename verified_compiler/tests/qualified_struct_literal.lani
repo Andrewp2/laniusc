@@ -1,0 +1,12 @@
+module app::main;
+
+import probe::records;
+import probe::other;
+
+fn main() -> i32 {
+    let pair: probe::records::Pair = probe::records::Pair {
+        left: 2,
+        right: 5,
+    };
+    return pair.left + pair.right;
+}

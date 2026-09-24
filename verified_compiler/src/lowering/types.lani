@@ -1,19 +1,26 @@
 module lowering::types;
 
-import backend::syntax;
 import lowering::aliases;
 import lowering::builtin;
-import lowering::error;
+import ir::type_ref;
+import verified::host;
 import verified::surface_type;
 import verified::token;
+
+type TypeRef = ir::type_ref::TypeRef;
 
 // This is the type boundary between the existing Surface type arena and the
 // structural Core transport consumed by backend::program. A successful result
 // means representable by that transport, not that every Lanius type is supported.
-// Errors are returned as the negatives of these magnitudes.
+// Errors are distinct from successful native type values.
 const RESOLUTION_FIELD_BYTES: i32 = 8;
-pub const RESOLUTION_RECORD_BYTES: i32 = 2 * RESOLUTION_FIELD_BYTES;
+pub const RESOLUTION_RECORD_BYTES: i32 =
+    (1 + ir::type_ref::STORAGE_WORDS) * RESOLUTION_FIELD_BYTES;
 pub const RESOLUTION_ALIGNMENT: i32 = RESOLUTION_FIELD_BYTES;
+const RESULT_FIELD_BYTES: i32 = 8;
+pub const RESULT_BYTES: i32 =
+    ir::type_ref::STORAGE_WORDS * RESULT_FIELD_BYTES;
+pub const RESULT_ALIGNMENT: i32 = RESULT_FIELD_BYTES;
 
 // Resolution keys have two deliberately different domains. Surface-unit
 // lowering can key a row by an arena node, while whole-program lowering keys
@@ -25,23 +32,6 @@ pub enum ResolutionKeyKind {
     IdentifierToken,
 }
 
-// Nominal name lookup keeps absence and ambiguity distinct from a valid Core
-// type tag. Only Found carries a usable tag.
-pub enum NominalLookupStage {
-    Found,
-    Missing,
-    Ambiguous,
-}
-
-pub struct NominalLookup {
-    stage: NominalLookupStage,
-    tag: i32,
-}
-
-pub fn nominal_result(stage: NominalLookupStage, tag: i32) -> NominalLookup {
-    return NominalLookup { stage: stage, tag: tag };
-}
-
 pub struct WordRegion {
     data: [i32],
     words: i32,
@@ -51,9 +41,36 @@ pub fn region(data: [i32], words: i32) -> WordRegion {
     return WordRegion { data: data, words: words };
 }
 
+// One semantic type per Surface arena node. No Core type code is retained in
+// this native workspace; only lower's result and the Core writer encode it.
+pub struct Results {
+    data: [ir::type_ref::TypeRef],
+    count: i32,
+}
+
+pub fn results(data: [ir::type_ref::TypeRef], count: i32) -> Results {
+    return Results { data: data, count: count };
+}
+
+pub fn result_allocation_bytes(count: i32) -> i32 {
+    if (count <= -1 || count > verified::host::I32_MAX / RESULT_BYTES) {
+        return -1;
+    }
+    if (count == 0) { return RESULT_BYTES; }
+    return count * RESULT_BYTES;
+}
+
+pub fn results_from_raw_parts(memory: ptr, count: i32) -> Results {
+    let first: ptr = memory;
+    if (count > 0) {
+        first = memory + count * RESULT_BYTES - RESULT_FIELD_BYTES;
+    }
+    return results(slice_from_raw_parts(first, count), count);
+}
+
 pub struct ResolutionRow {
     key: i32,
-    type_tag: i32,
+    type_tag: ir::type_ref::TypeRef,
 }
 
 pub struct ResolutionTable {
@@ -105,20 +122,21 @@ pub struct TypeInput {
 
 pub struct TypeWorkspace {
     alias_scratch: WordRegion,
-    output: WordRegion,
+    output: Results,
 }
 
-fn invalid() -> i32 {
-    return lowering::error::failure(lowering::error::InvalidInput);
+pub enum TypeLowerResult {
+    Lowered(TypeRef),
+    InvalidInput,
+    UnsupportedFeature,
 }
 
-fn unsupported() -> i32 {
-    return lowering::error::failure(lowering::error::UnsupportedFeature);
+fn invalid() -> TypeLowerResult {
+    return InvalidInput;
 }
 
-fn represented(tag: i32) -> bool {
-    return backend::syntax::primitive_type(tag)
-        || tag >= backend::syntax::NOMINAL_TYPE_BASE;
+fn unsupported() -> TypeLowerResult {
+    return UnsupportedFeature;
 }
 
 fn type_expression_kind(kind: verified::surface_type::SurfaceTypeKind) -> bool {
@@ -132,83 +150,40 @@ fn type_expression_kind(kind: verified::surface_type::SurfaceTypeKind) -> bool {
             verified::surface_type::Reference);
 }
 
-// Classify the primitive namespace before nominal or alias resolution.
-// A known but unsupported builtin must not fall through as a user type.
-fn builtin(source: [i32], source_length: i32, start: i32,
-    finish: i32) -> i32 {
-    let found: lowering::builtin::Lookup = lowering::builtin::lookup(
-        source, source_length, start, finish);
-    if (lowering::builtin::is_supported(found)) {
-        return lowering::builtin::type_tag(found);
-    }
-    if (lowering::builtin::is_unsupported(found)) {
-        return unsupported();
-    }
-    return invalid();
-}
-
 // Name resolution is an independent compiler pass. ArenaNode tables contain
-// [path-arena-node, Core-type-tag] rows. IdentifierToken tables contain
-// [declaration-name-token, Core-type-tag] rows shared by independently
-// extracted arenas. Qualified names and aliases are never guessed from their
-// last spelling. Rows are sorted by their key; repeated spellings are rejected,
-// including duplicate declarations.
-fn same_token(source:[i32], source_length: i32,
-    tokens:[verified::token::TokenRow], token_count: i32,
-    a: i32, b: i32) -> bool {
-    if (a <= -1 || b <= -1 || a >= token_count || b >= token_count
-        || !verified::token::kind_is(
-            tokens[a].kind, verified::token::Identifier)
-        || !verified::token::kind_is(
-            tokens[b].kind,
-            verified::token::Identifier)) { return false; }
-    let a_start: i32 = tokens[a].start;
-    let a_finish: i32 = tokens[a].finish;
-    let b_start: i32 = tokens[b].start;
-    let b_finish: i32 = tokens[b].finish;
-    if (a_start <= -1 || a_finish <= a_start || a_finish > source_length
-        || b_start <= -1 || b_finish <= b_start || b_finish > source_length
-        || a_finish - a_start != b_finish - b_start) { return false; }
-    let span_length: i32 = a_finish - a_start;
-    let index: i32 = 0;
-    while (index <= span_length - 1) {
-        if (source[a_start + index] != source[b_start + index]) { return false; }
-        index += 1;
-    }
-    return true;
-}
-
+// a path-arena-node key. IdentifierToken tables contain the exact source-token
+// key of a resolved type use, so qualified paths with the same final spelling
+// can denote different declarations. Rows are sorted and duplicate keys fail.
 fn resolved_arena(resolutions: [ResolutionRow], count: i32,
-    node: i32) -> i32 {
-    let answer: i32 = invalid();
+    node: i32) -> ir::type_ref::TypeRef {
+    let missing: ir::type_ref::TypeRef = ir::type_ref::Invalid;
+    let match_index: i32 = -1;
     let position: i32 = 0;
     while (position <= count - 1) {
         if (resolutions[position].key == node) {
-            if (answer != invalid()) { return invalid(); }
-            answer = resolutions[position].type_tag;
+            if (match_index >= 0) { return missing; }
+            match_index = position;
         }
         position += 1;
     }
-    return answer;
+    if (match_index < 0) { return missing; }
+    return resolutions[match_index].type_tag;
 }
 
-fn resolved_token(source:[i32], source_length: i32,
-    tokens:[verified::token::TokenRow], token_count: i32,
-    resolutions: [ResolutionRow], count: i32, token: i32) -> i32 {
-    let answer: i32 = invalid();
+fn resolved_token(resolutions: [ResolutionRow], count: i32,
+    token: i32) -> ir::type_ref::TypeRef {
+    let missing: ir::type_ref::TypeRef = ir::type_ref::Invalid;
+    let match_index: i32 = -1;
     let position: i32 = 0;
     while (position <= count - 1) {
-        if (same_token(source, source_length, tokens, token_count,
-            token, resolutions[position].key)) {
-            if (answer != invalid()) { return invalid(); }
-            answer = resolutions[position].type_tag;
+        if (token == resolutions[position].key) {
+            if (match_index >= 0) { return missing; }
+            match_index = position;
         }
         position += 1;
     }
-    if (answer == invalid()) {
-        return answer;
-    }
-    return answer;
+    if (match_index < 0) { return missing; }
+    return resolutions[match_index].type_tag;
 }
 
 fn token_keyed(kind: ResolutionKeyKind) -> bool {
@@ -225,11 +200,14 @@ fn token_keyed(kind: ResolutionKeyKind) -> bool {
 // Output has one slot per arena node; only type-node slots are Core type tags.
 // Failure leaves a partial output which the caller must discard. This pass
 // does not mutate source syntax or perform parsing, name lookup, or emission.
-pub fn lower(input: TypeInput, workspace: TypeWorkspace) -> i32 {
+pub fn lower(input: TypeInput, workspace: TypeWorkspace) -> TypeLowerResult {
     let source: [i32] = input.source.data;
     let source_length: i32 = input.source.words;
     let tokens: [verified::token::TokenRow] = input.tokens.data;
     let token_count: i32 = input.tokens.count;
+    let spellings: verified::token::SpellingView =
+        verified::token::spellings(source, source_length,
+            input.tokens, token_count);
     let arena: verified::surface_type::TypeArena =
         input.arena;
     let nodes: [verified::surface_type::TypeNode] = arena.data;
@@ -242,8 +220,8 @@ pub fn lower(input: TypeInput, workspace: TypeWorkspace) -> i32 {
     let alias_catalog: lowering::aliases::Catalog = input.aliases;
     let alias_scratch: [i32] = workspace.alias_scratch.data;
     let alias_scratch_capacity: i32 = workspace.alias_scratch.words;
-    let output: [i32] = workspace.output.data;
-    let capacity: i32 = workspace.output.words;
+    let output: [ir::type_ref::TypeRef] = workspace.output.data;
+    let capacity: i32 = workspace.output.count;
     if (source_length <= -1 || token_count <= -1
         || arena.capacity <= 0 || resolution_count <= -1
         || alias_scratch_capacity <= -1) {
@@ -262,9 +240,8 @@ pub fn lower(input: TypeInput, workspace: TypeWorkspace) -> i32 {
         let key: i32 = resolutions[position].key;
         if (nominal_table) {
             if (key <= previous || key <= -1 || key >= token_count
-                || resolutions[position].type_tag
-                    <= backend::syntax::NOMINAL_TYPE_BASE - 1
-                || !represented(resolutions[position].type_tag)) {
+                || !ir::type_ref::is_nominal(
+                    resolutions[position].type_tag)) {
                 return invalid();
             }
             previous = key;
@@ -273,7 +250,7 @@ pub fn lower(input: TypeInput, workspace: TypeWorkspace) -> i32 {
                 || !verified::surface_type::kind_is(
                     nodes[key].kind,
                     verified::surface_type::Path)
-                || !represented(resolutions[position].type_tag)) {
+                || !ir::type_ref::valid(resolutions[position].type_tag)) {
                 return invalid();
             }
             previous = key;
@@ -284,7 +261,7 @@ pub fn lower(input: TypeInput, workspace: TypeWorkspace) -> i32 {
     while (node <= count - 1) {
         let kind: verified::surface_type::SurfaceTypeKind = nodes[node].kind;
         let first: i32 = nodes[node].first;
-        let tag: i32 = invalid();
+        output[node] = ir::type_ref::Invalid;
         if (verified::surface_type::kind_is(kind,
                 verified::surface_type::Segment)) {
             if (first != -1) { return unsupported(); }
@@ -318,16 +295,24 @@ pub fn lower(input: TypeInput, workspace: TypeWorkspace) -> i32 {
                 }
                 if (segments == 1) {
                     let token: i32 = nodes[first].token;
-                    tag = builtin(source, source_length,
-                        tokens[token].start,
-                        tokens[token].finish);
-                    if (tag == unsupported()) { return unsupported(); }
+                    let builtin_result: lowering::builtin::Lookup =
+                        lowering::builtin::lookup(source, source_length,
+                            tokens[token].start, tokens[token].finish);
+                    let builtin_unsupported: bool = match (builtin_result) {
+                        lowering::builtin::UnsupportedType -> true,
+                        _ -> false,
+                    };
+                    if (builtin_unsupported) { return unsupported(); }
+                    let missing: ir::type_ref::TypeRef = ir::type_ref::Invalid;
+                    let builtin_type: ir::type_ref::TypeRef = match (builtin_result) {
+                        lowering::builtin::Supported(kind) -> kind,
+                        _ -> missing,
+                    };
+                    if (ir::type_ref::valid(builtin_type)) {
+                        output[node] = builtin_type;
+                    }
                 }
-                if (tag == invalid()) {
-                    let alias_ambiguous: i32 = lowering::aliases::failure(
-                        lowering::aliases::Ambiguous);
-                    let alias_unsupported: i32 = lowering::aliases::failure(
-                        lowering::aliases::Unsupported);
+                if (!ir::type_ref::valid(output[node])) {
                     let alias_input: lowering::aliases::AliasLookupInput =
                         lowering::aliases::AliasLookupInput {
                             source: lowering::aliases::region(source,
@@ -343,30 +328,50 @@ pub fn lower(input: TypeInput, workspace: TypeWorkspace) -> i32 {
                             scratch: lowering::aliases::region(alias_scratch,
                                 alias_scratch_capacity),
                         };
-                    let alias_tag: i32 = lowering::aliases::scalar(
+                    let alias_result: lowering::aliases::ScalarLookup =
+                        lowering::aliases::scalar(
                         alias_input, alias_workspace);
-                    if (alias_tag == alias_ambiguous) { return invalid(); }
-                    if (alias_tag == alias_unsupported) { return unsupported(); }
-                    if (alias_tag > 0) { tag = alias_tag; }
+                    let alias_ambiguous: bool = match (alias_result) {
+                        lowering::aliases::ScalarAmbiguous -> true,
+                        _ -> false,
+                    };
+                    let alias_unsupported: bool = match (alias_result) {
+                        lowering::aliases::ScalarUnsupported -> true,
+                        _ -> false,
+                    };
+                    let alias_invalid: bool = match (alias_result) {
+                        lowering::aliases::ScalarInvalid -> true,
+                        _ -> false,
+                    };
+                    if (alias_ambiguous) { return invalid(); }
+                    if (alias_unsupported) { return unsupported(); }
+                    if (alias_invalid) { return invalid(); }
+                    let missing: ir::type_ref::TypeRef = ir::type_ref::Invalid;
+                    let alias_type: ir::type_ref::TypeRef = match (alias_result) {
+                        lowering::aliases::ScalarFound(kind) -> kind,
+                        _ -> missing,
+                    };
+                    if (ir::type_ref::valid(alias_type)) {
+                        output[node] = alias_type;
+                    }
                     else {
                         if (nominal_table) {
-                            // Qualified names are resolved against the same
-                            // authenticated final-name map as unqualified
-                            // names; duplicate keys remain a hard failure.
+                            // The resolver keys each qualified or unqualified
+                            // type use by its own final identifier token.
                             let nominal_segment: i32 = first;
                             while (nodes[nominal_segment].next != -1) {
                                 nominal_segment = nodes[nominal_segment].next;
                             }
                             let nominal_token: i32 = nodes[nominal_segment].token;
-                            tag = resolved_token(source, source_length, tokens,
-                                token_count, resolutions, resolution_count,
-                                nominal_token);
+                            output[node] = resolved_token(
+                                resolutions, resolution_count, nominal_token);
                         } else {
-                            tag = resolved_arena(resolutions, resolution_count, node);
+                            output[node] = resolved_arena(
+                                resolutions, resolution_count, node);
                         }
                     }
                 }
-                if (tag == invalid()) {
+                if (!ir::type_ref::valid(output[node])) {
                     return invalid();
                 }
             } else {
@@ -375,17 +380,24 @@ pub fn lower(input: TypeInput, workspace: TypeWorkspace) -> i32 {
                     if (!verified::surface_type::kind_is(
                             nodes[first].kind,
                             verified::surface_type::Path)) { return invalid(); }
-                    tag = output[first];
+                    output[node] = output[first];
                 } else {
                     if (verified::surface_type::kind_is(kind,
                             verified::surface_type::Slice)) {
                         if (!type_expression_kind(nodes[first].kind)) {
                             return invalid();
                         }
-                        if (!backend::syntax::type_is(output[first],
-                            backend::syntax::TypeI32)) { return unsupported(); }
-                        tag = backend::syntax::type_code(
-                            backend::syntax::TypeSlice);
+                        let element: ir::type_ref::TypeRef = output[first];
+                        if (ir::type_ref::same(element, ir::type_ref::I32)) {
+                            output[node] = ir::type_ref::Slice;
+                        } else {
+                            let id: i32 = match (element) {
+                                ir::type_ref::Nominal(value) -> value,
+                                _ -> -1,
+                            };
+                            if (id <= -1) { return unsupported(); }
+                            output[node] = ir::type_ref::NominalSlice(id);
+                        }
                     } else {
                         if (verified::surface_type::kind_is(kind,
                                 verified::surface_type::Array)
@@ -398,9 +410,9 @@ pub fn lower(input: TypeInput, workspace: TypeWorkspace) -> i32 {
                 }
             }
         }
-        output[node] = tag;
         node += 1;
     }
     if (!type_expression_kind(nodes[root].kind)) { return invalid(); }
-    return output[root];
+    let result: ir::type_ref::TypeRef = output[root];
+    return Lowered(result);
 }

@@ -1,0 +1,179 @@
+module lowering::constant_expression;
+
+import lowering::unit_context;
+import verified::ascii;
+import verified::host;
+import verified::surface_expr;
+import verified::token;
+
+// One expression arena holds all initializers. A path-expression node indexes
+// the resolved constant ID directly; roots and owners are keyed by that ID.
+// Binding construction is separate from evaluation so forward references are
+// ordinary edges in the same graph. Fuel rejects cycles and excessive depth.
+pub struct Input {
+    arena: verified::surface_expr::ExpressionArena,
+    bindings: [i32],
+    binding_count: i32,
+    roots: [i32],
+    owners: [i32],
+    constant_count: i32,
+    contexts: lowering::unit_context::Table,
+    lexical: lowering::unit_context::LexicalCatalogs,
+}
+
+pub enum Result {
+    Invalid,
+    Integer(i32),
+    MinMagnitude,
+}
+
+pub fn succeeded(result: Result) -> bool {
+    return match (result) {
+        Integer(value) -> true,
+        _ -> false,
+    };
+}
+
+pub fn value(result: Result) -> i32 {
+    return match (result) {
+        Integer(number) -> number,
+        _ -> 0,
+    };
+}
+
+fn decimal(source: [i32], length: i32, start: i32, finish: i32) -> Result {
+    if (start <= -1 || finish <= start || finish > length) { return Invalid; }
+    let answer: i32 = 0;
+    let digits: i32 = 0;
+    let min_magnitude: bool = false;
+    let position: i32 = start;
+    while (position <= finish - 1) {
+        let byte: i32 = source[position];
+        if (byte != verified::ascii::UNDERSCORE) {
+            if (min_magnitude) { return Invalid; }
+            if (byte < verified::ascii::ZERO
+                || byte > verified::ascii::NINE) { return Invalid; }
+            let digit: i32 = byte - verified::ascii::ZERO;
+            if (answer > (verified::host::I32_MAX - digit) / 10) {
+                if (answer != 214748364 || digit != 8) {
+                    return Invalid;
+                }
+                min_magnitude = true;
+            } else {
+                answer = answer * 10 + digit;
+            }
+            digits += 1;
+        }
+        position += 1;
+    }
+    if (digits <= 0) { return Invalid; }
+    if (min_magnitude) { return MinMagnitude; }
+    return Integer(answer);
+}
+
+fn is_min_magnitude(result: Result) -> bool {
+    return match (result) {
+        MinMagnitude -> true,
+        _ -> false,
+    };
+}
+
+fn literal(input: Input, unit: i32, token: i32) -> Result {
+    let contexts: [lowering::unit_context::UnitContext] =
+        input.contexts.data;
+    if (unit <= -1 || unit >= input.contexts.count) { return Invalid; }
+    let context: i32 = unit;
+    let lexical: lowering::unit_context::UnitLexical =
+        lowering::unit_context::lexical(input.lexical, contexts[context]);
+    if (!lexical.valid || token <= -1 || token >= lexical.token_count) {
+        return Invalid;
+    }
+    let rows: [verified::token::TokenRow] = lexical.tokens.data;
+    let selected: verified::token::TokenRow = rows[token];
+    if (selected.kind != verified::token::Integer) { return Invalid; }
+    return decimal(lexical.source, lexical.source_length,
+        selected.start, selected.finish);
+}
+
+fn evaluate(input: Input, unit: i32, node: i32, fuel: i32) -> Result {
+    let arena: verified::surface_expr::ExpressionArena = input.arena;
+    let count: i32 = verified::surface_expr::node_count(arena);
+    if (fuel <= 0 || node <= -1 || node >= count
+        || count > arena.capacity) { return Invalid; }
+    let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
+    let expression: verified::surface_expr::ExpressionNode = nodes[node];
+    if (expression.kind == verified::surface_expr::Literal) {
+        if (expression.operator != verified::surface_expr::LiteralInteger) {
+            return Invalid;
+        }
+        return literal(input, unit, expression.token);
+    }
+    if (expression.kind == verified::surface_expr::PathExpression) {
+        let bindings: [i32] = input.bindings;
+        if (node >= input.binding_count) { return Invalid; }
+        let constant: i32 = bindings[node];
+        if (constant <= -1 || constant >= input.constant_count) {
+            return Invalid;
+        }
+        let roots: [i32] = input.roots;
+        let owners: [i32] = input.owners;
+        return evaluate(input, owners[constant], roots[constant], fuel - 1);
+    }
+    if (expression.kind == verified::surface_expr::Unary) {
+        let operand: Result = evaluate(input, unit, expression.left,
+            fuel - 1);
+        if (is_min_magnitude(operand)) {
+            if (expression.operator == verified::surface_expr::UnaryNegate) {
+                return Integer(0 - 2147483647 - 1);
+            }
+            return Invalid;
+        }
+        if (!succeeded(operand)) { return Invalid; }
+        let number: i32 = value(operand);
+        if (expression.operator == verified::surface_expr::UnaryPositive) {
+            return Integer(number);
+        }
+        if (expression.operator == verified::surface_expr::UnaryNegate) {
+            return Integer(0 - number);
+        }
+        return Invalid;
+    }
+    if (expression.kind != verified::surface_expr::Binary) {
+        return Invalid;
+    }
+    let left: Result = evaluate(input, unit, expression.left, fuel - 1);
+    let right: Result = evaluate(input, unit, expression.right, fuel - 1);
+    if (!succeeded(left) || !succeeded(right)) { return Invalid; }
+    let a: i32 = value(left);
+    let b: i32 = value(right);
+    if (expression.operator == verified::surface_expr::BinaryAdd) {
+        return Integer(a + b);
+    }
+    if (expression.operator == verified::surface_expr::BinarySubtract) {
+        return Integer(a - b);
+    }
+    if (expression.operator == verified::surface_expr::BinaryMultiply) {
+        return Integer(a * b);
+    }
+    if (expression.operator == verified::surface_expr::BinaryDivide) {
+        if (b == 0 || (a == -2147483647 - 1 && b == -1)) {
+            return Invalid;
+        }
+        return Integer(a / b);
+    }
+    if (expression.operator == verified::surface_expr::BinaryRemainder) {
+        if (b == 0 || (a == -2147483647 - 1 && b == -1)) {
+            return Invalid;
+        }
+        return Integer(a % b);
+    }
+    return Invalid;
+}
+
+pub fn constant(input: Input, id: i32, fuel: i32) -> Result {
+    if (id <= -1 || id >= input.constant_count
+        || fuel <= 0) { return Invalid; }
+    let roots: [i32] = input.roots;
+    let owners: [i32] = input.owners;
+    return evaluate(input, owners[id], roots[id], fuel);
+}

@@ -3,6 +3,7 @@ import verified::host;
 import verified::production;
 
 import verified::parser;
+import verified::surface_declaration;
 import verified::syntax_tree;
 
 pub enum DeclarationKind {
@@ -31,20 +32,8 @@ pub fn kind_code(kind: DeclarationKind) -> i32 {
     };
 }
 
-pub fn kind_from_code(encoded: i32) -> DeclarationKind {
-    if (encoded == kind_code(Structure)) { return Structure; }
-    if (encoded == kind_code(Enumeration)) { return Enumeration; }
-    if (encoded == kind_code(Alias)) { return Alias; }
-    if (encoded == kind_code(Constant)) { return Constant; }
-    if (encoded == kind_code(Function)) { return Function; }
-    if (encoded == kind_code(External)) { return External; }
-    if (encoded == kind_code(Module)) { return Module; }
-    if (encoded == kind_code(Import)) { return Import; }
-    return Invalid;
-}
-
 pub fn same_kind(left: DeclarationKind, right: DeclarationKind) -> bool {
-    return kind_code(left) == kind_code(right);
+    return left == right;
 }
 
 pub struct DeclarationRow {
@@ -168,11 +157,13 @@ pub fn catalog_from_raw_parts(memory: ptr, count: i32) -> Catalog {
 }
 
 pub fn catalog_table(catalog: Catalog, index: i32) -> Table {
-    return catalog.data[index];
+    let tables: [Table] = catalog.data;
+    return tables[index];
 }
 
 pub fn catalog_write_table(catalog: Catalog, index: i32, table: Table) {
-    catalog.data[index] = table;
+    let tables: [Table] = catalog.data;
+    tables[index] = table;
 }
 
 pub fn from_raw_parts(memory: ptr, count: i32) -> Table {
@@ -314,22 +305,83 @@ fn declaration_kind(production: i32, is_public: bool) -> DeclarationKind {
     return Invalid;
 }
 
-fn declaration_production(kind: DeclarationKind) -> i32 {
-    if (same_kind(kind, Structure)) { return verified::production::STRUCT; }
-    if (same_kind(kind, Enumeration)) { return verified::production::ENUM; }
-    if (same_kind(kind, Alias)) { return verified::production::TYPE_ALIAS; }
-    if (same_kind(kind, Constant)) { return verified::production::CONST; }
-    if (same_kind(kind, Function)) { return verified::production::FN; }
-    if (same_kind(kind, External)) { return verified::production::EXTERN_FN; }
-    if (same_kind(kind, Module)) { return verified::production::MODULE; }
-    if (same_kind(kind, Import)) { return verified::production::IMPORT; }
-    return -1;
+struct DeclarationIdentity {
+    kind: DeclarationKind,
+    name: i32,
+    generics: i32,
+    bounds: i32,
+    target: i32,
+}
+
+fn nominal_identity(kind: DeclarationKind,
+    nominal: verified::surface_declaration::Nominal)
+    -> DeclarationIdentity {
+    return DeclarationIdentity { kind: kind, name: nominal.name,
+        generics: nominal.generics, bounds: nominal.bounds, target: -1 };
+}
+
+fn alias_identity(alias: verified::surface_declaration::AliasDeclaration)
+    -> DeclarationIdentity {
+    return DeclarationIdentity { kind: Alias, name: alias.name,
+        generics: alias.generics, bounds: alias.bounds,
+        target: alias.target };
+}
+
+fn constant_identity(constant: verified::surface_declaration::ConstantDeclaration)
+    -> DeclarationIdentity {
+    return DeclarationIdentity { kind: Constant, name: constant.name,
+        generics: -1, bounds: -1, target: -1 };
+}
+
+fn function_identity(callable: verified::surface_declaration::Callable)
+    -> DeclarationIdentity {
+    return DeclarationIdentity { kind: Function, name: callable.name,
+        generics: callable.generics, bounds: callable.bounds, target: -1 };
+}
+
+fn external_identity(callable: verified::surface_declaration::ExternalCallable)
+    -> DeclarationIdentity {
+    return DeclarationIdentity { kind: External, name: callable.name,
+        generics: callable.generics, bounds: callable.bounds, target: -1 };
+}
+
+fn path_identity(kind: DeclarationKind,
+    path: verified::surface_declaration::PathDeclaration)
+    -> DeclarationIdentity {
+    return DeclarationIdentity { kind: kind, name: -1,
+        generics: -1, bounds: -1, target: path.target };
+}
+
+fn invalid_identity() -> DeclarationIdentity {
+    return DeclarationIdentity { kind: Invalid, name: -1,
+        generics: -1, bounds: -1, target: -1 };
+}
+
+fn identity(view: verified::surface_declaration::Declaration)
+    -> DeclarationIdentity {
+    return match (view) {
+        verified::surface_declaration::Structure(structure) ->
+            nominal_identity(Structure, structure),
+        verified::surface_declaration::Enumeration(enumeration) ->
+            nominal_identity(Enumeration, enumeration),
+        verified::surface_declaration::AliasItem(alias) ->
+            alias_identity(alias),
+        verified::surface_declaration::Constant(constant) ->
+            constant_identity(constant),
+        verified::surface_declaration::Function(function_shape) ->
+            function_identity(function_shape),
+        verified::surface_declaration::External(external) ->
+            external_identity(external),
+        verified::surface_declaration::Module(module_path) ->
+            path_identity(Module, module_path),
+        verified::surface_declaration::Import(import_path) ->
+            path_identity(Import, import_path),
+        _ -> invalid_identity(),
+    };
 }
 
 fn monomorphic(tree: verified::syntax_tree::Tree,
-    declaration: i32, generic_index: i32, bounds_index: i32) -> bool {
-    let generic: i32 = child(tree, declaration, generic_index);
-    let bounds: i32 = child(tree, declaration, bounds_index);
+    generic: i32, bounds: i32) -> bool {
     return verified::syntax_tree::production(tree, generic)
             == verified::production::ENUM_TYPE_PARAMS_NONE
         && verified::syntax_tree::child_count(tree, generic) == 0
@@ -391,41 +443,36 @@ pub fn collect(input: DeclarationInput, destination: Table) -> i32 {
             is_public);
         if (same_kind(kind, Invalid)) { return -1; }
         let declaration: i32 = child(tree, container, 0);
-        if (verified::syntax_tree::production(tree, declaration)
-                != declaration_production(kind)) { return -1; }
-        let name: i32 = -1;
-        let target: i32 = -1;
+        let parsed: DeclarationIdentity = identity(
+            verified::surface_declaration::read(tree, declaration));
+        if (!same_kind(parsed.kind, kind)) { return -1; }
+        let name: i32 = parsed.name;
+        let target: i32 = parsed.target;
         if (same_kind(kind, Module) || same_kind(kind, Import)) {
             if (same_kind(kind, Module)) {
                 if (counts.modules != 0) { return -1; }
-                target = child(tree, declaration, 1);
-            } else {
-                let tail: i32 = child(tree, declaration, 1);
-                if (verified::syntax_tree::production(tree, tail)
-                        != verified::production::IMPORT_PATH) { return -1; }
-                target = child(tree, tail, 0);
             }
-            if (verified::syntax_tree::production(tree, target)
-                    != verified::production::PATH) { return -1; }
+            if (target <= -1) { return -1; }
         } else {
-            let name_index: i32 = 1;
-            if (same_kind(kind, External)) { name_index = 3; }
-            name = verified::syntax_tree::child(tree, declaration,
-                name_index, verified::parser::TokenChild);
             if (name <= -1) { return -1; }
             if (same_kind(kind, Structure) || same_kind(kind, Enumeration)
                 || same_kind(kind, Alias)) {
-                if (!monomorphic(tree, declaration, 2, 3)) { return -1; }
+                if (!monomorphic(tree, parsed.generics, parsed.bounds)) {
+                    return -1;
+                }
                 if (same_kind(kind, Alias)) {
-                    target = child(tree, declaration, 5);
                     if (target <= -1) { return -1; }
                 }
             } else {
                 if (same_kind(kind, Function)) {
-                    if (!monomorphic(tree, declaration, 2, 7)) { return -1; }
+                    if (!monomorphic(tree, parsed.generics, parsed.bounds)) {
+                        return -1;
+                    }
                 }
                 if (same_kind(kind, External)) {
-                    if (!monomorphic(tree, declaration, 4, 9)) { return -1; }
+                    if (!monomorphic(tree, parsed.generics, parsed.bounds)) {
+                        return -1;
+                    }
                 }
             }
         }

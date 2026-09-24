@@ -23,7 +23,8 @@ mutual
     | .intrinsic _ operand | .i32ArrayDataPtr operand | .i32SliceDataPtr operand
     | .stringDataPtr operand => 1 + exprFuelSize operand
     | .binary _ left right | .index left right | .alloc left right
-    | .i32SliceFromRawParts left right => 1 + exprFuelSize left + exprFuelSize right
+    | .i32SliceFromRawParts left right
+    | .typedSliceFromRawParts _ left right => 1 + exprFuelSize left + exprFuelSize right
     | .array _ elements => 1 + exprsFuelSize elements
     | .arrayToSlice _ array | .field array _ => 1 + exprFuelSize array
     | .structValue _ fields | .enumValue _ _ fields | .call _ fields =>
@@ -203,6 +204,7 @@ mutual
            let lengthTyped ← checkExprFuel fuel program context length (.scalar (.signed .i32))
            pure ⟨.slice (.scalar (.signed .i32)), ⟨.i32SliceFromRawParts pointerTyped.down
              lengthTyped.down⟩⟩
+    | .typedSliceFromRawParts _ _ _ => none
     | .i32SliceDataPtr slice =>
         do let checked ← checkExprFuel fuel program context slice (.slice (.scalar (.signed .i32)))
            pure ⟨.scalar .rawPtr, ⟨.i32SliceDataPtr checked.down⟩⟩

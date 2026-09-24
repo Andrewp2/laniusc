@@ -1,0 +1,3 @@
+module sample::left;
+
+pub const BASE: i32 = 11;

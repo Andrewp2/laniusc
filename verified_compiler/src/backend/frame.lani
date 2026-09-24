@@ -1,5 +1,6 @@
 module backend::frame;
 import backend::layout;
+import ir::type_ref;
 import verified::host;
 import x86::register;
 import x86::encode;
@@ -9,11 +10,18 @@ import x86::control;
 // bindings, call fixups, function positions, and break patches follow it.
 // Each trailing region has `stride` typed records.
 const STATE_FIELD_BYTES: i32 = backend::layout::VALUE_WORD_BYTES;
-const STATE_FIELD_COUNT: i32 = 14;
+// TypeRef and InitializationFlag each occupy a discriminant and payload slot;
+// the other state fields each occupy one native value slot.
+const STATE_SCALAR_FIELDS: i32 = 12;
+const STATE_TYPE_FIELDS: i32 = 2;
+const STATE_FLAG_FIELDS: i32 = 2;
+const STATE_FIELD_COUNT: i32 = STATE_SCALAR_FIELDS + STATE_TYPE_FIELDS
+    + STATE_FLAG_FIELDS;
 const STATE_BYTES: i32 = STATE_FIELD_COUNT * STATE_FIELD_BYTES;
 pub const HEADER: i32 = STATE_BYTES / verified::host::I32_BYTES;
 const LOCAL_FIELD_BYTES: i32 = backend::layout::VALUE_WORD_BYTES;
-const LOCAL_RECORD_BYTES: i32 = 3 * LOCAL_FIELD_BYTES;
+// LocalBinding contains an id, a two-word TypeRef, a slot, and a bool.
+const LOCAL_RECORD_BYTES: i32 = 5 * LOCAL_FIELD_BYTES;
 const LOCAL_RECORD_WORDS: i32 = LOCAL_RECORD_BYTES
     / verified::host::I32_BYTES;
 const CALL_FIXUP_RECORD_BYTES: i32 = 2 * LOCAL_FIELD_BYTES;
@@ -29,12 +37,18 @@ pub const WORK_WORDS_PER_STRIDE: i32 = LOCAL_RECORD_WORDS
     + CALL_FIXUP_RECORD_WORDS + FUNCTION_RECORD_WORDS
     + BREAK_PATCH_WORDS;
 pub const WORK_ALIGNMENT: i32 = LOCAL_FIELD_BYTES;
+
+pub enum InitializationFlag {
+    NoFlag,
+    FlagSlot(i32),
+}
+
 pub struct State {
     input: i32,
     code: i32,
     slots: i32,
-    result: i32,
-    failed: i32,
+    result: ir::type_ref::TypeRef,
+    failed: bool,
     break_count: i32,
     top: i32,
     sret: i32,
@@ -42,8 +56,8 @@ pub struct State {
     entry_index: i32,
     fixup_count: i32,
     stride: i32,
-    // Compile-time result of place resolution: initialization flag slot, or -1.
-    place_flag: i32,
+    // Compile-time result of place resolution, retained across RHS evaluation.
+    place_flag: InitializationFlag,
     // The function-code boundary precedes appended runtime data.
     function_end: i32,
 }
@@ -151,7 +165,7 @@ pub fn function_code_start(work: Workspace, index: i32) -> i32 {
 pub fn allocate(work: Workspace, count: i32) -> i32 {
     let state: [State] = state_view(work);
     if (count < 1 || count > MAX_STACK_SLOTS - state[0].top) {
-        state[0].failed = 1;
+        state[0].failed = true;
         return -1;
     }
     state[0].top += count;
@@ -162,7 +176,7 @@ pub fn allocate(work: Workspace, count: i32) -> i32 {
 pub fn take(input: [i32], length: i32, work: Workspace) -> i32 {
     let state: [State] = state_view(work);
     let position: i32 = state[0].input;
-    if (position <= -1 || position >= length) { state[0].failed = 1; return 0; }
+    if (position <= -1 || position >= length) { state[0].failed = true; return 0; }
     state[0].input = position + 1;
     return input[position];
 }
@@ -175,7 +189,8 @@ pub fn bytes(slots: i32) -> i32 {
         * STACK_ALIGNMENT_BYTES;
 }
 
-pub fn store(output: [i32], capacity: i32, work: Workspace, slot: i32, source: i32) -> i32 {
+pub fn store(output: [i32], capacity: i32, work: Workspace, slot: i32,
+    source: x86::register::Register) -> i32 {
     let state: [State] = state_view(work);
     if (slot + 1 > state[0].slots) { state[0].slots = slot + 1; }
     state[0].code = x86::encode::store(output, capacity, state[0].code, x86::register::WIDTH_32, source,
@@ -183,7 +198,8 @@ pub fn store(output: [i32], capacity: i32, work: Workspace, slot: i32, source: i
     return state[0].code;
 }
 
-pub fn load(output: [i32], capacity: i32, work: Workspace, slot: i32, destination: i32) -> i32 {
+pub fn load(output: [i32], capacity: i32, work: Workspace, slot: i32,
+    destination: x86::register::Register) -> i32 {
     let state: [State] = state_view(work);
     state[0].code = x86::encode::load(output, capacity, state[0].code, x86::register::WIDTH_32, destination,
         x86::register::RBP, displacement(slot));

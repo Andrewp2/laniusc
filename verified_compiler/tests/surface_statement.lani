@@ -1,0 +1,179 @@
+module app::main;
+import verified::host;
+import verified::parser;
+import verified::production;
+import verified::surface_statement;
+import verified::syntax_tree;
+fn inferred(annotation: verified::surface_statement::Annotation) -> bool {
+    return match (annotation) {
+        verified::surface_statement::Inferred -> true,
+        _ -> false,
+    };
+}
+fn initialized(initializer: verified::surface_statement::Initializer, expected: i32) -> bool {
+    return match (initializer) {
+        verified::surface_statement::Initialized(value) -> value == expected,
+        _ -> false,
+    };
+}
+fn valid_binding(statement: verified::surface_statement::Statement) -> bool {
+    return match (statement) {
+        verified::surface_statement::Let(binding) -> binding.name == 17 && inferred(binding.annotation) && initialized(binding.initializer, 4),
+        _ -> false,
+    };
+}
+fn valid_list(list: verified::surface_statement::StatementList) -> bool {
+    return match (list) {
+        verified::surface_statement::ListMore(entry) -> entry.first == 5 && entry.rest == 6,
+        _ -> false,
+    };
+}
+fn is_void(statement: verified::surface_statement::Statement) -> bool {
+    return match (statement) {
+        verified::surface_statement::ReturnVoid -> true,
+        _ -> false,
+    };
+}
+fn is_unsupported(statement: verified::surface_statement::Statement) -> bool {
+    return match (statement) {
+        verified::surface_statement::Unsupported -> true,
+        _ -> false,
+    };
+}
+fn main() -> i32 {
+    let node_count: i32 = 8;
+    let child_count: i32 = 10;
+    let node_memory: ptr = verified::host::alloc(node_count * verified::syntax_tree::NODE_BYTES, verified::syntax_tree::ALIGNMENT);
+    let child_memory: ptr = verified::host::alloc(child_count * verified::syntax_tree::CHILD_BYTES, verified::syntax_tree::ALIGNMENT);
+    if (node_memory == 0 || child_memory == 0) {
+        return 1;
+    }
+    let nodes:[verified::syntax_tree::Node] = slice_from_raw_parts(node_memory + node_count * verified::syntax_tree::NODE_BYTES - verified::syntax_tree::ALIGNMENT, node_count);
+    let children:[verified::syntax_tree::Child] = slice_from_raw_parts(child_memory + child_count * verified::syntax_tree::CHILD_BYTES - verified::syntax_tree::ALIGNMENT, child_count);
+    nodes[0] = verified::syntax_tree::Node {
+        production: verified::production::RETURN_VOID,
+        origin: 0,
+        end: 1,
+        first_child: 0,
+        child_count: 0,
+    };
+    nodes[1] = verified::syntax_tree::Node {
+        production: verified::production::RETURN_STMT,
+        origin: 0,
+        end: 2,
+        first_child: 0,
+        child_count: 2,
+    };
+    nodes[2] = verified::syntax_tree::Node {
+        production: verified::production::LET_TYPE_NONE,
+        origin: 2,
+        end: 3,
+        first_child: 2,
+        child_count: 0,
+    };
+    nodes[3] = verified::syntax_tree::Node {
+        production: verified::production::LET_INIT,
+        origin: 3,
+        end: 4,
+        first_child: 2,
+        child_count: 2,
+    };
+    nodes[4] = verified::syntax_tree::Node {
+        production: verified::production::EXPR,
+        origin: 4,
+        end: 5,
+        first_child: 4,
+        child_count: 0,
+    };
+    nodes[5] = verified::syntax_tree::Node {
+        production: verified::production::LET_STMT,
+        origin: 2,
+        end: 5,
+        first_child: 4,
+        child_count: 4,
+    };
+    nodes[6] = verified::syntax_tree::Node {
+        production: verified::production::STMTS_END,
+        origin: 5,
+        end: 5,
+        first_child: 8,
+        child_count: 0,
+    };
+    nodes[7] = verified::syntax_tree::Node {
+        production: verified::production::STMTS_MORE,
+        origin: 2,
+        end: 5,
+        first_child: 8,
+        child_count: 2,
+    };
+    children[0] = verified::syntax_tree::Child {
+        kind: verified::parser::TokenChild,
+        payload: 0,
+        semantic_kind: 0,
+    };
+    children[1] = verified::syntax_tree::Child {
+        kind: verified::parser::StateChild,
+        payload: 0,
+        semantic_kind: 0,
+    };
+    children[2] = verified::syntax_tree::Child {
+        kind: verified::parser::TokenChild,
+        payload: 1,
+        semantic_kind: 0,
+    };
+    children[3] = verified::syntax_tree::Child {
+        kind: verified::parser::StateChild,
+        payload: 4,
+        semantic_kind: 0,
+    };
+    children[4] = verified::syntax_tree::Child {
+        kind: verified::parser::TokenChild,
+        payload: 2,
+        semantic_kind: 0,
+    };
+    children[5] = verified::syntax_tree::Child {
+        kind: verified::parser::TokenChild,
+        payload: 17,
+        semantic_kind: 0,
+    };
+    children[6] = verified::syntax_tree::Child {
+        kind: verified::parser::StateChild,
+        payload: 2,
+        semantic_kind: 0,
+    };
+    children[7] = verified::syntax_tree::Child {
+        kind: verified::parser::StateChild,
+        payload: 3,
+        semantic_kind: 0,
+    };
+    children[8] = verified::syntax_tree::Child {
+        kind: verified::parser::StateChild,
+        payload: 5,
+        semantic_kind: 0,
+    };
+    children[9] = verified::syntax_tree::Child {
+        kind: verified::parser::StateChild,
+        payload: 6,
+        semantic_kind: 0,
+    };
+    let tree: verified::syntax_tree::Tree = verified::syntax_tree::Tree {
+        nodes: nodes,
+        children: children,
+        node_count: node_count,
+        child_count: child_count,
+    };
+    if (!is_void(verified::surface_statement::read(tree, 1))) {
+        return 2;
+    }
+    if (!valid_binding(verified::surface_statement::read(tree, 5))) {
+        return 3;
+    }
+    if (!valid_list(verified::surface_statement::statement_list(tree, 7))) {
+        return 4;
+    }
+    children[7].kind = verified::parser::TokenChild;
+    if (!is_unsupported(verified::surface_statement::read(tree, 5))) {
+        return 5;
+    }
+    return 0;
+}

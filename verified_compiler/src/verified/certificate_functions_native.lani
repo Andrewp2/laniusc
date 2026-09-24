@@ -1,0 +1,16 @@
+module verified::certificate_functions_native;
+
+import backend::frame;
+import verified::certificate_functions;
+import verified::host;
+
+pub fn emit_functions_raw(work_pointer: ptr, work_length: i32,
+    output_pointer: ptr, capacity: i32, position: i32) -> i32 {
+    let work: backend::frame::Workspace =
+        backend::frame::from_raw_parts(work_pointer, work_length);
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    let output:[i32] = verified::host::i32_slice_from_raw_parts(output_pointer, capacity);
+    return verified::certificate_functions::emit_functions(work,
+        state[0].stride, state[0].function_count,
+        output, capacity, position);
+}

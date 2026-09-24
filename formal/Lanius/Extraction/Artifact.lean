@@ -123,11 +123,35 @@ inductive SurfaceLiteral where
 deriving BEq, Repr, Lean.FromJson, Lean.ToExpr
 
 mutual
+  inductive SurfacePatternValue where
+    | wildcard
+    | path (path : SurfacePath) (payload : List SurfacePattern)
+    | integer (token : TokenId) (text : String)
+    | boolean (value : Bool)
+
+  structure SurfacePattern where
+    id : SurfaceNodeId
+    parse_node : ParseNodeId
+    value : SurfacePatternValue
+end
+
+deriving instance BEq for SurfacePatternValue, SurfacePattern
+deriving instance Repr for SurfacePatternValue, SurfacePattern
+deriving instance Lean.FromJson for SurfacePatternValue, SurfacePattern
+deriving instance Lean.ToExpr for SurfacePatternValue, SurfacePattern
+
+mutual
   structure SurfaceStructFieldValue where
     id : SurfaceNodeId
     parse_node : ParseNodeId
     name : SpelledName
     value : SurfaceExpr
+
+  structure SurfaceMatchArm where
+    id : SurfaceNodeId
+    parse_node : ParseNodeId
+    pattern : SurfacePattern
+    result : SurfaceExpr
 
   inductive SurfaceExprValue where
     | literal (literal : SurfaceLiteral)
@@ -140,6 +164,7 @@ mutual
     | call (callee : SurfaceExpr) (arguments : List SurfaceExpr)
     | index (base index : SurfaceExpr)
     | member (base : SurfaceExpr) (name : SpelledName)
+    | match_value (scrutinee : SurfaceExpr) (arms : List SurfaceMatchArm)
 
   structure SurfaceExpr where
     id : SurfaceNodeId
@@ -148,10 +173,10 @@ mutual
 end
 
 
-deriving instance BEq for SurfaceStructFieldValue, SurfaceExprValue, SurfaceExpr
-deriving instance Repr for SurfaceStructFieldValue, SurfaceExprValue, SurfaceExpr
-deriving instance Lean.FromJson for SurfaceStructFieldValue, SurfaceExprValue, SurfaceExpr
-deriving instance Lean.ToExpr for SurfaceStructFieldValue, SurfaceExprValue, SurfaceExpr
+deriving instance BEq for SurfaceStructFieldValue, SurfaceMatchArm, SurfaceExprValue, SurfaceExpr
+deriving instance Repr for SurfaceStructFieldValue, SurfaceMatchArm, SurfaceExprValue, SurfaceExpr
+deriving instance Lean.FromJson for SurfaceStructFieldValue, SurfaceMatchArm, SurfaceExprValue, SurfaceExpr
+deriving instance Lean.ToExpr for SurfaceStructFieldValue, SurfaceMatchArm, SurfaceExprValue, SurfaceExpr
 
 mutual
   inductive SurfaceStmtValue where
@@ -273,6 +298,19 @@ structure SurfaceStruct where
   fields : List SurfaceStructField
 deriving BEq, Repr, Lean.FromJson, Lean.ToExpr
 
+structure SurfaceEnumVariant where
+  id : SurfaceNodeId
+  parse_node : ParseNodeId
+  name : SpelledName
+  payload : List SurfaceTypeExpr
+deriving BEq, Repr, Lean.FromJson, Lean.ToExpr
+
+structure SurfaceEnum where
+  name : SpelledName
+  is_public : Bool
+  variants : List SurfaceEnumVariant
+deriving BEq, Repr, Lean.FromJson, Lean.ToExpr
+
 inductive SurfaceItemValue where
   | module (path : SurfacePath)
   | import_path (path : SurfacePath)
@@ -284,6 +322,7 @@ inductive SurfaceItemValue where
   | type_alias
       (name : SpelledName) (is_public : Bool) (target : SurfaceTypeExpr)
   | structure (declaration : SurfaceStruct)
+  | enumeration (declaration : SurfaceEnum)
 deriving BEq, Repr, Lean.FromJson, Lean.ToExpr
 
 structure SurfaceItem where

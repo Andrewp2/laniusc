@@ -1,0 +1,38 @@
+module app::main;
+
+import verified::host;
+import verified::token;
+
+fn main() -> i32 {
+    let source: [i32; 6] = [97, 98, 97, 98, 97, 99];
+    let memory: ptr = verified::host::alloc(
+        3 * verified::token::RECORD_BYTES, verified::token::ALIGNMENT);
+    if (memory == 0) { return 1; }
+    let table: verified::token::TokenTable =
+        verified::token::from_raw_parts(memory, 3);
+    let rows: [verified::token::TokenRow] = table.data;
+    rows[0] = verified::token::TokenRow {
+        kind: verified::token::Identifier, start: 0, finish: 2,
+    };
+    rows[1] = verified::token::TokenRow {
+        kind: verified::token::Identifier, start: 2, finish: 4,
+    };
+    rows[2] = verified::token::TokenRow {
+        kind: verified::token::Identifier, start: 4, finish: 6,
+    };
+    let names: verified::token::SpellingView =
+        verified::token::spellings(source, 6, table, 3);
+    if (!verified::token::same_identifier(names, 0, 1)
+        || verified::token::same_identifier(names, 0, 2)
+        || verified::token::same_identifier(names, 0, 3)) { return 2; }
+    rows[1].kind = verified::token::Integer;
+    if (verified::token::same_identifier(names, 0, 1)) { return 3; }
+    rows[1].kind = verified::token::Identifier;
+    rows[1].finish = 7;
+    if (verified::token::same_identifier(names, 0, 1)) { return 4; }
+    rows[1].finish = 4;
+    let short: verified::token::SpellingView =
+        verified::token::spellings(source, 6, table, 1);
+    if (verified::token::same_identifier(short, 0, 1)) { return 5; }
+    return 0;
+}

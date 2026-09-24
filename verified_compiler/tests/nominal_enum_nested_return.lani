@@ -1,0 +1,24 @@
+module app::main;
+
+enum Inner { Empty, Number(i32) }
+enum Outer { Missing, Wrapped(Inner, i32) }
+
+fn make(value: i32) -> Outer {
+    let inner: Inner = Number(value);
+    return Wrapped(inner, 7);
+}
+
+fn inner_value(value: Inner) -> i32 {
+    return match (value) {
+        Empty -> -1,
+        Number(number) -> number,
+    };
+}
+
+fn main() -> i32 {
+    let outer: Outer = make(5);
+    return match (outer) {
+        Missing -> 1,
+        Wrapped(inner, tail) -> inner_value(inner) + tail - 12,
+    };
+}

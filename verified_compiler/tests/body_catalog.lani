@@ -1,0 +1,88 @@
+module app::main;
+
+import backend::syntax;
+import ir::body_catalog;
+import ir::body_events;
+import ir::type_ref;
+import lowering::body_event_write;
+import lowering::body_serialization;
+import verified::host;
+
+fn main() -> i32 {
+    let event_memory: ptr = verified::host::alloc(
+        ir::body_events::allocation_bytes(4),
+        ir::body_events::ALIGNMENT);
+    let catalog_memory: ptr = verified::host::alloc(
+        ir::body_catalog::allocation_bytes(2),
+        ir::body_catalog::ALIGNMENT);
+    let word_memory: ptr = verified::host::alloc_i32(8);
+    if (event_memory == 0 || catalog_memory == 0
+        || word_memory == 0) { return 1; }
+    let scratch: ir::body_events::Region =
+        ir::body_events::from_raw_parts(event_memory, 4);
+    let catalog: ir::body_catalog::Catalog =
+        ir::body_catalog::from_raw_parts(catalog_memory, 2);
+    let words: [i32] = verified::host::i32_slice_from_raw_parts(
+        word_memory, 8);
+    if (lowering::body_event_write::expression_value(scratch, 0,
+            ir::body_events::IntegerValue(42)) != 1) { return 2; }
+    let first_signature: ir::body_catalog::FunctionSignature =
+        ir::body_catalog::FunctionSignature {
+            id: 7, result_type: ir::type_ref::I32, parameters: 0,
+        };
+    let second_signature: ir::body_catalog::FunctionSignature =
+        ir::body_catalog::FunctionSignature {
+            id: 8, result_type: ir::type_ref::Void, parameters: 0,
+        };
+    let third_signature: ir::body_catalog::FunctionSignature =
+        ir::body_catalog::FunctionSignature {
+            id: 9, result_type: ir::type_ref::I32, parameters: 0,
+        };
+    if (ir::body_catalog::append(catalog, first_signature,
+            scratch, 1) != 0) {
+        return 3;
+    }
+    if (lowering::body_event_write::statement_skip(scratch, 0) != 1) {
+        return 4;
+    }
+    let original: ir::body_catalog::FunctionBody =
+        ir::body_catalog::at(catalog, 0);
+    if (original.signature.id != 7 || original.count != 1
+        || lowering::body_serialization::serialize(
+            ir::body_events::region(original.events, original.count),
+            1, lowering::body_serialization::word_region(words, 8), 0) != 3
+        || words[0] != backend::syntax::expression_code(
+            backend::syntax::ExprValue)
+        || words[1] != backend::syntax::type_code(
+            backend::syntax::TypeI32)
+        || words[2] != 42) { return 5; }
+    if (ir::body_catalog::append(catalog, second_signature,
+            scratch, 1) != 1
+        || ir::body_catalog::length(catalog) != 2
+        || ir::body_catalog::append(catalog, first_signature,
+            scratch, 1) != -1
+        || ir::body_catalog::append(catalog, third_signature,
+            scratch, 1) != -1) {
+        return 6;
+    }
+    let second: ir::body_catalog::FunctionBody =
+        ir::body_catalog::at(catalog, 1);
+    if (second.signature.id != 8 || second.count != 1
+        || ir::type_ref::code(second.signature.result_type) != 0
+        || lowering::body_serialization::serialize(
+            ir::body_events::region(second.events, second.count),
+            1, lowering::body_serialization::word_region(words, 8), 0) != 1
+        || words[0] != backend::syntax::statement_code(
+            backend::syntax::StatementSkip)) { return 7; }
+    let boundary: ir::body_catalog::Catalog =
+        ir::body_catalog::view_from_raw_parts(
+            ir::body_catalog::raw_memory(catalog), 2);
+    if (ir::body_catalog::length(boundary) != 2
+        || ir::body_catalog::find(boundary, 7) != 0
+        || ir::body_catalog::find(boundary, 8) != 1
+        || ir::body_catalog::find(boundary, 9) != -1
+        || ir::body_catalog::at(boundary, 1).signature.id != 8) {
+        return 8;
+    }
+    return 0;
+}

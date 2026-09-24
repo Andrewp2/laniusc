@@ -1,0 +1,8 @@
+module app::main;
+
+enum Choice { Present }
+
+fn main() -> i32 {
+    let choice: Choice = Missing;
+    return 0;
+}

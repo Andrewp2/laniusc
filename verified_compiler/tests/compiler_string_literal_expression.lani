@@ -1,0 +1,6 @@
+module app::main;
+
+fn main() -> i32 {
+    "A\n\"\\Z";
+    return 0;
+}

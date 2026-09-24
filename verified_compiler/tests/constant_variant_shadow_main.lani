@@ -1,0 +1,13 @@
+module app::main;
+
+import sample::left;
+
+enum Choice {
+    BASE,
+}
+
+const RESULT: i32 = BASE;
+
+fn main() -> i32 {
+    return RESULT;
+}

@@ -1,103 +1,550 @@
 module lowering::resolution_catalog;
 
-import backend::syntax;
+import ir::type_ref;
 import lowering::allocation;
 import lowering::declarations;
 import lowering::token_names;
 import lowering::types;
 import lowering::unit_context;
 import verified::surface_type;
+import verified::surface_expr;
+import verified::surface_declaration;
+import verified::surface_path;
 import verified::syntax_tree;
 import verified::token;
+import verified::production;
+import verified::parser;
 
-// Resolve a spelling against the allocated nominal-type namespace. A local
-// declaration wins over an imported one; otherwise exactly one global struct
-// or enum spelling is accepted. This keeps qualified cross-unit names
-// conservative when the final component is ambiguous.
-fn nominal_tag(unit: i32, token: i32, catalog: lowering::token_names::Catalog,
-    allocated: lowering::allocation::Table)
-    -> lowering::types::NominalLookup {
-    let local_tag: i32 = -1;
-    let local_matches: i32 = 0;
-    let global_tag: i32 = -1;
-    let global_matches: i32 = 0;
+struct AliasDestination {
+    owner: i32,
+    target: i32,
+}
+
+enum NominalLookup {
+    Found(i32),
+    Deferred(AliasDestination),
+    Missing,
+    Ambiguous,
+}
+
+fn is_ambiguous(result: NominalLookup) -> bool {
+    return match (result) {
+        Ambiguous -> true,
+        _ -> false,
+    };
+}
+
+struct TypePath {
+    valid: bool,
+    first: i32,
+    last_token: i32,
+}
+
+fn type_path(arena: verified::surface_type::TypeArena,
+    root: i32) -> TypePath {
+    let bad: TypePath = TypePath {
+        valid: false, first: -1, last_token: -1,
+    };
+    let nodes: [verified::surface_type::TypeNode] = arena.data;
+    if (root <= -1 || root >= arena.capacity
+        || !verified::surface_type::kind_is(nodes[root].kind,
+            verified::surface_type::PathType)) { return bad; }
+    let path: i32 = nodes[root].first;
+    if (path <= -1 || path >= root
+        || !verified::surface_type::kind_is(nodes[path].kind,
+            verified::surface_type::Path)) { return bad; }
+    let first: i32 = nodes[path].first;
+    let segment: i32 = first;
+    let remaining: i32 = root;
+    while (remaining > 0) {
+        if (segment <= -1 || segment >= path
+            || !verified::surface_type::kind_is(nodes[segment].kind,
+                verified::surface_type::Segment)) { return bad; }
+        if (nodes[segment].next == -1) {
+            return TypePath {
+                valid: nodes[segment].token >= 0,
+                first: first,
+                last_token: nodes[segment].token,
+            };
+        }
+        segment = nodes[segment].next;
+        remaining -= 1;
+    }
+    return bad;
+}
+
+fn module_target(unit: i32,
+    declarations: lowering::declarations::Table) -> i32 {
+    let target: i32 = -1;
     let row: i32 = 0;
-    let allocation_rows: i32 = lowering::allocation::table_header(
-        allocated).rows;
-    while (row != allocation_rows) {
-        let allocation: lowering::allocation::AllocationRow =
-            lowering::allocation::table_row(allocated, row);
-        if (lowering::allocation::row_has_kind(allocation,
-                lowering::declarations::Structure)
-            || lowering::allocation::row_has_kind(allocation,
+    let count: i32 = lowering::declarations::count_rows(
+        lowering::declarations::table_header(declarations));
+    while (row < count) {
+        let item: lowering::declarations::DeclarationRow =
+            lowering::declarations::table_row(declarations, row);
+        if (lowering::declarations::row_unit(item) == unit
+            && lowering::declarations::row_has_kind(item,
+                lowering::declarations::Module)) {
+            if (target != -1) { return -1; }
+            target = lowering::declarations::row_target(item);
+        }
+        row += 1;
+    }
+    return target;
+}
+
+fn same_module_path(catalog: lowering::token_names::Catalog,
+    left_unit: i32, left_tree: verified::syntax_tree::Tree, left_root: i32,
+    right_unit: i32, right_tree: verified::syntax_tree::Tree,
+    right_root: i32) -> bool {
+    let left: verified::surface_path::Segment =
+        verified::surface_path::first(left_tree, left_root);
+    let right: verified::surface_path::Segment =
+        verified::surface_path::first(right_tree, right_root);
+    while (left.valid && right.valid) {
+        if (!lowering::token_names::same(catalog, left_unit, left.token,
+                right_unit, right.token)) { return false; }
+        if (left.last || right.last) { return left.last && right.last; }
+        left = verified::surface_path::next(left_tree, left);
+        right = verified::surface_path::next(right_tree, right);
+    }
+    return false;
+}
+
+fn imports_module(catalog: lowering::token_names::Catalog,
+    unit: i32, owner: i32,
+    declarations: lowering::declarations::Table,
+    trees: verified::syntax_tree::Catalog, owner_target: i32) -> bool {
+    let sources: [verified::syntax_tree::Tree] = trees.data;
+    let count: i32 = lowering::declarations::count_rows(
+        lowering::declarations::table_header(declarations));
+    let row: i32 = 0;
+    while (row < count) {
+        let item: lowering::declarations::DeclarationRow =
+            lowering::declarations::table_row(declarations, row);
+        if (lowering::declarations::row_unit(item) == unit
+            && lowering::declarations::row_has_kind(item,
+                lowering::declarations::Import)
+            && same_module_path(catalog, unit, sources[unit],
+                lowering::declarations::row_target(item), owner,
+                sources[owner], owner_target)) { return true; }
+        row += 1;
+    }
+    return false;
+}
+
+fn qualified_module_matches(catalog: lowering::token_names::Catalog,
+    unit: i32, owner: i32, first: i32,
+    arena: verified::surface_type::TypeArena,
+    trees: verified::syntax_tree::Catalog, target: i32) -> bool {
+    let nodes: [verified::surface_type::TypeNode] = arena.data;
+    let sources: [verified::syntax_tree::Tree] = trees.data;
+    let tree: verified::syntax_tree::Tree = sources[owner];
+    let module_segment: verified::surface_path::Segment =
+        verified::surface_path::first(tree, target);
+    let segment: i32 = first;
+    let remaining: i32 = arena.capacity;
+    while (remaining > 0 && nodes[segment].next != -1) {
+        if (!module_segment.valid
+            || !lowering::token_names::same(catalog, unit,
+                nodes[segment].token, owner, module_segment.token)) {
+            return false;
+        }
+        segment = nodes[segment].next;
+        if (nodes[segment].next == -1) { return module_segment.last; }
+        if (module_segment.last) { return false; }
+        module_segment = verified::surface_path::next(tree, module_segment);
+        remaining -= 1;
+    }
+    return false;
+}
+
+pub struct ConstantPathInput {
+    unit: i32,
+    expression: i32,
+    arena: verified::surface_expr::ExpressionArena,
+    contexts: lowering::unit_context::Table,
+    sources: [i32],
+    tokens: verified::token::TokenTable,
+    allocations: lowering::allocation::Table,
+    declarations: lowering::declarations::Table,
+    trees: verified::syntax_tree::Catalog,
+}
+
+fn expression_module_matches(catalog: lowering::token_names::Catalog,
+    unit: i32, owner: i32, first: i32,
+    arena: verified::surface_expr::ExpressionArena,
+    trees: verified::syntax_tree::Catalog, target: i32) -> bool {
+    let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
+    let sources: [verified::syntax_tree::Tree] = trees.data;
+    let tree: verified::syntax_tree::Tree = sources[owner];
+    let module_segment: verified::surface_path::Segment =
+        verified::surface_path::first(tree, target);
+    let segment: i32 = first;
+    let remaining: i32 = verified::surface_expr::node_count(arena);
+    while (remaining > 0 && nodes[segment].left != -1) {
+        if (!module_segment.valid
+            || !lowering::token_names::same(catalog, unit,
+                nodes[segment].token, owner, module_segment.token)) {
+            return false;
+        }
+        segment = nodes[segment].left;
+        if (segment <= -1 || segment >= arena.capacity) { return false; }
+        if (nodes[segment].left == -1) { return module_segment.last; }
+        if (module_segment.last) { return false; }
+        module_segment = verified::surface_path::next(tree, module_segment);
+        remaining -= 1;
+    }
+    return false;
+}
+
+pub struct ExpressionOwnerInput {
+    unit: i32,
+    owner: i32,
+    path: i32,
+    arena: verified::surface_expr::ExpressionArena,
+    contexts: lowering::unit_context::Table,
+    sources: [i32],
+    tokens: verified::token::TokenTable,
+    declarations: lowering::declarations::Table,
+    trees: verified::syntax_tree::Catalog,
+    public_declaration: bool,
+}
+
+// A value path may use a bare name from the current/imported module, or an
+// exact module prefix. Enum patterns use the same visibility contract as
+// constant references.
+pub fn expression_owner_visible(input: ExpressionOwnerInput) -> bool {
+    if (input.unit < 0 || input.unit >= input.contexts.count
+        || input.owner < 0 || input.owner >= input.contexts.count
+        || input.trees.count != input.contexts.count) { return false; }
+    let arena: verified::surface_expr::ExpressionArena = input.arena;
+    let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
+    let count: i32 = verified::surface_expr::node_count(arena);
+    if (input.path < 0 || input.path >= count
+        || nodes[input.path].kind != verified::surface_expr::Path) {
+        return false;
+    }
+    let first: i32 = nodes[input.path].left;
+    if (first < 0 || first >= input.path
+        || nodes[first].kind != verified::surface_expr::PathSegment) {
+        return false;
+    }
+    let catalog: lowering::token_names::Catalog =
+        lowering::token_names::catalog(input.contexts,
+            input.sources, input.tokens);
+    let target: i32 = module_target(input.owner, input.declarations);
+    if (target < 0) { return false; }
+    if (input.owner != input.unit
+        && (!input.public_declaration
+            || !imports_module(catalog, input.unit, input.owner,
+                input.declarations, input.trees, target))) {
+        return false;
+    }
+    return nodes[first].left == -1
+        || expression_module_matches(catalog, input.unit, input.owner,
+            first, arena, input.trees, target);
+}
+
+// Enum variants share the value namespace with constants and functions.
+// They are not allocation rows, so inspect the already-authenticated enum
+// declaration when checking whether a constant path is shadowed or ambiguous.
+fn enum_variant_matches(catalog: lowering::token_names::Catalog,
+    unit: i32, owner: i32, name: i32,
+    tree: verified::syntax_tree::Tree, declaration: i32) -> i32 {
+    let view: verified::surface_declaration::Declaration =
+        verified::surface_declaration::read(tree, declaration);
+    let list: i32 = match (view) {
+        verified::surface_declaration::Enumeration(value) -> value.members,
+        _ -> -1,
+    };
+    if (list <= -1) { return -1; }
+    let list_kind: i32 = verified::syntax_tree::production(tree, list);
+    if (list_kind == verified::production::ENUM_VARIANTS_NONE) { return 0; }
+    if (list_kind != verified::production::ENUM_VARIANTS_SOME) {
+        return -1;
+    }
+    let current: i32 = verified::syntax_tree::child(tree, list, 0,
+        verified::parser::StateChild);
+    let tail: i32 = verified::syntax_tree::child(tree, list, 1,
+        verified::parser::StateChild);
+    let matches: i32 = 0;
+    let remaining: i32 = tree.node_count;
+    while (remaining > 0) {
+        remaining -= 1;
+        if (verified::syntax_tree::production(tree, current)
+                != verified::production::ENUM_VARIANT) { return -1; }
+        let variant_name: i32 = verified::syntax_tree::child(tree, current,
+            0, verified::parser::TokenChild);
+        if (variant_name <= -1) { return -1; }
+        if (lowering::token_names::same(catalog, unit, name,
+                owner, variant_name)) {
+            matches += 1;
+        }
+        let tail_kind: i32 = verified::syntax_tree::production(tree, tail);
+        if (tail_kind == verified::production::ENUM_VARIANTS_END) {
+            return matches;
+        }
+        if (tail_kind != verified::production::ENUM_VARIANTS_MORE) {
+            return -1;
+        }
+        let after: i32 = verified::syntax_tree::child(tree, tail, 1,
+            verified::parser::StateChild);
+        let after_kind: i32 = verified::syntax_tree::production(tree, after);
+        if (after_kind
+                == verified::production::ENUM_VARIANTS_AFTER_COMMA_TRAILING) {
+            return matches;
+        }
+        if (after_kind
+                != verified::production::ENUM_VARIANTS_AFTER_COMMA_MORE) {
+            return -1;
+        }
+        current = verified::syntax_tree::child(tree, after, 0,
+            verified::parser::StateChild);
+        tail = verified::syntax_tree::child(tree, after, 1,
+            verified::parser::StateChild);
+    }
+    return -1;
+}
+
+// Return a Core constant ID for an exact value-path occurrence. No spelling-
+// only fallback is permitted: a local declaration shadows imports, while a
+// qualified path must name an imported or current module exactly.
+pub fn resolve_constant_path(input: ConstantPathInput) -> i32 {
+    let unit: i32 = input.unit;
+    let arena: verified::surface_expr::ExpressionArena = input.arena;
+    let count: i32 = verified::surface_expr::node_count(arena);
+    if (unit <= -1 || unit >= input.contexts.count
+        || input.trees.count != input.contexts.count
+        || input.expression <= -1 || input.expression >= count
+        || !lowering::allocation::table_has_exact_rows(
+            input.allocations)) { return -1; }
+    let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
+    let expression: verified::surface_expr::ExpressionNode =
+        nodes[input.expression];
+    if (expression.kind != verified::surface_expr::PathExpression
+        || expression.left <= -1 || expression.left >= count) { return -1; }
+    let path: i32 = expression.left;
+    if (nodes[path].kind != verified::surface_expr::Path) { return -1; }
+    let first: i32 = nodes[path].left;
+    if (first <= -1 || first >= path) { return -1; }
+    let last: i32 = first;
+    let remaining: i32 = count;
+    let done: bool = false;
+    while (remaining > 0 && !done) {
+        if (last <= -1 || last >= path
+            || nodes[last].kind != verified::surface_expr::PathSegment) {
+            return -1;
+        }
+        if (nodes[last].left == -1) {
+            done = true;
+        } else {
+            last = nodes[last].left;
+            remaining -= 1;
+        }
+    }
+    if (remaining <= 0) { return -1; }
+    let final_token: i32 = nodes[last].token;
+    let qualified: bool = nodes[first].left != -1;
+    let catalog: lowering::token_names::Catalog =
+        lowering::token_names::catalog(input.contexts,
+            input.sources, input.tokens);
+    let local: i32 = -1;
+    let imported: i32 = -1;
+    let local_count: i32 = 0;
+    let imported_count: i32 = 0;
+    let row: i32 = 0;
+    let rows: i32 = lowering::allocation::table_header(
+        input.allocations).rows;
+    while (row < rows) {
+        let selected: lowering::allocation::AllocationRow =
+            lowering::allocation::table_row(input.allocations, row);
+        let constant: bool = lowering::allocation::row_has_kind(selected,
+            lowering::declarations::Constant);
+        let callable: bool = lowering::allocation::row_has_kind(selected,
+                lowering::declarations::Function)
+            || lowering::allocation::row_has_kind(selected,
+                lowering::declarations::External);
+        if (constant || callable) {
+            let owner: i32 = lowering::allocation::row_unit(selected);
+            if (owner <= -1 || owner >= input.contexts.count) { return -1; }
+            if (lowering::token_names::same(catalog, unit, final_token,
+                    owner, lowering::allocation::row_name(selected))) {
+                let target: i32 = module_target(owner, input.declarations);
+                if (target <= -1) { return -1; }
+                let visible: bool = owner == unit
+                    || (lowering::allocation::row_is_public(selected)
+                        && imports_module(catalog, unit, owner,
+                            input.declarations, input.trees, target));
+                let correct_path: bool = !qualified
+                    || expression_module_matches(catalog, unit, owner,
+                        first, arena, input.trees, target);
+                if (visible && correct_path) {
+                    if (owner == unit) {
+                        local_count += 1;
+                        if (constant) {
+                            local = lowering::allocation::row_declaration_id(
+                                selected);
+                        }
+                    } else {
+                        imported_count += 1;
+                        if (constant) {
+                            imported = lowering::allocation::row_declaration_id(
+                                selected);
+                        }
+                    }
+                }
+            }
+        }
+        if (lowering::allocation::row_has_kind(selected,
                 lowering::declarations::Enumeration)) {
-            let owner: i32 = lowering::allocation::row_unit(allocation);
-            if (lowering::token_names::same(catalog, unit, token, owner,
-                    lowering::allocation::row_name(allocation))) {
+            let owner: i32 = lowering::allocation::row_unit(selected);
+            if (owner <= -1 || owner >= input.contexts.count) { return -1; }
+            let target: i32 = module_target(owner, input.declarations);
+            if (target <= -1) { return -1; }
+            let visible: bool = owner == unit
+                || (lowering::allocation::row_is_public(selected)
+                    && imports_module(catalog, unit, owner,
+                        input.declarations, input.trees, target));
+            let correct_path: bool = !qualified
+                || expression_module_matches(catalog, unit, owner,
+                    first, arena, input.trees, target);
+            if (visible && correct_path) {
+                let trees: [verified::syntax_tree::Tree] = input.trees.data;
+                let variant_count: i32 = enum_variant_matches(catalog,
+                    unit, owner, final_token, trees[owner],
+                    lowering::allocation::row_declaration(selected));
+                if (variant_count <= -1) { return -1; }
                 if (owner == unit) {
-                    local_tag = backend::syntax::NOMINAL_TYPE_BASE
-                        + lowering::allocation::row_core_id(allocation);
-                    local_matches += 1;
+                    local_count += variant_count;
                 } else {
-                    global_tag = backend::syntax::NOMINAL_TYPE_BASE
-                        + lowering::allocation::row_core_id(allocation);
-                    global_matches += 1;
+                    imported_count += variant_count;
                 }
             }
         }
         row += 1;
     }
-    if (local_matches > 1 || global_matches > 1) {
-        return lowering::types::nominal_result(lowering::types::Ambiguous, 0);
-    }
-    if (local_matches == 1) {
-        return lowering::types::nominal_result(lowering::types::Found,
-            local_tag);
-    }
-    if (global_matches == 1) {
-        return lowering::types::nominal_result(lowering::types::Found,
-            global_tag);
-    }
-    return lowering::types::nominal_result(lowering::types::Missing, 0);
+    if (local_count > 1) { return -2; }
+    if (local_count == 1) { return local; }
+    if (imported_count > 1) { return -2; }
+    if (imported_count == 1) { return imported; }
+    return -1;
 }
 
-fn alias_target_token(input: verified::surface_type::TypeInput,
-    output: verified::surface_type::TypeArena) -> i32 {
-    let arena: [verified::surface_type::TypeNode] = output.data;
-    let root: i32 = verified::surface_type::extract(input, output);
-    if (root <= -1) { return -1; }
-    let path: i32 = root;
-    if (verified::surface_type::kind_is(arena[root].kind,
-            verified::surface_type::PathType)) {
-        path = arena[root].first;
-    } else {
-        if (!verified::surface_type::kind_is(arena[root].kind,
-                verified::surface_type::Path)) { return -1; }
+fn name_candidate(unit: i32, path: TypePath,
+    arena: verified::surface_type::TypeArena,
+    catalog: lowering::token_names::Catalog,
+    allocated: lowering::allocation::Table,
+    declarations: lowering::declarations::Table,
+    trees: verified::syntax_tree::Catalog) -> NominalLookup {
+    let nodes: [verified::surface_type::TypeNode] = arena.data;
+    let qualified: bool = nodes[path.first].next != -1;
+    let local: NominalLookup = Missing;
+    let imported: NominalLookup = Missing;
+    let local_matches: i32 = 0;
+    let imported_matches: i32 = 0;
+    let row: i32 = 0;
+    let allocation_rows: i32 = lowering::allocation::table_header(
+        allocated).rows;
+    while (row < allocation_rows) {
+        let allocation: lowering::allocation::AllocationRow =
+            lowering::allocation::table_row(allocated, row);
+        let structure: bool = lowering::allocation::row_has_kind(allocation,
+            lowering::declarations::Structure)
+            || lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Enumeration);
+        let alias: bool = lowering::allocation::row_has_kind(allocation,
+            lowering::declarations::Alias);
+        if (structure || alias) {
+            let owner: i32 = lowering::allocation::row_unit(allocation);
+            if (lowering::token_names::same(catalog, unit, path.last_token,
+                    owner, lowering::allocation::row_name(allocation))) {
+                let target: i32 = module_target(owner, declarations);
+                if (target <= -1) { return Ambiguous; }
+                let visible: bool = owner == unit
+                    || (lowering::allocation::row_is_public(allocation)
+                        && imports_module(catalog, unit, owner, declarations,
+                            trees, target));
+                let correct_path: bool = !qualified
+                    || qualified_module_matches(catalog, unit, owner,
+                        path.first, arena, trees, target);
+                if (visible && correct_path) {
+                    let selected: NominalLookup = Missing;
+                    if (alias) {
+                        let source: lowering::declarations::DeclarationRow =
+                            lowering::allocation::row_source(allocation);
+                        let destination: AliasDestination = AliasDestination {
+                            owner: owner,
+                            target: lowering::declarations::row_target(source),
+                        };
+                        selected = Deferred(destination);
+                    } else {
+                        selected = Found(
+                            lowering::allocation::row_core_id(allocation));
+                    }
+                    if (owner == unit) {
+                        local = selected;
+                        local_matches += 1;
+                    } else {
+                        imported = selected;
+                        imported_matches += 1;
+                    }
+                }
+            }
+        }
+        row += 1;
     }
-    if (path <= -1 || path >= root
-        || !verified::surface_type::kind_is(arena[path].kind,
-            verified::surface_type::Path)) { return -1; }
-    let segment: i32 = arena[path].first;
-    let answer: i32 = -1;
-    while (segment != -1) {
-        if (segment <= -1 || segment >= root
-            || !verified::surface_type::kind_is(arena[segment].kind,
-                verified::surface_type::Segment)) { return -1; }
-        answer = arena[segment].token;
-        segment = arena[segment].next;
-    }
-    return answer;
+    if (local_matches > 1) { return Ambiguous; }
+    if (local_matches == 1) { return local; }
+    if (imported_matches > 1) { return Ambiguous; }
+    if (imported_matches == 1) { return imported; }
+    return Missing;
 }
 
-// The existing nominal resolution table is keyed by the source unit's token
-// IDs.  Populate one such table from the global allocation and declaration
-// catalogs; no second symbol format is introduced.
+fn resolve_nominal(unit: i32, initial: TypePath,
+    arena: verified::surface_type::TypeArena,
+    catalog: lowering::token_names::Catalog,
+    allocated: lowering::allocation::Table,
+    declarations: lowering::declarations::Table,
+    trees: verified::syntax_tree::Catalog) -> NominalLookup {
+    let current_unit: i32 = unit;
+    let path: TypePath = initial;
+    let remaining: i32 = lowering::declarations::count_rows(
+        lowering::declarations::table_header(declarations));
+    let sources: [verified::syntax_tree::Tree] = trees.data;
+    while (remaining > 0) {
+        let selected: NominalLookup = name_candidate(current_unit, path,
+            arena, catalog, allocated, declarations, trees);
+        let missing_alias: AliasDestination = AliasDestination {
+            owner: -1, target: -1,
+        };
+        let alias: AliasDestination = match (selected) {
+            Deferred(found) -> found,
+            _ -> missing_alias,
+        };
+        if (alias.owner <= -1) { return selected; }
+        let tree: verified::syntax_tree::Tree = sources[alias.owner];
+        let root: i32 = verified::surface_type::extract(
+            verified::surface_type::TypeInput {
+                tree: tree, root: alias.target, depth: tree.node_count,
+            }, arena);
+        path = type_path(arena, root);
+        if (!path.valid) { return Missing; }
+        current_unit = alias.owner;
+        remaining -= 1;
+    }
+    return Ambiguous;
+}
+
+// Resolution rows are keyed by the exact source token for each type use.
+// Build them from the global allocation and declaration catalogs.
 pub struct ResolutionInput {
     unit: i32,
     contexts: lowering::unit_context::Table,
     sources: [i32],
     tokens: verified::token::TokenTable,
     tree: verified::syntax_tree::Tree,
+    trees: verified::syntax_tree::Catalog,
     declarations: lowering::declarations::Table,
     allocations: lowering::allocation::Table,
 }
@@ -107,6 +554,30 @@ pub struct ResolutionWorkspace {
     output_offset: i32,
     output_capacity: i32,
     type_arena: verified::surface_type::TypeArena,
+}
+
+fn insert_resolution(output: [lowering::types::ResolutionRow],
+    offset: i32, written: i32, capacity: i32,
+    key: i32, type_ref: ir::type_ref::TypeRef) -> i32 {
+    let position: i32 = 0;
+    while (position < written && output[offset + position].key < key) {
+        position += 1;
+    }
+    if (position < written && output[offset + position].key == key) {
+        if (!ir::type_ref::same(output[offset + position].type_tag,
+                type_ref)) { return -1; }
+        return written;
+    }
+    if (written >= capacity) { return -1; }
+    let shift: i32 = written;
+    while (shift > position) {
+        output[offset + shift] = output[offset + shift - 1];
+        shift -= 1;
+    }
+    output[offset + position] = lowering::types::ResolutionRow {
+        key: key, type_tag: type_ref,
+    };
+    return written + 1;
 }
 
 pub fn build(input: ResolutionInput,
@@ -137,64 +608,35 @@ pub fn build(input: ResolutionInput,
         return -1;
     }
     let written: i32 = 0;
-    let token: i32 = 0;
-    while (token != token_count) {
-        let resolved: lowering::types::NominalLookup = nominal_tag(unit, token, token_names,
-            allocated);
-        if (resolved.stage == lowering::types::Ambiguous) { return -1; }
-        let row: i32 = 0;
-        let declaration_rows: i32 = lowering::declarations::count_rows(
-            lowering::declarations::table_header(declarations));
-        while (row != declaration_rows) {
-            let declaration: lowering::declarations::DeclarationRow =
-                lowering::declarations::table_row(declarations, row);
-            if (lowering::declarations::row_unit(declaration) == unit
-                && lowering::declarations::row_has_kind(declaration,
-                    lowering::declarations::Alias)
-                && lowering::declarations::row_name(declaration) == token) {
-                let target_type: verified::surface_type::TypeInput =
-                    verified::surface_type::TypeInput {
-                        tree: tree,
-                        root: lowering::declarations::row_target(declaration),
-                        depth: node_count,
-                    };
-                let target_token: i32 = alias_target_token(target_type,
-                    type_arena);
-                if (target_token >= 0) {
-                    let alias_lookup: lowering::types::NominalLookup = nominal_tag(unit,
-                        target_token,
-                        token_names, allocated);
-                    if (alias_lookup.stage == lowering::types::Ambiguous) {
-                        return -1;
-                    }
-                    if (alias_lookup.stage == lowering::types::Found) {
-                        resolved = alias_lookup;
-                    }
-                }
-            }
-            row += 1;
-        }
-        if (resolved.stage == lowering::types::Found) {
-            let duplicate: bool = false;
-            let prior: i32 = 0;
-            while (prior != written) {
-                if (lowering::token_names::same(token_names, unit, token, unit,
-                        output[output_offset + prior].key)) {
-                    duplicate = true;
-                }
-                prior += 1;
-            }
-            if (!duplicate) {
-                if (written >= capacity) { return -1; }
-                output[output_offset + written]
-                    = lowering::types::ResolutionRow {
-                        key: token,
-                        type_tag: resolved.tag,
-                    };
-                written += 1;
+    let node: i32 = 0;
+    while (node != node_count) {
+        if (verified::syntax_tree::production(tree, node)
+            == verified::production::TYPE_IDENT) {
+            let root: i32 = verified::surface_type::extract(
+                verified::surface_type::TypeInput {
+                    tree: tree, root: node, depth: node_count,
+                }, type_arena);
+            let path: TypePath = type_path(type_arena, root);
+            if (!path.valid || path.last_token >= token_count) { return -1; }
+            let key: i32 = path.last_token;
+            let resolved: NominalLookup = resolve_nominal(unit, path,
+                type_arena, token_names, allocated, declarations,
+                input.trees);
+            if (is_ambiguous(resolved)) { return -1; }
+            let core_id: i32 = match (resolved) {
+                Found(value) -> value,
+                _ -> -1,
+            };
+            if (core_id >= 0) {
+                let type_ref: ir::type_ref::TypeRef =
+                    ir::type_ref::Nominal(core_id);
+                if (!ir::type_ref::is_nominal(type_ref)) { return -1; }
+                written = insert_resolution(output, output_offset, written,
+                    capacity, key, type_ref);
+                if (written <= -1) { return -1; }
             }
         }
-        token += 1;
+        node += 1;
     }
     return written;
 }

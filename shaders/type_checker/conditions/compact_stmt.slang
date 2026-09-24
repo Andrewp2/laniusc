@@ -208,6 +208,22 @@ void validate_decl(HirPayload stmt)
 
 void validate_assignment(HirPayload stmt)
 {
+    uint expected_ref_tag = TYPE_REF_INVALID;
+    uint expected_ref_payload = INVALID;
+    if (expression_type_ref(stmt.b, expected_ref_tag,
+                            expected_ref_payload) &&
+        (expected_ref_tag == TYPE_REF_INSTANCE ||
+         (expected_ref_tag == TYPE_REF_SCALAR &&
+          legacy_aggregate_type(expected_ref_payload))) &&
+        known_scalar(scalar_type(stmt.c)))
+    {
+        record_min_token_error(
+            status,
+            valid_token(expression_token(stmt.c)) ? expression_token(stmt.c) : 0u,
+            ERR_ASSIGN_MISMATCH,
+            0u);
+        return;
+    }
     uint target_token = expression_token(stmt.b);
     if (aggregate_decl_ref(target_token)) return;
     validate_pair(scalar_type(stmt.b), scalar_type(stmt.c), stmt.c, expression_token(stmt.c));

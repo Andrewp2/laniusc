@@ -1,0 +1,25 @@
+module app::main;
+
+import ir::body_events;
+import ir::type_ref;
+
+fn identity(kind: ir::type_ref::TypeRef) -> ir::type_ref::TypeRef {
+    return kind;
+}
+
+fn type_of(event: ir::body_events::Event) -> ir::type_ref::TypeRef {
+    return match (event) {
+        ir::body_events::ExpressionStruct(fields) ->
+            identity(ir::type_ref::Nominal(fields.type_id)),
+        _ -> ir::type_ref::Invalid,
+    };
+}
+
+fn main() -> i32 {
+    let fields: ir::body_events::StructFields =
+        ir::body_events::StructFields { type_id: 7, count: 0 };
+    let event: ir::body_events::Event =
+        ir::body_events::ExpressionStruct(fields);
+    let kind: ir::type_ref::TypeRef = type_of(event);
+    return ir::type_ref::code(kind) - 23;
+}

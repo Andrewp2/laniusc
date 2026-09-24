@@ -1,0 +1,67 @@
+module app::main;
+
+import ir::type_ref;
+import verified::host;
+
+fn main() -> i32 {
+    let code: i32 = 1;
+    while (code <= 6) {
+        if (ir::type_ref::code(ir::type_ref::from_code(code)) != code) {
+            return 1;
+        }
+        code += 1;
+    }
+    let nominal: ir::type_ref::TypeRef = ir::type_ref::Nominal(23);
+    let nominal_slice: ir::type_ref::TypeRef =
+        ir::type_ref::NominalSlice(23);
+    if (ir::type_ref::code(nominal) != ir::type_ref::NOMINAL_BASE + 23
+        || !ir::type_ref::is_nominal(nominal)
+        || ir::type_ref::is_nominal(ir::type_ref::I32)
+        || ir::type_ref::code(ir::type_ref::from_code(
+            ir::type_ref::code(nominal))) != ir::type_ref::code(nominal)) {
+        return 2;
+    }
+    let invalid_nominal: ir::type_ref::TypeRef = ir::type_ref::Nominal(-1);
+    if (ir::type_ref::code(ir::type_ref::from_code(0)) != 0
+        || ir::type_ref::valid(ir::type_ref::Void)
+        || !ir::type_ref::valid_result(ir::type_ref::Void)
+        || ir::type_ref::code(ir::type_ref::from_code(7)) != -1
+        || ir::type_ref::valid(invalid_nominal)
+        || ir::type_ref::is_nominal(invalid_nominal)) {
+        return 3;
+    }
+    let max_id: i32 = verified::host::I32_MAX;
+    let overflow_nominal: ir::type_ref::TypeRef = ir::type_ref::Nominal(max_id);
+    if (ir::type_ref::code(overflow_nominal) != -1
+        || ir::type_ref::is_nominal(overflow_nominal)) {
+        return 4;
+    }
+    if (!ir::type_ref::same(ir::type_ref::I32, ir::type_ref::I32)
+        || ir::type_ref::same(ir::type_ref::I32, ir::type_ref::Bool)
+        || !ir::type_ref::same(nominal, ir::type_ref::Nominal(23))
+        || ir::type_ref::same(nominal, ir::type_ref::Nominal(24))
+        || !ir::type_ref::same(ir::type_ref::Void, ir::type_ref::Void)
+        || !ir::type_ref::same(ir::type_ref::Invalid,
+            ir::type_ref::Invalid)
+        || ir::type_ref::same(invalid_nominal, ir::type_ref::Invalid)
+        || ir::type_ref::same(overflow_nominal, ir::type_ref::Invalid)) {
+        return 5;
+    }
+    if (!ir::type_ref::primitive(ir::type_ref::I32)
+        || !ir::type_ref::primitive(ir::type_ref::Slice)
+        || !ir::type_ref::primitive(nominal_slice)
+        || ir::type_ref::primitive(ir::type_ref::Void)
+        || ir::type_ref::primitive(nominal)
+        || ir::type_ref::primitive(invalid_nominal)) { return 6; }
+    if (ir::type_ref::code(nominal_slice)
+            != ir::type_ref::NOMINAL_SLICE_BASE + 23
+        || !ir::type_ref::is_slice(nominal_slice)
+        || ir::type_ref::is_nominal(nominal_slice)
+        || !ir::type_ref::same(
+            ir::type_ref::from_code(ir::type_ref::code(nominal_slice)),
+            nominal_slice)
+        || ir::type_ref::valid(ir::type_ref::NominalSlice(max_id))) {
+        return 7;
+    }
+    return 0;
+}

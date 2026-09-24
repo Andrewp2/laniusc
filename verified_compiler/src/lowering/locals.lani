@@ -1,8 +1,9 @@
 module lowering::locals;
 
+import ir::type_ref;
 import verified::host;
 
-const ENTRY_WORDS: i32 = 2;
+const ENTRY_WORDS: i32 = 3;
 const WORD_BYTES: i32 = 8;
 pub const ENTRY_BYTES: i32 = ENTRY_WORDS * WORD_BYTES;
 pub const ALIGNMENT: i32 = WORD_BYTES;
@@ -11,7 +12,7 @@ pub const MAX_CAPACITY: i32 =
 
 struct Binding {
     name: i32,
-    kind: i32,
+    kind: ir::type_ref::TypeRef,
 }
 
 struct CountCell {
@@ -66,14 +67,16 @@ pub fn name_at(table: Table, index: i32) -> i32 {
     return entries[index].name;
 }
 
-pub fn kind_at(table: Table, index: i32) -> i32 {
+pub fn kind_at(table: Table, index: i32) -> ir::type_ref::TypeRef {
     let count: [CountCell] = table.count;
-    if (index <= -1 || index >= count[0].value) { return -1; }
+    if (index <= -1 || index >= count[0].value) {
+        return ir::type_ref::Invalid;
+    }
     let entries: [Binding] = table.entries;
     return entries[index].kind;
 }
 
-pub fn type_of(table: Table, name: i32) -> i32 {
+pub fn type_of(table: Table, name: i32) -> ir::type_ref::TypeRef {
     let entries: [Binding] = table.entries;
     let count: [CountCell] = table.count;
     let index: i32 = count[0].value - 1;
@@ -83,14 +86,14 @@ pub fn type_of(table: Table, name: i32) -> i32 {
         }
         index -= 1;
     }
-    return -1;
+    return ir::type_ref::Invalid;
 }
 
-pub fn bind(table: Table, name: i32, kind: i32) -> bool {
+pub fn bind(table: Table, name: i32, kind: ir::type_ref::TypeRef) -> bool {
     let entries: [Binding] = table.entries;
     let count_storage: [CountCell] = table.count;
     let count: i32 = count_storage[0].value;
-    if (name <= -1 || kind <= 0 || count <= -1
+    if (name <= -1 || !ir::type_ref::valid(kind) || count <= -1
         || count >= table.capacity) { return false; }
     entries[count].name = name;
     entries[count].kind = kind;

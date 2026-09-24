@@ -1,6 +1,7 @@
 module app::main;
 
 import backend::syntax;
+import ir::type_ref;
 import lowering::declarations;
 import lowering::signature_index;
 import lowering::signatures;
@@ -27,15 +28,20 @@ fn main() -> i32 {
             lowering::signatures::SignatureRecord {
                 id: 0, declaration_kind: lowering::declarations::Structure,
                 shape: lowering::signatures::StructureShape,
-                arity: 0, result_type: -1,
+                arity: 0, result_type: ir::type_ref::Invalid,
+            }, 0, -1, -1)
+        || !lowering::signature_index::push_record(output,
+            lowering::signatures::SignatureRecord {
+                id: 1, declaration_kind: lowering::declarations::Function,
+                shape: lowering::signatures::InternalFunctionShape,
+                arity: 0, result_type: ir::type_ref::Void,
             }, 0, -1, -1)
         || !lowering::signature_index::push_record(output,
             lowering::signatures::SignatureRecord {
                 id: 3, declaration_kind: lowering::declarations::Function,
                 shape: lowering::signatures::InternalFunctionShape,
                 arity: 0,
-                result_type: backend::syntax::type_code(
-                    backend::syntax::TypeI32),
+                result_type: ir::type_ref::I32,
             }, 0, -1, -1)) { return 2; }
     let index: lowering::signature_index::Table =
         lowering::signature_index::finish(output);
@@ -50,7 +56,9 @@ fn main() -> i32 {
         lowering::signature_index::record_at(index, 3);
     if (lowering::signatures::record_id(record) != 3
         || lowering::signatures::record_arity(record) != 0
-        || lowering::signatures::record_result_type(record)
+        || ir::type_ref::code(lowering::signatures::record_result_type(
+            lowering::signature_index::record_at(index, 1))) != 0
+        || ir::type_ref::code(lowering::signatures::record_result_type(record))
             != backend::syntax::type_code(backend::syntax::TypeI32)) {
         return 4;
     }
@@ -58,21 +66,20 @@ fn main() -> i32 {
             lowering::signatures::SignatureRecord {
                 id: 0, declaration_kind: lowering::declarations::Structure,
                 shape: lowering::signatures::StructureShape,
-                arity: 0, result_type: -1,
+                arity: 0, result_type: ir::type_ref::Invalid,
             }, 0, -1, -1)) { return 5; }
     if (lowering::signature_index::push_record(output,
             lowering::signatures::SignatureRecord {
                 id: 4, declaration_kind: lowering::declarations::Function,
                 shape: lowering::signatures::InternalFunctionShape,
                 arity: 0,
-                result_type: backend::syntax::type_code(
-                    backend::syntax::TypeI32),
+                result_type: ir::type_ref::I32,
             }, 0, -1, -1)) { return 6; }
     if (lowering::signature_index::push_record(output,
             lowering::signatures::SignatureRecord {
                 id: 2, declaration_kind: lowering::declarations::Structure,
                 shape: lowering::signatures::StructureShape,
-                arity: 1, result_type: -1,
+                arity: 1, result_type: ir::type_ref::Invalid,
             }, 0, -1, -1)) { return 7; }
     return 0;
 }

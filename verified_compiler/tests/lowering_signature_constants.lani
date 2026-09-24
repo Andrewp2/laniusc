@@ -1,6 +1,7 @@
 module app::main;
 
 import backend::syntax;
+import ir::type_ref;
 import lowering::declarations;
 import lowering::signature_index;
 import lowering::signatures;
@@ -30,8 +31,7 @@ fn main() -> i32 {
                 id: 0, declaration_kind: lowering::declarations::Constant,
                 shape: lowering::signatures::ConstantShape,
                 arity: 0,
-                result_type: backend::syntax::type_code(
-                    backend::syntax::TypeI32),
+                result_type: ir::type_ref::I32,
             }, -1, -1, scalar)) { return 2; }
     let invalid: [i32; 1] = [256];
     if (lowering::signature_index::push_string(output, invalid, 1, 0, 1)
@@ -45,8 +45,7 @@ fn main() -> i32 {
                 id: 1, declaration_kind: lowering::declarations::Constant,
                 shape: lowering::signatures::ConstantShape,
                 arity: 0,
-                result_type: backend::syntax::type_code(
-                    backend::syntax::TypeString),
+                result_type: ir::type_ref::String,
             }, -1, -1, string)
         || !lowering::signature_index::complete(output)) { return 4; }
     let index: lowering::signature_index::Table =

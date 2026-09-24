@@ -1,0 +1,7 @@
+module app::main;
+
+fn main() -> i32 {
+    let text: str = "A\n\"\\Z";
+    let empty: str = "";
+    return 0;
+}

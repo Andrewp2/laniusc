@@ -1,0 +1,8 @@
+module app::main;
+
+// The RHS must read the old value before the assignment marks it initialized.
+fn main() -> i32 {
+    let value: i32;
+    value = value;
+    return 0;
+}

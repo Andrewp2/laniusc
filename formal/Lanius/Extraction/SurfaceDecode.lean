@@ -88,12 +88,34 @@ def decodeSurfaceLiteral : SurfaceLiteral → Option Surface.Literal
   | .character _ text => .character <$> SurfaceSyntax.characterLiteralValue? text
   | .boolean value => some (.boolean value)
 
+def decodeSurfacePatternWithFuel : Nat → SurfacePattern → Option Surface.Pattern
+  | 0, _ => none
+  | fuel + 1, pattern => do
+      match pattern.value with
+      | .wildcard => pure .wildcard
+      | .path path payload =>
+          let wildcard := match path.value.segments with
+            | [segment] => segment.name.text == "_" && segment.arguments.isEmpty
+            | _ => false
+          if wildcard && payload.isEmpty then pure .wildcard
+          else pure (.path (← decodeSurfacePathWithFuel fuel path)
+            (← payload.mapM (decodeSurfacePatternWithFuel fuel)))
+      | .integer _ text => pure (.integer text)
+      | .boolean value => pure (.boolean value)
+
 mutual
   def decodeSurfaceStructFieldValueWithFuel :
       Nat → SurfaceStructFieldValue → Option (Surface.Name × Surface.Expr)
     | 0, _ => none
     | fuel + 1, field => do
         pure (field.name.text, ← decodeSurfaceExprWithFuel fuel field.value)
+
+  def decodeSurfaceMatchArmWithFuel :
+      Nat → SurfaceMatchArm → Option (Surface.Pattern × Surface.Expr)
+    | 0, _ => none
+    | fuel + 1, arm => do
+        pure (← decodeSurfacePatternWithFuel fuel arm.pattern,
+          ← decodeSurfaceExprWithFuel fuel arm.result)
 
   def decodeSurfaceExprWithFuel : Nat → SurfaceExpr → Option Surface.Expr
     | 0, _ => none
@@ -125,6 +147,9 @@ mutual
               (← decodeSurfaceExprWithFuel fuel index))
         | .member base name =>
             pure (.member (← decodeSurfaceExprWithFuel fuel base) name.text)
+        | .match_value scrutinee arms =>
+            pure (.matchValue (← decodeSurfaceExprWithFuel fuel scrutinee)
+              (← arms.mapM (decodeSurfaceMatchArmWithFuel fuel)))
 end
 
 def decodeSurfaceExpr (fuel : Nat) (expression : SurfaceExpr) : Option Surface.Expr :=
@@ -218,6 +243,20 @@ def decodeSurfaceStruct (fuel : Nat) (declaration : SurfaceStruct) : Option Surf
     fields := ← declaration.fields.mapM (decodeSurfaceStructField fuel)
   }
 
+def decodeSurfaceEnumVariant (fuel : Nat)
+    (variant : SurfaceEnumVariant) : Option Surface.EnumVariant := do
+  pure {
+    name := variant.name.text
+    payload := ← variant.payload.mapM (decodeSurfaceTypeExpr fuel)
+  }
+
+def decodeSurfaceEnum (fuel : Nat) (declaration : SurfaceEnum) : Option Surface.EnumDecl := do
+  pure {
+    name := declaration.name.text
+    isPublic := declaration.is_public
+    variants := ← declaration.variants.mapM (decodeSurfaceEnumVariant fuel)
+  }
+
 def decodeSurfaceItem (fuel : Nat) (item : SurfaceItem) : Option Surface.Item := do
   match item.value with
   | .module path => .module <$> decodeSurfacePath fuel path
@@ -231,6 +270,7 @@ def decodeSurfaceItem (fuel : Nat) (item : SurfaceItem) : Option Surface.Item :=
   | .type_alias name isPublic target =>
       pure (.typeAlias name.text isPublic [] [] (← decodeSurfaceTypeExpr fuel target))
   | .structure declaration => .structure <$> decodeSurfaceStruct fuel declaration
+  | .enumeration declaration => .enumeration <$> decodeSurfaceEnum fuel declaration
 
 /-- Successful decoding composes across independently checked item ranges.
 This is the assembly law for generated decoding certificates; the kernel only

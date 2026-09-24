@@ -1,0 +1,10 @@
+module choice::types;
+
+pub enum Choice {
+    Value(i32),
+    Empty,
+}
+
+pub fn code(value: i32) -> i32 {
+    return value + 3;
+}

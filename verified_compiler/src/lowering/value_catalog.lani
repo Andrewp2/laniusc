@@ -12,17 +12,8 @@ pub const RECORD_BYTES: i32 = 6 * FIELD_BYTES;
 pub const ALIGNMENT: i32 = FIELD_BYTES;
 
 pub enum ValueBindingKind {
-    InvalidBinding,
     CallableBinding,
     EnumVariantBinding,
-}
-
-pub fn binding_code(kind: ValueBindingKind) -> i32 {
-    return match (kind) {
-        InvalidBinding -> -1,
-        CallableBinding -> 0,
-        EnumVariantBinding -> 1,
-    };
 }
 
 pub enum ValueBindingScope {
@@ -31,33 +22,30 @@ pub enum ValueBindingScope {
     ImportedBinding,
 }
 
-pub fn scope_code(scope: ValueBindingScope) -> i32 {
-    return match (scope) {
-        InvalidScope -> -1,
-        LocalBinding -> 0,
-        ImportedBinding -> 1,
-    };
-}
-
 pub struct ValueBinding {
     token: i32,
-    kind: ValueBindingKind,
     scope: ValueBindingScope,
-    id: i32,
-    member: i32,
-    arity: i32,
+    target: ValueTarget,
 }
 
-pub fn binding(token: i32, kind: ValueBindingKind,
-    scope: ValueBindingScope, id: i32, member: i32, arity: i32)
-    -> ValueBinding {
+pub struct VariantTarget {
+    type_id: i32,
+    ordinal: i32,
+    field_count: i32,
+}
+
+pub enum ValueTarget {
+    InvalidTarget,
+    Callable(i32),
+    Variant(VariantTarget),
+}
+
+pub fn binding(token: i32, scope: ValueBindingScope,
+    target: ValueTarget) -> ValueBinding {
     return ValueBinding {
         token: token,
-        kind: kind,
         scope: scope,
-        id: id,
-        member: member,
-        arity: arity,
+        target: target,
     };
 }
 
@@ -84,19 +72,58 @@ pub fn read_binding(values: ValueTable, slot: i32) -> ValueBinding {
 
 pub fn binding_token(binding: ValueBinding) -> i32 { return binding.token; }
 
+fn target_is_callable(target: ValueTarget) -> bool {
+    return match (target) {
+        Callable(id) -> true,
+        _ -> false,
+    };
+}
+
+fn target_is_variant(target: ValueTarget) -> bool {
+    return match (target) {
+        Variant(value) -> true,
+        _ -> false,
+    };
+}
+
 pub fn binding_is_kind(binding: ValueBinding,
     expected: ValueBindingKind) -> bool {
-    return binding_code(binding.kind) == binding_code(expected);
+    return match (expected) {
+        CallableBinding -> target_is_callable(binding.target),
+        EnumVariantBinding -> target_is_variant(binding.target),
+    };
 }
 
 pub fn binding_is_scope(binding: ValueBinding,
     expected: ValueBindingScope) -> bool {
-    return scope_code(binding.scope) == scope_code(expected);
+    return binding.scope == expected;
 }
 
-pub fn binding_id(binding: ValueBinding) -> i32 { return binding.id; }
-pub fn binding_member(binding: ValueBinding) -> i32 { return binding.member; }
-pub fn binding_arity(binding: ValueBinding) -> i32 { return binding.arity; }
+fn valid_target(target: ValueTarget) -> bool {
+    return match (target) {
+        InvalidTarget -> false,
+        Callable(id) -> id >= 0,
+        Variant(value) -> value.type_id >= 0
+            && value.ordinal >= 0 && value.field_count >= 0,
+    };
+}
+
+fn target_matches_allocation(target: ValueTarget,
+    allocation: lowering::allocation::AllocationRow) -> bool {
+    return match (target) {
+        InvalidTarget -> false,
+        Callable(id) -> lowering::allocation::row_core_id(allocation) == id
+            && (lowering::allocation::row_has_kind(allocation,
+                    lowering::declarations::Function)
+                || lowering::allocation::row_has_kind(allocation,
+                    lowering::declarations::External)),
+        Variant(value) ->
+            lowering::allocation::row_declaration_id(allocation)
+                == value.type_id
+            && lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Enumeration),
+    };
+}
 
 pub fn write_binding(output: ValueTable, slot: i32,
     value: ValueBinding) -> i32 {
@@ -146,20 +173,12 @@ pub fn valid_slice(values: ValueTable, offset: i32, count: i32,
     while (row < finish) {
         let binding: ValueBinding = read_binding(values, row);
         let token: i32 = binding_token(binding);
-        let id: i32 = binding_id(binding);
-        let member: i32 = binding_member(binding);
-        let arity: i32 = binding_arity(binding);
-        if (token <= -1 || token >= token_count || id <= -1
-            || (!binding_is_kind(binding, CallableBinding)
-                && !binding_is_kind(binding, EnumVariantBinding))
+        if (token <= -1 || token >= token_count
+            || !valid_target(binding.target)
             || (!binding_is_scope(binding, LocalBinding)
                 && !binding_is_scope(binding, ImportedBinding))) {
             return false;
         }
-        if ((binding_is_kind(binding, CallableBinding)
-                && (member != -1 || arity != -1))
-            || (binding_is_kind(binding, EnumVariantBinding)
-                && (member <= -1 || arity <= -1))) { return false; }
         if (row > offset) {
             let previous: ValueBinding = read_binding(values, row - 1);
             let previous_token: i32 = binding_token(previous);
@@ -175,17 +194,9 @@ pub fn valid_slice(values: ValueTable, offset: i32, count: i32,
         while (allocation_index < allocation_rows) {
             let allocation: lowering::allocation::AllocationRow =
                 lowering::allocation::table_row(allocated, allocation_index);
-            if ((binding_is_kind(binding, CallableBinding)
-                    && lowering::allocation::row_core_id(allocation) == id
-                    && (lowering::allocation::row_has_kind(allocation,
-                            lowering::declarations::Function)
-                        || lowering::allocation::row_has_kind(allocation,
-                            lowering::declarations::External)))
-                || (binding_is_kind(binding, EnumVariantBinding)
-                    && lowering::allocation::row_declaration_id(allocation)
-                        == id
-                    && lowering::allocation::row_has_kind(allocation,
-                        lowering::declarations::Enumeration))) { found = true; }
+            if (target_matches_allocation(binding.target, allocation)) {
+                found = true;
+            }
             allocation_index += 1;
         }
         if (!found) { return false; }

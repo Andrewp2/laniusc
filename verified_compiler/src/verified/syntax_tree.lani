@@ -2,10 +2,10 @@ module verified::syntax_tree;
 
 import verified::host;
 import verified::parser;
-import verified::surface_tree;
 
-// Native compiler view of a materialized parser derivation. The packed
-// derivation remains the certificate format; lowering reads these records.
+// Native compiler view of a parser derivation. All modes build this tree
+// directly from typed parser states; artifact records are serialized only
+// when an output format requests them.
 const FIELD_BYTES: i32 = 8;
 pub const NODE_BYTES: i32 = 5 * FIELD_BYTES;
 pub const CHILD_BYTES: i32 = 3 * FIELD_BYTES;
@@ -66,104 +66,156 @@ fn child_view(memory: ptr, count: i32) -> [Child] {
     return slice_from_raw_parts(first, count);
 }
 
-pub fn decode(records: [i32], record_words: i32, offsets: [i32],
-    node_count: i32, token_count: i32) -> Tree {
+struct NativeShape {
+    valid: bool,
+    nodes: i32,
+    children: i32,
+    record_words: i32,
+}
+
+fn measure_derivation(reader: verified::parser::DerivationReader,
+    state_id: i32, depth: i32,
+    node_limit: i32, record_limit: i32,
+    previous: NativeShape) -> NativeShape {
+    let result: NativeShape = previous;
+    if (!previous.valid || depth <= 0 || previous.nodes >= node_limit) {
+        result.valid = false;
+        return result;
+    }
+    let header: verified::parser::DerivationHeader =
+        verified::parser::read_derivation_header(reader, state_id);
+    if (!header.valid || previous.record_words > record_limit
+        - verified::parser::DERIVATION_HEADER_WORDS
+        || header.child_count >
+        (record_limit - previous.record_words
+            - verified::parser::DERIVATION_HEADER_WORDS)
+            / verified::parser::DERIVATION_CHILD_WORDS) {
+        result.valid = false;
+        return result;
+    }
+    result.record_words += verified::parser::DERIVATION_HEADER_WORDS
+        + header.child_count * verified::parser::DERIVATION_CHILD_WORDS;
+    result.children += header.child_count;
+    let child: i32 = 0;
+    while (child < header.child_count) {
+        let selected: verified::parser::DerivationChild =
+            verified::parser::read_derivation_child(reader, state_id, child);
+        if (!selected.valid) {
+            result.valid = false;
+            return result;
+        }
+        if (selected.kind == verified::parser::StateChild) {
+            result = measure_derivation(reader, selected.payload,
+                depth - 1, node_limit,
+                record_limit, result);
+            if (!result.valid) { return result; }
+        }
+        child += 1;
+    }
+    if (result.nodes >= node_limit) { result.valid = false; return result; }
+    result.nodes += 1;
+    return result;
+}
+
+struct NativeCursor {
+    valid: bool,
+    nodes: i32,
+    children: i32,
+}
+
+fn write_derivation(reader: verified::parser::DerivationReader,
+    state_id: i32, depth: i32,
+    output: Tree, previous: NativeCursor) -> NativeCursor {
+    let result: NativeCursor = previous;
+    if (!previous.valid || depth <= 0) { result.valid = false; return result; }
+    let header: verified::parser::DerivationHeader =
+        verified::parser::read_derivation_header(reader, state_id);
+    if (!header.valid || previous.children > output.child_count
+        || header.child_count > output.child_count - previous.children) {
+        result.valid = false;
+        return result;
+    }
+    let first_child: i32 = previous.children;
+    result.children += header.child_count;
+    let children: [Child] = output.children;
+    let child: i32 = 0;
+    while (child < header.child_count) {
+        let selected: verified::parser::DerivationChild =
+            verified::parser::read_derivation_child(reader, state_id, child);
+        if (!selected.valid) { result.valid = false; return result; }
+        let payload: i32 = selected.payload;
+        if (selected.kind == verified::parser::StateChild) {
+            result = write_derivation(reader, selected.payload,
+                depth - 1, output, result);
+            if (!result.valid) { return result; }
+            payload = result.nodes - 1;
+        }
+        children[first_child + child] = Child {
+            kind: selected.kind, payload: payload,
+            semantic_kind: selected.semantic_kind,
+        };
+        child += 1;
+    }
+    if (result.nodes >= output.node_count) {
+        result.valid = false;
+        return result;
+    }
+    let nodes: [Node] = output.nodes;
+    nodes[result.nodes] = Node {
+        production: header.production, origin: header.origin,
+        end: header.end, first_child: first_child,
+        child_count: header.child_count,
+    };
+    result.nodes += 1;
+    return result;
+}
+
+// Binary compilation materializes the typed syntax tree directly from the
+// recognizer workspace. It observes the same depth, node and packed-record
+// budgets as certificate materialization, but never builds packed records.
+pub fn materialize_native(parsed: verified::parser::ParseResult,
+    workspace: verified::parser::WorkspaceStorage, token_count: i32,
+    depth_limit: i32, node_limit: i32, record_limit: i32) -> Tree {
     let invalid: Tree = empty();
-    if (record_words <= 0 || node_count <= 0 || token_count <= -1
-        || node_count > verified::host::I32_MAX / NODE_BYTES) {
+    if (!verified::parser::parse_succeeded(parsed)
+        || node_limit <= 0 || record_limit <= 0
+        || node_limit > verified::host::I32_MAX / NODE_BYTES) {
         return invalid;
     }
-    let children: i32 = 0;
-    let node: i32 = 0;
-    while (node <= node_count - 1) {
-        let record: i32 = verified::surface_tree::record(records,
-            record_words, offsets, node_count, node);
-        if (record <= -1) { return invalid; }
-        let count: i32 = records[record
-            + verified::parser::DERIVATION_CHILD_COUNT_FIELD];
-        if (count > verified::host::I32_MAX / CHILD_BYTES - children
-            || records[record + verified::parser::DERIVATION_PRODUCTION_FIELD] <= -1
-            || records[record + verified::parser::DERIVATION_ORIGIN_FIELD] <= -1
-            || records[record + verified::parser::DERIVATION_END_FIELD]
-                <= records[record
-                    + verified::parser::DERIVATION_ORIGIN_FIELD] - 1) {
-            return invalid;
-        }
-        let child: i32 = 0;
-        while (child <= count - 1) {
-            let slot: i32 = record + verified::parser::DERIVATION_HEADER_WORDS
-                + child * verified::parser::DERIVATION_CHILD_WORDS;
-            let tag: i32 = records[slot
-                + verified::parser::DERIVATION_CHILD_TAG_FIELD];
-            let payload: i32 = records[slot
-                + verified::parser::DERIVATION_CHILD_PAYLOAD_FIELD];
-            if (payload <= -1) { return invalid; }
-            if (verified::parser::encoded_child_is(tag,
-                    verified::parser::TokenChild)) {
-                if (payload >= token_count) { return invalid; }
-            } else {
-                if (!verified::parser::encoded_child_is(tag,
-                        verified::parser::StateChild)
-                    || payload >= node) { return invalid; }
-            }
-            child += 1;
-        }
-        children += count;
-        node += 1;
+    let derivation: verified::parser::DerivationInput =
+        verified::parser::DerivationInput {
+            workspace: workspace, token_count: token_count,
+            state_count: verified::parser::parse_state_count(parsed),
+            state_id: verified::parser::parse_root_state(parsed),
+        };
+    let reader: verified::parser::DerivationReader =
+        verified::parser::derivation_reader(derivation);
+    let shape: NativeShape = measure_derivation(reader,
+        verified::parser::parse_root_state(parsed), depth_limit,
+        node_limit, record_limit,
+        NativeShape { valid: true, nodes: 0, children: 0,
+            record_words: 0 });
+    if (!shape.valid || shape.nodes <= 0
+        || shape.children > verified::host::I32_MAX / CHILD_BYTES) {
+        return invalid;
     }
     let node_memory: ptr = verified::host::alloc(
-        node_count * NODE_BYTES, ALIGNMENT);
+        shape.nodes * NODE_BYTES, ALIGNMENT);
     let child_bytes: i32 = CHILD_BYTES;
-    if (children > 0) { child_bytes = children * CHILD_BYTES; }
+    if (shape.children > 0) { child_bytes = shape.children * CHILD_BYTES; }
     let child_memory: ptr = verified::host::alloc(child_bytes, ALIGNMENT);
     if (node_memory == 0 || child_memory == 0) { return invalid; }
-    let native_nodes: [Node] = node_view(node_memory, node_count);
-    let native_children: [Child] = child_view(child_memory, children);
-    node = 0;
-    let first_child: i32 = 0;
-    while (node <= node_count - 1) {
-        let record: i32 = offsets[node];
-        let count: i32 = records[record
-            + verified::parser::DERIVATION_CHILD_COUNT_FIELD];
-        native_nodes[node] = Node {
-            production: records[record
-                + verified::parser::DERIVATION_PRODUCTION_FIELD],
-            origin: records[record
-                + verified::parser::DERIVATION_ORIGIN_FIELD],
-            end: records[record + verified::parser::DERIVATION_END_FIELD],
-            first_child: first_child,
-            child_count: count,
-        };
-        let child: i32 = 0;
-        while (child <= count - 1) {
-            let slot: i32 = record + verified::parser::DERIVATION_HEADER_WORDS
-                + child * verified::parser::DERIVATION_CHILD_WORDS;
-            let tag: i32 = records[slot
-                + verified::parser::DERIVATION_CHILD_TAG_FIELD];
-            let kind: verified::parser::ChildKind =
-                verified::parser::StateChild;
-            if (verified::parser::encoded_child_is(tag,
-                    verified::parser::TokenChild)) {
-                kind = verified::parser::TokenChild;
-            }
-            native_children[first_child + child] = Child {
-                kind: kind,
-                payload: records[slot
-                    + verified::parser::DERIVATION_CHILD_PAYLOAD_FIELD],
-                semantic_kind: records[slot
-                    + verified::parser::DERIVATION_CHILD_KIND_FIELD],
-            };
-            child += 1;
-        }
-        first_child += count;
-        node += 1;
-    }
-    return Tree {
-        nodes: native_nodes,
-        children: native_children,
-        node_count: node_count,
-        child_count: children,
+    let output: Tree = Tree {
+        nodes: node_view(node_memory, shape.nodes),
+        children: child_view(child_memory, shape.children),
+        node_count: shape.nodes, child_count: shape.children,
     };
+    let written: NativeCursor = write_derivation(reader,
+        verified::parser::parse_root_state(parsed), depth_limit, output,
+        NativeCursor { valid: true, nodes: 0, children: 0 });
+    if (!written.valid || written.nodes != shape.nodes
+        || written.children != shape.children) { return invalid; }
+    return output;
 }
 
 pub fn production(tree: Tree, node: i32) -> i32 {

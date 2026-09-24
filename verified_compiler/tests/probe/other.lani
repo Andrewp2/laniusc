@@ -1,0 +1,5 @@
+module probe::other;
+
+pub struct Pair {
+    other: i32,
+}

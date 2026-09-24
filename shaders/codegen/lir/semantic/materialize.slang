@@ -316,6 +316,35 @@ uint aggregate_word_count_for_hir(uint node, uint hir_count)
         semantic_type_for_hir(node, hir_count), hir_count);
 }
 
+uint match_binding_word_offset(HirMatchPayload binding, uint hir_count)
+{
+    uint start = compact_match_payload_start[binding.arm];
+    uint count = compact_match_payload_count[binding.arm];
+    uint total = active_match_payload_count();
+    if (binding.ordinal >= count || start >= total ||
+        binding.ordinal >= total - start)
+        return LIR_INVALID;
+    uint offset = 1u; // discriminant
+    for (uint ordinal = 0u; ordinal < binding.ordinal; ordinal += 1u)
+    {
+        HirMatchPayload prior = compact_match_payloads[start + ordinal];
+        if (prior.arm != binding.arm || prior.ordinal != ordinal ||
+            prior.pattern >= hir_count)
+            return LIR_INVALID;
+        uint words = aggregate_word_count_for_hir(prior.pattern, hir_count);
+        if (words == 0u)
+            words = aggregate_word_count_for_type(
+                semantic_value_type[prior.pattern], hir_count);
+        if (words == 0u)
+            words = semantic_value_type[prior.pattern] == SEMANTIC_LIR_TY_STRING
+                ? 2u : 1u;
+        if (words == LIR_INVALID || offset > LIR_INVALID - words)
+            return LIR_INVALID;
+        offset += words;
+    }
+    return offset;
+}
+
 uint enum_constructor_word_count(uint node, HirPayload payload, uint hir_count)
 {
     uint total = 1u; // discriminant
@@ -829,8 +858,18 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         }
     }
     if ((op == SEMANTIC_LIR_OP_VALUE_GET || op == SEMANTIC_LIR_OP_VALUE_SET ||
-         op == SEMANTIC_LIR_OP_STORE) && !match_expression && !short_circuit)
+         op == SEMANTIC_LIR_OP_STORE) && !match_expression &&
+        !match_binding && !short_circuit)
         core.type_id = semantic_value_type[node];
+    // The six synthetic rows of &&/|| carry the boolean result, even when
+    // the RHS compares an aggregate. Its operand's ABI width is not the
+    // width of the short-circuit temporary.
+    if (short_circuit)
+    {
+        core.type_id = 2u;
+        type_ref_tag = 1u;
+        core.type_ref_payload = 2u;
+    }
     // A declaration-setting row represents the value being stored, while the
     // statement node itself need not carry an expression type. Preserve the
     // checked RHS reference here so target ABIs can distinguish instantiated
@@ -914,6 +953,11 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         core.value_word_count = aggregate_word_count_for_hir(node, hir_count);
     if (core.value_word_count == 0u)
         core.value_word_count = aggregate_word_count_for_type(core.type_id, hir_count);
+    // Comparison retains its operand type for machine selection, but its
+    // produced value is one scalar bool. Inheriting an enum operand's word
+    // count makes a subsequent &&/|| store dereference that bool as a pointer.
+    if (op == SEMANTIC_LIR_OP_COMPARE || short_circuit)
+        core.value_word_count = 0u;
     if (array_for && (local_row == 11u || local_row == 12u))
     {
         // semantic_array_length[node] describes the iterable, not one loop
@@ -989,7 +1033,12 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     if ((match_expression && op == SEMANTIC_LIR_OP_LOAD) ||
         (match_binding && local_row == 1u))
         core.flags |= SEMANTIC_LIR_FLAG_FIELD;
-    if (op == SEMANTIC_LIR_OP_INVALID) core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
+    // The layout passes mark by-value cycles and unsupported nested payloads
+    // with LIR_INVALID. Never let that sentinel become an x86 copy width or
+    // silently skip the initialization of a match scrutinee.
+    if (op == SEMANTIC_LIR_OP_INVALID ||
+        core.value_word_count == LIR_INVALID)
+        core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
     if (match_expression && match_phase == 6u)
         core.flags |= SEMANTIC_LIR_FLAG_BRANCH_DEPTH_VALID;
     if (semantic_lir_is_for(hir, payload) &&
@@ -1129,7 +1178,9 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         HirMatchArm arm = compact_match_arms[binding.arm];
         uint match_node = arm.owner;
         uint scrutinee_declaration = gParams.n_tokens + hir_count + match_node;
-        uint word_offset = 1u + binding.ordinal;
+        uint word_offset = match_binding_word_offset(binding, hir_count);
+        if (word_offset == LIR_INVALID)
+            core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
         if (local_row == 0u)
             operands.a = scrutinee_declaration;
         else if (local_row == 1u)

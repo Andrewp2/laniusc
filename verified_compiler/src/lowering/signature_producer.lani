@@ -1,14 +1,18 @@
 module lowering::signature_producer;
 
-import backend::syntax;
 import verified::production;
 import lowering::declarations;
 import lowering::allocation;
+import lowering::constant_catalog;
+import lowering::constant_expression;
 import lowering::aliases;
 import lowering::types;
+import ir::type_ref;
 import lowering::signatures;
 import lowering::signature_index;
 import verified::surface_type;
+import verified::surface_expr;
+import verified::surface_declaration;
 import verified::syntax_tree;
 import verified::surface_atoms;
 import verified::parser;
@@ -18,11 +22,6 @@ import verified::host;
 import lowering::unit_context;
 
 const DECIMAL_RADIX: i32 = 10;
-// Child positions follow grammar/lanius.bnf.
-const CONSTANT_TYPE_CHILD: i32 = 3;
-const CONSTANT_VALUE_CHILD: i32 = 5;
-const STRUCTURE_FIELDS_CHILD: i32 = 5;
-const ENUMERATION_VARIANTS_CHILD: i32 = 5;
 const LIST_ITEM_CHILD: i32 = 0;
 const LIST_TAIL_CHILD: i32 = 1;
 const MEMBER_NAME_CHILD: i32 = 0;
@@ -33,45 +32,14 @@ const ENUM_VARIANT_TUPLE_FIELDS_CHILD: i32 = 1;
 const UNARY_OPERAND_CHILD: i32 = 1;
 const EXPRESSION_HEAD_CHILD: i32 = 0;
 const GROUP_VALUE_CHILD: i32 = 1;
-const FUNCTION_PARAMETERS_CHILD: i32 = 4;
-const FUNCTION_RESULT_CHILD: i32 = 6;
-const EXTERNAL_PARAMETERS_CHILD: i32 = 6;
-const EXTERNAL_RESULT_CHILD: i32 = 8;
-
-struct CallableChildren {
-    parameters: i32,
-    result_type: i32,
-}
-
-fn callable_children(kind: lowering::declarations::DeclarationKind)
-    -> CallableChildren {
-    if (lowering::declarations::same_kind(kind,
-            lowering::declarations::External)) {
-        return CallableChildren {
-            parameters: EXTERNAL_PARAMETERS_CHILD,
-            result_type: EXTERNAL_RESULT_CHILD,
-        };
-    }
-    return CallableChildren {
-        parameters: FUNCTION_PARAMETERS_CHILD,
-        result_type: FUNCTION_RESULT_CHILD,
-    };
-}
 
 enum MemberListKind {
     StructureFields,
     Parameters,
 }
 
-fn member_list_code(kind: MemberListKind) -> i32 {
-    return match (kind) {
-        StructureFields -> 0,
-        Parameters -> 1,
-    };
-}
-
 fn member_list_is(kind: MemberListKind, expected: MemberListKind) -> bool {
-    return member_list_code(kind) == member_list_code(expected);
+    return kind == expected;
 }
 
 // A signature unit context is ordered with lowering::units descriptors and
@@ -90,10 +58,10 @@ struct SignatureContext {
     aliases: lowering::aliases::Catalog,
     alias_scratch: [i32],
     alias_scratch_capacity: i32,
-    type_output: [i32],
-    type_capacity: i32,
+    type_output: lowering::types::Results,
     allocations: lowering::allocation::Table,
     writer: lowering::signature_index::Writer,
+    constant_graph: lowering::constant_expression::Input,
 }
 
 fn child(context: SignatureContext, node: i32, index: i32) -> i32 {
@@ -107,7 +75,8 @@ fn token_child(context: SignatureContext, node: i32, index: i32) -> i32 {
 fn production(context: SignatureContext, node: i32) -> i32 {
     return verified::syntax_tree::production(context.tree, node);
 }
-fn lower_type(context: SignatureContext, type_node: i32, depth: i32) -> i32 {
+fn lower_type(context: SignatureContext, type_node: i32,
+    depth: i32) -> ir::type_ref::TypeRef {
     let type_input: verified::surface_type::TypeInput =
         verified::surface_type::TypeInput {
             tree: context.tree,
@@ -118,7 +87,7 @@ fn lower_type(context: SignatureContext, type_node: i32, depth: i32) -> i32 {
         context.type_arena;
     let root: i32 = verified::surface_type::extract(type_input, type_output);
     if (root <= -1) {
-        return -1;
+        return ir::type_ref::Invalid;
     }
     let source_region: lowering::types::WordRegion =
         lowering::types::region(context.source, context.source_length);
@@ -137,20 +106,24 @@ fn lower_type(context: SignatureContext, type_node: i32, depth: i32) -> i32 {
         lowering::types::TypeWorkspace {
             alias_scratch: lowering::types::region(context.alias_scratch,
                 context.alias_scratch_capacity),
-            output: lowering::types::region(context.type_output,
-                context.type_capacity),
+            output: context.type_output,
         };
-    return lowering::types::lower(input, workspace);
+    let lowered: lowering::types::TypeLowerResult =
+        lowering::types::lower(input, workspace);
+    let missing: ir::type_ref::TypeRef = ir::type_ref::Invalid;
+    return match (lowered) {
+        lowering::types::Lowered(kind) -> kind,
+        _ -> missing,
+    };
 }
-fn result_type(context: SignatureContext, declaration: i32,
-    return_index: i32, depth: i32) -> i32 {
-    let return_node: i32 = child(context, declaration, return_index);
+fn result_type(context: SignatureContext, return_node: i32,
+    depth: i32) -> ir::type_ref::TypeRef {
     let return_production: i32 = production(context, return_node);
     if (return_production == verified::production::RET_VOID) {
-        return 0;
+        return ir::type_ref::Void;
     }
     if (return_production != verified::production::RET_TYPE) {
-        return -1;
+        return ir::type_ref::Invalid;
     }
     return lower_type(context, child(context, return_node, 1), depth);
 }
@@ -224,46 +197,67 @@ fn append_constant(context: SignatureContext, declaration: i32, id: i32,
     let token_count: i32 = context.token_count;
     let output: lowering::signature_index::Writer = context.writer;
     if (id <= -1) { return false; }
-    let type_tag: i32 = lower_type(context,
-        child(context, declaration, CONSTANT_TYPE_CHILD), depth);
-    if (type_tag <= -1) { return false; }
+    let view: verified::surface_declaration::Declaration =
+        verified::surface_declaration::read(context.tree, declaration);
+    let missing: verified::surface_declaration::ConstantDeclaration =
+        verified::surface_declaration::ConstantDeclaration {
+            name: -1, value_type: -1, value: -1 };
+    let constant: verified::surface_declaration::ConstantDeclaration =
+        match (view) {
+            verified::surface_declaration::Constant(value) -> value,
+            _ -> missing,
+        };
+    let type_tag: ir::type_ref::TypeRef = lower_type(context,
+        constant.value_type, depth);
+    if (!ir::type_ref::valid(type_tag)) { return false; }
+    let constant_start: i32 = -1;
+    if (ir::type_ref::same(type_tag, ir::type_ref::I32)) {
+        let graph: lowering::constant_expression::Input =
+            context.constant_graph;
+        let fuel: i32 = verified::surface_expr::node_count(graph.arena)
+            + graph.constant_count;
+        let evaluated: lowering::constant_expression::Result =
+            lowering::constant_expression::constant(graph, id, fuel);
+        if (!lowering::constant_expression::succeeded(evaluated)) {
+            return false;
+        }
+        constant_start = lowering::signature_index::push_scalar(output,
+            lowering::constant_expression::value(evaluated), 0);
+    } else {
     let expression_node: i32 = literal_node(context,
-        child(context, declaration, CONSTANT_VALUE_CHILD), depth);
+        constant.value, depth);
     if (expression_node <= -1) { return false; }
     let production: i32 = production(context, expression_node);
     let token: i32 = token_child(context, expression_node, 0);
     if (token <= -1 || token >= token_count) { return false; }
     let token_start: i32 = tokens[token].start;
     let token_finish: i32 = tokens[token].finish;
-    let constant_start: i32 = -1;
     if (production == verified::production::TRUE
         || production == verified::production::FALSE) {
-        if (type_tag != backend::syntax::type_code(
-                backend::syntax::TypeBool)) { return false; }
+        let expected: ir::type_ref::TypeRef = ir::type_ref::Bool;
+        if (!ir::type_ref::same(type_tag, expected)) { return false; }
         let value: i32 = 0;
         if (production == verified::production::TRUE) { value = 1; }
         constant_start = lowering::signature_index::push_scalar(
             output, value, 0);
     }
     if (production == verified::production::INT) {
-        if (type_tag != backend::syntax::type_code(backend::syntax::TypeI32)
-            && type_tag != backend::syntax::type_code(
-                backend::syntax::TypeUsize)
-            && type_tag != backend::syntax::type_code(
-                backend::syntax::TypePointer)) { return false; }
+        let unsigned: ir::type_ref::TypeRef = ir::type_ref::Usize;
+        let pointer: ir::type_ref::TypeRef = ir::type_ref::Pointer;
+        if (!ir::type_ref::same(type_tag, unsigned)
+            && !ir::type_ref::same(type_tag, pointer)) { return false; }
         let value: i32 = decimal_literal(source, source_length,
             token_start, token_finish);
         if (value <= -1
-            || (type_tag == backend::syntax::type_code(
-                    backend::syntax::TypePointer) && value != 0)) {
+            || (ir::type_ref::same(type_tag, pointer) && value != 0)) {
             return false;
         }
         constant_start = lowering::signature_index::push_scalar(
             output, value, 0);
     }
     if (production == verified::production::STRING) {
-        if (type_tag != backend::syntax::type_code(
-                backend::syntax::TypeString)
+        let expected: ir::type_ref::TypeRef = ir::type_ref::String;
+        if (!ir::type_ref::same(type_tag, expected)
             || token_finish - token_start <= 1
             || source[token_start] != verified::ascii::QUOTE
             || source[token_finish - 1] != verified::ascii::QUOTE
@@ -279,6 +273,7 @@ fn append_constant(context: SignatureContext, declaration: i32, id: i32,
         let count: i32 = token_finish - token_start - 2;
         constant_start = lowering::signature_index::push_string(output,
             source, source_length, token_start + 1, count);
+    }
     }
     if (constant_start <= -1) { return false; }
     let record: lowering::signatures::SignatureRecord =
@@ -330,13 +325,14 @@ fn append_members(context: SignatureContext, list: i32,
                 && member_kind != verified::production::PARAM_NAMED)) {
             return -1;
         }
-        let tag: i32 = lower_type(context,
+        let tag: ir::type_ref::TypeRef = lower_type(context,
             child(context, member, MEMBER_TYPE_CHILD), depth);
         let name: i32 = token_child(context, member, MEMBER_NAME_CHILD);
-        if (tag <= -1 || name <= -1
+        if (!ir::type_ref::valid(tag) || name <= -1
             || !lowering::signature_index::push_member(output,
                 lowering::signatures::SignatureMember {
-                    name: name, type_tag: tag,
+                    name: name,
+                    type_tag: tag,
                 })) { return -1; }
         count += 1;
         let tail: i32 = child(context, current, LIST_TAIL_CHILD);
@@ -399,8 +395,9 @@ fn append_enum_fields(context: SignatureContext, list: i32, depth: i32,
             return -1;
         }
         let type_node: i32 = child(context, current, LIST_ITEM_CHILD);
-        let tag: i32 = lower_type(context, type_node, depth);
-        if (tag <= -1 || !lowering::signature_index::push_field(
+        let tag: ir::type_ref::TypeRef = lower_type(context, type_node, depth);
+        if (!ir::type_ref::valid(tag)
+            || !lowering::signature_index::push_field(
                 output, variant_slot, tag)) { return -1; }
         count += 1;
         let tail: i32 = child(context, current, LIST_TAIL_CHILD);
@@ -431,10 +428,19 @@ fn append_enumeration(context: SignatureContext, declaration: i32,
     id: i32, depth: i32) -> bool {
     let output: lowering::signature_index::Writer = context.writer;
     if (id <= -1 || depth <= 0) { return false; }
+    let view: verified::surface_declaration::Declaration =
+        verified::surface_declaration::read(context.tree, declaration);
+    let missing: verified::surface_declaration::Nominal =
+        verified::surface_declaration::Nominal {
+            name: -1, generics: -1, bounds: -1, members: -1 };
+    let enumeration: verified::surface_declaration::Nominal =
+        match (view) {
+            verified::surface_declaration::Enumeration(value) -> value,
+            _ -> missing,
+        };
     let variant_start: i32 =
         lowering::signature_index::variant_position(output);
-    let list: i32 = child(context, declaration,
-        ENUMERATION_VARIANTS_CHILD);
+    let list: i32 = enumeration.members;
     let list_kind: i32 = production(context, list);
     let arity: i32 = 0;
     if (list_kind != verified::production::ENUM_VARIANTS_NONE) {
@@ -504,53 +510,102 @@ fn append_enumeration(context: SignatureContext, declaration: i32,
             declaration_kind: lowering::declarations::Enumeration,
             shape: lowering::signatures::EnumerationShape,
             arity: arity,
-            result_type: -1,
+            result_type: ir::type_ref::Invalid,
         };
     return lowering::signature_index::push_record(output, record,
         -1, variant_start, -1);
 }
+struct SignatureSource {
+    kind: lowering::declarations::DeclarationKind,
+    shape: lowering::signatures::SignatureShape,
+    members: i32,
+    result_node: i32,
+    mode: MemberListKind,
+}
+
+fn structure_source(nominal: verified::surface_declaration::Nominal)
+    -> SignatureSource {
+    return SignatureSource {
+        kind: lowering::declarations::Structure,
+        shape: lowering::signatures::StructureShape,
+        members: nominal.members, result_node: -1,
+        mode: StructureFields,
+    };
+}
+
+fn function_source(callable: verified::surface_declaration::Callable)
+    -> SignatureSource {
+    return SignatureSource {
+        kind: lowering::declarations::Function,
+        shape: lowering::signatures::InternalFunctionShape,
+        members: callable.parameters,
+        result_node: callable.result_type, mode: Parameters,
+    };
+}
+
+fn external_source(callable: verified::surface_declaration::ExternalCallable)
+    -> SignatureSource {
+    return SignatureSource {
+        kind: lowering::declarations::External,
+        shape: lowering::signatures::ExternalFunctionShape,
+        members: callable.parameters,
+        result_node: callable.result_type, mode: Parameters,
+    };
+}
+
+fn invalid_source() -> SignatureSource {
+    return SignatureSource {
+        kind: lowering::declarations::Invalid,
+        shape: lowering::signatures::StructureShape,
+        members: -1, result_node: -1, mode: StructureFields,
+    };
+}
+
 fn append_signature(context: SignatureContext, declaration: i32,
     kind: lowering::declarations::DeclarationKind,
     id: i32, depth: i32) -> bool {
     if (id <= -1) { return false; }
-    let shape: lowering::signatures::SignatureShape =
-        lowering::signatures::StructureShape;
-    let return_tag: i32 = -1;
-    let list_index: i32 = STRUCTURE_FIELDS_CHILD;
-    let mode: MemberListKind = StructureFields;
-    if (lowering::declarations::same_kind(kind,
-            lowering::declarations::Function)
-        || lowering::declarations::same_kind(kind,
-            lowering::declarations::External)) {
-        if (lowering::declarations::same_kind(kind,
-                lowering::declarations::Function)) {
-            shape = lowering::signatures::InternalFunctionShape;
-        } else {
-            shape = lowering::signatures::ExternalFunctionShape;
+    let view: verified::surface_declaration::Declaration =
+        verified::surface_declaration::read(context.tree, declaration);
+    let source: SignatureSource = match (view) {
+        verified::surface_declaration::Structure(nominal) ->
+            structure_source(nominal),
+        verified::surface_declaration::Function(function_shape) ->
+            function_source(function_shape),
+        verified::surface_declaration::External(external_shape) ->
+            external_source(external_shape),
+        _ -> invalid_source(),
+    };
+    if (source.members <= -1
+        || !lowering::declarations::same_kind(kind, source.kind)) {
+        return false;
+    }
+    let return_tag: ir::type_ref::TypeRef = ir::type_ref::Invalid;
+    if (member_list_is(source.mode, Parameters)) {
+        return_tag = result_type(context, source.result_node, depth);
+        if (!ir::type_ref::valid_result(return_tag)) {
+            return false;
         }
-        let children: CallableChildren = callable_children(kind);
-        list_index = children.parameters;
-        return_tag = result_type(context, declaration,
-            children.result_type, depth);
-        if (return_tag <= -1) { return false; }
-        mode = Parameters;
     }
     let output: lowering::signature_index::Writer = context.writer;
     let member_start: i32 =
         lowering::signature_index::member_position(output);
     let arity: i32 = append_members(context,
-        child(context, declaration, list_index), mode, depth);
-    if (arity <= -1) { return false; }
+        source.members, source.mode, depth);
+    if (arity <= -1) {
+        return false;
+    }
     let record: lowering::signatures::SignatureRecord =
         lowering::signatures::SignatureRecord {
             id: id,
             declaration_kind: kind,
-            shape: shape,
+            shape: source.shape,
             arity: arity,
             result_type: return_tag,
         };
-    return lowering::signature_index::push_record(output, record,
+    let pushed: bool = lowering::signature_index::push_record(output, record,
         member_start, -1, -1);
+    return pushed;
 }
 fn lower(context: SignatureContext) -> bool {
     let source_length: i32 = context.source_length;
@@ -565,7 +620,7 @@ fn lower(context: SignatureContext) -> bool {
         || node_count <= 0
         || type_arena.capacity <= 0 || resolution_count <= -1
         || context.alias_scratch_capacity <= -1
-        || context.type_capacity <= 0
+        || context.type_output.count <= 0
         || !lowering::declarations::table_has_exact_rows(
             declaration_table)
         || !lowering::allocation::table_has_exact_rows(allocated)) {
@@ -591,7 +646,9 @@ fn lower(context: SignatureContext) -> bool {
             && !append_constant(context,
                 lowering::allocation::row_declaration(allocation),
                 lowering::allocation::row_declaration_id(allocation),
-                node_count)) { return false; }
+                node_count)) {
+            return false;
+        }
         if (lowering::allocation::row_has_kind(allocation,
                 lowering::declarations::Enumeration)
             && !append_enumeration(context,
@@ -614,7 +671,9 @@ fn lower(context: SignatureContext) -> bool {
             }
             if (!append_signature(context,
                     lowering::allocation::row_declaration(allocation),
-                    kind, signature_id, node_count)) { return false; }
+                    kind, signature_id, node_count)) {
+                return false;
+            }
         }
         row += 1;
     }
@@ -738,17 +797,19 @@ pub struct SignatureUnitInputs {
     resolutions: lowering::types::ResolutionTable,
     aliases: lowering::aliases::Table,
     allocations: lowering::allocation::Table,
+    global_declarations: lowering::declarations::Table,
     expected_declaration_words: i32,
 }
 
 pub struct SignatureUnitWorkspace {
     alias_path_scratch: WordRegion,
-    type_output: WordRegion,
+    type_output: lowering::types::Results,
     type_arena: verified::surface_type::TypeArena,
     resolutions: lowering::types::ResolutionTable,
     declarations: lowering::declarations::Table,
     allocations: lowering::allocation::Table,
     writer: lowering::signature_index::Writer,
+    constant_graph: lowering::constant_catalog::Workspace,
 }
 
 // Lower every descriptor-ordered unit against one allocation table. The
@@ -785,12 +846,21 @@ pub fn lower_units(input: SignatureUnitInputs,
             source_words: source_catalog_length,
             tokens: token_catalog,
         };
+    let constant_input: lowering::constant_catalog::Input =
+        lowering::constant_catalog::Input {
+            contexts: context_region,
+            sources: lexical_catalogs,
+            trees: tree_catalog,
+            allocations: input.allocations,
+            declarations: input.global_declarations,
+        };
     let resolution_catalog_length: i32 = resolution_region.count;
     let alias_catalog: [lowering::aliases::Catalog] = alias_region.data;
     let alias_catalog_count: i32 = alias_region.count;
     let declaration_words: i32 = input.expected_declaration_words;
     let alias_path_region: WordRegion = workspace.alias_path_scratch;
-    let type_output_region: WordRegion = workspace.type_output;
+    let type_output_region: lowering::types::Results =
+        workspace.type_output;
     let type_arena_work: verified::surface_type::TypeArena =
         workspace.type_arena;
     let resolution_work: lowering::types::ResolutionTable =
@@ -801,8 +871,7 @@ pub fn lower_units(input: SignatureUnitInputs,
         workspace.allocations;
     let alias_path_scratch: [i32] = alias_path_region.data;
     let alias_path_capacity: i32 = alias_path_region.words;
-    let type_output: [i32] = type_output_region.data;
-    let type_capacity: i32 = type_output_region.words;
+    let type_capacity: i32 = type_output_region.count;
     let type_arena_capacity: i32 = type_arena_work.capacity;
     let resolution_scratch: [lowering::types::ResolutionRow] =
         resolution_work.data;
@@ -860,6 +929,13 @@ pub fn lower_units(input: SignatureUnitInputs,
         || allocation_header.rows != total_rows) {
         return false;
     }
+    if (!lowering::constant_catalog::build(constant_input,
+            workspace.constant_graph)) {
+        return false;
+    }
+    let constant_graph: lowering::constant_expression::Input =
+        lowering::constant_catalog::expression_input(constant_input,
+            workspace.constant_graph);
     // Descriptor ranges are not allowed to alias another unit's input. This
     // prevents a repeated catalog slice from silently compiling one unit twice.
     unit = 0;
@@ -958,12 +1034,14 @@ pub fn lower_units(input: SignatureUnitInputs,
             aliases: aliases,
             alias_scratch: alias_path_scratch,
             alias_scratch_capacity: alias_path_capacity,
-            type_output: type_output,
-            type_capacity: type_capacity,
+            type_output: type_output_region,
             allocations: local_allocations,
             writer: writer,
+            constant_graph: constant_graph,
         };
-        if (!lower(signature_context)) { return false; }
+        if (!lower(signature_context)) {
+            return false;
+        }
         allocation_row += rows;
         unit += 1;
     }

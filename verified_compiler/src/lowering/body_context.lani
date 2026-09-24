@@ -1,12 +1,16 @@
 module lowering::body_context;
 
-import backend::syntax;
 import lowering::allocation;
+import lowering::declarations;
 import lowering::aliases;
+import ir::body_catalog;
+import ir::body_events;
+import ir::type_ref;
 import lowering::error;
 import lowering::locals;
 import lowering::signature_index;
 import lowering::types;
+import lowering::unit_context;
 import lowering::value_catalog;
 import verified::parser;
 import verified::host;
@@ -18,92 +22,6 @@ import verified::token;
 
 const DECIMAL_RADIX: i32 = 10;
 type LocalTable = lowering::locals::Table;
-// Body transport is a sequence of backend::compile function inputs.  The
-// table header is [version, pointer_bits, function_count, word_count].  Each
-// following record is [word_count, 1, 64, function_id, result_type,
-// parameter_count, body_word_count, (parameter_id, type)*, body...].  A
-// parameter/local ID is the canonical token index of its declaration.  This
-// is deliberately a transport boundary: no host name lookup or guessed ID is
-// performed here.
-pub const VERSION: i32 = 1;
-pub const POINTER_BITS: i32 = backend::syntax::POINTER_BITS;
-pub const HEADER: i32 = 4;
-pub const RECORD_HEADER: i32 = backend::syntax::FUNCTION_RECORD_PREFIX_WORDS
-    + backend::syntax::FUNCTION_HEADER_WORDS;
-const HEADER_VERSION_FIELD: i32 = 0;
-const HEADER_POINTER_BITS_FIELD: i32 = 1;
-const HEADER_FUNCTION_COUNT_FIELD: i32 = 2;
-const HEADER_WORD_COUNT_FIELD: i32 = 3;
-const FUNCTION_RECORD_WORDS_FIELD: i32 = 0;
-const FUNCTION_RECORD_FIELD: i32 = backend::syntax::FUNCTION_RECORD_PREFIX_WORDS;
-
-pub struct BodyHeader {
-    version: i32,
-    pointer_bits: i32,
-    functions: i32,
-    words: i32,
-}
-
-pub fn empty_header() -> BodyHeader {
-    return BodyHeader {
-        version: VERSION, pointer_bits: POINTER_BITS,
-        functions: 0, words: HEADER,
-    };
-}
-
-pub fn read_header_at(input: [i32], offset: i32) -> BodyHeader {
-    return BodyHeader {
-        version: input[offset + HEADER_VERSION_FIELD],
-        pointer_bits: input[offset + HEADER_POINTER_BITS_FIELD],
-        functions: input[offset + HEADER_FUNCTION_COUNT_FIELD],
-        words: input[offset + HEADER_WORD_COUNT_FIELD],
-    };
-}
-
-pub fn write_header_at(output: [i32], offset: i32, header: BodyHeader) {
-    output[offset + HEADER_VERSION_FIELD] = header.version;
-    output[offset + HEADER_POINTER_BITS_FIELD] = header.pointer_bits;
-    output[offset + HEADER_FUNCTION_COUNT_FIELD] = header.functions;
-    output[offset + HEADER_WORD_COUNT_FIELD] = header.words;
-}
-
-pub fn header_words_at(input: [i32], offset: i32) -> i32 {
-    return input[offset + HEADER_WORD_COUNT_FIELD];
-}
-
-pub struct FunctionSpan {
-    words: i32,
-    function: i32,
-}
-
-pub fn read_function_span(input: [i32], position: i32)
-    -> FunctionSpan {
-    return FunctionSpan {
-        words: input[position + FUNCTION_RECORD_WORDS_FIELD],
-        function: position + FUNCTION_RECORD_FIELD,
-    };
-}
-
-pub fn write_function_words(output: [i32], position: i32,
-    words: i32) {
-    output[position + FUNCTION_RECORD_WORDS_FIELD] = words;
-}
-
-pub fn function_position(position: i32) -> i32 {
-    return position + FUNCTION_RECORD_FIELD;
-}
-
-pub fn span_end(span: FunctionSpan) -> i32 {
-    return span.function + span.words;
-}
-
-pub fn span_fits(span: FunctionSpan, finish: i32,
-    minimum_words: i32) -> bool {
-    return span.words >= minimum_words && span.function >= 0
-        && span.function <= finish
-        && span.words <= finish - span.function;
-}
-
 pub fn invalid() -> i32 {
     return lowering::error::failure(lowering::error::InvalidInput);
 }
@@ -127,13 +45,18 @@ pub struct BodyContext {
     alias_catalog: lowering::aliases::Catalog,
     alias_scratch: [i32],
     alias_scratch_capacity: i32,
-    type_output: [i32],
-    type_output_capacity: i32,
+    type_output: lowering::types::Results,
     allocated: lowering::allocation::Table,
     signature_index: lowering::signature_index::Table,
     values: lowering::value_catalog::ValueTable,
     locals: LocalTable,
+    return_kind: ir::type_ref::TypeRef,
     owner_unit: i32,
+    contexts: lowering::unit_context::Table,
+    source_catalog: [i32],
+    token_catalog: verified::token::TokenTable,
+    global_declarations: lowering::declarations::Table,
+    trees: verified::syntax_tree::Catalog,
 }
 
 pub struct WordRegion {
@@ -155,14 +78,20 @@ pub struct BodyLoweringInputs {
     resolutions: lowering::types::ResolutionTable,
     aliases: lowering::aliases::Catalog,
     values: lowering::value_catalog::ValueTable,
+    contexts: lowering::unit_context::Table,
+    source_catalog: [i32],
+    token_catalog: verified::token::TokenTable,
+    global_declarations: lowering::declarations::Table,
+    trees: verified::syntax_tree::Catalog,
 }
 
 pub struct BodyLoweringWorkspace {
     expressions: verified::surface_expr::ExpressionArena,
     types: verified::surface_type::TypeArena,
     alias_scratch: WordRegion,
-    type_output: WordRegion,
-    output: WordRegion,
+    type_output: lowering::types::Results,
+    events: ir::body_events::Region,
+    catalog: ir::body_catalog::Catalog,
 }
 
 pub fn child(context: BodyContext, node: i32, index: i32) -> i32 {
@@ -177,12 +106,6 @@ pub fn token_child(context: BodyContext, node: i32, index: i32) -> i32 {
 
 pub fn record_production(context: BodyContext, node: i32) -> i32 {
     return verified::syntax_tree::production(context.tree, node);
-}
-
-pub fn append(output: [i32], capacity: i32, position: i32, word: i32) -> i32 {
-    if (position <= -1 || position >= capacity) { return -1; }
-    output[position] = word;
-    return position + 1;
 }
 
 pub fn decimal(source: [i32], source_length: i32,
@@ -218,28 +141,12 @@ pub fn decimal(source: [i32], source_length: i32,
     return value;
 }
 
-pub fn same_token(source: [i32], source_length: i32,
-    tokens: verified::token::TokenTable,
-    token_count: i32, left: i32, right: i32) -> bool {
-    if (left <= -1 || right <= -1 || left >= token_count || right >= token_count) {
-        return false;
-    }
-    let rows: [verified::token::TokenRow] = tokens.data;
-    let left_start: i32 = rows[left].start;
-    let left_finish: i32 = rows[left].finish;
-    let right_start: i32 = rows[right].start;
-    let right_finish: i32 = rows[right].finish;
-    if (left_start <= -1 || right_start <= -1 || left_finish <= left_start
-        || right_finish <= right_start || left_finish > source_length
-        || right_finish > source_length || left_finish - left_start != right_finish - right_start) {
-        return false;
-    }
-    let index: i32 = 0;
-    while (index < left_finish - left_start) {
-        if (source[left_start + index] != source[right_start + index]) { return false; }
-        index += 1;
-    }
-    return true;
+pub fn same_identifier(context: BodyContext,
+    left: i32, right: i32) -> bool {
+    let view: verified::token::SpellingView = verified::token::spellings(
+        context.source, context.source_length, context.tokens,
+        context.token_count);
+    return verified::token::same_identifier(view, left, right);
 }
 
 // Core locals are identified by declaration token, not by the token at each
@@ -248,9 +155,8 @@ pub fn local_index(context: BodyContext, use_token: i32) -> i32 {
     let locals: lowering::locals::Table = context.locals;
     let index: i32 = lowering::locals::save(locals) - 1;
     while (index >= 0) {
-        if (same_token(context.source, context.source_length, context.tokens,
-                context.token_count, lowering::locals::name_at(locals, index),
-                use_token)) {
+        if (same_identifier(context,
+                lowering::locals::name_at(locals, index), use_token)) {
             return index;
         }
         index -= 1;
@@ -260,7 +166,7 @@ pub fn local_index(context: BodyContext, use_token: i32) -> i32 {
 
 // Calls carry a PathExpression wrapper, while struct literals own their Path
 // directly. Both forms refer to the same semantic path.
-fn surface_path(arena: verified::surface_expr::ExpressionArena, arena_count: i32, node: i32) -> i32 {
+pub fn surface_path(arena: verified::surface_expr::ExpressionArena, arena_count: i32, node: i32) -> i32 {
     let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
     if (node <= -1 || node >= arena_count) {
         return unsupported();

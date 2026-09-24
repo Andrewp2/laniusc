@@ -1,0 +1,150 @@
+module ir::body_catalog;
+
+import ir::body_events;
+import ir::type_ref;
+import verified::host;
+
+// One native body per Core function. Event storage is copied once from the
+// reusable lowering arena and retained for both serialization and codegen.
+const FIELD_BYTES: i32 = 8;
+const RECORD_FIELDS: i32 = 7;
+const RECORD_BYTES: i32 = RECORD_FIELDS * FIELD_BYTES;
+const COUNT_BYTES: i32 = FIELD_BYTES;
+pub const ALIGNMENT: i32 = FIELD_BYTES;
+pub const MAX_CAPACITY: i32 =
+    (verified::host::I32_MAX - COUNT_BYTES) / RECORD_BYTES;
+
+pub struct FunctionSignature {
+    id: i32,
+    result_type: ir::type_ref::TypeRef,
+    parameters: i32,
+}
+
+pub struct FunctionBody {
+    signature: FunctionSignature,
+    events: [ir::body_events::Event],
+    count: i32,
+}
+
+struct CountCell {
+    value: i32,
+}
+
+pub struct Catalog {
+    data: [FunctionBody],
+    count: [CountCell],
+    capacity: i32,
+    memory: ptr,
+}
+
+pub fn empty() -> Catalog {
+    let nowhere: ptr = 0;
+    return Catalog {
+        data: slice_from_raw_parts(nowhere, 0),
+        count: slice_from_raw_parts(nowhere, 0),
+        capacity: 0,
+        memory: nowhere,
+    };
+}
+
+pub fn allocation_bytes(capacity: i32) -> i32 {
+    if (capacity <= 0 || capacity > MAX_CAPACITY) { return -1; }
+    return COUNT_BYTES + capacity * RECORD_BYTES;
+}
+
+pub fn from_raw_parts(memory: ptr, capacity: i32) -> Catalog {
+    let first: ptr = memory + capacity * RECORD_BYTES;
+    let count: [CountCell] = slice_from_raw_parts(memory, 1);
+    count[0].value = 0;
+    return Catalog {
+        data: slice_from_raw_parts(first, capacity),
+        count: count,
+        capacity: capacity,
+        memory: memory,
+    };
+}
+
+// Rebuild the view at the native application/backend boundary without
+// resetting the count written during lowering.
+pub fn view_from_raw_parts(memory: ptr, capacity: i32) -> Catalog {
+    if (memory == 0 || capacity <= 0 || capacity > MAX_CAPACITY) {
+        return empty();
+    }
+    let first: ptr = memory + capacity * RECORD_BYTES;
+    return Catalog {
+        data: slice_from_raw_parts(first, capacity),
+        count: slice_from_raw_parts(memory, 1),
+        capacity: capacity,
+        memory: memory,
+    };
+}
+
+pub fn raw_memory(catalog: Catalog) -> ptr {
+    return catalog.memory;
+}
+
+pub fn length(catalog: Catalog) -> i32 {
+    if (catalog.capacity <= 0) { return 0; }
+    let count: [CountCell] = catalog.count;
+    return count[0].value;
+}
+
+pub fn clear(catalog: Catalog) {
+    if (catalog.capacity > 0) {
+        let count: [CountCell] = catalog.count;
+        count[0].value = 0;
+    }
+}
+
+pub fn at(catalog: Catalog, index: i32) -> FunctionBody {
+    let rows: [FunctionBody] = catalog.data;
+    return rows[index];
+}
+
+pub fn find(catalog: Catalog, id: i32) -> i32 {
+    let count: i32 = length(catalog);
+    if (id <= -1 || count <= -1 || count > catalog.capacity) { return -1; }
+    let rows: [FunctionBody] = catalog.data;
+    let index: i32 = 0;
+    while (index < count) {
+        if (rows[index].signature.id == id) { return index; }
+        index += 1;
+    }
+    return -1;
+}
+
+pub fn append(catalog: Catalog, signature: FunctionSignature,
+    source: ir::body_events::Region, event_count: i32) -> i32 {
+    let count: [CountCell] = catalog.count;
+    let rows: [FunctionBody] = catalog.data;
+    let source_events: [ir::body_events::Event] = source.events;
+    let next: i32 = count[0].value;
+    if (signature.id <= -1
+        || !ir::type_ref::valid_result(signature.result_type)
+        || signature.parameters <= -1
+        || next <= -1 || next >= catalog.capacity
+        || event_count <= 0 || event_count > source.capacity) { return -1; }
+    let prior: i32 = 0;
+    while (prior != next) {
+        if (rows[prior].signature.id == signature.id) { return -1; }
+        prior += 1;
+    }
+    let bytes: i32 = ir::body_events::allocation_bytes(event_count);
+    if (bytes <= 0) { return -1; }
+    let memory: ptr = verified::host::alloc(bytes,
+        ir::body_events::ALIGNMENT);
+    if (memory == 0) { return -1; }
+    let owned: ir::body_events::Region =
+        ir::body_events::from_raw_parts(memory, event_count);
+    let owned_events: [ir::body_events::Event] = owned.events;
+    let index: i32 = 0;
+    while (index != event_count) {
+        owned_events[index] = source_events[index];
+        index += 1;
+    }
+    rows[next] = FunctionBody {
+        signature: signature, events: owned_events, count: event_count,
+    };
+    count[0].value = next + 1;
+    return next;
+}

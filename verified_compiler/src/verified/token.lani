@@ -1,21 +1,22 @@
 module verified::token;
 
+import verified::host;
+
 pub const ROW_WORDS: i32 = 3;
 pub const TOKEN_WORD_CAPACITY: i32 = 65536;
 pub const KIND_FIELD: i32 = 0;
 pub const START_FIELD: i32 = 1;
 pub const END_FIELD: i32 = 2;
 
-// Canonical token triples are a frontend interchange format. Lowering keeps
-// native records so token identity and spans are read by field, not by packed
-// word offsets. The encoded kind is retained at this boundary because its
-// stable parser code is distinct from the native enum discriminant.
+// Canonical token triples are a frontend interchange format. Native records
+// retain the semantic kind; only the parser and interchange format use its
+// stable integer code.
 const NATIVE_FIELD_BYTES: i32 = 8;
 pub const RECORD_BYTES: i32 = 3 * NATIVE_FIELD_BYTES;
 pub const ALIGNMENT: i32 = NATIVE_FIELD_BYTES;
 
 pub struct TokenRow {
-    kind: i32,
+    kind: TokenKind,
     start: i32,
     finish: i32,
 }
@@ -24,6 +25,91 @@ pub struct TokenTable {
     data: [TokenRow],
     count: i32,
     storage: ptr,
+}
+
+// A source unit's identifier spellings. The token table may have spare
+// capacity, while token_count bounds the canonical tokens actually present.
+pub struct SpellingView {
+    source: [i32],
+    source_length: i32,
+    tokens: TokenTable,
+    token_count: i32,
+}
+
+pub struct SourceSpan {
+    data: [i32],
+    offset: i32,
+    length: i32,
+}
+
+pub struct IdentifierSpelling {
+    source: [i32],
+    start: i32,
+    length: i32,
+    valid: bool,
+}
+
+pub fn source_span(data: [i32], offset: i32,
+    length: i32) -> SourceSpan {
+    return SourceSpan {
+        data: data, offset: offset, length: length,
+    };
+}
+
+pub fn identifier_spelling(source: SourceSpan,
+    row: TokenRow) -> IdentifierSpelling {
+    let valid: bool = row.kind == Identifier
+        && source.offset >= 0 && source.length >= 0
+        && row.start >= 0 && row.finish > row.start
+        && row.finish <= source.length
+        && source.offset <= verified::host::I32_MAX - row.finish;
+    let start: i32 = 0;
+    let length: i32 = 0;
+    if (valid) {
+        start = source.offset + row.start;
+        length = row.finish - row.start;
+    }
+    return IdentifierSpelling {
+        source: source.data, start: start,
+        length: length, valid: valid,
+    };
+}
+
+pub fn same_spelling(left: IdentifierSpelling,
+    right: IdentifierSpelling) -> bool {
+    if (!left.valid || !right.valid || left.length != right.length) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (left.source[left.start + index]
+            != right.source[right.start + index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+pub fn spellings(source: [i32], source_length: i32,
+    tokens: TokenTable, token_count: i32) -> SpellingView {
+    return SpellingView {
+        source: source, source_length: source_length,
+        tokens: tokens, token_count: token_count,
+    };
+}
+
+pub fn same_identifier(view: SpellingView, left: i32,
+    right: i32) -> bool {
+    if (view.source_length <= -1 || view.token_count <= -1
+        || view.token_count > view.tokens.count
+        || left <= -1 || right <= -1
+        || left >= view.token_count || right >= view.token_count) {
+        return false;
+    }
+    let rows: [TokenRow] = view.tokens.data;
+    let source: SourceSpan = source_span(view.source, 0,
+        view.source_length);
+    return same_spelling(identifier_spelling(source, rows[left]),
+        identifier_spelling(source, rows[right]));
 }
 
 pub fn from_raw_parts(storage: ptr, count: i32) -> TokenTable {
@@ -49,21 +135,21 @@ pub fn subtable(table: TokenTable, offset: i32, count: i32) -> TokenTable {
     return from_raw_parts(first, count);
 }
 
-pub fn decode_packed(input: [i32], input_words: i32, count: i32,
-    output: TokenTable, offset: i32) -> bool {
-    if (input_words < 0 || count < 0 || offset < 0
-        || offset > output.count
-        || count > output.count - offset
-        || count > input_words / ROW_WORDS) { return false; }
-    let rows: [TokenRow] = output.data;
+// Serialize retained native rows only when an artifact needs token triples.
+pub fn encode_packed(input: TokenTable, count: i32,
+    output: [i32], output_words: i32) -> bool {
+    if (count < 0 || count > input.count || output_words < 0
+        || count > output_words / ROW_WORDS) { return false; }
+    let rows: [TokenRow] = input.data;
     let index: i32 = 0;
     while (index < count) {
+        let row: TokenRow = rows[index];
+        if (row.kind == InvalidToken || row.start < 0
+            || row.finish <= row.start) { return false; }
         let word: i32 = index * ROW_WORDS;
-        rows[offset + index] = TokenRow {
-            kind: input[word + KIND_FIELD],
-            start: input[word + START_FIELD],
-            finish: input[word + END_FIELD],
-        };
+        output[word + KIND_FIELD] = kind_code(row.kind);
+        output[word + START_FIELD] = row.start;
+        output[word + END_FIELD] = row.finish;
         index += 1;
     }
     return true;
@@ -72,6 +158,7 @@ pub fn decode_packed(input: [i32], input_words: i32, count: i32,
 // Token kinds are semantic values inside the lexer. Their stable integer IDs
 // exist only where token rows cross the generated-parser boundary.
 pub enum TokenKind {
+    InvalidToken,
     Identifier,
     Integer,
     Whitespace,
@@ -158,6 +245,7 @@ pub enum TokenKind {
 
 pub fn kind_code(kind: TokenKind) -> i32 {
     return match (kind) {
+        InvalidToken -> 0,
         Identifier -> 1,
         Integer -> 2,
         Whitespace -> 3,

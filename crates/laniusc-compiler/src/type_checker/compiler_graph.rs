@@ -304,6 +304,12 @@ pub(super) const TYPE_INSTANCES_MEMBER_RESULTS_PASS: &str =
     "type_check.type_instances.member_results";
 pub(super) const TYPE_INSTANCES_MEMBER_SUBSTITUTE_PASS: &str =
     "type_check.type_instances.member_substitute";
+pub(super) const TYPE_INSTANCES_MEMBER_RECEIVERS_AFTER_MATCH_PASS: &str =
+    "type_check.type_instances.member_receivers_after_match";
+pub(super) const TYPE_INSTANCES_MEMBER_RESULTS_AFTER_MATCH_PASS: &str =
+    "type_check.type_instances.member_results_after_match";
+pub(super) const TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_MATCH_PASS: &str =
+    "type_check.type_instances.member_substitute_after_match";
 pub(super) const TYPE_INSTANCES_MEMBER_RECEIVERS_AFTER_ARRAY_PASS: &str =
     "type_check.type_instances.member_receivers_after_array";
 pub(super) const TYPE_INSTANCES_MEMBER_RESULTS_AFTER_ARRAY_PASS: &str =
@@ -4868,6 +4874,30 @@ fn build_graph(
     MATCH_PATTERNS_BIND.register_kernel(&mut graph, kernels)?;
     MATCH_PAYLOADS_TYPE.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
+        TYPE_INSTANCES_MEMBER_RECEIVERS_AFTER_MATCH_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/type/instances/03a_member_receivers",
+        member_receiver_overrides,
+    )?;
+    graph.add_kernel_pass_by_name(
+        TYPE_INSTANCES_MEMBER_RESULTS_AFTER_MATCH_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::HirNodes,
+        kernels,
+        "type_checker/type/instances/03_member_results",
+        &[],
+    )?;
+    graph.add_kernel_pass_by_name(
+        TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_MATCH_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Tokens,
+        kernels,
+        "type_checker/type/instances/03b_member_substitute",
+        &[],
+    )?;
+    graph.add_kernel_pass_by_name(
         SCOPE_HIR_PASS,
         CompilerPhase::TypeCheck,
         ResourceDomain::Tokens,
@@ -5291,6 +5321,8 @@ fn build_graph(
     for pass in [
         TYPE_INSTANCES_MEMBER_RECEIVERS_PASS,
         TYPE_INSTANCES_MEMBER_RESULTS_PASS,
+        TYPE_INSTANCES_MEMBER_RECEIVERS_AFTER_MATCH_PASS,
+        TYPE_INSTANCES_MEMBER_RESULTS_AFTER_MATCH_PASS,
         TYPE_INSTANCES_MEMBER_RECEIVERS_AFTER_ARRAY_PASS,
         TYPE_INSTANCES_MEMBER_RESULTS_AFTER_ARRAY_PASS,
         TYPE_INSTANCES_STRUCT_INIT_CONTEXTS_PASS,
@@ -5301,6 +5333,7 @@ fn build_graph(
     }
     for pass in [
         TYPE_INSTANCES_MEMBER_SUBSTITUTE_PASS,
+        TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_MATCH_PASS,
         TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_ARRAY_PASS,
         TYPE_INSTANCES_STRUCT_INIT_SUBSTITUTE_PASS,
         TYPE_INSTANCE_ARG_HASH_ROWS_PASS,

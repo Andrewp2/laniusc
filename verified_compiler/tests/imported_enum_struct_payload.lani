@@ -1,0 +1,26 @@
+module app::main;
+
+import ir::body_events;
+
+struct Wrapper { event: ir::body_events::Event }
+
+fn field_count(event: ir::body_events::Event) -> i32 {
+    return match (event) {
+        ir::body_events::ExpressionStruct(payload) -> payload.count,
+        _ -> -1,
+    };
+}
+
+fn main() -> i32 {
+    let fields: ir::body_events::StructFields =
+        ir::body_events::StructFields { type_id: 7, count: 2 };
+    let event: ir::body_events::Event =
+        ir::body_events::ExpressionStruct(fields);
+    if (field_count(event) != 2) { return 2; }
+    let wrapper: Wrapper = Wrapper { event: event };
+    return match (wrapper.event) {
+        ir::body_events::ExpressionStruct(payload) ->
+            payload.type_id + payload.count - 9,
+        _ -> 1,
+    };
+}

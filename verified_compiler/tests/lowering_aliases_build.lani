@@ -2,14 +2,32 @@ module app::main;
 
 import lowering::aliases;
 import lowering::declarations;
+import ir::type_ref;
 import verified::host;
 import verified::parser;
 import verified::surface_type;
 import verified::syntax_tree;
 import verified::token;
+import test_support::syntax_tree_decode;
 
 const DECLARATION_CAPACITY: i32 = lowering::declarations::HEADER
     + 3 * lowering::declarations::ROW;
+
+fn scalar_is(target: lowering::aliases::AliasTarget,
+    expected: ir::type_ref::TypeRef) -> bool {
+    return match (target) {
+        lowering::aliases::Scalar(value) -> ir::type_ref::same(value,
+            expected),
+        _ -> false,
+    };
+}
+
+fn deferred_nominal(target: lowering::aliases::AliasTarget) -> bool {
+    return match (target) {
+        lowering::aliases::DeferredNominal -> true,
+        _ -> false,
+    };
+}
 
 fn record(records: [i32], offsets: [i32], node: i32,
     production: i32, children: i32) {
@@ -92,7 +110,6 @@ fn declarations(output: lowering::declarations::Table) {
 
 fn main() -> i32 {
     let source_memory: ptr = verified::host::alloc(64, 4);
-    let token_memory: ptr = verified::host::alloc(64, 4);
     let native_token_memory: ptr = verified::host::alloc(
         4 * verified::token::RECORD_BYTES, verified::token::ALIGNMENT);
     let record_memory: ptr = verified::host::alloc(640, 4);
@@ -116,13 +133,12 @@ fn main() -> i32 {
     let output_memory: ptr = verified::host::alloc(
         lowering::aliases::CATALOG_RECORD_BYTES,
         lowering::aliases::CATALOG_ALIGNMENT);
-    if (source_memory == 0 || token_memory == 0
+    if (source_memory == 0
         || native_token_memory == 0 || record_memory == 0
         || offset_memory == 0 || declaration_memory == 0 || arena_memory == 0
         || work_memory == 0 || stack_memory == 0 || scratch_memory == 0
         || result_memory == 0 || output_memory == 0) { return 1; }
     let source: [i32] = verified::host::i32_slice_from_raw_parts(source_memory, 16);
-    let tokens: [i32] = verified::host::i32_slice_from_raw_parts(token_memory, 16);
     let records: [i32] = verified::host::i32_slice_from_raw_parts(record_memory, 160);
     let offsets: [i32] = verified::host::i32_slice_from_raw_parts(offset_memory, 10);
     let declaration_table: lowering::declarations::Table =
@@ -158,30 +174,28 @@ fn main() -> i32 {
     source[9] = 105;
     source[10] = 110;
     source[11] = 103;
-    tokens[0] = 1;
-    tokens[1] = 0;
-    tokens[2] = 1;
-    tokens[3] = 1;
-    tokens[4] = 1;
-    tokens[5] = 2;
-    tokens[6] = 1;
-    tokens[7] = 2;
-    tokens[8] = 5;
-    tokens[9] = 1;
-    tokens[10] = 5;
-    tokens[11] = 12;
     let token_table: verified::token::TokenTable =
         verified::token::from_raw_parts(native_token_memory, 4);
-    if (!verified::token::decode_packed(tokens, 12, 4, token_table, 0)) {
-        return 1;
-    }
+    let token_rows: [verified::token::TokenRow] = token_table.data;
+    token_rows[0] = verified::token::TokenRow {
+        kind: verified::token::Identifier, start: 0, finish: 1,
+    };
+    token_rows[1] = verified::token::TokenRow {
+        kind: verified::token::Identifier, start: 1, finish: 2,
+    };
+    token_rows[2] = verified::token::TokenRow {
+        kind: verified::token::Identifier, start: 2, finish: 5,
+    };
+    token_rows[3] = verified::token::TokenRow {
+        kind: verified::token::Identifier, start: 5, finish: 12,
+    };
     declarations(declaration_table);
     make_tree(records, offsets, 2);
     let inputs: lowering::aliases::AliasBuildInputs =
         lowering::aliases::AliasBuildInputs {
             source: lowering::aliases::region(source, 12),
             tokens: token_table,
-            tree: verified::syntax_tree::decode(records, 128, offsets, 8, 4),
+            tree: test_support::syntax_tree_decode::decode(records, 128, offsets, 8, 4),
             declarations: lowering::declarations::from_raw_parts(
                 declaration_memory, 2),
             depth: 16,
@@ -202,38 +216,36 @@ fn main() -> i32 {
     let symbols: [lowering::aliases::AliasSymbol] = catalog.symbols;
     if (catalog.symbol_count != 1
         || symbols[0].name_token != 1) { return 22; }
-    if (!lowering::aliases::target_has_kind(
-            lowering::aliases::target_kind_code(symbols[0].target_kind),
-            lowering::aliases::Scalar)
-        || symbols[0].target_value != 1) { return 23; }
+    if (!scalar_is(symbols[0].target, ir::type_ref::I32)) { return 23; }
     let alias_row: lowering::declarations::DeclarationRow =
         lowering::declarations::table_row(declaration_table, 1);
     alias_row.target = 9;
     lowering::declarations::table_write_row(declaration_table, 1,
         alias_row);
     make_slice_tree(records, offsets, 2);
-    inputs.tree = verified::syntax_tree::decode(records, 160, offsets, 10, 4);
+    inputs.tree = test_support::syntax_tree_decode::decode(records, 160, offsets, 10, 4);
     let slice_words: i32 = lowering::aliases::build(inputs, workspace);
     catalog = catalog_rows[0];
     let slice_symbols: [lowering::aliases::AliasSymbol] = catalog.symbols;
-    if (slice_words != 1 || slice_symbols[0].target_value != 6) { return 6; }
+    if (slice_words != 1 || !scalar_is(slice_symbols[0].target,
+            ir::type_ref::Slice)) {
+        return 6;
+    }
     alias_row.target = 7;
     lowering::declarations::table_write_row(declaration_table, 1,
         alias_row);
     make_tree(records, offsets, 1);
-    inputs.tree = verified::syntax_tree::decode(records, 128, offsets, 8, 4);
+    inputs.tree = test_support::syntax_tree_decode::decode(records, 128, offsets, 8, 4);
     let cycle: i32 = lowering::aliases::build(inputs, workspace);
     let expected_cycle: i32 = lowering::aliases::failure(lowering::aliases::Cycle);
     if (cycle != expected_cycle) { return 3; }
     make_tree(records, offsets, 3);
-    inputs.tree = verified::syntax_tree::decode(records, 128, offsets, 8, 4);
+    inputs.tree = test_support::syntax_tree_decode::decode(records, 128, offsets, 8, 4);
     let unresolved: i32 = lowering::aliases::build(inputs, workspace);
     catalog = catalog_rows[0];
     let unresolved_symbols: [lowering::aliases::AliasSymbol] = catalog.symbols;
-    if (unresolved != 1 || !lowering::aliases::target_has_kind(
-            lowering::aliases::target_kind_code(unresolved_symbols[0].target_kind),
-            lowering::aliases::Nominal)
-        || unresolved_symbols[0].target_value != 0) { return 4; }
+    if (unresolved != 1
+        || !deferred_nominal(unresolved_symbols[0].target)) { return 4; }
     let declaration_header: lowering::declarations::DeclarationCounts =
         lowering::declarations::table_header(declaration_table);
     declaration_header.rows = 3;
@@ -249,21 +261,15 @@ fn main() -> i32 {
     lowering::declarations::table_write_row(declaration_table, 2,
         duplicate);
     make_tree(records, offsets, 2);
-    inputs.tree = verified::syntax_tree::decode(records, 128, offsets, 8, 4);
+    inputs.tree = test_support::syntax_tree_decode::decode(records, 128, offsets, 8, 4);
     inputs.declarations = lowering::declarations::from_raw_parts(
         declaration_memory, 3);
     let two_aliases: i32 = lowering::aliases::build(inputs, workspace);
     catalog = catalog_rows[0];
     let pair: [lowering::aliases::AliasSymbol] = catalog.symbols;
     if (two_aliases != 2 || catalog.symbol_count != 2
-        || !lowering::aliases::target_has_kind(
-            lowering::aliases::target_kind_code(pair[0].target_kind),
-            lowering::aliases::Scalar)
-        || pair[0].target_value != 1
-        || !lowering::aliases::target_has_kind(
-            lowering::aliases::target_kind_code(pair[1].target_kind),
-            lowering::aliases::Scalar)
-        || pair[1].target_value != 1) { return 7; }
+        || !scalar_is(pair[0].target, ir::type_ref::I32)
+        || !scalar_is(pair[1].target, ir::type_ref::I32)) { return 7; }
     duplicate.name = 1;
     lowering::declarations::table_write_row(declaration_table, 2,
         duplicate);

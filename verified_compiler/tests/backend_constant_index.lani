@@ -11,7 +11,7 @@ fn main() -> i32 {
         backend::constant_index::ALIGNMENT);
     if (memory == 0) { return 1; }
     let constants: backend::constant_index::Table =
-        backend::constant_index::from_raw_parts(memory, 2);
+        backend::constant_index::from_raw_parts(memory, 2, input, 10);
     if (backend::constant_index::build(input, 10, 0, constants) != 10
         || backend::constant_index::find(constants, 7) != 0
         || backend::constant_index::find(constants, 8) != 1

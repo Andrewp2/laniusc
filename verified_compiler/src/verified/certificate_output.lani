@@ -2,7 +2,6 @@ module verified::certificate_output;
 
 import verified::output;
 import verified::host;
-import backend::frame;
 
 // The certificate envelope is an ASCII transport around the existing compact
 // pack, canonical Core transport, and the exact emitted ELF.  Version 3 adds
@@ -51,41 +50,6 @@ pub fn emit_image(image:[i32], image_length: i32,
     while (index != image_length) {
         next = verified::output::hex_byte(
             verified::output::cursor(output, capacity, next), image[index]);
-        if (next <= -1) { return -1; }
-        index += 1;
-    }
-    return next;
-}
-
-// Work-table function starts are absolute output offsets. The explicit
-// `function_end` state field is captured before runtime data is appended, so
-// the final length ends exactly at the last function byte.
-pub fn emit_functions(work: backend::frame::Workspace, stride: i32, count: i32,
-    output:[i32], capacity: i32, position: i32) -> i32 {
-    let state: [backend::frame::State] = backend::frame::state_view(work);
-    if (work.words <= backend::frame::HEADER - 1 || stride <= -1
-        || state[0].stride != stride || count <= -1 ||
-        backend::frame::HEADER + stride
-            * backend::frame::WORK_WORDS_PER_STRIDE
-            > work.words ||
-        count > stride) { return -1; }
-    let end: i32 = state[0].function_end;
-    if (end <= -1) { return -1; }
-    let next: i32 = verified::output::hex_word(
-        verified::output::cursor(output, capacity, position), count);
-    if (next <= -1) { return -1; }
-    let index: i32 = 0;
-    while (index != count) {
-        let start: i32 = backend::frame::function_code_start(work, index);
-        let finish: i32 = end;
-        if (index + 1 < count) {
-            finish = backend::frame::function_code_start(work, index + 1);
-        }
-        if (start <= -1 || finish <= start) { return -1; }
-        next = verified::output::hex_word(
-            verified::output::cursor(output, capacity, next), start);
-        next = verified::output::hex_word(
-            verified::output::cursor(output, capacity, next), finish - start);
         if (next <= -1) { return -1; }
         index += 1;
     }

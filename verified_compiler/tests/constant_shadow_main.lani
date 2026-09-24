@@ -1,0 +1,13 @@
+module app::main;
+
+import sample::left;
+
+fn BASE() -> i32 {
+    return 0;
+}
+
+const RESULT: i32 = BASE;
+
+fn main() -> i32 {
+    return RESULT;
+}

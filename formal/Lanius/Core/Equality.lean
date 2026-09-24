@@ -173,6 +173,11 @@ mutual
         let ⟨h0⟩ ← expression? p p'
         let ⟨h1⟩ ← expression? n n'
         pure ⟨by cases h0; cases h1; rfl⟩
+    | .typedSliceFromRawParts element p n, .typedSliceFromRawParts element' p' n' => do
+        let ⟨h0⟩ ← atom? element element'
+        let ⟨h1⟩ ← expression? p p'
+        let ⟨h2⟩ ← expression? n n'
+        pure ⟨by cases h0; cases h1; cases h2; rfl⟩
     | .i32SliceDataPtr v, .i32SliceDataPtr v' => do
         let ⟨h0⟩ ← expression? v v'
         pure ⟨by cases h0; rfl⟩

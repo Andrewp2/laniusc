@@ -15,8 +15,8 @@ fn main() -> i32 {
     let token_rows: [verified::token::TokenRow] = tokens.data;
     sources[0] = 11;
     sources[4] = 44;
-    token_rows[0].kind = 10;
-    token_rows[2].kind = 60;
+    token_rows[0].kind = verified::token::LineComment;
+    token_rows[2].kind = verified::token::FnKeyword;
     let catalogs: lowering::unit_context::LexicalCatalogs =
         lowering::unit_context::LexicalCatalogs {
             sources: sources,
@@ -43,7 +43,7 @@ fn main() -> i32 {
     let unit_source: [i32] = view.source;
     let unit_tokens: [verified::token::TokenRow] = view.tokens.data;
     if (unit_source[0] != 44) { return 2; }
-    if (unit_tokens[0].kind != 60) { return 3; }
+    if (unit_tokens[0].kind != verified::token::FnKeyword) { return 3; }
     context.token_count = 3;
     if (lowering::unit_context::lexical(catalogs, context).valid) {
         return 6;

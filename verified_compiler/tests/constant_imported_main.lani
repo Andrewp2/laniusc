@@ -1,0 +1,7 @@
+module app::main;
+
+import sample::left;
+
+fn main() -> i32 {
+    return sample::left::BASE;
+}

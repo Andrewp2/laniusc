@@ -1,56 +1,125 @@
 module lowering::body_lookup;
 
 import lowering::allocation;
+import lowering::builtin;
 import lowering::body_context;
 import lowering::declarations;
+import lowering::resolution_catalog;
 import lowering::signature_index;
 import lowering::signatures;
+import lowering::token_names;
 import lowering::value_catalog;
+import ir::type_ref;
+import verified::ascii;
 import verified::surface_expr;
 import verified::token;
 
 type BodyContext = lowering::body_context::BodyContext;
+type VariantTarget = lowering::value_catalog::VariantTarget;
 
-pub enum EnumLookupState {
+pub enum EnumVariant {
     EnumMissing,
-    EnumResolved,
+    EnumResolved(VariantTarget),
     EnumInvalid,
 }
 
-fn enum_lookup_code(state: EnumLookupState) -> i32 {
-    return match (state) {
-        EnumMissing -> 0,
-        EnumResolved -> 1,
-        EnumInvalid -> 2,
+pub enum IntrinsicCall {
+    NoIntrinsic,
+    I32SliceFromRawParts,
+    I32SliceDataPointer,
+    StringDataPointer,
+    TypedSliceFromRawParts,
+}
+
+pub fn intrinsic_call(context: BodyContext, path_expression: i32) -> IntrinsicCall {
+    let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
+    let count: i32 = verified::surface_expr::node_count(arena);
+    let name: i32 = lowering::body_context::qualified_path_token(arena,
+        count, path_expression);
+    if (name <= -1 || name >= context.token_count) { return NoIntrinsic; }
+    let rows: [verified::token::TokenRow] = context.tokens.data;
+    if (rows[name].kind != verified::token::Identifier) { return NoIntrinsic; }
+    let start: i32 = rows[name].start;
+    let finish: i32 = rows[name].finish;
+    if (start <= -1 || finish <= start || finish > context.source_length) {
+        return NoIntrinsic;
+    }
+    let length: i32 = finish - start;
+    if (length == 24 && lowering::builtin::name_is(context.source, start,
+            length, "i32_slice_from_raw_parts")) {
+        return I32SliceFromRawParts;
+    }
+    if (length == 18 && lowering::builtin::name_is(context.source, start,
+            length, "i32_slice_data_ptr")) {
+        return I32SliceDataPointer;
+    }
+    if (length == 15 && lowering::builtin::name_is(context.source, start,
+            length, "string_data_ptr")) {
+        return StringDataPointer;
+    }
+    if (length == 20 && lowering::builtin::name_is(context.source, start,
+            length, "slice_from_raw_parts")) {
+        return TypedSliceFromRawParts;
+    }
+    return NoIntrinsic;
+}
+
+
+fn is_missing(variant: EnumVariant) -> bool {
+    return match (variant) {
+        EnumMissing -> true,
+        _ -> false,
     };
 }
 
-pub fn enum_lookup_is(state: EnumLookupState, expected: EnumLookupState) -> bool {
-    return enum_lookup_code(state) == enum_lookup_code(expected);
-}
-
-pub struct EnumVariant {
-    state: EnumLookupState,
-    type_id: i32,
-    ordinal: i32,
-    field_count: i32,
-}
-
-fn missing_enum_variant() -> EnumVariant {
-    return EnumVariant {
-        state: EnumMissing,
-        type_id: -1,
-        ordinal: -1,
-        field_count: -1,
+pub fn is_resolved(variant: EnumVariant) -> bool {
+    return match (variant) {
+        EnumResolved(value) -> true,
+        _ -> false,
     };
 }
 
-fn invalid_enum_variant() -> EnumVariant {
-    return EnumVariant {
-        state: EnumInvalid,
-        type_id: -1,
-        ordinal: -1,
-        field_count: -1,
+pub fn is_invalid(variant: EnumVariant) -> bool {
+    return match (variant) {
+        EnumInvalid -> true,
+        _ -> false,
+    };
+}
+
+pub fn type_id(variant: EnumVariant) -> i32 {
+    return match (variant) {
+        EnumResolved(value) -> value.type_id,
+        _ -> lowering::body_context::invalid(),
+    };
+}
+
+pub fn ordinal(variant: EnumVariant) -> i32 {
+    return match (variant) {
+        EnumResolved(value) -> value.ordinal,
+        _ -> lowering::body_context::invalid(),
+    };
+}
+
+pub fn field_count(variant: EnumVariant) -> i32 {
+    return match (variant) {
+        EnumResolved(value) -> value.field_count,
+        _ -> lowering::body_context::invalid(),
+    };
+}
+
+fn callable_binding_id(binding: lowering::value_catalog::ValueBinding)
+    -> i32 {
+    return match (binding.target) {
+        lowering::value_catalog::Callable(id) -> id,
+        _ -> lowering::body_context::invalid(),
+    };
+}
+
+fn enum_variant_binding(binding: lowering::value_catalog::ValueBinding)
+    -> EnumVariant {
+    return match (binding.target) {
+        lowering::value_catalog::Variant(value) -> EnumResolved(value),
+        _ -> EnumMissing,
     };
 }
 
@@ -80,9 +149,6 @@ fn binding_index(values: lowering::value_catalog::ValueTable,
 }
 
 pub fn callable_id(context: BodyContext, qualified: bool, name: i32) -> i32 {
-    let source: [i32] = context.source;
-    let source_length: i32 = context.source_length;
-    let tokens: verified::token::TokenTable = context.tokens;
     let token_count: i32 = context.token_count;
     let allocated: lowering::allocation::Table = context.allocated;
     let value_catalog: lowering::value_catalog::ValueTable = context.values;
@@ -102,8 +168,8 @@ pub fn callable_id(context: BodyContext, qualified: bool, name: i32) -> i32 {
         let binding: i32 = binding_index(value_catalog, name,
             lowering::value_catalog::CallableBinding, qualified);
         if (binding <= -1) { return lowering::body_context::invalid(); }
-        return lowering::value_catalog::binding_id(
-            lowering::value_catalog::read_binding(value_catalog, binding));
+        return callable_binding_id(lowering::value_catalog::read_binding(
+            value_catalog, binding));
     }
     if (qualified && owner_unit <= -1) { return lowering::body_context::invalid(); }
     let row: i32 = 0;
@@ -121,8 +187,8 @@ pub fn callable_id(context: BodyContext, qualified: bool, name: i32) -> i32 {
             // come from multiple units with different local row offsets.
             let declaration_name: i32 = lowering::allocation::row_name(
                 allocation);
-            if (lowering::body_context::same_token(source, source_length, tokens, token_count, name,
-                declaration_name)) {
+            if (lowering::body_context::same_identifier(context,
+                name, declaration_name)) {
                 return lowering::allocation::row_core_id(allocation);
             }
         }
@@ -131,10 +197,78 @@ pub fn callable_id(context: BodyContext, qualified: bool, name: i32) -> i32 {
     return lowering::body_context::invalid();
 }
 
+pub fn callable_path_id(context: BodyContext, path_expression: i32) -> i32 {
+    let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
+    let count: i32 = verified::surface_expr::node_count(arena);
+    let name: i32 = lowering::body_context::qualified_path_token(arena,
+        count, path_expression);
+    if (name <= -1 || name >= context.token_count) {
+        return lowering::body_context::invalid();
+    }
+    if (!lowering::body_context::path_is_qualified(arena, count,
+        path_expression)) { return callable_id(context, false, name); }
+    let path: i32 = lowering::body_context::surface_path(arena,
+        count, path_expression);
+    if (path <= -1) { return lowering::body_context::invalid(); }
+    let catalog: lowering::token_names::Catalog =
+        lowering::token_names::catalog(context.contexts,
+            context.source_catalog, context.token_catalog);
+    let allocations: lowering::allocation::Table = context.allocated;
+    let rows: i32 = lowering::allocation::table_header(allocations).rows;
+    let found: i32 = -1;
+    let row: i32 = 0;
+    while (row < rows) {
+        let selected: lowering::allocation::AllocationRow =
+            lowering::allocation::table_row(allocations, row);
+        if (lowering::allocation::row_has_kind(selected,
+                lowering::declarations::Function)
+            || lowering::allocation::row_has_kind(selected,
+                lowering::declarations::External)) {
+            let owner: i32 = lowering::allocation::row_unit(selected);
+            if (lowering::token_names::same(catalog, context.owner_unit,
+                    name, owner, lowering::allocation::row_name(selected))
+                && lowering::resolution_catalog::expression_owner_visible(
+                    lowering::resolution_catalog::ExpressionOwnerInput {
+                        unit: context.owner_unit,
+                        owner: owner,
+                        path: path,
+                        arena: arena,
+                        contexts: context.contexts,
+                        sources: context.source_catalog,
+                        tokens: context.token_catalog,
+                        declarations: context.global_declarations,
+                        trees: context.trees,
+                        public_declaration:
+                            lowering::allocation::row_is_public(selected),
+                    })) {
+                if (found >= 0) { return lowering::body_context::invalid(); }
+                found = lowering::allocation::row_core_id(selected);
+            }
+        }
+        row += 1;
+    }
+    return found;
+}
+
 pub fn has_function_signature(index: lowering::signature_index::Table,
     function_id: i32) -> bool {
     return lowering::signature_index::has_shape(index, function_id,
         lowering::signatures::InternalFunctionShape);
+}
+
+pub fn constant_id(context: BodyContext, path_expression: i32) -> i32 {
+    return lowering::resolution_catalog::resolve_constant_path(
+        lowering::resolution_catalog::ConstantPathInput {
+            unit: context.owner_unit,
+            expression: path_expression,
+            arena: context.expression_arena,
+            contexts: context.contexts,
+            sources: context.source_catalog,
+            tokens: context.token_catalog,
+            allocations: context.allocated,
+            declarations: context.global_declarations,
+            trees: context.trees,
+        });
 }
 
 pub fn nominal_allocation(context: BodyContext, path_expression: i32,
@@ -146,21 +280,51 @@ pub fn nominal_allocation(context: BodyContext, path_expression: i32,
     if (name <= -1 || name >= context.token_count) { return lowering::body_context::invalid(); }
     let qualified: bool = lowering::body_context::path_is_qualified(arena,
         verified::surface_expr::node_count(arena), path_expression);
+    let path: i32 = -1;
+    if (qualified) {
+        path = lowering::body_context::surface_path(arena,
+            verified::surface_expr::node_count(arena), path_expression);
+        if (path <= -1) { return lowering::body_context::invalid(); }
+    }
+    let catalog: lowering::token_names::Catalog =
+        lowering::token_names::catalog(context.contexts,
+            context.source_catalog, context.token_catalog);
     let found: i32 = -1;
     let row: i32 = 0;
     let rows: i32 = lowering::allocation::table_header(allocated).rows;
     while (row != rows) {
         let allocation: lowering::allocation::AllocationRow =
             lowering::allocation::table_row(allocated, row);
-        if (lowering::allocation::row_has_kind(allocation, expected)
-            && (!qualified
-                && lowering::allocation::row_unit(allocation)
-                    == context.owner_unit)
-            && lowering::body_context::same_token(context.source, context.source_length, context.tokens,
-                context.token_count, name,
-                lowering::allocation::row_name(allocation))) {
-            if (found >= 0) { return lowering::body_context::invalid(); }
-            found = row;
+        if (lowering::allocation::row_has_kind(allocation, expected)) {
+            let owner: i32 = lowering::allocation::row_unit(allocation);
+            let matches: bool = false;
+            if (qualified) {
+                matches = lowering::token_names::same(catalog,
+                        context.owner_unit, name, owner,
+                        lowering::allocation::row_name(allocation))
+                    && lowering::resolution_catalog::expression_owner_visible(
+                        lowering::resolution_catalog::ExpressionOwnerInput {
+                            unit: context.owner_unit,
+                            owner: owner,
+                            path: path,
+                            arena: arena,
+                            contexts: context.contexts,
+                            sources: context.source_catalog,
+                            tokens: context.token_catalog,
+                            declarations: context.global_declarations,
+                            trees: context.trees,
+                            public_declaration:
+                                lowering::allocation::row_is_public(allocation),
+                        });
+            } else {
+                matches = owner == context.owner_unit
+                    && lowering::body_context::same_identifier(context, name,
+                        lowering::allocation::row_name(allocation));
+            }
+            if (matches) {
+                if (found >= 0) { return lowering::body_context::invalid(); }
+                found = row;
+            }
         }
         row += 1;
     }
@@ -173,23 +337,21 @@ pub fn has_signature(context: BodyContext, id: i32,
         id, expected);
 }
 
-// Enum variant names live in the unit that declared the enum.  This local
-// resolver therefore considers only signatures owned by the current unit;
-// imported variants are resolved through the authenticated value catalog.
+// Local variants are resolved from owned signatures. Imported variants still
+// use the caller-local value catalog until constructor path resolution is
+// moved to the same exact module boundary as pattern resolution.
 fn local_enum_variant(context: BodyContext,
     path_expression: i32) -> EnumVariant {
     let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
-    let allocation_table: lowering::allocation::Table = context.allocated;
     if (lowering::body_context::path_is_qualified(arena,
         verified::surface_expr::node_count(arena), path_expression)) {
-        return missing_enum_variant();
+        return EnumMissing;
     }
     let name: i32 = lowering::body_context::simple_path_token(arena,
         verified::surface_expr::node_count(arena), path_expression);
-    if (name <= -1 || name >= context.token_count) {
-        return invalid_enum_variant();
-    }
-    let result: EnumVariant = missing_enum_variant();
+    if (name <= -1 || name >= context.token_count) { return EnumInvalid; }
+    let allocation_table: lowering::allocation::Table = context.allocated;
+    let result: EnumVariant = EnumMissing;
     let row: i32 = 0;
     let allocation_rows: i32 = lowering::allocation::table_header(
         allocation_table).rows;
@@ -202,9 +364,7 @@ fn local_enum_variant(context: BodyContext,
             let type_id: i32 = lowering::allocation::row_declaration_id(
                 allocation);
             if (!has_signature(context, type_id,
-                lowering::signatures::EnumerationShape)) {
-                return invalid_enum_variant();
-            }
+                lowering::signatures::EnumerationShape)) { return EnumInvalid; }
             let record: lowering::signatures::SignatureRecord =
                 lowering::signature_index::record_at(context.signature_index,
                     type_id);
@@ -214,18 +374,18 @@ fn local_enum_variant(context: BodyContext,
                     lowering::signature_index::variant_at(
                         context.signature_index, type_id, variant);
                 if (native.name <= -1 || native.field_count <= -1) {
-                    return invalid_enum_variant();
+                    return EnumInvalid;
                 }
-                if (lowering::body_context::same_token(context.source, context.source_length,
-                    context.tokens, context.token_count, name,
-                    native.name)) {
-                    if (enum_lookup_is(result.state, EnumResolved)) {
-                        return invalid_enum_variant();
-                    }
-                    result.state = EnumResolved;
-                    result.type_id = type_id;
-                    result.ordinal = variant;
-                    result.field_count = native.field_count;
+                if (lowering::body_context::same_identifier(context,
+                    name, native.name)) {
+                    if (is_resolved(result)) { return EnumInvalid; }
+                    let target: VariantTarget =
+                        lowering::value_catalog::VariantTarget {
+                        type_id: type_id,
+                        ordinal: variant,
+                        field_count: native.field_count,
+                    };
+                    result = EnumResolved(target);
                 }
                 variant += 1;
             }
@@ -237,33 +397,100 @@ fn local_enum_variant(context: BodyContext,
 
 fn catalog_enum_variant(context: BodyContext,
     path_expression: i32) -> EnumVariant {
-    if (context.values.count <= 0) { return missing_enum_variant(); }
     let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
+    let arena_count: i32 = verified::surface_expr::node_count(arena);
+    let qualified: bool = lowering::body_context::path_is_qualified(arena,
+        arena_count, path_expression);
+    if (qualified) {
+        let path: i32 = lowering::body_context::surface_path(arena,
+            arena_count, path_expression);
+        let name: i32 = lowering::body_context::qualified_path_token(arena,
+            arena_count, path_expression);
+        if (path <= -1 || name <= -1 || name >= context.token_count) {
+            return EnumInvalid;
+        }
+        let catalog: lowering::token_names::Catalog =
+            lowering::token_names::catalog(context.contexts,
+                context.source_catalog, context.token_catalog);
+        let allocations: lowering::allocation::Table = context.allocated;
+        let rows: i32 = lowering::allocation::table_header(allocations).rows;
+        let result: EnumVariant = EnumMissing;
+        let row: i32 = 0;
+        while (row != rows) {
+            let allocation: lowering::allocation::AllocationRow =
+                lowering::allocation::table_row(allocations, row);
+            if (lowering::allocation::row_has_kind(allocation,
+                    lowering::declarations::Enumeration)) {
+                let owner: i32 = lowering::allocation::row_unit(allocation);
+                let visible: bool =
+                    lowering::resolution_catalog::expression_owner_visible(
+                        lowering::resolution_catalog::ExpressionOwnerInput {
+                            unit: context.owner_unit,
+                            owner: owner,
+                            path: path,
+                            arena: arena,
+                            contexts: context.contexts,
+                            sources: context.source_catalog,
+                            tokens: context.token_catalog,
+                            declarations: context.global_declarations,
+                            trees: context.trees,
+                            public_declaration:
+                                lowering::allocation::row_is_public(allocation),
+                        });
+                if (visible) {
+                    let type_id: i32 = lowering::allocation::row_declaration_id(
+                        allocation);
+                    if (!has_signature(context, type_id,
+                        lowering::signatures::EnumerationShape)) {
+                        return EnumInvalid;
+                    }
+                    let record: lowering::signatures::SignatureRecord =
+                        lowering::signature_index::record_at(
+                            context.signature_index, type_id);
+                    let variant: i32 = 0;
+                    while (variant != lowering::signatures::record_arity(record)) {
+                        let native: lowering::signature_index::Variant =
+                            lowering::signature_index::variant_at(
+                                context.signature_index, type_id, variant);
+                        if (native.name <= -1 || native.field_count <= -1) {
+                            return EnumInvalid;
+                        }
+                        if (lowering::token_names::same(catalog,
+                            context.owner_unit, name, owner, native.name)) {
+                            if (is_resolved(result)) { return EnumInvalid; }
+                            let target: VariantTarget =
+                                lowering::value_catalog::VariantTarget {
+                                    type_id: type_id,
+                                    ordinal: variant,
+                                    field_count: native.field_count,
+                                };
+                            result = EnumResolved(target);
+                        }
+                        variant += 1;
+                    }
+                }
+            }
+            row += 1;
+        }
+        return result;
+    }
+    if (context.values.count <= 0) { return EnumMissing; }
     let values: lowering::value_catalog::ValueTable = context.values;
     let name: i32 = lowering::body_context::qualified_path_token(arena,
-        verified::surface_expr::node_count(arena), path_expression);
-    if (name <= -1 || name >= context.token_count) {
-        return invalid_enum_variant();
-    }
-    let qualified: bool = lowering::body_context::path_is_qualified(arena,
-        verified::surface_expr::node_count(arena), path_expression);
+        arena_count, path_expression);
+    if (name <= -1 || name >= context.token_count) { return EnumInvalid; }
     let slot: i32 = binding_index(values, name,
         lowering::value_catalog::EnumVariantBinding, qualified);
-    if (slot <= -1) { return missing_enum_variant(); }
+    if (slot <= -1) { return EnumMissing; }
     let binding: lowering::value_catalog::ValueBinding =
         lowering::value_catalog::read_binding(values, slot);
-    return EnumVariant {
-        state: EnumResolved,
-        type_id: lowering::value_catalog::binding_id(binding),
-        ordinal: lowering::value_catalog::binding_member(binding),
-        field_count: lowering::value_catalog::binding_arity(binding),
-    };
+    return enum_variant_binding(binding);
 }
 
 pub fn enum_variant(context: BodyContext,
     path_expression: i32) -> EnumVariant {
     let local: EnumVariant = local_enum_variant(context, path_expression);
-    if (!enum_lookup_is(local.state, EnumMissing)) { return local; }
+    if (!is_missing(local)) { return local; }
     return catalog_enum_variant(context, path_expression);
 }
 
@@ -298,12 +525,34 @@ pub fn pattern_path_token(context: BodyContext, arena_count: i32,
     return answer;
 }
 
+pub fn wildcard_pattern(context: BodyContext, arena_count: i32,
+    pattern: i32) -> bool {
+    let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
+    let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
+    if (pattern <= -1 || pattern >= arena_count
+        || nodes[pattern].right != -1) { return false; }
+    let name: i32 = pattern_path_token(context, arena_count, pattern, true);
+    if (name <= -1 || name >= context.token_count) { return false; }
+    let rows: [verified::token::TokenRow] = context.tokens.data;
+    let start: i32 = rows[name].start;
+    let source: [i32] = context.source;
+    return start >= 0 && rows[name].finish == start + 1
+        && start < context.source_length
+        && source[start] == verified::ascii::UNDERSCORE;
+}
+
 pub fn enum_pattern_variant(context: BodyContext, arena_count: i32,
     pattern: i32, type_id: i32) -> EnumVariant {
     let name: i32 = pattern_path_token(context, arena_count, pattern, false);
     if (name <= -1 || name >= context.token_count) {
-        return invalid_enum_variant();
+        return EnumInvalid;
     }
+    let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
+    let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
+    let path: i32 = nodes[pattern].left;
+    let catalog: lowering::token_names::Catalog =
+        lowering::token_names::catalog(context.contexts,
+            context.source_catalog, context.token_catalog);
     let allocation_table: lowering::allocation::Table = context.allocated;
     let row: i32 = 0;
     let allocation_rows: i32 = lowering::allocation::table_header(
@@ -311,13 +560,27 @@ pub fn enum_pattern_variant(context: BodyContext, arena_count: i32,
     while (row != allocation_rows) {
         let allocation: lowering::allocation::AllocationRow =
             lowering::allocation::table_row(allocation_table, row);
-        if (lowering::allocation::row_unit(allocation) == context.owner_unit
-            && lowering::allocation::row_declaration_id(allocation) == type_id
+        if (lowering::allocation::row_declaration_id(allocation) == type_id
             && lowering::allocation::row_has_kind(allocation,
                 lowering::declarations::Enumeration)) {
+            let owner: i32 = lowering::allocation::row_unit(allocation);
+            if (!lowering::resolution_catalog::expression_owner_visible(
+                lowering::resolution_catalog::ExpressionOwnerInput {
+                    unit: context.owner_unit,
+                    owner: owner,
+                    path: path,
+                    arena: arena,
+                    contexts: context.contexts,
+                    sources: context.source_catalog,
+                    tokens: context.token_catalog,
+                    declarations: context.global_declarations,
+                    trees: context.trees,
+                    public_declaration:
+                        lowering::allocation::row_is_public(allocation),
+                })) { return EnumInvalid; }
             if (!has_signature(context, type_id,
                 lowering::signatures::EnumerationShape)) {
-                return invalid_enum_variant();
+                return EnumInvalid;
             }
             let record: lowering::signatures::SignatureRecord =
                 lowering::signature_index::record_at(context.signature_index,
@@ -328,67 +591,50 @@ pub fn enum_pattern_variant(context: BodyContext, arena_count: i32,
                     lowering::signature_index::variant_at(
                         context.signature_index, type_id, variant);
                 if (native.name <= -1 || native.field_count <= -1) {
-                    return invalid_enum_variant();
+                    return EnumInvalid;
                 }
-                if (lowering::body_context::same_token(context.source, context.source_length,
-                    context.tokens, context.token_count, name,
-                    native.name)) {
-                    return EnumVariant {
-                        state: EnumResolved,
-                        type_id: type_id,
-                        ordinal: variant,
-                        field_count: native.field_count,
-                    };
+                if (lowering::token_names::same(catalog,
+                    context.owner_unit, name, owner, native.name)) {
+                    let target: VariantTarget =
+                        lowering::value_catalog::VariantTarget {
+                            type_id: type_id,
+                            ordinal: variant,
+                            field_count: native.field_count,
+                        };
+                    return EnumResolved(target);
                 }
                 variant += 1;
             }
         }
         row += 1;
     }
-    let value_table: lowering::value_catalog::ValueTable = context.values;
-    let value: i32 = 0;
-    while (value < value_table.count) {
-        let binding: lowering::value_catalog::ValueBinding =
-            lowering::value_catalog::read_binding(value_table, value);
-        if (lowering::value_catalog::binding_token(binding) == name
-            && lowering::value_catalog::binding_is_kind(binding,
-                lowering::value_catalog::EnumVariantBinding)
-            && lowering::value_catalog::binding_id(binding) == type_id) {
-            return EnumVariant {
-                state: EnumResolved,
-                type_id: type_id,
-                ordinal: lowering::value_catalog::binding_member(binding),
-                field_count: lowering::value_catalog::binding_arity(binding),
-            };
-        }
-        value += 1;
-    }
-    return missing_enum_variant();
+    return EnumMissing;
 }
 
-pub fn enum_variant_field_kind(context: BodyContext, variant: EnumVariant,
-    field_index: i32) -> i32 {
-    if (!enum_lookup_is(variant.state, EnumResolved)
-        || field_index <= -1 || field_index >= variant.field_count) { return lowering::body_context::invalid(); }
-    if (!has_signature(context, variant.type_id,
+pub fn enum_variant_field_kind(context: BodyContext, value: VariantTarget,
+    field_index: i32) -> ir::type_ref::TypeRef {
+    if (field_index <= -1 || field_index >= value.field_count) {
+        return ir::type_ref::Invalid;
+    }
+    if (!has_signature(context, value.type_id,
         lowering::signatures::EnumerationShape)) {
-        return lowering::body_context::invalid();
+        return ir::type_ref::Invalid;
     }
     let record: lowering::signatures::SignatureRecord =
         lowering::signature_index::record_at(context.signature_index,
-            variant.type_id);
-    if (variant.ordinal <= -1
-        || variant.ordinal >= lowering::signatures::record_arity(record)) {
-        return lowering::body_context::invalid();
+            value.type_id);
+    if (value.ordinal <= -1
+        || value.ordinal >= lowering::signatures::record_arity(record)) {
+        return ir::type_ref::Invalid;
     }
     let selected: lowering::signature_index::Variant =
         lowering::signature_index::variant_at(context.signature_index,
-            variant.type_id, variant.ordinal);
-    if (selected.field_count != variant.field_count) {
-        return lowering::body_context::invalid();
+            value.type_id, value.ordinal);
+    if (selected.field_count != value.field_count) {
+        return ir::type_ref::Invalid;
     }
     return lowering::signature_index::enum_field_type(
-        context.signature_index, variant.type_id, variant.ordinal,
+        context.signature_index, value.type_id, value.ordinal,
         field_index);
 }
 

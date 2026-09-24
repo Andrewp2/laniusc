@@ -1,16 +1,31 @@
 module app::main;
 
-import backend::syntax;
+import ir::type_ref;
 import lowering::aliases;
 import lowering::types;
 import verified::host;
 import verified::surface_type;
 import verified::token;
 
+fn lowered_nominal(result: lowering::types::TypeLowerResult) -> bool {
+    let missing: ir::type_ref::TypeRef = ir::type_ref::Invalid;
+    let expected: ir::type_ref::TypeRef = ir::type_ref::Nominal(1);
+    let found: ir::type_ref::TypeRef = match (result) {
+        lowering::types::Lowered(kind) -> kind,
+        _ -> missing,
+    };
+    return ir::type_ref::same(found, expected);
+}
+
+fn invalid(result: lowering::types::TypeLowerResult) -> bool {
+    return match (result) {
+        lowering::types::InvalidInput -> true,
+        _ -> false,
+    };
+}
+
 fn main() -> i32 {
     let source: [i32; 5] = [84, 104, 105, 110, 103]; // "Thing"
-    let tokens: [i32; 3] = [0, 0, 5];
-    tokens[0] = verified::token::kind_code(verified::token::Identifier);
     let arena_memory: ptr = verified::host::alloc(
         verified::surface_type::allocation_bytes(3),
         verified::surface_type::ALIGNMENT);
@@ -30,7 +45,12 @@ fn main() -> i32 {
         kind: verified::surface_type::PathType,
         first: 1, token: -1, next: -1 };
     let scratch: [i32; 1] = [0];
-    let output: [i32; 3] = [0, 0, 0];
+    let output_memory: ptr = verified::host::alloc(
+        lowering::types::result_allocation_bytes(3),
+        lowering::types::RESULT_ALIGNMENT);
+    if (output_memory == 0) { return 1; }
+    let output: lowering::types::Results =
+        lowering::types::results_from_raw_parts(output_memory, 3);
     let memory: ptr = verified::host::alloc(
         2 * lowering::types::RESOLUTION_RECORD_BYTES,
         lowering::types::RESOLUTION_ALIGNMENT);
@@ -42,15 +62,17 @@ fn main() -> i32 {
         lowering::types::from_raw_parts(memory, 2,
             lowering::types::IdentifierToken);
     let rows: [lowering::types::ResolutionRow] = source_rows.data;
-    let expected: i32 = backend::syntax::NOMINAL_TYPE_BASE + 1;
+    let expected_type: ir::type_ref::TypeRef = ir::type_ref::Nominal(1);
+    let expected: i32 = ir::type_ref::code(expected_type);
     rows[0] = lowering::types::ResolutionRow {
-        key: 0, type_tag: expected };
+        key: 0, type_tag: ir::type_ref::Nominal(1) };
     let copied: lowering::types::ResolutionTable =
         lowering::types::from_raw_parts(copied_memory, 2,
             lowering::types::IdentifierToken);
     if (!lowering::types::copy_rows(source_rows, 0, 1, copied)) { return 2; }
     let copied_rows: [lowering::types::ResolutionRow] = copied.data;
-    if (copied_rows[0].key != 0 || copied_rows[0].type_tag != expected) {
+    if (copied_rows[0].key != 0
+        || ir::type_ref::code(copied_rows[0].type_tag) != expected) {
         return 3;
     }
     let wrong_domain: lowering::types::ResolutionTable =
@@ -66,9 +88,10 @@ fn main() -> i32 {
     if (token_memory == 0) { return 1; }
     let token_table: verified::token::TokenTable =
         verified::token::from_raw_parts(token_memory, 1);
-    if (!verified::token::decode_packed(tokens, 3, 1, token_table, 0)) {
-        return 1;
-    }
+    let token_rows: [verified::token::TokenRow] = token_table.data;
+    token_rows[0] = verified::token::TokenRow {
+        kind: verified::token::Identifier, start: 0, finish: 5,
+    };
     let alias_region: lowering::aliases::Catalog =
         lowering::aliases::empty();
     let input: lowering::types::TypeInput = lowering::types::TypeInput {
@@ -83,15 +106,19 @@ fn main() -> i32 {
     let workspace: lowering::types::TypeWorkspace =
         lowering::types::TypeWorkspace {
             alias_scratch: lowering::types::region(scratch, 1),
-            output: lowering::types::region(output, 3),
+            output: output,
         };
-    let actual: i32 = lowering::types::lower(input, workspace);
-    if (actual != expected) { return actual; }
+    if (!lowered_nominal(lowering::types::lower(input, workspace))) {
+        return 4;
+    }
+    let result_rows: [ir::type_ref::TypeRef] = output.data;
+    if (ir::type_ref::code(result_rows[1]) != expected
+        || ir::type_ref::code(result_rows[2]) != expected) { return 9; }
     let malformed_aliases: lowering::aliases::Catalog =
         lowering::aliases::empty();
     malformed_aliases.symbol_count = 1;
     input.aliases = malformed_aliases;
-    if (lowering::types::lower(input, workspace) >= 0) { return 8; }
+    if (!invalid(lowering::types::lower(input, workspace))) { return 8; }
     input.aliases = alias_region;
     let short_memory: ptr = verified::host::alloc(
         verified::surface_type::allocation_bytes(0),
@@ -106,7 +133,7 @@ fn main() -> i32 {
             lowering::types::IdentifierToken),
         aliases: alias_region,
     };
-    if (lowering::types::lower(short_input, workspace) >= 0) { return 7; }
+    if (!invalid(lowering::types::lower(short_input, workspace))) { return 7; }
     copied_rows[1] = copied_rows[0];
     let duplicate: lowering::types::TypeInput = lowering::types::TypeInput {
         source: source_region,
@@ -117,6 +144,6 @@ fn main() -> i32 {
             lowering::types::IdentifierToken),
         aliases: alias_region,
     };
-    if (lowering::types::lower(duplicate, workspace) >= 0) { return 5; }
+    if (!invalid(lowering::types::lower(duplicate, workspace))) { return 5; }
     return 0;
 }

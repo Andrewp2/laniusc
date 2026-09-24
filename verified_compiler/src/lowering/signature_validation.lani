@@ -1,10 +1,10 @@
 module lowering::signature_validation;
 
-import backend::syntax;
 import lowering::allocation;
 import lowering::declarations;
 import lowering::signature_index;
 import lowering::signatures;
+import ir::type_ref;
 import lowering::unit_descriptor;
 import verified::host;
 
@@ -18,13 +18,27 @@ pub struct Input {
     nominal_types: i32,
 }
 
-pub fn supported_type(tag: i32, nominal_types: i32) -> bool {
-    if (tag >= backend::syntax::type_code(backend::syntax::TypeI32)
-        && tag <= backend::syntax::type_code(backend::syntax::TypeSlice)) {
-        return true;
-    }
-    return tag >= backend::syntax::NOMINAL_TYPE_BASE
-        && tag <= backend::syntax::NOMINAL_TYPE_BASE + nominal_types - 1;
+fn supported_nominal_id(id: i32, nominal_types: i32) -> bool {
+    return id >= 0 && id <= nominal_types - 1;
+}
+
+pub fn supported_type(tag: ir::type_ref::TypeRef,
+    nominal_types: i32) -> bool {
+    return match (tag) {
+        ir::type_ref::I32 -> true,
+        ir::type_ref::Bool -> true,
+        ir::type_ref::Usize -> true,
+        ir::type_ref::Pointer -> true,
+        ir::type_ref::String -> true,
+        ir::type_ref::Slice -> true,
+        ir::type_ref::NominalSlice(slice_id) ->
+            supported_nominal_id(slice_id, nominal_types)
+                && ir::type_ref::valid(tag),
+        ir::type_ref::Nominal(id) ->
+            id >= 0 && id < nominal_types
+                && ir::type_ref::valid(tag),
+        _ -> false,
+    };
 }
 
 fn members_valid(index: lowering::signature_index::Table, id: i32,
@@ -77,12 +91,11 @@ fn enumeration_valid(index: lowering::signature_index::Table, id: i32,
 }
 
 fn constant_valid(index: lowering::signature_index::Table, id: i32,
-    result_type: i32, nominal_types: i32) -> bool {
+    result_type: ir::type_ref::TypeRef, nominal_types: i32) -> bool {
     if (!supported_type(result_type, nominal_types)) { return false; }
     let value: lowering::signature_index::ConstantValue =
         lowering::signature_index::constant_at(index, id);
-    if (result_type == backend::syntax::type_code(
-            backend::syntax::TypeString)) {
+    if (ir::type_ref::same(result_type, ir::type_ref::String)) {
         if (value.encoding != lowering::signature_index::StringConstant
             || value.byte_count <= -1) {
             return false;
@@ -101,18 +114,16 @@ fn constant_valid(index: lowering::signature_index::Table, id: i32,
     if (value.encoding != lowering::signature_index::ScalarConstant) {
         return false;
     }
-    if (result_type == backend::syntax::type_code(
-            backend::syntax::TypeBool)) {
+    if (ir::type_ref::same(result_type, ir::type_ref::Bool)) {
         return (value.low == 0 || value.low == 1) && value.high == 0;
     }
-    if (result_type == backend::syntax::type_code(
-            backend::syntax::TypePointer)) {
+    if (ir::type_ref::same(result_type, ir::type_ref::Pointer)) {
         return value.low == 0 && value.high == 0;
     }
-    if (result_type == backend::syntax::type_code(
-            backend::syntax::TypeI32)) { return value.high == 0; }
-    return result_type == backend::syntax::type_code(
-        backend::syntax::TypeUsize);
+    if (ir::type_ref::same(result_type, ir::type_ref::I32)) {
+        return value.high == 0;
+    }
+    return ir::type_ref::same(result_type, ir::type_ref::Usize);
 }
 
 fn row_valid(index: lowering::signature_index::Table,
@@ -152,27 +163,29 @@ fn row_valid(index: lowering::signature_index::Table,
     let record: lowering::signatures::SignatureRecord =
         lowering::signature_index::record_at(index, id);
     let arity: i32 = lowering::signatures::record_arity(record);
-    let result_type: i32 = lowering::signatures::record_result_type(record);
+    let result_type: ir::type_ref::TypeRef =
+        lowering::signatures::record_result_type(record);
     if (!lowering::declarations::same_kind(
             lowering::signatures::record_declaration_kind(record), kind)
         || arity <= -1) { return false; }
     if (shape == lowering::signatures::StructureShape) {
-        return result_type == -1
+        return ir::type_ref::same(result_type, ir::type_ref::Invalid)
             && members_valid(index, id, arity, token_count,
                 nominal_types, false);
     }
     if (shape == lowering::signatures::EnumerationShape) {
-        return result_type == -1
+        return ir::type_ref::same(result_type, ir::type_ref::Invalid)
             && enumeration_valid(index, id, arity,
                 token_count, nominal_types);
     }
     if (shape == lowering::signatures::ConstantShape) {
-        return arity == 0 && result_type > 0
+        return arity == 0 && ir::type_ref::valid(result_type)
             && constant_valid(index, id, result_type,
                 nominal_types);
     }
-    return result_type > 0
-        && supported_type(result_type, nominal_types)
+    // Void is a valid function result, but not a field or parameter type.
+    return (ir::type_ref::same(result_type, ir::type_ref::Void)
+            || supported_type(result_type, nominal_types))
         && members_valid(index, id, arity, token_count,
             nominal_types, true);
 }

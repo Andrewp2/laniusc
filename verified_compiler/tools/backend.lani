@@ -52,15 +52,15 @@ fn main() -> i32 {
         raw, INPUT_BYTE_CAPACITY);
     let scratch: [i32] = verified::host::i32_slice_from_raw_parts(
         packed, verified::byte_io::PACKED_IO_WORDS);
-    let length: i32 = verified::byte_io::read_file(
+    let input_bytes: i32 = verified::byte_io::read_file(
         handle, bytes, INPUT_BYTE_CAPACITY, scratch);
     let closed: i32 = verified::host::close(handle);
-    if (length < 0 || length % verified::host::I32_BYTES != 0
+    if (input_bytes < 0 || input_bytes % verified::host::I32_BYTES != 0
         || closed < 0) { return 6; }
     let input: [i32] = verified::host::i32_slice_from_raw_parts(
         words, backend::compile::MAX_WORDS);
     let index: i32 = 0;
-    while (index < length / verified::host::I32_BYTES) {
+    while (index < input_bytes / verified::host::I32_BYTES) {
         let byte: i32 = index * verified::host::I32_BYTES;
         input[index] = bytes[byte]
             | (bytes[byte + 1] << verified::host::BITS_PER_BYTE)
@@ -75,23 +75,18 @@ fn main() -> i32 {
             work, backend::image_boundary::WORK_CAPACITY);
     let output: [i32] = verified::host::i32_slice_from_raw_parts(
         code, backend::image_boundary::OUTPUT_CAPACITY);
+    let source: backend::program::Source = backend::program::core(
+        backend::compile::region(
+            input, input_bytes / verified::host::I32_BYTES),
+        backend::compile::region(
+            function_input, backend::compile::MAX_WORDS));
     let emitted: i32 = -1;
     if (arguments == 3) {
-        emitted = backend::program::compile(
-            backend::compile::region(
-                input, length / verified::host::I32_BYTES),
-            backend::compile::region(
-                function_input, backend::compile::MAX_WORDS),
-            workspace,
+        emitted = backend::program::compile(source, workspace,
             backend::compile::cursor(
                 output, backend::image_boundary::OUTPUT_CAPACITY, 0));
     } else {
-        emitted = backend::image::compile(
-            backend::compile::region(
-                input, length / verified::host::I32_BYTES),
-            backend::compile::region(
-                function_input, backend::compile::MAX_WORDS),
-            workspace,
+        emitted = backend::image::compile(source, workspace,
             backend::compile::region(
                 output, backend::image_boundary::OUTPUT_CAPACITY));
     }

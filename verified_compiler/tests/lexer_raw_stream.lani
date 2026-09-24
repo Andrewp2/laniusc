@@ -1,5 +1,6 @@
-module lexer_raw_stream;
+module app::main;
 
+import verified::host;
 import verified::raw_lexer;
 import verified::token;
 
@@ -8,44 +9,29 @@ fn main() -> i32 {
         97, 98, 99, 32, 49, 50, 46, 46, 51, 52, 32,
         47, 47, 120, 10, 34, 111, 107, 34, 32, 64,
     ];
-    let records: [i32; 63] = [
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    ];
-
-    let result = verified::raw_lexer::lex_into(
-        source, 21, records, 21);
+    let memory: ptr = verified::host::alloc(
+        21 * verified::token::RECORD_BYTES,
+        verified::token::ALIGNMENT);
+    if (memory == 0) { return 10; }
+    let tokens: verified::token::TokenTable =
+        verified::token::from_raw_parts(memory, 21);
+    let rows: [verified::token::TokenRow] = tokens.data;
+    let result: verified::raw_lexer::LexResult =
+        verified::raw_lexer::lex_into_rows(source, 21, tokens);
     if (!verified::raw_lexer::lex_has_stage(result,
-        verified::raw_lexer::LexicalError)) {
-        return 1;
-    }
+            verified::raw_lexer::LexicalError)) { return 1; }
     if (verified::raw_lexer::lex_token_count(result) != 10) { return 2; }
     if (verified::raw_lexer::lex_error_offset(result) != 20) { return 3; }
-
-    if (records[0] != verified::token::kind_code(verified::token::Identifier)
-        || records[1] != 0 || records[2] != 3) {
-        return 4;
-    }
-    if (records[6] != verified::token::kind_code(verified::token::Integer)
-        || records[7] != 4 || records[8] != 6) {
-        return 5;
-    }
-    if (records[9] != verified::token::kind_code(verified::token::DotDot)
-        || records[10] != 6 || records[11] != 8) {
-        return 6;
-    }
-    if (records[15] != verified::token::kind_code(
-            verified::token::Whitespace)) { return 7; }
-    if (records[18] != verified::token::kind_code(
-            verified::token::LineComment) || records[20] != 14) { return 8; }
-    if (records[24] != verified::token::kind_code(
-            verified::token::StringLiteral)
-        || records[25] != 15 || records[26] != 19) {
-        return 9;
-    }
+    if (rows[0].kind != verified::token::Identifier
+        || rows[0].start != 0 || rows[0].finish != 3) { return 4; }
+    if (rows[2].kind != verified::token::Integer
+        || rows[2].start != 4 || rows[2].finish != 6) { return 5; }
+    if (rows[3].kind != verified::token::DotDot
+        || rows[3].start != 6 || rows[3].finish != 8) { return 6; }
+    if (rows[5].kind != verified::token::Whitespace) { return 7; }
+    if (rows[6].kind != verified::token::LineComment
+        || rows[6].finish != 14) { return 8; }
+    if (rows[8].kind != verified::token::StringLiteral
+        || rows[8].start != 15 || rows[8].finish != 19) { return 9; }
     return 0;
 }

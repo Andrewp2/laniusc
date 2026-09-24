@@ -37,7 +37,7 @@ pub fn relative(output: [i32], capacity: i32, work: backend::frame::Workspace, t
     let fixup: i32 = state[0].fixup_count;
     if (fixup >= state[0].stride
         || state[0].code <= -1) {
-        state[0].failed = 1;
+        state[0].failed = true;
         return -1;
     }
     let fixups: [CallFixup] = fixup_table(work);

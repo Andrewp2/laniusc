@@ -1,0 +1,8 @@
+module app::main;
+
+const BASE: i32 = 7;
+const RESULT: i32 = BASE + 3;
+
+fn main() -> i32 {
+    return 0;
+}

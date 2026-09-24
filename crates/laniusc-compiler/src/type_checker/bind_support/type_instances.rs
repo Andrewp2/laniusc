@@ -122,6 +122,10 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         compiler_graph::TYPE_INSTANCES_MEMBER_RECEIVERS_PASS,
         "type_checker/type/instances/03a_member_receivers",
     )?;
+    let member_receivers_after_match = member_receivers.invocation(
+        graph,
+        compiler_graph::TYPE_INSTANCES_MEMBER_RECEIVERS_AFTER_MATCH_PASS,
+    )?;
     let member_receivers_after_array = member_receivers.invocation(
         graph,
         compiler_graph::TYPE_INSTANCES_MEMBER_RECEIVERS_AFTER_ARRAY_PASS,
@@ -130,6 +134,10 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         compiler_graph::TYPE_INSTANCES_MEMBER_RESULTS_PASS,
         "type_checker/type/instances/03_member_results",
     )?;
+    let member_results_after_match = member_results.invocation(
+        graph,
+        compiler_graph::TYPE_INSTANCES_MEMBER_RESULTS_AFTER_MATCH_PASS,
+    )?;
     let member_results_after_array = member_results.invocation(
         graph,
         compiler_graph::TYPE_INSTANCES_MEMBER_RESULTS_AFTER_ARRAY_PASS,
@@ -137,6 +145,10 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
     let member_substitute = indirect_token(
         compiler_graph::TYPE_INSTANCES_MEMBER_SUBSTITUTE_PASS,
         "type_checker/type/instances/03b_member_substitute",
+    )?;
+    let member_substitute_after_match = member_substitute.invocation(
+        graph,
+        compiler_graph::TYPE_INSTANCES_MEMBER_SUBSTITUTE_AFTER_MATCH_PASS,
     )?;
     let member_substitute_after_array = member_substitute.invocation(
         graph,
@@ -191,10 +203,13 @@ pub(in crate::type_checker) fn create_type_instance_bind_groups(
         decl_refs,
         decl_refs_for_bindings,
         member_receivers,
+        member_receivers_after_match,
         member_receivers_after_array,
         member_results,
+        member_results_after_match,
         member_results_after_array,
         member_substitute,
+        member_substitute_after_match,
         member_substitute_after_array,
         struct_init_clear: ComputeOperation::direct(
             device,

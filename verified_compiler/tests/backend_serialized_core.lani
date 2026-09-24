@@ -1,0 +1,54 @@
+module app::main;
+
+import backend::compile;
+import backend::frame;
+import backend::image;
+import backend::program;
+import ir::body_catalog;
+import ir::program;
+import verified::host;
+
+fn main() -> i32 {
+    // One serialized Core function: fn main() -> i32 { return 42; }
+    let core: [i32; 18] = [
+        3, 64, 0, 0, 0, 1,
+        11, 1, 64, 0, 1, 0, 5,
+        10, 1, 0, 1, 42,
+    ];
+    let scratch: [i32; 18] = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    let work_words: i32 = backend::frame::HEADER
+        + 18 * backend::frame::WORK_WORDS_PER_STRIDE;
+    let work_memory: ptr = verified::host::alloc(
+        work_words * verified::host::I32_BYTES,
+        backend::frame::WORK_ALIGNMENT);
+    let output_memory: ptr = verified::host::alloc_i32(2048);
+    if (work_memory == 0 || output_memory == 0) { return 1; }
+    let work: backend::frame::Workspace =
+        backend::frame::from_raw_parts(work_memory, work_words);
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(
+        output_memory, 2048);
+    let empty_native: ir::program::Storage = ir::program::empty();
+    if (ir::program::valid(empty_native)) { return 2; }
+    let source: backend::program::Source = backend::program::core(
+        backend::compile::region(core, 18),
+        backend::compile::region(scratch, 18));
+    let emitted: i32 = backend::image::compile(source, work,
+        backend::compile::region(output, 2048));
+    if (emitted <= backend::image::CODE
+        || output[0] != 127 || output[1] != 69
+        || output[2] != 76 || output[3] != 70) { return 3; }
+    let raw_end: i32 = backend::program::compile(source, work,
+        backend::compile::cursor(output, 2048, 0));
+    if (raw_end <= 0) { return 5; }
+    // An explicitly typed source cannot fall back to the wire path merely
+    // because it has no bodies.
+    let missing_bodies: backend::program::Source = backend::program::typed(
+        ir::body_catalog::empty(), empty_native);
+    if (!backend::program::is_typed(missing_bodies)
+        || backend::image::compile(missing_bodies, work,
+            backend::compile::region(output, 2048)) != -1) { return 4; }
+    return 0;
+}

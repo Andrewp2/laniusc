@@ -124,6 +124,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint start = semantic_struct_field_start_by_hir[current];
         if (stack_next[depth] >= count)
         {
+            if (stack_multiplier[depth] != 0u &&
+                stack_total[depth] > (INVALID - 1u) / stack_multiplier[depth])
+            {
+                semantic_struct_word_count_by_hir[root] = INVALID;
+                return;
+            }
             uint completed = stack_total[depth] * stack_multiplier[depth];
             uint parent_field = stack_parent_field[depth];
             if (depth == 0u)
@@ -136,6 +142,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
             {
                 semantic_struct_field_word_offset_by_row[parent_field] = stack_total[0u];
                 semantic_struct_field_word_count_by_row[parent_field] = completed;
+            }
+            if (stack_total[depth] >= INVALID - completed)
+            {
+                semantic_struct_word_count_by_hir[root] = INVALID;
+                return;
             }
             stack_total[depth] += completed;
             continue;
@@ -164,8 +175,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             semantic_struct_word_count_by_hir[root] = INVALID;
             return;
         }
-        uint multiplier = cached_width != 0u ? cached_width
-            : slice_field ? 2u : array_length(field.value, hir_count);
+        uint multiplier = slice_field ? 2u
+            : array_length(field.value, hir_count);
         uint element_type = array_element_type(field.value, hir_count);
         // A slice owns a pointer-and-length pair, not an inline copy of its
         // element type (even when that element is a nominal struct).
@@ -173,6 +184,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
             : nested_struct(element_type, hir_count);
         if (child == INVALID)
         {
+            // Only enum fields cache a complete non-struct layout between
+            // passes. A cached struct width already includes its child and
+            // must not become the child's multiplier on the second pass.
+            if (cached_width != 0u)
+                multiplier = cached_width;
+            if (multiplier == INVALID || stack_total[depth] >= INVALID - multiplier)
+            {
+                semantic_struct_word_count_by_hir[root] = INVALID;
+                return;
+            }
             if (depth == 0u)
             {
                 semantic_struct_field_word_offset_by_row[field_row] = stack_total[0u];

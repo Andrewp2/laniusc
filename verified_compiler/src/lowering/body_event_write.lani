@@ -1,0 +1,248 @@
+module lowering::body_event_write;
+
+import backend::syntax;
+import ir::body_events;
+import ir::type_ref;
+
+type Region = ir::body_events::Region;
+type LiteralValue = ir::body_events::LiteralValue;
+type LocalReference = ir::body_events::LocalReference;
+type LocalDeclaration = ir::body_events::LocalDeclaration;
+type FieldReference = ir::body_events::FieldReference;
+type StructFields = ir::body_events::StructFields;
+type EnumVariant = ir::body_events::EnumVariant;
+type MatchHeader = ir::body_events::MatchHeader;
+type MatchArm = ir::body_events::MatchArm;
+type CallHeader = ir::body_events::CallHeader;
+
+pub fn expression_value(output: Region, position: i32,
+    literal: LiteralValue) -> i32 {
+    return match (literal) {
+        ir::body_events::IntegerValue(integer_value) ->
+            ir::body_events::append(output, position,
+                ir::body_events::ExpressionInteger(integer_value)),
+        ir::body_events::BooleanValue(boolean_value) ->
+            ir::body_events::append(output, position,
+                ir::body_events::ExpressionBoolean(boolean_value)),
+    };
+}
+
+pub fn expression_local(output: Region, position: i32,
+    local: LocalReference) -> i32 {
+    if (local.id <= -1) { return -1; }
+    return ir::body_events::append(output, position,
+        ir::body_events::ExpressionLocal(local));
+}
+
+pub fn expression_constant(output: Region, position: i32,
+    constant_id: i32) -> i32 {
+    if (constant_id <= -1) { return -1; }
+    return ir::body_events::append(output, position,
+        ir::body_events::ExpressionConstant(constant_id));
+}
+
+pub fn expression_unary(output: Region, position: i32,
+    operation: backend::syntax::UnaryOperation) -> i32 {
+    return match (operation) {
+        backend::syntax::UnaryPositive ->
+            ir::body_events::append(output, position,
+                ir::body_events::ExpressionUnaryPositive),
+        backend::syntax::UnaryNot ->
+            ir::body_events::append(output, position,
+                ir::body_events::ExpressionUnaryNot),
+        backend::syntax::UnaryNegate ->
+            ir::body_events::append(output, position,
+                ir::body_events::ExpressionUnaryNegate),
+        backend::syntax::InvalidUnaryOperation -> -1,
+    };
+}
+
+pub fn expression_binary(output: Region, position: i32,
+    operation: backend::syntax::BinaryOperation) -> i32 {
+    return match (operation) {
+        backend::syntax::BinaryAndThen ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryAndThen),
+        backend::syntax::BinaryOrElse ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryOrElse),
+        backend::syntax::BinaryEqual ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryEqual),
+        backend::syntax::BinaryNotEqual ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryNotEqual),
+        backend::syntax::BinaryLess ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryLess),
+        backend::syntax::BinaryLessEqual ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryLessEqual),
+        backend::syntax::BinaryGreater ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryGreater),
+        backend::syntax::BinaryGreaterEqual ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryGreaterEqual),
+        backend::syntax::BinaryAdd ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryAdd),
+        backend::syntax::BinarySubtract ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinarySubtract),
+        backend::syntax::BinaryMultiply ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryMultiply),
+        backend::syntax::BinaryDivide ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryDivide),
+        backend::syntax::BinaryRemainder ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryRemainder),
+        backend::syntax::BinaryBitAnd ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryBitAnd),
+        backend::syntax::BinaryBitOr ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryBitOr),
+        backend::syntax::BinaryBitXor ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryBitXor),
+        backend::syntax::BinaryShiftLeft ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryShiftLeft),
+        backend::syntax::BinaryShiftRight ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionBinaryShiftRight),
+        backend::syntax::InvalidBinaryOperation -> -1,
+    };
+}
+
+pub fn expression_assignment(output: Region, position: i32,
+    operation: backend::syntax::AssignmentOperation) -> i32 {
+    return match (operation) {
+        backend::syntax::AssignmentSet ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionAssignmentSet),
+        backend::syntax::AssignmentAdd ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionAssignmentAdd),
+        backend::syntax::AssignmentSubtract ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionAssignmentSubtract),
+        backend::syntax::AssignmentMultiply ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionAssignmentMultiply),
+        backend::syntax::AssignmentDivide ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionAssignmentDivide),
+        backend::syntax::AssignmentRemainder ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionAssignmentRemainder),
+        backend::syntax::AssignmentBitXor ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionAssignmentBitXor),
+        backend::syntax::AssignmentShiftLeft ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionAssignmentShiftLeft),
+        backend::syntax::AssignmentShiftRight ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionAssignmentShiftRight),
+        backend::syntax::AssignmentBitAnd ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionAssignmentBitAnd),
+        backend::syntax::AssignmentBitOr ->
+            ir::body_events::append(output, position, ir::body_events::ExpressionAssignmentBitOr),
+        backend::syntax::InvalidAssignmentOperation -> -1,
+    };
+}
+
+pub fn expression_index(output: Region, position: i32) -> i32 {
+    return ir::body_events::append(output, position, ir::body_events::ExpressionIndex);
+}
+
+pub fn expression_struct(output: Region, position: i32,
+    fields: StructFields) -> i32 {
+    if (backend::syntax::nominal_type(fields.type_id) <= -1 || fields.count <= -1) { return -1; }
+    return ir::body_events::append(output, position,
+        ir::body_events::ExpressionStruct(fields));
+}
+
+pub fn expression_enumeration(output: Region, position: i32,
+    variant: EnumVariant) -> i32 {
+    if (backend::syntax::nominal_type(variant.type_id) <= -1 || variant.ordinal <= -1
+        || variant.payload_count <= -1) { return -1; }
+    return ir::body_events::append(output, position,
+        ir::body_events::ExpressionEnumeration(variant));
+}
+
+pub fn expression_match(output: Region, position: i32,
+    header: MatchHeader) -> i32 {
+    if (!ir::type_ref::valid(header.result_kind)
+        || header.arm_count <= 0) { return -1; }
+    return ir::body_events::append(output, position,
+        ir::body_events::ExpressionMatch(header));
+}
+
+pub fn expression_field(output: Region, position: i32,
+    field: FieldReference) -> i32 {
+    if (field.index <= -1) { return -1; }
+    return ir::body_events::append(output, position,
+        ir::body_events::ExpressionField(field));
+}
+
+pub fn expression_call(output: Region, position: i32,
+    call: CallHeader) -> i32 {
+    if (call.function_id <= -1 || call.argument_count <= -1) { return -1; }
+    return ir::body_events::append(output, position,
+        ir::body_events::ExpressionCall(call));
+}
+
+pub fn match_arm(output: Region, position: i32, arm: MatchArm) -> i32 {
+    if (arm.ordinal < -1 || arm.binding_count <= -1
+        || (arm.ordinal == -1 && arm.binding_count != 0)) { return -1; }
+    return ir::body_events::append(output, position,
+        ir::body_events::MatchArmHeader(arm));
+}
+
+pub fn match_binding(output: Region, position: i32,
+    binding: LocalReference) -> i32 {
+    if (binding.id <= -1) { return -1; }
+    return ir::body_events::append(output, position,
+        ir::body_events::MatchBinding(binding));
+}
+
+pub fn place_local(output: Region, position: i32,
+    local: LocalReference) -> i32 {
+    if (local.id <= -1) { return -1; }
+    return ir::body_events::append(output, position,
+        ir::body_events::PlaceLocal(local));
+}
+
+pub fn place_index(output: Region, position: i32) -> i32 {
+    return ir::body_events::append(output, position, ir::body_events::PlaceIndex);
+}
+
+pub fn place_field(output: Region, position: i32,
+    field: FieldReference) -> i32 {
+    if (field.index <= -1) { return -1; }
+    return ir::body_events::append(output, position,
+        ir::body_events::PlaceField(field));
+}
+
+pub fn statement_skip(output: Region, position: i32) -> i32 {
+    return ir::body_events::append(output, position, ir::body_events::StatementSkip);
+}
+
+pub fn statement_expression(output: Region, position: i32) -> i32 {
+    return ir::body_events::append(output, position, ir::body_events::StatementExpression);
+}
+
+pub fn statement_sequence(output: Region, position: i32) -> i32 {
+    return ir::body_events::append(output, position, ir::body_events::StatementSequence);
+}
+
+pub fn statement_let(output: Region, position: i32,
+    local: LocalDeclaration) -> i32 {
+    if (local.id <= -1 || !ir::type_ref::valid(local.kind)) { return -1; }
+    return ir::body_events::append(output, position,
+        ir::body_events::StatementLet(local));
+}
+
+pub fn statement_let_uninitialized(output: Region, position: i32,
+    local: LocalDeclaration) -> i32 {
+    if (local.id <= -1 || !ir::type_ref::valid(local.kind)) { return -1; }
+    return ir::body_events::append(output, position,
+        ir::body_events::StatementLetUninitialized(local));
+}
+
+pub fn statement_if(output: Region, position: i32) -> i32 {
+    return ir::body_events::append(output, position, ir::body_events::StatementIf);
+}
+
+pub fn statement_while(output: Region, position: i32) -> i32 {
+    return ir::body_events::append(output, position, ir::body_events::StatementWhile);
+}
+
+pub fn statement_return(output: Region, position: i32,
+    presence: backend::syntax::Presence) -> i32 {
+    return match (presence) {
+        backend::syntax::Absent -> ir::body_events::append(output, position,
+            ir::body_events::StatementReturnVoid),
+        backend::syntax::Present -> ir::body_events::append(output, position,
+            ir::body_events::StatementReturnValue),
+        backend::syntax::InvalidPresence -> -1,
+    };
+}

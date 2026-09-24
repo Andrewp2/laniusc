@@ -312,6 +312,12 @@ uint direct_expr_type(uint node)
     if (!valid_compact_node(node))
         return TY_UNKNOWN;
 
+    if (compact_hir_core[node].kind == HIR_MEMBER_EXPR)
+    {
+        uint member_token = compact_hir_payload[node].c;
+        return visible_type_for_token(member_token);
+    }
+
     if (compact_hir_core[node].kind == HIR_CALL_EXPR)
     {
         uint callee = compact_hir_payload[node].a;

@@ -94,12 +94,12 @@ pub fn valid_condition(condition: Condition) -> bool {
 }
 
 pub fn set_condition(output: [i32], capacity: i32, cursor: i32,
-    condition: Condition, destination: i32) -> i32 {
+    condition: Condition, destination: x86::register::Register) -> i32 {
     if (!valid_condition(condition)) { return -1; }
-    return x86::encode::register_form(output, capacity, cursor,
+    return x86::encode::extension_form(output, capacity, cursor,
         x86::register::WIDTH_32,
         SET_CONDITION_OPCODE_BASE + condition_code(condition),
-        0, destination, destination >= x86::register::RSP);
+        0, destination, x86::register::needs_byte_rex(destination));
 }
 
 fn relative(output: [i32], capacity: i32, cursor: i32,
@@ -160,25 +160,29 @@ pub fn patch_relative(output: [i32], length: i32, field: i32, target: i32) -> i3
         target - (field + RELATIVE_WORD_BYTES));
 }
 
-fn stack_register(output: [i32], capacity: i32, cursor: i32, opcode: i32, register: i32) -> i32 {
+fn stack_register(output: [i32], capacity: i32, cursor: i32,
+    opcode: i32, register: x86::register::Register) -> i32 {
     if (!x86::register::valid(register)) { return -1; }
+    let register_code: i32 = x86::register::code(register);
     let size: i32 = SINGLE_BYTE_INSTRUCTION;
-    if (register >= LOW_REGISTER_COUNT) { size = TWO_BYTE_INSTRUCTION; }
+    if (register_code >= LOW_REGISTER_COUNT) { size = TWO_BYTE_INSTRUCTION; }
     if (!x86::buffer::fits(capacity, cursor, size)) { return -1; }
     let next: i32 = cursor;
-    if (register >= LOW_REGISTER_COUNT) {
+    if (register_code >= LOW_REGISTER_COUNT) {
         output[next] = EXTENDED_REGISTER_PREFIX;
         next += SINGLE_BYTE_INSTRUCTION;
     }
-    output[next] = opcode + register % LOW_REGISTER_COUNT;
+    output[next] = opcode + register_code % LOW_REGISTER_COUNT;
     return next + SINGLE_BYTE_INSTRUCTION;
 }
 
-pub fn push(output: [i32], capacity: i32, cursor: i32, register: i32) -> i32 {
+pub fn push(output: [i32], capacity: i32, cursor: i32,
+    register: x86::register::Register) -> i32 {
     return stack_register(output, capacity, cursor, PUSH_REGISTER_BASE, register);
 }
 
-pub fn pop(output: [i32], capacity: i32, cursor: i32, register: i32) -> i32 {
+pub fn pop(output: [i32], capacity: i32, cursor: i32,
+    register: x86::register::Register) -> i32 {
     return stack_register(output, capacity, cursor, POP_REGISTER_BASE, register);
 }
 

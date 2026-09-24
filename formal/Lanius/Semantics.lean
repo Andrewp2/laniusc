@@ -1159,6 +1159,7 @@ mutual
             | .trapped reason next => .trapped reason next
             | .exited code exitedState => .exited code exitedState
             | .outOfFuel => .outOfFuel
+        | .typedSliceFromRawParts _ _ _ => .trapped .typeMismatch state
         | .i32SliceDataPtr slice =>
             match evalExpr fuel program state slice with
             | .done (.slice (.scalar (.signed .i32)) cell projections start length) next =>

@@ -151,6 +151,11 @@ uint expression_token(uint node)
 {
     if (!valid_hir(node))
         return INVALID;
+    if (compact_hir_core[node].kind == HIR_MEMBER_EXPR)
+    {
+        uint member = compact_hir_payload[node].c;
+        return valid_token(member) ? member : INVALID;
+    }
     uint token = compact_hir_payload[node].d;
     return valid_token(token) ? token : compact_hir_core[node].token_start;
 }

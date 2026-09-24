@@ -1,6 +1,7 @@
 module app::main;
 
 import backend::syntax;
+import ir::type_ref;
 
 fn main() -> i32 {
     let words: [i32; 16] = [0, 0, 0, 0, 0, 0, 0, 0,
@@ -30,8 +31,7 @@ fn main() -> i32 {
         backend::syntax::FunctionHeader {
             kind: backend::syntax::DefinedFunction,
             pointer_bits: backend::syntax::POINTER_BITS,
-            id: 5, result_type: backend::syntax::type_code(
-                backend::syntax::TypeI32),
+            id: 5, result_type: ir::type_ref::I32,
             parameters: 2, body_words: 3,
         };
     backend::syntax::write_function_header(words,
@@ -42,7 +42,8 @@ fn main() -> i32 {
     if (decoded_function.kind != backend::syntax::DefinedFunction
         || decoded_function.pointer_bits != function.pointer_bits
         || decoded_function.id != function.id
-        || decoded_function.result_type != function.result_type
+        || !ir::type_ref::same(decoded_function.result_type,
+            function.result_type)
         || decoded_function.parameters != function.parameters
         || decoded_function.body_words != function.body_words
         || backend::syntax::function_id_at(words,
@@ -51,10 +52,14 @@ fn main() -> i32 {
     }
     backend::syntax::set_function_body_words_at(words,
         backend::syntax::PROGRAM_HEADER_WORDS, 8);
-    if (backend::syntax::read_function_header(words,
-            backend::syntax::PROGRAM_HEADER_WORDS).body_words != 8) {
-        return 4;
+    if (words[backend::syntax::PROGRAM_HEADER_WORDS
+            + backend::syntax::FUNCTION_HEADER_WORDS - 1] != 8) {
+        return 6;
     }
+    let updated: backend::syntax::FunctionHeader =
+        backend::syntax::read_function_header(words,
+            backend::syntax::PROGRAM_HEADER_WORDS);
+    if (updated.body_words != 8) { return 4; }
     words[backend::syntax::PROGRAM_HEADER_WORDS] = 99;
     if (backend::syntax::read_function_header(words,
             backend::syntax::PROGRAM_HEADER_WORDS).kind

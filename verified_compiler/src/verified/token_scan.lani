@@ -16,12 +16,6 @@ pub fn succeeded(result: TokenScan) -> bool {
     return result.success;
 }
 
-// Encode only where a token crosses into the generated parser's row format.
-pub fn encoded_kind(result: TokenScan) -> i32 {
-    if (!result.success) { return 0; }
-    return verified::token::kind_code(result.kind);
-}
-
 // Only inspect the typed kind after `succeeded` returned true. On failure the
 // success flag, not the unused kind field, identifies the scan result.
 pub fn token_kind(result: TokenScan) -> verified::token::TokenKind {
@@ -48,7 +42,7 @@ pub fn successful(kind: verified::token::TokenKind, end_offset: i32) -> TokenSca
 pub fn failed(error_offset: i32) -> TokenScan {
     return TokenScan {
         success: false,
-        kind: verified::token::Identifier,
+        kind: verified::token::InvalidToken,
         end_offset: 0,
         error_offset: error_offset,
     };

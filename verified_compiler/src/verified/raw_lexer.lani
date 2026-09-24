@@ -32,7 +32,7 @@ pub fn lex_stage_code(result: LexResult) -> i32 {
 }
 
 pub fn lex_has_stage(result: LexResult, expected: LexStage) -> bool {
-    return stage_code(result.stage) == stage_code(expected);
+    return result.stage == expected;
 }
 
 pub fn lex_succeeded(result: LexResult) -> bool {
@@ -170,37 +170,29 @@ pub fn scan_one(
     return verified::token_scan::failed(start);
 }
 
-// Writes the complete raw token stream into caller-owned storage. The source
-// length is always a sufficient output capacity because every token consumes
-// at least one byte. Returning the accepted prefix on failure makes the first
-// lexical failure observable without inventing a partial token.
-pub fn lex_into(
-    source: [i32],
-    source_length: i32,
-    output_records: [i32],
-    output_capacity: i32,
-) -> LexResult {
+// Lexing retains typed token rows. The generated parser receives only the
+// canonical kind codes later; spans are never packed during recognition.
+pub fn lex_into_rows(source: [i32], source_length: i32,
+    output: verified::token::TokenTable) -> LexResult {
+    let rows: [verified::token::TokenRow] = output.data;
     let offset: i32 = 0;
     let token_count: i32 = 0;
     while (offset < source_length) {
-        let scanned = scan_one(source, source_length, offset);
+        let scanned: verified::token_scan::TokenScan =
+            scan_one(source, source_length, offset);
         if (!verified::token_scan::succeeded(scanned)) {
-            return lexical_failure(
-                token_count,
-                verified::token_scan::error_offset(scanned),
-            );
+            return lexical_failure(token_count,
+                verified::token_scan::error_offset(scanned));
         }
-        if (token_count >= output_capacity) {
+        if (token_count >= output.count) {
             return output_full(token_count, offset);
         }
-
-        let row: i32 = token_count * verified::token::ROW_WORDS;
-        output_records[row + verified::token::KIND_FIELD]
-            = verified::token_scan::encoded_kind(scanned);
-        output_records[row + verified::token::START_FIELD] = offset;
-        output_records[row + verified::token::END_FIELD]
-            = verified::token_scan::end_offset(scanned);
-        offset = verified::token_scan::end_offset(scanned);
+        let end: i32 = verified::token_scan::end_offset(scanned);
+        rows[token_count] = verified::token::TokenRow {
+            kind: verified::token_scan::token_kind(scanned),
+            start: offset, finish: end,
+        };
+        offset = end;
         token_count += 1;
     }
     return completed(token_count);

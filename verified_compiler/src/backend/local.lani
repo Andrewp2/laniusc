@@ -1,21 +1,32 @@
 module backend::local;
 import backend::frame;
+import ir::type_ref;
 import x86::encode;
 import x86::control;
 import x86::register;
 
 pub struct LocalBinding {
     id: i32,
-    kind: i32,
+    kind: ir::type_ref::TypeRef,
     slot: i32,
+    needs_init_check: bool,
 }
 
-pub fn binding(id: i32, kind: i32, slot: i32) -> LocalBinding {
-    return LocalBinding { id: id, kind: kind, slot: slot };
+pub fn binding(id: i32, kind: ir::type_ref::TypeRef, slot: i32,
+    needs_init_check: bool) -> LocalBinding {
+    return LocalBinding {
+        id: id, kind: kind, slot: slot,
+        needs_init_check: needs_init_check,
+    };
 }
 
-pub fn binding_kind(value: LocalBinding) -> i32 { return value.kind; }
+pub fn binding_kind(value: LocalBinding) -> ir::type_ref::TypeRef {
+    return value.kind;
+}
 pub fn binding_slot(value: LocalBinding) -> i32 { return value.slot; }
+pub fn needs_init_check(value: LocalBinding) -> bool {
+    return value.needs_init_check;
+}
 
 fn slice_from_raw_parts(data: ptr, length: i32) -> [LocalBinding] {
     return slice_from_raw_parts(data, length);
@@ -32,6 +43,7 @@ pub fn write(work: backend::frame::Workspace, index: i32, value: LocalBinding) {
     locals[index].id = value.id;
     locals[index].kind = value.kind;
     locals[index].slot = value.slot;
+    locals[index].needs_init_check = value.needs_init_check;
 }
 
 pub fn read(work: backend::frame::Workspace, index: i32) -> LocalBinding {
@@ -40,6 +52,7 @@ pub fn read(work: backend::frame::Workspace, index: i32) -> LocalBinding {
         id: locals[index].id,
         kind: locals[index].kind,
         slot: locals[index].slot,
+        needs_init_check: locals[index].needs_init_check,
     };
 }
 
@@ -53,9 +66,9 @@ pub fn lookup(work: backend::frame::Workspace, active: i32, id: i32) -> i32 {
     return -1;
 }
 
-// A negative binding kind denotes an originally uninitialized local. It has
-// one extra frame word after its value, initialized to zero at every scope
-// entry. Initialized declarations and parameters need no flag or read check.
+// An originally uninitialized local has one extra frame word after its value,
+// initialized to zero at every scope entry. Initialized declarations and
+// parameters need no flag or read check.
 pub fn mark(output: [i32], capacity: i32, work: backend::frame::Workspace, slot: i32, initialized: bool) -> i32 {
     let state: [backend::frame::State] = backend::frame::state_view(work);
     let value: i32 = 0;

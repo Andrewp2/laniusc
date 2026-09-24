@@ -1,0 +1,127 @@
+module test_support::syntax_tree_decode;
+
+import verified::host;
+import verified::parser;
+import verified::surface_tree;
+import verified::syntax_tree;
+
+// Legacy packed-tree fixtures used by older lowering tests. Production
+// compiler/extractor paths never import this module or decode artifact rows.
+pub fn decode(records: [i32], record_words: i32, offsets: [i32],
+    node_count: i32, token_count: i32) -> verified::syntax_tree::Tree {
+    let invalid: verified::syntax_tree::Tree =
+        verified::syntax_tree::empty();
+    if (record_words <= 0 || node_count <= 0 || token_count <= -1
+        || node_count > verified::host::I32_MAX
+            / verified::syntax_tree::NODE_BYTES) { return invalid; }
+    let children: i32 = 0;
+    let node: i32 = 0;
+    while (node <= node_count - 1) {
+        let record: i32 = verified::surface_tree::record(records,
+            record_words, offsets, node_count, node);
+        if (record <= -1) { return invalid; }
+        let count: i32 = records[record
+            + verified::parser::DERIVATION_CHILD_COUNT_FIELD];
+        if (count > verified::host::I32_MAX
+                / verified::syntax_tree::CHILD_BYTES - children
+            || records[record
+                + verified::parser::DERIVATION_PRODUCTION_FIELD] <= -1
+            || records[record
+                + verified::parser::DERIVATION_ORIGIN_FIELD] <= -1
+            || records[record + verified::parser::DERIVATION_END_FIELD]
+                <= records[record
+                    + verified::parser::DERIVATION_ORIGIN_FIELD] - 1) {
+            return invalid;
+        }
+        let child_index: i32 = 0;
+        while (child_index != count) {
+            let slot: i32 = record
+                + verified::parser::DERIVATION_HEADER_WORDS
+                + child_index * verified::parser::DERIVATION_CHILD_WORDS;
+            let tag: i32 = records[slot
+                + verified::parser::DERIVATION_CHILD_TAG_FIELD];
+            let payload: i32 = records[slot
+                + verified::parser::DERIVATION_CHILD_PAYLOAD_FIELD];
+            if (payload <= -1) { return invalid; }
+            if (verified::parser::encoded_child_is(tag,
+                    verified::parser::TokenChild)) {
+                if (payload >= token_count) { return invalid; }
+            } else {
+                if (!verified::parser::encoded_child_is(tag,
+                        verified::parser::StateChild)
+                    || payload >= node) { return invalid; }
+            }
+            child_index += 1;
+        }
+        children += count;
+        node += 1;
+    }
+    let node_memory: ptr = verified::host::alloc(
+        node_count * verified::syntax_tree::NODE_BYTES,
+        verified::syntax_tree::ALIGNMENT);
+    let child_bytes: i32 = verified::syntax_tree::CHILD_BYTES;
+    if (children > 0) {
+        child_bytes = children * verified::syntax_tree::CHILD_BYTES;
+    }
+    let child_memory: ptr = verified::host::alloc(child_bytes,
+        verified::syntax_tree::ALIGNMENT);
+    if (node_memory == 0 || child_memory == 0) { return invalid; }
+    let native_nodes: [verified::syntax_tree::Node] =
+        slice_from_raw_parts(node_memory
+            + node_count * verified::syntax_tree::NODE_BYTES
+            - verified::syntax_tree::ALIGNMENT, node_count);
+    let child_first: ptr = child_memory;
+    if (children > 0) {
+        child_first = child_memory
+            + children * verified::syntax_tree::CHILD_BYTES
+            - verified::syntax_tree::ALIGNMENT;
+    }
+    let native_children: [verified::syntax_tree::Child] =
+        slice_from_raw_parts(child_first, children);
+    node = 0;
+    let first_child: i32 = 0;
+    while (node <= node_count - 1) {
+        let record: i32 = offsets[node];
+        let count: i32 = records[record
+            + verified::parser::DERIVATION_CHILD_COUNT_FIELD];
+        native_nodes[node] = verified::syntax_tree::Node {
+            production: records[record
+                + verified::parser::DERIVATION_PRODUCTION_FIELD],
+            origin: records[record
+                + verified::parser::DERIVATION_ORIGIN_FIELD],
+            end: records[record
+                + verified::parser::DERIVATION_END_FIELD],
+            first_child: first_child,
+            child_count: count,
+        };
+        let child_index: i32 = 0;
+        while (child_index != count) {
+            let slot: i32 = record
+                + verified::parser::DERIVATION_HEADER_WORDS
+                + child_index * verified::parser::DERIVATION_CHILD_WORDS;
+            let tag: i32 = records[slot
+                + verified::parser::DERIVATION_CHILD_TAG_FIELD];
+            let kind: verified::parser::ChildKind =
+                verified::parser::StateChild;
+            if (verified::parser::encoded_child_is(tag,
+                    verified::parser::TokenChild)) {
+                kind = verified::parser::TokenChild;
+            }
+            native_children[first_child + child_index] =
+                verified::syntax_tree::Child {
+                    kind: kind,
+                    payload: records[slot
+                        + verified::parser::DERIVATION_CHILD_PAYLOAD_FIELD],
+                    semantic_kind: records[slot
+                        + verified::parser::DERIVATION_CHILD_KIND_FIELD],
+                };
+            child_index += 1;
+        }
+        first_child += count;
+        node += 1;
+    }
+    return verified::syntax_tree::Tree {
+        nodes: native_nodes, children: native_children,
+        node_count: node_count, child_count: children,
+    };
+}

@@ -21,7 +21,7 @@ pub fn stage_code(stage: UnitsStage) -> i32 {
 }
 
 pub fn stage_succeeded(stage: UnitsStage) -> bool {
-    return stage_code(stage) == stage_code(Success);
+    return stage == Success;
 }
 
 pub struct UnitsResult {

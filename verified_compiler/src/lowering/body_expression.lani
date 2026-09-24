@@ -1,23 +1,81 @@
 module lowering::body_expression;
 
-import verified::production;
 import backend::syntax;
 import lowering::allocation;
 import lowering::body_context;
+import ir::body_events;
+import ir::type_ref;
+import lowering::body_event_write;
 import lowering::body_lookup;
 import lowering::declarations;
 import lowering::locals;
 import lowering::signatures;
 import lowering::signature_index;
+import lowering::string_literal;
+import lowering::token_names;
+import lowering::value_catalog;
 import verified::surface_expr;
+import verified::host;
 
 type BodyContext = lowering::body_context::BodyContext;
 type EnumVariant = lowering::body_lookup::EnumVariant;
+type VariantTarget = lowering::value_catalog::VariantTarget;
+type Region = ir::body_events::Region;
+type TypeRef = ir::type_ref::TypeRef;
 
-fn emit_enum_variant(context: BodyContext, arena_count: i32,
-    variant: EnumVariant, first: i32, output: [i32], capacity: i32,
+pub enum ExpressionStatus {
+    KnownExpression,
+    InvalidExpression,
+    UnsupportedExpression,
+}
+
+pub struct ExpressionKind {
+    status: ExpressionStatus,
+    kind: TypeRef,
+}
+
+fn invalid_kind() -> ExpressionKind {
+    return ExpressionKind {
+        status: InvalidExpression,
+        kind: ir::type_ref::Invalid,
+    };
+}
+
+fn unsupported_kind() -> ExpressionKind {
+    return ExpressionKind {
+        status: UnsupportedExpression,
+        kind: ir::type_ref::Invalid,
+    };
+}
+
+fn known_kind(kind: ir::type_ref::TypeRef) -> ExpressionKind {
+    if (!ir::type_ref::valid(kind)) { return unsupported_kind(); }
+    return ExpressionKind { status: KnownExpression, kind: kind };
+}
+
+pub fn kind_type(result: ExpressionKind) -> ir::type_ref::TypeRef {
+    if (result.status == KnownExpression) { return result.kind; }
+    return ir::type_ref::Invalid;
+}
+
+fn kind_failure(result: ExpressionKind) -> i32 {
+    if (result.status == UnsupportedExpression) {
+        return lowering::body_context::unsupported();
+    }
+    return lowering::body_context::invalid();
+}
+
+fn nominal_id(result: ExpressionKind) -> i32 {
+    let kind: ir::type_ref::TypeRef = kind_type(result);
+    return match (kind) {
+        ir::type_ref::Nominal(id) -> id,
+        _ -> -1,
+    };
+}
+
+fn emit_resolved_enum_variant(context: BodyContext, arena_count: i32,
+    variant: VariantTarget, first: i32, output: Region,
     position: i32, depth: i32) -> i32 {
-    if (!lowering::body_lookup::enum_lookup_is(variant.state, lowering::body_lookup::EnumResolved)) { return lowering::body_context::invalid(); }
     let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
     let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
     let count: i32 = 0;
@@ -29,16 +87,18 @@ fn emit_enum_variant(context: BodyContext, arena_count: i32,
         current = nodes[current].next;
         fuel -= 1;
     }
-    if (current >= 0 || count != variant.field_count) { return lowering::body_context::invalid(); }
-    let next: i32 = lowering::body_context::append(output, capacity, position,
-        backend::syntax::expression_code(backend::syntax::ExprEnumeration));
-    next = lowering::body_context::append(output, capacity, next,
-        backend::syntax::NOMINAL_TYPE_BASE + variant.type_id);
-    next = lowering::body_context::append(output, capacity, next, variant.ordinal);
-    next = lowering::body_context::append(output, capacity, next, variant.field_count);
+    if (current >= 0 || count != variant.field_count) {
+        return lowering::body_context::invalid();
+    }
+    let next: i32 = lowering::body_event_write::expression_enumeration(output,
+        position, ir::body_events::EnumVariant {
+            type_id: variant.type_id,
+            ordinal: variant.ordinal,
+            payload_count: variant.field_count,
+        });
     current = first;
     while (current >= 0) {
-        next = expression(context, arena_count, current, output, capacity,
+        next = expression(context, arena_count, current, output,
             next, depth - 1);
         if (next <= -1) { return lowering::body_context::invalid(); }
         current = nodes[current].next;
@@ -46,14 +106,27 @@ fn emit_enum_variant(context: BodyContext, arena_count: i32,
     return next;
 }
 
+fn emit_enum_variant(context: BodyContext, arena_count: i32,
+    variant: EnumVariant, first: i32, output: Region,
+    position: i32, depth: i32) -> i32 {
+    return match (variant) {
+        lowering::body_lookup::EnumResolved(value) ->
+            emit_resolved_enum_variant(context, arena_count, value, first,
+                output, position, depth),
+        _ -> lowering::body_context::invalid(),
+    };
+}
+
 fn bind_pattern_payload(context: BodyContext, arena_count: i32,
-    pattern: i32, variant: EnumVariant) -> i32 {
+    pattern: i32, variant: VariantTarget) -> i32 {
     let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
     let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
     let locals: lowering::locals::Table = context.locals;
     let first: i32 = nodes[pattern].right;
     if (lowering::body_lookup::pattern_payload_count(context, arena_count, first)
-        != variant.field_count) { return lowering::body_context::invalid(); }
+        != variant.field_count) {
+        return lowering::body_context::invalid();
+    }
     let saved: i32 = lowering::locals::save(locals);
     let current: i32 = first;
     let payload_index: i32 = 0;
@@ -72,17 +145,17 @@ fn bind_pattern_payload(context: BodyContext, arena_count: i32,
         }
         let binding: i32 = saved;
         while (binding < lowering::locals::save(locals)) {
-            if (lowering::body_context::same_token(context.source, context.source_length,
-                    context.tokens, context.token_count,
+            if (lowering::body_context::same_identifier(context,
                     lowering::locals::name_at(locals, binding), name)) {
                 lowering::locals::restore(locals, saved);
                 return lowering::body_context::invalid();
             }
             binding += 1;
         }
-        let field_kind: i32 = lowering::body_lookup::enum_variant_field_kind(context, variant,
-            payload_index);
-        if (field_kind <= -1 || !lowering::locals::bind(context.locals, name, field_kind)) {
+        let field_kind: TypeRef = lowering::body_lookup::enum_variant_field_kind(
+            context, variant, payload_index);
+        if (!ir::type_ref::valid(field_kind)
+            || !lowering::locals::bind(context.locals, name, field_kind)) {
             lowering::locals::restore(locals, saved);
             return lowering::body_context::invalid();
         }
@@ -92,58 +165,82 @@ fn bind_pattern_payload(context: BodyContext, arena_count: i32,
     return variant.field_count;
 }
 
+fn bind_pattern_variant(context: BodyContext, arena_count: i32,
+    pattern: i32, variant: EnumVariant) -> i32 {
+    return match (variant) {
+        lowering::body_lookup::EnumResolved(value) ->
+            bind_pattern_payload(context, arena_count, pattern, value),
+        _ -> lowering::body_context::invalid(),
+    };
+}
+
 fn match_result_kind(context: BodyContext, arena_count: i32, node: i32,
-    depth: i32) -> i32 {
+    depth: i32) -> ExpressionKind {
     let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
     let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
     let locals: lowering::locals::Table = context.locals;
     if (node <= -1 || node >= arena_count
         || !verified::surface_expr::has_kind(nodes[node].kind,
-            verified::surface_expr::MatchValue)) { return lowering::body_context::unsupported(); }
-    let scrutinee_kind: i32 = expression_kind(context, arena_count,
+            verified::surface_expr::MatchValue)) { return unsupported_kind(); }
+    let scrutinee_kind: ExpressionKind = expression_kind(context, arena_count,
         nodes[node].left, depth - 1);
-    if (scrutinee_kind < backend::syntax::NOMINAL_TYPE_BASE) {
-        return lowering::body_context::unsupported();
-    }
-    let type_id: i32 = scrutinee_kind - backend::syntax::NOMINAL_TYPE_BASE;
+    let type_id: i32 = nominal_id(scrutinee_kind);
+    if (type_id <= -1) { return unsupported_kind(); }
     if (!lowering::body_lookup::has_signature(context, type_id,
         lowering::signatures::EnumerationShape)) {
-        return lowering::body_context::unsupported();
+        return unsupported_kind();
     }
     let first: i32 = nodes[node].right;
     let arm: i32 = first;
     let arms: i32 = 0;
-    let result_kind: i32 = -1;
+    let wildcard: bool = false;
+    let result_kind: ir::type_ref::TypeRef = ir::type_ref::Invalid;
     let fuel: i32 = arena_count;
     while (arm >= 0 && fuel > 0) {
         if (arm >= arena_count
             || !verified::surface_expr::has_kind(nodes[arm].kind,
-                verified::surface_expr::MatchArm)) { return lowering::body_context::invalid(); }
+                verified::surface_expr::MatchArm)) { return invalid_kind(); }
         let pattern: i32 = nodes[arm].left;
-        let variant: EnumVariant = lowering::body_lookup::enum_pattern_variant(context, arena_count,
-            pattern, type_id);
-        if (!lowering::body_lookup::enum_lookup_is(variant.state, lowering::body_lookup::EnumResolved)) { return lowering::body_context::invalid(); }
-        let prior: i32 = first;
-        while (prior >= 0 && prior != arm) {
-            let prior_variant: EnumVariant = lowering::body_lookup::enum_pattern_variant(context,
-                arena_count, nodes[prior].left, type_id);
-            if (!lowering::body_lookup::enum_lookup_is(prior_variant.state, lowering::body_lookup::EnumResolved)
-                || prior_variant.ordinal == variant.ordinal) {
-                return lowering::body_context::invalid();
+        let is_wildcard: bool = lowering::body_lookup::wildcard_pattern(
+            context, arena_count, pattern);
+        if (is_wildcard) {
+            if (nodes[arm].next != -1) { return invalid_kind(); }
+            wildcard = true;
+        } else {
+            let variant: EnumVariant = lowering::body_lookup::enum_pattern_variant(
+                context, arena_count, pattern, type_id);
+            if (!lowering::body_lookup::is_resolved(variant)) {
+                return invalid_kind();
             }
-            prior = nodes[prior].next;
+            let prior: i32 = first;
+            while (prior >= 0 && prior != arm) {
+                let prior_variant: EnumVariant = lowering::body_lookup::enum_pattern_variant(
+                    context, arena_count, nodes[prior].left, type_id);
+                if (!lowering::body_lookup::is_resolved(prior_variant)
+                    || lowering::body_lookup::ordinal(prior_variant)
+                        == lowering::body_lookup::ordinal(variant)) {
+                    return invalid_kind();
+                }
+                prior = nodes[prior].next;
+            }
         }
         let saved: i32 = lowering::locals::save(locals);
-        if (bind_pattern_payload(context, arena_count, pattern, variant)
-            <= -1) {
-            lowering::locals::restore(locals, saved);
-            return lowering::body_context::invalid();
+        if (!is_wildcard) {
+            let variant: EnumVariant = lowering::body_lookup::enum_pattern_variant(
+                context, arena_count, pattern, type_id);
+            if (bind_pattern_variant(context, arena_count, pattern, variant)
+                <= -1) {
+                lowering::locals::restore(locals, saved);
+                return invalid_kind();
+            }
         }
-        let arm_kind: i32 = expression_kind(context, arena_count,
+        let arm_result: ExpressionKind = expression_kind(context, arena_count,
             nodes[arm].right, depth - 1);
         lowering::locals::restore(locals, saved);
-        if (arm_kind <= -1 || (result_kind >= 0 && result_kind != arm_kind)) {
-            return lowering::body_context::unsupported();
+        let arm_kind: ir::type_ref::TypeRef = kind_type(arm_result);
+        if (!ir::type_ref::valid(arm_kind)) { return unsupported_kind(); }
+        if (arms > 0 && !ir::type_ref::same(result_kind, arm_kind)) {
+            return unsupported_kind();
         }
         result_kind = arm_kind;
         arm = nodes[arm].next;
@@ -154,10 +251,11 @@ fn match_result_kind(context: BodyContext, arena_count: i32, node: i32,
         lowering::signature_index::record_at(context.signature_index,
             type_id);
     if (arm >= 0 || fuel == 0 || arms <= 0
-        || arms != lowering::signatures::record_arity(signature_record)) {
-        return lowering::body_context::invalid();
+        || (!wildcard
+            && arms != lowering::signatures::record_arity(signature_record))) {
+        return invalid_kind();
     }
-    return result_kind;
+    return known_kind(result_kind);
 }
 
 fn structure_field(context: BodyContext, type_id: i32, name: i32) -> i32 {
@@ -170,23 +268,45 @@ fn structure_field(context: BodyContext, type_id: i32, name: i32) -> i32 {
             type_id);
     if (!lowering::signatures::record_has_shape(record,
             lowering::signatures::StructureShape)) { return lowering::body_context::invalid(); }
+    let allocated: lowering::allocation::Table = context.allocated;
+    let owner: i32 = -1;
+    let row: i32 = 0;
+    let rows: i32 = lowering::allocation::table_header(allocated).rows;
+    while (row < rows) {
+        let declaration: lowering::allocation::AllocationRow =
+            lowering::allocation::table_row(allocated, row);
+        if (lowering::allocation::row_has_kind(declaration,
+                lowering::declarations::Structure)
+            && lowering::allocation::row_declaration_id(declaration) == type_id) {
+            if (owner >= 0) { return lowering::body_context::invalid(); }
+            owner = lowering::allocation::row_unit(declaration);
+        }
+        row += 1;
+    }
+    if (owner <= -1) { return lowering::body_context::invalid(); }
+    let catalog: lowering::token_names::Catalog =
+        lowering::token_names::catalog(context.contexts,
+            context.source_catalog, context.token_catalog);
     let field_index: i32 = 0;
     while (field_index != lowering::signatures::record_arity(record)) {
         let member: lowering::signatures::SignatureMember =
             lowering::signature_index::member_at(context.signature_index,
                 type_id, field_index);
         let field_name: i32 = member.name;
-        if (lowering::body_context::same_token(context.source, context.source_length, context.tokens,
-            context.token_count, name, field_name)) { return field_index; }
+        if (lowering::token_names::same(catalog, context.owner_unit,
+            name, owner, field_name)) { return field_index; }
         field_index += 1;
     }
     return lowering::body_context::invalid();
 }
 
 fn struct_literal_field(context: BodyContext, arena_count: i32, first: i32,
-    expected_name: i32) -> i32 {
+    expected_owner: i32, expected_name: i32) -> i32 {
     let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
     let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
+    let catalog: lowering::token_names::Catalog =
+        lowering::token_names::catalog(context.contexts,
+            context.source_catalog, context.token_catalog);
     let current: i32 = first;
     let found: i32 = -1;
     let fuel: i32 = arena_count;
@@ -196,8 +316,8 @@ fn struct_literal_field(context: BodyContext, arena_count: i32, first: i32,
                 nodes[current].kind,
                 verified::surface_expr::StructField)) { return lowering::body_context::invalid(); }
         let name: i32 = nodes[current].token;
-        if (lowering::body_context::same_token(context.source, context.source_length, context.tokens,
-            context.token_count, name, expected_name)) {
+        if (lowering::token_names::same(catalog, context.owner_unit,
+            name, expected_owner, expected_name)) {
             if (found >= 0) { return lowering::body_context::invalid(); }
             found = current;
         }
@@ -212,7 +332,7 @@ fn struct_literal_field(context: BodyContext, arena_count: i32, first: i32,
 // only one-segment local paths and recursively indexed places have a canonical
 // backend representation in this lowering stage.
 fn place(context: BodyContext, arena_count: i32, node: i32,
-    output: [i32], capacity: i32, position: i32, depth: i32) -> i32 {
+    output: Region, position: i32, depth: i32) -> i32 {
     let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
     let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
     if (depth <= 0 || node <= -1 || node >= arena_count) { return lowering::body_context::invalid(); }
@@ -227,60 +347,98 @@ fn place(context: BodyContext, arena_count: i32, node: i32,
         if (binding <= -1) { return lowering::body_context::invalid(); }
         let declaration: i32 = lowering::locals::name_at(context.locals,
             binding);
-        let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::place_code(backend::syntax::PlaceLocal));
-        next = lowering::body_context::append(output, capacity, next, declaration);
-        return next;
+        return lowering::body_event_write::place_local(
+            output, position,
+            ir::body_events::LocalReference { id: declaration });
     }
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Index)) {
-        let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::place_code(backend::syntax::PlaceIndex));
+        let next: i32 = lowering::body_event_write::place_index(
+            output, position);
         if (next <= -1) { return next; }
         next = place(context, arena_count,
-            current_node.left, output, capacity, next,
+            current_node.left, output, next,
             depth - 1);
         if (next <= -1) { return next; }
         return expression(context, arena_count,
-            current_node.right, output, capacity, next,
+            current_node.right, output, next,
             depth - 1);
     }
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Member)) {
         let base: i32 = current_node.left;
-        let base_kind: i32 = expression_kind(context, arena_count, base,
+        let base_kind: ExpressionKind = expression_kind(context, arena_count, base,
             depth - 1);
-        if (base_kind <= backend::syntax::NOMINAL_TYPE_BASE - 1) {
+        let type_id: i32 = nominal_id(base_kind);
+        if (type_id <= -1) {
             return lowering::body_context::unsupported();
         }
         let field_index: i32 = structure_field(context,
-            base_kind - backend::syntax::NOMINAL_TYPE_BASE,
-            current_node.token);
+            type_id, current_node.token);
         if (field_index <= -1) { return lowering::body_context::invalid(); }
-        let next: i32 = lowering::body_context::append(output, capacity, position,
-            backend::syntax::place_code(backend::syntax::PlaceField));
-        next = lowering::body_context::append(output, capacity, next, field_index);
+        let next: i32 = lowering::body_event_write::place_field(
+            output, position,
+            ir::body_events::FieldReference { index: field_index });
         if (next <= -1) { return lowering::body_context::invalid(); }
-        return place(context, arena_count, base, output, capacity, next,
+        return place(context, arena_count, base, output, next,
             depth - 1);
     }
     return lowering::body_context::unsupported();
 }
 
-fn unary_operation(production: i32) -> i32 {
-    if (production == verified::production::POS) {
-        return backend::syntax::unary_code(
-            backend::syntax::UnaryPositive);
-    }
-    if (production == verified::production::NEG) {
-        return backend::syntax::unary_code(
-            backend::syntax::UnaryNegate);
-    }
-    if (production == verified::production::NOT) {
-        return backend::syntax::unary_code(
-            backend::syntax::UnaryNot);
-    }
-    return lowering::body_context::unsupported();
+fn unary_operation(operator: verified::surface_expr::ExpressionOperator)
+    -> backend::syntax::UnaryOperation {
+    return match (operator) {
+        verified::surface_expr::UnaryPositive -> backend::syntax::UnaryPositive,
+        verified::surface_expr::UnaryNegate -> backend::syntax::UnaryNegate,
+        verified::surface_expr::UnaryNot -> backend::syntax::UnaryNot,
+        _ -> backend::syntax::InvalidUnaryOperation,
+    };
+}
+
+fn binary_operation(operator: verified::surface_expr::ExpressionOperator)
+    -> backend::syntax::BinaryOperation {
+    return match (operator) {
+        verified::surface_expr::BinaryOrElse -> backend::syntax::BinaryOrElse,
+        verified::surface_expr::BinaryAndThen -> backend::syntax::BinaryAndThen,
+        verified::surface_expr::BinaryBitOr -> backend::syntax::BinaryBitOr,
+        verified::surface_expr::BinaryBitXor -> backend::syntax::BinaryBitXor,
+        verified::surface_expr::BinaryBitAnd -> backend::syntax::BinaryBitAnd,
+        verified::surface_expr::BinaryEqual -> backend::syntax::BinaryEqual,
+        verified::surface_expr::BinaryNotEqual -> backend::syntax::BinaryNotEqual,
+        verified::surface_expr::BinaryLess -> backend::syntax::BinaryLess,
+        verified::surface_expr::BinaryGreater -> backend::syntax::BinaryGreater,
+        verified::surface_expr::BinaryLessEqual -> backend::syntax::BinaryLessEqual,
+        verified::surface_expr::BinaryGreaterEqual -> backend::syntax::BinaryGreaterEqual,
+        verified::surface_expr::BinaryShiftLeft -> backend::syntax::BinaryShiftLeft,
+        verified::surface_expr::BinaryShiftRight -> backend::syntax::BinaryShiftRight,
+        verified::surface_expr::BinaryAdd -> backend::syntax::BinaryAdd,
+        verified::surface_expr::BinarySubtract -> backend::syntax::BinarySubtract,
+        verified::surface_expr::BinaryMultiply -> backend::syntax::BinaryMultiply,
+        verified::surface_expr::BinaryDivide -> backend::syntax::BinaryDivide,
+        verified::surface_expr::BinaryRemainder -> backend::syntax::BinaryRemainder,
+        _ -> backend::syntax::InvalidBinaryOperation,
+    };
+}
+
+fn assignment_operation(operator: verified::surface_expr::ExpressionOperator)
+    -> backend::syntax::AssignmentOperation {
+    return match (operator) {
+        verified::surface_expr::AssignmentSet -> backend::syntax::AssignmentSet,
+        verified::surface_expr::AssignmentAdd -> backend::syntax::AssignmentAdd,
+        verified::surface_expr::AssignmentSubtract -> backend::syntax::AssignmentSubtract,
+        verified::surface_expr::AssignmentMultiply -> backend::syntax::AssignmentMultiply,
+        verified::surface_expr::AssignmentDivide -> backend::syntax::AssignmentDivide,
+        verified::surface_expr::AssignmentRemainder -> backend::syntax::AssignmentRemainder,
+        verified::surface_expr::AssignmentBitXor -> backend::syntax::AssignmentBitXor,
+        verified::surface_expr::AssignmentShiftLeft -> backend::syntax::AssignmentShiftLeft,
+        verified::surface_expr::AssignmentShiftRight -> backend::syntax::AssignmentShiftRight,
+        verified::surface_expr::AssignmentBitAnd -> backend::syntax::AssignmentBitAnd,
+        verified::surface_expr::AssignmentBitOr -> backend::syntax::AssignmentBitOr,
+        _ -> backend::syntax::InvalidAssignmentOperation,
+    };
 }
 
 pub fn expression(context: BodyContext, arena_count: i32, node: i32,
-    output: [i32], capacity: i32, position: i32, depth: i32) -> i32 {
+    output: Region, position: i32, depth: i32) -> i32 {
     let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
     let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
     let allocation_table: lowering::allocation::Table = context.allocated;
@@ -288,85 +446,87 @@ pub fn expression(context: BodyContext, arena_count: i32, node: i32,
     let current_node: verified::surface_expr::ExpressionNode = nodes[node];
     let kind: verified::surface_expr::SurfaceExprKind = current_node.kind;
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Literal)) {
-        let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::expression_code(backend::syntax::ExprValue));
-        if (next <= -1) { return lowering::body_context::invalid(); }
-        let production: i32 = current_node.production;
-        if (production == verified::production::INT) {
+        let operator: verified::surface_expr::ExpressionOperator =
+            current_node.operator;
+        if (operator == verified::surface_expr::LiteralInteger) {
             let value: i32 = lowering::body_context::decimal(context.source, context.source_length,
                 context.tokens, context.token_count,
                 current_node.token);
             if (value <= -1) { return lowering::body_context::invalid(); }
-            next = lowering::body_context::append(output, capacity, next, backend::syntax::type_code(backend::syntax::TypeI32));
-            next = lowering::body_context::append(output, capacity, next, value);
-            return next;
+            return lowering::body_event_write::expression_value(output,
+                position, ir::body_events::IntegerValue(value));
         }
-        if (production == verified::production::TRUE || production == verified::production::FALSE) {
-            next = lowering::body_context::append(output, capacity, next, backend::syntax::type_code(backend::syntax::TypeBool));
-            let value: i32 = 0;
-            if (production == verified::production::TRUE) { value = 1; }
-            next = lowering::body_context::append(output, capacity, next, value);
-        return next;
-    }
+        if (operator == verified::surface_expr::LiteralTrue
+            || operator == verified::surface_expr::LiteralFalse) {
+            let value: bool =
+                operator == verified::surface_expr::LiteralTrue;
+            return lowering::body_event_write::expression_value(output,
+                position, ir::body_events::BooleanValue(value));
+        }
+        if (operator == verified::surface_expr::LiteralString) {
+            let memory: ptr =
+                lowering::string_literal::decode(context.source,
+                    context.source_length, context.tokens,
+                    context.token_count, current_node.token);
+            if (memory == 0) { return lowering::body_context::invalid(); }
+            let header: [i32] = slice_from_raw_parts(memory, 1);
+            let length: i32 = header[0];
+            let value: ir::body_events::StringValue =
+                ir::body_events::StringValue {
+                    data: slice_from_raw_parts(
+                        memory + verified::host::I32_BYTES, length),
+                    length: length,
+                };
+            return ir::body_events::append(output, position,
+                ir::body_events::ExpressionString(value));
+        }
         return lowering::body_context::unsupported();
-}
+    }
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Unary)) {
-        let operation: i32 = unary_operation(current_node.production);
-        if (operation <= -1) { return lowering::body_context::unsupported(); }
-        let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::expression_code(backend::syntax::ExprUnary));
-        next = lowering::body_context::append(output, capacity, next, operation);
+        let operation: backend::syntax::UnaryOperation =
+            unary_operation(current_node.operator);
+        if (operation == backend::syntax::InvalidUnaryOperation) {
+            return lowering::body_context::unsupported();
+        }
+        let next: i32 = lowering::body_event_write::expression_unary(output,
+            position, operation);
         if (next <= -1) { return lowering::body_context::invalid(); }
         next = expression(context, arena_count,
-            current_node.left, output, capacity, next,
+            current_node.left, output, next,
             depth - 1);
         return next;
     }
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Binary)) {
-        let production: i32 = current_node.production;
-        let operation: i32 = -1;
-        if (production == verified::production::OR_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryOrElse); }
-        if (production == verified::production::AND_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryAndThen); }
-        if (production == verified::production::BOR_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryBitOr); }
-        if (production == verified::production::XOR_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryBitXor); }
-        if (production == verified::production::BAND_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryBitAnd); }
-        if (production == verified::production::EQ_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryEqual); }
-        if (production == verified::production::NE_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryNotEqual); }
-        if (production == verified::production::LT_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryLess); }
-        if (production == verified::production::GT_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryGreater); }
-        if (production == verified::production::LE_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryLessEqual); }
-        if (production == verified::production::GE_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryGreaterEqual); }
-        if (production == verified::production::SHL_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryShiftLeft); }
-        if (production == verified::production::SHR_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryShiftRight); }
-        if (production == verified::production::ADD_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryAdd); }
-        if (production == verified::production::SUB_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinarySubtract); }
-        if (production == verified::production::MUL_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryMultiply); }
-        if (production == verified::production::DIV_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryDivide); }
-        if (production == verified::production::MOD_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryRemainder); }
-        if (operation <= -1) { return lowering::body_context::unsupported(); }
-        let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::expression_code(backend::syntax::ExprBinary));
-        next = lowering::body_context::append(output, capacity, next, operation);
+        let operation: backend::syntax::BinaryOperation =
+            binary_operation(current_node.operator);
+        if (operation == backend::syntax::InvalidBinaryOperation) {
+            return lowering::body_context::unsupported();
+        }
+        let next: i32 = lowering::body_event_write::expression_binary(output,
+            position, operation);
         if (next <= -1) { return lowering::body_context::invalid(); }
         next = expression(context, arena_count,
-            current_node.left, output, capacity, next,
+            current_node.left, output, next,
             depth - 1);
         return expression(context, arena_count,
-            current_node.right, output, capacity, next,
+            current_node.right, output, next,
             depth - 1);
     }
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Assign)) {
-        let operation: i32 = current_node.production
-            - verified::production::ASSIGN_SET;
-        if (!backend::syntax::valid_assignment_code(operation)) {
+        let operation: backend::syntax::AssignmentOperation =
+            assignment_operation(current_node.operator);
+        if (operation == backend::syntax::InvalidAssignmentOperation) {
             return lowering::body_context::unsupported();
         }
-        let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::expression_code(backend::syntax::ExprAssign));
-        next = lowering::body_context::append(output, capacity, next, operation);
+        let next: i32 = lowering::body_event_write::expression_assignment(output,
+            position, operation);
         if (next <= -1) { return lowering::body_context::invalid(); }
         next = place(context, arena_count,
-            current_node.left, output, capacity, next,
+            current_node.left, output, next,
             depth - 1);
         if (next <= -1) { return lowering::body_context::invalid(); }
         next = expression(context, arena_count,
-            current_node.right, output, capacity, next,
+            current_node.right, output, next,
             depth - 1);
         if (next <= -1) { return lowering::body_context::invalid(); }
         return next;
@@ -377,25 +537,34 @@ pub fn expression(context: BodyContext, arena_count: i32, node: i32,
             arena_count, node);
         let binding: i32 = lowering::body_context::local_index(context, name);
         if (binding >= 0) {
-            let next: i32 = lowering::body_context::append(output, capacity, position,
-                backend::syntax::expression_code(backend::syntax::ExprLocal));
-            return lowering::body_context::append(output, capacity, next,
-                lowering::locals::name_at(context.locals, binding));
+            return lowering::body_event_write::expression_local(output, position,
+                ir::body_events::LocalReference {
+                    id: lowering::locals::name_at(context.locals, binding),
+                });
+        }
+        let constant_id: i32 = lowering::body_lookup::constant_id(context,
+            node);
+        if (constant_id >= 0) {
+            return lowering::body_event_write::expression_constant(output,
+                position, constant_id);
         }
         let variant: EnumVariant = lowering::body_lookup::enum_variant(context, node);
-        if (!lowering::body_lookup::enum_lookup_is(variant.state, lowering::body_lookup::EnumResolved)
-            || variant.field_count != 0) { return lowering::body_context::invalid(); }
+        if (!lowering::body_lookup::is_resolved(variant)
+            || lowering::body_lookup::field_count(variant) != 0) {
+            return lowering::body_context::invalid();
+        }
         return emit_enum_variant(context, arena_count, variant, -1, output,
-            capacity, position, depth);
+            position, depth);
     }
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Index)) {
-        let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::expression_code(backend::syntax::ExprIndex));
+        let next: i32 = lowering::body_event_write::expression_index(output,
+            position);
         next = expression(context, arena_count,
-            current_node.left, output, capacity, next,
+            current_node.left, output, next,
             depth - 1);
         if (next <= -1) { return lowering::body_context::invalid(); }
         next = expression(context, arena_count,
-            current_node.right, output, capacity, next,
+            current_node.right, output, next,
             depth - 1);
         if (next <= -1) { return lowering::body_context::invalid(); }
         return next;
@@ -411,7 +580,7 @@ pub fn expression(context: BodyContext, arena_count: i32, node: i32,
         let type_id: i32 = lowering::allocation::row_declaration_id(
             allocation_row);
         if (!lowering::body_lookup::has_signature(context, type_id,
-            lowering::signatures::StructureShape)) {
+                lowering::signatures::StructureShape)) {
             return lowering::body_context::invalid();
         }
         let signature_row: lowering::signatures::SignatureRecord =
@@ -429,11 +598,10 @@ pub fn expression(context: BodyContext, arena_count: i32, node: i32,
             fuel -= 1;
         }
         if (current >= 0 || supplied != field_count) { return lowering::body_context::invalid(); }
-        let next: i32 = lowering::body_context::append(output, capacity, position,
-            backend::syntax::expression_code(backend::syntax::ExprStruct));
-        next = lowering::body_context::append(output, capacity, next,
-            backend::syntax::NOMINAL_TYPE_BASE + type_id);
-        next = lowering::body_context::append(output, capacity, next, field_count);
+        let next: i32 = lowering::body_event_write::expression_struct(output,
+            position, ir::body_events::StructFields {
+                type_id: type_id, count: field_count,
+            });
         if (next <= -1) { return lowering::body_context::invalid(); }
         let field_index: i32 = 0;
         while (field_index < field_count) {
@@ -442,11 +610,11 @@ pub fn expression(context: BodyContext, arena_count: i32, node: i32,
                     type_id, field_index);
             let field_name: i32 = member.name;
             let field_node: i32 = struct_literal_field(context, arena_count,
-                first, field_name);
+                first, lowering::allocation::row_unit(allocation_row),
+                field_name);
             if (field_node <= -1) { return lowering::body_context::invalid(); }
-            next = expression(context, arena_count,
-                nodes[field_node].left, output,
-                capacity, next, depth - 1);
+            next = expression_expected(context, arena_count,
+                nodes[field_node].left, member.type_tag, output, next, depth - 1);
             if (next <= -1) { return lowering::body_context::invalid(); }
             field_index += 1;
         }
@@ -454,9 +622,10 @@ pub fn expression(context: BodyContext, arena_count: i32, node: i32,
     }
     if (verified::surface_expr::has_kind(kind,
         verified::surface_expr::MatchValue)) {
-        let result_kind: i32 = match_result_kind(context, arena_count, node,
+        let result: ExpressionKind = match_result_kind(context, arena_count, node,
             depth - 1);
-        if (result_kind <= -1) { return result_kind; }
+        let result_kind: ir::type_ref::TypeRef = kind_type(result);
+        if (!ir::type_ref::valid(result_kind)) { return kind_failure(result); }
         let arm: i32 = current_node.right;
         let arm_count: i32 = 0;
         let fuel: i32 = arena_count;
@@ -467,85 +636,107 @@ pub fn expression(context: BodyContext, arena_count: i32, node: i32,
             fuel -= 1;
         }
         if (arm >= 0 || fuel == 0 || arm_count <= 0) { return lowering::body_context::invalid(); }
-        let next: i32 = lowering::body_context::append(output, capacity, position,
-            backend::syntax::expression_code(backend::syntax::ExprMatch));
-        next = lowering::body_context::append(output, capacity, next, result_kind);
-        next = lowering::body_context::append(output, capacity, next, arm_count);
+        let next: i32 = lowering::body_event_write::expression_match(output,
+            position, ir::body_events::MatchHeader {
+                result_kind: result_kind,
+                arm_count: arm_count,
+            });
         next = expression(context, arena_count, current_node.left,
-            output, capacity, next, depth - 1);
+            output, next, depth - 1);
         if (next <= -1) { return lowering::body_context::invalid(); }
-        let scrutinee_kind: i32 = expression_kind(context, arena_count,
+        let scrutinee_kind: ExpressionKind = expression_kind(context, arena_count,
             current_node.left, depth - 1);
-        let type_id: i32 = scrutinee_kind
-            - backend::syntax::NOMINAL_TYPE_BASE;
+        let type_id: i32 = nominal_id(scrutinee_kind);
+        if (type_id <= -1) { return lowering::body_context::unsupported(); }
         let locals: lowering::locals::Table = context.locals;
         arm = current_node.right;
         while (arm >= 0) {
             let pattern: i32 = nodes[arm].left;
-            let variant: EnumVariant = lowering::body_lookup::enum_pattern_variant(context,
-                arena_count, pattern, type_id);
-            if (!lowering::body_lookup::enum_lookup_is(variant.state, lowering::body_lookup::EnumResolved)) {
-                return lowering::body_context::invalid();
-            }
-            next = lowering::body_context::append(output, capacity, next, variant.ordinal);
-            next = lowering::body_context::append(output, capacity, next, variant.field_count);
-            let saved: i32 = lowering::locals::save(locals);
-            if (bind_pattern_payload(context, arena_count, pattern, variant)
-                != variant.field_count) {
+            if (lowering::body_lookup::wildcard_pattern(context,
+                arena_count, pattern)) {
+                next = lowering::body_event_write::match_arm(output, next,
+                    ir::body_events::MatchArm {
+                        ordinal: -1, binding_count: 0,
+                    });
+                next = expression(context, arena_count,
+                    nodes[arm].right, output, next, depth - 1);
+                if (next <= -1) { return lowering::body_context::invalid(); }
+            } else {
+                let variant: EnumVariant = lowering::body_lookup::enum_pattern_variant(context,
+                    arena_count, pattern, type_id);
+                if (!lowering::body_lookup::is_resolved(variant)) {
+                    return lowering::body_context::invalid();
+                }
+                next = lowering::body_event_write::match_arm(output, next,
+                    ir::body_events::MatchArm {
+                        ordinal: lowering::body_lookup::ordinal(variant),
+                        binding_count: lowering::body_lookup::field_count(variant),
+                    });
+                let saved: i32 = lowering::locals::save(locals);
+                if (bind_pattern_variant(context, arena_count, pattern, variant)
+                    != lowering::body_lookup::field_count(variant)) {
+                    lowering::locals::restore(locals, saved);
+                    return lowering::body_context::invalid();
+                }
+                let payload: i32 = nodes[pattern].right;
+                while (payload >= 0) {
+                    next = lowering::body_event_write::match_binding(output, next,
+                        ir::body_events::LocalReference {
+                            id: lowering::body_lookup::pattern_path_token(
+                                context, arena_count, payload, true),
+                        });
+                    payload = nodes[payload].next;
+                }
+                next = expression(context, arena_count,
+                    nodes[arm].right, output, next,
+                    depth - 1);
                 lowering::locals::restore(locals, saved);
-                return lowering::body_context::invalid();
+                if (next <= -1) { return lowering::body_context::invalid(); }
             }
-            let payload: i32 = nodes[pattern].right;
-            while (payload >= 0) {
-                next = lowering::body_context::append(output, capacity, next,
-                    lowering::body_lookup::pattern_path_token(context, arena_count, payload, true));
-                payload = nodes[payload].next;
-            }
-            next = expression(context, arena_count,
-                nodes[arm].right, output, capacity, next,
-                depth - 1);
-            lowering::locals::restore(locals, saved);
-            if (next <= -1) { return lowering::body_context::invalid(); }
             arm = nodes[arm].next;
         }
         return next;
     }
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Member)) {
         let base: i32 = current_node.left;
-        let base_kind: i32 = expression_kind(context, arena_count, base,
+        let base_kind: ExpressionKind = expression_kind(context, arena_count, base,
             depth - 1);
-        if (base_kind <= backend::syntax::NOMINAL_TYPE_BASE - 1) {
+        let type_id: i32 = nominal_id(base_kind);
+        if (type_id <= -1) {
             return lowering::body_context::unsupported();
         }
         let field_index: i32 = structure_field(context,
-            base_kind - backend::syntax::NOMINAL_TYPE_BASE,
-            current_node.token);
+            type_id, current_node.token);
         if (field_index <= -1) { return lowering::body_context::invalid(); }
-        let next: i32 = lowering::body_context::append(output, capacity, position,
-            backend::syntax::expression_code(backend::syntax::ExprField));
-        next = lowering::body_context::append(output, capacity, next, field_index);
+        let next: i32 = lowering::body_event_write::expression_field(output,
+            position, ir::body_events::FieldReference {
+                index: field_index,
+            });
         if (next <= -1) { return lowering::body_context::invalid(); }
-        return expression(context, arena_count, base, output, capacity, next,
+        return expression(context, arena_count, base, output, next,
             depth - 1);
     }
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Call)) {
         let callee: i32 = current_node.left;
         let variant: EnumVariant = lowering::body_lookup::enum_variant(context, callee);
-        if (lowering::body_lookup::enum_lookup_is(variant.state, lowering::body_lookup::EnumResolved)) {
+        if (lowering::body_lookup::is_resolved(variant)) {
             return emit_enum_variant(context, arena_count, variant,
-                current_node.right, output, capacity, position,
+                current_node.right, output, position,
                 depth);
         }
-        if (lowering::body_lookup::enum_lookup_is(variant.state, lowering::body_lookup::EnumInvalid)) { return lowering::body_context::invalid(); }
-        let qualified: bool = lowering::body_context::path_is_qualified(context.expression_arena,
-            arena_count, callee);
-        let name: i32 = lowering::body_context::qualified_path_token(context.expression_arena,
-            arena_count, callee);
-        if (name <= -1 || name >= context.token_count) { return lowering::body_context::invalid(); }
-        let id: i32 = lowering::body_lookup::callable_id(context, qualified, name);
-        if (id <= -1) { return lowering::body_context::invalid(); }
-        let next: i32 = lowering::body_context::append(output, capacity, position, backend::syntax::expression_code(backend::syntax::ExprCall));
-        next = lowering::body_context::append(output, capacity, next, id);
+        if (lowering::body_lookup::is_invalid(variant)) {
+            return lowering::body_context::invalid();
+        }
+        let intrinsic: lowering::body_lookup::IntrinsicCall =
+            lowering::body_lookup::intrinsic_call(context, callee);
+        if (intrinsic == lowering::body_lookup::TypedSliceFromRawParts) {
+            return lowering::body_context::unsupported();
+        }
+        let id: i32 = -1;
+        if (intrinsic == lowering::body_lookup::NoIntrinsic) {
+            id = lowering::body_lookup::callable_path_id(context, callee);
+            if (id <= -1) { return lowering::body_context::invalid(); }
+        }
         let argument: i32 = current_node.right;
         let count: i32 = 0;
         let current: i32 = argument;
@@ -554,97 +745,147 @@ pub fn expression(context: BodyContext, arena_count: i32, node: i32,
             count += 1;
             current = nodes[current].next;
         }
-        next = lowering::body_context::append(output, capacity, next, count);
+        if (intrinsic == lowering::body_lookup::NoIntrinsic) {
+            if ((!lowering::body_lookup::has_signature(context, id,
+                    lowering::signatures::InternalFunctionShape)
+                    && !lowering::body_lookup::has_signature(context, id,
+                        lowering::signatures::ExternalFunctionShape))
+                || lowering::signatures::record_arity(
+                    lowering::signature_index::record_at(
+                        context.signature_index, id)) != count) {
+                return lowering::body_context::invalid();
+            }
+        }
+        let next: i32 = -1;
+        if (intrinsic == lowering::body_lookup::NoIntrinsic) {
+            next = lowering::body_event_write::expression_call(output,
+                position, ir::body_events::CallHeader {
+                    function_id: id, argument_count: count,
+                });
+        }
+        if (intrinsic == lowering::body_lookup::I32SliceFromRawParts) {
+            if (count != 2) { return lowering::body_context::invalid(); }
+            next = ir::body_events::append(output, position,
+                ir::body_events::ExpressionI32SliceFromRawParts);
+        }
+        if (intrinsic == lowering::body_lookup::I32SliceDataPointer) {
+            if (count != 1) { return lowering::body_context::invalid(); }
+            next = ir::body_events::append(output, position,
+                ir::body_events::ExpressionI32SliceDataPointer);
+        }
+        if (intrinsic == lowering::body_lookup::StringDataPointer) {
+            if (count != 1) { return lowering::body_context::invalid(); }
+            next = ir::body_events::append(output, position,
+                ir::body_events::ExpressionStringDataPointer);
+        }
+        if (next <= -1) { return lowering::body_context::invalid(); }
         current = argument;
+        let argument_index: i32 = 0;
         while (current >= 0) {
-            next = expression(context, arena_count, current, output, capacity,
-                next, depth - 1);
+            if (intrinsic == lowering::body_lookup::NoIntrinsic) {
+                let parameter: lowering::signatures::SignatureMember =
+                    lowering::signature_index::member_at(
+                        context.signature_index, id, argument_index);
+                next = expression_expected(context, arena_count, current,
+                    parameter.type_tag, output, next, depth - 1);
+            } else {
+                next = expression(context, arena_count, current, output,
+                    next, depth - 1);
+            }
             if (next <= -1) { return lowering::body_context::invalid(); }
             current = nodes[current].next;
+            argument_index += 1;
         }
         return next;
     }
     return lowering::body_context::unsupported();
 }
 
-// Inferred lets need the scalar kind before their initializer is serialized.
-// Keep this query aligned with the expression emitter and deliberately close:
-// literals and scalar unary/binary expressions have a syntax-local result kind;
-// paths, calls, aggregates, and assignments require a lexical type environment
-// which this transport boundary does not carry.
+// Infer a typed result for local declarations and match arms. Bindings,
+// signatures, and nominal declarations come from the lowering context;
+// serialized type codes are not part of this query.
 pub fn expression_kind(context: BodyContext, arena_count: i32, node: i32,
-    depth: i32) -> i32 {
+    depth: i32) -> ExpressionKind {
     let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
     let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
     let allocation_table: lowering::allocation::Table = context.allocated;
-    if (depth <= 0 || node <= -1 || node >= arena_count) { return lowering::body_context::invalid(); }
+    if (depth <= 0 || node <= -1 || node >= arena_count) {
+        return invalid_kind();
+    }
     let current_node: verified::surface_expr::ExpressionNode = nodes[node];
     let kind: verified::surface_expr::SurfaceExprKind = current_node.kind;
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Literal)) {
-        let production: i32 = current_node.production;
-        if (production == verified::production::INT) { return backend::syntax::type_code(backend::syntax::TypeI32); }
-        if (production == verified::production::TRUE || production == verified::production::FALSE) { return backend::syntax::type_code(backend::syntax::TypeBool); }
-        return lowering::body_context::unsupported();
+        let operator: verified::surface_expr::ExpressionOperator =
+            current_node.operator;
+        if (operator == verified::surface_expr::LiteralInteger) {
+            return known_kind(ir::type_ref::I32);
+        }
+        if (operator == verified::surface_expr::LiteralTrue
+            || operator == verified::surface_expr::LiteralFalse) {
+            return known_kind(ir::type_ref::Bool);
+        }
+        if (operator == verified::surface_expr::LiteralString) {
+            return known_kind(ir::type_ref::String);
+        }
+        return unsupported_kind();
     }
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Unary)) {
-        let operation: i32 = unary_operation(current_node.production);
-        if (operation <= -1) { return lowering::body_context::unsupported(); }
-        let operand: i32 = expression_kind(context, arena_count,
-            current_node.left, depth - 1);
-        if (operand <= -1) { return operand; }
-        if (operation == backend::syntax::unary_code(backend::syntax::UnaryNot)) {
-            if (operand == backend::syntax::type_code(backend::syntax::TypeBool)) { return backend::syntax::type_code(backend::syntax::TypeBool); }
-            return lowering::body_context::unsupported();
+        let operation: backend::syntax::UnaryOperation =
+            unary_operation(current_node.operator);
+        if (operation == backend::syntax::InvalidUnaryOperation) {
+            return unsupported_kind();
         }
-        if ((operation == backend::syntax::unary_code(backend::syntax::UnaryPositive) || operation == backend::syntax::unary_code(backend::syntax::UnaryNegate))
-            && operand == backend::syntax::type_code(backend::syntax::TypeI32)) { return backend::syntax::type_code(backend::syntax::TypeI32); }
-        return lowering::body_context::unsupported();
+        let operand_result: ExpressionKind = expression_kind(context, arena_count,
+            current_node.left, depth - 1);
+        let operand: ir::type_ref::TypeRef = kind_type(operand_result);
+        if (!ir::type_ref::valid(operand)) { return operand_result; }
+        if (operation == backend::syntax::UnaryNot) {
+            if (ir::type_ref::same(operand, ir::type_ref::Bool)) {
+                return known_kind(ir::type_ref::Bool);
+            }
+            return unsupported_kind();
+        }
+        if ((operation == backend::syntax::UnaryPositive
+                || operation == backend::syntax::UnaryNegate)
+            && ir::type_ref::same(operand, ir::type_ref::I32)) {
+            return known_kind(ir::type_ref::I32);
+        }
+        return unsupported_kind();
     }
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Binary)) {
-        let operation: i32 = -1;
-        let production: i32 = current_node.production;
-        if (production == verified::production::OR_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryOrElse); }
-        if (production == verified::production::AND_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryAndThen); }
-        if (production == verified::production::BOR_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryBitOr); }
-        if (production == verified::production::XOR_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryBitXor); }
-        if (production == verified::production::BAND_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryBitAnd); }
-        if (production == verified::production::EQ_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryEqual); }
-        if (production == verified::production::NE_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryNotEqual); }
-        if (production == verified::production::LT_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryLess); }
-        if (production == verified::production::GT_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryGreater); }
-        if (production == verified::production::LE_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryLessEqual); }
-        if (production == verified::production::GE_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryGreaterEqual); }
-        if (production == verified::production::SHL_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryShiftLeft); }
-        if (production == verified::production::SHR_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryShiftRight); }
-        if (production == verified::production::ADD_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryAdd); }
-        if (production == verified::production::SUB_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinarySubtract); }
-        if (production == verified::production::MUL_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryMultiply); }
-        if (production == verified::production::DIV_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryDivide); }
-        if (production == verified::production::MOD_TAIL) { operation = backend::syntax::binary_code(backend::syntax::BinaryRemainder); }
-        if (operation <= -1) { return lowering::body_context::unsupported(); }
-        let left: i32 = expression_kind(context, arena_count,
+        let operation: backend::syntax::BinaryOperation =
+            binary_operation(current_node.operator);
+        if (operation == backend::syntax::InvalidBinaryOperation) {
+            return unsupported_kind();
+        }
+        let left_result: ExpressionKind = expression_kind(context, arena_count,
             current_node.left, depth - 1);
-        let right: i32 = expression_kind(context, arena_count,
+        let right_result: ExpressionKind = expression_kind(context, arena_count,
             current_node.right, depth - 1);
-        if (left <= -1) { return left; }
-        if (right <= -1) { return right; }
-        if (operation == backend::syntax::binary_code(backend::syntax::BinaryAndThen) || operation == backend::syntax::binary_code(backend::syntax::BinaryOrElse)) {
-            if (left == backend::syntax::type_code(backend::syntax::TypeBool) && right == backend::syntax::type_code(backend::syntax::TypeBool)) {
-                return backend::syntax::type_code(backend::syntax::TypeBool);
+        let left: ir::type_ref::TypeRef = kind_type(left_result);
+        let right: ir::type_ref::TypeRef = kind_type(right_result);
+        if (!ir::type_ref::valid(left)) { return left_result; }
+        if (!ir::type_ref::valid(right)) { return right_result; }
+        if (operation == backend::syntax::BinaryAndThen
+            || operation == backend::syntax::BinaryOrElse) {
+            if (ir::type_ref::same(left, ir::type_ref::Bool)
+                && ir::type_ref::same(right, ir::type_ref::Bool)) {
+                return known_kind(ir::type_ref::Bool);
             }
-            return lowering::body_context::unsupported();
+            return unsupported_kind();
         }
-        if (operation >= backend::syntax::binary_code(backend::syntax::BinaryEqual)
-            && operation <= backend::syntax::binary_code(backend::syntax::BinaryGreaterEqual)) {
-            if (left == backend::syntax::type_code(backend::syntax::TypeI32) && right == backend::syntax::type_code(backend::syntax::TypeI32)) {
-                return backend::syntax::type_code(backend::syntax::TypeBool);
+        if (backend::syntax::binary_is_comparison(operation)) {
+            if (ir::type_ref::same(left, ir::type_ref::I32)
+                && ir::type_ref::same(right, ir::type_ref::I32)) {
+                return known_kind(ir::type_ref::Bool);
             }
-            return lowering::body_context::unsupported();
+            return unsupported_kind();
         }
-        if (left == backend::syntax::type_code(backend::syntax::TypeI32) && right == backend::syntax::type_code(backend::syntax::TypeI32)) {
-            return backend::syntax::type_code(backend::syntax::TypeI32);
+        if (ir::type_ref::same(left, ir::type_ref::I32)
+            && ir::type_ref::same(right, ir::type_ref::I32)) {
+            return known_kind(ir::type_ref::I32);
         }
-        return lowering::body_context::unsupported();
+        return unsupported_kind();
     }
     if (verified::surface_expr::has_kind(kind,
         verified::surface_expr::PathExpression)) {
@@ -652,79 +893,164 @@ pub fn expression_kind(context: BodyContext, arena_count: i32, node: i32,
             arena_count, node);
         let binding: i32 = lowering::body_context::local_index(context, name);
         if (binding >= 0) {
-            return lowering::locals::kind_at(context.locals, binding);
+            return known_kind(lowering::locals::kind_at(context.locals,
+                binding));
+        }
+        let constant_id: i32 = lowering::body_lookup::constant_id(context,
+            node);
+        if (constant_id >= 0
+            && lowering::signature_index::has_shape(
+                context.signature_index, constant_id,
+                lowering::signatures::ConstantShape)) {
+            let record: lowering::signatures::SignatureRecord =
+                lowering::signature_index::record_at(
+                    context.signature_index, constant_id);
+            return known_kind(
+                lowering::signatures::record_result_type(record));
         }
         let variant: EnumVariant = lowering::body_lookup::enum_variant(context, node);
-        if (lowering::body_lookup::enum_lookup_is(variant.state, lowering::body_lookup::EnumResolved)
-            && variant.field_count == 0) {
-            return backend::syntax::NOMINAL_TYPE_BASE + variant.type_id;
+        if (lowering::body_lookup::is_resolved(variant)
+            && lowering::body_lookup::field_count(variant) == 0) {
+            return known_kind(ir::type_ref::Nominal(
+                lowering::body_lookup::type_id(variant)));
         }
-        return lowering::body_context::unsupported();
+        return unsupported_kind();
     }
     if (verified::surface_expr::has_kind(kind,
         verified::surface_expr::StructValue)) {
         let allocation: i32 = lowering::body_lookup::nominal_allocation(context,
             current_node.left,
             lowering::declarations::Structure);
-        if (allocation <= -1) { return lowering::body_context::unsupported(); }
+        if (allocation <= -1) { return unsupported_kind(); }
         let allocation_row: lowering::allocation::AllocationRow =
             lowering::allocation::table_row(allocation_table, allocation);
-        return backend::syntax::NOMINAL_TYPE_BASE
-            + lowering::allocation::row_declaration_id(allocation_row);
+        return known_kind(ir::type_ref::Nominal(
+            lowering::allocation::row_declaration_id(allocation_row)));
     }
     if (verified::surface_expr::has_kind(kind,
         verified::surface_expr::MatchValue)) {
         return match_result_kind(context, arena_count, node, depth - 1);
     }
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Member)) {
-        let base_kind: i32 = expression_kind(context, arena_count,
+        let base_kind: ExpressionKind = expression_kind(context, arena_count,
             current_node.left, depth - 1);
-        if (base_kind <= backend::syntax::NOMINAL_TYPE_BASE - 1) {
-            return lowering::body_context::unsupported();
-        }
+        let type_id: i32 = nominal_id(base_kind);
+        if (type_id <= -1) { return unsupported_kind(); }
         let field_index: i32 = structure_field(context,
-            base_kind - backend::syntax::NOMINAL_TYPE_BASE,
-            current_node.token);
-        if (field_index <= -1) { return lowering::body_context::unsupported(); }
+            type_id, current_node.token);
+        if (field_index <= -1) { return unsupported_kind(); }
         let member: lowering::signatures::SignatureMember =
             lowering::signature_index::member_at(context.signature_index,
-                base_kind - backend::syntax::NOMINAL_TYPE_BASE,
+                type_id,
                 field_index);
-        return member.type_tag;
+        return known_kind(member.type_tag);
     }
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Index)) {
-        let base_kind: i32 = expression_kind(context, arena_count,
+        let base_kind: ExpressionKind = expression_kind(context, arena_count,
             current_node.left, depth - 1);
-        if (base_kind == backend::syntax::type_code(backend::syntax::TypeSlice)) { return backend::syntax::type_code(backend::syntax::TypeI32); }
-        return lowering::body_context::unsupported();
+        let slice_kind: ir::type_ref::TypeRef = kind_type(base_kind);
+        if (ir::type_ref::same(slice_kind, ir::type_ref::Slice)) {
+            return known_kind(ir::type_ref::I32);
+        }
+        let nominal_element: i32 = match (slice_kind) {
+            ir::type_ref::NominalSlice(id) -> id,
+            _ -> -1,
+        };
+        if (nominal_element >= 0) {
+            return known_kind(ir::type_ref::Nominal(nominal_element));
+        }
+        return unsupported_kind();
     }
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Call)) {
         let callee: i32 = current_node.left;
         let variant: EnumVariant = lowering::body_lookup::enum_variant(context, callee);
-        if (lowering::body_lookup::enum_lookup_is(variant.state, lowering::body_lookup::EnumResolved)) {
-            return backend::syntax::NOMINAL_TYPE_BASE + variant.type_id;
+        if (lowering::body_lookup::is_resolved(variant)) {
+            return known_kind(ir::type_ref::Nominal(
+                lowering::body_lookup::type_id(variant)));
         }
-        if (lowering::body_lookup::enum_lookup_is(variant.state, lowering::body_lookup::EnumInvalid)) {
-            return lowering::body_context::unsupported();
+        if (lowering::body_lookup::is_invalid(variant)) {
+            return unsupported_kind();
         }
-        let name: i32 = lowering::body_context::qualified_path_token(context.expression_arena,
-            arena_count, callee);
-        let id: i32 = lowering::body_lookup::callable_id(context,
-            lowering::body_context::path_is_qualified(context.expression_arena, arena_count, callee),
-            name);
-        if (id <= -1) { return lowering::body_context::unsupported(); }
+        let intrinsic: lowering::body_lookup::IntrinsicCall =
+            lowering::body_lookup::intrinsic_call(context, callee);
+        if (intrinsic == lowering::body_lookup::TypedSliceFromRawParts) {
+            return unsupported_kind();
+        }
+        if (intrinsic == lowering::body_lookup::I32SliceFromRawParts) {
+            return known_kind(ir::type_ref::Slice);
+        }
+        if (intrinsic == lowering::body_lookup::I32SliceDataPointer
+            || intrinsic == lowering::body_lookup::StringDataPointer) {
+            return known_kind(ir::type_ref::Pointer);
+        }
+        let id: i32 = lowering::body_lookup::callable_path_id(context, callee);
+        if (id <= -1) { return unsupported_kind(); }
         if (!lowering::body_lookup::has_signature(context, id,
                 lowering::signatures::InternalFunctionShape)
             && !lowering::body_lookup::has_signature(context, id,
                 lowering::signatures::ExternalFunctionShape)) {
-            return lowering::body_context::unsupported();
+            return unsupported_kind();
         }
         let signature_row: lowering::signatures::SignatureRecord =
             lowering::signature_index::record_at(context.signature_index,
                 id);
-        return lowering::signatures::record_result_type(signature_row);
+        return known_kind(
+            lowering::signatures::record_result_type(signature_row));
     }
-    return lowering::body_context::unsupported();
+    return unsupported_kind();
+}
+
+pub fn expression_expected(context: BodyContext, arena_count: i32, node: i32,
+    expected: TypeRef, output: Region, position: i32, depth: i32) -> i32 {
+    let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
+    let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
+    if (depth <= 0 || node <= -1 || node >= arena_count) {
+        return lowering::body_context::invalid();
+    }
+    let current_node: verified::surface_expr::ExpressionNode = nodes[node];
+    if (!verified::surface_expr::has_kind(current_node.kind,
+            verified::surface_expr::Call)
+        || lowering::body_lookup::intrinsic_call(context, current_node.left)
+            != lowering::body_lookup::TypedSliceFromRawParts) {
+        return expression(context, arena_count, node, output, position, depth);
+    }
+    let element: ir::body_events::SliceElement = ir::body_events::SliceElement {
+        kind: ir::body_events::I32Slice, id: 0,
+    };
+    if (!ir::type_ref::same(expected, ir::type_ref::Slice)) {
+        let id: i32 = match (expected) {
+            ir::type_ref::NominalSlice(value) -> value,
+            _ -> -1,
+        };
+        if (id <= -1) { return lowering::body_context::unsupported(); }
+        if (lowering::body_lookup::has_signature(context, id,
+                lowering::signatures::StructureShape)) {
+            element = ir::body_events::SliceElement {
+                kind: ir::body_events::StructureSlice, id: id,
+            };
+        } else {
+            if (!lowering::body_lookup::has_signature(context, id,
+                    lowering::signatures::EnumerationShape)) {
+                return lowering::body_context::unsupported();
+            }
+            element = ir::body_events::SliceElement {
+                kind: ir::body_events::EnumerationSlice, id: id,
+            };
+        }
+    }
+    let first: i32 = current_node.right;
+    if (first <= -1 || first >= arena_count
+        || nodes[first].next <= -1 || nodes[first].next >= arena_count
+        || nodes[nodes[first].next].next >= 0) {
+        return lowering::body_context::invalid();
+    }
+    let next: i32 = ir::body_events::append(output, position,
+        ir::body_events::ExpressionTypedSliceFromRawParts(element));
+    if (next <= -1) { return lowering::body_context::invalid(); }
+    next = expression(context, arena_count, first, output, next, depth - 1);
+    if (next <= -1) { return next; }
+    return expression(context, arena_count, nodes[first].next, output,
+        next, depth - 1);
 }
 
 pub fn extract_expression(context: BodyContext, surface: i32, depth: i32) -> i32 {
@@ -738,8 +1064,8 @@ pub fn extract_expression(context: BodyContext, surface: i32, depth: i32) -> i32
         context.expression_arena);
 }
 
-pub fn expression_from_surface(context: BodyContext, surface: i32, output: [i32],
-    capacity: i32, position: i32, depth: i32) -> i32 {
+pub fn expression_from_surface(context: BodyContext, surface: i32,
+    output: Region, position: i32, depth: i32) -> i32 {
     let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
     let root: i32 = extract_expression(context, surface, depth);
     if (root <= -1
@@ -748,5 +1074,17 @@ pub fn expression_from_surface(context: BodyContext, surface: i32, output: [i32]
     }
     return expression(context,
         verified::surface_expr::node_count(arena), root, output,
-        capacity, position, depth);
+        position, depth);
+}
+
+pub fn expression_from_surface_expected(context: BodyContext, surface: i32,
+    expected: TypeRef, output: Region, position: i32, depth: i32) -> i32 {
+    let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
+    let root: i32 = extract_expression(context, surface, depth);
+    if (root <= -1 || verified::surface_expr::node_count(arena) <= 0) {
+        return lowering::body_context::invalid();
+    }
+    return expression_expected(context,
+        verified::surface_expr::node_count(arena), root, expected, output,
+        position, depth);
 }

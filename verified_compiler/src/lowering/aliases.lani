@@ -1,30 +1,34 @@
 module lowering::aliases;
-import verified::production;
-import backend::syntax;
 import lowering::declarations;
 import lowering::builtin;
+import ir::type_ref;
 import verified::host;
-import verified::parser;
+import verified::surface_path;
 import verified::surface_type;
 import verified::syntax_tree;
 import verified::token;
 
+type TypeRef = ir::type_ref::TypeRef;
+
 const RESULT_SLOT: i32 = 0;
 
 // One source unit owns one module path and a typed symbol table. This is
-// private compiler state, not a Core wire format. A Nominal target value is
-// a stable symbol ordinal, not a guessed Core ID.
+// private compiler state, not a Core wire format. A Nominal payload is a
+// stable symbol ordinal, not a guessed Core ID.
 const NATIVE_FIELD_BYTES: i32 = 8;
+const ALIAS_TARGET_WORDS: i32 = 1 + ir::type_ref::STORAGE_WORDS;
 pub const SYMBOL_ALIGNMENT: i32 = NATIVE_FIELD_BYTES;
-pub const SYMBOL_RECORD_BYTES: i32 = 3 * NATIVE_FIELD_BYTES;
+pub const SYMBOL_RECORD_BYTES: i32 = (1 + ALIAS_TARGET_WORDS)
+    * NATIVE_FIELD_BYTES;
 pub const CATALOG_RECORD_BYTES: i32 = 6 * NATIVE_FIELD_BYTES;
 pub const CATALOG_ALIGNMENT: i32 = NATIVE_FIELD_BYTES;
 const FIRST_PATH_TOKEN: i32 = 0;
-const WORK_FIELDS_PER_RECORD: i32 = 5;
+const WORK_FIELDS_PER_RECORD: i32 = 3 + ALIAS_TARGET_WORDS;
 pub const WORK_RECORD_BYTES: i32 = WORK_FIELDS_PER_RECORD
     * NATIVE_FIELD_BYTES;
 pub const WORK_ALIGNMENT: i32 = NATIVE_FIELD_BYTES;
-pub const RESOLUTION_RECORD_BYTES: i32 = 2 * NATIVE_FIELD_BYTES;
+pub const RESOLUTION_RECORD_BYTES: i32 = ALIAS_TARGET_WORDS
+    * NATIVE_FIELD_BYTES;
 
 enum ResolutionState {
     Unvisited,
@@ -36,32 +40,23 @@ struct AliasWork {
     declaration: i32,
     declaration_kind: lowering::declarations::DeclarationKind,
     state: ResolutionState,
-    target_kind: AliasTargetKind,
-    target_value: i32,
+    target: AliasTarget,
 }
 
 fn alias_work_slice(data: ptr, length: i32) -> [AliasWork] {
     return slice_from_raw_parts(data, length);
 }
 
-fn resolution_state_code(state: ResolutionState) -> i32 {
-    return match (state) {
-        Unvisited -> 0,
-        Visiting -> 1,
-        Resolved -> 2,
-    };
-}
-
-pub enum AliasTargetKind {
+pub enum AliasTarget {
     Unresolved,
-    Scalar,
-    Nominal,
+    Scalar(TypeRef),
+    Nominal(i32),
+    DeferredNominal,
 }
 
 pub struct AliasSymbol {
     name_token: i32,
-    target_kind: AliasTargetKind,
-    target_value: i32,
+    target: AliasTarget,
 }
 
 pub struct Catalog {
@@ -106,20 +101,23 @@ fn symbol_view(memory: ptr, count: i32) -> [AliasSymbol] {
 }
 
 pub struct AliasResolution {
-    target_kind: AliasTargetKind,
-    target_value: i32,
+    target: AliasTarget,
 }
 
-pub fn target_kind_code(kind: AliasTargetKind) -> i32 {
-    return match (kind) {
-        Unresolved -> -1,
-        Scalar -> 1,
-        Nominal -> 2,
+fn unresolved(target: AliasTarget) -> bool {
+    return match (target) {
+        Unresolved -> true,
+        _ -> false,
     };
 }
 
-pub fn target_has_kind(encoded: i32, expected: AliasTargetKind) -> bool {
-    return encoded == target_kind_code(expected);
+fn valid_target(target: AliasTarget) -> bool {
+    return match (target) {
+        Unresolved -> false,
+        Scalar(kind) -> ir::type_ref::primitive(kind),
+        Nominal(ordinal) -> ordinal >= 0,
+        DeferredNominal -> true,
+    };
 }
 
 pub enum AliasError {
@@ -146,15 +144,11 @@ pub fn failed_with(value: i32, error: AliasError) -> bool {
     return value == failure(error);
 }
 
-fn child(tree: verified::syntax_tree::Tree, node: i32, index: i32) -> i32 {
-    return verified::syntax_tree::child(tree, node, index,
-        verified::parser::StateChild);
-}
-
-fn token_child(tree: verified::syntax_tree::Tree, node: i32,
-    index: i32) -> i32 {
-    return verified::syntax_tree::child(tree, node, index,
-        verified::parser::TokenChild);
+fn scalar_slice_kind(kind: TypeRef) -> TypeRef {
+    if (ir::type_ref::same(kind, ir::type_ref::I32)) {
+        return ir::type_ref::Slice;
+    }
+    return ir::type_ref::Invalid;
 }
 
 fn valid_token(source: [i32], source_length: i32,
@@ -173,54 +167,20 @@ fn identifier_token(tokens: verified::token::TokenTable, token_count: i32,
     token: i32) -> bool {
     let rows: [verified::token::TokenRow] = tokens.data;
     return token > -1 && token <= token_count - 1
-        && verified::token::kind_is(
-            rows[token].kind, verified::token::Identifier);
+        && rows[token].kind == verified::token::Identifier;
 }
 
-fn same_token(source: [i32], source_length: i32,
-    tokens: verified::token::TokenTable,
-    token_count: i32, left: i32, right: i32) -> bool {
-    if (!valid_token(source, source_length, tokens, token_count, left)
-        || !valid_token(source, source_length, tokens, token_count, right)) {
-        return false;
-    }
-    let rows: [verified::token::TokenRow] = tokens.data;
-    let left_start: i32 = rows[left].start;
-    let left_finish: i32 = rows[left].finish;
-    let right_start: i32 = rows[right].start;
-    let right_finish: i32 = rows[right].finish;
-    if (left_finish - left_start != right_finish - right_start) { return false; }
-    let index: i32 = 0;
-    while (index <= left_finish - left_start - 1) {
-        if (source[left_start + index] != source[right_start + index]) { return false; }
-        index += 1;
-    }
-    return true;
-}
-
-// Return a supported builtin tag, or an encoded AliasError at the scalar API
-// boundary for a known unsupported type or an ordinary user spelling.
+// Keep builtin recognition typed until the scalar-lowering API boundary.
 fn builtin(source: [i32], source_length: i32,
     tokens: verified::token::TokenTable, token_count: i32,
-    token: i32) -> i32 {
-    if (!valid_token(source, source_length, tokens, token_count, token)) { return failure(Invalid); }
+    token: i32) -> lowering::builtin::Lookup {
+    if (!valid_token(source, source_length, tokens, token_count, token)) {
+        return lowering::builtin::UnknownName;
+    }
     let rows: [verified::token::TokenRow] = tokens.data;
     let start: i32 = rows[token].start;
     let finish: i32 = rows[token].finish;
-    let found: lowering::builtin::Lookup = lowering::builtin::lookup(
-        source, source_length, start, finish);
-    if (lowering::builtin::is_supported(found)) {
-        return lowering::builtin::type_tag(found);
-    }
-    if (lowering::builtin::is_unsupported(found)) {
-        return failure(Unsupported);
-    }
-    return failure(Invalid);
-}
-
-fn path_node(tree: verified::syntax_tree::Tree, root: i32) -> bool {
-    return verified::syntax_tree::production(tree, root)
-        == verified::production::PATH;
+    return lowering::builtin::lookup(source, source_length, start, finish);
 }
 
 // Materialize a plain parse-tree path into token IDs. Generic path segments
@@ -243,18 +203,13 @@ fn parse_path(context: ParsePathContext, root: i32) -> i32 {
     let token_count: i32 = context.token_count;
     let output: [i32] = context.output;
     let capacity: i32 = context.capacity;
-    if (!path_node(tree, root) || capacity <= 0) { return failure(Invalid); }
-    let segment: i32 = child(tree, root, 0);
-    let tail: i32 = child(tree, root, 1);
+    if (capacity <= 0) { return failure(Invalid); }
+    let segment: verified::surface_path::Segment =
+        verified::surface_path::first(tree, root);
     let written: i32 = 0;
     let previous: i32 = -1;
-    while (segment >= 0) {
-        if (verified::syntax_tree::production(tree, segment)
-                != verified::production::PATH_IDENT
-            || verified::syntax_tree::child_count(tree, segment) != 1) {
-            return failure(Invalid);
-        }
-        let name: i32 = token_child(tree, segment, 0);
+    while (segment.valid) {
+        let name: i32 = segment.token;
         if (!valid_token(source, source_length, tokens, token_count, name)) {
             return failure(Invalid);
         }
@@ -262,20 +217,8 @@ fn parse_path(context: ParsePathContext, root: i32) -> i32 {
         output[written] = name;
         written += 1;
         previous = name;
-        let tail_production: i32 =
-            verified::syntax_tree::production(tree, tail);
-        if (tail_production == verified::production::PATH_END) {
-            if (verified::syntax_tree::child_count(tree, tail) != 0) {
-                return failure(Invalid);
-            }
-            return written;
-        }
-        if (tail_production != verified::production::PATH_MORE
-            || verified::syntax_tree::child_count(tree, tail) != 4) {
-            return failure(Invalid);
-        }
-        segment = child(tree, tail, 2);
-        tail = child(tree, tail, 3);
+        if (segment.last) { return written; }
+        segment = verified::surface_path::next(tree, segment);
     }
     return failure(Invalid);
 }
@@ -303,38 +246,28 @@ fn copy_arena_path(arena: verified::surface_type::TypeArena,
     return written;
 }
 
-struct TokenContext {
-    source: [i32],
-    source_length: i32,
-    tokens: verified::token::TokenTable,
-    token_count: i32,
-}
-
-fn row_matches(context: TokenContext, catalog: Catalog,
+fn row_matches(context: verified::token::SpellingView, catalog: Catalog,
     symbol: AliasSymbol, path: [i32], path_count: i32) -> bool {
     let module_count: i32 = catalog.module_segments;
     let module_tokens: [i32] = catalog.module_tokens;
     if (path_count == 1) {
-        return same_token(context.source, context.source_length,
-            context.tokens, context.token_count, path[FIRST_PATH_TOKEN],
-            symbol.name_token);
+        return verified::token::same_identifier(context,
+            path[FIRST_PATH_TOKEN], symbol.name_token);
     }
     if (path_count != module_count + 1) { return false; }
     let index: i32 = 0;
     while (index <= module_count - 1) {
-        if (!same_token(context.source, context.source_length,
-            context.tokens, context.token_count,
+        if (!verified::token::same_identifier(context,
             path[index], module_tokens[index])) {
             return false;
         }
         index += 1;
     }
-    return same_token(context.source, context.source_length,
-        context.tokens, context.token_count, path[module_count],
-        symbol.name_token);
+    return verified::token::same_identifier(context,
+        path[module_count], symbol.name_token);
 }
 
-fn lookup_symbol(context: TokenContext, catalog: Catalog,
+fn lookup_symbol(context: verified::token::SpellingView, catalog: Catalog,
     path: [i32], path_count: i32) -> i32 {
     let rows: i32 = catalog.symbol_count;
     if (path_count <= 0 || rows <= -1 || catalog.module_segments <= 0) {
@@ -410,23 +343,28 @@ fn resolve_arena(context: AliasContext, root: i32, stack_depth: i32,
             arena_count[0].value, path,
             scratch, scratch_capacity);
         if (path_count <= 0) { return failure(Invalid); }
-        let builtin_tag: i32 = failure(Invalid);
         if (path_count == 1) {
             let token: i32 = scratch[FIRST_PATH_TOKEN];
-            builtin_tag = builtin(source, source_length, tokens, token_count, token);
-            if (builtin_tag > 0) {
-                result[RESULT_SLOT].target_kind = Scalar;
-                result[RESULT_SLOT].target_value = builtin_tag;
+            let found: lowering::builtin::Lookup = builtin(source,
+                source_length, tokens, token_count, token);
+            let invalid_kind: TypeRef = ir::type_ref::Invalid;
+            let builtin_kind: TypeRef = match (found) {
+                lowering::builtin::Supported(kind) -> kind,
+                _ -> invalid_kind,
+            };
+            if (ir::type_ref::primitive(builtin_kind)) {
+                result[RESULT_SLOT].target = Scalar(builtin_kind);
                 return 0;
             }
-            if (failed_with(builtin_tag, Unsupported)) { return failure(Unsupported); }
+            let unsupported: bool = match (found) {
+                lowering::builtin::UnsupportedType -> true,
+                _ -> false,
+            };
+            if (unsupported) { return failure(Unsupported); }
         }
-        let token_context: TokenContext = TokenContext {
-            source: source,
-            source_length: source_length,
-            tokens: tokens,
-            token_count: token_count,
-        };
+        let token_context: verified::token::SpellingView =
+            verified::token::spellings(source, source_length,
+                tokens, token_count);
         let symbol: i32 = lookup_symbol(token_context, catalog,
             scratch, path_count);
         if (failed_with(symbol, Ambiguous)) { return failure(Ambiguous); }
@@ -444,13 +382,15 @@ fn resolve_arena(context: AliasContext, root: i32, stack_depth: i32,
         let nested: i32 = resolve_arena(context, child, stack_depth,
             depth - 1);
         if (nested <= -1) { return nested; }
-        if (!target_has_kind(target_kind_code(result[RESULT_SLOT].target_kind), Scalar)
-            || result[RESULT_SLOT].target_value
-                != backend::syntax::type_code(backend::syntax::TypeI32)) {
+        let slice_kind: TypeRef = match (result[RESULT_SLOT].target) {
+            Scalar(kind) -> scalar_slice_kind(kind),
+            Nominal(id) -> ir::type_ref::NominalSlice(id),
+            _ -> ir::type_ref::Invalid,
+        };
+        if (!ir::type_ref::valid(slice_kind)) {
             return failure(Unsupported);
         }
-        result[RESULT_SLOT].target_value
-            = backend::syntax::type_code(backend::syntax::TypeSlice);
+        result[RESULT_SLOT].target = Scalar(slice_kind);
         return 0;
     }
     if (verified::surface_type::kind_is(kind, verified::surface_type::Array)
@@ -470,14 +410,11 @@ fn resolve_symbol(context: AliasContext, index: i32, stack_depth: i32,
     let stack_capacity: i32 = context.stack_capacity;
     if (index <= -1 || index >= work_capacity || depth <= 0
         || stack_depth <= -1 || stack_depth >= stack_capacity) { return failure(Invalid); }
-    if (resolution_state_code(work[index].state)
-            == resolution_state_code(Resolved)) {
-        result[RESULT_SLOT].target_kind = work[index].target_kind;
-        result[RESULT_SLOT].target_value = work[index].target_value;
+    if (work[index].state == Resolved) {
+        result[RESULT_SLOT].target = work[index].target;
         return 0;
     }
-    if (resolution_state_code(work[index].state)
-        == resolution_state_code(Visiting)) { return failure(Cycle); }
+    if (work[index].state == Visiting) { return failure(Cycle); }
     work[index].state = Visiting;
     stack[stack_depth] = index;
     if (lowering::declarations::same_kind(
@@ -486,8 +423,7 @@ fn resolve_symbol(context: AliasContext, index: i32, stack_depth: i32,
         || lowering::declarations::same_kind(
             work[index].declaration_kind,
             lowering::declarations::Enumeration)) {
-        work[index].target_kind = Nominal;
-        work[index].target_value = index;
+        work[index].target = Nominal(index);
     } else {
         let declaration: i32 = work[index].declaration;
         let type_input: verified::surface_type::TypeInput =
@@ -506,21 +442,18 @@ fn resolve_symbol(context: AliasContext, index: i32, stack_depth: i32,
         let resolved: i32 = resolve_arena(context, root, stack_depth + 1,
             depth - 1);
         if (resolved <= -1) { return resolved; }
-        let kind: AliasTargetKind = result[RESULT_SLOT].target_kind;
-        if (target_kind_code(kind) <= -1) { return failure(Invalid); }
-        work[index].target_kind = kind;
-        work[index].target_value = result[RESULT_SLOT].target_value;
+        let target: AliasTarget = result[RESULT_SLOT].target;
+        if (unresolved(target)) { return failure(Invalid); }
+        work[index].target = target;
     }
     work[index].state = Resolved;
-    result[RESULT_SLOT].target_kind = work[index].target_kind;
-    result[RESULT_SLOT].target_value = work[index].target_value;
+    result[RESULT_SLOT].target = work[index].target;
     return 0;
 }
 
-fn duplicate_key(source: [i32], source_length: i32,
-    tokens: verified::token::TokenTable, token_count: i32,
+fn duplicate_key(spellings: verified::token::SpellingView,
     symbols: [AliasSymbol], name: i32, prior: i32) -> bool {
-    return same_token(source, source_length, tokens, token_count,
+    return verified::token::same_identifier(spellings,
         name, symbols[prior].name_token);
 }
 
@@ -529,8 +462,7 @@ fn initialize_work(work: [AliasWork], index: i32,
     work[index].declaration = lowering::declarations::row_target(declaration);
     work[index].declaration_kind = lowering::declarations::row_kind(declaration);
     work[index].state = Unvisited;
-    work[index].target_kind = Unresolved;
-    work[index].target_value = -1;
+    work[index].target = Unresolved;
 }
 
 pub struct WordRegion {
@@ -695,6 +627,9 @@ pub fn build(input: AliasBuildInputs, workspace: AliasBuildWorkspace) -> i32 {
         symbols: symbols,
         symbol_count: expected_symbols,
     };
+    let spellings: verified::token::SpellingView =
+        verified::token::spellings(source, source_length,
+            tokens, token_count);
     let symbol_count: i32 = 0;
     let source_row: i32 = 0;
     while (source_row <= rows - 1) {
@@ -711,18 +646,22 @@ pub fn build(input: AliasBuildInputs, workspace: AliasBuildWorkspace) -> i32 {
             }
             let name: i32 = lowering::declarations::row_name(declaration);
             if (!valid_token(source, source_length, tokens, token_count, name)) { return failure(Invalid); }
-            let builtin_name: i32 = builtin(source, source_length, tokens, token_count, name);
-            if (!failed_with(builtin_name, Invalid)) { return failure(Ambiguous); }
+            let builtin_name: lowering::builtin::Lookup = builtin(source,
+                source_length, tokens, token_count, name);
+            let ordinary_name: bool = match (builtin_name) {
+                lowering::builtin::UnknownName -> true,
+                _ -> false,
+            };
+            if (!ordinary_name) { return failure(Ambiguous); }
             let prior: i32 = 0;
             while (prior <= symbol_count - 1) {
-                if (duplicate_key(source, source_length, tokens, token_count,
-                    symbols, name, prior)) { return failure(Ambiguous); }
+                if (duplicate_key(spellings, symbols,
+                    name, prior)) { return failure(Ambiguous); }
                 prior += 1;
             }
             symbols[symbol_count] = AliasSymbol {
                 name_token: name,
-                target_kind: Unresolved,
-                target_value: -1,
+                target: Unresolved,
             };
             initialize_work(work, symbol_count, declaration);
             symbol_count += 1;
@@ -755,11 +694,9 @@ pub fn build(input: AliasBuildInputs, workspace: AliasBuildWorkspace) -> i32 {
         // reject here.
         if (resolved <= -1) {
             if (!failed_with(resolved, Invalid)) { return resolved; }
-            work[symbol].target_kind = Nominal;
-            work[symbol].target_value = 0;
+            work[symbol].target = DeferredNominal;
         }
-        symbols[symbol].target_kind = work[symbol].target_kind;
-        symbols[symbol].target_value = work[symbol].target_value;
+        symbols[symbol].target = work[symbol].target;
         symbol += 1;
     }
     let output_rows: [Catalog] = output_table.data;
@@ -790,12 +727,8 @@ pub fn valid(catalog: Catalog,
     let row: i32 = 0;
     while (row <= rows - 1) {
         let symbol: AliasSymbol = symbols[row];
-        let kind: i32 = target_kind_code(symbol.target_kind);
-        let payload: i32 = symbol.target_value;
         if (!identifier_token(tokens, token_count, symbol.name_token)
-            || (!target_has_kind(kind, Scalar) && !target_has_kind(kind, Nominal))
-            || payload <= -1 || (target_has_kind(kind, Scalar)
-                && !backend::syntax::primitive_type(payload))) {
+            || !valid_target(symbol.target)) {
             return false;
         }
         row += 1;
@@ -823,11 +756,19 @@ pub struct AliasLookupWorkspace {
     scratch: WordRegion,
 }
 
+pub enum ScalarLookup {
+    ScalarFound(TypeRef),
+    ScalarMissing,
+    ScalarInvalid,
+    ScalarUnsupported,
+    ScalarAmbiguous,
+}
+
 // Resolve an arena path against a catalog. Nominal rows are left for the
 // allocation-authenticated resolution table; scalar() reports them as a
 // non-scalar miss so types.lower can continue to nominal resolution.
 pub fn scalar(input: AliasLookupInput,
-    workspace: AliasLookupWorkspace) -> i32 {
+    workspace: AliasLookupWorkspace) -> ScalarLookup {
     let source: [i32] = input.source.data;
     let source_length: i32 = input.source.words;
     let tokens: verified::token::TokenTable = input.tokens;
@@ -840,56 +781,56 @@ pub fn scalar(input: AliasLookupInput,
     let scratch: [i32] = workspace.scratch.data;
     let scratch_capacity: i32 = workspace.scratch.words;
     if (arena.capacity <= 0 || arena_count[0].value <= 0
-        || arena_count[0].value > arena.capacity
-        || !valid(catalog, tokens) || root <= -1
+        || arena_count[0].value > arena.capacity || root <= -1
         || root >= arena_count[0].value) {
-        return failure(Invalid);
+        return ScalarInvalid;
     }
+    if (catalog.module_segments == 0 && catalog.symbol_count == 0) {
+        return ScalarMissing;
+    }
+    if (!valid(catalog, tokens)) { return ScalarInvalid; }
     let path: i32 = root;
     let root_kind: verified::surface_type::SurfaceTypeKind = nodes[root].kind;
     if (verified::surface_type::kind_is(root_kind, verified::surface_type::PathType)) {
         path = nodes[root].first;
-        if (path <= -1 || path >= root) { return failure(Invalid); }
+        if (path <= -1 || path >= root) { return ScalarInvalid; }
     } else {
         if (!verified::surface_type::kind_is(root_kind,
-            verified::surface_type::Path)) { return failure(Invalid); }
+            verified::surface_type::Path)) { return ScalarInvalid; }
     }
     if (!verified::surface_type::kind_is(nodes[path].kind,
-        verified::surface_type::Path)) { return failure(Invalid); }
+        verified::surface_type::Path)) { return ScalarInvalid; }
     let count: i32 = copy_arena_path(arena,
         arena_count[0].value, path, scratch, scratch_capacity);
-    if (count <= 0) { return failure(Invalid); }
+    if (count <= 0) { return ScalarInvalid; }
     let segment: i32 = nodes[path].first;
     while (segment != -1) {
         if (segment <= -1 || segment >= root
             || !verified::surface_type::kind_is(nodes[segment].kind,
                 verified::surface_type::Segment)
             || nodes[segment].first != -1) {
-            return failure(Unsupported);
+            return ScalarUnsupported;
         }
         segment = nodes[segment].next;
     }
     let rows: i32 = catalog.symbol_count;
     let symbols: [AliasSymbol] = catalog.symbols;
     let row: i32 = 0;
-    let answer: i32 = failure(Invalid);
-    let token_context: TokenContext = TokenContext {
-        source: source,
-        source_length: source_length,
-        tokens: tokens,
-        token_count: token_count,
-    };
+    let first_match: i32 = -1;
+    let token_context: verified::token::SpellingView =
+        verified::token::spellings(source, source_length,
+            tokens, token_count);
     while (row <= rows - 1) {
         let symbol: AliasSymbol = symbols[row];
         if (row_matches(token_context, catalog, symbol, scratch, count)) {
-            if (!failed_with(answer, Invalid)) { return failure(Ambiguous); }
-            if (target_kind_code(symbol.target_kind)
-                    == target_kind_code(Nominal)) {
-                return failure(Invalid);
-            }
-            answer = symbol.target_value;
+            if (first_match >= 0) { return ScalarAmbiguous; }
+            first_match = row;
         }
         row += 1;
     }
-    return answer;
+    if (first_match < 0) { return ScalarMissing; }
+    return match (symbols[first_match].target) {
+        Scalar(kind) -> ScalarFound(kind),
+        _ -> ScalarMissing,
+    };
 }

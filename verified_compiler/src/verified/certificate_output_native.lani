@@ -1,6 +1,5 @@
 module verified::certificate_output_native;
 
-import backend::frame;
 import verified::certificate_output;
 import verified::host;
 
@@ -29,15 +28,6 @@ pub fn emit_image_raw(image_pointer: ptr, image_length: i32,
     let output:[i32] = verified::host::i32_slice_from_raw_parts(output_pointer, capacity);
     return verified::certificate_output::emit_image(image, image_length, output,
         capacity, position);
-}
-
-pub fn emit_functions_raw(work_pointer: ptr, work_length: i32, stride: i32,
-    count: i32, output_pointer: ptr, capacity: i32, position: i32) -> i32 {
-    let work: backend::frame::Workspace =
-        backend::frame::from_raw_parts(work_pointer, work_length);
-    let output:[i32] = verified::host::i32_slice_from_raw_parts(output_pointer, capacity);
-    return verified::certificate_output::emit_functions(work, stride,
-        count, output, capacity, position);
 }
 
 pub fn emit_empty_functions_raw(output_pointer: ptr, capacity: i32,

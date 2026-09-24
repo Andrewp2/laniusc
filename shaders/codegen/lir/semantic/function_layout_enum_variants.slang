@@ -19,13 +19,58 @@ StructuredBuffer<uint> compact_variant_payload_count;
 StructuredBuffer<HirVariantPayload> compact_variant_payloads;
 StructuredBuffer<uint> semantic_expr_ref_tag;
 StructuredBuffer<uint> semantic_expr_ref_payload;
+StructuredBuffer<uint> semantic_aggregate_decl_token;
+StructuredBuffer<uint> semantic_aggregate_hir_by_name_token;
 RWStructuredBuffer<uint> semantic_struct_word_count_by_hir;
+RWStructuredBuffer<LoweringStatus> lowering_status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint HIR_ENUM_ITEM = 26u;
+static const uint HIR_STRUCT_ITEM = 27u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TY_STRUCT_BASE = 4096u;
+static const uint TY_ENUM_BASE = 6144u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
+
+uint nominal_declaration(uint type_node, uint type_id, uint hir_count)
+{
+    uint token = semantic_aggregate_decl_token[type_node];
+    uint declaration = token < gParams.n_tokens
+        ? semantic_aggregate_hir_by_name_token[token] : INVALID;
+    if (declaration < hir_count)
+    {
+        uint kind = compact_hir_core[declaration].kind;
+        if (kind == HIR_STRUCT_ITEM || kind == HIR_ENUM_ITEM)
+            return declaration;
+    }
+    uint enum_declaration = INVALID;
+    if (type_id >= TY_ENUM_BASE)
+    {
+        token = type_id - TY_ENUM_BASE;
+        if (token < gParams.n_tokens)
+        {
+            declaration = semantic_aggregate_hir_by_name_token[token];
+            if (declaration < hir_count &&
+                compact_hir_core[declaration].kind == HIR_ENUM_ITEM)
+                enum_declaration = declaration;
+        }
+    }
+    uint struct_declaration = INVALID;
+    if (type_id >= TY_STRUCT_BASE)
+    {
+        token = type_id - TY_STRUCT_BASE;
+        if (token < gParams.n_tokens)
+        {
+            declaration = semantic_aggregate_hir_by_name_token[token];
+            if (declaration < hir_count &&
+                compact_hir_core[declaration].kind == HIR_STRUCT_ITEM)
+                struct_declaration = declaration;
+        }
+    }
+    if (enum_declaration != INVALID && struct_declaration != INVALID)
+        return INVALID;
+    return enum_declaration != INVALID ? enum_declaration : struct_declaration;
+}
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -55,16 +100,42 @@ void main(uint3 dtid: SV_DispatchThreadID)
             break;
         }
         uint type_id = semantic_expr_ref_payload[payload.type_node];
-        // Recursive nominal payloads need a dependency-ordered layout pass.
+        uint payload_words = type_id == SEMANTIC_LIR_TY_STRING ? 2u : 1u;
         if (type_id >= TY_STRUCT_BASE)
         {
-            words = INVALID;
-            break;
+            uint declaration = nominal_declaration(payload.type_node,
+                type_id, hir_count);
+            if (declaration >= hir_count)
+            {
+                words = INVALID;
+                break;
+            }
+            payload_words = semantic_struct_word_count_by_hir[declaration];
+            if (payload_words == INVALID)
+            {
+                words = INVALID;
+                break;
+            }
         }
-        uint payload_words = type_id == SEMANTIC_LIR_TY_STRING ? 2u : 1u;
         words = words > INVALID - payload_words
             ? INVALID : words + payload_words;
     }
+    // The last invocation checks that the bounded aggregate fixed point has
+    // converged. Every enum adds a discriminant, so a by-value cycle keeps
+    // growing and is rejected instead of being assigned a finite layout.
+    if (gParams.reserved == 0u)
+    {
+        uint current = semantic_struct_word_count_by_hir[variant.owner];
+        if (words == INVALID || current == INVALID || words > current)
+        {
+            InterlockedOr(lowering_status[0u].flags,
+                LOWERING_STATUS_UNSUPPORTED_SEMANTIC);
+            InterlockedMin(lowering_status[0u].first_unsupported_hir,
+                variant.owner);
+        }
+        return;
+    }
     uint ignored;
-    InterlockedMax(semantic_struct_word_count_by_hir[variant.owner], words, ignored);
+    InterlockedMax(semantic_struct_word_count_by_hir[variant.owner], words,
+        ignored);
 }

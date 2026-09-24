@@ -1,0 +1,11 @@
+module app::main;
+
+import choice::types;
+
+fn main() -> i32 {
+    let choice: choice::types::Choice = choice::types::Value(7);
+    return match (choice) {
+        other::types::Value(number) -> number,
+        _ -> 13,
+    };
+}

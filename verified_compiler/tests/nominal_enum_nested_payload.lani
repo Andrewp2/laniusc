@@ -1,0 +1,22 @@
+module app::main;
+
+enum Inner { Empty, Number(i32) }
+struct Wrapper { inner: Inner, tail: i32 }
+enum Outer { Nothing, Wrapped(Wrapper) }
+
+fn inner_value(value: Inner) -> i32 {
+    return match (value) {
+        Number(number) -> number,
+        Empty -> -1,
+    };
+}
+
+fn main() -> i32 {
+    let inner: Inner = Number(7);
+    let wrapped: Wrapper = Wrapper { inner: inner, tail: 13 };
+    let outer: Outer = Wrapped(wrapped);
+    return match (outer) {
+        Wrapped(payload) -> inner_value(payload.inner) + payload.tail - 20,
+        Nothing -> 1,
+    };
+}

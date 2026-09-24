@@ -1,0 +1,264 @@
+module app::main;
+
+import backend::body_reader;
+import backend::frame;
+import backend::syntax;
+import ir::body_events;
+import ir::type_ref;
+import lowering::body_event_write;
+import verified::host;
+
+fn main() -> i32 {
+    let state_memory: ptr = verified::host::alloc_i32(
+        backend::frame::HEADER);
+    let wire_memory: ptr = verified::host::alloc_i32(4);
+    let event_memory: ptr = verified::host::alloc(
+        ir::body_events::allocation_bytes(1),
+        ir::body_events::ALIGNMENT);
+    if (state_memory == 0 || wire_memory == 0
+        || event_memory == 0) { return 1; }
+    let work: backend::frame::Workspace =
+        backend::frame::from_raw_parts(state_memory,
+            backend::frame::HEADER);
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    let words: [i32] = verified::host::i32_slice_from_raw_parts(
+        wire_memory, 4);
+    let node: backend::body_reader::Expression =
+        backend::body_reader::Expression {
+            kind: backend::syntax::ExprValue,
+            event: ir::body_events::StatementSkip,
+        };
+    let source: backend::body_reader::Source =
+        backend::body_reader::wire(words, 4);
+
+    words[0] = backend::syntax::type_code(backend::syntax::TypeString);
+    words[1] = 2;
+    words[2] = 65;
+    words[3] = 66;
+    state[0].input = 0;
+    let string: backend::body_reader::Literal =
+        backend::body_reader::literal(source, work, node);
+    if (!ir::type_ref::same(string.kind, ir::type_ref::String)
+        || string.low != 2
+        || string.high != 0 || state[0].input != 2
+        || words[state[0].input] != 65) { return 2; }
+
+    words[0] = backend::syntax::type_code(backend::syntax::TypePointer);
+    words[1] = 7;
+    words[2] = 9;
+    state[0].input = 0;
+    let pointer_value: backend::body_reader::Literal =
+        backend::body_reader::literal(source, work, node);
+    if (!ir::type_ref::same(pointer_value.kind,
+            ir::type_ref::Pointer) || pointer_value.low != 7
+        || pointer_value.high != 9 || state[0].input != 3) {
+        return 3;
+    }
+
+    words[0] = backend::syntax::unary_code(backend::syntax::UnaryNegate);
+    state[0].input = 0;
+    if (backend::body_reader::unary_operation(source, work, node)
+            != backend::syntax::UnaryNegate
+        || state[0].input != 1) { return 14; }
+    words[0] = backend::syntax::binary_code(backend::syntax::BinaryMultiply);
+    state[0].input = 0;
+    if (backend::body_reader::binary_operation(source, work, node)
+            != backend::syntax::BinaryMultiply
+        || state[0].input != 1) { return 15; }
+    words[0] = backend::syntax::assignment_code(
+        backend::syntax::AssignmentBitAnd);
+    state[0].input = 0;
+    if (backend::body_reader::assignment_operation(source, work, node)
+            != backend::syntax::AssignmentBitAnd
+        || state[0].input != 1) { return 16; }
+
+    let events: ir::body_events::Region =
+        ir::body_events::from_raw_parts(event_memory, 1);
+    let rows: [ir::body_events::Event] = events.events;
+    rows[0] = ir::body_events::ExpressionInteger(42);
+    let typed: backend::body_reader::Source =
+        backend::body_reader::events(events);
+    state[0].input = 0;
+    let typed_node: backend::body_reader::Expression =
+        backend::body_reader::expression(typed, work);
+    let integer: backend::body_reader::Literal =
+        backend::body_reader::literal(typed, work, typed_node);
+    if (!ir::type_ref::same(integer.kind, ir::type_ref::I32)
+        || integer.low != 42 || integer.high != 0
+        || state[0].input != 1) { return 4; }
+
+    rows[0] = ir::body_events::ExpressionConstant(23);
+    state[0].input = 0;
+    let constant_node: backend::body_reader::Expression =
+        backend::body_reader::expression(typed, work);
+    let constant: backend::body_reader::ConstantReference =
+        backend::body_reader::constant_expression(typed, work, constant_node);
+    if (constant_node.kind != backend::syntax::ExprConstant
+        || constant.id != 23 || state[0].input != 1) { return 17; }
+
+    let binary_code: i32 = 0;
+    while (binary_code <= backend::syntax::binary_code(
+            backend::syntax::BinaryShiftRight)) {
+        if (lowering::body_event_write::expression_binary(events, 0,
+                backend::syntax::binary_from_code(binary_code)) != 1) {
+            return 5;
+        }
+        state[0].input = 0;
+        let binary: backend::body_reader::Expression =
+            backend::body_reader::expression(typed, work);
+        if (binary.kind != backend::syntax::ExprBinary
+            || backend::syntax::binary_code(
+                backend::body_reader::binary_operation(typed, work, binary))
+                != binary_code
+            || state[0].input != 1) { return 6; }
+        binary_code += 1;
+    }
+
+    let assignment_code: i32 = 0;
+    while (assignment_code <= backend::syntax::assignment_code(
+            backend::syntax::AssignmentBitOr)) {
+        if (lowering::body_event_write::expression_assignment(events, 0,
+                backend::syntax::assignment_from_code(assignment_code)) != 1) {
+            return 7;
+        }
+        state[0].input = 0;
+        let assignment: backend::body_reader::Expression =
+            backend::body_reader::expression(typed, work);
+        if (assignment.kind != backend::syntax::ExprAssign
+            || backend::syntax::assignment_code(
+                backend::body_reader::assignment_operation(typed, work,
+                    assignment))
+                != assignment_code
+            || state[0].input != 1) { return 8; }
+        assignment_code += 1;
+    }
+    let local: ir::body_events::LocalDeclaration =
+        ir::body_events::LocalDeclaration {
+            id: 17,
+            kind: ir::type_ref::I32,
+        };
+    rows[0] = ir::body_events::StatementLet(local);
+    state[0].input = 0;
+    let initialized: backend::body_reader::Statement =
+        backend::body_reader::statement(typed, work);
+    let initialized_local: ir::body_events::LocalDeclaration =
+        backend::body_reader::local_declaration(typed, work, initialized);
+    if (initialized.kind != backend::syntax::StatementLet
+        || initialized_local.id != 17
+        || ir::type_ref::code(initialized_local.kind)
+            != ir::type_ref::code(local.kind)) { return 9; }
+
+    rows[0] = ir::body_events::StatementLetUninitialized(local);
+    state[0].input = 0;
+    let uninitialized: backend::body_reader::Statement =
+        backend::body_reader::statement(typed, work);
+    let uninitialized_local: ir::body_events::LocalDeclaration =
+        backend::body_reader::local_declaration(typed, work, uninitialized);
+    if (uninitialized.kind != backend::syntax::StatementLetUninitialized
+        || uninitialized_local.id != 17
+        || ir::type_ref::code(uninitialized_local.kind)
+            != ir::type_ref::code(local.kind)) { return 10; }
+
+    let header: ir::body_events::MatchArm =
+        ir::body_events::MatchArm { ordinal: 2, binding_count: 1 };
+    rows[0] = ir::body_events::MatchArmHeader(header);
+    state[0].input = 0;
+    let arm: backend::body_reader::MatchArm =
+        backend::body_reader::match_arm(typed, work);
+    if (!arm.valid || arm.ordinal != 2 || arm.bindings != 1) {
+        return 11;
+    }
+
+    let struct_fields: ir::body_events::StructFields =
+        ir::body_events::StructFields { type_id: 3, count: 2 };
+    rows[0] = ir::body_events::ExpressionStruct(struct_fields);
+    state[0].input = 0;
+    let struct_node: backend::body_reader::Expression =
+        backend::body_reader::expression(typed, work);
+    let native_struct: backend::body_reader::StructConstructor =
+        backend::body_reader::struct_constructor(typed, work,
+            struct_node);
+    if (!ir::type_ref::same(native_struct.kind,
+            ir::type_ref::Nominal(3))
+        || native_struct.field_count != 2 || state[0].input != 1) {
+        return 12;
+    }
+
+    let enum_variant: ir::body_events::EnumVariant =
+        ir::body_events::EnumVariant {
+            type_id: 4, ordinal: 1, payload_count: 2,
+        };
+    rows[0] = ir::body_events::ExpressionEnumeration(enum_variant);
+    state[0].input = 0;
+    let enum_node: backend::body_reader::Expression =
+        backend::body_reader::expression(typed, work);
+    let native_enum: backend::body_reader::EnumConstructor =
+        backend::body_reader::enum_constructor(typed, work, enum_node);
+    if (!ir::type_ref::same(native_enum.kind,
+            ir::type_ref::Nominal(4))
+        || native_enum.variant != 1 || native_enum.payload_count != 2
+        || state[0].input != 1) { return 13; }
+
+    words[0] = ir::type_ref::code(ir::type_ref::Nominal(4));
+    words[1] = 1;
+    words[2] = 2;
+    state[0].input = 0;
+    let wire_enum: backend::body_reader::EnumConstructor =
+        backend::body_reader::enum_constructor(source, work, enum_node);
+    if (!ir::type_ref::same(wire_enum.kind, native_enum.kind)
+        || wire_enum.variant != native_enum.variant
+        || wire_enum.payload_count != native_enum.payload_count
+        || state[0].input != 3) { return 14; }
+
+    words[0] = ir::type_ref::code(ir::type_ref::Usize);
+    state[0].input = 0;
+    let cast: ir::type_ref::TypeRef =
+        backend::body_reader::cast_target(source, work, node);
+    if (!ir::type_ref::same(cast, ir::type_ref::Usize)
+        || state[0].input != 1) { return 15; }
+
+    let local_reference: ir::body_events::LocalReference =
+        ir::body_events::LocalReference { id: 19 };
+    rows[0] = ir::body_events::ExpressionLocal(local_reference);
+    state[0].input = 0;
+    let local_node: backend::body_reader::Expression =
+        backend::body_reader::expression(typed, work);
+    let local_value: ir::body_events::LocalReference =
+        backend::body_reader::local_expression(typed, work, local_node);
+    if (local_node.kind != backend::syntax::ExprLocal
+        || local_value.id != 19 || state[0].input != 1) { return 17; }
+
+    let field_reference: ir::body_events::FieldReference =
+        ir::body_events::FieldReference { index: 3 };
+    rows[0] = ir::body_events::ExpressionField(field_reference);
+    state[0].input = 0;
+    let field_node: backend::body_reader::Expression =
+        backend::body_reader::expression(typed, work);
+    let field_value: ir::body_events::FieldReference =
+        backend::body_reader::field_expression(typed, work, field_node);
+    if (field_node.kind != backend::syntax::ExprField
+        || field_value.index != 3 || state[0].input != 1) { return 18; }
+
+    rows[0] = ir::body_events::PlaceLocal(local_reference);
+    state[0].input = 0;
+    let local_place: backend::body_reader::Place =
+        backend::body_reader::place(typed, work);
+    if (local_place.kind != backend::syntax::PlaceLocal
+        || backend::body_reader::local_place(typed, work, local_place).id != 19
+        || state[0].input != 1) { return 19; }
+
+    rows[0] = ir::body_events::PlaceField(field_reference);
+    state[0].input = 0;
+    let field_place: backend::body_reader::Place =
+        backend::body_reader::place(typed, work);
+    if (field_place.kind != backend::syntax::PlaceField
+        || backend::body_reader::field_place(typed, work, field_place).index != 3
+        || state[0].input != 1) { return 20; }
+
+    rows[0] = ir::body_events::MatchBinding(local_reference);
+    state[0].input = 0;
+    let binding: ir::body_events::LocalReference =
+        backend::body_reader::match_binding(typed, work);
+    if (binding.id != 19 || state[0].input != 1) { return 21; }
+    return 0;
+}

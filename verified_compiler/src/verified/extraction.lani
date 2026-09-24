@@ -3,7 +3,6 @@ module verified::extraction;
 import verified::raw_lexer;
 import verified::canonical_tokens;
 import verified::parser;
-import verified::parse_tree;
 import verified::token;
 
 // Canonical in-memory capacities shared by the native frontend entrypoints.
@@ -18,33 +17,74 @@ pub const PARSE_NODE_CAPACITY: i32 = 131072;
 pub const DEFAULT_PARSE_DEPTH_LIMIT: i32 = 1024;
 
 pub enum ExtractionStage {
-    Extracted,
+    Recognized,
     InvalidInput,
     LexingFailed,
     TokenStorageFull,
     ParsingFailed,
-    TreeMaterializationFailed,
 }
 
-pub fn stage_code(stage: ExtractionStage) -> i32 {
-    return match (stage) {
-        Extracted -> 0,
-        InvalidInput -> 1,
-        LexingFailed -> 2,
-        TokenStorageFull -> 3,
-        ParsingFailed -> 4,
-        TreeMaterializationFailed -> 5,
-    };
-}
-
-pub struct SyntaxResult {
+pub struct SyntaxRecognition {
     stage: ExtractionStage,
     detail: i32,
     raw_count: i32,
     token_count: i32,
-    node_count: i32,
-    tree_words: i32,
     error_position: i32,
+    state_count: i32,
+    root_state: i32,
+}
+
+pub fn recognition_succeeded(value: SyntaxRecognition) -> bool {
+    return value.stage == Recognized;
+}
+
+pub fn recognition_has_stage(value: SyntaxRecognition,
+    stage: ExtractionStage) -> bool {
+    return value.stage == stage;
+}
+
+pub fn recognition_detail(value: SyntaxRecognition) -> i32 {
+    return value.detail;
+}
+
+pub fn recognition_raw_count(value: SyntaxRecognition) -> i32 {
+    return value.raw_count;
+}
+
+pub fn recognition_error_position(value: SyntaxRecognition) -> i32 {
+    return value.error_position;
+}
+
+pub fn recognition_token_count(value: SyntaxRecognition) -> i32 {
+    return value.token_count;
+}
+
+pub fn recognition_parse(value: SyntaxRecognition)
+    -> verified::parser::ParseResult {
+    return verified::parser::ParseResult {
+        stage: verified::parser::Parsed,
+        state_count: value.state_count,
+        root_state: value.root_state,
+        error_position: 0,
+    };
+}
+
+fn recognition_result(stage: ExtractionStage, detail: i32,
+    raw_count: i32, token_count: i32, error_position: i32,
+    parse: verified::parser::ParseResult) -> SyntaxRecognition {
+    return SyntaxRecognition {
+        stage: stage, detail: detail, raw_count: raw_count,
+        token_count: token_count, error_position: error_position,
+        state_count: verified::parser::parse_state_count(parse),
+        root_state: verified::parser::parse_root_state(parse),
+    };
+}
+
+fn empty_parse() -> verified::parser::ParseResult {
+    return verified::parser::ParseResult {
+        stage: verified::parser::InvalidInput,
+        state_count: 0, root_state: -1, error_position: 0,
+    };
 }
 
 pub struct WordBuffer {
@@ -61,123 +101,97 @@ pub struct SyntaxInput {
     grammar: WordBuffer,
 }
 
-pub struct SyntaxWorkspace {
+pub struct NativeRecognitionWorkspace {
+    tokens: verified::token::TokenTable,
     raw_tokens: WordBuffer,
     canonical_tokens: WordBuffer,
     token_kinds: WordBuffer,
     parser_workspace: verified::parser::WorkspaceStorage,
-    parse_records: WordBuffer,
-    node_offsets: WordBuffer,
-    depth_limit: i32,
-}
-pub fn extraction_stage_code(value: SyntaxResult) -> i32 { return stage_code(value.stage); }
-pub fn extraction_has_stage(value: SyntaxResult,
-    expected: ExtractionStage) -> bool {
-    return stage_code(value.stage) == stage_code(expected);
-}
-pub fn extraction_detail(value: SyntaxResult) -> i32 { return value.detail; }
-pub fn raw_count(value: SyntaxResult) -> i32 { return value.raw_count; }
-pub fn token_count(value: SyntaxResult) -> i32 { return value.token_count; }
-pub fn node_count(value: SyntaxResult) -> i32 { return value.node_count; }
-pub fn tree_words(value: SyntaxResult) -> i32 { return value.tree_words; }
-pub fn error_position(value: SyntaxResult) -> i32 { return value.error_position; }
-fn result(stage: ExtractionStage, detail: i32, raw: i32, tokens: i32,
-    nodes: i32, words: i32, position: i32,) -> SyntaxResult {
-    return SyntaxResult { stage: stage, detail: detail, raw_count: raw,
-        token_count: tokens, node_count: nodes, tree_words: words, error_position: position };
 }
 
-// Extract syntax evidence using only the Lanius frontend. All lengths below
-// are in i32 words except source_length, which counts source bytes held in
-// i32 slots. Buffers must be disjoint and lengths must match actual storage.
-// Preserve raw rows; canonicalization compacts a separate copy. Tree records
-// retain per-terminal semantic kinds, including virtual split-token uses.
-// Only Extracted authorizes consuming the full output as a certificate.
-// This stage does not yet reconstruct Surface syntax or lower to Core.
-pub fn extract_syntax(input: SyntaxInput,
-    buffers: SyntaxWorkspace) -> SyntaxResult {
+fn parse_recognized(grammar: [i32], grammar_length: i32,
+    kinds: [i32], workspace: verified::parser::WorkspaceStorage,
+    raw_count: i32, token_count: i32) -> SyntaxRecognition {
+    let parsed: verified::parser::ParseResult =
+        verified::parser::recognize(grammar, grammar_length, kinds,
+            token_count, workspace);
+    if (!verified::parser::parse_succeeded(parsed)) {
+        return recognition_result(ParsingFailed,
+            verified::parser::parse_stage_code(parsed), raw_count,
+            token_count, verified::parser::parse_error_position(parsed),
+            parsed);
+    }
+    return recognition_result(Recognized, 0, raw_count, token_count, 0,
+        parsed);
+}
+
+// All modes keep token rows native; optional artifact buffers are serialized
+// from those rows before compaction overwrites the raw stream.
+pub fn recognize_native_syntax(input: SyntaxInput,
+    buffers: NativeRecognitionWorkspace) -> SyntaxRecognition {
     let source: [i32] = input.source.data;
     let source_length: i32 = input.source.length;
     let grammar: [i32] = input.grammar.data;
     let grammar_length: i32 = input.grammar.length;
-    let raw: [i32] = buffers.raw_tokens.data;
-    let raw_length: i32 = buffers.raw_tokens.length;
-    let canonical: [i32] = buffers.canonical_tokens.data;
-    let canonical_length: i32 = buffers.canonical_tokens.length;
+    let tokens: verified::token::TokenTable = buffers.tokens;
+    let raw: WordBuffer = buffers.raw_tokens;
+    let canonical: WordBuffer = buffers.canonical_tokens;
     let kinds: [i32] = buffers.token_kinds.data;
     let kinds_length: i32 = buffers.token_kinds.length;
     let workspace: verified::parser::WorkspaceStorage =
         buffers.parser_workspace;
-    let workspace_length: i32 = workspace.words;
-    let records: [i32] = buffers.parse_records.data;
-    let records_length: i32 = buffers.parse_records.length;
-    let offsets: [i32] = buffers.node_offsets.data;
-    let offsets_length: i32 = buffers.node_offsets.length;
-    let depth_limit: i32 = buffers.depth_limit;
+    let no_parse: verified::parser::ParseResult = empty_parse();
     if (source_length <= -1) {
-        return result(InvalidInput, 1, 0, 0, 0, 0, 0);
+        return recognition_result(InvalidInput, 1, 0, 0, 0, no_parse);
     }
     if (grammar_length <= -1) {
-        return result(InvalidInput, 2, 0, 0, 0, 0, 0);
+        return recognition_result(InvalidInput, 2, 0, 0, 0, no_parse);
     }
-    if (raw_length <= -1) {
-        return result(InvalidInput, 3, 0, 0, 0, 0, 0);
+    if (tokens.count <= -1) {
+        return recognition_result(InvalidInput, 3, 0, 0, 0, no_parse);
     }
-    if (canonical_length <= -1) {
-        return result(InvalidInput, 4, 0, 0, 0, 0, 0);
+    if (raw.length <= -1 || canonical.length <= -1
+        || (raw.length == 0 && canonical.length != 0)
+        || (raw.length != 0 && canonical.length == 0)) {
+        return recognition_result(InvalidInput, 4, 0, 0, 0, no_parse);
     }
     if (kinds_length <= -1) {
-        return result(InvalidInput, 5, 0, 0, 0, 0, 0);
+        return recognition_result(InvalidInput, 5, 0, 0, 0, no_parse);
     }
-    if (workspace_length <= -1) {
-        return result(InvalidInput, 6, 0, 0, 0, 0, 0);
+    if (workspace.words <= -1) {
+        return recognition_result(InvalidInput, 6, 0, 0, 0, no_parse);
     }
-    if (records_length <= -1) {
-        return result(InvalidInput, 7, 0, 0, 0, 0, 0);
-    }
-    if (offsets_length <= -1) {
-        return result(InvalidInput, 8, 0, 0, 0, 0, 0);
-    }
-    let lexed = verified::raw_lexer::lex_into(source, source_length, raw,
-        raw_length / verified::token::ROW_WORDS);
+    let lexed: verified::raw_lexer::LexResult =
+        verified::raw_lexer::lex_into_rows(source, source_length, tokens);
     let raw_count: i32 = verified::raw_lexer::lex_token_count(lexed);
     if (!verified::raw_lexer::lex_succeeded(lexed)) {
-        return result(LexingFailed, verified::raw_lexer::lex_stage_code(lexed), raw_count,
-            0, 0, 0, verified::raw_lexer::lex_error_offset(lexed));
+        return recognition_result(LexingFailed,
+            verified::raw_lexer::lex_stage_code(lexed), raw_count, 0,
+            verified::raw_lexer::lex_error_offset(lexed), no_parse);
     }
-    if (!(raw_count <= canonical_length / verified::token::ROW_WORDS)) {
-        return result(TokenStorageFull, 0, raw_count, 0, 0, 0, 0);
+    if (raw.length > 0 && !verified::token::encode_packed(tokens,
+            raw_count, raw.data, raw.length)) {
+        return recognition_result(TokenStorageFull, 0, raw_count, 0, 0,
+            no_parse);
     }
-    let word: i32 = 0;
-    while (word != raw_count * verified::token::ROW_WORDS) {
-        canonical[word] = raw[word];
-        word += 1;
+    let token_count: i32 =
+        verified::canonical_tokens::canonicalize_rows_in_place(source,
+            tokens, raw_count);
+    if (canonical.length > 0 && !verified::token::encode_packed(
+            tokens, token_count, canonical.data, canonical.length)) {
+        return recognition_result(TokenStorageFull, 1, raw_count,
+            token_count, 0, no_parse);
     }
-    let token_count: i32 = verified::canonical_tokens::canonicalize_in_place(source, canonical, raw_count);
-    if (!(token_count <= kinds_length)) {
-        return result(TokenStorageFull, 1, raw_count, token_count, 0, 0, 0);
+    if (token_count > kinds_length) {
+        return recognition_result(TokenStorageFull, 1, raw_count,
+            token_count, 0, no_parse);
     }
+    let rows: [verified::token::TokenRow] = tokens.data;
     let token: i32 = 0;
-    while (token != token_count) {
-        kinds[token] = canonical[token * verified::token::ROW_WORDS
-            + verified::token::KIND_FIELD];
+    while (token < token_count) {
+        kinds[token] = verified::token::kind_code(rows[token].kind);
         token += 1;
     }
-    let parsed = verified::parser::recognize(grammar, grammar_length, kinds,
-        token_count, workspace);
-    if (!verified::parser::parse_succeeded(parsed)) {
-        return result(ParsingFailed, verified::parser::parse_stage_code(parsed), raw_count,
-            token_count, 0, 0, verified::parser::parse_error_position(parsed));
-    }
-    let tree = verified::parse_tree::materialize(
-        parsed, verified::parse_tree::input(workspace, token_count,
-            depth_limit),
-        verified::parse_tree::storage(records, records_length, offsets,
-            offsets_length));
-    let stage: ExtractionStage = Extracted;
-    if (!verified::parse_tree::tree_succeeded(tree)) {
-        stage = TreeMaterializationFailed;
-    }
-    return result(stage, verified::parse_tree::tree_stage_code(tree), raw_count, token_count,
-        verified::parse_tree::tree_node_count(tree), verified::parse_tree::tree_words_used(tree), 0);
+    return parse_recognized(grammar, grammar_length, kinds, workspace,
+        raw_count, token_count);
 }

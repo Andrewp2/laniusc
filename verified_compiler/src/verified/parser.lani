@@ -162,11 +162,160 @@ pub struct DerivationOutput {
     capacity: i32,
     offset: i32,
 }
+
+// Native consumers read the retained derivation directly from typed parser
+// states. The packed copy_derivation output remains the certificate format.
+pub struct DerivationHeader {
+    valid: bool,
+    production: i32,
+    origin: i32,
+    end: i32,
+    child_count: i32,
+}
+
+pub struct DerivationChild {
+    valid: bool,
+    kind: ChildKind,
+    payload: i32,
+    semantic_kind: i32,
+}
+
+pub struct DerivationReader {
+    states: [State],
+    token_count: i32,
+    state_count: i32,
+    valid: bool,
+}
+
+fn invalid_derivation_header() -> DerivationHeader {
+    return DerivationHeader {
+        valid: false, production: -1, origin: -1, end: -1,
+        child_count: 0,
+    };
+}
+
+fn invalid_derivation_child() -> DerivationChild {
+    return DerivationChild {
+        valid: false, kind: NoChild, payload: -1, semantic_kind: -1,
+    };
+}
+
+fn derivation_view_valid(input: DerivationInput) -> bool {
+    let workspace: WorkspaceStorage = input.workspace;
+    let workspace_length: i32 = workspace.words;
+    if (input.token_count <= -1 || input.token_count > MAX_TOKEN_COUNT
+        || workspace.memory == 0 || workspace_length <= -1
+        || workspace_length > verified::host::I32_MAX
+            / verified::host::I32_BYTES
+        || input.state_count <= -1 || input.state_id <= -1
+        || input.state_id >= input.state_count) {
+        return false;
+    }
+    let chart_count: i32 = input.token_count
+        * LATTICE_POSITIONS_PER_TOKEN + 1;
+    if (chart_count > workspace_length / CHART_RECORD_WORDS) {
+        return false;
+    }
+    let chart_words: i32 = chart_count * CHART_RECORD_WORDS;
+    let state_capacity: i32 = (workspace_length - chart_words)
+        / STATE_RECORD_WORDS;
+    return input.state_count <= state_capacity;
+}
+
+fn derivation_states(input: DerivationInput) -> [State] {
+    let chart_count: i32 = input.token_count
+        * LATTICE_POSITIONS_PER_TOKEN + 1;
+    let state_capacity: i32 = (input.workspace.words
+        - chart_count * CHART_RECORD_WORDS) / STATE_RECORD_WORDS;
+    let work: ParserWorkspace = workspace_view(input.workspace, chart_count,
+        state_capacity);
+    return work.states;
+}
+
+pub fn derivation_reader(input: DerivationInput) -> DerivationReader {
+    let nowhere: ptr = 0;
+    if (!derivation_view_valid(input)) {
+        return DerivationReader {
+            states: state_slice(nowhere, 0), token_count: 0,
+            state_count: 0, valid: false,
+        };
+    }
+    return DerivationReader {
+        states: derivation_states(input), token_count: input.token_count,
+        state_count: input.state_count, valid: true,
+    };
+}
+
+pub fn read_derivation_header(reader: DerivationReader,
+    state_id: i32) -> DerivationHeader {
+    let invalid: DerivationHeader = invalid_derivation_header();
+    if (!reader.valid || state_id <= -1 || state_id >= reader.state_count) {
+        return invalid;
+    }
+    let states: [State] = reader.states;
+    let state: State = states[state_id];
+    if (state.dot <= -1 || state.dot > reader.state_count
+        || state.production <= -1 || state.origin <= -1
+        || state.position < state.origin) { return invalid; }
+    if (state.dot == 0 && (state.previous != -1
+        || state.child != NoChild)) { return invalid; }
+    return DerivationHeader {
+        valid: true, production: state.production,
+        origin: state.origin, end: state.position,
+        child_count: state.dot,
+    };
+}
+
+// Children are returned in grammar order. A retained prefix chain is walked
+// backwards to the requested slot, validating every traversed link.
+pub fn read_derivation_child(reader: DerivationReader,
+    state_id: i32, index: i32) -> DerivationChild {
+    let invalid: DerivationChild = invalid_derivation_child();
+    let header: DerivationHeader = read_derivation_header(reader, state_id);
+    if (!header.valid || index <= -1 || index >= header.child_count) {
+        return invalid;
+    }
+    let states: [State] = reader.states;
+    let current: i32 = state_id;
+    let remaining: i32 = header.child_count;
+    while (remaining > index + 1) {
+        let step: State = states[current];
+        if (step.dot != remaining || step.production != header.production
+            || step.origin != header.origin || step.previous <= -1
+            || step.previous >= current) { return invalid; }
+        current = step.previous;
+        remaining -= 1;
+    }
+    let selected: State = states[current];
+    let previous: i32 = selected.previous;
+    if (selected.dot != remaining
+        || selected.production != header.production
+        || selected.origin != header.origin
+        || previous <= -1 || previous >= current
+        || selected.child_payload <= -1) { return invalid; }
+    if (selected.child == TokenChild) {
+        if (selected.child_payload >= reader.token_count) { return invalid; }
+    } else {
+        if (selected.child != StateChild
+            || selected.child_payload >= current) { return invalid; }
+    }
+    if (index == 0) {
+        let base: State = states[previous];
+        if (base.dot != 0 || base.production != header.production
+            || base.origin != header.origin || base.previous != -1
+            || base.child != NoChild) { return invalid; }
+    }
+    return DerivationChild {
+        valid: true, kind: selected.child,
+        payload: selected.child_payload,
+        semantic_kind: selected.semantic_kind,
+    };
+}
 pub fn parse_stage_code(result: ParseResult) -> i32 {
     return stage_code(result.stage);
 }
 pub fn parse_has_stage(result: ParseResult, expected: ParseStage) -> bool {
-    return stage_code(result.stage) == stage_code(expected);
+    return result.stage == expected;
 }
 pub fn parse_succeeded(result: ParseResult) -> bool {
     return parse_has_stage(result, Parsed);
@@ -551,35 +700,14 @@ pub fn recognize(grammar:[i32], grammar_length: i32, tokens:[i32],
 // as for recognize. This is a derivation reader, not a grammar validator.
 pub fn copy_derivation(input: DerivationInput,
     destination: DerivationOutput) -> i32 {
-    let workspace: WorkspaceStorage = input.workspace;
-    let workspace_length: i32 = workspace.words;
     let token_count: i32 = input.token_count;
     let state_count: i32 = input.state_count;
     let state_id: i32 = input.state_id;
     let output: [i32] = destination.data;
     let output_length: i32 = destination.capacity;
     let output_offset: i32 = destination.offset;
-    if (token_count <= -1 || token_count > MAX_TOKEN_COUNT
-        || workspace.memory == 0
-        || workspace_length <= -1
-        || workspace_length > verified::host::I32_MAX
-            / verified::host::I32_BYTES
-        || state_count <= -1 || state_id <= -1 || state_id >= state_count) {
-        return -1;
-    }
-    let chart_count: i32 = token_count * LATTICE_POSITIONS_PER_TOKEN + 1;
-    if (chart_count > workspace_length / CHART_RECORD_WORDS) {
-        return -1;
-    }
-    let chart_words: i32 = chart_count * CHART_RECORD_WORDS;
-    let state_capacity: i32 = (workspace_length - chart_words)
-        / STATE_RECORD_WORDS;
-    if (state_count > state_capacity) {
-        return -1;
-    }
-    let work: ParserWorkspace = workspace_view(workspace, chart_count,
-        state_capacity);
-    let states: [State] = work.states;
+    if (!derivation_view_valid(input)) { return -1; }
+    let states: [State] = derivation_states(input);
     let count: i32 = states[state_id].dot;
     if (count <= -1 || !(count <= state_count)) {
         return -1;

@@ -1,0 +1,79 @@
+module app::main;
+
+import test_support::syntax_tree_decode;
+
+import verified::host;
+import verified::parse_tree;
+import verified::parser;
+import verified::syntax_tree;
+import verified::token;
+
+const WORK_WORDS: i32 = 128;
+
+fn main() -> i32 {
+    // Start -> identifier, with the terminal's semantic kind retained.
+    let grammar: [i32; 25] = [1, 1, 1, 1, 0, 99, 13, 17, 18, 19, 20,
+        21, 1, 22, 23, 24, 1, 1, 0, 0, 1, 0, 0, 1, 0];
+    let kinds: [i32; 1] = [0];
+    kinds[0] = verified::token::kind_code(verified::token::Identifier);
+    let memory: ptr = verified::host::alloc_i32(WORK_WORDS);
+    if (memory == 0) { return 1; }
+    let workspace: verified::parser::WorkspaceStorage =
+        verified::parser::storage(memory, WORK_WORDS);
+    let parsed: verified::parser::ParseResult =
+        verified::parser::recognize(grammar, 25, kinds, 1, workspace);
+    if (!verified::parser::parse_succeeded(parsed)) { return 2; }
+
+    let native: verified::syntax_tree::Tree =
+        verified::syntax_tree::materialize_native(parsed, workspace, 1,
+            8, 2, 8);
+    let native_records: [i32; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
+    let native_offsets: [i32; 2] = [0, 0];
+    let serialized: verified::parse_tree::TreeResult =
+        verified::parse_tree::serialize_native(native, 1,
+            verified::parse_tree::storage(native_records, 8,
+                native_offsets, 2), 8);
+    if (!verified::parse_tree::tree_succeeded(serialized)
+        || serialized.node_count != 1
+        || serialized.words_used != 7
+        || native_offsets[0] != 0
+        || native_records[0] != 0 || native_records[1] != 0
+        || native_records[2] != 2 || native_records[3] != 1
+        || native_records[4] != verified::parser::child_code(
+            verified::parser::TokenChild)
+        || native_records[5] != 0 || native_records[6] != 0) { return 8; }
+    let decoded: verified::syntax_tree::Tree =
+        test_support::syntax_tree_decode::decode(native_records, 7, native_offsets, 1, 1);
+    if (decoded.node_count != 1 || native.node_count != decoded.node_count
+        || native.child_count != decoded.child_count
+        || verified::syntax_tree::production(native, 0)
+            != verified::syntax_tree::production(decoded, 0)
+        || verified::syntax_tree::child_count(native, 0) != 1
+        || verified::syntax_tree::child(native, 0, 0,
+            verified::parser::TokenChild)
+            != verified::syntax_tree::child(decoded, 0, 0,
+                verified::parser::TokenChild)) {
+        return 4;
+    }
+    let native_children: [verified::syntax_tree::Child] = native.children;
+    let decoded_children: [verified::syntax_tree::Child] = decoded.children;
+    if (native_children[0].semantic_kind
+        != decoded_children[0].semantic_kind) { return 5; }
+    if (verified::syntax_tree::materialize_native(parsed, workspace, 1,
+            0, 2, 8).node_count != 0
+        || verified::syntax_tree::materialize_native(parsed, workspace, 1,
+            8, 0, 8).node_count != 0
+        || verified::syntax_tree::materialize_native(parsed, workspace, 1,
+            8, 2, 6).node_count != 0) {
+        return 6;
+    }
+    let invalid_root: verified::parser::ParseResult = parsed;
+    invalid_root.root_state = verified::parser::parse_state_count(parsed);
+    if (verified::syntax_tree::materialize_native(invalid_root, workspace, 1,
+            8, 2, 8).node_count != 0
+        || verified::syntax_tree::materialize_native(parsed, workspace, -1,
+            8, 2, 8).node_count != 0) {
+        return 7;
+    }
+    return 0;
+}

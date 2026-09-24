@@ -1,0 +1,42 @@
+module app::main;
+
+import backend::syntax;
+import ir::type_ref;
+import runtime::service;
+
+fn main() -> i32 {
+    let words: [i32; 11] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let header: backend::syntax::FunctionHeader =
+        backend::syntax::FunctionHeader {
+            kind: backend::syntax::RuntimeFunction,
+            pointer_bits: backend::syntax::POINTER_BITS,
+            id: 7,
+            result_type: ir::type_ref::Pointer,
+            parameters: 2,
+            body_words: runtime::service::RUNTIME_SERVICE_BODY_WORDS,
+        };
+    backend::syntax::write_function_header(words, 0, header);
+    let first: i32 = backend::syntax::FUNCTION_HEADER_WORDS;
+    let second: i32 = first + backend::syntax::PARAMETER_ROW_WORDS;
+    let body: i32 = second + backend::syntax::PARAMETER_ROW_WORDS;
+    let count: i32 = body + runtime::service::RUNTIME_SERVICE_BODY_WORDS;
+    words[first + backend::syntax::PARAMETER_ID_FIELD] = 11;
+    words[first + backend::syntax::PARAMETER_TYPE_FIELD] =
+        ir::type_ref::code(ir::type_ref::Usize);
+    words[second + backend::syntax::PARAMETER_ID_FIELD] = 12;
+    words[second + backend::syntax::PARAMETER_TYPE_FIELD] =
+        ir::type_ref::code(ir::type_ref::Usize);
+    words[body] = runtime::service::service_code(runtime::service::Allocate);
+    if (!runtime::service::valid(words, 0, count)) { return 1; }
+    words[second + backend::syntax::PARAMETER_TYPE_FIELD] =
+        ir::type_ref::code(ir::type_ref::I32);
+    if (runtime::service::valid(words, 0, count)) { return 2; }
+    words[second + backend::syntax::PARAMETER_TYPE_FIELD] =
+        ir::type_ref::code(ir::type_ref::Usize);
+    words[second + backend::syntax::PARAMETER_ID_FIELD] = 11;
+    if (runtime::service::valid(words, 0, count)) { return 3; }
+    words[second + backend::syntax::PARAMETER_ID_FIELD] = 12;
+    words[body] = runtime::service::service_code(runtime::service::NoService);
+    if (runtime::service::valid(words, 0, count)) { return 4; }
+    return 0;
+}

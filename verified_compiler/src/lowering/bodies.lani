@@ -1,9 +1,11 @@
 module lowering::bodies;
 
-import backend::syntax;
 import lowering::allocation;
 import lowering::aliases;
 import lowering::body_context;
+import ir::body_catalog;
+import ir::body_events;
+import ir::type_ref;
 import lowering::body_lookup;
 import lowering::body_statement;
 import lowering::declarations;
@@ -14,6 +16,8 @@ import lowering::types;
 import lowering::value_catalog;
 import verified::host;
 import verified::surface_expr;
+import verified::surface_declaration;
+import verified::surface_statement;
 import verified::surface_type;
 import verified::token;
 
@@ -24,7 +28,7 @@ type WordRegion = lowering::body_context::WordRegion;
 
 fn append_function(input: BodyLoweringInputs,
     workspace: BodyLoweringWorkspace, declaration: i32, function_id: i32,
-    position: i32, depth: i32) -> i32 {
+    depth: i32) -> i32 {
     let source_region: WordRegion = input.source;
     let token_region: verified::token::TokenTable = input.tokens;
     let allocation_table: lowering::allocation::Table = input.allocations;
@@ -36,18 +40,15 @@ fn append_function(input: BodyLoweringInputs,
         workspace.expressions;
     let type_arena: verified::surface_type::TypeArena = workspace.types;
     let alias_scratch_region: WordRegion = workspace.alias_scratch;
-    let type_output_region: WordRegion = workspace.type_output;
-    let output_region: WordRegion = workspace.output;
+    let type_output_region: lowering::types::Results =
+        workspace.type_output;
     let source: [i32] = source_region.data;
     let source_length: i32 = source_region.words;
     let tokens: verified::token::TokenTable = token_region;
     let token_count: i32 = token_region.count;
     let alias_scratch: [i32] = alias_scratch_region.data;
     let alias_scratch_capacity: i32 = alias_scratch_region.words;
-    let type_output: [i32] = type_output_region.data;
-    let type_output_capacity: i32 = type_output_region.words;
-    let output: [i32] = output_region.data;
-    let capacity: i32 = output_region.words;
+    let events: ir::body_events::Region = workspace.events;
     let owner_unit: i32 = input.owner_unit;
     let signature_record: lowering::signatures::SignatureRecord =
         lowering::signature_index::record_at(input.signature_index,
@@ -57,17 +58,11 @@ fn append_function(input: BodyLoweringInputs,
     if (parameter_count <= -1
         || !lowering::signature_index::has_shape(input.signature_index,
             function_id, lowering::signatures::InternalFunctionShape)
-        || lowering::signatures::record_result_type(signature_record) <= 0
+        || !ir::type_ref::valid_result(
+            lowering::signatures::record_result_type(signature_record))
         || token_count <= -1
         || token_count > lowering::locals::MAX_CAPACITY) {
         return lowering::body_context::unsupported();
-    }
-    if (position <= -1 || position > capacity
-            - lowering::body_context::RECORD_HEADER - 1
-        || parameter_count > (capacity - position
-            - lowering::body_context::RECORD_HEADER - 1)
-                / backend::syntax::PARAMETER_ROW_WORDS) {
-        return lowering::body_context::invalid();
     }
     let local_bytes: usize = lowering::locals::allocation_bytes(token_count);
     let local_alignment: usize = lowering::locals::ALIGNMENT;
@@ -87,55 +82,43 @@ fn append_function(input: BodyLoweringInputs,
         alias_catalog: alias_region,
         alias_scratch: alias_scratch,
         alias_scratch_capacity: alias_scratch_capacity,
-        type_output: type_output,
-        type_output_capacity: type_output_capacity,
+        type_output: type_output_region,
         allocated: allocation_table,
         signature_index: input.signature_index,
         values: value_region,
         locals: locals,
+        return_kind: lowering::signatures::record_result_type(signature_record),
         owner_unit: owner_unit,
+        contexts: input.contexts,
+        source_catalog: input.source_catalog,
+        token_catalog: input.token_catalog,
+        global_declarations: input.global_declarations,
+        trees: input.trees,
     };
-    let record_start: i32 = position;
-    let body_start: i32 = position + lowering::body_context::RECORD_HEADER
-        + parameter_count * backend::syntax::PARAMETER_ROW_WORDS;
-    if (body_start <= position || body_start >= capacity) { return lowering::body_context::invalid(); }
-    lowering::body_context::write_function_words(output, record_start, 0);
-    let function_header: backend::syntax::FunctionHeader =
-        backend::syntax::FunctionHeader {
-            kind: backend::syntax::DefinedFunction,
-            pointer_bits: lowering::body_context::POINTER_BITS,
-            id: function_id,
-            result_type: lowering::signatures::record_result_type(
-                signature_record),
-            parameters: parameter_count,
-            body_words: 0,
-        };
-    backend::syntax::write_function_header(output,
-        lowering::body_context::function_position(record_start),
-        function_header);
-    let next: i32 = position + lowering::body_context::RECORD_HEADER;
     let parameter: i32 = 0;
     while (parameter != parameter_count) {
         let parameter_record: lowering::signatures::SignatureMember =
             lowering::signature_index::member_at(input.signature_index,
                 function_id, parameter);
         let name: i32 = parameter_record.name;
-        let kind: i32 = parameter_record.type_tag;
-        output[next + backend::syntax::PARAMETER_ID_FIELD] = name;
-        output[next + backend::syntax::PARAMETER_TYPE_FIELD] = kind;
+        let kind: ir::type_ref::TypeRef = parameter_record.type_tag;
         if (!lowering::locals::bind(context.locals, name, kind)) { return lowering::body_context::invalid(); }
-        next += backend::syntax::PARAMETER_ROW_WORDS;
         parameter += 1;
     }
-    let body: i32 = lowering::body_context::child(context, declaration, 8);
-    next = lowering::body_statement::block_statements(context, body, output, capacity, next, depth - 1);
-    if (next <= -1 || next <= body_start) { return next; }
-    lowering::body_context::write_function_words(output, record_start,
-        next - lowering::body_context::function_position(record_start));
-    backend::syntax::set_function_body_words_at(output,
-        lowering::body_context::function_position(record_start),
-        next - body_start);
-    return next;
+    let body: i32 = verified::surface_declaration::function_body(
+        context.tree, declaration);
+    let event_count: i32 = lowering::body_statement::block_statements(
+        context, body, events, 0, depth - 1);
+    if (event_count <= 0) { return lowering::body_context::invalid(); }
+    let body_index: i32 = ir::body_catalog::append(workspace.catalog,
+        ir::body_catalog::FunctionSignature {
+            id: function_id,
+            result_type: lowering::signatures::record_result_type(
+                signature_record),
+            parameters: parameter_count,
+        }, events, event_count);
+    if (body_index <= -1) { return lowering::body_context::invalid(); }
+    return 0;
 }
 
 // Lower nongeneric internal functions owned by `owner_unit` from the global
@@ -153,23 +136,21 @@ pub fn lower_owned(input: BodyLoweringInputs,
     let expression_region: verified::surface_expr::ExpressionArena =
         workspace.expressions;
     let type_arena: verified::surface_type::TypeArena = workspace.types;
-    let type_output_region: WordRegion = workspace.type_output;
-    let output_region: WordRegion = workspace.output;
+    let type_output_region: lowering::types::Results =
+        workspace.type_output;
     let owner_unit: i32 = input.owner_unit;
     let source_length: i32 = source_region.words;
     let token_count: i32 = token_region.count;
     let node_count: i32 = input.tree.node_count;
     let expression_capacity: i32 = expression_region.capacity;
-    let type_output_capacity: i32 = type_output_region.words;
-    let output: [i32] = output_region.data;
-    let capacity: i32 = output_region.words;
+    let type_output_capacity: i32 = type_output_region.count;
     if (owner_unit <= -2 || source_length <= -1 || token_count <= -1
         || node_count <= 0
         || !lowering::allocation::table_has_exact_rows(allocation_table)
         || input.signature_index.count <= 0
         || value_region.count <= -1
         || expression_capacity <= 0 || type_arena.capacity <= 0
-        || type_output_capacity <= 0 || capacity <= lowering::body_context::HEADER) {
+        || type_output_capacity <= 0) {
         return lowering::body_context::invalid();
     }
     let rows: i32 = lowering::allocation::table_header(
@@ -179,10 +160,7 @@ pub fn lower_owned(input: BodyLoweringInputs,
     }
     if (!lowering::value_catalog::valid(value_region, token_count,
             allocation_table)) { return lowering::body_context::invalid(); }
-    let header: lowering::body_context::BodyHeader =
-        lowering::body_context::empty_header();
-    lowering::body_context::write_header_at(output, 0, header);
-    let written: i32 = lowering::body_context::HEADER;
+    let lowered: i32 = 0;
     let row: i32 = 0;
     while (row != rows) {
         let allocation: lowering::allocation::AllocationRow =
@@ -197,17 +175,13 @@ pub fn lower_owned(input: BodyLoweringInputs,
                 input.signature_index, function_id)) {
                 return lowering::body_context::invalid();
             }
-            let next: i32 = append_function(input, workspace,
+            let result: i32 = append_function(input, workspace,
                 lowering::allocation::row_declaration(allocation),
-                function_id, written,
-                node_count);
-            if (next <= -1) { return next; }
-            written = next;
-            header.functions += 1;
+                function_id, node_count);
+            if (result <= -1) { return result; }
+            lowered += 1;
         }
         row += 1;
     }
-    header.words = written;
-    lowering::body_context::write_header_at(output, 0, header);
-    return written;
+    return lowered;
 }

@@ -1,0 +1,137 @@
+module lowering::constant_catalog;
+
+import lowering::allocation;
+import lowering::constant_expression;
+import lowering::declarations;
+import lowering::resolution_catalog;
+import lowering::unit_context;
+import verified::surface_declaration;
+import verified::surface_expr;
+import verified::syntax_tree;
+import verified::token;
+
+pub struct Input {
+    contexts: lowering::unit_context::Table,
+    sources: lowering::unit_context::LexicalCatalogs,
+    trees: verified::syntax_tree::Catalog,
+    allocations: lowering::allocation::Table,
+    declarations: lowering::declarations::Table,
+}
+
+pub struct Workspace {
+    arena: verified::surface_expr::ExpressionArena,
+    bindings: [i32],
+    binding_count: i32,
+    roots: [i32],
+    owners: [i32],
+    constant_count: i32,
+    expected_constants: i32,
+}
+
+pub fn expression_input(input: Input, workspace: Workspace)
+    -> lowering::constant_expression::Input {
+    return lowering::constant_expression::Input {
+        arena: workspace.arena,
+        bindings: workspace.bindings,
+        binding_count: workspace.binding_count,
+        roots: workspace.roots,
+        owners: workspace.owners,
+        constant_count: workspace.constant_count,
+        contexts: input.contexts,
+        lexical: input.sources,
+    };
+}
+
+// Build a single graph before signatures are emitted. Each initializer is
+// decoded once; exact path bindings make forward references independent of
+// declaration order. The evaluator's decreasing fuel rejects cycles.
+pub fn build(input: Input, workspace: Workspace) -> bool {
+    let arena: verified::surface_expr::ExpressionArena = workspace.arena;
+    let roots: [i32] = workspace.roots;
+    let owners: [i32] = workspace.owners;
+    let bindings: [i32] = workspace.bindings;
+    let trees: [verified::syntax_tree::Tree] = input.trees.data;
+    let allocated: lowering::allocation::Table = input.allocations;
+    let count: i32 = workspace.constant_count;
+    if (count <= -1 || input.trees.count != input.contexts.count
+        || workspace.binding_count < arena.capacity
+        || !lowering::allocation::table_has_exact_rows(allocated)
+        || !lowering::declarations::table_has_exact_rows(
+            input.declarations)) { return false; }
+    let id: i32 = 0;
+    while (id <= count - 1) {
+        roots[id] = -1;
+        owners[id] = -1;
+        id += 1;
+    }
+    let row: i32 = 0;
+    let allocation_rows: i32 = lowering::allocation::table_header(
+        allocated).rows;
+    let found: i32 = 0;
+    while (row <= allocation_rows - 1) {
+        let selected: lowering::allocation::AllocationRow =
+            lowering::allocation::table_row(allocated, row);
+        if (lowering::allocation::row_has_kind(selected,
+                lowering::declarations::Constant)) {
+            let owner: i32 = lowering::allocation::row_unit(selected);
+            let constant: i32 = lowering::allocation::row_declaration_id(
+                selected);
+            if (owner <= -1 || owner >= input.trees.count
+                || constant <= -1 || constant >= count
+                || roots[constant] != -1) {
+                return false;
+            }
+            let tree: verified::syntax_tree::Tree = trees[owner];
+            let source: verified::surface_declaration::Declaration =
+                verified::surface_declaration::read(tree,
+                    lowering::allocation::row_declaration(selected));
+            let initializer: i32 = match (source) {
+                verified::surface_declaration::Constant(value) -> value.value,
+                _ -> -1,
+            };
+            if (initializer <= -1) {
+                return false;
+            }
+            let before: i32 = verified::surface_expr::node_count(arena);
+            let root: i32 = verified::surface_expr::extract_append(
+                verified::surface_expr::ExpressionInput {
+                    tree: tree, root: initializer, depth: tree.node_count,
+                }, arena);
+            if (root <= -1) {
+                return false;
+            }
+            let after: i32 = verified::surface_expr::node_count(arena);
+            roots[constant] = root;
+            owners[constant] = owner;
+            let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
+            let node: i32 = before;
+            while (node <= after - 1) {
+                bindings[node] = -1;
+                if (nodes[node].kind == verified::surface_expr::PathExpression) {
+                    let target: i32 =
+                        lowering::resolution_catalog::resolve_constant_path(
+                            lowering::resolution_catalog::ConstantPathInput {
+                                unit: owner,
+                                expression: node,
+                                arena: arena,
+                                contexts: input.contexts,
+                                sources: input.sources.sources,
+                                tokens: input.sources.tokens,
+                                allocations: allocated,
+                                declarations: input.declarations,
+                                trees: input.trees,
+                            });
+                    if (target <= -1 || target >= count) {
+                        return false;
+                    }
+                    bindings[node] = target;
+                }
+                node += 1;
+            }
+            found += 1;
+        }
+        row += 1;
+    }
+    if (found != workspace.expected_constants) { return false; }
+    return true;
+}

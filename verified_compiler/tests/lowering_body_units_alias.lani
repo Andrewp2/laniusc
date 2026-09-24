@@ -1,9 +1,12 @@
 module app::main;
 
-import backend::syntax;
+import test_support::syntax_tree_decode;
+
+import ir::body_catalog;
+import ir::body_events;
+import ir::type_ref;
 import lowering::aliases;
 import lowering::allocation;
-import lowering::body_context;
 import lowering::body_units;
 import lowering::declarations;
 import lowering::signature_index;
@@ -29,6 +32,13 @@ const UNIT_DECLARATION_WORDS: i32 = lowering::declarations::HEADER
 const CATALOG_DECLARATION_WORDS: i32 = 2 * UNIT_DECLARATION_WORDS;
 const GLOBAL_DECLARATION_WORDS: i32 = lowering::declarations::HEADER
     + 6 * lowering::declarations::ROW;
+
+fn call_target(event: ir::body_events::Event) -> i32 {
+    return match (event) {
+        ir::body_events::ExpressionCall(call) -> call.function_id,
+        _ -> -1,
+    };
+}
 
 fn record(records:[i32], offsets:[i32], base: i32, node: i32,
     production: i32, children: i32) {
@@ -171,10 +181,10 @@ fn aliases(catalog: lowering::aliases::Table, unit: i32) {
     let symbols: [lowering::aliases::AliasSymbol] = slice_from_raw_parts(
         symbol_memory + lowering::aliases::SYMBOL_RECORD_BYTES - 8, 1);
     module_tokens[0] = 0;
+    let scalar_i32: ir::type_ref::TypeRef = ir::type_ref::I32;
     symbols[0] = lowering::aliases::AliasSymbol {
         name_token: 0,
-        target_kind: lowering::aliases::Scalar,
-        target_value: 1,
+        target: lowering::aliases::Scalar(scalar_i32),
     };
     catalog.data[unit] = lowering::aliases::Catalog {
         module_tokens: module_tokens,
@@ -184,7 +194,8 @@ fn aliases(catalog: lowering::aliases::Table, unit: i32) {
     };
 }
 
-fn source_and_tokens(source:[i32], tokens:[i32], unit: i32) {
+fn source_and_tokens(source:[i32], tokens:[verified::token::TokenRow],
+    unit: i32) {
     if (unit == 0) {
         let source_base: i32 = 0;
         source[source_base] = 65;
@@ -209,24 +220,18 @@ fn source_and_tokens(source:[i32], tokens:[i32], unit: i32) {
         source[source_base + 19] = 108;
         source[source_base + 20] = 101;
         source[source_base + 21] = 114;
-        tokens[0] = verified::token::kind_code(verified::token::Identifier);
-        tokens[1] = 0;
-        tokens[2] = 5;
-        tokens[3] = verified::token::kind_code(verified::token::Integer);
-        tokens[4] = 5;
-        tokens[5] = 6;
-        tokens[6] = verified::token::kind_code(verified::token::Identifier);
-        tokens[7] = 6;
-        tokens[8] = 7;
-        tokens[9] = verified::token::kind_code(verified::token::Identifier);
-        tokens[10] = 7;
-        tokens[11] = 10;
-        tokens[12] = verified::token::kind_code(verified::token::Identifier);
-        tokens[13] = 10;
-        tokens[14] = 16;
-        tokens[15] = verified::token::kind_code(verified::token::Identifier);
-        tokens[16] = 16;
-        tokens[17] = 22;
+        tokens[0] = verified::token::TokenRow {
+            kind: verified::token::Identifier, start: 0, finish: 5 };
+        tokens[1] = verified::token::TokenRow {
+            kind: verified::token::Integer, start: 5, finish: 6 };
+        tokens[2] = verified::token::TokenRow {
+            kind: verified::token::Identifier, start: 6, finish: 7 };
+        tokens[3] = verified::token::TokenRow {
+            kind: verified::token::Identifier, start: 7, finish: 10 };
+        tokens[4] = verified::token::TokenRow {
+            kind: verified::token::Identifier, start: 10, finish: 16 };
+        tokens[5] = verified::token::TokenRow {
+            kind: verified::token::Identifier, start: 16, finish: 22 };
     } else {
         let source_base: i32 = 22;
         source[source_base] = 65;
@@ -248,27 +253,16 @@ fn source_and_tokens(source:[i32], tokens:[i32], unit: i32) {
         source[source_base + 16] = 108;
         source[source_base + 17] = 101;
         source[source_base + 18] = 114;
-        let token_base: i32 = 18;
-        tokens[token_base] = verified::token::kind_code(
-            verified::token::Identifier);
-        tokens[token_base + 1] = 22;
-        tokens[token_base + 2] = 27;
-        tokens[token_base + 3] = verified::token::kind_code(
-            verified::token::Integer);
-        tokens[token_base + 4] = 27;
-        tokens[token_base + 5] = 28;
-        tokens[token_base + 6] = verified::token::kind_code(
-            verified::token::Identifier);
-        tokens[token_base + 7] = 28;
-        tokens[token_base + 8] = 29;
-        tokens[token_base + 9] = verified::token::kind_code(
-            verified::token::Identifier);
-        tokens[token_base + 10] = 29;
-        tokens[token_base + 11] = 35;
-        tokens[token_base + 12] = verified::token::kind_code(
-            verified::token::Identifier);
-        tokens[token_base + 13] = 35;
-        tokens[token_base + 14] = 41;
+        tokens[6] = verified::token::TokenRow {
+            kind: verified::token::Identifier, start: 22, finish: 27 };
+        tokens[7] = verified::token::TokenRow {
+            kind: verified::token::Integer, start: 27, finish: 28 };
+        tokens[8] = verified::token::TokenRow {
+            kind: verified::token::Identifier, start: 28, finish: 29 };
+        tokens[9] = verified::token::TokenRow {
+            kind: verified::token::Identifier, start: 29, finish: 35 };
+        tokens[10] = verified::token::TokenRow {
+            kind: verified::token::Identifier, start: 35, finish: 41 };
     }
 }
 
@@ -292,7 +286,6 @@ fn main() -> i32 {
         ALLOCATION_WORDS * verified::host::I32_BYTES,
         lowering::allocation::ALIGNMENT);
     let source_memory: ptr = verified::host::alloc(164, 4);
-    let token_memory: ptr = verified::host::alloc(132, 4);
     let native_token_memory: ptr = verified::host::alloc(
         11 * verified::token::RECORD_BYTES, verified::token::ALIGNMENT);
     let record_memory: ptr = verified::host::alloc(5888, 4);
@@ -319,21 +312,27 @@ fn main() -> i32 {
     let expression_arena_memory: ptr = verified::host::alloc(
         verified::surface_expr::allocation_bytes(EXPRESSION_NODE_CAPACITY),
         verified::surface_expr::ALIGNMENT);
-    let type_output_memory: ptr = verified::host::alloc(256, 4);
-    let body_scratch_memory: ptr = verified::host::alloc(512, 4);
-    let body_catalog_memory: ptr = verified::host::alloc(1024, 4);
+    let type_output_memory: ptr = verified::host::alloc(
+        lowering::types::result_allocation_bytes(64),
+        lowering::types::RESULT_ALIGNMENT);
+    let event_memory: ptr = verified::host::alloc(
+        ir::body_events::allocation_bytes(128),
+        ir::body_events::ALIGNMENT);
+    let body_catalog_memory: ptr = verified::host::alloc(
+        ir::body_catalog::allocation_bytes(2),
+        ir::body_catalog::ALIGNMENT);
     if (descriptors_memory == 0 || contexts_memory == 0 || transports_memory == 0
         || declarations_catalog_memory == 0
         || global_declarations_memory == 0
         || allocated_memory == 0 || source_memory == 0
-        || token_memory == 0 || native_token_memory == 0
+        || native_token_memory == 0
         || record_memory == 0 || offsets_memory == 0 || tree_memory == 0
         || value_catalog_memory == 0
         || alias_catalog_memory == 0 || type_arena_scratch_memory == 0
         || resolution_scratch_memory == 0 || value_scratch_memory == 0
         || alias_work_memory == 0
         || expression_arena_memory == 0 || type_output_memory == 0
-        || body_scratch_memory == 0 || body_catalog_memory == 0) { return 1; }
+        || event_memory == 0 || body_catalog_memory == 0) { return 1; }
     let descriptor_table: lowering::declarations::Catalog =
         lowering::declarations::catalog_from_raw_parts(descriptors_memory, 2);
     let context_table: lowering::unit_context::Table =
@@ -349,7 +348,9 @@ fn main() -> i32 {
     let allocation_table: lowering::allocation::Table =
         lowering::allocation::from_raw_parts(allocated_memory, 6);
     let source_catalog:[i32] = verified::host::i32_slice_from_raw_parts(source_memory, 41);
-    let token_catalog:[i32] = verified::host::i32_slice_from_raw_parts(token_memory, 33);
+    let native_tokens: verified::token::TokenTable =
+        verified::token::from_raw_parts(native_token_memory, 11);
+    let token_catalog: [verified::token::TokenRow] = native_tokens.data;
     let record_catalog:[i32] = verified::host::i32_slice_from_raw_parts(record_memory, 1472);
     let offsets_catalog:[i32] = verified::host::i32_slice_from_raw_parts(offsets_memory, 46);
     let tree_catalog: verified::syntax_tree::Catalog =
@@ -373,9 +374,12 @@ fn main() -> i32 {
     let expression_arena: verified::surface_expr::ExpressionArena =
         verified::surface_expr::from_raw_parts(expression_arena_memory,
             EXPRESSION_NODE_CAPACITY);
-    let type_output:[i32] = verified::host::i32_slice_from_raw_parts(type_output_memory, 64);
-    let body_scratch:[i32] = verified::host::i32_slice_from_raw_parts(body_scratch_memory, 128);
-    let body_catalog:[i32] = verified::host::i32_slice_from_raw_parts(body_catalog_memory, 256);
+    let type_output: lowering::types::Results =
+        lowering::types::results_from_raw_parts(type_output_memory, 64);
+    let events: ir::body_events::Region =
+        ir::body_events::from_raw_parts(event_memory, 128);
+    let body_catalog: ir::body_catalog::Catalog =
+        ir::body_catalog::from_raw_parts(body_catalog_memory, 2);
     let unit: i32 = 0;
     while (unit <= 1) {
         let unit_declarations_memory: ptr = declarations_catalog_memory
@@ -402,7 +406,7 @@ fn main() -> i32 {
         let unit_offsets: [i32] = verified::host::i32_slice_from_raw_parts(
             offsets_memory + unit * 23 * verified::host::I32_BYTES, 23);
         let decoded: verified::syntax_tree::Tree =
-            verified::syntax_tree::decode(unit_records, 736,
+            test_support::syntax_tree_decode::decode(unit_records, 736,
                 unit_offsets, 23, contexts[unit].token_count);
         if (decoded.node_count != 23) { return 38 + unit; }
         trees[unit] = decoded;
@@ -425,16 +429,16 @@ fn main() -> i32 {
     }
     if (lowering::value_catalog::write_binding(value_catalog, 0,
             lowering::value_catalog::binding(4,
-                lowering::value_catalog::CallableBinding,
-                lowering::value_catalog::ImportedBinding, 3, -1, -1)) != 1
+                lowering::value_catalog::ImportedBinding,
+                lowering::value_catalog::Callable(3))) != 1
         || lowering::value_catalog::write_binding(value_catalog, 1,
             lowering::value_catalog::binding(5,
-                lowering::value_catalog::CallableBinding,
-                lowering::value_catalog::LocalBinding, 2, -1, -1)) != 2
+                lowering::value_catalog::LocalBinding,
+                lowering::value_catalog::Callable(2))) != 2
         || lowering::value_catalog::write_binding(value_catalog, 2,
             lowering::value_catalog::binding(3,
-                lowering::value_catalog::CallableBinding,
-                lowering::value_catalog::LocalBinding, 3, -1, -1)) != 3) {
+                lowering::value_catalog::LocalBinding,
+                lowering::value_catalog::Callable(3))) != 3) {
         return 20;
     }
     lowering::declarations::table_write_header(global_declarations,
@@ -512,7 +516,7 @@ fn main() -> i32 {
         lowering::signatures::SignatureRecord {
             id: 2, declaration_kind: lowering::declarations::Function,
             shape: lowering::signatures::InternalFunctionShape,
-            arity: 0, result_type: 1,
+            arity: 0, result_type: ir::type_ref::I32,
         };
     let second_signature: lowering::signatures::SignatureRecord =
         first_signature;
@@ -524,10 +528,6 @@ fn main() -> i32 {
         || !lowering::signature_index::complete(writer)) { return 29; }
     let signature_index: lowering::signature_index::Table =
         lowering::signature_index::finish(writer);
-    let native_tokens: verified::token::TokenTable =
-        verified::token::from_raw_parts(native_token_memory, 11);
-    if (!verified::token::decode_packed(token_catalog, 33, 11,
-            native_tokens, 0)) { return 1; }
     let inputs: lowering::body_units::BodyUnitInputs =
         lowering::body_units::BodyUnitInputs {
             unit_count: 2,
@@ -550,31 +550,33 @@ fn main() -> i32 {
             resolutions: resolution_scratch,
             values: value_scratch,
             expressions: expression_arena,
-            type_output: lowering::body_units::region(type_output, 64),
-            body: lowering::body_units::region(body_scratch, 128),
-            body_catalog: lowering::body_units::region(body_catalog, 256),
+            type_output: type_output,
+            events: events,
+            catalog: body_catalog,
             alias_work: lowering::body_units::region(alias_work, 16),
         };
-    let words: i32 = lowering::body_units::lower_units_owned(inputs, workspace);
-    if (words <= 0) { return 30; }
-    if (transports[0].body_offset != 0) { return 31; }
-    if (transports[0].body_words <= 12) { return 32; }
-    if (transports[1].body_offset != transports[0].body_words) { return 33; }
-    if (body_catalog[7] != 2) { return 34; }
-    if (body_catalog[18] != backend::syntax::statement_code(backend::syntax::StatementExpression)
-        || body_catalog[19] != backend::syntax::expression_code(backend::syntax::ExprCall)
-        || body_catalog[20] != 3) { return 36; }
+    let count: i32 = lowering::body_units::lower_units_owned(inputs, workspace);
+    if (count != 2 || ir::body_catalog::length(body_catalog) != 2) {
+        return 30;
+    }
+    let first_body: ir::body_catalog::FunctionBody =
+        ir::body_catalog::at(body_catalog, 0);
+    let second_body: ir::body_catalog::FunctionBody =
+        ir::body_catalog::at(body_catalog, 1);
+    if (first_body.signature.id != 2 || second_body.signature.id != 3
+        || first_body.count <= 0 || second_body.count <= 0) { return 34; }
     let calls: i32 = 0;
-    let scan: i32 = lowering::body_context::HEADER;
-    while (scan <= transports[0].body_words - 1) {
-        if (body_catalog[scan] == backend::syntax::expression_code(backend::syntax::ExprCall)) {
-            if (body_catalog[scan + 1] != 3) { return 37; }
+    let first_events: [ir::body_events::Event] = first_body.events;
+    let scan: i32 = 0;
+    while (scan < first_body.count) {
+        let target: i32 = call_target(first_events[scan]);
+        if (target >= 0) {
+            if (target != 3) { return 37; }
             calls += 1;
         }
         scan += 1;
     }
     if (calls != 1) { return 38; }
-    if (body_catalog[transports[1].body_offset + 7] != 3) { return 35; }
     inputs.allocations = lowering::allocation::table_with_rows(
         allocation_table, 5);
     if (lowering::body_units::lower_units_owned(inputs, workspace) >= 0) {
@@ -595,12 +597,12 @@ fn main() -> i32 {
         lowering::value_catalog::read_binding(value_catalog, 1);
     if (lowering::value_catalog::write_binding(value_catalog, 0,
             lowering::value_catalog::binding(4,
-                lowering::value_catalog::CallableBinding,
-                lowering::value_catalog::LocalBinding, 2, -1, -1)) != 1
+                lowering::value_catalog::LocalBinding,
+                lowering::value_catalog::Callable(2))) != 1
         || lowering::value_catalog::write_binding(value_catalog, 1,
             lowering::value_catalog::binding(4,
-                lowering::value_catalog::CallableBinding,
-                lowering::value_catalog::ImportedBinding, 3, -1, -1)) != 2
+                lowering::value_catalog::ImportedBinding,
+                lowering::value_catalog::Callable(3))) != 2
         || !lowering::value_catalog::valid_slice(value_catalog, 0, 2,
             6, allocation_table)) { return 44; }
     if (lowering::value_catalog::write_binding(value_catalog, 0,
@@ -611,8 +613,8 @@ fn main() -> i32 {
         lowering::value_catalog::read_binding(value_catalog, 2);
     let invalid_binding: lowering::value_catalog::ValueBinding =
         lowering::value_catalog::binding(3,
-            lowering::value_catalog::InvalidBinding,
-            lowering::value_catalog::LocalBinding, 3, -1, -1);
+            lowering::value_catalog::LocalBinding,
+            lowering::value_catalog::InvalidTarget);
     if (lowering::value_catalog::write_binding(value_catalog, 2,
             invalid_binding) != 3
         || lowering::body_units::lower_units_owned(inputs, workspace) >= 0) {
@@ -622,8 +624,8 @@ fn main() -> i32 {
             valid_binding) != 3) { return 40; }
     if (lowering::value_catalog::write_binding(value_catalog, 1,
             lowering::value_catalog::binding(4,
-                lowering::value_catalog::CallableBinding,
-                lowering::value_catalog::ImportedBinding, 2, -1, -1)) != 2
+                lowering::value_catalog::ImportedBinding,
+                lowering::value_catalog::Callable(2))) != 2
         || lowering::body_units::lower_units_owned(inputs, workspace) >= 0) {
         return 42;
     }
@@ -631,8 +633,8 @@ fn main() -> i32 {
             second_binding) != 2) { return 43; }
     if (lowering::value_catalog::write_binding(value_catalog, 1,
             lowering::value_catalog::binding(3,
-                lowering::value_catalog::CallableBinding,
-                lowering::value_catalog::LocalBinding, 2, -1, -1)) != 2
+                lowering::value_catalog::LocalBinding,
+                lowering::value_catalog::Callable(2))) != 2
         || lowering::value_catalog::valid_slice(value_catalog, 0, 2,
             6, allocation_table)) { return 46; }
     if (lowering::value_catalog::write_binding(value_catalog, 1,

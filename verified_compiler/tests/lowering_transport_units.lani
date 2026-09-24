@@ -7,6 +7,10 @@ import lowering::declarations;
 import lowering::signature_index;
 import lowering::signature_validation;
 import lowering::signatures;
+import ir::function_catalog;
+import ir::body_catalog;
+import ir::body_events;
+import ir::type_ref;
 import verified::host;
 import verified::token;
 
@@ -19,16 +23,29 @@ const DECLARATION_WORDS: i32 = lowering::declarations::HEADER
 // uses global allocation rows and the typed signature index for stable
 // metadata order, then emits the entrypoint before remaining bodies.
 fn main() -> i32 {
+    if (!lowering::signature_validation::supported_type(
+            ir::type_ref::I32, 1)
+        || !lowering::signature_validation::supported_type(
+            ir::type_ref::Nominal(0), 1)
+        || lowering::signature_validation::supported_type(
+            ir::type_ref::Nominal(1), 1)
+        || lowering::signature_validation::supported_type(
+            ir::type_ref::Invalid, 1)
+        || lowering::signature_validation::supported_type(
+            ir::type_ref::Void, 1)) { return 18; }
     let sources: [i32; 10] = [104,101,108,112,101,114,109,97,105,110];
-    let tokens: [i32; 6] = [1,0,6, 1,0,4];
     let token_memory: ptr = verified::host::alloc(
         2 * verified::token::RECORD_BYTES, verified::token::ALIGNMENT);
     if (token_memory == 0) { return 5; }
     let token_table: verified::token::TokenTable =
         verified::token::from_raw_parts(token_memory, 2);
-    if (!verified::token::decode_packed(tokens, 6, 2, token_table, 0)) {
-        return 5;
-    }
+    let token_rows: [verified::token::TokenRow] = token_table.data;
+    token_rows[0] = verified::token::TokenRow {
+        kind: verified::token::Identifier, start: 0, finish: 6,
+    };
+    token_rows[1] = verified::token::TokenRow {
+        kind: verified::token::Identifier, start: 0, finish: 4,
+    };
     let descriptor_memory: ptr = verified::host::alloc(
         2 * lowering::unit_descriptor::RECORD_BYTES,
         lowering::unit_descriptor::ALIGNMENT);
@@ -48,18 +65,13 @@ fn main() -> i32 {
     descriptors[0].source_length = 6;
     descriptors[0].token_offset = 0;
     descriptors[0].token_count = 1;
-    descriptors[0].body_offset = 12;
-    descriptors[0].body_words = 12;
     descriptors[1].source_offset = 6;
     descriptors[1].source_length = 4;
     descriptors[1].token_offset = 1;
     descriptors[1].token_count = 1;
-    descriptors[1].body_offset = 0;
-    descriptors[1].body_words = 12;
     if (descriptors[0].source_offset != 0
-        || descriptors[0].body_offset != 12
         || descriptors[1].source_offset != 6
-        || descriptors[1].body_words != 12) { return 6; }
+        || descriptors[1].token_count != 1) { return 6; }
     let declaration_table: lowering::declarations::Table =
         lowering::declarations::from_raw_parts(declaration_memory, 2);
     lowering::declarations::table_write_header(declaration_table,
@@ -119,7 +131,7 @@ fn main() -> i32 {
         lowering::signatures::SignatureRecord {
             id: 0, declaration_kind: lowering::declarations::Function,
             shape: lowering::signatures::InternalFunctionShape,
-            arity: 0, result_type: 1,
+            arity: 0, result_type: ir::type_ref::I32,
         };
     let second: lowering::signatures::SignatureRecord = first;
     second.id = 1;
@@ -141,14 +153,42 @@ fn main() -> i32 {
     if (lowering::signature_validation::valid(validation)) { return 13; }
     validation.allocations = allocation_table;
     // Likewise, unit 0's body is at offset 12 and unit 1's at zero.
-    let bodies: [i32; 24] = [
-        1,64,1,12, 7,1,64,1,1,0,1,0,
-        1,64,1,12, 7,1,64,0,1,0,1,0,
-    ];
+    let body_memory: ptr = verified::host::alloc(
+        ir::body_catalog::allocation_bytes(2),
+        ir::body_catalog::ALIGNMENT);
+    let event_memory: ptr = verified::host::alloc(
+        ir::body_events::allocation_bytes(1),
+        ir::body_events::ALIGNMENT);
+    if (body_memory == 0 || event_memory == 0) { return 5; }
+    let bodies: ir::body_catalog::Catalog =
+        ir::body_catalog::from_raw_parts(body_memory, 2);
+    let event_region: ir::body_events::Region =
+        ir::body_events::from_raw_parts(event_memory, 1);
+    let events: [ir::body_events::Event] = event_region.events;
+    events[0] = ir::body_events::StatementSkip;
+    let body_signature: ir::body_catalog::FunctionSignature =
+        ir::body_catalog::FunctionSignature {
+            id: 0, result_type: ir::type_ref::I32, parameters: 0,
+        };
+    if (ir::body_catalog::append(bodies, body_signature,
+            event_region, 1) != 0) {
+        return 5;
+    }
+    body_signature.id = 1;
+    if (ir::body_catalog::append(bodies, body_signature,
+            event_region, 1) != 1) {
+        return 5;
+    }
     let output: [i32; 32] = [
         0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
         0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
     ];
+    let function_memory: ptr = verified::host::alloc(
+        ir::function_catalog::allocation_bytes(2, 0),
+        ir::function_catalog::ALIGNMENT);
+    if (function_memory == 0) { return 5; }
+    let functions: ir::function_catalog::Table =
+        ir::function_catalog::from_raw_parts(function_memory, 2, 0);
     let input: lowering::transport::TransportInput =
         lowering::transport::TransportInput {
             unit_count: 2,
@@ -158,44 +198,77 @@ fn main() -> i32 {
             declarations: declaration_table,
             allocations: allocation_table,
             signature_index: signature_index,
-            bodies: lowering::transport::region(bodies, 24),
+            bodies: bodies,
+            functions: functions,
         };
+    output[0] = 12345;
+    let native_words: i32 = lowering::transport::lower(input,
+        lowering::transport::region(output, 0),
+        lowering::transport::NativeOnly);
+    let native_entry: ir::function_catalog::Function =
+        ir::function_catalog::at(functions, 0);
+    let native_helper: ir::function_catalog::Function =
+        ir::function_catalog::at(functions, 1);
+    if (native_words != 0
+        || output[0] != 12345
+        || native_entry.kind != ir::function_catalog::DefinedFunction
+        || native_entry.id != 1
+        || native_helper.kind != ir::function_catalog::DefinedFunction
+        || native_helper.id != 0) {
+        return 17;
+    }
     let words: i32 = lowering::transport::lower(input,
-        lowering::transport::region(output, 32));
+        lowering::transport::region(output, 32),
+        lowering::transport::NativeAndCore);
     if (words != 22) { return 1; }
+    let entry: ir::function_catalog::Function =
+        ir::function_catalog::at(functions, 0);
+    let helper: ir::function_catalog::Function =
+        ir::function_catalog::at(functions, 1);
+    if (entry.id != 1 || entry.parameters != 0
+        || entry.parameter_start != 0
+        || helper.id != 0 || helper.parameters != 0
+        || helper.parameter_start != 0) {
+        return 16;
+    }
     input.allocations = lowering::allocation::from_raw_parts(
         allocation_memory, 1);
     if (lowering::transport::lower(input,
-        lowering::transport::region(output, 32)) != -1) { return 14; }
+        lowering::transport::region(output, 32),
+        lowering::transport::NativeAndCore) != -1) { return 14; }
     input.allocations = allocation_table;
     input.declarations = lowering::declarations::from_raw_parts(
         declaration_memory, 1);
     if (lowering::transport::lower(input,
-        lowering::transport::region(output, 32)) != -1) { return 15; }
+        lowering::transport::region(output, 32),
+        lowering::transport::NativeAndCore) != -1) { return 15; }
     input.declarations = declaration_table;
     if (output[0] != lowering::transport::VERSION
         || output[1] != lowering::transport::POINTER_BITS || output[2] != 1
         || output[3] != 0 || output[4] != 0 || output[5] != 2) { return 2; }
     // The entrypoint is emitted first for the backend's authenticated direct
     // call boundary; the remaining function keeps allocation-row order.
-    if (output[6] != 7 || output[9] != 1 || output[14] != 7
-        || output[17] != 0) { return 3; }
+    if (output[6] != 7 || output[9] != 1 || output[12] != 1
+        || output[14] != 7 || output[17] != 0
+        || output[20] != 1) { return 3; }
     let entries: [lowering::signature_index::Entry] = signature_index.data;
-    entries[0].result_type = 0;
+    entries[0].result_type = ir::type_ref::Void;
     if (lowering::signature_validation::valid(validation)) { return 11; }
-    entries[0].result_type = 1;
+    entries[0].result_type = ir::type_ref::I32;
     entries[1].id = 0;
     if (lowering::signature_validation::valid(validation)) { return 12; }
     entries[1].id = 1;
-    entries[0].result_type = 2;
+    entries[0].result_type = ir::type_ref::Bool;
     if (lowering::transport::lower(input,
-        lowering::transport::region(output, 32)) != -1) { return 9; }
-    entries[0].result_type = 1;
+        lowering::transport::region(output, 32),
+        lowering::transport::NativeAndCore) != -1) { return 9; }
+    entries[0].result_type = ir::type_ref::I32;
     // A descriptor catalog that is not exactly one descriptor per unit fails
     // before any partial transport can be mistaken for a valid program.
     input.descriptors = lowering::unit_descriptor::from_raw_parts(
         descriptor_memory, 1);
     if (lowering::transport::lower(input,
-        lowering::transport::region(output, 32)) != -1) { return 4; }
+        lowering::transport::region(output, 32),
+        lowering::transport::NativeAndCore) != -1) { return 4; }
     return 0;
 }
