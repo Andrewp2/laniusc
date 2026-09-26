@@ -9,8 +9,8 @@ limited to native x86_64 output from this worktree.
 
 | Public surface | Classification | Evidence and limit |
 | --- | --- | --- |
-| `core::number_i32` constants and all 19 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, multiplication and power overflow, division failure fallbacks, and power-of-two overflow. |
-| `core::number_u32` constants and all 23 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero divisor, and alignment fallbacks. |
+| `core::number_i32` constants and all 21 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, multiplication and power overflow, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
+| `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
 | `core::byte` constants and all 39 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
 | `core::bits` all 10 public `u32` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across 0 and 32, bit reversal, byte swap, and out-of-range bit fallback. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
@@ -49,6 +49,9 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   overflow before multiplying, including `MIN * -1`. `pow_or` defines `0^0`
   as one, computes powers by squaring, and returns the fallback on overflow.
   `div_or` and `rem_or` return the fallback for a zero divisor or `MIN/-1`.
+  `div_euclid_or` and `rem_euclid_or` apply the same failure rule and otherwise
+  return a quotient and nonnegative remainder satisfying
+  `value = divisor * quotient + remainder`.
   `is_multiple_of(_, 0)` is false. `next_power_of_two` returns zero when the
   next positive power would exceed 1,073,741,824.
 - `core::number_u32` saturates or wraps as named. `saturating_mul` checks
@@ -58,7 +61,8 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   caller's fallback. `gcd(0, 0)` is zero; `lcm_or` returns zero if either input
   is zero and the caller's fallback if the LCM exceeds `u32::MAX`.
   `pow_or` also defines `0^0` as one and returns the caller's fallback for a
-  power above `u32::MAX`.
+  power above `u32::MAX`. `div_or` and `rem_or` return the caller's fallback
+  for a zero divisor.
   `core::u32::saturating_mul` uses the same constant-time
   source algorithm, but its imported module still lacks a native claim.
 - `core::byte` arithmetic saturates or wraps as its function name says.
@@ -287,6 +291,14 @@ Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
     ASCII mappings for executable case conversion, while general conversion
     from a Unicode scalar to `char` remains a compiler dependency. This
     reproduction has been sent to the parallel compiler task.
+18. **Secure random scalar failure channel.** The x86 runtime bytes for
+    `std::random::secure_u32` in
+    `shaders/codegen/lir/x86/runtime_abi.slang` return `0xFFFFFFFF` when the
+    `getrandom` syscall does not return four bytes. That bit pattern is also a
+    valid random `u32`, so callers cannot detect the failure. The bound
+    `fill_secure_bytes` operation has a signed status result; a reliable
+    scalar random API needs an equally unambiguous failure channel. The
+    existing native test demonstrates normal execution, not failure handling.
 
 These are compiler/runtime dependencies, not stdlib implementations in Rust or
 Python. They should be handled in the parallel compiler task before extending

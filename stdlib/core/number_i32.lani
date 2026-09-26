@@ -160,6 +160,35 @@ pub fn rem_or(value: i32, divisor: i32, fallback: i32) -> i32 {
     }
     return value % divisor;
 }
+// Euclidean division keeps the remainder nonnegative. Zero divisor and
+// MIN/-1 return fallback before evaluating a trapping native division.
+pub fn div_euclid_or(value: i32, divisor: i32, fallback: i32) -> i32 {
+    if (divisor == 0 || value == MIN && divisor == -1) {
+        return fallback;
+    }
+    let quotient: i32 = value / divisor;
+    let remainder: i32 = value % divisor;
+    if (remainder<0) {
+        if (divisor>0) {
+            return quotient - 1;
+        }
+        return quotient + 1;
+    }
+    return quotient;
+}
+pub fn rem_euclid_or(value: i32, divisor: i32, fallback: i32) -> i32 {
+    if (divisor == 0 || value == MIN && divisor == -1) {
+        return fallback;
+    }
+    let remainder: i32 = value % divisor;
+    if (remainder<0) {
+        if (divisor>0) {
+            return remainder + divisor;
+        }
+        return remainder - divisor;
+    }
+    return remainder;
+}
 pub fn is_power_of_two(value: i32) -> bool {
     if (value <= 0) {
         return false;

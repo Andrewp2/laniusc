@@ -38,6 +38,12 @@ fn main() -> i32 {
     if (!core::number_u32::is_multiple_of(12, 3) || core::number_u32::is_multiple_of(13, 3) || core::number_u32::is_multiple_of(0, 0)) {
         return 9;
     }
+    if (core::number_u32::div_or(7, 3, 99) != 2 || core::number_u32::div_or(0, 1, 99) != 0 || core::number_u32::div_or(maximum, 2, 99) != 2147483647 || core::number_u32::div_or(7, 0, 99) != 99) {
+        return 17;
+    }
+    if (core::number_u32::rem_or(7, 3, 99) != 1 || core::number_u32::rem_or(0, 1, 99) != 0 || core::number_u32::rem_or(maximum, 2, 99) != 1 || core::number_u32::rem_or(7, 0, 99) != 99) {
+        return 18;
+    }
     if (!core::number_u32::is_power_of_two(2147483648) || core::number_u32::is_power_of_two(0) || core::number_u32::is_power_of_two(maximum) || core::number_u32::next_power_of_two(0) != 1 || core::number_u32::next_power_of_two(7) != 8 || core::number_u32::next_power_of_two(2147483648) != 2147483648 || core::number_u32::next_power_of_two(2147483649) != 0) {
         return 10;
     }

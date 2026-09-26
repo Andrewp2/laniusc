@@ -125,6 +125,19 @@ pub fn is_multiple_of(value: u32, divisor: u32) -> bool {
     }
     return value % divisor == 0;
 }
+// A zero divisor returns fallback rather than evaluating native division.
+pub fn div_or(value: u32, divisor: u32, fallback: u32) -> u32 {
+    if (divisor == 0) {
+        return fallback;
+    }
+    return value / divisor;
+}
+pub fn rem_or(value: u32, divisor: u32, fallback: u32) -> u32 {
+    if (divisor == 0) {
+        return fallback;
+    }
+    return value % divisor;
+}
 pub fn is_power_of_two(value: u32) -> bool {
     return value != 0 &&(value&(value - 1)) == 0;
 }
