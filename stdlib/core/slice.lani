@@ -134,6 +134,24 @@ pub fn copy_within_i32(values:[i32], len: i32, source_start: i32, source_end: i3
     }
     return true;
 }
+// Copies the source prefix into a backed destination view. The copied ranges
+// must not overlap in memory; use copy_within_i32 for overlap in one view.
+// Invalid lengths return false without writing. Caller-supplied lengths must
+// not exceed the actual backing view lengths.
+pub fn copy_nonoverlapping_prefix_i32(destination:[i32], destination_len: i32, source:[i32], source_len: i32) -> bool {
+    if (destination_len<0 || source_len<0) {
+        return false;
+    }
+    if (source_len>destination_len) {
+        return false;
+    }
+    let offset: i32 = 0;
+    while (offset<source_len) {
+        destination[offset] = source[offset];
+        offset += 1;
+    }
+    return true;
+}
 // Keep the first element of each adjacent run, preserving order. Returns the
 // new logical length; elements at or beyond it are unspecified. A nonpositive
 // len returns zero without writing.

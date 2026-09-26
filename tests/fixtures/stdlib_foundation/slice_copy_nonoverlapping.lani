@@ -1,0 +1,42 @@
+module app::main;
+import core::mem;
+import core::slice;
+fn main() -> i32 {
+    let source:[i32; 5] =[7, 11, 13, 17, 19];
+    let destination:[i32; 6] =[0, 0, 0, 0, 0, 0];
+    let source_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(source), 5);
+    let destination_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(destination), 6);
+    if (!core::slice::copy_nonoverlapping_prefix_i32(destination_view, 6, source_view, 3)) {
+        return 1;
+    }
+    if (destination[0] != 7 || destination[1] != 11 || destination[2] != 13 || destination[3] != 0) {
+        return 2;
+    }
+    if (!core::slice::copy_nonoverlapping_prefix_i32(destination_view, 6, source_view, 0)) {
+        return 3;
+    }
+    if (core::slice::copy_nonoverlapping_prefix_i32(destination_view, 2, source_view, 3)) {
+        return 4;
+    }
+    if (core::slice::copy_nonoverlapping_prefix_i32(destination_view, -1, source_view, 1)) {
+        return 5;
+    }
+    if (core::slice::copy_nonoverlapping_prefix_i32(destination_view, 6, source_view, -1)) {
+        return 6;
+    }
+    if (destination[0] != 7 || destination[1] != 11 || destination[2] != 13 || destination[3] != 0) {
+        return 7;
+    }
+    if (!core::slice::copy_nonoverlapping_prefix_i32(destination_view, 6, source_view, 5)) {
+        return 8;
+    }
+    if (destination[3] != 17 || destination[4] != 19 || destination[5] != 0) {
+        return 9;
+    }
+    let empty_source:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(source), 0);
+    let empty_destination:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(destination), 0);
+    if (!core::slice::copy_nonoverlapping_prefix_i32(empty_destination, 0, empty_source, 0)) {
+        return 10;
+    }
+    return 0;
+}

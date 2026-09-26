@@ -21,7 +21,7 @@ limited to native x86_64 output from this worktree.
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
 | Legacy `stdlib/i32.lani` power-of-two helpers | Executable on x86_64 | A focused source-level native test checks the highest signed power and the zero overflow sentinel. The legacy file as a whole is not included in this claim. |
 | `core::range` free functions for all five range forms and methods for `Range<i32>`, `RangeInclusive<i32>`, `RangeFrom<i32>`, and `RangeTo<i32>` | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership. There is no `RangeFull` method claim. |
-| `core::slice` all 28 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, rotations, compaction, search and insertion boundaries, extrema, sum, overlapping copies, sorting, and fallback behavior. A separate fixture confirms native index trapping on an overclaimed length. |
+| `core::slice` all 29 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, rotations, compaction, search and insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. A separate fixture confirms native index trapping on an overclaimed length. |
 | `core::mem::{i32_array_data_ptr,i32_slice_from_raw_parts}` | Misleading source stubs; executable x86_64 compiler intrinsics | The source bodies return `0` and `[]`; x86 lowers the recognized calls as intrinsics, demonstrated by the slice fixture. Do not use these bodies as evidence for another target. `string_data_ptr` and `i32_slice_data_ptr` have the same placeholder issue and are outside this subset. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
@@ -138,6 +138,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `fill_i32` returns the number of elements written, and `reverse_in_place_i32`
   returns the number of swaps. `copy_within_i32` handles overlap in either
   direction and rejects invalid source or destination bounds before writing.
+  `copy_nonoverlapping_prefix_i32` copies the requested source prefix into a
+  separate backed view, returns false without writing for negative lengths or
+  insufficient destination length, and accepts an empty source. Its source and
+  destination element ranges must not overlap in memory.
   `starts_with_i32`, `ends_with_i32`, and `equals_i32` compare elements in
   backed views; they treat negative lengths as empty. `rotate_left_i32` and
   `rotate_right_i32` mutate in place and return false without writing unless
@@ -216,9 +220,9 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   stack storage.
 
 The small runnable example is `sample_programs/portable_window_checksum.lani`.
-It validates an ASCII marker, sorts readings in place, selects a half-open
-window from sorted-value boundaries, reads a slice, and accumulates with
-saturating arithmetic. It prints `96`.
+It validates an ASCII marker, copies readings into a separate backed view,
+sorts the copy, selects a half-open window from sorted-value boundaries, reads
+the view, and accumulates with saturating arithmetic. It prints `96`.
 
 ## Target support and focused verification
 
@@ -230,7 +234,7 @@ saturating arithmetic. It prints `96`.
 | Wasm | Not claimed or required for this foundation. |
 
 Run the focused gate with `cargo test --test stdlib_foundation_execution`.
-The test compiles eighteen small Lanius programs through `--stdlib-root`, executes
+The test compiles nineteen small Lanius programs through `--stdlib-root`, executes
 the native ELFs, checks their exit status, checks the example's stdout, and
 checks the slice bounds trap. Each source is also suitable for direct CLI
 compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.
@@ -418,6 +422,14 @@ the failure injection cases run when Linux `strace` is available.
     the `core::pair::Pair { ... }` literal. This is a second obstacle to a
     public struct-based collection handle, alongside the imported aggregate
     result failure in dependency 2.
+24. **Seven-argument imported calls.** With
+    `--stdlib-root tests/fixtures/stdlib_foundation/repro_many_args_root`,
+    `repro_seven_arguments.lani` passes `laniusc check`, but x86 emission stops
+    with `LNC0017`, unsupported target LIR opcode 21 at the imported call.
+    A corresponding six-scalar-argument probe emitted and executed. This
+    prevented a general range-copy helper with two views and five scalar
+    arguments; `core::slice::copy_nonoverlapping_prefix_i32` uses four arguments
+    and has a native runtime test.
 
 These are compiler/runtime dependencies, not stdlib implementations in Rust or
 Python. They should be handled in the parallel compiler task before extending

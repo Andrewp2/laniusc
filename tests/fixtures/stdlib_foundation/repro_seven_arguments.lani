@@ -1,0 +1,8 @@
+module app::main;
+import core::args;
+fn main() -> i32 {
+    if (core::args::sum7(1, 2, 3, 4, 5, 6, 7) == 28) {
+        return 0;
+    }
+    return 1;
+}

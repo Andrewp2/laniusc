@@ -67,6 +67,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "slice_copy_nonoverlapping",
+            "tests/fixtures/stdlib_foundation/slice_copy_nonoverlapping.lani",
+            0,
+            b"",
+        ),
+        (
             "slice_compaction",
             "tests/fixtures/stdlib_foundation/slice_compaction.lani",
             0,
