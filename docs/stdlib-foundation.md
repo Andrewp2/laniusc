@@ -9,8 +9,8 @@ limited to native x86_64 output from this worktree.
 
 | Public surface | Classification | Evidence and limit |
 | --- | --- | --- |
-| `core::number_i32` constants and all 18 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, multiplication overflow, division failure fallbacks, and power-of-two overflow. |
-| `core::number_u32` constants and all 22 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power-of-two overflow, zero divisor, and alignment fallbacks. |
+| `core::number_i32` constants and all 19 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, multiplication and power overflow, division failure fallbacks, and power-of-two overflow. |
+| `core::number_u32` constants and all 23 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero divisor, and alignment fallbacks. |
 | `core::byte` constants and all 33 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, zero divisor, power-of-two overflow, ASCII classes and boundaries, case conversion, and hex fallback. |
 | `core::bits` all 10 public `u32` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across 0 and 32, bit reversal, byte swap, and out-of-range bit fallback. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
@@ -45,7 +45,8 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   caller-supplied fallback when `low > high`; valid inclusive bounds clamp.
   `saturating_mul` clamps an unrepresentable mathematical product to `MIN` or
   `MAX`; `mul_or` returns the caller's fallback for that case. Both check
-  overflow before multiplying, including `MIN * -1`.
+  overflow before multiplying, including `MIN * -1`. `pow_or` defines `0^0`
+  as one, computes powers by squaring, and returns the fallback on overflow.
   `div_or` and `rem_or` return the fallback for a zero divisor or `MIN/-1`.
   `is_multiple_of(_, 0)` is false. `next_power_of_two` returns zero when the
   next positive power would exceed 1,073,741,824.
@@ -55,6 +56,8 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   2,147,483,648. Invalid alignment or overflowing `align_up_or` returns the
   caller's fallback. `gcd(0, 0)` is zero; `lcm_or` returns zero if either input
   is zero and the caller's fallback if the LCM exceeds `u32::MAX`.
+  `pow_or` also defines `0^0` as one and returns the caller's fallback for a
+  power above `u32::MAX`.
   `core::u32::saturating_mul` uses the same constant-time
   source algorithm, but its imported module still lacks a native claim.
 - `core::byte` arithmetic saturates or wraps as its function name says.

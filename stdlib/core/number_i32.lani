@@ -91,6 +91,28 @@ pub fn mul_or(left: i32, right: i32, fallback: i32) -> i32 {
     }
     return left * right;
 }
+// Zero to the zero power is one; an unrepresentable power returns fallback.
+pub fn pow_or(base: i32, exponent: u32, fallback: i32) -> i32 {
+    let result: i32 = 1;
+    let factor: i32 = base;
+    let remaining: u32 = exponent;
+    while (remaining>0) {
+        if (remaining % 2 != 0) {
+            if (mul_overflows(result, factor)) {
+                return fallback;
+            }
+            result *= factor;
+        }
+        remaining /= 2;
+        if (remaining>0) {
+            if (mul_overflows(factor, factor)) {
+                return fallback;
+            }
+            factor *= factor;
+        }
+    }
+    return result;
+}
 pub fn saturating_abs_diff(left: i32, right: i32) -> i32 {
     if (left >= right) {
         return saturating_sub(left, right);

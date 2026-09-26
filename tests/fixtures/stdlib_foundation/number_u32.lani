@@ -29,6 +29,9 @@ fn main() -> i32 {
     if (core::number_u32::lcm_or(6, 8, 99) != 24 || core::number_u32::lcm_or(8, 6, 99) != 24 || core::number_u32::lcm_or(0, maximum, 99) != 0 || core::number_u32::lcm_or(maximum, maximum, 99) != maximum || core::number_u32::lcm_or(maximum, 2, 99) != 99 || core::number_u32::lcm_or(2, maximum, 99) != 99 || core::number_u32::lcm_or(65536, 65536, 99) != 65536) {
         return 15;
     }
+    if (core::number_u32::pow_or(0, 0, 99) != 1 || core::number_u32::pow_or(0, 99, 99) != 0 || core::number_u32::pow_or(3, 5, 99) != 243 || core::number_u32::pow_or(2, 31, 99) != 2147483648 || core::number_u32::pow_or(2, 32, 99) != 99 || core::number_u32::pow_or(maximum, 1, 99) != maximum || core::number_u32::pow_or(maximum, 2, 99) != 99 || core::number_u32::pow_or(1, maximum, 99) != 1) {
+        return 16;
+    }
     if (!core::number_u32::is_zero(0) || core::number_u32::is_zero(1) || !core::number_u32::is_nonzero(maximum) || core::number_u32::is_nonzero(0) || !core::number_u32::is_even(4) || core::number_u32::is_even(3) || !core::number_u32::is_odd(3) || core::number_u32::is_odd(4)) {
         return 8;
     }

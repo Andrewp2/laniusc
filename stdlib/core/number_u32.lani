@@ -84,6 +84,28 @@ pub fn lcm_or(left: u32, right: u32, fallback: u32) -> u32 {
     }
     return reduced * right;
 }
+// Zero to the zero power is one; an unrepresentable power returns fallback.
+pub fn pow_or(base: u32, exponent: u32, fallback: u32) -> u32 {
+    let result: u32 = 1;
+    let factor: u32 = base;
+    let remaining: u32 = exponent;
+    while (remaining>0) {
+        if (remaining % 2 != 0) {
+            if (factor != 0 && result>MAX / factor) {
+                return fallback;
+            }
+            result *= factor;
+        }
+        remaining /= 2;
+        if (remaining>0) {
+            if (factor != 0 && factor>MAX / factor) {
+                return fallback;
+            }
+            factor *= factor;
+        }
+    }
+    return result;
+}
 pub fn is_zero(value: u32) -> bool {
     return value == 0;
 }

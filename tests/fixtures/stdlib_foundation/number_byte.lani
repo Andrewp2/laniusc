@@ -34,6 +34,9 @@ fn main() -> i32 {
     if (core::number_i32::mul_or(2, minimum, 99) != 99 || core::number_i32::mul_or(-1, minimum, 99) != 99 || core::number_i32::mul_or(2, -1073741824, 99) != minimum || core::number_i32::mul_or(2, -1073741825, 99) != 99) {
         return 31;
     }
+    if (core::number_i32::pow_or(0, 0, 99) != 1 || core::number_i32::pow_or(0, 99, 99) != 0 || core::number_i32::pow_or(3, 5, 99) != 243 || core::number_i32::pow_or(-3, 5, 99) != -243 || core::number_i32::pow_or(-3, 4, 99) != 81 || core::number_i32::pow_or(2, 30, 99) != 1073741824 || core::number_i32::pow_or(2, 31, 99) != 99 || core::number_i32::pow_or(-2, 31, 99) != minimum || core::number_i32::pow_or(-2, 32, 99) != 99 || core::number_i32::pow_or(minimum, 1, 99) != minimum || core::number_i32::pow_or(minimum, 2, 99) != 99 || core::number_i32::pow_or(-1, 4294967295, 99) != -1) {
+        return 32;
+    }
     if (core::number_i32::saturating_abs_diff(minimum, maximum) != maximum || core::number_i32::saturating_abs_diff(3, 7) != 4) {
         return 6;
     }
