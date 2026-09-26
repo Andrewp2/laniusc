@@ -1,0 +1,10 @@
+module app::main;
+import core::mem;
+fn slice_from_raw_parts(data: ptr, length: i32) ->[u8] {
+    return slice_from_raw_parts(data, length);
+}
+fn main() -> i32 {
+    let pointer: ptr = core::mem::string_data_ptr("Az");
+    let bytes:[u8] = slice_from_raw_parts(pointer, 2);
+    return bytes[1];
+}

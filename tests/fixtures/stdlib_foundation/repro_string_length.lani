@@ -1,0 +1,8 @@
+module app::main;
+fn main() -> i32 {
+    let text: str = "Az";
+    if (text.len() == 2) {
+        return 0;
+    }
+    return 1;
+}

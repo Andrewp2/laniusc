@@ -9,8 +9,8 @@ limited to native x86_64 output from this worktree.
 
 | Public surface | Classification | Evidence and limit |
 | --- | --- | --- |
-| `core::number_i32` constants and all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, division failure fallbacks, and power-of-two overflow. |
-| `core::number_u32` constants and all 20 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, power-of-two overflow, zero divisor, and alignment fallbacks. |
+| `core::number_i32` constants and all 18 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, multiplication overflow, division failure fallbacks, and power-of-two overflow. |
+| `core::number_u32` constants and all 22 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power-of-two overflow, zero divisor, and alignment fallbacks. |
 | `core::byte` constants and all 33 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, zero divisor, power-of-two overflow, ASCII classes and boundaries, case conversion, and hex fallback. |
 | `core::bits` all 10 public `u32` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across 0 and 32, bit reversal, byte swap, and out-of-range bit fallback. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
@@ -43,6 +43,9 @@ Lanius logic. No declaration is promoted solely because it type-checks.
 
 - `core::number_i32` saturates instead of overflowing. `clamp_or` returns its
   caller-supplied fallback when `low > high`; valid inclusive bounds clamp.
+  `saturating_mul` clamps an unrepresentable mathematical product to `MIN` or
+  `MAX`; `mul_or` returns the caller's fallback for that case. Both check
+  overflow before multiplying, including `MIN * -1`.
   `div_or` and `rem_or` return the fallback for a zero divisor or `MIN/-1`.
   `is_multiple_of(_, 0)` is false. `next_power_of_two` returns zero when the
   next positive power would exceed 1,073,741,824.
@@ -50,7 +53,9 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   overflow with division instead of repeated addition. `is_multiple_of(_, 0)`
   and `is_aligned(_, 0)` are false. `next_power_of_two` returns zero above
   2,147,483,648. Invalid alignment or overflowing `align_up_or` returns the
-  caller's fallback. `core::u32::saturating_mul` uses the same constant-time
+  caller's fallback. `gcd(0, 0)` is zero; `lcm_or` returns zero if either input
+  is zero and the caller's fallback if the LCM exceeds `u32::MAX`.
+  `core::u32::saturating_mul` uses the same constant-time
   source algorithm, but its imported module still lacks a native claim.
 - `core::byte` arithmetic saturates or wraps as its function name says.
   `is_multiple_of(_, 0)` returns false. Invalid ASCII hex input returns the
@@ -230,6 +235,18 @@ Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
     occurred for a `[bool]` literal. A view built from backing array storage
     with `core::mem::i32_slice_from_raw_parts` indexes correctly, so public
     slice APIs remain limited to valid backed views.
+15. **Borrowed string length.**
+    `tests/fixtures/stdlib_foundation/repro_string_length.lani` calls
+    `text.len()` on a `str` value. `laniusc check --stdlib-root stdlib` reports
+    `LNC0027`: no method matches this receiver. A borrowed UTF-8 string
+    module needs executable length metadata to bound every read.
+16. **Byte access to borrowed string storage.**
+    `tests/fixtures/stdlib_foundation/repro_u8_string_slice.lani` takes
+    `core::mem::string_data_ptr("Az")`, constructs a two-byte `[u8]` view,
+    and returns `bytes[1]`. Native emission succeeds, but the ELF exits 245
+    instead of the ASCII value 122 for `z`. Thus even with a caller-supplied
+    length, byte iteration cannot be claimed executable from this pointer and
+    view combination. The compiler task has both minimal reproductions.
 
 These are compiler/runtime dependencies, not stdlib implementations in Rust or
 Python. They should be handled in the parallel compiler task before extending

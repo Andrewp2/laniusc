@@ -62,6 +62,28 @@ pub fn abs_diff(left: u32, right: u32) -> u32 {
     }
     return right - left;
 }
+// Euclid's algorithm defines gcd(0, 0) as zero for this API.
+pub fn gcd(left: u32, right: u32) -> u32 {
+    let a: u32 = left;
+    let b: u32 = right;
+    while (b != 0) {
+        let remainder: u32 = a % b;
+        a = b;
+        b = remainder;
+    }
+    return a;
+}
+// Zero times anything has LCM zero; an unrepresentable LCM returns fallback.
+pub fn lcm_or(left: u32, right: u32, fallback: u32) -> u32 {
+    if (left == 0 || right == 0) {
+        return 0;
+    }
+    let reduced: u32 = left / gcd(left, right);
+    if (reduced>MAX / right) {
+        return fallback;
+    }
+    return reduced * right;
+}
 pub fn is_zero(value: u32) -> bool {
     return value == 0;
 }

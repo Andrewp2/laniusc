@@ -55,6 +55,42 @@ pub fn saturating_sub(left: i32, right: i32) -> i32 {
     }
     return left - right;
 }
+// Check before multiplying: evaluating an overflowing i32 product is not safe.
+fn mul_overflows(left: i32, right: i32) -> bool {
+    if (left>0) {
+        if (right>0) {
+            return left>MAX / right;
+        }
+        if (right<0) {
+            return right<MIN / left;
+        }
+    }
+    if (left<0) {
+        if (right>0) {
+            return left<MIN / right;
+        }
+        if (right<0) {
+            return left<MAX / right;
+        }
+    }
+    return false;
+}
+pub fn saturating_mul(left: i32, right: i32) -> i32 {
+    if (mul_overflows(left, right)) {
+        if ((left<0) ==(right<0)) {
+            return MAX;
+        }
+        return MIN;
+    }
+    return left * right;
+}
+// Return fallback when the mathematical product does not fit in i32.
+pub fn mul_or(left: i32, right: i32, fallback: i32) -> i32 {
+    if (mul_overflows(left, right)) {
+        return fallback;
+    }
+    return left * right;
+}
 pub fn saturating_abs_diff(left: i32, right: i32) -> i32 {
     if (left >= right) {
         return saturating_sub(left, right);
