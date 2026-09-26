@@ -37,6 +37,52 @@ pub fn saturating_abs(value: i32) -> i32 {
     }
     return value;
 }
+// The GCD is nonnegative and gcd(0, 0) is zero. If it is 2,147,483,648,
+// which cannot fit in i32, return fallback instead.
+pub fn gcd_or(left: i32, right: i32, fallback: i32) -> i32 {
+    let a: i32 = left;
+    let b: i32 = right;
+    if (a == MIN) {
+        if (b == 0 || b == MIN) {
+            return fallback;
+        }
+        b = saturating_abs(b);
+        a = saturating_abs(a % b);
+    } else {
+        if (b == MIN) {
+            if (a == 0) {
+                return fallback;
+            }
+            a = saturating_abs(a);
+            b = saturating_abs(b % a);
+        } else {
+            a = saturating_abs(a);
+            b = saturating_abs(b);
+        }
+    }
+    while (b != 0) {
+        let remainder: i32 = a % b;
+        a = b;
+        b = remainder;
+    }
+    return a;
+}
+// The LCM is nonnegative. Zero yields zero; an LCM above i32::MAX returns
+// fallback, including a nonzero LCM involving MIN.
+pub fn lcm_or(left: i32, right: i32, fallback: i32) -> i32 {
+    if (left == 0 || right == 0) {
+        return 0;
+    }
+    if (left == MIN || right == MIN) {
+        return fallback;
+    }
+    let reduced: i32 = saturating_abs(left) / gcd_or(left, right, 0);
+    let factor: i32 = saturating_abs(right);
+    if (reduced>MAX / factor) {
+        return fallback;
+    }
+    return reduced * factor;
+}
 pub fn saturating_add(left: i32, right: i32) -> i32 {
     if (right>0 && left>MAX - right) {
         return MAX;

@@ -19,6 +19,12 @@ fn main() -> i32 {
     if (core::number_i32::saturating_abs(-7) != 7 || core::number_i32::saturating_abs(minimum) != maximum) {
         return 3;
     }
+    if (core::number_i32::gcd_or(54, -24, 99) != 6 || core::number_i32::gcd_or(-54, -24, 99) != 6 || core::number_i32::gcd_or(0, 7, 99) != 7 || core::number_i32::gcd_or(0, 0, 99) != 0 || core::number_i32::gcd_or(minimum, 0, 99) != 99 || core::number_i32::gcd_or(minimum, maximum, 99) != 1 || core::number_i32::gcd_or(minimum, -2, 99) != 2 || core::number_i32::gcd_or(-2, minimum, 99) != 2 || core::number_i32::gcd_or(minimum, minimum, 99) != 99) {
+        return 46;
+    }
+    if (core::number_i32::lcm_or(12, -18, 99) != 36 || core::number_i32::lcm_or(-12, -18, 99) != 36 || core::number_i32::lcm_or(0, minimum, 99) != 0 || core::number_i32::lcm_or(minimum, 1, 99) != 99 || core::number_i32::lcm_or(minimum, minimum, 99) != 99 || core::number_i32::lcm_or(maximum, 1, 99) != maximum || core::number_i32::lcm_or(maximum, 2, 99) != 99 || core::number_i32::lcm_or(1073741824, 2, 99) != 1073741824) {
+        return 47;
+    }
     if (core::number_i32::saturating_add(maximum, 1) != maximum || core::number_i32::saturating_add(minimum, -1) != minimum || core::number_i32::saturating_add(-3, 2) != -1) {
         return 4;
     }

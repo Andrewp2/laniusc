@@ -9,7 +9,7 @@ limited to native x86_64 output from this worktree.
 
 | Public surface | Classification | Evidence and limit |
 | --- | --- | --- |
-| `core::number_i32` constants and all 21 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, multiplication and power overflow, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
+| `core::number_i32` constants and all 23 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, multiplication and power overflow, signed GCD/LCM, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
 | `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
 | `core::byte` constants and all 44 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
 | `core::bits` all 10 public `u32` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across 0 and 32, bit reversal, byte swap, and out-of-range bit fallback. |
@@ -52,6 +52,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `div_euclid_or` and `rem_euclid_or` apply the same failure rule and otherwise
   return a quotient and nonnegative remainder satisfying
   `value = divisor * quotient + remainder`.
+  `gcd_or(0, 0, _)` returns zero; if the true GCD is 2,147,483,648, it returns
+  the caller's fallback because that magnitude does not fit in `i32`.
+  `lcm_or` returns a nonnegative result, zero if either input is zero, or the
+  fallback if the LCM exceeds `i32::MAX`.
   `is_multiple_of(_, 0)` is false. `next_power_of_two` returns zero when the
   next positive power would exceed 1,073,741,824.
 - `core::number_u32` saturates or wraps as named. `saturating_mul` checks
