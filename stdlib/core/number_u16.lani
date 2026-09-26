@@ -1,0 +1,215 @@
+// Allocation-free unsigned 16-bit arithmetic. Widen to u32 before products
+// and sums so overflow behavior is explicit.
+module core::number_u16;
+pub const MIN: u16 = 0;
+pub const MAX: u16 = 65535;
+pub fn min(left: u16, right: u16) -> u16 {
+    if (left<right) {
+        return left;
+    }
+    return right;
+}
+pub fn max(left: u16, right: u16) -> u16 {
+    if (left>right) {
+        return left;
+    }
+    return right;
+}
+// Reversed bounds return fallback unchanged.
+pub fn clamp_or(value: u16, low: u16, high: u16, fallback: u16) -> u16 {
+    if (low>high) {
+        return fallback;
+    }
+    if (value<low) {
+        return low;
+    }
+    if (value>high) {
+        return high;
+    }
+    return value;
+}
+pub fn saturating_add(left: u16, right: u16) -> u16 {
+    let a: u32 = left;
+    let b: u32 = right;
+    let sum: u32 = a + b;
+    if (sum>65535) {
+        return MAX;
+    }
+    let narrowed: u16 = sum;
+    return narrowed;
+}
+pub fn saturating_sub(left: u16, right: u16) -> u16 {
+    if (left<right) {
+        return MIN;
+    }
+    return left - right;
+}
+pub fn saturating_mul(left: u16, right: u16) -> u16 {
+    let a: u32 = left;
+    let b: u32 = right;
+    let product: u32 = a * b;
+    if (product>65535) {
+        return MAX;
+    }
+    let narrowed: u16 = product;
+    return narrowed;
+}
+pub fn wrapping_add(left: u16, right: u16) -> u16 {
+    let a: u32 = left;
+    let b: u32 = right;
+    let reduced: u32 =(a + b) % 65536;
+    let narrowed: u16 = reduced;
+    return narrowed;
+}
+pub fn wrapping_sub(left: u16, right: u16) -> u16 {
+    let a: u32 = left;
+    let b: u32 = right;
+    let reduced: u32 =(a + 65536 - b) % 65536;
+    let narrowed: u16 = reduced;
+    return narrowed;
+}
+pub fn wrapping_mul(left: u16, right: u16) -> u16 {
+    let a: u32 = left;
+    let b: u32 = right;
+    let reduced: u32 =(a * b) % 65536;
+    let narrowed: u16 = reduced;
+    return narrowed;
+}
+pub fn abs_diff(left: u16, right: u16) -> u16 {
+    if (left >= right) {
+        return left - right;
+    }
+    return right - left;
+}
+// Euclid's algorithm defines gcd(0, 0) as zero.
+pub fn gcd(left: u16, right: u16) -> u16 {
+    let a: u16 = left;
+    let b: u16 = right;
+    while (b != 0) {
+        let remainder: u16 = a % b;
+        a = b;
+        b = remainder;
+    }
+    return a;
+}
+// Zero times anything has LCM zero. An LCM above MAX returns fallback.
+pub fn lcm_or(left: u16, right: u16, fallback: u16) -> u16 {
+    if (left == 0 || right == 0) {
+        return 0;
+    }
+    let a: u32 = left;
+    let b: u32 = right;
+    let divisor: u32 = gcd(left, right);
+    let product: u32 =(a / divisor) * b;
+    if (product>65535) {
+        return fallback;
+    }
+    let narrowed: u16 = product;
+    return narrowed;
+}
+// Defines 0^0 as one. An unrepresentable power returns fallback.
+pub fn pow_or(base: u16, exponent: u32, fallback: u16) -> u16 {
+    let result: u32 = 1;
+    let factor: u32 = base;
+    let remaining: u32 = exponent;
+    while (remaining>0) {
+        if (remaining % 2 != 0) {
+            let product: u32 = result * factor;
+            if (product>65535) {
+                return fallback;
+            }
+            result = product;
+        }
+        remaining /= 2;
+        if (remaining>0) {
+            let square: u32 = factor * factor;
+            if (square>65535) {
+                return fallback;
+            }
+            factor = square;
+        }
+    }
+    let narrowed: u16 = result;
+    return narrowed;
+}
+pub fn is_zero(value: u16) -> bool {
+    return value == 0;
+}
+pub fn is_nonzero(value: u16) -> bool {
+    return value != 0;
+}
+pub fn is_even(value: u16) -> bool {
+    return value % 2 == 0;
+}
+pub fn is_odd(value: u16) -> bool {
+    return value % 2 != 0;
+}
+// Zero is not a valid divisor and returns false.
+pub fn is_multiple_of(value: u16, divisor: u16) -> bool {
+    if (divisor == 0) {
+        return false;
+    }
+    return value % divisor == 0;
+}
+// A zero divisor returns fallback before division.
+pub fn div_or(value: u16, divisor: u16, fallback: u16) -> u16 {
+    if (divisor == 0) {
+        return fallback;
+    }
+    return value / divisor;
+}
+pub fn rem_or(value: u16, divisor: u16, fallback: u16) -> u16 {
+    if (divisor == 0) {
+        return fallback;
+    }
+    return value % divisor;
+}
+pub fn is_power_of_two(value: u16) -> bool {
+    return value != 0 &&(value&(value - 1)) == 0;
+}
+// Zero means the next positive power cannot fit in u16.
+pub fn next_power_of_two(value: u16) -> u16 {
+    if (value <= 1) {
+        return 1;
+    }
+    if (value>32768) {
+        return 0;
+    }
+    let power: u16 = 1;
+    while (power<value) {
+        power *= 2;
+    }
+    return power;
+}
+// Alignment zero is invalid.
+pub fn is_aligned(value: u16, alignment: u16) -> bool {
+    if (alignment == 0) {
+        return false;
+    }
+    return value % alignment == 0;
+}
+// Alignment zero or a result above MAX returns fallback.
+pub fn align_up_or(value: u16, alignment: u16, fallback: u16) -> u16 {
+    if (alignment == 0) {
+        return fallback;
+    }
+    let wide_value: u32 = value;
+    let wide_alignment: u32 = alignment;
+    let remainder: u32 = wide_value % wide_alignment;
+    if (remainder == 0) {
+        return value;
+    }
+    let aligned: u32 = wide_value + wide_alignment - remainder;
+    if (aligned>65535) {
+        return fallback;
+    }
+    let narrowed: u16 = aligned;
+    return narrowed;
+}
+// Alignment zero returns fallback.
+pub fn align_down_or(value: u16, alignment: u16, fallback: u16) -> u16 {
+    if (alignment == 0) {
+        return fallback;
+    }
+    return value - value % alignment;
+}

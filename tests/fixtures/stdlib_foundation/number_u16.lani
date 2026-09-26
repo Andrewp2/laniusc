@@ -1,0 +1,71 @@
+module app::main;
+import core::number_u16;
+fn main() -> i32 {
+    let zero: u16 = 0;
+    let high: u16 = 65535;
+    let fallback: u16 = 123;
+    if (core::number_u16::MIN != zero || core::number_u16::MAX != high) {
+        return 1;
+    }
+    if (core::number_u16::min(3, 9) != 3 || core::number_u16::max(3, 9) != 9 || core::number_u16::min(high, zero) != zero) {
+        return 2;
+    }
+    if (core::number_u16::clamp_or(2, 3, 7, fallback) != 3 || core::number_u16::clamp_or(9, 3, 7, fallback) != 7 || core::number_u16::clamp_or(5, 3, 7, fallback) != 5 || core::number_u16::clamp_or(5, 7, 3, fallback) != fallback) {
+        return 3;
+    }
+    if (core::number_u16::saturating_add(3, 4) != 7 || core::number_u16::saturating_add(high, 1) != high || core::number_u16::saturating_add(0, 0) != 0) {
+        return 4;
+    }
+    if (core::number_u16::saturating_sub(9, 4) != 5 || core::number_u16::saturating_sub(4, 9) != 0 || core::number_u16::saturating_sub(high, high) != 0) {
+        return 5;
+    }
+    if (core::number_u16::saturating_mul(256, 255) != 65280 || core::number_u16::saturating_mul(256, 256) != high || core::number_u16::saturating_mul(high, high) != high || core::number_u16::saturating_mul(high, 0) != 0) {
+        return 6;
+    }
+    if (core::number_u16::wrapping_add(high, 1) != 0 || core::number_u16::wrapping_add(60000, 6000) != 464 || core::number_u16::wrapping_add(3, 4) != 7) {
+        return 7;
+    }
+    if (core::number_u16::wrapping_sub(0, 1) != high || core::number_u16::wrapping_sub(3, 5) != 65534 || core::number_u16::wrapping_sub(9, 4) != 5) {
+        return 8;
+    }
+    if (core::number_u16::wrapping_mul(high, high) != 1 || core::number_u16::wrapping_mul(256, 256) != 0 || core::number_u16::wrapping_mul(7, 9) != 63) {
+        return 9;
+    }
+    if (core::number_u16::abs_diff(3, 9) != 6 || core::number_u16::abs_diff(9, 3) != 6 || core::number_u16::abs_diff(high, 0) != high) {
+        return 10;
+    }
+    if (core::number_u16::gcd(24, 18) != 6 || core::number_u16::gcd(0, 0) != 0 || core::number_u16::gcd(high, high) != high) {
+        return 11;
+    }
+    if (core::number_u16::lcm_or(6, 8, fallback) != 24 || core::number_u16::lcm_or(0, high, fallback) != 0 || core::number_u16::lcm_or(high, 2, fallback) != fallback || core::number_u16::lcm_or(high, 1, fallback) != high) {
+        return 12;
+    }
+    if (core::number_u16::pow_or(3, 4, fallback) != 81 || core::number_u16::pow_or(0, 0, fallback) != 1 || core::number_u16::pow_or(2, 15, fallback) != 32768 || core::number_u16::pow_or(2, 16, fallback) != fallback || core::number_u16::pow_or(high, 2, fallback) != fallback) {
+        return 13;
+    }
+    if (!core::number_u16::is_zero(0) || core::number_u16::is_zero(1) || !core::number_u16::is_nonzero(high) || core::number_u16::is_nonzero(0) || !core::number_u16::is_even(2) || core::number_u16::is_even(3) || !core::number_u16::is_odd(3) || core::number_u16::is_odd(2)) {
+        return 14;
+    }
+    if (!core::number_u16::is_multiple_of(12, 3) || core::number_u16::is_multiple_of(13, 3) || core::number_u16::is_multiple_of(0, 0) || !core::number_u16::is_multiple_of(0, 7)) {
+        return 15;
+    }
+    if (core::number_u16::div_or(13, 5, fallback) != 2 || core::number_u16::div_or(13, 0, fallback) != fallback || core::number_u16::rem_or(13, 5, fallback) != 3 || core::number_u16::rem_or(13, 0, fallback) != fallback) {
+        return 16;
+    }
+    if (!core::number_u16::is_power_of_two(1) || !core::number_u16::is_power_of_two(32768) || core::number_u16::is_power_of_two(0) || core::number_u16::is_power_of_two(high)) {
+        return 17;
+    }
+    if (core::number_u16::next_power_of_two(0) != 1 || core::number_u16::next_power_of_two(1) != 1 || core::number_u16::next_power_of_two(3) != 4 || core::number_u16::next_power_of_two(32768) != 32768 || core::number_u16::next_power_of_two(32769) != 0) {
+        return 18;
+    }
+    if (!core::number_u16::is_aligned(12, 4) || core::number_u16::is_aligned(13, 4) || core::number_u16::is_aligned(0, 0) || !core::number_u16::is_aligned(high, high)) {
+        return 19;
+    }
+    if (core::number_u16::align_up_or(5, 4, fallback) != 8 || core::number_u16::align_up_or(8, 4, fallback) != 8 || core::number_u16::align_up_or(high, 2, fallback) != fallback || core::number_u16::align_up_or(1, 0, fallback) != fallback || core::number_u16::align_up_or(high, high, fallback) != high) {
+        return 20;
+    }
+    if (core::number_u16::align_down_or(5, 4, fallback) != 4 || core::number_u16::align_down_or(8, 4, fallback) != 8 || core::number_u16::align_down_or(1, 0, fallback) != fallback || core::number_u16::align_down_or(high, high, fallback) != high) {
+        return 21;
+    }
+    return 0;
+}
