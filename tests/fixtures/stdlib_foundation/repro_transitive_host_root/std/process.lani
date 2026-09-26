@@ -1,0 +1,5 @@
+module std::process;
+pub extern "lanius_std" fn exit(code: i32);
+pub fn marker() -> i32 {
+    return 1;
+}

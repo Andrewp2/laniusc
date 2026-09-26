@@ -1,0 +1,6 @@
+module app::main;
+import std::process;
+fn main() -> i32 {
+    std::process::exit(0);
+    return 1;
+}

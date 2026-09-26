@@ -11,7 +11,7 @@ limited to native x86_64 output from this worktree.
 | --- | --- | --- |
 | `core::number_i32` constants and all 21 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, multiplication and power overflow, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
 | `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
-| `core::byte` constants and all 39 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
+| `core::byte` constants and all 44 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
 | `core::bits` all 10 public `u32` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across 0 and 32, bit reversal, byte swap, and out-of-range bit fallback. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
@@ -68,7 +68,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
 - `core::byte` arithmetic saturates or wraps as its function name says.
   `wrapping_mul` computes multiplication modulo 256; the focused fixture
   compares all 65,536 byte pairs with a widened arithmetic reference.
-  `is_multiple_of(_, 0)` returns false. Invalid ASCII hex input returns the
+  `is_multiple_of(_, 0)` returns false; `div_or` and `rem_or` return the
+  caller's fallback for a zero divisor. `gcd(0, 0)` is zero. `lcm_or` returns
+  zero if either input is zero and the fallback if the LCM exceeds 255.
+  `pow_or` defines `0^0` as one and returns the fallback on overflow.
+  Invalid ASCII hex input returns the
   unchanged fallback from `ascii_hexdigit_value_or`. `clamp_or` returns its
   fallback for reversed bounds. `next_power_of_two` returns zero when the next
   u8 power would exceed 128. `high_nibble` and `low_nibble` split a byte;
@@ -215,7 +219,8 @@ Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
    inputs. Native emission fails with `LNC0017`, unsupported target LIR opcode
    38. `repro_assert_fail.lani` is the corresponding failure-path input; it
    cannot run until assertions have a native lowering. Type checking alone
-   cannot establish that failed assertions terminate execution.
+   cannot establish that failed assertions terminate execution. A source-level
+   fallback using the bound process exit call hits dependency 19.
 7. **Imported fixed-array results.** `repro_array_i32_4_return.lani` imports
    `core::array_i32_4::copy` and accesses its returned array. Native emission
    succeeds, but the ELF segfaults (exit 139 under `timeout`). The scalar
@@ -299,6 +304,14 @@ Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
     `fill_secure_bytes` operation has a signed status result; a reliable
     scalar random API needs an equally unambiguous failure channel. The
     existing native test demonstrates normal execution, not failure handling.
+19. **Transitive host import loses the native entrypoint.** With
+    `--stdlib-root tests/fixtures/stdlib_foundation/repro_transitive_host_root`,
+    `repro_transitive_host_direct.lani` emits an x86_64 ELF that exits zero.
+    `repro_transitive_host_import.lani` type-checks with the same root, but
+    native emission reports `LNC0017: missing main entrypoint` at the
+    transitive `std::process` source. It calls the same bound exit operation
+    through `test::probe`; these four small source files reproduce the issue.
+    This blocks a source-level `test::assert` using process exit.
 
 These are compiler/runtime dependencies, not stdlib implementations in Rust or
 Python. They should be handled in the parallel compiler task before extending

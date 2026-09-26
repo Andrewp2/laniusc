@@ -85,6 +85,21 @@ fn main() -> i32 {
     if (core::byte::is_multiple_of(7, 0) || !core::byte::is_multiple_of(12, 3)) {
         return 10;
     }
+    if (core::byte::div_or(7, 3, 99) != 2 || core::byte::div_or(0, 1, 99) != 0 || core::byte::div_or(255, 2, 99) != 127 || core::byte::div_or(7, 0, 99) != 99) {
+        return 41;
+    }
+    if (core::byte::rem_or(7, 3, 99) != 1 || core::byte::rem_or(0, 1, 99) != 0 || core::byte::rem_or(255, 2, 99) != 1 || core::byte::rem_or(7, 0, 99) != 99) {
+        return 42;
+    }
+    if (core::byte::gcd(54, 24) != 6 || core::byte::gcd(0, 7) != 7 || core::byte::gcd(255, 0) != 255 || core::byte::gcd(0, 0) != 0) {
+        return 43;
+    }
+    if (core::byte::lcm_or(12, 18, 99) != 36 || core::byte::lcm_or(17, 17, 99) != 17 || core::byte::lcm_or(255, 1, 99) != 255 || core::byte::lcm_or(16, 17, 99) != 99 || core::byte::lcm_or(0, 255, 99) != 0) {
+        return 44;
+    }
+    if (core::byte::pow_or(0, 0, 99) != 1 || core::byte::pow_or(0, 7, 99) != 0 || core::byte::pow_or(3, 5, 99) != 243 || core::byte::pow_or(2, 7, 99) != 128 || core::byte::pow_or(2, 8, 99) != 99 || core::byte::pow_or(255, 1, 99) != 255 || core::byte::pow_or(255, 2, 99) != 99 || core::byte::pow_or(1, 4294967295, 99) != 1) {
+        return 45;
+    }
     if (!core::byte::is_ascii_digit(48) || !core::byte::is_ascii_digit(57) || core::byte::is_ascii_digit(47) || core::byte::is_ascii_digit(58)) {
         return 11;
     }

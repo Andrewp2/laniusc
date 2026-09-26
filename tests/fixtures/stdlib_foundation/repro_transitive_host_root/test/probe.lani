@@ -1,0 +1,6 @@
+module test::probe;
+import std::process;
+pub fn finish() {
+    std::process::exit(0);
+    return;
+}

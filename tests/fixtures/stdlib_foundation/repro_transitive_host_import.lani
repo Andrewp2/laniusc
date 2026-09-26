@@ -1,0 +1,6 @@
+module app::main;
+import test::probe;
+fn main() -> i32 {
+    test::probe::finish();
+    return 1;
+}

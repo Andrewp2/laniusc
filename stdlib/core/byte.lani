@@ -113,6 +113,63 @@ pub fn is_multiple_of(value: u8, divisor: u8) -> bool {
     }
     return value % divisor == 0;
 }
+// A zero divisor returns fallback before evaluating native division.
+pub fn div_or(value: u8, divisor: u8, fallback: u8) -> u8 {
+    if (divisor == 0) {
+        return fallback;
+    }
+    return value / divisor;
+}
+pub fn rem_or(value: u8, divisor: u8, fallback: u8) -> u8 {
+    if (divisor == 0) {
+        return fallback;
+    }
+    return value % divisor;
+}
+// Euclid's algorithm defines gcd(0, 0) as zero for this API.
+pub fn gcd(left: u8, right: u8) -> u8 {
+    let a: u8 = left;
+    let b: u8 = right;
+    while (b != 0) {
+        let remainder: u8 = a % b;
+        a = b;
+        b = remainder;
+    }
+    return a;
+}
+// Zero times anything has LCM zero; an unrepresentable LCM returns fallback.
+pub fn lcm_or(left: u8, right: u8, fallback: u8) -> u8 {
+    if (left == 0 || right == 0) {
+        return 0;
+    }
+    let reduced: u8 = left / gcd(left, right);
+    if (reduced>MAX / right) {
+        return fallback;
+    }
+    return reduced * right;
+}
+// Zero to the zero power is one; an unrepresentable power returns fallback.
+pub fn pow_or(base: u8, exponent: u32, fallback: u8) -> u8 {
+    let result: u8 = 1;
+    let factor: u8 = base;
+    let remaining: u32 = exponent;
+    while (remaining>0) {
+        if (remaining % 2 != 0) {
+            if (factor != 0 && result>MAX / factor) {
+                return fallback;
+            }
+            result *= factor;
+        }
+        remaining /= 2;
+        if (remaining>0) {
+            if (factor != 0 && factor>MAX / factor) {
+                return fallback;
+            }
+            factor *= factor;
+        }
+    }
+    return result;
+}
 pub fn is_power_of_two(value: u8) -> bool {
     if (value == 0 || value>128) {
         return false;
