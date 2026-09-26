@@ -14,7 +14,7 @@ limited to native x86_64 output from this worktree.
 | `core::byte` constants and all 33 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, zero divisor, power-of-two overflow, ASCII classes and boundaries, case conversion, and hex fallback. |
 | `core::bits` all 10 public `u32` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across 0 and 32, bit reversal, byte swap, and out-of-range bit fallback. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
-| `core::char` all 12 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII character classes, case-insensitive comparison, punctuation, and printable boundaries. |
+| `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 6 public scalar-codec functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, length boundaries, malformed sequences, surrogate exclusion, and Unicode maximum. Byte parameters and results use `u8`; it does not access string storage. |
 | `core::f32` all 12 public functions | Executable on x86_64 for tested finite inputs | Runtime fixture checks sign, comparison, bounds, and square root for zero, negative, small, ordinary, and large inputs. The imported public constant `ONE` is broken; see dependency 5. |
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
@@ -71,7 +71,8 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   returns the caller's fallback for an index of 32 or more.
 - `core::bool` converts any nonzero i32 to true. Its selector functions return
   the chosen branch value. `core::char` tests ASCII classes; its case-insensitive
-  equality folds ASCII letters only.
+  equality and case conversion fold ASCII letters only. `is_ascii_control`
+  includes `0..=31` and 127; non-ASCII input is unchanged by conversion.
 - `core::utf8` accepts Unicode scalar values in `0..=0x10FFFF` excluding the
   surrogate range. Valid encoded bytes and decoder arguments use `u8`.
   Encoding returns a caller fallback for an invalid scalar or byte index.
@@ -265,6 +266,13 @@ Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
     instead of the ASCII value 122 for `z`. Thus even with a caller-supplied
     length, byte iteration cannot be claimed executable from this pointer and
     view combination. The compiler task has both minimal reproductions.
+17. **Integer-to-character cast.**
+    `tests/fixtures/stdlib_foundation/repro_u32_to_char.lani` returns a
+    `u32` value as `char`. Native compilation reports `LNC0006`: the return
+    context expects `char` but still sees `u32`. `core::char` uses explicit
+    ASCII mappings for executable case conversion, while general conversion
+    from a Unicode scalar to `char` remains a compiler dependency. This
+    reproduction has been sent to the parallel compiler task.
 
 These are compiler/runtime dependencies, not stdlib implementations in Rust or
 Python. They should be handled in the parallel compiler task before extending

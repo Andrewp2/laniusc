@@ -1,6 +1,25 @@
 module app::main;
 import core::char;
+fn check_ascii_pair(upper: char, lower: char) -> bool {
+    return core::char::to_ascii_lowercase(upper) == lower && core::char::to_ascii_uppercase(lower) == upper && core::char::eq_ignore_ascii_case(upper, lower);
+}
 fn main() -> i32 {
+    let non_ascii: char = 'é';
+    if (!core::char::is_ascii('A') || !core::char::is_ascii('~') || core::char::is_ascii(non_ascii)) {
+        return 13;
+    }
+    if (!core::char::is_ascii_control('\n') || !core::char::is_ascii_control('\t') || core::char::is_ascii_control(' ') || core::char::is_ascii_control(non_ascii)) {
+        return 14;
+    }
+    if (core::char::to_ascii_lowercase('A') != 'a' || core::char::to_ascii_lowercase('Z') != 'z' || core::char::to_ascii_lowercase('a') != 'a' || core::char::to_ascii_lowercase('0') != '0' || core::char::to_ascii_lowercase(non_ascii) != non_ascii) {
+        return 15;
+    }
+    if (core::char::to_ascii_uppercase('a') != 'A' || core::char::to_ascii_uppercase('z') != 'Z' || core::char::to_ascii_uppercase('A') != 'A' || core::char::to_ascii_uppercase('0') != '0' || core::char::to_ascii_uppercase(non_ascii) != non_ascii) {
+        return 16;
+    }
+    if (!check_ascii_pair('A', 'a') || !check_ascii_pair('B', 'b') || !check_ascii_pair('C', 'c') || !check_ascii_pair('D', 'd') || !check_ascii_pair('E', 'e') || !check_ascii_pair('F', 'f') || !check_ascii_pair('G', 'g') || !check_ascii_pair('H', 'h') || !check_ascii_pair('I', 'i') || !check_ascii_pair('J', 'j') || !check_ascii_pair('K', 'k') || !check_ascii_pair('L', 'l') || !check_ascii_pair('M', 'm') || !check_ascii_pair('N', 'n') || !check_ascii_pair('O', 'o') || !check_ascii_pair('P', 'p') || !check_ascii_pair('Q', 'q') || !check_ascii_pair('R', 'r') || !check_ascii_pair('S', 's') || !check_ascii_pair('T', 't') || !check_ascii_pair('U', 'u') || !check_ascii_pair('V', 'v') || !check_ascii_pair('W', 'w') || !check_ascii_pair('X', 'x') || !check_ascii_pair('Y', 'y') || !check_ascii_pair('Z', 'z')) {
+        return 17;
+    }
     if (!core::char::is_ascii_digit('5') || core::char::is_ascii_digit('/')) {
         return 1;
     }
@@ -19,7 +38,7 @@ fn main() -> i32 {
     if (!core::char::is_ascii_word('_') || !core::char::is_ascii_word('z') || core::char::is_ascii_word('-')) {
         return 6;
     }
-    if (!core::char::eq_ignore_ascii_case('A', 'a') || !core::char::eq_ignore_ascii_case('z', 'Z') || !core::char::eq_ignore_ascii_case('7', '7') || core::char::eq_ignore_ascii_case('A', 'b')) {
+    if (!core::char::eq_ignore_ascii_case('A', 'a') || !core::char::eq_ignore_ascii_case('z', 'Z') || !core::char::eq_ignore_ascii_case('7', '7') || !core::char::eq_ignore_ascii_case(non_ascii, non_ascii) || core::char::eq_ignore_ascii_case(non_ascii, 'e') || core::char::eq_ignore_ascii_case('A', 'b')) {
         return 7;
     }
     if (!core::char::is_ascii_hexdigit('F') || !core::char::is_ascii_hexdigit('f') || core::char::is_ascii_hexdigit('g')) {

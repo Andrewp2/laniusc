@@ -1,95 +1,203 @@
 // Module-form char helpers for source-level stdlib imports.
-
 module core::char;
-
+fn codepoint(value: char) -> u32 {
+    return value as u32;
+}
+pub fn is_ascii(value: char) -> bool {
+    return codepoint(value) <= 127;
+}
+pub fn is_ascii_control(value: char) -> bool {
+    return codepoint(value) <= 31 || codepoint(value) == 127;
+}
 pub fn is_ascii_digit(value: char) -> bool {
     return value >= '0' && value <= '9';
 }
-
 pub fn is_ascii_lowercase(value: char) -> bool {
     return value >= 'a' && value <= 'z';
 }
-
 pub fn is_ascii_uppercase(value: char) -> bool {
     return value >= 'A' && value <= 'Z';
 }
-
 pub fn is_ascii_alphabetic(value: char) -> bool {
     return is_ascii_lowercase(value) || is_ascii_uppercase(value);
 }
-
 pub fn is_ascii_alphanumeric(value: char) -> bool {
     return is_ascii_alphabetic(value) || is_ascii_digit(value);
 }
-
 pub fn is_ascii_word(value: char) -> bool {
     return is_ascii_alphanumeric(value) || value == '_';
 }
-
-pub fn eq_ignore_ascii_case(left: char, right: char) -> bool {
-    return left == right
-        || left == 'A' && right == 'a'
-        || left == 'a' && right == 'A'
-        || left == 'B' && right == 'b'
-        || left == 'b' && right == 'B'
-        || left == 'C' && right == 'c'
-        || left == 'c' && right == 'C'
-        || left == 'D' && right == 'd'
-        || left == 'd' && right == 'D'
-        || left == 'E' && right == 'e'
-        || left == 'e' && right == 'E'
-        || left == 'F' && right == 'f'
-        || left == 'f' && right == 'F'
-        || left == 'G' && right == 'g'
-        || left == 'g' && right == 'G'
-        || left == 'H' && right == 'h'
-        || left == 'h' && right == 'H'
-        || left == 'I' && right == 'i'
-        || left == 'i' && right == 'I'
-        || left == 'J' && right == 'j'
-        || left == 'j' && right == 'J'
-        || left == 'K' && right == 'k'
-        || left == 'k' && right == 'K'
-        || left == 'L' && right == 'l'
-        || left == 'l' && right == 'L'
-        || left == 'M' && right == 'm'
-        || left == 'm' && right == 'M'
-        || left == 'N' && right == 'n'
-        || left == 'n' && right == 'N'
-        || left == 'O' && right == 'o'
-        || left == 'o' && right == 'O'
-        || left == 'P' && right == 'p'
-        || left == 'p' && right == 'P'
-        || left == 'Q' && right == 'q'
-        || left == 'q' && right == 'Q'
-        || left == 'R' && right == 'r'
-        || left == 'r' && right == 'R'
-        || left == 'S' && right == 's'
-        || left == 's' && right == 'S'
-        || left == 'T' && right == 't'
-        || left == 't' && right == 'T'
-        || left == 'U' && right == 'u'
-        || left == 'u' && right == 'U'
-        || left == 'V' && right == 'v'
-        || left == 'v' && right == 'V'
-        || left == 'W' && right == 'w'
-        || left == 'w' && right == 'W'
-        || left == 'X' && right == 'x'
-        || left == 'x' && right == 'X'
-        || left == 'Y' && right == 'y'
-        || left == 'y' && right == 'Y'
-        || left == 'Z' && right == 'z'
-        || left == 'z' && right == 'Z';
+pub fn to_ascii_lowercase(value: char) -> char {
+    if (value == 'A') {
+        return 'a';
+    }
+    if (value == 'B') {
+        return 'b';
+    }
+    if (value == 'C') {
+        return 'c';
+    }
+    if (value == 'D') {
+        return 'd';
+    }
+    if (value == 'E') {
+        return 'e';
+    }
+    if (value == 'F') {
+        return 'f';
+    }
+    if (value == 'G') {
+        return 'g';
+    }
+    if (value == 'H') {
+        return 'h';
+    }
+    if (value == 'I') {
+        return 'i';
+    }
+    if (value == 'J') {
+        return 'j';
+    }
+    if (value == 'K') {
+        return 'k';
+    }
+    if (value == 'L') {
+        return 'l';
+    }
+    if (value == 'M') {
+        return 'm';
+    }
+    if (value == 'N') {
+        return 'n';
+    }
+    if (value == 'O') {
+        return 'o';
+    }
+    if (value == 'P') {
+        return 'p';
+    }
+    if (value == 'Q') {
+        return 'q';
+    }
+    if (value == 'R') {
+        return 'r';
+    }
+    if (value == 'S') {
+        return 's';
+    }
+    if (value == 'T') {
+        return 't';
+    }
+    if (value == 'U') {
+        return 'u';
+    }
+    if (value == 'V') {
+        return 'v';
+    }
+    if (value == 'W') {
+        return 'w';
+    }
+    if (value == 'X') {
+        return 'x';
+    }
+    if (value == 'Y') {
+        return 'y';
+    }
+    if (value == 'Z') {
+        return 'z';
+    }
+    return value;
 }
-
+pub fn to_ascii_uppercase(value: char) -> char {
+    if (value == 'a') {
+        return 'A';
+    }
+    if (value == 'b') {
+        return 'B';
+    }
+    if (value == 'c') {
+        return 'C';
+    }
+    if (value == 'd') {
+        return 'D';
+    }
+    if (value == 'e') {
+        return 'E';
+    }
+    if (value == 'f') {
+        return 'F';
+    }
+    if (value == 'g') {
+        return 'G';
+    }
+    if (value == 'h') {
+        return 'H';
+    }
+    if (value == 'i') {
+        return 'I';
+    }
+    if (value == 'j') {
+        return 'J';
+    }
+    if (value == 'k') {
+        return 'K';
+    }
+    if (value == 'l') {
+        return 'L';
+    }
+    if (value == 'm') {
+        return 'M';
+    }
+    if (value == 'n') {
+        return 'N';
+    }
+    if (value == 'o') {
+        return 'O';
+    }
+    if (value == 'p') {
+        return 'P';
+    }
+    if (value == 'q') {
+        return 'Q';
+    }
+    if (value == 'r') {
+        return 'R';
+    }
+    if (value == 's') {
+        return 'S';
+    }
+    if (value == 't') {
+        return 'T';
+    }
+    if (value == 'u') {
+        return 'U';
+    }
+    if (value == 'v') {
+        return 'V';
+    }
+    if (value == 'w') {
+        return 'W';
+    }
+    if (value == 'x') {
+        return 'X';
+    }
+    if (value == 'y') {
+        return 'Y';
+    }
+    if (value == 'z') {
+        return 'Z';
+    }
+    return value;
+}
+pub fn eq_ignore_ascii_case(left: char, right: char) -> bool {
+    return to_ascii_lowercase(left) == to_ascii_lowercase(right);
+}
 pub fn is_ascii_hexdigit(value: char) -> bool {
     return is_ascii_digit(value) || value >= 'A' && value <= 'F' || value >= 'a' && value <= 'f';
 }
-
 pub fn is_ascii_whitespace(value: char) -> bool {
     return value == ' ' || value == '\t' || value == '\n' || value == '\r';
 }
-
 pub fn is_ascii_punctuation(value: char) -> bool {
     if (value >= '!' && value <= '/') {
         return true;
@@ -97,7 +205,7 @@ pub fn is_ascii_punctuation(value: char) -> bool {
         if (value >= ':' && value <= '@') {
             return true;
         } else {
-            if (value >= '[' && value < 'a') {
+            if (value >= '[' && value<'a') {
                 return true;
             } else {
                 return value >= '{' && value <= '~';
@@ -105,11 +213,9 @@ pub fn is_ascii_punctuation(value: char) -> bool {
         }
     }
 }
-
 pub fn is_ascii_graphic(value: char) -> bool {
     return value >= '!' && value <= '~';
 }
-
 pub fn is_ascii_printable(value: char) -> bool {
     return value >= ' ' && value <= '~';
 }
