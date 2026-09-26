@@ -1,0 +1,4 @@
+module core::byte_view;
+pub fn first(values:[u8]) -> u8 {
+    return values[0];
+}

@@ -326,12 +326,16 @@ the failure injection cases run when Linux `strace` is available.
     `LNC0027`: no method matches this receiver. A borrowed UTF-8 string
     module needs executable length metadata to bound every read.
 16. **Byte access to borrowed string storage.**
-    `tests/fixtures/stdlib_foundation/repro_u8_string_slice.lani` takes
-    `core::mem::string_data_ptr("Az")`, constructs a two-byte `[u8]` view,
-    and returns `bytes[1]`. Native emission succeeds, but the ELF exits 245
-    instead of the ASCII value 122 for `z`. Thus even with a caller-supplied
-    length, byte iteration cannot be claimed executable from this pointer and
-    view combination. The compiler task has both minimal reproductions.
+   `tests/fixtures/stdlib_foundation/repro_u8_string_slice.lani` takes
+   `core::mem::string_data_ptr("Az")`, constructs a two-byte `[u8]` view,
+   and returns `bytes[1]`. Native emission succeeds, but the ELF exits 245
+   instead of the ASCII value 122 for `z`. Thus even with a caller-supplied
+   length, byte iteration cannot be claimed executable from this pointer and
+   view combination. A second reproduction,
+   `repro_u8_array_raw_slice.lani`, constructs a raw byte view over an i32
+   stack array containing known little-endian bytes; native execution exits 1
+   because `bytes[2]` is not the expected value 65. The compiler task has the
+   string-storage reproduction; the stack-array case is recorded here.
 17. **Integer-to-character cast.**
     `tests/fixtures/stdlib_foundation/repro_u32_to_char.lani` returns a
     `u32` value as `char`. Native compilation reports `LNC0006`: the return
@@ -358,6 +362,15 @@ the failure injection cases run when Linux `strace` is available.
     transitive `std::process` source. It calls the same bound exit operation
     through `test::probe`; these four small source files reproduce the issue.
     This blocks a source-level `test::assert` using process exit.
+20. **Imported u8 slice arguments.** With
+    `--stdlib-root tests/fixtures/stdlib_foundation/repro_u8_imported_root`,
+    `repro_u8_local_slice.lani` compiles and exits zero when a fixed `[u8; 1]`
+    array is passed to a local `[u8]` helper. The corresponding imported
+    `core::byte_view::first` call in `repro_u8_imported_slice.lani` passes
+    `laniusc check`, but x86 emission stops with `LNC0006` at that argument.
+    This prevents an imported, array-backed byte-slice utility module from
+    having an executable claim. The raw-view behavior in dependency 16 is a
+    separate obstacle.
 
 These are compiler/runtime dependencies, not stdlib implementations in Rust or
 Python. They should be handled in the parallel compiler task before extending
