@@ -20,7 +20,7 @@ limited to native x86_64 output from this worktree.
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
 | Legacy `stdlib/i32.lani` power-of-two helpers | Executable on x86_64 | A focused source-level native test checks the highest signed power and the zero overflow sentinel. The legacy file as a whole is not included in this claim. |
 | `core::range` free functions for all five range forms and methods for `Range<i32>`, `RangeInclusive<i32>`, `RangeFrom<i32>`, and `RangeTo<i32>` | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership. There is no `RangeFull` method claim. |
-| `core::slice` all 25 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, rotations, search and insertion boundaries, extrema, sum, overlapping copies, sorting, and fallback behavior. A separate fixture confirms native index trapping on an overclaimed length. |
+| `core::slice` all 28 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, rotations, compaction, search and insertion boundaries, extrema, sum, overlapping copies, sorting, and fallback behavior. A separate fixture confirms native index trapping on an overclaimed length. |
 | `core::mem::{i32_array_data_ptr,i32_slice_from_raw_parts}` | Misleading source stubs; executable x86_64 compiler intrinsics | The source bodies return `0` and `[]`; x86 lowers the recognized calls as intrinsics, demonstrated by the slice fixture. Do not use these bodies as evidence for another target. `string_data_ptr` and `i32_slice_data_ptr` have the same placeholder issue and are outside this subset. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
@@ -132,6 +132,12 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   backed views; they treat negative lengths as empty. `rotate_left_i32` and
   `rotate_right_i32` mutate in place and return false without writing unless
   `len >= 0` and `0 <= amount <= len`. Rotating an empty view by zero succeeds.
+  `dedup_adjacent_i32` retains one element from each adjacent run;
+  `retain_not_equal_i32` removes every matching element while preserving the
+  rest in order. Both return the new logical length, or zero without writing
+  for a nonpositive length. `remove_at_i32` shifts successors left and returns
+  false without writing for an invalid index. After any of these operations,
+  elements outside the new logical length are unspecified.
   `sort_i32` uses an in-place heapsort in ascending order and returns the
   number of elements sorted, or zero for a nonpositive length. The backing
   array sees these mutations.
@@ -179,7 +185,7 @@ saturating arithmetic. It prints `96`.
 | Wasm | Not claimed or required for this foundation. |
 
 Run the focused gate with `cargo test --test stdlib_foundation_execution`.
-The test compiles sixteen small Lanius programs through `--stdlib-root`, executes
+The test compiles seventeen small Lanius programs through `--stdlib-root`, executes
 the native ELFs, checks their exit status, checks the example's stdout, and
 checks the slice bounds trap. Each source is also suitable for direct CLI
 compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.

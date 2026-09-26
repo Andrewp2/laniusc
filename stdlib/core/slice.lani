@@ -134,6 +134,55 @@ pub fn copy_within_i32(values:[i32], len: i32, source_start: i32, source_end: i3
     }
     return true;
 }
+// Keep the first element of each adjacent run, preserving order. Returns the
+// new logical length; elements at or beyond it are unspecified. A nonpositive
+// len returns zero without writing.
+pub fn dedup_adjacent_i32(values:[i32], len: i32) -> i32 {
+    if (len <= 0) {
+        return 0;
+    }
+    let write: i32 = 1;
+    let read: i32 = 1;
+    while (read<len) {
+        let current: i32 = values[read];
+        if (current != values[write - 1]) {
+            values[write] = current;
+            write += 1;
+        }
+        read += 1;
+    }
+    return write;
+}
+// Remove every matching value from the logical view while preserving the
+// order of retained values. Returns the new length; the tail is unspecified.
+// A nonpositive len returns zero without writing.
+pub fn retain_not_equal_i32(values:[i32], len: i32, needle: i32) -> i32 {
+    let read: i32 = 0;
+    let write: i32 = 0;
+    while (read<len) {
+        let current: i32 = values[read];
+        if (current != needle) {
+            values[write] = current;
+            write += 1;
+        }
+        read += 1;
+    }
+    return write;
+}
+// Remove one logical element and shift its successors left. A valid index
+// returns true; an invalid index returns false without writing. The previous
+// final element is outside the new logical length and is unspecified.
+pub fn remove_at_i32(values:[i32], len: i32, index: i32) -> bool {
+    if (index<0 || index >= len) {
+        return false;
+    }
+    let read: i32 = index + 1;
+    while (read<len) {
+        values[read - 1] = values[read];
+        read += 1;
+    }
+    return true;
+}
 // Negative lengths count as empty. An empty prefix matches every view.
 pub fn starts_with_i32(values:[i32], len: i32, prefix:[i32], prefix_len: i32) -> bool {
     let count: i32 = nonnegative_len_i32(len);
