@@ -117,6 +117,10 @@ fn std_file_read_once_into_buffer_executes_on_x86() {
             input[..16]
         );
         assert_eq!(
+            std::fs::read(run_dir.path().join("exact.bin")).expect("read exact prefix"),
+            input[..16]
+        );
+        assert_eq!(
             std::fs::read(run_dir.path().join("short-copy.bin")).expect("read short copy"),
             b"abc"
         );
@@ -150,5 +154,5 @@ fn std_file_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 4);
+    assert_eq!(count, 5);
 }

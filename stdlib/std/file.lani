@@ -44,6 +44,38 @@ pub fn read_once_into_buffer(path: str, buffer: ptr, capacity: usize) -> i32 {
     }
     return received;
 }
+// Read exactly len bytes from a file into caller storage. A zero length still
+// opens and closes the file, but does not access buffer. Invalid arguments,
+// missing files, premature EOF, read errors, and close errors return false.
+// A failure can leave a prefix in buffer. Extra file bytes are not consumed.
+pub fn read_exact_into_buffer(path: str, buffer: ptr, len: usize) -> bool {
+    if (len>2147483647 || buffer == 0 && len>0) {
+        return false;
+    }
+    let handle: i32 = std::fs::open_read_path(path);
+    if (handle<0) {
+        return false;
+    }
+    let received: usize = 0;
+    let complete: bool = true;
+    while (received<len) {
+        let cursor: ptr = buffer + received;
+        let remaining: usize = len - received;
+        let count: i32 = std::fs::read(handle, cursor, remaining);
+        if (count <= 0) {
+            complete = false;
+            break;
+        }
+        let advanced: usize = count;
+        if (advanced>remaining) {
+            complete = false;
+            break;
+        }
+        received += advanced;
+    }
+    let closed: i32 = std::fs::close_file(handle);
+    return complete && closed >= 0;
+}
 // Write all len bytes to an open file handle, retrying short writes. A valid
 // handle with len zero succeeds without accessing buffer. Invalid handles,
 // null nonempty buffers, lengths above i32::MAX, host errors, and zero-progress

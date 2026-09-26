@@ -17,6 +17,21 @@ fn exercise(buffer: ptr) -> i32 {
     if (!written || closed<0) {
         return 3;
     }
+    if (!std::file::read_exact_into_buffer("input.bin", buffer, 16)) {
+        return 16;
+    }
+    let exact_output: i32 = std::fs::open_write_path("exact.bin");
+    if (exact_output<0) {
+        return 17;
+    }
+    let exact_written: bool = std::file::write_all_bytes(exact_output, buffer, 16);
+    let exact_closed: i32 = std::fs::close_file(exact_output);
+    if (!exact_written || exact_closed<0) {
+        return 18;
+    }
+    if (std::file::read_exact_into_buffer("short.bin", buffer, 4) || !std::file::read_exact_into_buffer("empty.bin", 0, 0) || std::file::read_exact_into_buffer("missing.bin", 0, 0) || std::file::read_exact_into_buffer("input.bin", 0, 16) || std::file::read_exact_into_buffer("input.bin", buffer, 2147483648)) {
+        return 19;
+    }
     let short_read: i32 = std::file::read_once_into_buffer("short.bin", buffer, 16);
     if (short_read != 3) {
         return 10;
