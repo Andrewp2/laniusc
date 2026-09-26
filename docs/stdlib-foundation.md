@@ -18,6 +18,7 @@ limited to native x86_64 output from this worktree.
 | `core::utf8` all 6 public scalar-codec functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, length boundaries, malformed sequences, surrogate exclusion, and Unicode maximum. Byte parameters and results use `u8`; it does not access string storage. |
 | `core::f32` all 12 public functions | Executable on x86_64 for tested finite inputs | Runtime fixture checks sign, comparison, bounds, and square root for zero, negative, small, ordinary, and large inputs. The imported public constant `ONE` is broken; see dependency 5. |
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
+| `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
 | Legacy `stdlib/i32.lani` power-of-two helpers | Executable on x86_64 | A focused source-level native test checks the highest signed power and the zero overflow sentinel. The legacy file as a whole is not included in this claim. |
 | `core::range` free functions for all five range forms and methods for `Range<i32>`, `RangeInclusive<i32>`, `RangeFrom<i32>`, and `RangeTo<i32>` | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership. There is no `RangeFull` method claim. |
 | `core::slice` all 28 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, rotations, compaction, search and insertion boundaries, extrema, sum, overlapping copies, sorting, and fallback behavior. A separate fixture confirms native index trapping on an overclaimed length. |
@@ -110,6 +111,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
 - `core::array_i32_4::sum` folds with saturating addition; overflowing sums
   clamp to the corresponding i32 endpoint at each element. `get_or` and
   `index_of_or` return the caller's fallback for out-of-range or absent values.
+- `core::array_u8_4` accepts exactly four `u8` elements. `sum_u32` returns
+  their exact sum in `0..=1020`; endian conversion interprets the first array
+  element as the most or least significant byte as named. `get_or` and
+  `index_of_or` return caller fallbacks for invalid indices or absent bytes.
 - Half-open ranges exclude `end`; inclusive ranges include it. A reversed or
   empty range contains no values and overlaps no range. `RangeFrom<i32>` includes
   its start, `RangeTo<i32>` excludes its end, and `RangeFull` contains all i32
@@ -212,7 +217,7 @@ saturating arithmetic. It prints `96`.
 | Wasm | Not claimed or required for this foundation. |
 
 Run the focused gate with `cargo test --test stdlib_foundation_execution`.
-The test compiles seventeen small Lanius programs through `--stdlib-root`, executes
+The test compiles eighteen small Lanius programs through `--stdlib-root`, executes
 the native ELFs, checks their exit status, checks the example's stdout, and
 checks the slice bounds trap. Each source is also suitable for direct CLI
 compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.

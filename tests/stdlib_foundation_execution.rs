@@ -91,6 +91,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_array_u8_4",
+            "tests/fixtures/stdlib_foundation/core_array_u8_4.lani",
+            0,
+            b"",
+        ),
+        (
             "core_mem_values",
             "tests/fixtures/stdlib_foundation/core_mem_values.lani",
             0,
@@ -171,6 +177,11 @@ fn legacy_i32_power_boundaries_execute_on_x86() {
 #[test]
 fn executable_core_function_surface_has_runtime_cases() {
     let modules = [
+        (
+            "array_u8_4",
+            include_str!("../stdlib/core/array_u8_4.lani"),
+            include_str!("fixtures/stdlib_foundation/core_array_u8_4.lani"),
+        ),
         (
             "bits",
             include_str!("../stdlib/core/bits.lani"),

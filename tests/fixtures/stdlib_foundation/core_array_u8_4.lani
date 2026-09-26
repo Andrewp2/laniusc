@@ -1,0 +1,38 @@
+module app::main;
+import core::array_u8_4;
+fn main() -> i32 {
+    let zero: u8 = 0;
+    let three: u8 = 3;
+    let high: u8 = 255;
+    let missing: u8 = 7;
+    let fallback: u8 = 99;
+    let mixed:[u8; 4] =[three, high, three, zero];
+    let repeated:[u8; 4] =[high, high, high, high];
+    if (core::array_u8_4::len() != 4 || core::array_u8_4::is_empty()) {
+        return 1;
+    }
+    if (core::array_u8_4::first(mixed) != three || core::array_u8_4::last(mixed) != zero || core::array_u8_4::first(repeated) != high) {
+        return 2;
+    }
+    if (core::array_u8_4::get_or(mixed, 0, fallback) != three || core::array_u8_4::get_or(mixed, 1, fallback) != high || core::array_u8_4::get_or(mixed, 2, fallback) != three || core::array_u8_4::get_or(mixed, 3, fallback) != zero || core::array_u8_4::get_or(mixed, -1, fallback) != fallback || core::array_u8_4::get_or(mixed, 4, fallback) != fallback) {
+        return 3;
+    }
+    if (!core::array_u8_4::contains(mixed, high) || core::array_u8_4::contains(mixed, missing) || core::array_u8_4::count(mixed, three) != 2 || core::array_u8_4::count(mixed, missing) != 0 || core::array_u8_4::index_of_or(mixed, three, -9) != 0 || core::array_u8_4::index_of_or(mixed, missing, -9) != -9) {
+        return 4;
+    }
+    if (core::array_u8_4::min(mixed) != zero || core::array_u8_4::max(mixed) != high || core::array_u8_4::min(repeated) != high || core::array_u8_4::sum_u32(mixed) != 261 || core::array_u8_4::sum_u32(repeated) != 1020) {
+        return 5;
+    }
+    if (core::array_u8_4::all_equal(mixed) || !core::array_u8_4::all_equal(repeated)) {
+        return 6;
+    }
+    let first: u8 = 18;
+    let second: u8 = 52;
+    let third: u8 = 86;
+    let fourth: u8 = 120;
+    let bytes:[u8; 4] =[first, second, third, fourth];
+    if (core::array_u8_4::from_be_u32(bytes) != 305419896 || core::array_u8_4::from_le_u32(bytes) != 2018915346 || core::array_u8_4::from_be_u32(repeated) != 4294967295 || core::array_u8_4::from_le_u32(repeated) != 4294967295) {
+        return 7;
+    }
+    return 0;
+}

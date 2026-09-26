@@ -1,0 +1,104 @@
+// Allocation-free helpers for exactly four bytes. Every result is scalar;
+// array-valued returns still require a native aggregate ABI fix.
+module core::array_u8_4;
+import core::bits;
+pub fn len() -> i32 {
+    return 4;
+}
+pub fn is_empty() -> bool {
+    return false;
+}
+pub fn first(values:[u8; 4]) -> u8 {
+    return values[0];
+}
+pub fn last(values:[u8; 4]) -> u8 {
+    return values[3];
+}
+// An index outside 0..4 returns the caller's fallback.
+pub fn get_or(values:[u8; 4], index: i32, fallback: u8) -> u8 {
+    if (index<0 || index >= 4) {
+        return fallback;
+    }
+    return values[index];
+}
+pub fn contains(values:[u8; 4], needle: u8) -> bool {
+    let index: i32 = 0;
+    while (index<4) {
+        if (values[index] == needle) {
+            return true;
+        }
+        index += 1;
+    }
+    return false;
+}
+pub fn count(values:[u8; 4], needle: u8) -> i32 {
+    let index: i32 = 0;
+    let total: i32 = 0;
+    while (index<4) {
+        if (values[index] == needle) {
+            total += 1;
+        }
+        index += 1;
+    }
+    return total;
+}
+pub fn index_of_or(values:[u8; 4], needle: u8, fallback: i32) -> i32 {
+    let index: i32 = 0;
+    while (index<4) {
+        if (values[index] == needle) {
+            return index;
+        }
+        index += 1;
+    }
+    return fallback;
+}
+pub fn min(values:[u8; 4]) -> u8 {
+    let best: u8 = values[0];
+    let index: i32 = 1;
+    while (index<4) {
+        if (values[index]<best) {
+            best = values[index];
+        }
+        index += 1;
+    }
+    return best;
+}
+pub fn max(values:[u8; 4]) -> u8 {
+    let best: u8 = values[0];
+    let index: i32 = 1;
+    while (index<4) {
+        if (values[index]>best) {
+            best = values[index];
+        }
+        index += 1;
+    }
+    return best;
+}
+// The largest possible sum is 1020, so the u32 result cannot overflow.
+pub fn sum_u32(values:[u8; 4]) -> u32 {
+    let total: u32 = 0;
+    let index: i32 = 0;
+    while (index<4) {
+        let item: u8 = values[index];
+        let widened: u32 = item as u32;
+        total += widened;
+        index += 1;
+    }
+    return total;
+}
+pub fn all_equal(values:[u8; 4]) -> bool {
+    let index: i32 = 1;
+    while (index<4) {
+        if (values[index] != values[0]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+pub fn from_be_u32(values:[u8; 4]) -> u32 {
+    return core::bits::from_be_bytes_u32(values[0], values[1], values[2], values[3]);
+}
+pub fn from_le_u32(values:[u8; 4]) -> u32 {
+    return core::bits::from_le_bytes_u32(values[0], values[1], values[2], values[3]);
+}
