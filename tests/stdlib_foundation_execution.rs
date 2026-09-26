@@ -61,6 +61,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "slice_sequence",
+            "tests/fixtures/stdlib_foundation/slice_sequence.lani",
+            0,
+            b"",
+        ),
+        (
             "core_range_methods",
             "tests/fixtures/stdlib_foundation/core_range_methods.lani",
             0,
@@ -217,10 +223,11 @@ fn executable_core_function_surface_has_runtime_cases() {
                 .next()
                 .expect("public function has a name");
             let call = format!("core::{module}::{name}(");
-            assert!(
-                fixture.contains(&call),
-                "{module}::{name} lacks a runtime case"
-            );
+            let covered = fixture.contains(&call)
+                || module == "slice"
+                    && include_str!("fixtures/stdlib_foundation/slice_sequence.lani")
+                        .contains(&call);
+            assert!(covered, "{module}::{name} lacks a runtime case");
             count += 1;
         }
         assert!(count > 0, "{module} has no public functions to audit");
