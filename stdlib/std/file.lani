@@ -1,8 +1,8 @@
-// Convenience file operation built from the bound filesystem and I/O APIs.
+// Convenience file operations built from the bound filesystem and I/O APIs.
 // write_text_once opens or creates `path`, truncates it, makes one write
 // attempt, then closes the handle. A nonnegative result is the number of
 // bytes actually written; it may be shorter than `text`. A negative result
-// reports an open, write, or close failure. The handle is closed even when
+// reports an open, write, or close failure. Closing is attempted even when
 // the write fails.
 module std::file;
 import std::fs;
@@ -21,4 +21,50 @@ pub fn write_text_once(path: str, text: str) -> i32 {
         return closed;
     }
     return written;
+}
+fn copy_open_files(input: i32, output: i32, buffer: ptr, capacity: usize) -> bool {
+    while (true) {
+        let received: i32 = std::fs::read(input, buffer, capacity);
+        if (received<0) {
+            return false;
+        }
+        if (received == 0) {
+            return true;
+        }
+        let sent: i32 = 0;
+        while (sent<received) {
+            let cursor: ptr = buffer + sent;
+            let remaining: usize = received - sent;
+            let written: i32 = std::fs::write(output, cursor, remaining);
+            if (written <= 0 || written>received - sent) {
+                return false;
+            }
+            sent += written;
+        }
+    }
+    return false;
+}
+// Copies all bytes from an existing file into a newly truncated file using the
+// caller's non-null buffer, which must point to at least `capacity` writable
+// bytes for the whole call. The paths must refer to distinct files, including
+// through aliases. Capacity must be between 1 and i32::MAX. False means an
+// invalid argument, open, read, write, or close failure; the destination may
+// contain a prefix after such a failure. Closing both handles is attempted.
+pub fn copy_distinct_with_buffer(input_path: str, output_path: str, buffer: ptr, capacity: usize) -> bool {
+    if (buffer == 0 || capacity == 0 || capacity>2147483647) {
+        return false;
+    }
+    let input: i32 = std::fs::open_read_path(input_path);
+    if (input<0) {
+        return false;
+    }
+    let output: i32 = std::fs::open_write_path(output_path);
+    if (output<0) {
+        std::fs::close_file(input);
+        return false;
+    }
+    let copied: bool = copy_open_files(input, output, buffer, capacity);
+    let output_closed: i32 = std::fs::close_file(output);
+    let input_closed: i32 = std::fs::close_file(input);
+    return copied && output_closed >= 0 && input_closed >= 0;
 }

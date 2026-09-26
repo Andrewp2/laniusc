@@ -10,6 +10,7 @@ limited to native x86_64 output from this worktree.
 | Public surface | Classification | Evidence and limit |
 | --- | --- | --- |
 | `core::number_i32` constants and all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, division failure fallbacks, and power-of-two overflow. |
+| `core::number_u32` constants and all 20 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, power-of-two overflow, zero divisor, and alignment fallbacks. |
 | `core::byte` constants and all 33 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, zero divisor, power-of-two overflow, ASCII classes and boundaries, case conversion, and hex fallback. |
 | `core::bits` all 10 public `u32` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across 0 and 32, bit reversal, byte swap, and out-of-range bit fallback. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
@@ -28,7 +29,7 @@ limited to native x86_64 output from this worktree.
 | `alloc::allocator` | Executable host ABI, separate from portable core | Its listed allocation externs have compiler bindings and x86 tests, but storage ownership and failure behavior are host/runtime concerns. |
 | `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty line, exact byte counts, and invalid handle failure. These are separate from the portable core. |
-| `std::file::write_text_once` | Executable x86_64 Linux host wrapper | `tests/stdlib_file_execution.rs` checks created and truncated file contents, an empty write, open failure, and write failure using `/dev/full`. A nonnegative return is the number of bytes written by one attempt; it does not promise a complete write. |
+| `std::file::{write_text_once,copy_distinct_with_buffer}` | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, a multi-chunk binary copy, empty copy, invalid buffer sizes, missing paths, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
 | `test::assert` | Contract-only | Passing assertions hit unsupported target LIR opcode 38 during x86 emission. Reproduction programs are included. |
@@ -45,6 +46,12 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `div_or` and `rem_or` return the fallback for a zero divisor or `MIN/-1`.
   `is_multiple_of(_, 0)` is false. `next_power_of_two` returns zero when the
   next positive power would exceed 1,073,741,824.
+- `core::number_u32` saturates or wraps as named. `saturating_mul` checks
+  overflow with division instead of repeated addition. `is_multiple_of(_, 0)`
+  and `is_aligned(_, 0)` are false. `next_power_of_two` returns zero above
+  2,147,483,648. Invalid alignment or overflowing `align_up_or` returns the
+  caller's fallback. `core::u32::saturating_mul` uses the same constant-time
+  source algorithm, but its imported module still lacks a native claim.
 - `core::byte` arithmetic saturates or wraps as its function name says.
   `is_multiple_of(_, 0)` returns false. Invalid ASCII hex input returns the
   unchanged fallback from `ascii_hexdigit_value_or`. `clamp_or` returns its
@@ -97,10 +104,15 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   text and returns status `0`, while `write_byte` and `write_newline` return
   byte counts for the tested writes.
 - `std::file::write_text_once` opens or creates a file, truncates it, attempts
-  one text write, and closes it even if writing fails. It returns the actual
+  one text write, and attempts to close it even if writing fails. It returns the actual
   byte count on success, including zero for empty text; a negative open,
   write, or close result is passed through. A short write is reported by its
   count and is not retried.
+- `std::file::copy_distinct_with_buffer` copies until EOF using caller storage
+  and retries short writes. It returns false for invalid buffer arguments or
+  any host failure. The destination can contain a copied prefix on failure.
+  Source and destination must refer to different files, even through aliases;
+  the current file ABI cannot check that precondition before truncation.
 
 The small runnable example is `sample_programs/portable_window_checksum.lani`.
 It validates an ASCII marker, sorts readings in place, selects a half-open
@@ -117,13 +129,13 @@ window, reads a slice, and accumulates with saturating arithmetic. It prints
 | Wasm | Not claimed or required for this foundation. |
 
 Run the focused gate with `cargo test --test stdlib_foundation_execution`.
-The test compiles thirteen small Lanius programs through `--stdlib-root`, executes
+The test compiles fourteen small Lanius programs through `--stdlib-root`, executes
 the native ELFs, checks their exit status, checks the example's stdout, and
 checks the slice bounds trap. Each source is also suitable for direct CLI
 compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.
 Run `cargo test --test stdlib_host_execution` for the separate native I/O
 wrappers.
-Run `cargo test --test stdlib_file_execution` for the file write wrapper.
+Run `cargo test --test stdlib_file_execution` for the file wrappers.
 Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
 
 ## Compiler/runtime dependencies and minimal reproductions

@@ -43,6 +43,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "number_u32",
+            "tests/fixtures/stdlib_foundation/number_u32.lani",
+            0,
+            b"",
+        ),
+        (
             "range_slice",
             "tests/fixtures/stdlib_foundation/range_slice.lani",
             0,
@@ -178,6 +184,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             include_str!("fixtures/stdlib_foundation/number_byte.lani"),
         ),
         (
+            "number_u32",
+            include_str!("../stdlib/core/number_u32.lani"),
+            include_str!("fixtures/stdlib_foundation/number_u32.lani"),
+        ),
+        (
             "slice",
             include_str!("../stdlib/core/slice.lani"),
             include_str!("fixtures/stdlib_foundation/range_slice.lani"),
@@ -236,6 +247,13 @@ fn executable_core_function_surface_has_runtime_cases() {
                 "{reference} lacks a runtime case"
             );
         }
+    }
+    for name in ["MIN", "MAX"] {
+        let reference = format!("core::number_u32::{name}");
+        assert!(
+            include_str!("fixtures/stdlib_foundation/number_u32.lani").contains(&reference),
+            "{reference} lacks a runtime case"
+        );
     }
     assert!(
         include_str!("fixtures/stdlib_foundation/core_f32.lani").contains("core::f32::ZERO"),

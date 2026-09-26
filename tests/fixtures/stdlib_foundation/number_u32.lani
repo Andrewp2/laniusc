@@ -1,0 +1,45 @@
+module app::main;
+import core::number_u32;
+fn main() -> i32 {
+    let maximum: u32 = core::number_u32::MAX;
+    if (core::number_u32::MIN != 0 || maximum != 4294967295) {
+        return 1;
+    }
+    if (core::number_u32::min(maximum, 1) != 1 || core::number_u32::max(maximum, 1) != maximum) {
+        return 2;
+    }
+    if (core::number_u32::clamp_or(2, 4, 9, 99) != 4 || core::number_u32::clamp_or(12, 4, 9, 99) != 9 || core::number_u32::clamp_or(7, 4, 9, 99) != 7 || core::number_u32::clamp_or(7, 9, 4, 99) != 99) {
+        return 3;
+    }
+    if (core::number_u32::saturating_add(maximum, 1) != maximum || core::number_u32::saturating_add(2, 3) != 5 || core::number_u32::saturating_sub(0, 1) != 0 || core::number_u32::saturating_sub(7, 3) != 4) {
+        return 4;
+    }
+    if (core::number_u32::saturating_mul(maximum, 2) != maximum || core::number_u32::saturating_mul(65536, 65536) != maximum || core::number_u32::saturating_mul(65535, 65535) != 4294836225 || core::number_u32::saturating_mul(maximum, 0) != 0) {
+        return 5;
+    }
+    if (core::number_u32::wrapping_add(maximum, 1) != 0 || core::number_u32::wrapping_sub(0, 1) != maximum || core::number_u32::wrapping_mul(maximum, 2) != 4294967294 || core::number_u32::wrapping_mul(3, 7) != 21) {
+        return 6;
+    }
+    if (core::number_u32::abs_diff(0, maximum) != maximum || core::number_u32::abs_diff(9, 4) != 5) {
+        return 7;
+    }
+    if (!core::number_u32::is_zero(0) || core::number_u32::is_zero(1) || !core::number_u32::is_nonzero(maximum) || core::number_u32::is_nonzero(0) || !core::number_u32::is_even(4) || core::number_u32::is_even(3) || !core::number_u32::is_odd(3) || core::number_u32::is_odd(4)) {
+        return 8;
+    }
+    if (!core::number_u32::is_multiple_of(12, 3) || core::number_u32::is_multiple_of(13, 3) || core::number_u32::is_multiple_of(0, 0)) {
+        return 9;
+    }
+    if (!core::number_u32::is_power_of_two(2147483648) || core::number_u32::is_power_of_two(0) || core::number_u32::is_power_of_two(maximum) || core::number_u32::next_power_of_two(0) != 1 || core::number_u32::next_power_of_two(7) != 8 || core::number_u32::next_power_of_two(2147483648) != 2147483648 || core::number_u32::next_power_of_two(2147483649) != 0) {
+        return 10;
+    }
+    if (!core::number_u32::is_aligned(12, 4) || core::number_u32::is_aligned(14, 4) || core::number_u32::is_aligned(0, 0) || !core::number_u32::is_aligned(maximum, 1)) {
+        return 11;
+    }
+    if (core::number_u32::align_up_or(10, 4, 99) != 12 || core::number_u32::align_up_or(12, 4, 99) != 12 || core::number_u32::align_up_or(maximum, 4, 99) != 99 || core::number_u32::align_up_or(10, 0, 99) != 99 || core::number_u32::align_up_or(maximum, 1, 99) != maximum) {
+        return 12;
+    }
+    if (core::number_u32::align_down_or(10, 4, 99) != 8 || core::number_u32::align_down_or(maximum, 4, 99) != 4294967292 || core::number_u32::align_down_or(10, 0, 99) != 99) {
+        return 13;
+    }
+    return 0;
+}

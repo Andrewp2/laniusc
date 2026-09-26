@@ -1,0 +1,39 @@
+module app::main;
+import alloc::allocator;
+import std::file;
+fn exercise(buffer: ptr) -> i32 {
+    if (!std::file::copy_distinct_with_buffer("input.bin", "copied.bin", buffer, 16)) {
+        return 1;
+    }
+    if (!std::file::copy_distinct_with_buffer("empty.bin", "empty-copy.bin", buffer, 16)) {
+        return 2;
+    }
+    if (std::file::copy_distinct_with_buffer("missing.bin", "absent-copy.bin", buffer, 16)) {
+        return 3;
+    }
+    if (std::file::copy_distinct_with_buffer("input.bin", "missing/output.bin", buffer, 16)) {
+        return 4;
+    }
+    if (std::file::copy_distinct_with_buffer("input.bin", "null-copy.bin", 0, 16)) {
+        return 5;
+    }
+    if (std::file::copy_distinct_with_buffer("input.bin", "zero-copy.bin", buffer, 0)) {
+        return 6;
+    }
+    if (std::file::copy_distinct_with_buffer("input.bin", "huge-copy.bin", buffer, 2147483648)) {
+        return 7;
+    }
+    if (std::file::copy_distinct_with_buffer("input.bin", "/dev/full", buffer, 16)) {
+        return 8;
+    }
+    return 0;
+}
+fn main() -> i32 {
+    let buffer: ptr = alloc::allocator::alloc(16, 1);
+    if (buffer == 0) {
+        return 9;
+    }
+    let result: i32 = exercise(buffer);
+    alloc::allocator::dealloc(buffer, 16, 1);
+    return result;
+}

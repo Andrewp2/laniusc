@@ -1,0 +1,129 @@
+// Allocation-free unsigned 32-bit arithmetic with explicit failure fallbacks.
+module core::number_u32;
+pub const MIN: u32 = 0;
+pub const MAX: u32 = 4294967295;
+pub fn min(left: u32, right: u32) -> u32 {
+    if (left<right) {
+        return left;
+    }
+    return right;
+}
+pub fn max(left: u32, right: u32) -> u32 {
+    if (left>right) {
+        return left;
+    }
+    return right;
+}
+pub fn clamp_or(value: u32, low: u32, high: u32, fallback: u32) -> u32 {
+    if (low>high) {
+        return fallback;
+    }
+    if (value<low) {
+        return low;
+    }
+    if (value>high) {
+        return high;
+    }
+    return value;
+}
+pub fn saturating_add(left: u32, right: u32) -> u32 {
+    if (left>MAX - right) {
+        return MAX;
+    }
+    return left + right;
+}
+pub fn saturating_sub(left: u32, right: u32) -> u32 {
+    if (left<right) {
+        return MIN;
+    }
+    return left - right;
+}
+pub fn saturating_mul(left: u32, right: u32) -> u32 {
+    if (right == 0) {
+        return 0;
+    }
+    if (left>MAX / right) {
+        return MAX;
+    }
+    return left * right;
+}
+pub fn wrapping_add(left: u32, right: u32) -> u32 {
+    return left + right;
+}
+pub fn wrapping_sub(left: u32, right: u32) -> u32 {
+    return left - right;
+}
+pub fn wrapping_mul(left: u32, right: u32) -> u32 {
+    return left * right;
+}
+pub fn abs_diff(left: u32, right: u32) -> u32 {
+    if (left >= right) {
+        return left - right;
+    }
+    return right - left;
+}
+pub fn is_zero(value: u32) -> bool {
+    return value == 0;
+}
+pub fn is_nonzero(value: u32) -> bool {
+    return value != 0;
+}
+pub fn is_even(value: u32) -> bool {
+    return value % 2 == 0;
+}
+pub fn is_odd(value: u32) -> bool {
+    return value % 2 != 0;
+}
+// A zero divisor is never a multiple relation.
+pub fn is_multiple_of(value: u32, divisor: u32) -> bool {
+    if (divisor == 0) {
+        return false;
+    }
+    return value % divisor == 0;
+}
+pub fn is_power_of_two(value: u32) -> bool {
+    return value != 0 &&(value&(value - 1)) == 0;
+}
+// Zero means the next power cannot fit in u32.
+pub fn next_power_of_two(value: u32) -> u32 {
+    if (value <= 1) {
+        return 1;
+    }
+    if (value>2147483648) {
+        return 0;
+    }
+    let power: u32 = 1;
+    while (power<value) {
+        power *= 2;
+    }
+    return power;
+}
+// Zero is not an alignment.
+pub fn is_aligned(value: u32, alignment: u32) -> bool {
+    if (alignment == 0) {
+        return false;
+    }
+    return value % alignment == 0;
+}
+// Zero alignment or an overflowing round-up returns the caller's fallback.
+pub fn align_up_or(value: u32, alignment: u32, fallback: u32) -> u32 {
+    if (alignment == 0) {
+        return fallback;
+    }
+    let remainder: u32 = value % alignment;
+    if (remainder == 0) {
+        return value;
+    }
+    let bump: u32 = alignment - remainder;
+    if (value>MAX - bump) {
+        return fallback;
+    }
+    return value + bump;
+}
+// Zero alignment returns the caller's fallback.
+pub fn align_down_or(value: u32, alignment: u32, fallback: u32) -> u32 {
+    if (alignment == 0) {
+        return fallback;
+    }
+    return value - value % alignment;
+}

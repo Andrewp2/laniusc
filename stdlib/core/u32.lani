@@ -82,22 +82,13 @@ pub fn saturating_sub(left: u32, right: u32) -> u32 {
 }
 
 pub fn saturating_mul(left: u32, right: u32) -> u32 {
-    if (left == 0 || right == 0) {
+    if (right == 0) {
         return 0;
-    } else {
-        let factor: u32 = max(left, right);
-        let times: u32 = min(left, right);
-        let total: u32 = 0;
-        let count: u32 = 0;
-        while (count < times) {
-            total = saturating_add(total, factor);
-            if (total == MAX) {
-                return MAX;
-            }
-            count += 1;
-        }
-        return total;
     }
+    if (left > MAX / right) {
+        return MAX;
+    }
+    return left * right;
 }
 
 pub fn abs_diff(left: u32, right: u32) -> u32 {
