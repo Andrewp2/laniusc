@@ -29,7 +29,7 @@ limited to native x86_64 output from this worktree.
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
 | `alloc::allocator` | Executable host ABI, separate from portable core | Its listed allocation externs have compiler bindings and x86 tests, but storage ownership and failure behavior are host/runtime concerns. |
 | `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
-| `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty line, exact byte counts, and invalid handle failure. These are separate from the portable core. |
+| `std::io::{write_line,println,eprintln,write_u32}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, unsigned decimal zero and maximum, exact byte counts, invalid handles, and injected failure after a written prefix. These are separate from the portable core. |
 | `std::file::{write_text_once,read_once_into_buffer,read_exact_into_buffer,write_all_bytes,copy_distinct_with_buffer}` | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot and exact caller-buffer reads, complete buffer writes, a multi-chunk binary copy, empty files, invalid buffer sizes, missing paths, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked::secure_u32_or` | Executable x86_64 Linux host wrapper | `tests/stdlib_random_execution.rs` checks successful generation and injects both a host error and a short read, each of which returns the caller's fallback. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
@@ -156,6 +156,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   The focused host fixture also confirms that `write_i32` writes its decimal
   text and returns status `0`, while `write_byte` and `write_newline` return
   byte counts for the tested writes.
+- `std::io::write_u32` writes the complete decimal representation without
+  allocating or reading string storage. It returns a byte count from 1 to 10,
+  the first negative host error, or `-1` for a byte write that made no
+  progress. Failure may leave a decimal prefix on the handle.
 - `std::file::write_text_once` opens or creates a file, truncates it, attempts
   one text write, and attempts to close it even if writing fails. It returns the actual
   byte count on success, including zero for empty text; a negative open,
@@ -213,7 +217,7 @@ the native ELFs, checks their exit status, checks the example's stdout, and
 checks the slice bounds trap. Each source is also suitable for direct CLI
 compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.
 Run `cargo test --test stdlib_host_execution` for the separate native I/O
-wrappers.
+wrappers; its partial-write fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_file_execution` for the file wrappers.
 Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
 Run `cargo test --test stdlib_random_execution` for the checked random scalar;

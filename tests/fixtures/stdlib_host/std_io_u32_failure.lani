@@ -1,0 +1,12 @@
+module app::main;
+import std::io;
+fn main() -> i32 {
+    let result: i32 = std::io::write_u32(1, 42);
+    if (result == -1) {
+        return 1;
+    }
+    if (result == -5) {
+        return 5;
+    }
+    return 99;
+}
