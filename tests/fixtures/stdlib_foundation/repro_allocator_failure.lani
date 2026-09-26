@@ -1,0 +1,12 @@
+// Under `strace -e inject=mmap:error=ENOMEM:when=1`, this should return 0.
+// The current x86 allocator returns the raw negative syscall result instead.
+module app::main;
+import alloc::allocator;
+
+fn main() -> i32 {
+    let storage: ptr = alloc::allocator::alloc(12, 4);
+    if (storage == 0) {
+        return 0;
+    }
+    return 1;
+}

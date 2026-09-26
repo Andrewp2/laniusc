@@ -1,0 +1,12 @@
+// Constructing a public struct from an imported module is rejected by native
+// lowering before any collection code can run.
+module app::main;
+import core::pair;
+
+fn main() -> i32 {
+    let pair: core::pair::Pair = core::pair::Pair { present: true, value: 0 };
+    if (core::pair::has_zero(pair)) {
+        return 0;
+    }
+    return 1;
+}

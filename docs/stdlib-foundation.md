@@ -28,7 +28,7 @@ limited to native x86_64 output from this worktree.
 | Generic `core::option`, `core::result`, and `core::{i32,i64,u32,u8}` as complete imported modules | Contract-only for native execution | Their Lanius bodies type-check, but generic enum use or import prevents reliable x86 output. The numeric modules import generic `Option` for checked results. A minimal failing program is included below. |
 | `core::{cmp,hash,ordering,array_i32}` and legacy root `stdlib/{i32,bool,array_i32_4}.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs and traits also depend on backend support. |
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
-| `alloc::allocator` | Executable host ABI, separate from portable core | Its listed allocation externs have compiler bindings and x86 tests, but storage ownership and failure behavior are host/runtime concerns. |
+| `alloc::allocator` | Native host ABI with an unsafe allocation-failure path | Normal allocation, reallocation, and release have x86 tests. An injected `mmap` failure returns a nonzero error-shaped pointer from `alloc`; see dependency 22. Callers cannot currently rely on a null-pointer failure check. |
 | `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, and invalid handles. These are separate from the portable core. |
 | `std::io_decimal::write_u32` | Executable x86_64 Linux host wrapper | `tests/stdlib_host_execution.rs` checks unsigned decimal zero and maximum, exact byte counts, invalid handles, and injected failure after a written prefix. |
@@ -270,7 +270,9 @@ the failure injection cases run when Linux `strace` is available.
 4. **Allocation-backed vectors.** `std::vec` requires storage, mutation,
    allocation failure, and ownership semantics. Its silent `push` stub is
    removed until those runtime pieces exist; the empty `Vec<T>` contract is
-   still type-checkable but not an executable collection.
+   still type-checkable but not an executable collection. A fixed-capacity i32
+   collection worked on the allocation success path, but dependency 22 made
+   its failure path unsafe, so it was not added as a public API.
 5. **Imported f32 constant lowering.** With the minimal library in
    `tests/fixtures/stdlib_foundation/repro_f32_const_root`, native emission of
    `repro_f32_const.lani` succeeds, but the ELF exits 3 because imported
@@ -401,6 +403,21 @@ the failure injection cases run when Linux `strace` is available.
     short-write information. `std::file::write_i32_decimal` instead uses
     single-byte writes and checks each result. The raw binding needs a runtime
     fix before it can promise a complete decimal write.
+22. **Allocator failure returns a nonzero pointer.** Compile
+    `tests/fixtures/stdlib_foundation/repro_allocator_failure.lani` with the
+    stdlib root, then run its ELF through
+    `strace -qq -e trace=mmap -e inject=mmap:error=ENOMEM:when=1`. The injected
+    syscall returns `-1 ENOMEM`, but `alloc::allocator::alloc(12, 4)` returns a
+    nonzero error-shaped `ptr`; the program exits 1 instead of 0. Dereferencing
+    that result segfaults. This prevents a collection from reporting allocation
+    failure safely even though heap-backed i32 reads and writes work normally.
+23. **Imported struct literals in native code.** Compile
+    `tests/fixtures/stdlib_foundation/repro_imported_struct_literal.lani` with
+    `--stdlib-root tests/fixtures/stdlib_foundation/repro_aggregate_root`.
+    Native emission stops with `LNC0017`, unsupported target LIR opcode 31 at
+    the `core::pair::Pair { ... }` literal. This is a second obstacle to a
+    public struct-based collection handle, alongside the imported aggregate
+    result failure in dependency 2.
 
 These are compiler/runtime dependencies, not stdlib implementations in Rust or
 Python. They should be handled in the parallel compiler task before extending
