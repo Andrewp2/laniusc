@@ -230,11 +230,12 @@ pub fn sort_i32(values:[i32], len: i32) -> i32 {
     }
     return len;
 }
-// Requires nondecreasing input and returns the first matching index.
+// Requires nondecreasing input. Returns the first index whose value is >=
+// needle, or len when every value is smaller. A nonpositive len returns zero.
 // The midpoint calculation avoids overflowing i32 for a large valid view.
-pub fn binary_search_first_or_i32(values:[i32], len: i32, needle: i32, fallback: i32) -> i32 {
+pub fn lower_bound_i32(values:[i32], len: i32, needle: i32) -> i32 {
     if (len <= 0) {
-        return fallback;
+        return 0;
     }
     let low: i32 = 0;
     let high: i32 = len;
@@ -246,8 +247,34 @@ pub fn binary_search_first_or_i32(values:[i32], len: i32, needle: i32, fallback:
             high = middle;
         }
     }
-    if (low<len && values[low] == needle) {
-        return low;
+    return low;
+}
+// Requires nondecreasing input. Returns the first index whose value is
+// strictly greater than needle, or len when every value is <= needle.
+pub fn upper_bound_i32(values:[i32], len: i32, needle: i32) -> i32 {
+    if (len <= 0) {
+        return 0;
+    }
+    let low: i32 = 0;
+    let high: i32 = len;
+    while (low<high) {
+        let middle: i32 = low +(high - low) / 2;
+        if (values[middle] <= needle) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+// Requires nondecreasing input and returns the first matching index.
+pub fn binary_search_first_or_i32(values:[i32], len: i32, needle: i32, fallback: i32) -> i32 {
+    if (len <= 0) {
+        return fallback;
+    }
+    let index: i32 = lower_bound_i32(values, len, needle);
+    if (index<len && values[index] == needle) {
+        return index;
     }
     return fallback;
 }

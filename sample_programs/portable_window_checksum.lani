@@ -16,7 +16,9 @@ fn main() -> i32 {
     if (core::slice::sort_i32(view, 4) != 4 || !core::slice::is_sorted_i32(view, 4)) {
         return 2;
     }
-    let window: core::range::Range<i32> = core::range::range_i32(1, 4);
+    let first: i32 = core::slice::lower_bound_i32(view, 4, 24);
+    let end: i32 = core::slice::upper_bound_i32(view, 4, 42);
+    let window: core::range::Range<i32> = core::range::range_i32(first, end);
     let index: i32 = 0;
     let checksum: i32 = 0;
     while (index<4) {

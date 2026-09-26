@@ -20,7 +20,7 @@ limited to native x86_64 output from this worktree.
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
 | Legacy `stdlib/i32.lani` power-of-two helpers | Executable on x86_64 | A focused source-level native test checks the highest signed power and the zero overflow sentinel. The legacy file as a whole is not included in this claim. |
 | `core::range` free functions for all five range forms and methods for `Range<i32>`, `RangeInclusive<i32>`, `RangeFrom<i32>`, and `RangeTo<i32>` | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership. There is no `RangeFull` method claim. |
-| `core::slice` all 18 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixture checks backed, empty, unsorted, duplicate, and sorted views; search, extrema, sum, in-place mutation, overlapping copies, sorting, and fallback behavior. A separate fixture confirms native index trapping on an overclaimed length. |
+| `core::slice` all 20 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixture checks backed, empty, unsorted, duplicate, and sorted views; search and insertion boundaries, extrema, sum, in-place mutation, overlapping copies, sorting, and fallback behavior. A separate fixture confirms native index trapping on an overclaimed length. |
 | `core::mem::{i32_array_data_ptr,i32_slice_from_raw_parts}` | Misleading source stubs; executable x86_64 compiler intrinsics | The source bodies return `0` and `[]`; x86 lowers the recognized calls as intrinsics, demonstrated by the slice fixture. Do not use these bodies as evidence for another target. `string_data_ptr` and `i32_slice_data_ptr` have the same placeholder issue and are outside this subset. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
@@ -107,7 +107,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   overflow clamps to `MIN` or `MAX` before the next element. Search helpers
   return the first or last matching index as named, or the caller's fallback.
   Empty extrema return the fallback. `is_sorted_i32` accepts equal neighbors;
-  `binary_search_first_or_i32` requires that order and returns the first match.
+  `lower_bound_i32` and `upper_bound_i32` require that order and return the
+  insertion index before and after equal values respectively, including `len`
+  when the insertion point is past the last element. A nonpositive length
+  returns zero. `binary_search_first_or_i32` uses lower bound and returns the
+  first match or its caller's fallback.
   `set_i32` and `swap_i32` reject invalid indices without mutation.
   `fill_i32` returns the number of elements written, and `reverse_in_place_i32`
   returns the number of swaps. `copy_within_i32` handles overlap in either
@@ -146,8 +150,8 @@ Lanius logic. No declaration is promoted solely because it type-checks.
 
 The small runnable example is `sample_programs/portable_window_checksum.lani`.
 It validates an ASCII marker, sorts readings in place, selects a half-open
-window, reads a slice, and accumulates with saturating arithmetic. It prints
-`96`.
+window from sorted-value boundaries, reads a slice, and accumulates with
+saturating arithmetic. It prints `96`.
 
 ## Target support and focused verification
 
