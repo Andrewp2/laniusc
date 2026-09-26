@@ -138,28 +138,28 @@ def findScheme? :
               declarationMatches := found.declarationMatches }
 
 def nominalInstanceCompatible (nominal : Static.NominalInstance)
-    (sourceType coreType declaration : Nat) : Bool :=
+    (sourceType coreType declaration : Nat) (kind : Static.NominalKind) : Bool :=
   decide (nominal.sourceType ≠ sourceType ∨
     nominal.typeArguments ≠ [] ∨ nominal.constArguments ≠ [] ∨
-    (nominal.kind = .structure ∧ nominal.coreType = coreType ∧
+    (nominal.kind = kind ∧ nominal.coreType = coreType ∧
       nominal.declaration = declaration))
 
 theorem nominalInstanceCompatible_of_all
     {instances : List Static.NominalInstance}
     {nominal : Static.NominalInstance}
-    {sourceType coreType declaration : Nat}
+    {sourceType coreType declaration : Nat} {kind : Static.NominalKind}
     (all : instances.all (fun candidate =>
-      nominalInstanceCompatible candidate sourceType coreType declaration) = true)
+      nominalInstanceCompatible candidate sourceType coreType declaration kind) = true)
     (member : nominal ∈ instances)
     (source : nominal.sourceType = sourceType)
     (types : nominal.typeArguments = [])
     (constants : nominal.constArguments = []) :
-    nominal.kind = .structure ∧ nominal.coreType = coreType ∧
+    nominal.kind = kind ∧ nominal.coreType = coreType ∧
       nominal.declaration = declaration := by
   have found := List.all_eq_true.mp all nominal member
   have compatible : nominal.sourceType ≠ sourceType ∨
       nominal.typeArguments ≠ [] ∨ nominal.constArguments ≠ [] ∨
-      (nominal.kind = .structure ∧ nominal.coreType = coreType ∧
+      (nominal.kind = kind ∧ nominal.coreType = coreType ∧
         nominal.declaration = declaration) := by
     simpa [nominalInstanceCompatible] using (of_decide_eq_true found)
   rcases compatible with sourceNot | typesNot | constantsNot | shape
@@ -169,40 +169,40 @@ theorem nominalInstanceCompatible_of_all
   · exact shape
 
 structure NominalMatch (instances : List Static.NominalInstance)
-    (sourceType coreType declaration : Nat) where
+    (sourceType coreType declaration : Nat) (kind : Static.NominalKind) where
   nominal : Static.NominalInstance
   member : nominal ∈ instances
   sourceTypeMatches : nominal.sourceType = sourceType
   typeArgumentsEmpty : nominal.typeArguments = []
   constArgumentsEmpty : nominal.constArguments = []
-  structureKind : nominal.kind = .structure
+  kindMatches : nominal.kind = kind
   coreTypeMatches : nominal.coreType = coreType
   declarationMatches : nominal.declaration = declaration
   compatible : ∀ candidate, candidate ∈ instances →
     candidate.sourceType = sourceType → candidate.typeArguments = [] →
     candidate.constArguments = [] →
-    candidate.kind = .structure ∧ candidate.coreType = coreType ∧
+    candidate.kind = kind ∧ candidate.coreType = coreType ∧
       candidate.declaration = declaration
 
 def findNominal? :
     (instances : List Static.NominalInstance) →
-    (sourceType coreType declaration : Nat) →
-    Option (NominalMatch instances sourceType coreType declaration)
-  | [], _, _, _ => none
-  | nominal :: instances, sourceType, coreType, declaration =>
+    (sourceType coreType declaration : Nat) → (kind : Static.NominalKind) →
+    Option (NominalMatch instances sourceType coreType declaration kind)
+  | [], _, _, _, _ => none
+  | nominal :: instances, sourceType, coreType, declaration, kind =>
       if arguments : nominal.sourceType = sourceType ∧
           nominal.typeArguments = [] ∧ nominal.constArguments = [] then
-        if shape : nominal.kind = .structure ∧
+        if shape : nominal.kind = kind ∧
             nominal.coreType = coreType ∧ nominal.declaration = declaration then
           if compatible : instances.all (fun candidate =>
-              nominalInstanceCompatible candidate sourceType coreType declaration) = true then
+              nominalInstanceCompatible candidate sourceType coreType declaration kind) = true then
             some {
               nominal := nominal
               member := by simp
               sourceTypeMatches := arguments.1
               typeArgumentsEmpty := arguments.2.1
               constArgumentsEmpty := arguments.2.2
-              structureKind := shape.1
+              kindMatches := shape.1
               coreTypeMatches := shape.2.1
               declarationMatches := shape.2.2
               compatible := by
@@ -216,7 +216,7 @@ def findNominal? :
           else none
         else none
       else
-        match findNominal? instances sourceType coreType declaration with
+        match findNominal? instances sourceType coreType declaration kind with
         | none => none
         | some found =>
             some {
@@ -225,7 +225,7 @@ def findNominal? :
               sourceTypeMatches := found.sourceTypeMatches
               typeArgumentsEmpty := found.typeArgumentsEmpty
               constArgumentsEmpty := found.constArgumentsEmpty
-              structureKind := found.structureKind
+              kindMatches := found.kindMatches
               coreTypeMatches := found.coreTypeMatches
               declarationMatches := found.declarationMatches
               compatible := by
@@ -238,7 +238,7 @@ def findNominal? :
                 · exact found.compatible candidate member' source types constants }
 
 def nominalCandidate? (context : SurfaceElaboration.Context)
-    (path : Surface.Path) (coreType : TypeId) :
+    (path : Surface.Path) (coreType : TypeId) (kind : Static.NominalKind) :
     Option (NamedTypeCheck.Candidate context path) :=
   if empty : context.typeParameters.isEmpty then
     match builtin : Elaboration.builtinTypePath? path with
@@ -255,23 +255,22 @@ def nominalCandidate? (context : SurfaceElaboration.Context)
                 | some scheme =>
                     if parameters : scheme.scheme.genericParameters.isEmpty then
                       if requirements : scheme.scheme.requirements.isEmpty then
-                        match kind : scheme.scheme.kind with
-                        | .structure =>
+                        if sameKind : scheme.scheme.kind = kind then
                             match findNominal? context.nominalInstances
-                                scheme.scheme.type coreType scheme.scheme.declaration with
+                                scheme.scheme.type coreType scheme.scheme.declaration kind with
                             | none => none
                             | some nominal =>
                                 if mapped : context.monomorphization.resolveNominal
-                                    scheme.scheme.type [] [] = some (.structure coreType) then
+                                    scheme.scheme.type [] [] =
+                                      some (match kind with
+                                        | .structure => .structure coreType
+                                        | .enumeration => .enumeration coreType) then
                                   have parametersEmpty :
                                       scheme.scheme.genericParameters = [] := by
                                     simpa using parameters
                                   have requirementsEmpty :
                                       scheme.scheme.requirements = [] := by
                                     simpa using requirements
-                                  have schemeStructure :
-                                      scheme.scheme.kind = .structure := by
-                                    exact kind
                                   some {
                                     symbol := resolved.symbol
                                     scheme := scheme.scheme
@@ -296,7 +295,7 @@ def nominalCandidate? (context : SurfaceElaboration.Context)
                                       refine ⟨nominal.member, ?_, ?_, ?_, ?_, ?_, ?_⟩
                                       · exact nominal.declarationMatches
                                       · exact nominal.sourceTypeMatches
-                                      · exact nominal.structureKind.trans schemeStructure.symm
+                                      · exact nominal.kindMatches.trans sameKind.symm
                                       · rw [parametersEmpty, nominal.typeArgumentsEmpty,
                                           nominal.constArgumentsEmpty]
                                         exact .nil
@@ -311,15 +310,15 @@ def nominalCandidate? (context : SurfaceElaboration.Context)
                                         exact (nominal.compatible candidate member source' types' constants').2.1.trans
                                           nominal.coreTypeMatches.symm
                                     mapped := by
-                                      simpa [Static.NominalInstanceMapped,
+                                      cases kind <;> simpa [Static.NominalInstanceMapped,
                                         Static.NominalInstance.coreTy,
                                         nominal.sourceTypeMatches,
                                         nominal.typeArgumentsEmpty,
                                         nominal.constArgumentsEmpty,
-                                        nominal.structureKind,
+                                        nominal.kindMatches,
                                         nominal.coreTypeMatches] using mapped }
                                 else none
-                        | .enumeration => none
+                        else none
                       else none
                     else none
         | some _ => none
@@ -391,10 +390,22 @@ def checkFuel : Nat → (context : SurfaceElaboration.Context) →
               | none => none
               | some target => some (wrapAlias candidate target)
           | none =>
-              match nominalCandidate? context { segments := segments } typeId with
+              match nominalCandidate? context { segments := segments } typeId .structure with
               | none => none
               | some candidate =>
                   checkNominal context { segments := segments } (.structure typeId) candidate
+      | .path segments, .enumeration typeId =>
+          match aliasCandidate? context { segments := segments } with
+          | some candidate =>
+              match checkFuel fuel (context.forTypeAlias candidate.entry {})
+                  candidate.entry.target (.enumeration typeId) with
+              | none => none
+              | some target => some (wrapAlias candidate target)
+          | none =>
+              match nominalCandidate? context { segments := segments } typeId .enumeration with
+              | none => none
+              | some candidate =>
+                  checkNominal context { segments := segments } (.enumeration typeId) candidate
       | .path segments, .slice coreElement =>
           match aliasCandidate? context { segments := segments } with
           | none => none

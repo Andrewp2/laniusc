@@ -1,0 +1,271 @@
+module lowering::ir_catalogs;
+
+import ir::constant_catalog;
+import ir::type_catalog;
+import ir::type_ref;
+import lowering::allocation;
+import lowering::declarations;
+import lowering::signature_index;
+import lowering::signatures;
+import verified::host;
+
+// The only conversion from lowering's declaration/signature bookkeeping to
+// the consumer-owned semantic catalogs. No consumer needs source rows.
+pub struct Catalogs {
+    valid: bool,
+    types: ir::type_catalog::Table,
+    constants: ir::constant_catalog::Table,
+}
+
+fn invalid() -> Catalogs {
+    return Catalogs {
+        valid: false,
+        types: ir::type_catalog::empty(),
+        constants: ir::constant_catalog::empty(),
+    };
+}
+
+fn add_count(total: i32, next: i32) -> i32 {
+    if (total <= -1 || next <= -1
+        || next > verified::host::I32_MAX - total) { return -1; }
+    return total + next;
+}
+
+pub fn build(signatures: lowering::signature_index::Table,
+    allocations: lowering::allocation::Table) -> Catalogs {
+    if (!lowering::allocation::table_has_exact_rows(allocations)) {
+        return invalid();
+    }
+    let header: lowering::allocation::AllocationHeader =
+        lowering::allocation::table_header(allocations);
+    let type_count: i32 = add_count(header.structures,
+        header.enumerations);
+    if (type_count <= -1 || header.constants <= -1) { return invalid(); }
+    let variant_count: i32 = 0;
+    let field_count: i32 = 0;
+    let byte_count: i32 = 0;
+    let constant_count: i32 = 0;
+    let row: i32 = 0;
+    while (row != header.rows) {
+        let allocation: lowering::allocation::AllocationRow =
+            lowering::allocation::table_row(allocations, row);
+        let declaration: i32 = lowering::allocation::row_declaration_id(
+            allocation);
+        if (lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Structure)) {
+            if (!lowering::signature_index::has_shape(signatures,
+                    declaration, lowering::signatures::StructureShape)) {
+                return invalid();
+            }
+            let record: lowering::signatures::SignatureRecord =
+                lowering::signature_index::record_at(signatures, declaration);
+            field_count = add_count(field_count,
+                lowering::signatures::record_arity(record));
+        }
+        if (lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Enumeration)) {
+            if (!lowering::signature_index::has_shape(signatures,
+                    declaration, lowering::signatures::EnumerationShape)) {
+                return invalid();
+            }
+            let record: lowering::signatures::SignatureRecord =
+                lowering::signature_index::record_at(signatures, declaration);
+            let arity: i32 = lowering::signatures::record_arity(record);
+            variant_count = add_count(variant_count, arity);
+            let ordinal: i32 = 0;
+            while (ordinal != arity) {
+                let variant: lowering::signature_index::Variant =
+                    lowering::signature_index::variant_at(signatures,
+                        declaration, ordinal);
+                field_count = add_count(field_count, variant.field_count);
+                ordinal += 1;
+            }
+        }
+        if (lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Constant)) {
+            if (!lowering::signature_index::has_shape(signatures,
+                    declaration, lowering::signatures::ConstantShape)) {
+                return invalid();
+            }
+            constant_count = add_count(constant_count, 1);
+            let constant: lowering::signature_index::ConstantValue =
+                lowering::signature_index::constant_at(signatures,
+                    declaration);
+            if (constant.encoding == lowering::signature_index::StringConstant) {
+                byte_count = add_count(byte_count, constant.byte_count);
+            }
+        }
+        if (variant_count <= -1 || field_count <= -1
+            || byte_count <= -1 || constant_count <= -1) {
+            return invalid();
+        }
+        row += 1;
+    }
+    if (constant_count != header.constants) { return invalid(); }
+    let type_bytes: i32 = ir::type_catalog::allocation_bytes(type_count,
+        variant_count, field_count);
+    let constant_bytes: i32 = ir::constant_catalog::allocation_bytes(
+        constant_count, byte_count);
+    if (type_bytes <= 0 || constant_bytes <= 0) { return invalid(); }
+    let type_memory: ptr = verified::host::alloc(type_bytes,
+        ir::type_catalog::ALIGNMENT);
+    let constant_memory: ptr = verified::host::alloc(constant_bytes,
+        ir::constant_catalog::ALIGNMENT);
+    if (type_memory == 0 || constant_memory == 0) { return invalid(); }
+    let types: ir::type_catalog::Table =
+        ir::type_catalog::from_raw_parts(type_memory, type_count,
+            variant_count, field_count);
+    let constants: ir::constant_catalog::Table =
+        ir::constant_catalog::from_raw_parts(constant_memory,
+            constant_count, byte_count);
+    let type_rows: [ir::type_catalog::TypeDecl] = types.types;
+    let variants: [ir::type_catalog::Variant] = types.variants;
+    let fields: [ir::type_catalog::Field] = types.fields;
+    let type_cursor: i32 = 0;
+    let variant_cursor: i32 = 0;
+    let field_cursor: i32 = 0;
+    let pass: i32 = 0;
+    while (pass != 2) {
+        row = 0;
+        while (row != header.rows) {
+            let allocation: lowering::allocation::AllocationRow =
+                lowering::allocation::table_row(allocations, row);
+            let wanted: bool = false;
+            if (pass == 0) {
+                wanted = lowering::allocation::row_has_kind(allocation,
+                    lowering::declarations::Structure);
+            } else {
+                wanted = lowering::allocation::row_has_kind(allocation,
+                    lowering::declarations::Enumeration);
+            }
+            if (wanted) {
+                let declaration: i32 =
+                    lowering::allocation::row_declaration_id(allocation);
+                if (lowering::allocation::row_core_id(allocation)
+                        != type_cursor || type_cursor >= type_count) {
+                    return invalid();
+                }
+                let record: lowering::signatures::SignatureRecord =
+                    lowering::signature_index::record_at(signatures,
+                        declaration);
+                let arity: i32 = lowering::signatures::record_arity(record);
+                if (pass == 0) {
+                    type_rows[type_cursor] = ir::type_catalog::TypeDecl {
+                        kind: ir::type_catalog::Structure,
+                        id: type_cursor,
+                        field_start: field_cursor, field_count: arity,
+                        variant_start: -1, variant_count: 0,
+                    };
+                    let field: i32 = 0;
+                    while (field != arity) {
+                        let member: lowering::signatures::SignatureMember =
+                            lowering::signature_index::member_at(signatures,
+                                declaration, field);
+                        fields[field_cursor] = ir::type_catalog::Field {
+                            type_tag: member.type_tag,
+                        };
+                        field_cursor += 1;
+                        field += 1;
+                    }
+                } else {
+                    type_rows[type_cursor] = ir::type_catalog::TypeDecl {
+                        kind: ir::type_catalog::Enumeration,
+                        id: type_cursor,
+                        field_start: -1, field_count: 0,
+                        variant_start: variant_cursor,
+                        variant_count: arity,
+                    };
+                    let ordinal: i32 = 0;
+                    while (ordinal != arity) {
+                        let variant: lowering::signature_index::Variant =
+                            lowering::signature_index::variant_at(signatures,
+                                declaration, ordinal);
+                        variants[variant_cursor] = ir::type_catalog::Variant {
+                            field_start: field_cursor,
+                            field_count: variant.field_count,
+                        };
+                        let field: i32 = 0;
+                        while (field != variant.field_count) {
+                            fields[field_cursor] = ir::type_catalog::Field {
+                                type_tag:
+                                    lowering::signature_index::enum_field_type(
+                                        signatures, declaration, ordinal,
+                                        field),
+                            };
+                            field_cursor += 1;
+                            field += 1;
+                        }
+                        variant_cursor += 1;
+                        ordinal += 1;
+                    }
+                }
+                type_cursor += 1;
+            }
+            row += 1;
+        }
+        pass += 1;
+    }
+    if (type_cursor != type_count || variant_cursor != variant_count
+        || field_cursor != field_count || !ir::type_catalog::valid(types)) {
+        return invalid();
+    }
+    let constant_rows: [ir::constant_catalog::Constant] =
+        constants.constants;
+    let bytes: [i32] = constants.bytes;
+    let constant_cursor: i32 = 0;
+    let byte_cursor: i32 = 0;
+    row = 0;
+    while (row != header.rows) {
+        let allocation: lowering::allocation::AllocationRow =
+            lowering::allocation::table_row(allocations, row);
+        if (lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Constant)) {
+            let declaration: i32 =
+                lowering::allocation::row_declaration_id(allocation);
+            let record: lowering::signatures::SignatureRecord =
+                lowering::signature_index::record_at(signatures,
+                    declaration);
+            let source: lowering::signature_index::ConstantValue =
+                lowering::signature_index::constant_at(signatures,
+                    declaration);
+            let encoding: ir::constant_catalog::Encoding =
+                ir::constant_catalog::Scalar;
+            let byte_start: i32 = -1;
+            let count: i32 = 0;
+            if (source.encoding == lowering::signature_index::StringConstant) {
+                encoding = ir::constant_catalog::StringBytes;
+                byte_start = byte_cursor;
+                count = source.byte_count;
+                let ordinal: i32 = 0;
+                while (ordinal != count) {
+                    let value: i32 = lowering::signature_index::constant_byte(
+                        signatures, declaration, ordinal);
+                    if (value <= -1 || value > verified::host::BYTE_MASK) {
+                        return invalid();
+                    }
+                    bytes[byte_cursor] = value;
+                    byte_cursor += 1;
+                    ordinal += 1;
+                }
+            } else {
+                if (source.encoding != lowering::signature_index::ScalarConstant) {
+                    return invalid();
+                }
+            }
+            constant_rows[constant_cursor] = ir::constant_catalog::Constant {
+                id: lowering::signatures::record_id(record),
+                kind: lowering::signatures::record_result_type(record),
+                encoding: encoding,
+                low: source.low, high: source.high,
+                byte_start: byte_start, byte_count: count,
+            };
+            constant_cursor += 1;
+        }
+        row += 1;
+    }
+    if (constant_cursor != constant_count || byte_cursor != byte_count
+        || !ir::constant_catalog::valid(constants)) { return invalid(); }
+    return Catalogs {
+        valid: true, types: types, constants: constants,
+    };
+}

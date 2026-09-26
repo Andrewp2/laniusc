@@ -1,0 +1,11 @@
+module app::main;
+
+pub extern "lanius_alloc" fn alloc(size: usize, alignment: usize) -> ptr;
+
+fn main() -> i32 {
+    let length: i32 = 8;
+    let widened: usize = length;
+    let memory: ptr = alloc(widened, 8);
+    if (memory == 0) { return 1; }
+    return 0;
+}

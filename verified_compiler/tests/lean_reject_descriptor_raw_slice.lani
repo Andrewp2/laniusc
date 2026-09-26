@@ -1,0 +1,13 @@
+module app::main;
+
+pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+
+struct Holder {
+    items: str,
+}
+
+fn main() -> i32 {
+    let memory: ptr = alloc(16, 8);
+    let holders: [Holder] = slice_from_raw_parts(memory + 8, 1);
+    return 0;
+}

@@ -1,0 +1,278 @@
+module verified::lean_named_types;
+
+import ir::symbol_catalog;
+import ir::type_catalog;
+import ir::type_ref;
+import verified::host;
+import verified::lean_output;
+import verified::lean_syntax;
+
+// Lean-native nominal declarations index the same Core type IDs used by x86.
+// Emit independent declarations in dependency order. A mutual block is only
+// needed for an actual cycle, rather than for every type in a large program.
+
+fn field_type(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table, names: ir::symbol_catalog::Catalog,
+    field: ir::type_catalog::Field) -> i32 {
+    return verified::lean_syntax::named_type_ref(output, capacity, position,
+        types, names, field.type_tag);
+}
+
+fn constructor_name(output: [i32], capacity: i32, position: i32,
+    names: ir::symbol_catalog::Catalog, slot: i32,
+    ordinal: i32) -> i32 {
+    if (names.unit_count == 0) {
+        let next: i32 = verified::lean_output::text(output, capacity,
+            position, "variant", 7);
+        return verified::lean_output::natural(output, capacity, next,
+            ordinal);
+    }
+    if (slot < 0 || slot >= names.variant_count) { return -1; }
+    let references: [ir::symbol_catalog::Ref] = names.variants;
+    return verified::lean_syntax::source_identifier(output, capacity,
+        position, names, references[slot]);
+}
+
+fn payload_fields(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table, names: ir::symbol_catalog::Catalog,
+    first: i32, count: i32) -> i32 {
+    let next: i32 = position;
+    let fields: [ir::type_catalog::Field] = types.fields;
+    let field: i32 = 0;
+    while (field < count) {
+        if (count == 1) {
+            next = verified::lean_output::text(output, capacity, next,
+                " (value : ", 10);
+        } else {
+            next = verified::lean_output::text(output, capacity, next,
+                " (field", 7);
+            next = verified::lean_output::natural(output, capacity,
+                next, field);
+            next = verified::lean_output::text(output, capacity,
+                next, " : ", 3);
+        }
+        next = field_type(output, capacity, next, types, names,
+            fields[first + field]);
+        next = verified::lean_output::byte(output, capacity, next, 41);
+        if (next < 0) { return -1; }
+        field += 1;
+    }
+    return next;
+}
+
+fn declaration(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table, names: ir::symbol_catalog::Catalog,
+    row: ir::type_catalog::TypeDecl) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "private inductive ", 18);
+    next = verified::lean_syntax::type_identifier(output, capacity,
+        next, names, row.id);
+    next = verified::lean_output::text(output, capacity, next,
+        " where\n", 7);
+    if (row.kind == ir::type_catalog::Structure) {
+        next = verified::lean_output::text(output, capacity, next,
+            "  | mk", 6);
+        next = payload_fields(output, capacity, next, types, names,
+            row.field_start, row.field_count);
+        return verified::lean_output::byte(output, capacity, next, 10);
+    }
+    if (row.kind != ir::type_catalog::Enumeration) { return -1; }
+    let variants: [ir::type_catalog::Variant] = types.variants;
+    let ordinal: i32 = 0;
+    while (ordinal < row.variant_count) {
+        let slot: i32 = row.variant_start + ordinal;
+        let variant: ir::type_catalog::Variant = variants[slot];
+        next = verified::lean_output::text(output, capacity, next,
+            "  | ", 4);
+        next = constructor_name(output, capacity, next, names,
+            slot, ordinal);
+        next = payload_fields(output, capacity, next, types, names,
+            variant.field_start, variant.field_count);
+        next = verified::lean_output::byte(output, capacity, next, 10);
+        if (next < 0) { return -1; }
+        ordinal += 1;
+    }
+    return next;
+}
+
+fn field_ready(field: ir::type_catalog::Field, emitted: [i32],
+    type_count: i32) -> bool {
+    let dependency: i32 = match (field.type_tag) {
+        ir::type_ref::Nominal(id) -> id,
+        ir::type_ref::NominalSlice(slice_id) -> slice_id,
+        _ -> -1,
+    };
+    if (dependency < 0) { return true; }
+    return dependency < type_count && emitted[dependency] != 0;
+}
+
+fn fields_ready(types: ir::type_catalog::Table, emitted: [i32],
+    first: i32, count: i32) -> bool {
+    let fields: [ir::type_catalog::Field] = types.fields;
+    let index: i32 = 0;
+    while (index < count) {
+        if (!field_ready(fields[first + index], emitted,
+                types.type_count)) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+fn declaration_ready(types: ir::type_catalog::Table, emitted: [i32],
+    row: ir::type_catalog::TypeDecl) -> bool {
+    if (row.kind == ir::type_catalog::Structure) {
+        return fields_ready(types, emitted, row.field_start,
+            row.field_count);
+    }
+    if (row.kind != ir::type_catalog::Enumeration) { return false; }
+    let variants: [ir::type_catalog::Variant] = types.variants;
+    let ordinal: i32 = 0;
+    while (ordinal < row.variant_count) {
+        let variant: ir::type_catalog::Variant = variants[
+            row.variant_start + ordinal];
+        if (!fields_ready(types, emitted, variant.field_start,
+                variant.field_count)) { return false; }
+        ordinal += 1;
+    }
+    return true;
+}
+
+fn code_instance(output: [i32], capacity: i32, position: i32,
+    names: ir::symbol_catalog::Catalog,
+    row: ir::type_catalog::TypeDecl) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "\nprivate instance : Lanius.TypedIR.Named.Code ", 46);
+    next = verified::lean_syntax::type_identifier(output, capacity,
+        next, names, row.id);
+    next = verified::lean_output::text(output, capacity, next,
+        " where ty := ", 13);
+    if (row.kind == ir::type_catalog::Structure) {
+        next = verified::lean_output::text(output, capacity, next,
+            "(.structure ", 12);
+    } else {
+        if (row.kind != ir::type_catalog::Enumeration) { return -1; }
+        next = verified::lean_output::text(output, capacity, next,
+            "(.enumeration ", 14);
+    }
+    next = verified::lean_output::natural(output, capacity, next,
+        row.id);
+    return verified::lean_output::text(output, capacity, next, ")\n", 2);
+}
+
+fn variant_value(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table, names: ir::symbol_catalog::Catalog,
+    row: ir::type_catalog::TypeDecl, ordinal: i32) -> i32 {
+    let slot: i32 = row.variant_start + ordinal;
+    let variants: [ir::type_catalog::Variant] = types.variants;
+    let fields: [ir::type_catalog::Field] = types.fields;
+    let variant: ir::type_catalog::Variant = variants[slot];
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, "\nprivate def ", 13);
+    next = verified::lean_syntax::variant_identifier(output,
+        capacity, next, names, slot);
+    next = verified::lean_output::text(output, capacity, next,
+        " : Lanius.TypedIR.Named.Variant ", 32);
+    next = verified::lean_syntax::type_identifier(output, capacity,
+        next, names, row.id);
+    next = verified::lean_output::text(output, capacity, next, " [", 2);
+    let field: i32 = 0;
+    while (field < variant.field_count) {
+        if (field != 0) {
+            next = verified::lean_output::text(output, capacity,
+                next, ", ", 2);
+        }
+        next = field_type(output, capacity, next, types, names,
+            fields[variant.field_start + field]);
+        if (next < 0) { return -1; }
+        field += 1;
+    }
+    next = verified::lean_output::text(output, capacity, next,
+        "] :=\n  Lanius.TypedIR.Named.Variant.named ", 42);
+    next = verified::lean_output::natural(output, capacity, next, row.id);
+    next = verified::lean_output::byte(output, capacity, next, 32);
+    next = verified::lean_output::natural(output, capacity, next, ordinal);
+    next = verified::lean_output::byte(output, capacity, next, 32);
+    if (names.unit_count == 0) {
+        next = verified::lean_output::text(output, capacity, next,
+            "\"\"", 2);
+    } else {
+        if (slot < 0 || slot >= names.variant_count) { return -1; }
+        let references: [ir::symbol_catalog::Ref] = names.variants;
+        next = verified::lean_syntax::source_name(output, capacity, next,
+            names, references[slot]);
+    }
+    return verified::lean_output::text(output, capacity, next,
+        " (by rfl)\n", 10);
+}
+
+pub fn emit(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table,
+    names: ir::symbol_catalog::Catalog) -> i32 {
+    if (types.type_count == 0) { return position; }
+    let memory: ptr = verified::host::alloc_i32(types.type_count);
+    if (memory == 0) { return -1; }
+    let emitted: [i32] = verified::host::i32_slice_from_raw_parts(
+        memory, types.type_count);
+    let rows: [ir::type_catalog::TypeDecl] = types.types;
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, "\n", 1);
+    let index: i32 = 0;
+    while (index < types.type_count) {
+        emitted[index] = 0;
+        index += 1;
+    }
+    let remaining: i32 = types.type_count;
+    let progress: bool = true;
+    while (remaining > 0 && progress) {
+        progress = false;
+        index = 0;
+        while (index < types.type_count) {
+            if (emitted[index] == 0 && declaration_ready(types,
+                    emitted, rows[index])) {
+                next = declaration(output, capacity, next, types,
+                    names, rows[index]);
+                if (next < 0) { return -1; }
+                emitted[index] = 1;
+                remaining -= 1;
+                progress = true;
+            }
+            index += 1;
+        }
+    }
+    if (remaining > 0) {
+        next = verified::lean_output::text(output, capacity, next,
+            "mutual\n", 7);
+        index = 0;
+        while (index < types.type_count) {
+            if (emitted[index] == 0) {
+                next = declaration(output, capacity, next, types,
+                    names, rows[index]);
+                if (next < 0) { return -1; }
+            }
+            index += 1;
+        }
+        next = verified::lean_output::text(output, capacity, next,
+            "end\n", 4);
+    }
+    index = 0;
+    while (index < types.type_count) {
+        next = code_instance(output, capacity, next, names, rows[index]);
+        if (next < 0) { return -1; }
+        index += 1;
+    }
+    index = 0;
+    while (index < types.type_count) {
+        let row: ir::type_catalog::TypeDecl = rows[index];
+        if (row.kind == ir::type_catalog::Enumeration) {
+            let ordinal: i32 = 0;
+            while (ordinal < row.variant_count) {
+                next = variant_value(output, capacity, next, types,
+                    names, row, ordinal);
+                if (next < 0) { return -1; }
+                ordinal += 1;
+            }
+        }
+        index += 1;
+    }
+    return next;
+}

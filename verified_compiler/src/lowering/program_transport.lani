@@ -5,9 +5,12 @@ import lowering::error;
 import lowering::transport;
 import lowering::aliases;
 import lowering::body_units;
+import lowering::ir_catalogs;
+import lowering::ir_names;
 import ir::body_catalog;
 import ir::function_catalog;
 import ir::program;
+import ir::symbol_catalog;
 import ir::body_events;
 import verified::surface_expr;
 import lowering::value_catalog;
@@ -24,6 +27,7 @@ import lowering::unit_descriptor;
 import lowering::unit_context;
 import lowering::value_collection;
 import verified::host;
+import verified::core_transport;
 import verified::extraction;
 import verified::surface_type;
 import verified::syntax_tree;
@@ -437,6 +441,9 @@ fn prepare_catalogs(bundle: Bundle,
             resolution_count: 0,
             value_row_offset: unit * BUNDLE_VALUE_ROW_CAP,
             value_count: 0,
+            declaration_start: -1,
+            declaration_count: 0,
+            module_target: -1,
         };
         unit += 1;
     }
@@ -471,16 +478,43 @@ fn prepare_catalogs(bundle: Bundle,
             lowering::allocation::table_row(allocation_table, row);
         let declaration: lowering::declarations::DeclarationRow =
             lowering::allocation::row_source(allocation);
+        let owner: i32 = lowering::declarations::row_unit(declaration);
+        if (owner <= -1 || owner >= unit_count) { return -1; }
+        if (contexts[owner].declaration_count == 0) {
+            contexts[owner].declaration_start = row;
+        } else {
+            if (row != contexts[owner].declaration_start
+                    + contexts[owner].declaration_count) {
+                return -1;
+            }
+        }
+        contexts[owner].declaration_count += 1;
         lowering::declarations::table_write_row(global_declarations,
             row, declaration);
         let declaration_kind: lowering::declarations::DeclarationKind =
             lowering::declarations::row_kind(declaration);
         if (lowering::declarations::same_kind(declaration_kind,
             lowering::declarations::Invalid)) { return -1; }
+        if (lowering::declarations::same_kind(declaration_kind,
+                lowering::declarations::Module)) {
+            if (contexts[owner].module_target >= 0) { return -1; }
+            contexts[owner].module_target =
+                lowering::declarations::row_target(declaration);
+        }
         declaration_counts = lowering::declarations::add_kind(
             declaration_counts, declaration_kind);
         row += 1;
     }
+    let span_end: i32 = 0;
+    let span_unit: i32 = 0;
+    while (span_unit < unit_count) {
+        if (contexts[span_unit].declaration_start != span_end
+            || contexts[span_unit].declaration_count <= 0
+            || contexts[span_unit].module_target <= -1) { return -1; }
+        span_end += contexts[span_unit].declaration_count;
+        span_unit += 1;
+    }
+    if (span_end != total_rows) { return -1; }
     lowering::declarations::table_write_header(global_declarations,
         declaration_counts);
     let resolution_unit: i32 = 0;
@@ -699,6 +733,10 @@ fn lower_bodies(input: BodyInputs) -> i32 {
         verified::surface_expr::allocation_bytes(
             EXPRESSION_NODE_CAPACITY),
         verified::surface_expr::ALIGNMENT);
+    let expression_kind_code_memory: ptr =
+        verified::host::alloc_i32(EXPRESSION_NODE_CAPACITY);
+    let expression_kind_depth_memory: ptr =
+        verified::host::alloc_i32(EXPRESSION_NODE_CAPACITY);
     let type_output_memory:ptr = verified::host::alloc(
         lowering::types::result_allocation_bytes(TYPE_ARENA_NODE_CAPACITY),
         lowering::types::RESULT_ALIGNMENT);
@@ -708,6 +746,8 @@ fn lower_bodies(input: BodyInputs) -> i32 {
     let alias_work_memory:ptr = verified::host::alloc_i32(BUNDLE_TOKEN_CAP);
     if (value_scratch_memory == 0 || type_scratch_memory == 0
         || resolution_scratch_memory == 0 || expression_memory == 0
+        || expression_kind_code_memory == 0
+        || expression_kind_depth_memory == 0
         || type_output_memory == 0
         || event_memory == 0
         || alias_work_memory == 0) { return -1; }
@@ -802,6 +842,10 @@ fn lower_bodies(input: BodyInputs) -> i32 {
             resolutions: resolution_scratch,
             values: value_scratch,
             expressions: expression_arena,
+            expression_kind_codes: verified::host::i32_slice_from_raw_parts(
+                expression_kind_code_memory, EXPRESSION_NODE_CAPACITY),
+            expression_kind_depths: verified::host::i32_slice_from_raw_parts(
+                expression_kind_depth_memory, EXPRESSION_NODE_CAPACITY),
             type_output: type_output,
             events: ir::body_events::from_raw_parts(event_memory,
                 BODY_EVENT_CAPACITY),
@@ -922,8 +966,7 @@ pub fn error_code(status: LoweringStatus) -> i32 {
 pub struct LoweredProgram {
     status: LoweringStatus,
     transport_words: i32,
-    bodies: ir::body_catalog::Catalog,
-    native: ir::program::Storage,
+    program: ir::program::Program,
 }
 
 fn failure(status: i32) -> LoweredProgram {
@@ -935,8 +978,7 @@ fn failure(status: i32) -> LoweredProgram {
     return LoweredProgram {
         status: reason,
         transport_words: 0,
-        bodies: ir::body_catalog::empty(),
-        native: ir::program::empty(),
+        program: ir::program::empty(),
     };
 }
 
@@ -1086,24 +1128,45 @@ pub fn lower_units(bundle: Bundle,
             functions: functions,
         };
     let final_words: i32 = lowering::transport::lower(transport_input,
-        lowering::transport::region(output, output_capacity), mode);
-    if (final_words <= -1
-        || (mode == lowering::transport::NativeAndCore
-            && final_words < lowering::transport::HEADER)) {
+        lowering::transport::region(output, output_capacity),
+        lowering::transport::NativeOnly);
+    if (final_words <= -1) {
         return failure(final_words);
     }
+    let semantic: lowering::ir_catalogs::Catalogs =
+        lowering::ir_catalogs::build(signature_index, allocation_table);
+    if (!semantic.valid) { return failure(-1); }
+    let names: ir::symbol_catalog::Catalog = lowering::ir_names::build(
+        lowering::ir_names::Input {
+            sources: source_catalog,
+            source_count: unit_count * BUNDLE_SOURCE_CAP,
+            tokens: token_catalog,
+            descriptors: transport_table,
+            allocations: allocation_table,
+            signatures: signature_index,
+            types: semantic.types,
+            functions: functions,
+        });
+    if (names.unit_count != unit_count) { return failure(-1); }
+    let program: ir::program::Program = ir::program::Program {
+        entrypoint: ir::function_catalog::at(functions, 0).id,
+        types: semantic.types,
+        constants: semantic.constants,
+        functions: functions,
+        bodies: typed_bodies,
+        names: names,
+    };
     let transport_words: i32 = 0;
     if (mode == lowering::transport::NativeAndCore) {
-        transport_words = final_words;
+        transport_words = verified::core_transport::serialize(program,
+            output, output_capacity);
+        if (transport_words < lowering::transport::HEADER) {
+            return failure(-1);
+        }
     }
     return LoweredProgram {
         status: Ready,
         transport_words: transport_words,
-        bodies: typed_bodies,
-        native: ir::program::Storage {
-            signatures: signature_index,
-            allocations: allocation_table,
-            functions: functions,
-        },
+        program: program,
     };
 }

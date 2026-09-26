@@ -204,7 +204,12 @@ mutual
            let lengthTyped ← checkExprFuel fuel program context length (.scalar (.signed .i32))
            pure ⟨.slice (.scalar (.signed .i32)), ⟨.i32SliceFromRawParts pointerTyped.down
              lengthTyped.down⟩⟩
-    | .typedSliceFromRawParts _ _ _ => none
+    | .typedSliceFromRawParts element pointer length =>
+        do let elementTyped ← checkRawNominalSliceElement program element
+           let pointerTyped ← checkExprFuel fuel program context pointer (.scalar .rawPtr)
+           let lengthTyped ← checkExprFuel fuel program context length (.scalar (.signed .i32))
+           pure ⟨.slice element, ⟨.typedSliceFromRawParts elementTyped.down
+             pointerTyped.down lengthTyped.down⟩⟩
     | .i32SliceDataPtr slice =>
         do let checked ← checkExprFuel fuel program context slice (.slice (.scalar (.signed .i32)))
            pure ⟨.scalar .rawPtr, ⟨.i32SliceDataPtr checked.down⟩⟩

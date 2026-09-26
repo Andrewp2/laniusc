@@ -1,0 +1,92 @@
+module app::main;
+
+import ir::body_catalog;
+import ir::body_events;
+import ir::constant_catalog;
+import ir::function_catalog;
+import ir::program;
+import ir::symbol_catalog;
+import ir::type_catalog;
+import ir::type_ref;
+import backend::syntax;
+import runtime::service;
+import verified::core_transport;
+import verified::host;
+import verified::lean_program;
+
+fn main() -> i32 {
+    let function_memory: ptr = verified::host::alloc(
+        ir::function_catalog::allocation_bytes(3, 0),
+        ir::function_catalog::ALIGNMENT);
+    let body_memory: ptr = verified::host::alloc(
+        ir::body_catalog::allocation_bytes(2),
+        ir::body_catalog::ALIGNMENT);
+    let event_memory: ptr = verified::host::alloc(
+        ir::body_events::allocation_bytes(2),
+        ir::body_events::ALIGNMENT);
+    let output_memory: ptr = verified::host::alloc_i32(4096);
+    if (function_memory == 0 || body_memory == 0
+        || event_memory == 0 || output_memory == 0) { return 1; }
+    let functions: ir::function_catalog::Table =
+        ir::function_catalog::from_raw_parts(function_memory, 3, 0);
+    let rows: [ir::function_catalog::Function] = functions.functions;
+    rows[0] = ir::function_catalog::Function {
+        kind: ir::function_catalog::DefinedFunction,
+        id: 0, result_type: ir::type_ref::I32,
+        parameters: 0, parameter_start: 0,
+        service: runtime::service::NoService,
+    };
+    rows[1] = ir::function_catalog::Function {
+        kind: ir::function_catalog::RuntimeFunction,
+        id: 1, result_type: ir::type_ref::I32,
+        parameters: 0, parameter_start: 0,
+        service: runtime::service::ArgumentCount,
+    };
+    rows[2] = rows[1];
+    let bodies: ir::body_catalog::Catalog =
+        ir::body_catalog::from_raw_parts(body_memory, 2);
+    let events: ir::body_events::Region =
+        ir::body_events::from_raw_parts(event_memory, 2);
+    let event_rows: [ir::body_events::Event] = events.events;
+    event_rows[0] = ir::body_events::StatementReturnValue;
+    event_rows[1] = ir::body_events::ExpressionInteger(7);
+    if (ir::body_catalog::append(bodies,
+            ir::body_catalog::FunctionSignature {
+                id: 0, result_type: ir::type_ref::I32,
+                parameters: 0,
+            }, events, 2) != 0) { return 2; }
+    let program: ir::program::Program = ir::program::Program {
+        entrypoint: 0,
+        types: ir::type_catalog::empty(),
+        constants: ir::constant_catalog::empty(),
+        functions: functions, bodies: bodies,
+        names: ir::symbol_catalog::empty(),
+    };
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(
+        output_memory, 4096);
+    if (ir::program::valid(program)
+        || verified::lean_program::emit(program, output, 4096, 0) != -1) {
+        return 3;
+    }
+    rows[2].id = 2;
+    if (!ir::program::valid(program)
+        || verified::lean_program::emit(program, output, 4096, 0) <= 0) {
+        return 4;
+    }
+    rows[2].kind = ir::function_catalog::DefinedFunction;
+    rows[2].service = runtime::service::NoService;
+    if (ir::body_catalog::append(bodies,
+            ir::body_catalog::FunctionSignature {
+                id: 2, result_type: ir::type_ref::I32,
+                parameters: 0,
+            }, events, 2) != 1) { return 5; }
+    program.entrypoint = 2;
+    if (!ir::program::valid(program)
+        || verified::lean_program::emit(program, output, 4096, 0) <= 0
+        || verified::core_transport::serialize(program, output, 4096)
+            <= backend::syntax::PROGRAM_HEADER_WORDS) { return 6; }
+    let header: backend::syntax::ProgramHeader =
+        backend::syntax::read_program_header(output);
+    if (header.entry != 2) { return 7; }
+    return 0;
+}

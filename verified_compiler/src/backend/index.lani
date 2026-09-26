@@ -9,14 +9,17 @@ import x86::register;
 
 // RAX holds the evaluated index; slot holds the saved address of the captured
 // descriptor. Compare all 64 length bits before loading any array element.
-// A live nonwrapping packed i32 allocation has at most 2^62 elements. Thus a
-// negative sign-extended i32 always fails the same unsigned length check.
+// A zero word count selects the forward packed-i32 ABI. A positive word count
+// selects the descending nominal-aggregate ABI: the descriptor points at the
+// high word of element zero, and each indexed element occupies whole words.
 pub fn address(output: [i32], capacity: i32,
     work: backend::frame::Workspace, slot: i32,
-    kind: ir::type_ref::TypeRef) -> i32 {
+    kind: ir::type_ref::TypeRef, element_words: i32) -> i32 {
     let state: [backend::frame::State] = backend::frame::state_view(work);
     if (!ir::type_ref::same(kind, ir::type_ref::I32)
-        && !ir::type_ref::same(kind, ir::type_ref::Usize)) { return -1; }
+        && !ir::type_ref::same(kind, ir::type_ref::Usize)
+        || element_words < 0
+        || element_words > backend::layout::MAX_VALUE_WORDS) { return -1; }
     let next: i32 = state[0].code;
     if (ir::type_ref::same(kind, ir::type_ref::I32)) {
         next = x86::encode::sign_extend_i32(output, capacity, next, x86::register::RAX, x86::register::RAX);
@@ -30,7 +33,26 @@ pub fn address(output: [i32], capacity: i32,
     next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_64, x86::encode::Compare, x86::register::RAX, x86::register::R10);
     next = x86::control::branch_over_trap(output, capacity, next,
         x86::control::Below);
-    state[0].code = x86::encode::indexed_address(output, capacity, next,
-        x86::register::RAX, x86::register::R11, x86::register::RAX, 2, 0);
+    if (element_words == 0) {
+        state[0].code = x86::encode::indexed_address(output, capacity, next,
+            x86::register::RAX, x86::register::R11,
+            x86::register::RAX, 2, 0);
+    } else {
+        // The native aggregate layout resolves the complete element width
+        // before codegen. Normalize its high-word pointer to the first word
+        // after subtracting the checked element stride.
+        next = x86::encode::immediate(output, capacity, next,
+            x86::register::WIDTH_64, x86::register::R10,
+            element_words * backend::layout::VALUE_WORD_BYTES, 0);
+        next = x86::encode::multiply(output, capacity, next,
+            x86::register::WIDTH_64, x86::register::RAX,
+            x86::register::R10);
+        next = x86::encode::binary(output, capacity, next,
+            x86::register::WIDTH_64, x86::encode::Subtract,
+            x86::register::R11, x86::register::RAX);
+        state[0].code = x86::encode::address(output, capacity, next,
+            x86::register::RAX, x86::register::R11,
+            (1 - element_words) * backend::layout::VALUE_WORD_BYTES);
+    }
     return state[0].code;
 }

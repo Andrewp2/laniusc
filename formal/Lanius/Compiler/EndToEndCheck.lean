@@ -49,6 +49,8 @@ structure Checked (encoded : String)
   imageAccepted :
     X86.ImageCheck.check X86.ImageCheck.lanius
       certificate.certificate.certificate.elf certificateImage.image = some image
+  enumerationsEmpty :
+    certificate.certificate.backend.executable.program.enumerations = []
 
 /- The checker first authenticates source/Core, then authenticates span
    metadata and constructs the image, then checks the extracted bytes. -/
@@ -74,7 +76,7 @@ def check (encoded : String) (expectedSources : List Extraction.SourceFile)
                     certificate.certificate.certificate.elf certificateImage.image with
               | none => .error .image
               | some imageChecked =>
-                  .ok {
+                  if noEnums : certificate.certificate.backend.executable.program.enumerations = [] then .ok {
                     certificate
                     certificateImage
                     program
@@ -82,7 +84,9 @@ def check (encoded : String) (expectedSources : List Extraction.SourceFile)
                     certificateAccepted
                     imageMetadataAccepted
                     programAccepted
-                    imageAccepted }
+                    imageAccepted
+                    enumerationsEmpty := noEnums }
+                  else .error .program
 
 structure Soundness (encoded : String)
     (expectedSources : List Extraction.SourceFile)
@@ -201,12 +205,6 @@ theorem check_sound {encoded : String}
   have imageMetadata :=
     X86.CertificateImageCheck.check_sound checked.imageMetadataAccepted
   have transportTarget := transport_target certificate.2.2.2.2.2.2.2.2.2
-  have noEnumerations :
-      checked.certificate.certificate.backend.executable.program.enumerations = [] := by
-    change checked.certificate.lowering.program =
-      checked.certificate.certificate.backend.executable.program at programLowering
-    rw [← programLowering]
-    exact checked.certificate.lowering.noEnumerations
   have loadedFromElf := fun (machine : X86.Machine.State)
       (mapped : X86.Machine.CodeAt machine.memory X86.ImageCheck.lanius.base
         checked.certificate.certificate.certificate.elf) =>
@@ -226,7 +224,7 @@ theorem check_sound {encoded : String}
     executableWellFormed := certificate.2.2.2.2.2.2.2.2.1
     canonicalTransport := certificate.2.2.2.2.2.2.2.2.2
     programTarget := transportTarget
-    enumerationsEmpty := noEnumerations
+    enumerationsEmpty := checked.enumerationsEmpty
     spanCountExact := imageMetadata.1
     spansWellFormed := imageMetadata.2
     functionsExact := X86.ProgramCheck.Authenticated.functions_exact checked.program

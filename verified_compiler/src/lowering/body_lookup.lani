@@ -126,13 +126,31 @@ fn enum_variant_binding(binding: lowering::value_catalog::ValueBinding)
 fn binding_index(values: lowering::value_catalog::ValueTable,
     token: i32, kind: lowering::value_catalog::ValueBindingKind,
     qualified: bool) -> i32 {
+    // The authenticated caller-local catalog is sorted by token, then scope.
+    // Find its token span once instead of rescanning every binding for every
+    // identifier occurrence in a large function body.
+    if (token <= -1 || values.count <= -1) { return -1; }
+    let low: i32 = 0;
+    let high: i32 = values.count;
+    while (low < high) {
+        let middle: i32 = low + (high - low) / 2;
+        let candidate: lowering::value_catalog::ValueBinding =
+            lowering::value_catalog::read_binding(values, middle);
+        if (lowering::value_catalog::binding_token(candidate) < token) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
     let imported: i32 = -1;
-    let row: i32 = 0;
+    let row: i32 = low;
     while (row < values.count) {
         let binding: lowering::value_catalog::ValueBinding =
             lowering::value_catalog::read_binding(values, row);
-        if (lowering::value_catalog::binding_token(binding) == token
-            && lowering::value_catalog::binding_is_kind(binding, kind)) {
+        if (lowering::value_catalog::binding_token(binding) != token) {
+            return imported;
+        }
+        if (lowering::value_catalog::binding_is_kind(binding, kind)) {
             if (!qualified && lowering::value_catalog::binding_is_scope(
                     binding, lowering::value_catalog::LocalBinding)) {
                 return row;
@@ -215,6 +233,46 @@ pub fn callable_path_id(context: BodyContext, path_expression: i32) -> i32 {
             context.source_catalog, context.token_catalog);
     let allocations: lowering::allocation::Table = context.allocated;
     let rows: i32 = lowering::allocation::table_header(allocations).rows;
+    let candidate_slot: i32 = binding_index(context.values, name,
+        lowering::value_catalog::CallableBinding, true);
+    if (candidate_slot >= 0) {
+        let candidate_id: i32 = callable_binding_id(
+            lowering::value_catalog::read_binding(context.values,
+                candidate_slot));
+        let candidate_row: i32 = 0;
+        while (candidate_row < rows) {
+            let selected: lowering::allocation::AllocationRow =
+                lowering::allocation::table_row(allocations, candidate_row);
+            if (lowering::allocation::row_core_id(selected) == candidate_id
+                && (lowering::allocation::row_has_kind(selected,
+                        lowering::declarations::Function)
+                    || lowering::allocation::row_has_kind(selected,
+                        lowering::declarations::External))) {
+                let owner: i32 = lowering::allocation::row_unit(selected);
+                if (lowering::token_names::same(catalog,
+                        context.owner_unit, name, owner,
+                        lowering::allocation::row_name(selected))
+                    && lowering::resolution_catalog::expression_owner_visible(
+                        lowering::resolution_catalog::ExpressionOwnerInput {
+                            unit: context.owner_unit,
+                            owner: owner,
+                            path: path,
+                            arena: arena,
+                            contexts: context.contexts,
+                            sources: context.source_catalog,
+                            tokens: context.token_catalog,
+                            declarations: context.global_declarations,
+                            trees: context.trees,
+                            public_declaration:
+                                lowering::allocation::row_is_public(selected),
+                        })) {
+                    return candidate_id;
+                }
+                candidate_row = rows;
+            }
+            candidate_row += 1;
+        }
+    }
     let found: i32 = -1;
     let row: i32 = 0;
     while (row < rows) {

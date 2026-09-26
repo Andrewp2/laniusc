@@ -5,7 +5,20 @@ belong in proofs, not in a runtime address-translation table. The x86 allocator
 already returns native addresses; this decision does not add another allocator
 or change its emitted code.
 
-## Confirmed raw-view alias mismatch — September 16
+The Lanius-written x86 compiler now accepts nominal raw slices in its typed IR.
+Their descriptor holds a pointer to the high word of element zero and a length;
+successive aggregate elements descend by the element's resolved eight-byte-word
+width. At each index, codegen normalizes that high-word address to its low word
+before using its existing positive struct-field offsets. Packed `[i32]` slices
+retain their separate forward, four-byte stride. Core now represents nominal
+raw slices as heap aliases and supports indexed reads, scalar-field writes,
+and value iteration through the same native layout. Direct Lean emission accepts
+nominal elements composed of i32, bool, usize, pointer, and nested nominal
+values; it rejects descriptor-bearing fields until their lifetime and byte
+representation are modeled. This is an executable semantics boundary, not yet
+a proof that emitted x86 preserves it.
+
+## Historical raw-view alias mismatch — September 16
 
 The current Core semantics and native backend disagree on repeated views of
 the same allocation. `mapRawI32Slice` always copies the block into a fresh
@@ -27,13 +40,9 @@ until the semantics and backend agree; the test does not accept disagreement.
 Logs are `raw-alias-all-cases.log` and `raw-alias-observation.log` under
 `target/verified-compiler`.
 
-The proposed correction is to reuse an existing registered backing place for
-an already-mapped raw address, retaining protection and size checks. This would
-change the authoritative Core semantics and the always-fresh-cell theorem
-contracts, including typing, renaming, registry, and raw-constructor proofs.
-It has **not** been implemented; the user has been asked to choose shared
-storage versus preserving Core's current snapshot behavior in the backend.
-Existing snapshot and bounded-store theorems do not close this discrepancy.
+The i32 raw-slice path now reuses a registered view for an identical raw
+address and length. The historical result above records the mismatch that led
+to that change; it is not a current passing test or a full aliasing proof.
 
 ## Implemented boundary
 

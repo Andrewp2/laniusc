@@ -54,6 +54,10 @@ fn main() -> i32 {
         || backend::layout_index::words(table, structure_ref) != 3
         || backend::layout_index::words(table, enumeration_ref) != 5
         || backend::layout_index::words(table,
+            ir::type_ref::NominalSlice(0)) != 2
+        || backend::layout_index::words(table,
+            ir::type_ref::NominalSlice(2)) != -1
+        || backend::layout_index::words(table,
             ir::type_ref::String) != 2) {
         return 4;
     }
@@ -133,6 +137,7 @@ fn main() -> i32 {
     if (backend::layout::aggregate(ir::type_ref::I32)
         || !backend::layout::aggregate(ir::type_ref::String)
         || !backend::layout::aggregate(ir::type_ref::Slice)
+        || !backend::layout::aggregate(ir::type_ref::NominalSlice(0))
         || !backend::layout::aggregate(ir::type_ref::Nominal(0))
         || backend::layout::aggregate(ir::type_ref::Nominal(-1))
         || backend::layout::aggregate(overflow_nominal)

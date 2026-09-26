@@ -564,11 +564,12 @@ fn main() -> i32 {
     let second_body: ir::body_catalog::FunctionBody =
         ir::body_catalog::at(body_catalog, 1);
     if (first_body.signature.id != 2 || second_body.signature.id != 3
-        || first_body.count <= 0 || second_body.count <= 0) { return 34; }
+        || first_body.tree.count <= 0
+        || second_body.tree.count <= 0) { return 34; }
     let calls: i32 = 0;
-    let first_events: [ir::body_events::Event] = first_body.events;
+    let first_events: [ir::body_events::Event] = first_body.tree.events;
     let scan: i32 = 0;
-    while (scan < first_body.count) {
+    while (scan < first_body.tree.count) {
         let target: i32 = call_target(first_events[scan]);
         if (target >= 0) {
             if (target != 3) { return 37; }

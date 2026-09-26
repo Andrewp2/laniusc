@@ -1,0 +1,6 @@
+module app::main;
+
+fn main() -> i32 {
+    let values: [i32] = slice_from_raw_parts(7, 2);
+    return values[0];
+}

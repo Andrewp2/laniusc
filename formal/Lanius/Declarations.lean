@@ -31,7 +31,7 @@ def SourcePack.file? (pack : SourcePack) (id : FileId) : Option SourceFile :=
 structure ItemAddress where
   file : FileId
   index : Nat
-deriving DecidableEq, Repr
+deriving DecidableEq, BEq, Hashable, Repr
 
 def SourcePack.item? (pack : SourcePack) (address : ItemAddress) : Option Surface.Item := do
   let file ← pack.file? address.file
@@ -138,7 +138,7 @@ inductive DeclarationOccurrence where
   | enumVariant (parent : ItemAddress) (index : Nat)
   | traitMethod (parent : ItemAddress) (index : Nat)
   | implementationMethod (parent : ItemAddress) (index : Nat)
-deriving DecidableEq, Repr
+deriving DecidableEq, BEq, Hashable, Repr
 
 structure DeclarationHeader where
   source : DeclarationOccurrence

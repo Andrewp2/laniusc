@@ -111,13 +111,21 @@ fn return_value(context: BodyContext, surface: i32, output: Region, position: i3
     return lowering::body_expression::expression_from_surface_expected(
         context, surface, context.return_kind, output, next, depth - 1);
 }
+fn return_void(context: BodyContext, output: Region, position: i32) -> i32 {
+    if (!ir::type_ref::same(context.return_kind, ir::type_ref::Void)) {
+        return lowering::body_context::invalid();
+    }
+    return lowering::body_event_write::statement_return(
+        output, position, backend::syntax::Absent);
+}
 fn expression_statement(context: BodyContext, surface: i32, output: Region, position: i32, depth: i32) -> i32 {
     let next: i32 = lowering::body_event_write::statement_expression(output, position);
     return lowering::body_expression::expression_from_surface(context, surface, output, next, depth - 1);
 }
 fn while_statement(context: BodyContext, loop: verified::surface_statement::ConditionalBlock, output: Region, position: i32, depth: i32) -> i32 {
     let next: i32 = lowering::body_event_write::statement_while(output, position);
-    next = lowering::body_expression::expression_from_surface(context, loop.condition, output, next, depth - 1);
+    next = lowering::body_expression::expression_from_surface_expected(
+        context, loop.condition, ir::type_ref::Bool, output, next, depth - 1);
     if (next <= -1) {
         return next;
     }
@@ -131,7 +139,8 @@ fn else_branch(context: BodyContext, otherwise: verified::surface_statement::Els
 }
 fn if_statement(context: BodyContext, branch: verified::surface_statement::Branch, output: Region, position: i32, depth: i32) -> i32 {
     let next: i32 = lowering::body_event_write::statement_if(output, position);
-    next = lowering::body_expression::expression_from_surface(context, branch.condition, output, next, depth - 1);
+    next = lowering::body_expression::expression_from_surface_expected(
+        context, branch.condition, ir::type_ref::Bool, output, next, depth - 1);
     if (next <= -1) {
         return next;
     }
@@ -147,7 +156,7 @@ fn statement(context: BodyContext, node: i32, output: Region, position: i32, dep
     }
     let parsed: verified::surface_statement::Statement = verified::surface_statement::read(context.tree, node);
     return match (parsed) {
-        verified::surface_statement::ReturnVoid -> lowering::body_event_write::statement_return(output, position, backend::syntax::Absent),
+        verified::surface_statement::ReturnVoid -> return_void(context, output, position),
         verified::surface_statement::ReturnValue(surface) -> return_value(context, surface, output, position, depth),
         verified::surface_statement::Expression(expression_surface) -> expression_statement(context, expression_surface, output, position, depth),
         verified::surface_statement::Let(binding) -> lower_let(context, binding, output, position, depth),

@@ -1,0 +1,158 @@
+module app::main;
+
+import ir::body_events;
+import ir::body_tree;
+import ir::type_ref;
+import verified::host;
+
+fn main() -> i32 {
+    let memory: ptr = verified::host::alloc(
+        ir::body_events::allocation_bytes(8),
+        ir::body_events::ALIGNMENT);
+    if (memory == 0) { return 1; }
+    let region: ir::body_events::Region =
+        ir::body_events::from_raw_parts(memory, 8);
+    let events: [ir::body_events::Event] = region.events;
+
+    // return 2 + 3 * 4
+    events[0] = ir::body_events::StatementReturnValue;
+    events[1] = ir::body_events::ExpressionBinaryAdd;
+    events[2] = ir::body_events::ExpressionInteger(2);
+    events[3] = ir::body_events::ExpressionBinaryMultiply;
+    events[4] = ir::body_events::ExpressionInteger(3);
+    events[5] = ir::body_events::ExpressionInteger(4);
+    let arithmetic: ir::body_tree::Tree =
+        ir::body_tree::build(region, 6);
+    if (!ir::body_tree::valid(arithmetic)
+        || ir::body_tree::kind(arithmetic, 0)
+            != ir::body_tree::StatementNode
+        || ir::body_tree::subtree_end(arithmetic, 0) != 6
+        || ir::body_tree::child(arithmetic, 0, 0) != 1
+        || ir::body_tree::child(arithmetic, 1, 0) != 2
+        || ir::body_tree::child(arithmetic, 1, 1) != 3
+        || ir::body_tree::child(arithmetic, 3, 1) != 5
+        || ir::body_tree::subtree_end(arithmetic, 2) != 3
+        || ir::body_tree::child_count(arithmetic, 1) != 2
+        || ir::body_tree::first_child(arithmetic, 1) != 2
+        || ir::body_tree::next_sibling(arithmetic, 1, 2) != 3
+        || ir::body_tree::next_sibling(arithmetic, 1, 3) != -1
+        || ir::body_tree::child(arithmetic, 1, 2) != -1) { return 2; }
+    let ends: [i32] = arithmetic.ends;
+    ends[1] = 5;
+    if (ir::body_tree::valid(arithmetic)) { return 10; }
+    ends[1] = 6;
+
+    // Assignment owns a place and an expression; the place owns an index.
+    events[0] = ir::body_events::StatementSequence;
+    events[1] = ir::body_events::StatementExpression;
+    events[2] = ir::body_events::ExpressionAssignmentSet;
+    events[3] = ir::body_events::PlaceIndex;
+    let place_local: ir::body_events::LocalReference =
+        ir::body_events::LocalReference { id: 1 };
+    events[4] = ir::body_events::PlaceLocal(place_local);
+    events[5] = ir::body_events::ExpressionInteger(0);
+    events[6] = ir::body_events::ExpressionInteger(7);
+    events[7] = ir::body_events::StatementSkip;
+    let assignment: ir::body_tree::Tree =
+        ir::body_tree::build(region, 8);
+    if (!ir::body_tree::valid(assignment)
+        || ir::body_tree::child(assignment, 0, 1) != 7
+        || ir::body_tree::child(assignment, 2, 0) != 3
+        || ir::body_tree::child(assignment, 2, 1) != 6
+        || ir::body_tree::child(assignment, 3, 0) != 4
+        || ir::body_tree::child(assignment, 3, 1) != 5
+        || ir::body_tree::subtree_end(assignment, 3) != 6) {
+        return 3;
+    }
+
+    let match_header: ir::body_events::MatchHeader =
+        ir::body_events::MatchHeader {
+            result_kind: ir::type_ref::I32,
+            scrutinee_type_id: 0, arm_count: 1,
+        };
+    let variant: ir::body_events::EnumVariant =
+        ir::body_events::EnumVariant {
+            type_id: 0, ordinal: 0, payload_count: 0,
+        };
+    let arm: ir::body_events::MatchArm =
+        ir::body_events::MatchArm { ordinal: 0, binding_count: 1 };
+    let binding: ir::body_events::LocalReference =
+        ir::body_events::LocalReference { id: 2 };
+    events[0] = ir::body_events::ExpressionMatch(match_header);
+    events[1] = ir::body_events::ExpressionEnumeration(variant);
+    events[2] = ir::body_events::MatchArmHeader(arm);
+    events[3] = ir::body_events::MatchBinding(binding);
+    events[4] = ir::body_events::ExpressionInteger(9);
+    let matching: ir::body_tree::Tree =
+        ir::body_tree::build(region, 5);
+    if (!ir::body_tree::valid(matching)
+        || ir::body_tree::child(matching, 0, 0) != 1
+        || ir::body_tree::child(matching, 0, 1) != 2
+        || ir::body_tree::child(matching, 2, 0) != 3
+        || ir::body_tree::child(matching, 2, 1) != 4
+        || ir::body_tree::subtree_end(matching, 0) != 5) {
+        return 4;
+    }
+
+    let local: ir::body_events::LocalDeclaration =
+        ir::body_events::LocalDeclaration {
+            id: 3, kind: ir::type_ref::I32,
+        };
+    events[0] = ir::body_events::StatementLet(local);
+    events[1] = ir::body_events::ExpressionInteger(7);
+    events[2] = ir::body_events::StatementIf;
+    events[3] = ir::body_events::ExpressionBoolean(true);
+    events[4] = ir::body_events::StatementReturnValue;
+    events[5] = ir::body_events::ExpressionInteger(1);
+    events[6] = ir::body_events::StatementReturnValue;
+    events[7] = ir::body_events::ExpressionInteger(0);
+    let branching: ir::body_tree::Tree =
+        ir::body_tree::build(region, 8);
+    if (!ir::body_tree::valid(branching)
+        || ir::body_tree::child(branching, 0, 0) != 1
+        || ir::body_tree::child(branching, 0, 1) != 2
+        || ir::body_tree::child(branching, 2, 0) != 3
+        || ir::body_tree::child(branching, 2, 1) != 4
+        || ir::body_tree::child(branching, 2, 2) != 6
+        || ir::body_tree::subtree_end(branching, 0) != 8) {
+        return 9;
+    }
+
+    events[0] = ir::body_events::StatementReturnValue;
+    events[1] = ir::body_events::StatementSkip;
+    if (ir::body_tree::valid(ir::body_tree::build(region, 2))) {
+        return 5;
+    }
+    events[0] = ir::body_events::ExpressionBinaryAdd;
+    events[1] = ir::body_events::ExpressionInteger(1);
+    if (ir::body_tree::valid(ir::body_tree::build(region, 2))) {
+        return 6;
+    }
+    events[0] = ir::body_events::ExpressionInteger(1);
+    events[1] = ir::body_events::ExpressionInteger(2);
+    if (ir::body_tree::valid(ir::body_tree::build(region, 2))) {
+        return 7;
+    }
+    match_header.arm_count = 0;
+    events[0] = ir::body_events::ExpressionMatch(match_header);
+    events[1] = ir::body_events::ExpressionInteger(1);
+    if (ir::body_tree::valid(ir::body_tree::build(region, 2))) {
+        return 8;
+    }
+    let cast_target: ir::body_events::CastTarget =
+        ir::body_events::CastTarget { kind: ir::type_ref::Usize };
+    events[0] = ir::body_events::StatementReturnValue;
+    events[1] = ir::body_events::ExpressionCast(cast_target);
+    events[2] = ir::body_events::ExpressionInteger(7);
+    let cast_tree: ir::body_tree::Tree = ir::body_tree::build(region, 3);
+    if (!ir::body_tree::valid(cast_tree)
+        || ir::body_tree::child(cast_tree, 1, 0) != 2) {
+        return 11;
+    }
+    cast_target.kind = ir::type_ref::Pointer;
+    events[1] = ir::body_events::ExpressionCast(cast_target);
+    if (ir::body_tree::valid(ir::body_tree::build(region, 3))) {
+        return 12;
+    }
+    return 0;
+}

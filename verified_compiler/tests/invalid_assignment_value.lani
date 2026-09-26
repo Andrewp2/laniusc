@@ -1,0 +1,7 @@
+module app::main;
+
+fn main() -> i32 {
+    let answer: i32 = 0;
+    answer = true;
+    return answer;
+}

@@ -1,0 +1,150 @@
+module app::main;
+
+import ir::body_catalog;
+import ir::body_events;
+import ir::constant_catalog;
+import ir::function_catalog;
+import ir::program;
+import ir::symbol_catalog;
+import ir::type_catalog;
+import ir::type_ref;
+import runtime::service;
+import verified::host;
+import verified::lean_program;
+
+fn main() -> i32 {
+    let type_memory: ptr = verified::host::alloc(
+        ir::type_catalog::allocation_bytes(1, 1, 0),
+        ir::type_catalog::ALIGNMENT);
+    let function_memory: ptr = verified::host::alloc(
+        ir::function_catalog::allocation_bytes(1, 0),
+        ir::function_catalog::ALIGNMENT);
+    let body_memory: ptr = verified::host::alloc(
+        ir::body_catalog::allocation_bytes(1),
+        ir::body_catalog::ALIGNMENT);
+    let event_memory: ptr = verified::host::alloc(
+        ir::body_events::allocation_bytes(6),
+        ir::body_events::ALIGNMENT);
+    let output_memory: ptr = verified::host::alloc_i32(4096);
+    if (type_memory == 0 || function_memory == 0
+        || body_memory == 0 || event_memory == 0
+        || output_memory == 0) { return 1; }
+
+    let types: ir::type_catalog::Table =
+        ir::type_catalog::from_raw_parts(type_memory, 1, 1, 0);
+    let type_rows: [ir::type_catalog::TypeDecl] = types.types;
+    let variants: [ir::type_catalog::Variant] = types.variants;
+    type_rows[0] = ir::type_catalog::TypeDecl {
+        kind: ir::type_catalog::Enumeration, id: 0,
+        field_start: -1, field_count: 0,
+        variant_start: 0, variant_count: 1,
+    };
+    variants[0] = ir::type_catalog::Variant {
+        field_start: 0, field_count: 0,
+    };
+    let functions: ir::function_catalog::Table =
+        ir::function_catalog::from_raw_parts(function_memory, 1, 0);
+    let function_rows: [ir::function_catalog::Function] = functions.functions;
+    function_rows[0] = ir::function_catalog::Function {
+        kind: ir::function_catalog::DefinedFunction,
+        id: 0, result_type: ir::type_ref::I32,
+        parameters: 0, parameter_start: 0,
+        service: runtime::service::NoService,
+    };
+    let bodies: ir::body_catalog::Catalog =
+        ir::body_catalog::from_raw_parts(body_memory, 1);
+    let events: ir::body_events::Region =
+        ir::body_events::from_raw_parts(event_memory, 6);
+    let rows: [ir::body_events::Event] = events.events;
+    let match_header: ir::body_events::MatchHeader =
+        ir::body_events::MatchHeader {
+            result_kind: ir::type_ref::I32,
+            scrutinee_type_id: 0, arm_count: 1,
+        };
+    let constructor: ir::body_events::EnumVariant =
+        ir::body_events::EnumVariant {
+            type_id: 0, ordinal: 0, payload_count: 0,
+        };
+    let arm: ir::body_events::MatchArm =
+        ir::body_events::MatchArm {
+            ordinal: 0, binding_count: 0,
+        };
+    rows[0] = ir::body_events::StatementReturnValue;
+    rows[1] = ir::body_events::ExpressionMatch(match_header);
+    rows[2] = ir::body_events::ExpressionEnumeration(constructor);
+    rows[3] = ir::body_events::MatchArmHeader(arm);
+    rows[4] = ir::body_events::ExpressionInteger(7);
+    let signature: ir::body_catalog::FunctionSignature =
+        ir::body_catalog::FunctionSignature {
+            id: 0, result_type: ir::type_ref::I32, parameters: 0,
+        };
+    if (ir::body_catalog::append(bodies, signature, events, 5) != 0) {
+        return 2;
+    }
+    let program: ir::program::Program = ir::program::Program {
+        entrypoint: 0,
+        types: types,
+        constants: ir::constant_catalog::empty(),
+        functions: functions, bodies: bodies,
+        names: ir::symbol_catalog::empty(),
+    };
+    if (!ir::program::valid(program)) { return 3; }
+
+    ir::body_catalog::clear(bodies);
+    arm.binding_count = 1;
+    rows[3] = ir::body_events::MatchArmHeader(arm);
+    let binding: ir::body_events::LocalReference =
+        ir::body_events::LocalReference { id: 9 };
+    rows[4] = ir::body_events::MatchBinding(binding);
+    rows[5] = ir::body_events::ExpressionInteger(7);
+    if (ir::body_catalog::append(bodies, signature, events, 6) != 0) {
+        return 4;
+    }
+    if (ir::program::valid(program)) { return 5; }
+
+    ir::body_catalog::clear(bodies);
+    arm.binding_count = 0;
+    rows[3] = ir::body_events::MatchArmHeader(arm);
+    rows[4] = ir::body_events::ExpressionInteger(7);
+    constructor.ordinal = 1;
+    rows[2] = ir::body_events::ExpressionEnumeration(constructor);
+    if (ir::body_catalog::append(bodies, signature, events, 5) != 0) {
+        return 6;
+    }
+    if (ir::program::valid(program)) { return 7; }
+
+    ir::body_catalog::clear(bodies);
+    function_rows[0].result_type = ir::type_ref::NominalSlice(0);
+    signature.result_type = ir::type_ref::NominalSlice(0);
+    let element: ir::body_events::SliceElement =
+        ir::body_events::SliceElement {
+            kind: ir::body_events::EnumerationSlice, id: 0,
+        };
+    rows[0] = ir::body_events::StatementReturnValue;
+    rows[1] = ir::body_events::ExpressionTypedSliceFromRawParts(element);
+    rows[2] = ir::body_events::ExpressionPointerNull;
+    rows[3] = ir::body_events::ExpressionInteger(0);
+    if (ir::body_catalog::append(bodies, signature, events, 4) != 0) {
+        return 8;
+    }
+    if (!ir::program::valid(program)) { return 8; }
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(
+        output_memory, 4096);
+    if (verified::lean_program::emit(program, output, 4096, 0) <= 0) {
+        return 11;
+    }
+
+    ir::body_catalog::clear(bodies);
+    element.kind = ir::body_events::StructureSlice;
+    rows[1] = ir::body_events::ExpressionTypedSliceFromRawParts(element);
+    if (ir::body_catalog::append(bodies, signature, events, 4) != 0
+        || ir::program::valid(program)) { return 9; }
+
+    ir::body_catalog::clear(bodies);
+    element.kind = ir::body_events::I32Slice;
+    element.id = 1;
+    rows[1] = ir::body_events::ExpressionTypedSliceFromRawParts(element);
+    if (ir::body_catalog::append(bodies, signature, events, 4) != 0
+        || ir::program::valid(program)) { return 10; }
+    return 0;
+}

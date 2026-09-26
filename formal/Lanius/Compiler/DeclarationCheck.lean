@@ -7,11 +7,12 @@ open Lanius.Declarations
 open Lanius.Compiler.ProgramLowering
 
 inductive Failure | catalogHeaderMissing | sourceMismatch | coreMissing | coreShapeMismatch
-  | duplicateOccurrence | missingDeclaration | extraEnumeration | unsupportedAlias
+  | duplicateOccurrence | missingDeclaration | unsupportedAlias
   deriving DecidableEq, Repr
 
 inductive CoreKey where
-  | structure (id : TypeId) | constant (id : ConstantId) | function (id : FunctionId)
+  | structure (id : TypeId) | enumeration (id : TypeId)
+  | constant (id : ConstantId) | function (id : FunctionId)
   deriving DecidableEq, Repr
 
 structure CandidateRow where
@@ -30,11 +31,13 @@ theorem findById_mem {id : Nat} {key : α → Nat} {values : List α} {value : �
 
 def coreOf? (program : Core.Program) : CoreKey → Option CoreDeclaration
   | .structure id => (findById id (·.id) program.structures).map .structure
+  | .enumeration id => (findById id (·.id) program.enumerations).map .enumeration
   | .constant id => (findById id (·.id) program.constants).map .constant
   | .function id => (findById id (·.id) program.functions).map .function
 
 def coreMatches (header : DeclarationHeader) : CoreDeclaration → Bool
   | .structure d => if header.kind = .structureType then d.id == header.declaration else false
+  | .enumeration d => if header.kind = .enumeration then d.id == header.declaration else false
   | .constant d => if header.kind = .constant then d.id == header.declaration else false
   | .function d => if header.kind = .function then d.id == header.declaration &&
       (match d.body, d.external with | some _, none => true | _, _ => false)
@@ -79,7 +82,10 @@ theorem headerMatches_occurs {pack : Declarations.SourcePack} {header : Declarat
   | .implementationMethod fileFound itemFound childFound => .implementationMethod fileFound itemFound childFound
 
 def programKeys (program : Core.Program) : List CoreKey :=
-  program.structures.map (fun declaration => .structure declaration.id) ++ program.constants.map (fun declaration => .constant declaration.id) ++ program.functions.map (fun declaration => .function declaration.id)
+  program.structures.map (fun declaration => .structure declaration.id) ++
+    program.enumerations.map (fun declaration => .enumeration declaration.id) ++
+    program.constants.map (fun declaration => .constant declaration.id) ++
+    program.functions.map (fun declaration => .function declaration.id)
 
 def keysCovered (rows : List CoreKey) (keys : List CoreKey) : Bool :=
   keys.all (fun key => decide (key ∈ rows))
@@ -89,7 +95,8 @@ def headersCovered (headers : List DeclarationHeader) (candidates : List Candida
 
 def isRuntimeHeader : DeclarationHeader → Bool
   | { kind := .function, .. } | { kind := .externalFunction, .. } |
-    { kind := .constant, .. } | { kind := .structureType, .. } => true
+    { kind := .constant, .. } | { kind := .structureType, .. } |
+    { kind := .enumeration, .. } => true
   | _ => false
 
 def runtimeHeaders (headers : List DeclarationHeader) : List DeclarationHeader :=
@@ -110,11 +117,11 @@ theorem runtimeOccurs_of_itemFound {pack : SourcePack} {address : ItemAddress}
   | externFunction declaration => exact .externalFunction fileFound itemFound
   | constant name isPublic type value => exact .constant fileFound itemFound
   | «structure» declaration => exact .structureType fileFound itemFound
+  | enumeration declaration => exact .enumeration fileFound itemFound
   | module path => simp [RuntimeItem] at runtime
   | importPath path => simp [RuntimeItem] at runtime
   | importString path => simp [RuntimeItem] at runtime
   | typeAlias name isPublic parameters predicates target => simp [RuntimeItem] at runtime
-  | enumeration declaration => simp [RuntimeItem] at runtime
   | trait declaration => simp [RuntimeItem] at runtime
   | implementation declaration => simp [RuntimeItem] at runtime
 
@@ -213,6 +220,16 @@ theorem coreOf_structure_eq (program : Core.Program) (declaration : Core.StructD
   simp only [coreOf?, Option.map_eq_some_iff] at h; rcases h with ⟨found, hv, rfl⟩
   simpa [findById_eq_of_mem_nodup unique member hv rfl]
 
+theorem coreOf_enumeration_eq (program : Core.Program) (declaration : Core.EnumDecl)
+    (unique : (program.enumerations.map (fun value => value.id)).Nodup)
+    (member : declaration ∈ program.enumerations)
+    {core : CoreDeclaration}
+    (h : coreOf? program (.enumeration declaration.id) = some core) :
+    core = .enumeration declaration := by
+  simp only [coreOf?, Option.map_eq_some_iff] at h
+  rcases h with ⟨found, hv, rfl⟩
+  simpa [findById_eq_of_mem_nodup unique member hv rfl]
+
 theorem coreOf_constant_eq (program : Core.Program) (declaration : Core.Constant)
     (unique : (program.constants.map (fun value => value.id)).Nodup) (member : declaration ∈ program.constants)
     {core : CoreDeclaration} (h : coreOf? program (.constant declaration.id) = some core) : core = .constant declaration := by
@@ -232,7 +249,11 @@ theorem checked_key_witness {pack : SourcePack} {catalog : Catalog} {program : C
   rcases List.mem_map.mp candidateMem with ⟨checked, checkedMem, checkedCandidate⟩
   exact ⟨checked, checkedMem, (congrArg CandidateRow.core checkedCandidate).trans candidateKey⟩
 
-abbrev programIdsUnique (program : Core.Program) : Prop := (program.structures.map (fun declaration => declaration.id)).Nodup ∧ (program.constants.map (fun declaration => declaration.id)).Nodup ∧ (program.functions.map (fun declaration => declaration.id)).Nodup
+abbrev programIdsUnique (program : Core.Program) : Prop :=
+  (program.structures.map (fun declaration => declaration.id)).Nodup ∧
+    (program.enumerations.map (fun declaration => declaration.id)).Nodup ∧
+    (program.constants.map (fun declaration => declaration.id)).Nodup ∧
+    (program.functions.map (fun declaration => declaration.id)).Nodup
 
 abbrev CheckedDistinct {pack : SourcePack} {catalog : Catalog} {program : Core.Program} (left right : CheckedRow pack catalog program) : Prop := left.row.occurrence ≠ right.row.occurrence
 
@@ -291,22 +312,42 @@ theorem program_coverage
     {checks : List (CheckedRow pack catalog program)}
     (keys : keysCovered ((checks.map CheckedRow.candidate).map CandidateRow.core) (programKeys program) = true) :
     (∀ declaration, declaration ∈ program.structures → ∃ checked, checked ∈ checks ∧ checked.row.core = .structure declaration) ∧
+    (∀ declaration, declaration ∈ program.enumerations → ∃ checked, checked ∈ checks ∧ checked.row.core = .enumeration declaration) ∧
     (∀ declaration, declaration ∈ program.constants → ∃ checked, checked ∈ checks ∧ checked.row.core = .constant declaration) ∧
     (∀ declaration, declaration ∈ program.functions → ∃ checked, checked ∈ checks ∧ checked.row.core = .function declaration) := by
   have keysMem := keysCovered_sound keys
-  have structuresUnique := programUnique.1; have constantsUnique := programUnique.2.1; have functionsUnique := programUnique.2.2
+  have structuresUnique := programUnique.1
+  have enumerationsUnique := programUnique.2.1
+  have constantsUnique := programUnique.2.2.1
+  have functionsUnique := programUnique.2.2.2
   constructor
   · intro declaration declarationMem
-    have km : CoreKey.structure declaration.id ∈ programKeys program := List.mem_append_left _ (List.mem_append_left _ (List.mem_map.mpr ⟨declaration, declarationMem, rfl⟩))
+    have km : CoreKey.structure declaration.id ∈ programKeys program := by
+      simp only [programKeys, List.mem_append, List.mem_map]
+      exact Or.inl (Or.inl (Or.inl ⟨declaration, declarationMem, rfl⟩))
     obtain ⟨checked, cm, ck⟩ := checked_key_witness (keysMem _ km); have hc := checked.core; rw [ck] at hc
     exact ⟨checked, cm, coreOf_structure_eq program declaration structuresUnique declarationMem hc⟩
   constructor
   · intro declaration declarationMem
-    have km : CoreKey.constant declaration.id ∈ programKeys program := List.mem_append_left _ (List.mem_append_right _ (List.mem_map.mpr ⟨declaration, declarationMem, rfl⟩))
+    have km : CoreKey.enumeration declaration.id ∈ programKeys program := by
+      simp only [programKeys, List.mem_append, List.mem_map]
+      exact Or.inl (Or.inl (Or.inr ⟨declaration, declarationMem, rfl⟩))
+    obtain ⟨checked, cm, ck⟩ := checked_key_witness (keysMem _ km)
+    have hc := checked.core
+    rw [ck] at hc
+    exact ⟨checked, cm,
+      coreOf_enumeration_eq program declaration enumerationsUnique declarationMem hc⟩
+  constructor
+  · intro declaration declarationMem
+    have km : CoreKey.constant declaration.id ∈ programKeys program := by
+      simp only [programKeys, List.mem_append, List.mem_map]
+      exact Or.inl (Or.inr ⟨declaration, declarationMem, rfl⟩)
     obtain ⟨checked, cm, ck⟩ := checked_key_witness (keysMem _ km); have hc := checked.core; rw [ck] at hc
     exact ⟨checked, cm, coreOf_constant_eq program declaration constantsUnique declarationMem hc⟩
   · intro declaration declarationMem
-    have km : CoreKey.function declaration.id ∈ programKeys program := List.mem_append_right _ (List.mem_map.mpr ⟨declaration, declarationMem, rfl⟩)
+    have km : CoreKey.function declaration.id ∈ programKeys program := by
+      simp only [programKeys, List.mem_append, List.mem_map]
+      exact Or.inr ⟨declaration, declarationMem, rfl⟩
     obtain ⟨checked, cm, ck⟩ := checked_key_witness (keysMem _ km); have hc := checked.core; rw [ck] at hc
     exact ⟨checked, cm, coreOf_function_eq program declaration functionsUnique declarationMem hc⟩
 
@@ -328,18 +369,21 @@ theorem exact_of_checks
     (source : ∀ occurrence, RuntimeOccurrence pack occurrence →
       ∃ checked, checked ∈ checks ∧ checked.row.occurrence = occurrence)
     (coverage : (∀ declaration, declaration ∈ program.structures → ∃ checked, checked ∈ checks ∧ checked.row.core = .structure declaration) ∧
+      (∀ declaration, declaration ∈ program.enumerations → ∃ checked, checked ∈ checks ∧ checked.row.core = .enumeration declaration) ∧
       (∀ declaration, declaration ∈ program.constants → ∃ checked, checked ∈ checks ∧ checked.row.core = .constant declaration) ∧
       (∀ declaration, declaration ∈ program.functions → ∃ checked, checked ∈ checks ∧ checked.row.core = .function declaration))
     (unique : checks.Pairwise CheckedDistinct) :
     DeclarationLoweringsExact pack catalog program (checks.map CheckedRow.row) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro occurrence occurs; obtain ⟨checked, checkedMem, eq⟩ := source occurrence occurs
     exact ⟨checked.row, List.mem_map.mpr ⟨checked, checkedMem, rfl⟩, eq⟩
   · intro declaration declarationMem; obtain ⟨checked, checkedMem, eq⟩ := coverage.1 declaration declarationMem
     exact ⟨checked.row, List.mem_map.mpr ⟨checked, checkedMem, rfl⟩, eq⟩
   · intro declaration declarationMem; obtain ⟨checked, checkedMem, eq⟩ := coverage.2.1 declaration declarationMem
     exact ⟨checked.row, List.mem_map.mpr ⟨checked, checkedMem, rfl⟩, eq⟩
-  · intro declaration declarationMem; obtain ⟨checked, checkedMem, eq⟩ := coverage.2.2 declaration declarationMem
+  · intro declaration declarationMem; obtain ⟨checked, checkedMem, eq⟩ := coverage.2.2.1 declaration declarationMem
+    exact ⟨checked.row, List.mem_map.mpr ⟨checked, checkedMem, rfl⟩, eq⟩
+  · intro declaration declarationMem; obtain ⟨checked, checkedMem, eq⟩ := coverage.2.2.2 declaration declarationMem
     exact ⟨checked.row, List.mem_map.mpr ⟨checked, checkedMem, rfl⟩, eq⟩
   · exact rows_pairwise_exact unique
 
@@ -502,8 +546,8 @@ structure CheckedDeclarations
   exact : DeclarationLoweringsExact pack catalog program rows
   aliases : List (TypeAliasLowering pack catalog)
   aliasesExact : TypeAliasLoweringsExact pack catalog aliases
-  enumerationsEmpty : program.enumerations = []
   structuresIdsUnique : (program.structures.map (fun declaration => declaration.id)).Nodup
+  enumerationsIdsUnique : (program.enumerations.map (fun declaration => declaration.id)).Nodup
   constantsIdsUnique : (program.constants.map (fun declaration => declaration.id)).Nodup
   functionsIdsUnique : (program.functions.map (fun declaration => declaration.id)).Nodup
 
@@ -519,12 +563,11 @@ def checkDeclarations
     match checkCandidates pack catalog catalogWellFormed program candidates with
     | .error failure => .error failure
     | .ok checks =>
-      if _hExtra : program.enumerations = [] then
-        if hUnique : checks.Pairwise (fun left right => left.row.occurrence ≠ right.row.occurrence) then
+      if hUnique : checks.Pairwise (fun left right => left.row.occurrence ≠ right.row.occurrence) then
           let candidateRows := checks.map CheckedRow.candidate
           if hHeaders : headersCovered (runtimeHeaders catalog.headers) candidateRows = true then
             if hKeys : keysCovered (candidateRows.map CandidateRow.core) (programKeys program) = true then
-              if hProgramUnique : (program.structures.map (fun declaration => declaration.id)).Nodup ∧ (program.constants.map (fun declaration => declaration.id)).Nodup ∧ (program.functions.map (fun declaration => declaration.id)).Nodup then
+              if hProgramUnique : programIdsUnique program then
                 let sourceEvidence := source_coverage catalogWellFormed hHeaders
                 let aliasExact : TypeAliasLoweringsExact pack catalog aliases :=
                   by
@@ -541,12 +584,11 @@ def checkDeclarations
                     exact := exact_of_checks sourceEvidence programEvidence hUnique
                     aliases := aliases
                     aliasesExact := aliasExact
-                    enumerationsEmpty := _hExtra
                     structuresIdsUnique := hProgramUnique.1
-                    constantsIdsUnique := hProgramUnique.2.1
-                    functionsIdsUnique := hProgramUnique.2.2 }
+                    enumerationsIdsUnique := hProgramUnique.2.1
+                    constantsIdsUnique := hProgramUnique.2.2.1
+                    functionsIdsUnique := hProgramUnique.2.2.2 }
               else .error .missingDeclaration
             else .error .missingDeclaration
           else .error .missingDeclaration
-        else .error .duplicateOccurrence
-      else .error .extraEnumeration
+      else .error .duplicateOccurrence

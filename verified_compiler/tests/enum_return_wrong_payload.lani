@@ -1,0 +1,19 @@
+module app::main;
+
+enum Value {
+    One(bool),
+    Zero,
+}
+
+fn choose(flag: bool) -> Value {
+    if (flag) { return One(true); }
+    return Zero;
+}
+
+fn main() -> i32 {
+    let value: Value = choose(true);
+    return match (value) {
+        One(inner) -> 0,
+        Zero -> 1,
+    };
+}

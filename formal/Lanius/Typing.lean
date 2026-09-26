@@ -18,6 +18,21 @@ def Context.bindAll (context : Context) (bindings : List (VarId × Ty)) : Contex
 def parameterContext (parameters : List (VarId × Ty)) : Context :=
   parameters.foldl (fun context parameter => context.bind parameter.1 parameter.2) Context.empty
 
+/-- A declared nominal element can be viewed through the native raw-slice
+    intrinsic. Packed i32 slices use their separate constructor. -/
+inductive RawNominalSliceElement (program : Program) : Ty → Prop where
+  | structureType (id : TypeId) (declaration : StructDecl)
+      (found : program.structure? id = some declaration) :
+      RawNominalSliceElement program (.structure id)
+  | enumerationType (id : TypeId) (declaration : EnumDecl)
+      (found : program.enumeration? id = some declaration) :
+      RawNominalSliceElement program (.enumeration id)
+
+inductive RawSliceElement (program : Program) : Ty → Prop where
+  | i32 : RawSliceElement program (.scalar (.signed .i32))
+  | nominal (element : RawNominalSliceElement program type) :
+      RawSliceElement program type
+
 mutual
   /-- Core literals are source-constructible values. References and slices
       carry runtime cell identities and therefore may only be produced by
@@ -26,7 +41,8 @@ mutual
     | .array values => Values.areLiteral values
     | .structure _ fields => Values.areLiteral fields
     | .enumeration _ _ payload => Values.areLiteral payload
-    | .slice _ _ _ _ _ | .reference _ _ _ => false
+    | .slice _ _ _ _ _ | .rawSlice _ _ _
+    | .reference _ _ _ => false
     | _ => true
 
   def Values.areLiteral : List Value → Bool
@@ -64,6 +80,10 @@ mutual
         ValueHasType program (.array values) (.array elementType count)
     | slice (elementType) (cell) (projections) (start) (length) :
         ValueHasType program (.slice elementType cell projections start length)
+          (.slice elementType)
+    | rawSlice (element : RawSliceElement program elementType)
+        (address length) :
+        ValueHasType program (.rawSlice elementType address length)
           (.slice elementType)
     | structure (declaration : StructDecl)
         (found : program.structure? declaration.id = some declaration)
@@ -142,6 +162,7 @@ inductive EqualityTy : Ty → Prop where
   | f64 : EqualityTy (.scalar .f64)
   | character : EqualityTy (.scalar .char)
   | pointer : EqualityTy (.scalar .rawPtr)
+  | enumeration (id) : EqualityTy (.enumeration id)
 
 inductive PointerOffsetTy : Ty → Prop where
   | signed (type) : PointerOffsetTy (.scalar (.signed type))
@@ -343,6 +364,14 @@ mutual
         ExprHasType program context
           (.i32SliceFromRawParts pointerExpression lengthExpression)
           (.slice (.scalar (.signed .i32)))
+    | typedSliceFromRawParts
+        (element : RawNominalSliceElement program elementType)
+        (pointer : ExprHasType program context pointerExpression (.scalar .rawPtr))
+        (length : ExprHasType program context lengthExpression
+          (.scalar (.signed .i32))) :
+        ExprHasType program context
+          (.typedSliceFromRawParts elementType pointerExpression lengthExpression)
+          (.slice elementType)
     | i32SliceDataPtr
         (slice : ExprHasType program context sliceExpression
           (.slice (.scalar (.signed .i32)))) :

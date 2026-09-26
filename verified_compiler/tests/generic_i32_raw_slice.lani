@@ -1,0 +1,14 @@
+module app::main;
+
+pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+
+fn main() -> i32 {
+    let memory: ptr = alloc(8, 4);
+    if (memory == 0) { return 1; }
+    let values: [i32] = slice_from_raw_parts(memory, 2);
+    values[0] = 7;
+    values[1] = 9;
+    let alias: [i32] = i32_slice_from_raw_parts(
+        i32_slice_data_ptr(values), 2);
+    return alias[0] + alias[1];
+}

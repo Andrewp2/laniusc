@@ -1,0 +1,15 @@
+module app::main;
+
+pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+
+struct Box {
+    value: i32,
+}
+
+fn main() -> i32 {
+    let memory: ptr = alloc(8, 8);
+    if (memory == 0) { return 1; }
+    let values: [Box] = slice_from_raw_parts(memory, 1);
+    values[0].value = 42;
+    return values[0].value;
+}

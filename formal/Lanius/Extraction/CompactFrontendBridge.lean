@@ -7,10 +7,10 @@ open Lanius.Compiler
 open Lanius.Compiler.ProgramLowering
 open Lanius.Declarations
 
-/-! The extractor emits a compact syntax certificate.  `FrontendBoundary.check`
-    is the executable composition that binds it to the supplied source files
-    and derives the frontend payload.  This result packages the two existing
-    soundness theorems without adding a fixture-specific normal form. -/
+/-! The compiler's explicit certificate mode still emits a compact syntax
+    payload for the separate backend proof. `FrontendBoundary.check` binds
+    that payload to the supplied source files and derives the frontend
+    evidence. Ordinary extractor output is Lean Core, not this format. -/
 
 def checkCompactFrontend (encoded : String) (expectedSources : List SourceFile) :
     Except FrontendBoundary.Failure
@@ -37,9 +37,6 @@ structure CompactFrontendEvidence (encoded : String)
     (FrontendBoundary.frontendPack checked.frontend).files.map
         (fun file => file.contents) =
       SourcePackCheck.surfaceFiles checked.frontend.compact.units
-  eligible :
-    SupportedMonomorphic
-      (FrontendBoundary.frontendPack checked.frontend)
 
 theorem checkCompactFrontend_sound
     {encoded : String} {expectedSources : List SourceFile}
@@ -58,7 +55,6 @@ theorem checkCompactFrontend_sound
     catalogWellFormed := frontend.2.2.2.1
     importsCovered := frontend.2.2.2.2
     surfaceAlignment := checked.frontend.surfaceAlignment
-    eligible := checked.frontend.eligibility.evidence
   }
 
 end Lanius.Extraction

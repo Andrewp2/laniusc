@@ -118,6 +118,24 @@ def Heap.protectAsBorrowed
       else
         .ok { heap with blocks := replaceBlock heap.blocks { block with owned := false } }
 
+/-- Borrow a nonempty, aligned region inside one live allocation. Nominal
+    slices may expose a prefix of a larger typed table, so unlike packed-i32
+    raw slices they need not describe the entire allocation. -/
+def Heap.protectRangeAsBorrowed
+    (heap : Heap) (pointer size alignment : Nat) : Except Trap Heap :=
+  if size == 0 || !validAlignment alignment || pointer % alignment != 0 then
+    .error .rawMemoryBounds
+  else
+    match heap.containingBlock? pointer with
+    | none => .error .invalidPointer
+    | some block =>
+        if block.alignment < alignment ||
+            pointer + size > block.base + block.size then
+          .error .rawMemoryBounds
+        else
+          .ok { heap with
+            blocks := replaceBlock heap.blocks { block with owned := false } }
+
 def Heap.deallocate (heap : Heap) (pointer size alignment : Nat) : Except Trap Heap :=
   if pointer == null then
     .ok heap

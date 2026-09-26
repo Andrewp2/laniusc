@@ -40,6 +40,9 @@ pub struct BodyContext {
     token_count: i32,
     tree: verified::syntax_tree::Tree,
     expression_arena: verified::surface_expr::ExpressionArena,
+    // Reinitialized for each extracted expression; -1 denotes no cached type.
+    expression_kind_codes: [i32],
+    expression_kind_depths: [i32],
     type_arena: verified::surface_type::TypeArena,
     resolutions: lowering::types::ResolutionTable,
     alias_catalog: lowering::aliases::Catalog,
@@ -87,6 +90,8 @@ pub struct BodyLoweringInputs {
 
 pub struct BodyLoweringWorkspace {
     expressions: verified::surface_expr::ExpressionArena,
+    expression_kind_codes: [i32],
+    expression_kind_depths: [i32],
     types: verified::surface_type::TypeArena,
     alias_scratch: WordRegion,
     type_output: lowering::types::Results,

@@ -1,0 +1,157 @@
+module ir::symbol_catalog;
+
+import verified::host;
+import verified::token;
+
+// Source spellings are retained alongside the semantic IR. A Ref is a token
+// in one source unit, not a second serialization of a declaration or body.
+// The x86 consumer may ignore this metadata; Lean emission can name the same
+// declarations without reparsing source or guessing from Core IDs.
+const SLOT_BYTES: i32 = 8;
+const UNIT_BYTES: i32 = 4 * SLOT_BYTES;
+const REF_BYTES: i32 = 2 * SLOT_BYTES;
+pub const ALIGNMENT: i32 = SLOT_BYTES;
+
+pub struct Unit {
+    source_offset: i32,
+    source_length: i32,
+    token_offset: i32,
+    token_count: i32,
+}
+
+pub struct Ref {
+    unit: i32,
+    token: i32,
+}
+
+pub struct Spelling {
+    source: [i32],
+    start: i32,
+    length: i32,
+    valid: bool,
+}
+
+pub struct Catalog {
+    sources: [i32],
+    source_count: i32,
+    tokens: verified::token::TokenTable,
+    units: [Unit],
+    unit_count: i32,
+    types: [Ref],
+    type_count: i32,
+    variants: [Ref],
+    variant_count: i32,
+    functions: [Ref],
+    function_count: i32,
+}
+
+fn first(base: ptr, count: i32, bytes: i32) -> ptr {
+    if (count <= 0) { return base; }
+    return base + count * bytes - SLOT_BYTES;
+}
+
+pub fn allocation_bytes(units: i32, types: i32, variants: i32,
+    functions: i32) -> i32 {
+    if (units <= 0 || types <= -1 || variants <= -1 || functions <= 0
+        || units > verified::host::I32_MAX / UNIT_BYTES) { return -1; }
+    let bytes: i32 = units * UNIT_BYTES;
+    if (types > (verified::host::I32_MAX - bytes) / REF_BYTES) {
+        return -1;
+    }
+    bytes += types * REF_BYTES;
+    if (variants > (verified::host::I32_MAX - bytes) / REF_BYTES) {
+        return -1;
+    }
+    bytes += variants * REF_BYTES;
+    if (functions > (verified::host::I32_MAX - bytes) / REF_BYTES) {
+        return -1;
+    }
+    return bytes + functions * REF_BYTES;
+}
+
+pub fn from_raw_parts(memory: ptr, sources: [i32],
+    source_count: i32, tokens: verified::token::TokenTable,
+    units: i32, types: i32, variants: i32,
+    functions: i32) -> Catalog {
+    let type_base: ptr = memory + units * UNIT_BYTES;
+    let variant_base: ptr = type_base + types * REF_BYTES;
+    let function_base: ptr = variant_base + variants * REF_BYTES;
+    return Catalog {
+        sources: sources, source_count: source_count, tokens: tokens,
+        units: slice_from_raw_parts(first(memory, units, UNIT_BYTES), units),
+        unit_count: units,
+        types: slice_from_raw_parts(first(type_base, types, REF_BYTES), types),
+        type_count: types,
+        variants: slice_from_raw_parts(first(variant_base, variants, REF_BYTES), variants),
+        variant_count: variants,
+        functions: slice_from_raw_parts(first(function_base, functions, REF_BYTES), functions),
+        function_count: functions,
+    };
+}
+
+pub fn empty() -> Catalog {
+    let nowhere: ptr = 0;
+    return from_raw_parts(nowhere, slice_from_raw_parts(nowhere, 0),
+        0, verified::token::from_raw_parts(nowhere, 0), 0, 0, 0, 0);
+}
+
+pub fn spelling(catalog: Catalog, reference: Ref) -> Spelling {
+    let invalid: Spelling = Spelling {
+        source: catalog.sources, start: 0, length: 0, valid: false,
+    };
+    if (reference.unit <= -1 || reference.unit >= catalog.unit_count) {
+        return invalid;
+    }
+    let units: [Unit] = catalog.units;
+    let unit: Unit = units[reference.unit];
+    if (unit.source_offset <= -1 || unit.source_length <= -1
+        || unit.source_offset > catalog.source_count
+        || unit.source_length > catalog.source_count - unit.source_offset
+        || unit.token_offset <= -1 || unit.token_count <= -1
+        || unit.token_offset > catalog.tokens.count
+        || unit.token_count > catalog.tokens.count - unit.token_offset
+        || reference.token <= -1 || reference.token >= unit.token_count) {
+        return invalid;
+    }
+    let tokens: [verified::token::TokenRow] = catalog.tokens.data;
+    let token: verified::token::TokenRow =
+        tokens[unit.token_offset + reference.token];
+    if (token.kind != verified::token::Identifier
+        || token.start <= -1 || token.finish <= token.start
+        || token.finish > unit.source_length) { return invalid; }
+    return Spelling {
+        source: catalog.sources,
+        start: unit.source_offset + token.start,
+        length: token.finish - token.start,
+        valid: true,
+    };
+}
+
+pub fn valid(catalog: Catalog) -> bool {
+    if (catalog.unit_count <= 0 || catalog.type_count <= -1
+        || catalog.variant_count <= -1 || catalog.function_count <= 0) {
+        return false;
+    }
+    let types: [Ref] = catalog.types;
+    let variants: [Ref] = catalog.variants;
+    let functions: [Ref] = catalog.functions;
+    let type_count: i32 = catalog.type_count;
+    let variant_count: i32 = catalog.variant_count;
+    let function_count: i32 = catalog.function_count;
+    let index: i32 = 0;
+    while (index != type_count) {
+        if (!spelling(catalog, types[index]).valid) { return false; }
+        index += 1;
+    }
+    index = 0;
+    while (index != variant_count) {
+        if (!spelling(catalog, variants[index]).valid) { return false; }
+        index += 1;
+    }
+    index = 0;
+    while (index != function_count) {
+        if (!spelling(catalog, functions[index]).valid) { return false; }
+        index += 1;
+    }
+    return true;
+}

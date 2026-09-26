@@ -1,0 +1,191 @@
+module verified::core_transport;
+
+import backend::syntax;
+import ir::body_catalog;
+import ir::body_events;
+import ir::constant_catalog;
+import ir::function_catalog;
+import ir::program;
+import ir::type_catalog;
+import ir::type_ref;
+import runtime::service;
+import verified::core_body;
+
+// The certificate wire format is an output view of the semantic Program.
+// Neither this writer nor the x86 emitter reads lowering's source tables.
+fn append(output: [i32], capacity: i32, position: i32,
+    word: i32) -> i32 {
+    if (position <= -1 || position >= capacity) { return -1; }
+    output[position] = word;
+    return position + 1;
+}
+
+fn type_record(source: ir::type_catalog::Table, index: i32,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    let types: [ir::type_catalog::TypeDecl] = source.types;
+    let variants: [ir::type_catalog::Variant] = source.variants;
+    let fields: [ir::type_catalog::Field] = source.fields;
+    let declaration: ir::type_catalog::TypeDecl = types[index];
+    let start: i32 = position;
+    let next: i32 = append(output, capacity, position, 0);
+    next = append(output, capacity, next, declaration.id);
+    if (declaration.kind == ir::type_catalog::Structure) {
+        next = append(output, capacity, next,
+            backend::syntax::layout_code(backend::syntax::StructureLayout));
+        next = append(output, capacity, next, declaration.field_count);
+        let field: i32 = 0;
+        while (field != declaration.field_count) {
+            next = append(output, capacity, next,
+                ir::type_ref::code(fields[declaration.field_start
+                    + field].type_tag));
+            if (next <= -1) { return -1; }
+            field += 1;
+        }
+    } else {
+        next = append(output, capacity, next,
+            backend::syntax::layout_code(backend::syntax::EnumerationLayout));
+        next = append(output, capacity, next, declaration.variant_count);
+        let ordinal: i32 = 0;
+        while (ordinal != declaration.variant_count) {
+            let variant: ir::type_catalog::Variant =
+                variants[declaration.variant_start + ordinal];
+            next = append(output, capacity, next, variant.field_count);
+            let field: i32 = 0;
+            while (field != variant.field_count) {
+                next = append(output, capacity, next,
+                    ir::type_ref::code(fields[variant.field_start
+                        + field].type_tag));
+                if (next <= -1) { return -1; }
+                field += 1;
+            }
+            ordinal += 1;
+        }
+    }
+    if (next <= -1) { return -1; }
+    output[start] = next - start - 1;
+    return next;
+}
+
+fn constant_record(source: ir::constant_catalog::Table, index: i32,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    let constants: [ir::constant_catalog::Constant] = source.constants;
+    let bytes: [i32] = source.bytes;
+    let constant: ir::constant_catalog::Constant = constants[index];
+    let next: i32 = append(output, capacity, position, constant.id);
+    next = append(output, capacity, next,
+        ir::type_ref::code(constant.kind));
+    if (constant.encoding == ir::constant_catalog::StringBytes) {
+        next = append(output, capacity, next, constant.byte_count);
+        let byte: i32 = 0;
+        while (byte != constant.byte_count) {
+            next = append(output, capacity, next,
+                bytes[constant.byte_start + byte]);
+            if (next <= -1) { return -1; }
+            byte += 1;
+        }
+    } else {
+        next = append(output, capacity, next, constant.low);
+        next = append(output, capacity, next, constant.high);
+    }
+    return next;
+}
+
+fn function_record(program: ir::program::Program, index: i32,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    let functions: ir::function_catalog::Table = program.functions;
+    let rows: [ir::function_catalog::Function] = functions.functions;
+    let parameters: [ir::function_catalog::Parameter] =
+        functions.parameters;
+    let function: ir::function_catalog::Function = rows[index];
+    let start: i32 = position;
+    let next: i32 = append(output, capacity, position, 0);
+    if (next <= -1 || next > capacity
+            - backend::syntax::FUNCTION_HEADER_WORDS) { return -1; }
+    let kind: backend::syntax::FunctionRecordKind =
+        backend::syntax::DefinedFunction;
+    let body_words: i32 = 0;
+    if (function.kind == ir::function_catalog::RuntimeFunction) {
+        kind = backend::syntax::RuntimeFunction;
+        body_words = runtime::service::RUNTIME_SERVICE_BODY_WORDS;
+    }
+    let header: backend::syntax::FunctionHeader =
+        backend::syntax::FunctionHeader {
+            kind: kind,
+            pointer_bits: backend::syntax::POINTER_BITS,
+            id: function.id,
+            result_type: function.result_type,
+            parameters: function.parameters,
+            body_words: body_words,
+        };
+    backend::syntax::write_function_header(output, next, header);
+    let header_start: i32 = next;
+    next += backend::syntax::FUNCTION_HEADER_WORDS;
+    let ordinal: i32 = 0;
+    while (ordinal != function.parameters) {
+        let parameter: ir::function_catalog::Parameter =
+            parameters[function.parameter_start + ordinal];
+        next = append(output, capacity, next, parameter.id);
+        next = append(output, capacity, next,
+            ir::type_ref::code(parameter.type_tag));
+        if (next <= -1) { return -1; }
+        ordinal += 1;
+    }
+    if (function.kind == ir::function_catalog::RuntimeFunction) {
+        next = append(output, capacity, next,
+            runtime::service::service_code(function.service));
+    } else {
+        let body_index: i32 = ir::body_catalog::find(program.bodies,
+            function.id);
+        if (body_index <= -1) { return -1; }
+        let body: ir::body_catalog::FunctionBody =
+            ir::body_catalog::at(program.bodies, body_index);
+        let body_start: i32 = next;
+        next = verified::core_body::serialize(
+            ir::body_events::region(body.tree.events, body.tree.count),
+            body.tree.count,
+            verified::core_body::word_region(output, capacity), next);
+        if (next <= body_start) { return -1; }
+        backend::syntax::set_function_body_words_at(output, header_start,
+            next - body_start);
+    }
+    if (next <= -1) { return -1; }
+    output[start] = next - start - 1;
+    return next;
+}
+
+pub fn serialize(program: ir::program::Program, output: [i32],
+    capacity: i32) -> i32 {
+    if (!ir::program::valid(program)
+        || capacity < backend::syntax::PROGRAM_HEADER_WORDS) { return -1; }
+    let header: backend::syntax::ProgramHeader =
+        backend::syntax::ProgramHeader {
+            version: backend::syntax::PROGRAM_VERSION,
+            pointer_bits: backend::syntax::POINTER_BITS,
+            entry: program.entrypoint,
+            types: program.types.type_count,
+            constants: program.constants.count,
+            functions: program.functions.count,
+        };
+    backend::syntax::write_program_header(output, header);
+    let next: i32 = backend::syntax::PROGRAM_HEADER_WORDS;
+    let index: i32 = 0;
+    while (index != program.types.type_count) {
+        next = type_record(program.types, index, output, capacity, next);
+        if (next <= -1) { return -1; }
+        index += 1;
+    }
+    index = 0;
+    while (index != program.constants.count) {
+        next = constant_record(program.constants, index, output,
+            capacity, next);
+        if (next <= -1) { return -1; }
+        index += 1;
+    }
+    index = 0;
+    while (index != program.functions.count) {
+        next = function_record(program, index, output, capacity, next);
+        if (next <= -1) { return -1; }
+        index += 1;
+    }
+    return next;
+}

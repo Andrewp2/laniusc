@@ -1,0 +1,88 @@
+module app::main;
+
+import ir::type_catalog;
+import ir::type_ref;
+import runtime::service;
+import verified::host;
+import verified::lean_syntax;
+
+fn equals(actual: [i32], count: i32, expected: str,
+    expected_count: i32) -> bool {
+    if (count != expected_count) { return false; }
+    let words: [i32] = verified::host::i32_slice_from_raw_parts(
+        verified::host::string_data_ptr(expected),
+        verified::host::packed_words(expected_count));
+    let index: i32 = 0;
+    while (index < count) {
+        let byte: i32 = (words[index / 4] >> ((index % 4) * 8)) & 255;
+        let emitted: i32 = (actual[index / 4] >> ((index % 4) * 8)) & 255;
+        if (emitted != byte) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+fn main() -> i32 {
+    let output_memory: ptr = verified::host::alloc_i32(
+        verified::host::packed_words(512));
+    let type_memory: ptr = verified::host::alloc(
+        ir::type_catalog::allocation_bytes(2, 1, 0),
+        ir::type_catalog::ALIGNMENT);
+    let byte_memory: ptr = verified::host::alloc_i32(3);
+    if (output_memory == 0 || type_memory == 0 || byte_memory == 0) {
+        return 1;
+    }
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(
+        output_memory, verified::host::packed_words(512));
+    let types: ir::type_catalog::Table =
+        ir::type_catalog::from_raw_parts(type_memory, 2, 1, 0);
+    let rows: [ir::type_catalog::TypeDecl] = types.types;
+    rows[0] = ir::type_catalog::TypeDecl {
+        kind: ir::type_catalog::Structure, id: 0,
+        field_start: 0, field_count: 0,
+        variant_start: -1, variant_count: 0,
+    };
+    rows[1] = ir::type_catalog::TypeDecl {
+        kind: ir::type_catalog::Enumeration, id: 1,
+        field_start: -1, field_count: 0,
+        variant_start: 0, variant_count: 1,
+    };
+    let n: i32 = verified::lean_syntax::type_ref(output, 512, 0,
+        types, ir::type_ref::I32);
+    if (!equals(output, n, "(.scalar (.signed .i32))", 24)) { return 2; }
+    n = verified::lean_syntax::type_ref(output, 512, 0,
+        types, ir::type_ref::NominalSlice(1));
+    if (!equals(output, n, "(.slice (.enumeration 1))", 25)) { return 3; }
+    if (verified::lean_syntax::type_ref(output, 512, 0,
+        types, ir::type_ref::Nominal(2)) != -1) { return 4; }
+    n = verified::lean_syntax::signed(output, 512, 0, -2147483648);
+    if (!equals(output, n, "-2147483648", 11)) { return 5; }
+    n = verified::lean_syntax::unsigned64(output, 512, 0, -1, 1);
+    if (!equals(output, n,
+        "(0xffffffff + 4294967296 * 0x00000001)", 38)) { return 6; }
+    let bytes: [i32] = verified::host::i32_slice_from_raw_parts(
+        byte_memory, 3);
+    bytes[0] = 65;
+    bytes[1] = 0;
+    bytes[2] = 66;
+    n = verified::lean_syntax::string_bytes(output, 512, 0, bytes,
+        3, 0, 3);
+    if (!equals(output, n, "\"A\\x00B\"", 8)) { return 7; }
+    bytes[0] = 206;
+    bytes[1] = 177;
+    bytes[2] = 34;
+    n = verified::lean_syntax::string_bytes(output, 512, 0, bytes,
+        3, 0, 3);
+    if (!equals(output, n, "\"α\\x22\"", 8)) { return 10; }
+    bytes[2] = 92;
+    n = verified::lean_syntax::string_bytes(output, 512, 0, bytes,
+        3, 0, 3);
+    if (!equals(output, n, "\"α\\x5c\"", 8)) { return 11; }
+    bytes[1] = -1;
+    if (verified::lean_syntax::string_bytes(output, 512, 0,
+        bytes, 3, 0, 3) != -1) { return 8; }
+    n = verified::lean_syntax::service(output, 512, 0,
+        runtime::service::WriteStdout);
+    if (!equals(output, n, "(.host .writeStdout)", 20)) { return 9; }
+    return 0;
+}

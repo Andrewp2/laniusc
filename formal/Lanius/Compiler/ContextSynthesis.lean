@@ -51,7 +51,7 @@ def functionScheme (row : DeclarationLowering pack catalog program) :
         (groundOfCore parameter.2).toTy)
       returnType := (groundOfCore declaration.returnType).toTy
       requirements := [] }
-  | .structure _ | .constant _ => none
+  | .structure _ | .enumeration _ | .constant _ => none
 
 def functionInstance (row : DeclarationLowering pack catalog program) :
     Option Static.FunctionInstance :=
@@ -63,9 +63,18 @@ def functionInstance (row : DeclarationLowering pack catalog program) :
       constArguments := []
       parameterTypes := groundsOfCore (declaration.parameters.map Prod.snd)
       returnType := groundOfCore declaration.returnType }
-  | .structure _ | .constant _ => none
+  | .structure _ | .enumeration _ | .constant _ => none
+
+def enumVariantHeaderIds (catalog : Declarations.Catalog)
+    (address : Declarations.ItemAddress) : List Nat :=
+  catalog.headers.filterMap fun header =>
+    match header.source with
+    | .enumVariant parent _ =>
+        if parent == address then some header.declaration else none
+    | _ => none
 
 def nominalScheme (pack : Declarations.SourcePack)
+    (catalog : Declarations.Catalog)
     (row : DeclarationLowering pack catalog program) :
     Option Static.NominalScheme :=
   match row.occurrence, row.core with
@@ -80,6 +89,17 @@ def nominalScheme (pack : Declarations.SourcePack)
           requirements := []
           memberDeclarations := [] }
       | _ => none
+  | .item address, .enumeration declaration =>
+      match pack.item? address with
+      | some (.enumeration source) => some {
+          declaration := row.header.declaration
+          type := declaration.id
+          kind := .enumeration
+          isPublic := source.isPublic
+          genericParameters := []
+          requirements := []
+          memberDeclarations := enumVariantHeaderIds catalog address }
+      | _ => none
   | _, _ => none
 
 def nominalInstance (row : DeclarationLowering pack catalog program) :
@@ -92,6 +112,13 @@ def nominalInstance (row : DeclarationLowering pack catalog program) :
       typeArguments := []
       constArguments := []
       coreType := declaration.id }
+  | .enumeration declaration => some {
+      declaration := row.header.declaration
+      sourceType := declaration.id
+      kind := .enumeration
+      typeArguments := []
+      constArguments := []
+      coreType := declaration.id }
   | .function _ | .constant _ => none
 
 def constantEntry (row : DeclarationLowering pack catalog program) :
@@ -101,7 +128,7 @@ def constantEntry (row : DeclarationLowering pack catalog program) :
       declaration := row.header.declaration
       constant := declaration.id
       type := groundOfCore declaration.type }
-  | .structure _ | .function _ => none
+  | .structure _ | .enumeration _ | .function _ => none
 
 def structFieldEntries (receiver : Static.GroundTy) (start : FieldId)
     (surface : List Surface.StructField) (core : List Core.Ty) :
@@ -134,7 +161,45 @@ def structureEntry (row : DeclarationLowering pack catalog program) :
       receiver := .nominal declaration.id [] []
       coreType := declaration.id
       fieldOrder := List.range declaration.fields.length }
-  | .constant _ | .function _ => none
+  | .enumeration _ | .constant _ | .function _ => none
+
+def enumVariantRowsAt (catalog : Declarations.Catalog)
+    (parent : Declarations.ItemAddress) (nominalDeclaration : Nat)
+    (coreType : TypeId) : Nat → List (List Core.Ty) →
+      List (SurfaceElaboration.VariantEntry ×
+        SurfaceElaboration.VariantConstructorScheme)
+  | _, [] => []
+  | index, payload :: tail =>
+      let rest := enumVariantRowsAt catalog parent nominalDeclaration
+        coreType (index + 1) tail
+      match catalog.headers.find? (fun header =>
+          header.source == .enumVariant parent index) with
+      | none => rest
+      | some header =>
+          ({ declaration := header.declaration
+             receiver := .nominal coreType [] []
+             coreType := coreType
+             variant := index
+             payload := groundsOfCore payload },
+           { declaration := header.declaration
+             nominalDeclaration := nominalDeclaration
+             sourceType := coreType
+             variant := index
+             payload := (groundsOfCore payload).map Static.GroundTy.toTy }) :: rest
+
+def enumVariantRows (pack : Declarations.SourcePack)
+    (catalog : Declarations.Catalog)
+    (row : DeclarationLowering pack catalog program) :
+    List (SurfaceElaboration.VariantEntry ×
+      SurfaceElaboration.VariantConstructorScheme) :=
+  match row.occurrence, row.core with
+  | .item address, .enumeration declaration =>
+      match pack.item? address with
+      | some (.enumeration _) =>
+          enumVariantRowsAt catalog address row.header.declaration
+            declaration.id 0 declaration.variants
+      | _ => []
+  | _, _ => []
 
 def aliasEntry (alias : TypeAliasLowering pack catalog) :
     SurfaceElaboration.TypeAliasEntry := {
@@ -144,10 +209,14 @@ def aliasEntry (alias : TypeAliasLowering pack catalog) :
       requirements := []
       target := alias.target }
 
-def monomorphization : Static.Monomorphization := {
+def monomorphization (program : Core.Program) : Static.Monomorphization := {
   resolveNominal := fun id typeArguments constArguments =>
     match typeArguments, constArguments with
-    | [], [] => some (.structure id)
+    | [], [] =>
+        match program.enumeration? id, program.structure? id with
+        | some _, none => some (.enumeration id)
+        | none, some _ => some (.structure id)
+        | _, _ => none
     | _, _ => none }
 
 def environment (pack : Declarations.SourcePack) (catalog : Declarations.Catalog)
@@ -161,18 +230,21 @@ def synthesize
     (aliases : List (TypeAliasLowering pack catalog)) :
     SurfaceElaboration.Context :=
   let names := environment pack catalog imports
+  let variantRows := rows.flatMap (enumVariantRows pack catalog)
   { target := program.target
     names := names
     currentModule := firstModule pack.files
-    monomorphization := monomorphization
+    monomorphization := monomorphization program
     functions := rows.filterMap functionScheme
     functionInstances := rows.filterMap functionInstance
     constants := rows.filterMap constantEntry
     fields := rows.flatMap (structureFields pack)
-    nominalSchemes := rows.filterMap (nominalScheme pack)
+    nominalSchemes := rows.filterMap (nominalScheme pack catalog)
     nominalInstances := rows.filterMap nominalInstance
     typeAliases := aliases.map aliasEntry
-    structures := rows.filterMap structureEntry }
+    structures := rows.filterMap structureEntry
+    variants := variantRows.map Prod.fst
+    variantConstructors := variantRows.map Prod.snd }
 
 /- The option wrapper is useful at executable boundaries.  It is deliberately
    total for checked declarations: all rejection belongs to the declaration
@@ -243,6 +315,7 @@ theorem function_rows_have_tables
       resolved.declaration = row.header.declaration ∧ resolved.function = function.id := by
   cases h : row.core with
   | «structure» declaration => simp [h] at core
+  | enumeration declaration => simp [h] at core
   | constant declaration => simp [h] at core
   | function declaration =>
     simp only [h] at core
@@ -283,9 +356,10 @@ theorem function_row_has_tables
           resolved ∈ (synthesize pack catalog imports program rows aliases).functionInstances ∧
           scheme.declaration = row.header.declaration ∧
           resolved.declaration = row.header.declaration ∧ resolved.function = function.id
-    | .structure _ | .constant _ => True := by
+    | .structure _ | .enumeration _ | .constant _ => True := by
   cases h : row.core with
   | «structure» declaration => simp [h]
+  | enumeration declaration => simp [h]
   | constant declaration => simp [h]
   | function declaration =>
       simp only [h]

@@ -8,7 +8,7 @@ import verified::token;
 // lengths count words. Parser record offsets stay at the decode boundary.
 // Native Lanius aggregate fields occupy eight-byte slots, including i32s.
 const FIELD_BYTES: i32 = 8;
-const FIELD_COUNT: i32 = 9;
+const FIELD_COUNT: i32 = 12;
 pub const RECORD_BYTES: i32 = FIELD_COUNT * FIELD_BYTES;
 pub const RECORD_WORDS: i32 = RECORD_BYTES / verified::host::I32_BYTES;
 pub const ALIGNMENT: i32 = FIELD_BYTES;
@@ -23,6 +23,9 @@ pub struct UnitContext {
     resolution_count: i32,
     value_row_offset: i32,
     value_count: i32,
+    declaration_start: i32,
+    declaration_count: i32,
+    module_target: i32,
 }
 
 pub struct Table {
@@ -92,6 +95,9 @@ pub fn empty() -> UnitContext {
         resolution_count: 0,
         value_row_offset: 0,
         value_count: 0,
+        declaration_start: -1,
+        declaration_count: 0,
+        module_target: -1,
     };
 }
 

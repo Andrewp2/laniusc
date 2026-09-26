@@ -138,13 +138,13 @@ pub fn subtable(table: TokenTable, offset: i32, count: i32) -> TokenTable {
 // Serialize retained native rows only when an artifact needs token triples.
 pub fn encode_packed(input: TokenTable, count: i32,
     output: [i32], output_words: i32) -> bool {
-    if (count < 0 || count > input.count || output_words < 0
+    if (count <= -1 || count > input.count || output_words <= -1
         || count > output_words / ROW_WORDS) { return false; }
     let rows: [TokenRow] = input.data;
     let index: i32 = 0;
-    while (index < count) {
+    while (index != count) {
         let row: TokenRow = rows[index];
-        if (row.kind == InvalidToken || row.start < 0
+        if (row.kind == InvalidToken || row.start <= -1
             || row.finish <= row.start) { return false; }
         let word: i32 = index * ROW_WORDS;
         output[word + KIND_FIELD] = kind_code(row.kind);

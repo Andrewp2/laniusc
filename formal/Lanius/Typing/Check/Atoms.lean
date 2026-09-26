@@ -8,6 +8,35 @@ open Lanius.Typing
 
 abbrev ProofOf (predicate : Prop) := PLift predicate
 
+def checkRawNominalSliceElement (program : Program) (element : Ty) :
+    Option (ProofOf (RawNominalSliceElement program element)) :=
+  match element with
+  | .structure id =>
+      match found : program.structure? id with
+      | some declaration => some ⟨.structureType id declaration found⟩
+      | none => none
+  | .enumeration id =>
+      match found : program.enumeration? id with
+      | some declaration => some ⟨.enumerationType id declaration found⟩
+      | none => none
+  | _ => none
+
+def checkRawSliceElement (program : Program) (element : Ty) :
+    Option (ProofOf (RawSliceElement program element)) :=
+  match element with
+  | .scalar (.signed .i32) => some ⟨.i32⟩
+  | .structure id =>
+      match found : program.structure? id with
+      | some declaration =>
+          some ⟨.nominal (.structureType id declaration found)⟩
+      | none => none
+  | .enumeration id =>
+      match found : program.enumeration? id with
+      | some declaration =>
+          some ⟨.nominal (.enumerationType id declaration found)⟩
+      | none => none
+  | _ => none
+
 def checkArithmetic (type : Ty) : Option (ProofOf (ArithmeticTy type)) :=
   match type with
   | .scalar (.signed signed) => some ⟨.signed signed⟩
@@ -51,6 +80,7 @@ def checkEquality (type : Ty) : Option (ProofOf (EqualityTy type)) :=
   | .scalar .f64 => some ⟨.f64⟩
   | .scalar .char => some ⟨.character⟩
   | .scalar .rawPtr => some ⟨.pointer⟩
+  | .enumeration id => some ⟨.enumeration id⟩
   | _ => none
 
 def checkPointerOffset (type : Ty) : Option (ProofOf (PointerOffsetTy type)) :=
@@ -339,6 +369,12 @@ mutual
           some ⟨by simpa [equal] using
             ValueHasType.slice elementType cell projections start length⟩
         else none
+    | .rawSlice elementType address length, .slice expected =>
+        if equal : elementType = expected then
+          do let element ← checkRawSliceElement program elementType
+             pure ⟨by simpa [equal] using
+               ValueHasType.rawSlice element.down address length⟩
+        else none
     | .reference referent cell projections, .reference expected =>
         if equal : referent = expected then
           some ⟨by simpa [equal] using
@@ -411,6 +447,10 @@ mutual
     | .pointer address => some ⟨.scalar .rawPtr, ⟨.pointer address⟩⟩
     | .slice elementType cell projections start length =>
         some ⟨.slice elementType, ⟨.slice elementType cell projections start length⟩⟩
+    | .rawSlice elementType address length =>
+        do let element ← checkRawSliceElement program elementType
+           pure ⟨.slice elementType,
+             ⟨.rawSlice element.down address length⟩⟩
     | .reference referent cell projections =>
         some ⟨.reference referent, ⟨.reference referent cell projections⟩⟩
     | .array [] => none

@@ -89,4 +89,96 @@ theorem checked_source_evidence {encoded : String}
   exact ⟨compact.1, compact.2.2.1, sourceWellFormed.down,
     checked.catalog.wellFormed, checked.importsEvidence.covers⟩
 
+/-! The structured frontend is the eventual input to direct Lean extraction.
+    It shares catalog and import synthesis with the compact bootstrap path. -/
+
+def typedFrontendPack {pack : ArtifactPack}
+    {expectedSources : List Lanius.Extraction.SourceFile}
+    (frontend : FrontendCheck.CheckedTypedFrontend pack expectedSources) :
+    SourcePack :=
+  SourcePackCheck.declaredTypedPack frontend.typedSyntax
+
+inductive TypedFailure where
+  | frontend (failure : FrontendCheck.TypedFailure)
+  | catalog
+  | importSynthesis
+  | imports (failure : ImportCheck.Failure)
+deriving DecidableEq, Repr
+
+structure CheckedTyped (pack : ArtifactPack)
+    (expectedSources : List Lanius.Extraction.SourceFile) where
+  frontend : FrontendCheck.CheckedTypedFrontend pack expectedSources
+  frontendAccepted : FrontendCheck.checkTyped pack expectedSources = .ok frontend
+  catalog : CatalogSynthesis.Checked (typedFrontendPack frontend)
+  catalogAccepted : CatalogSynthesis.check (typedFrontendPack frontend) = some catalog
+  imports : List CollectedImport
+  importsSynthesized : ImportSynthesis.synthesize? (typedFrontendPack frontend) = some imports
+  importsEvidence : ImportCheck.Checked (typedFrontendPack frontend) imports
+  importsAccepted : ImportCheck.check (typedFrontendPack frontend) imports = .ok importsEvidence
+
+def checkTyped (pack : ArtifactPack)
+    (expectedSources : List Lanius.Extraction.SourceFile) :
+    Except TypedFailure (CheckedTyped pack expectedSources) :=
+  match frontendAccepted : FrontendCheck.checkTyped pack expectedSources with
+  | .error failure => .error (.frontend failure)
+  | .ok frontend =>
+      let sourcePack := typedFrontendPack frontend
+      match catalogAccepted : CatalogSynthesis.check sourcePack with
+      | none => .error .catalog
+      | some catalog =>
+          match importsSynthesized : ImportSynthesis.synthesize? sourcePack with
+          | none => .error .importSynthesis
+          | some imports =>
+              match importsAccepted : ImportCheck.check sourcePack imports with
+              | .error failure => .error (.imports failure)
+              | .ok importsEvidence =>
+                  .ok {
+                    frontend
+                    frontendAccepted
+                    catalog
+                    catalogAccepted
+                    imports
+                    importsSynthesized
+                    importsEvidence
+                    importsAccepted
+                  }
+
+theorem checked_typed_source_evidence {pack : ArtifactPack}
+    {expectedSources : List Lanius.Extraction.SourceFile}
+    (checked : CheckedTyped pack expectedSources) :
+    compactPackSources pack = expectedSources ∧
+      SourcePackWellFormed (typedFrontendPack checked.frontend) ∧
+      CatalogWellFormed (typedFrontendPack checked.frontend) checked.catalog.catalog ∧
+      ImportCollectionCovers (typedFrontendPack checked.frontend) checked.imports :=
+  ⟨checked.frontend.typedSyntax.sourceIdentity,
+    checked.frontend.sourcePackEvidence.down,
+    checked.catalog.wellFormed, checked.importsEvidence.covers⟩
+
+/-- The semantic checker starts from one authenticated source pack. Compact
+    decoding and structured Lean syntax both construct this same input. -/
+structure CoreInput where
+  pack : SourcePack
+  sourceWellFormed : SourcePackWellFormed pack
+  catalog : CatalogSynthesis.Checked pack
+  imports : List CollectedImport
+  importsEvidence : ImportCheck.Checked pack imports
+
+def coreInput {encoded : String}
+    {expectedSources : List Lanius.Extraction.SourceFile}
+    (checked : Checked encoded expectedSources) : CoreInput :=
+  { pack := frontendPack checked.frontend
+    sourceWellFormed := checked.frontend.sourcePackEvidence.down
+    catalog := checked.catalog
+    imports := checked.imports
+    importsEvidence := checked.importsEvidence }
+
+def typedCoreInput {pack : ArtifactPack}
+    {expectedSources : List Lanius.Extraction.SourceFile}
+    (checked : CheckedTyped pack expectedSources) : CoreInput :=
+  { pack := typedFrontendPack checked.frontend
+    sourceWellFormed := checked.frontend.sourcePackEvidence.down
+    catalog := checked.catalog
+    imports := checked.imports
+    importsEvidence := checked.importsEvidence }
+
 end Lanius.Compiler.FrontendBoundary

@@ -1,7 +1,6 @@
 module app::main;
 
 import lowering::program_transport;
-import ir::body_catalog;
 import lowering::transport;
 import verified::byte_io;
 import verified::certificate_output_native;
@@ -435,16 +434,12 @@ fn main() -> i32 {
         if (!lowering::program_transport::succeeded(lowered.status)) {
             return exit_code(CoreLoweringFailure);
         }
-        if (ir::body_catalog::length(lowered.bodies) <= 0) {
-            return exit_code(CoreLoweringFailure);
-        }
-        // Native codegen consumes the retained typed catalogs. Core words
-        // remain available for certificates but are not its input.
-        let emitted: i32 = backend::image_boundary::compile_raw(
+        // Native codegen consumes one typed program. Core words remain
+        // available for certificates but are not its input.
+        let emitted: i32 = backend::image_boundary::compile(
             verified::host::i32_slice_data_ptr(backend_work),
             verified::host::i32_slice_data_ptr(code),
-            ir::body_catalog::raw_memory(lowered.bodies),
-            lowered.bodies.capacity, lowered.native);
+            lowered.program);
         if (emitted <= 0) { return exit_code(BackendFailed); }
         if (emits_certificate(mode)) {
             let certificate_length: i32 =

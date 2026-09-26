@@ -8,7 +8,7 @@ import backend::syntax;
 import ir::body_events;
 import ir::type_ref;
 import lowering::body_event_write;
-import lowering::body_serialization;
+import verified::core_body;
 import verified::host;
 
 fn same_bytes(left: [i32], right: [i32], count: i32) -> bool {
@@ -52,8 +52,8 @@ fn main() -> i32 {
             ir::body_events::IntegerValue(42)) != 2) { return 2; }
     let literal_body: ir::body_events::Region =
         ir::body_events::region(arena.events, 2);
-    if (lowering::body_serialization::serialize(literal_body, 2,
-            lowering::body_serialization::word_region(wire, 8), 0)
+    if (verified::core_body::serialize(literal_body, 2,
+            verified::core_body::word_region(wire, 8), 0)
         != literal_header.body_words) { return 3; }
     let old_end: i32 = backend::literal::return_value(wire, 5,
         literal_header, old_code, 32, 0);
@@ -96,8 +96,8 @@ fn main() -> i32 {
     boolean_header.result_type = ir::type_ref::Bool;
     if (lowering::body_event_write::expression_value(arena, 1,
             ir::body_events::BooleanValue(true)) != 2
-        || lowering::body_serialization::serialize(literal_body, 2,
-            lowering::body_serialization::word_region(wire, 8), 0)
+        || verified::core_body::serialize(literal_body, 2,
+            verified::core_body::word_region(wire, 8), 0)
             != boolean_header.body_words) { return 10; }
     old_end = backend::literal::return_value(wire, 5,
         boolean_header, old_code, 32, 0);
@@ -154,8 +154,8 @@ fn main() -> i32 {
     }
     let parameter_body: ir::body_events::Region =
         ir::body_events::region(arena.events, 4);
-    if (lowering::body_serialization::serialize(parameter_body, 4,
-            lowering::body_serialization::word_region(wire, 8), 0)
+    if (verified::core_body::serialize(parameter_body, 4,
+            verified::core_body::word_region(wire, 8), 0)
         != parameter_header.body_words) { return 6; }
     old_end = backend::parameter::compile(wire, 6, parameter_view,
         old_code, 32, 0);

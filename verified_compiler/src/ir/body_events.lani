@@ -3,6 +3,8 @@ module ir::body_events;
 import verified::host;
 import ir::type_ref;
 
+type TypeRef = ir::type_ref::TypeRef;
+
 // These are semantic Core constructors in preorder. Children follow their
 // parent in source order. Only serialization converts them to certificate
 // words; lowering stores typed events, not packed word prefixes.
@@ -19,6 +21,10 @@ pub struct LocalReference {
 pub struct LocalDeclaration {
     id: i32,
     kind: ir::type_ref::TypeRef,
+}
+
+pub struct CastTarget {
+    kind: TypeRef,
 }
 
 pub struct FieldReference {
@@ -38,6 +44,7 @@ pub struct EnumVariant {
 
 pub struct MatchHeader {
     result_kind: ir::type_ref::TypeRef,
+    scrutinee_type_id: i32,
     arm_count: i32,
 }
 
@@ -72,6 +79,9 @@ pub struct StringValue {
 
 pub enum Event {
     ExpressionInteger(i32),
+    ExpressionUsize(i32),
+    ExpressionPointerNull,
+    ExpressionCast(CastTarget),
     ExpressionBoolean(bool),
     ExpressionString(StringValue),
     ExpressionLocal(LocalReference),
@@ -134,31 +144,150 @@ pub enum Event {
     StatementReturnValue,
 }
 
-// The widest event has a tag and three eight-byte payload fields.
+fn invalid_enumeration_fields() -> EnumVariant {
+    return EnumVariant { type_id: -1, ordinal: -1,
+        payload_count: -1 };
+}
+
+pub fn enumeration_fields(event: Event) -> EnumVariant {
+    return match (event) {
+        ExpressionEnumeration(value) -> value,
+        _ -> invalid_enumeration_fields(),
+    };
+}
+
+fn invalid_typed_slice_fields() -> SliceElement {
+    return SliceElement { kind: I32Slice, id: -1 };
+}
+
+pub fn typed_slice_fields(event: Event) -> SliceElement {
+    return match (event) {
+        ExpressionTypedSliceFromRawParts(value) -> value,
+        _ -> invalid_typed_slice_fields(),
+    };
+}
+
+fn invalid_structure_fields() -> StructFields {
+    return StructFields { type_id: -1, count: -1 };
+}
+
+pub fn structure_fields(event: Event) -> StructFields {
+    return match (event) {
+        ExpressionStruct(value) -> value,
+        _ -> invalid_structure_fields(),
+    };
+}
+
+fn invalid_match_header() -> MatchHeader {
+    return MatchHeader {
+        result_kind: ir::type_ref::Invalid,
+        scrutinee_type_id: -1, arm_count: -1,
+    };
+}
+
+pub fn matching_fields(event: Event) -> MatchHeader {
+    return match (event) {
+        ExpressionMatch(value) -> value,
+        _ -> invalid_match_header(),
+    };
+}
+
+fn invalid_match_arm() -> MatchArm {
+    return MatchArm { ordinal: -1, binding_count: -1 };
+}
+
+pub fn matching_arm_fields(event: Event) -> MatchArm {
+    return match (event) {
+        MatchArmHeader(value) -> value,
+        _ -> invalid_match_arm(),
+    };
+}
+
+fn invalid_local_reference() -> LocalReference {
+    return LocalReference { id: -1 };
+}
+
+pub fn local_reference(event: Event) -> LocalReference {
+    return match (event) {
+        ExpressionLocal(local) -> local,
+        _ -> invalid_local_reference(),
+    };
+}
+
+pub fn matching_binding_fields(event: Event) -> LocalReference {
+    return match (event) {
+        MatchBinding(binding) -> binding,
+        _ -> invalid_local_reference(),
+    };
+}
+
+pub fn call_fields(event: Event) -> CallHeader {
+    let invalid: CallHeader = CallHeader {
+        function_id: -1, argument_count: -1,
+    };
+    return match (event) {
+        ExpressionCall(value) -> value,
+        _ -> invalid,
+    };
+}
+
+fn invalid_local_declaration() -> LocalDeclaration {
+    return LocalDeclaration { id: -1, kind: ir::type_ref::Invalid };
+}
+
+pub fn local_declaration(event: Event) -> LocalDeclaration {
+    return match (event) {
+        StatementLet(initialized) -> initialized,
+        StatementLetUninitialized(uninitialized) -> uninitialized,
+        _ -> invalid_local_declaration(),
+    };
+}
+
+// The widest event has a tag and four eight-byte payload fields.
 const FIELD_BYTES: i32 = 8;
-const EVENT_FIELDS: i32 = 4;
+const EVENT_FIELDS: i32 = 5;
 pub const EVENT_BYTES: i32 = EVENT_FIELDS * FIELD_BYTES;
+const TYPE_BYTES: i32 = ir::type_ref::STORAGE_WORDS * FIELD_BYTES;
 pub const ALIGNMENT: i32 = FIELD_BYTES;
-pub const MAX_CAPACITY: i32 = verified::host::I32_MAX / EVENT_BYTES;
+pub const MAX_CAPACITY: i32 = verified::host::I32_MAX
+    / (EVENT_BYTES + TYPE_BYTES);
 
 pub struct Region {
     events: [Event],
+    result_types: [TypeRef],
+    has_result_types: bool,
     capacity: i32,
 }
 
 pub fn region(events: [Event], capacity: i32) -> Region {
-    return Region { events: events, capacity: capacity };
+    let nowhere: ptr = 0;
+    return Region {
+        events: events,
+        result_types: slice_from_raw_parts(nowhere, 0),
+        has_result_types: false,
+        capacity: capacity,
+    };
 }
 
 pub fn allocation_bytes(capacity: i32) -> i32 {
     if (capacity <= 0 || capacity > MAX_CAPACITY) { return -1; }
-    return capacity * EVENT_BYTES;
+    return capacity * (EVENT_BYTES + TYPE_BYTES);
 }
 
 pub fn from_raw_parts(memory: ptr, capacity: i32) -> Region {
     let first: ptr = memory + capacity * EVENT_BYTES - FIELD_BYTES;
+    let type_base: ptr = memory + capacity * EVENT_BYTES;
+    let type_first: ptr = type_base + capacity * TYPE_BYTES - FIELD_BYTES;
+    let types: [TypeRef] = slice_from_raw_parts(type_first, capacity);
+    let index: i32 = 0;
+    while (index != capacity) {
+        types[index] = ir::type_ref::Invalid;
+        index += 1;
+    }
     return Region {
         events: slice_from_raw_parts(first, capacity),
+        result_types: types,
+        has_result_types: true,
         capacity: capacity,
     };
 }
@@ -167,5 +296,20 @@ pub fn append(output: Region, position: i32, event: Event) -> i32 {
     if (position <= -1 || position >= output.capacity) { return -1; }
     let events: [Event] = output.events;
     events[position] = event;
+    if (output.has_result_types) {
+        let types: [TypeRef] = output.result_types;
+        types[position] = ir::type_ref::Invalid;
+    }
     return position + 1;
+}
+
+pub fn record_result_type(output: Region, position: i32,
+    kind: TypeRef) -> bool {
+    if (position <= -1 || position >= output.capacity
+        || !ir::type_ref::valid_result(kind)) { return false; }
+    if (output.has_result_types) {
+        let types: [TypeRef] = output.result_types;
+        types[position] = kind;
+    }
+    return true;
 }

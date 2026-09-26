@@ -37,6 +37,7 @@ def supportedItem : Surface.Item → Bool
   | .constant _ _ _ _ => true
   | .typeAlias _ _ parameters predicates _ => parameters.isEmpty && predicates.isEmpty
   | .structure d => d.genericParameters.isEmpty && d.wherePredicates.isEmpty
+  | .enumeration d => d.genericParameters.isEmpty && d.wherePredicates.isEmpty
   | _ => false
 
 def supportedPack (pack : Declarations.SourcePack) : Bool := pack.files.all fun file => file.contents.items.all supportedItem
@@ -67,7 +68,9 @@ theorem supportedPack_sound {pack : Declarations.SourcePack}
   | typeAlias _ _ parameters predicates _ =>
       simp [supportedItem, SupportedItem] at itemAccepted
       exact ⟨itemAccepted.1, itemAccepted.2⟩
-  | enumeration _ | trait _ | implementation _ =>
+  | enumeration declaration =>
+      simpa [supportedItem, SupportedItem] using itemAccepted
+  | trait _ | implementation _ =>
       simp [supportedItem, SupportedItem] at itemAccepted
   | «structure» declaration =>
       simpa [supportedItem, SupportedItem] using itemAccepted
@@ -268,7 +271,7 @@ theorem lowerings_unique {α β : Type} {pack : Declarations.SourcePack} {catalo
     calc (row left).occurrence = .item (address left) := source left leftMember
       _ = .item (address right) := by rw [addressEq]
       _ = (row right).occurrence := (source right rightMember).symm
-  have coreEq := declarations.2.2.2.2 (row left) (rowMember left leftMember)
+  have coreEq := declarations.2.2.2.2.2 (row left) (rowMember left leftMember)
     (row right) (rowMember right rightMember) occurrenceEq
   rw [rowCore left, rowCore right] at coreEq
   exact embedInjective coreEq.2
@@ -284,14 +287,17 @@ inductive Failure where
   | missingExternals
 deriving DecidableEq, Repr
 
-def check
-    (checked : CoreBoundary.Checked encoded expectedSources frontend program)
+def checkInput
+    (input : FrontendBoundary.CoreInput)
+    (checked : CoreBoundary.CheckedInput input program)
     (baseContext : SurfaceElaboration.Context) (environment : Names.Environment)
-    (resolver : ExternalBehaviorResolver) :
+    (resolver : ExternalBehaviorResolver)
+    (canonical : baseContext =
+      CoreBoundary.enumContextInput input program checked.declarations) :
     Except Failure ProgramLowering :=
-  let pack := FrontendBoundary.frontendPack frontend.frontend
-  let catalog := frontend.catalog.catalog
-  let imports := frontend.imports
+  let pack := input.pack
+  let catalog := input.catalog.catalog
+  let imports := input.imports
   if hEnvironment : environment = Declarations.nameEnvironment pack catalog imports then
     if hNames : baseContext.names = environment then
       if hTarget : baseContext.target = program.target then
@@ -355,9 +361,9 @@ def check
                     environment := environment
                     context := baseContext
                     program := program
-                    sourceWellFormed := (CoreBoundary.checked_evidence (checked := checked)).1
-                    catalogWellFormed := (CoreBoundary.checked_evidence (checked := checked)).2.1
-                    importsWellFormed := (CoreBoundary.checked_evidence (checked := checked)).2.2.1
+                    sourceWellFormed := input.sourceWellFormed
+                    catalogWellFormed := input.catalog.wellFormed
+                    importsWellFormed := input.importsEvidence.covers
                     eligible := supportedPack_sound hEligible
                     environmentMatches := hEnvironment
                     contextEnvironment := hNames
@@ -375,7 +381,8 @@ def check
                     externalsExact := externalExact
                     constants := constants
                     constantsExact := constantExact
-                    noEnumerations := checked.declarations.enumerationsEmpty
+                    enumerationsLowered := by
+                      simpa only [canonical, EnumShapeCheck.RowShape] using checked.enumShapes.down
                     structuresUnique := checked.declarations.structuresIdsUnique
                     constantsUnique := checked.declarations.constantsIdsUnique
                     functionsUnique := checked.declarations.functionsIdsUnique
@@ -388,5 +395,15 @@ def check
       else .error .contextTargetMismatch
     else .error .contextEnvironmentMismatch
   else .error .environmentMismatch
+
+def check
+    (checked : CoreBoundary.Checked encoded expectedSources frontend program)
+    (baseContext : SurfaceElaboration.Context) (environment : Names.Environment)
+    (resolver : ExternalBehaviorResolver)
+    (canonical : baseContext =
+      CoreBoundary.enumContext frontend program checked.declarations) :
+    Except Failure ProgramLowering :=
+  checkInput (FrontendBoundary.coreInput frontend) checked
+    baseContext environment resolver canonical
 
 end Lanius.Compiler.ProgramLoweringCheck

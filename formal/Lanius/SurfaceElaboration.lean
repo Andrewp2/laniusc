@@ -1115,6 +1115,15 @@ mutual
     | constant
         (resolved : ResolvesConstant context path entry) :
         ExprLowers context (.path path) entry.type (.constant entry.constant)
+    | nullaryVariant
+        (selected : SelectsVariant context (.nominal typeId [] []) path entry)
+        (noArguments : PathHasNoGenericArguments path)
+        (noPayload : entry.payload = [])
+        (coreType : entry.coreType = typeId)
+        (grounded : (Static.GroundTy.nominal typeId [] []).toCore
+          context.monomorphization = some (.enumeration typeId)) :
+        ExprLowers context (.path path) (.nominal typeId [] [])
+          (.enumValue typeId entry.variant [])
     | array
         (head : ExprLowers context surfaceHead elementType coreHead)
         (tail : ExprsCheck context surfaceTail

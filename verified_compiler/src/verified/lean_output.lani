@@ -1,0 +1,94 @@
+module verified::lean_output;
+
+import verified::ascii;
+import verified::host;
+
+const DECIMAL_RADIX: i32 = 10;
+const NIBBLE_BITS: i32 = 4;
+const NIBBLE_MASK: i32 = 15;
+
+// The logical capacity and cursor are byte offsets. Storage is packed four
+// bytes per i32 word so the finished Lean file can be written directly.
+pub struct Cursor {
+    data: [i32],
+    capacity: i32,
+    position: i32,
+}
+
+pub fn cursor(data: [i32], capacity: i32, position: i32) -> Cursor {
+    return Cursor { data: data, capacity: capacity, position: position };
+}
+
+pub fn byte(output: [i32], capacity: i32, position: i32,
+    value: i32) -> i32 {
+    if (position < 0 || position >= capacity
+        || value < 0 || value > verified::host::BYTE_MASK) { return -1; }
+    let word: i32 = position / verified::host::I32_BYTES;
+    let shift: i32 = (position % verified::host::I32_BYTES)
+        * verified::host::BITS_PER_BYTE;
+    let mask: i32 = verified::host::BYTE_MASK << shift;
+    output[word] = (output[word] & (mask ^ -1)) | (value << shift);
+    return position + 1;
+}
+
+fn hex_digit(value: i32) -> i32 {
+    if (value < DECIMAL_RADIX) { return verified::ascii::ZERO + value; }
+    return verified::ascii::LOWER_A + value - DECIMAL_RADIX;
+}
+
+pub fn hex_word(destination: Cursor, value: i32) -> i32 {
+    let next: i32 = destination.position;
+    let shift: i32 = 28;
+    while (shift >= 0) {
+        next = byte(destination.data, destination.capacity, next,
+            hex_digit((value >> shift) & NIBBLE_MASK));
+        if (next < 0) { return -1; }
+        shift -= NIBBLE_BITS;
+    }
+    return next;
+}
+
+pub fn natural(output: [i32], capacity: i32, position: i32,
+    value: i32) -> i32 {
+    if (value < 0 || position < 0 || position > capacity) { return -1; }
+    let digits: i32 = 1;
+    let remaining: i32 = value;
+    while (remaining >= DECIMAL_RADIX) {
+        remaining = remaining / DECIMAL_RADIX;
+        digits += 1;
+    }
+    if (digits > capacity - position) { return -1; }
+    remaining = value;
+    let index: i32 = position + digits;
+    while (index != position) {
+        index -= 1;
+        if (byte(output, capacity, index,
+                verified::ascii::ZERO + remaining % DECIMAL_RADIX) < 0) {
+            return -1;
+        }
+        remaining = remaining / DECIMAL_RADIX;
+    }
+    return position + digits;
+}
+
+pub fn text(output: [i32], capacity: i32, position: i32,
+    input: str, length: i32) -> i32 {
+    if (length < 0 || position < 0 || position > capacity
+        || length > capacity - position) { return -1; }
+    let words: [i32] = verified::host::i32_slice_from_raw_parts(
+        verified::host::string_data_ptr(input),
+        verified::host::packed_words(length));
+    let next: i32 = position;
+    let index: i32 = 0;
+    while (index != length) {
+        let value: i32 =
+            (words[index / verified::host::I32_BYTES]
+                >> ((index % verified::host::I32_BYTES)
+                    * verified::host::BITS_PER_BYTE))
+            & verified::host::BYTE_MASK;
+        next = byte(output, capacity, next, value);
+        if (next < 0) { return -1; }
+        index += 1;
+    }
+    return next;
+}

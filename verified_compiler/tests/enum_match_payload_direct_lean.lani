@@ -1,0 +1,14 @@
+module app::main;
+
+enum Choice {
+    None,
+    Some(i32),
+}
+
+fn main() -> i32 {
+    let selected: Choice = Some(7);
+    return match (selected) {
+        Some(value) => value,
+        None => 0,
+    };
+}

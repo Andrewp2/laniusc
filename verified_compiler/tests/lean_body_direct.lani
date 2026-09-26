@@ -1,0 +1,65 @@
+module app::main;
+
+import ir::body_events;
+import ir::body_tree;
+import ir::type_catalog;
+import verified::host;
+import verified::lean_body;
+
+fn equals(actual: [i32], count: i32, expected: str,
+    expected_count: i32) -> bool {
+    if (count != expected_count) { return false; }
+    let words: [i32] = verified::host::i32_slice_from_raw_parts(
+        verified::host::string_data_ptr(expected),
+        verified::host::packed_words(expected_count));
+    let index: i32 = 0;
+    while (index < count) {
+        let byte: i32 = (words[index / 4] >> ((index % 4) * 8)) & 255;
+        let emitted: i32 = (actual[index / 4] >> ((index % 4) * 8)) & 255;
+        if (emitted != byte) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+fn main() -> i32 {
+    let event_memory: ptr = verified::host::alloc(
+        ir::body_events::allocation_bytes(5),
+        ir::body_events::ALIGNMENT);
+    let output_memory: ptr = verified::host::alloc_i32(
+        verified::host::packed_words(256));
+    if (event_memory == 0 || output_memory == 0) { return 1; }
+    let source: ir::body_events::Region =
+        ir::body_events::from_raw_parts(event_memory, 5);
+    let events: [ir::body_events::Event] = source.events;
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(
+        output_memory, verified::host::packed_words(256));
+    let field: ir::body_events::FieldReference =
+        ir::body_events::FieldReference { index: 0 };
+    let local: ir::body_events::LocalReference =
+        ir::body_events::LocalReference { id: 2 };
+    events[0] = ir::body_events::StatementReturnValue;
+    events[1] = ir::body_events::ExpressionField(field);
+    events[2] = ir::body_events::ExpressionLocal(local);
+    let tree: ir::body_tree::Tree = ir::body_tree::build(source, 3);
+    let length: i32 = verified::lean_body::emit(tree,
+        ir::type_catalog::empty(), output, 256, 0);
+    if (!equals(output, length,
+        "(.returnValue (some (.field (.local 2) 0)))", 43)) {
+        return 2;
+    }
+    events[0] = ir::body_events::StatementExpression;
+    events[1] = ir::body_events::ExpressionAssignmentSet;
+    events[2] = ir::body_events::PlaceField(field);
+    events[3] = ir::body_events::PlaceLocal(local);
+    events[4] = ir::body_events::ExpressionInteger(7);
+    tree = ir::body_tree::build(source, 5);
+    length = verified::lean_body::emit(tree,
+        ir::type_catalog::empty(), output, 256, 0);
+    if (!equals(output, length,
+        "(.expression (.assign .set (.field (.local 2) 0) (.value (.signed .i32 7))))",
+        76)) {
+        return 3;
+    }
+    return 0;
+}

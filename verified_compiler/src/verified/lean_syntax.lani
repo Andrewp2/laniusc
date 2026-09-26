@@ -1,0 +1,262 @@
+module verified::lean_syntax;
+
+import ir::type_catalog;
+import ir::type_ref;
+import ir::symbol_catalog;
+import runtime::service;
+import verified::ascii;
+import verified::lean_output;
+import verified::host;
+import verified::surface_atoms;
+
+// Small, checked Lean-syntax atoms. The caller owns a packed-byte output
+// buffer; every writer returns its next byte offset or -1. No Core transport
+// words are constructed or interpreted here.
+pub fn signed(output: [i32], capacity: i32, position: i32,
+    value: i32) -> i32 {
+    if (value == 0 - verified::host::I32_MAX - 1) {
+        return verified::lean_output::text(output, capacity, position,
+            "-2147483648", 11);
+    }
+    if (value < 0) {
+        let next: i32 = verified::lean_output::byte(output, capacity,
+            position, verified::ascii::MINUS);
+        return verified::lean_output::natural(output, capacity, next, 0 - value);
+    }
+    return verified::lean_output::natural(output, capacity, position, value);
+}
+
+fn hexadecimal_word(output: [i32], capacity: i32, position: i32,
+    value: i32) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "0x", 2);
+    return verified::lean_output::hex_word(
+        verified::lean_output::cursor(output, capacity, next), value);
+}
+
+// The two signed i32 storage limbs denote an unsigned 64-bit machine value.
+// Hex numerals preserve their bit patterns without a decoder computation in
+// generated Lean. The surrounding constructor gives this expression type Nat.
+pub fn unsigned64(output: [i32], capacity: i32, position: i32,
+    low: i32, high: i32) -> i32 {
+    let next: i32 = verified::lean_output::byte(output, capacity,
+        position, verified::ascii::LEFT_PAREN);
+    next = hexadecimal_word(output, capacity, next, low);
+    next = verified::lean_output::text(output, capacity, next,
+        " + 4294967296 * ", 16);
+    next = hexadecimal_word(output, capacity, next, high);
+    return verified::lean_output::byte(output, capacity, next,
+        verified::ascii::RIGHT_PAREN);
+}
+
+fn nominal(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table, id: i32) -> i32 {
+    if (id < 0 || id >= types.type_count) { return -1; }
+    let rows: [ir::type_catalog::TypeDecl] = types.types;
+    let next: i32 = position;
+    if (rows[id].kind == ir::type_catalog::Structure) {
+        next = verified::lean_output::text(output, capacity, next,
+            "(.structure ", 12);
+    } else {
+        if (rows[id].kind != ir::type_catalog::Enumeration) { return -1; }
+        next = verified::lean_output::text(output, capacity, next,
+            "(.enumeration ", 14);
+    }
+    next = verified::lean_output::natural(output, capacity, next, id);
+    return verified::lean_output::byte(output, capacity, next,
+        verified::ascii::RIGHT_PAREN);
+}
+
+fn nominal_slice(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table, id: i32) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, "(.slice ", 8);
+    next = nominal(output, capacity, next, types, id);
+    return verified::lean_output::byte(output, capacity, next,
+        verified::ascii::RIGHT_PAREN);
+}
+
+pub fn type_ref(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table,
+    value: ir::type_ref::TypeRef) -> i32 {
+    return match (value) {
+        ir::type_ref::Void -> verified::lean_output::text(output, capacity,
+            position, ".unit", 5),
+        ir::type_ref::I32 -> verified::lean_output::text(output, capacity,
+            position, "(.scalar (.signed .i32))", 24),
+        ir::type_ref::Bool -> verified::lean_output::text(output, capacity,
+            position, "(.scalar .bool)", 15),
+        ir::type_ref::Usize -> verified::lean_output::text(output, capacity,
+            position, "(.scalar (.unsigned .usize))", 28),
+        ir::type_ref::Pointer -> verified::lean_output::text(output, capacity,
+            position, "(.scalar .rawPtr)", 17),
+        ir::type_ref::String -> verified::lean_output::text(output, capacity,
+            position, "(.scalar .string)", 17),
+        ir::type_ref::Slice -> verified::lean_output::text(output, capacity,
+            position, "(.slice (.scalar (.signed .i32)))", 33),
+        ir::type_ref::Nominal(id) -> nominal(output, capacity, position,
+            types, id),
+        ir::type_ref::NominalSlice(slice_id) -> nominal_slice(output,
+            capacity, position, types, slice_id),
+        _ -> -1,
+    };
+}
+
+// Source identifiers have already been validated by the Lanius lexer. The
+// same spelling is emitted into Lean without rereading the source file.
+pub fn source_identifier(output: [i32], capacity: i32, position: i32,
+    names: ir::symbol_catalog::Catalog,
+    reference: ir::symbol_catalog::Ref) -> i32 {
+    let spelling: ir::symbol_catalog::Spelling =
+        ir::symbol_catalog::spelling(names, reference);
+    if (!spelling.valid) { return -1; }
+    let bytes: [i32] = spelling.source;
+    let next: i32 = position;
+    let index: i32 = 0;
+    while (index < spelling.length) {
+        next = verified::lean_output::byte(output, capacity, next,
+            bytes[spelling.start + index]);
+        if (next < 0) { return -1; }
+        index += 1;
+    }
+    return next;
+}
+
+// A source-shaped Lean type name retains a stable Core ID to prevent clashes
+// between source units that declare the same spelling.
+pub fn type_identifier(output: [i32], capacity: i32, position: i32,
+    names: ir::symbol_catalog::Catalog, id: i32) -> i32 {
+    if (id < 0 || (names.unit_count > 0 && id >= names.type_count)) {
+        return -1;
+    }
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "ExtractedType", 13);
+    next = verified::lean_output::natural(output, capacity, next, id);
+    if (names.unit_count == 0) { return next; }
+    let references: [ir::symbol_catalog::Ref] = names.types;
+    next = verified::lean_output::byte(output, capacity, next, 95);
+    return source_identifier(output, capacity, next, names, references[id]);
+}
+
+pub fn variant_identifier(output: [i32], capacity: i32, position: i32,
+    names: ir::symbol_catalog::Catalog, slot: i32) -> i32 {
+    if (slot < 0 || (names.unit_count > 0 && slot >= names.variant_count)) {
+        return -1;
+    }
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "extractedVariant", 16);
+    next = verified::lean_output::natural(output, capacity, next, slot);
+    if (names.unit_count == 0) { return next; }
+    let references: [ir::symbol_catalog::Ref] = names.variants;
+    next = verified::lean_output::byte(output, capacity, next, 95);
+    return source_identifier(output, capacity, next, names, references[slot]);
+}
+
+pub fn named_type_ref(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table,
+    names: ir::symbol_catalog::Catalog,
+    value: ir::type_ref::TypeRef) -> i32 {
+    return match (value) {
+        ir::type_ref::Void -> verified::lean_output::text(output, capacity,
+            position, "Unit", 4),
+        ir::type_ref::I32 -> verified::lean_output::text(output, capacity,
+            position, "Lanius.TypedIR.Named.I32", 24),
+        ir::type_ref::Bool -> verified::lean_output::text(output, capacity,
+            position, "Bool", 4),
+        ir::type_ref::Usize -> verified::lean_output::text(output, capacity,
+            position, "Lanius.TypedIR.Named.Usize", 26),
+        ir::type_ref::Pointer -> verified::lean_output::text(output, capacity,
+            position, "Lanius.TypedIR.Named.RawPtr", 27),
+        ir::type_ref::String -> verified::lean_output::text(output, capacity,
+            position, "String", 6),
+        ir::type_ref::Slice -> verified::lean_output::text(output, capacity,
+            position, "(Lanius.TypedIR.Named.Slice Lanius.TypedIR.Named.I32)", 53),
+        ir::type_ref::Nominal(id) -> type_identifier(output, capacity,
+            position, names, id),
+        ir::type_ref::NominalSlice(slice_id) -> named_nominal_slice(output,
+            capacity, position, names, slice_id),
+        _ -> -1,
+    };
+}
+
+fn named_nominal_slice(output: [i32], capacity: i32, position: i32,
+    names: ir::symbol_catalog::Catalog, id: i32) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "(Lanius.TypedIR.Named.Slice ", 28);
+    next = type_identifier(output, capacity, next, names, id);
+    return verified::lean_output::byte(output, capacity, next, 41);
+}
+
+fn hex_digit(value: i32) -> i32 {
+    if (value < 10) { return verified::ascii::ZERO + value; }
+    return verified::ascii::LOWER_A + value - 10;
+}
+
+// Emit a byte-preserving UTF-8 Lean string literal from typed IR bytes.
+// ASCII controls, the quote, and backslash use fixed-width hex escapes;
+// multibyte UTF-8 is copied verbatim after validating the whole string.
+pub fn string_bytes(output: [i32], capacity: i32, position: i32,
+    bytes: [i32], byte_capacity: i32, start: i32, count: i32) -> i32 {
+    if (start < 0 || count < 0 || start > byte_capacity
+        || count > byte_capacity - start
+        || !verified::surface_atoms::valid_utf8(bytes, byte_capacity,
+            start, start + count)) {
+        return -1;
+    }
+    let next: i32 = verified::lean_output::byte(output, capacity,
+        position, 34);
+    let index: i32 = 0;
+    while (index < count) {
+        let byte: i32 = bytes[start + index];
+        if (byte < 0 || byte > verified::host::BYTE_MASK) { return -1; }
+        if (byte < 32 || byte == 34 || byte == 92 || byte == 127) {
+            next = verified::lean_output::byte(output, capacity, next, 92);
+            next = verified::lean_output::byte(output, capacity, next, 120);
+            next = verified::lean_output::byte(output, capacity, next,
+                hex_digit(byte >> 4));
+            next = verified::lean_output::byte(output, capacity, next,
+                hex_digit(byte & 15));
+        } else {
+            next = verified::lean_output::byte(output, capacity, next, byte);
+        }
+        if (next <= -1) { return -1; }
+        index += 1;
+    }
+    return verified::lean_output::byte(output, capacity, next, 34);
+}
+
+pub fn source_name(output: [i32], capacity: i32, position: i32,
+    names: ir::symbol_catalog::Catalog,
+    reference: ir::symbol_catalog::Ref) -> i32 {
+    let spelling: ir::symbol_catalog::Spelling =
+        ir::symbol_catalog::spelling(names, reference);
+    if (!spelling.valid) { return -1; }
+    return string_bytes(output, capacity, position,
+        spelling.source, names.source_count,
+        spelling.start, spelling.length);
+}
+
+pub fn service(output: [i32], capacity: i32, position: i32,
+    value: runtime::service::RuntimeService) -> i32 {
+    return match (value) {
+        runtime::service::Allocate -> verified::lean_output::text(output,
+            capacity, position, "(.host .alloc)", 14),
+        runtime::service::OpenRead -> verified::lean_output::text(output,
+            capacity, position, "(.host .openRead)", 17),
+        runtime::service::Close -> verified::lean_output::text(output,
+            capacity, position, "(.host .close)", 14),
+        runtime::service::Read -> verified::lean_output::text(output,
+            capacity, position, "(.host .read)", 13),
+        runtime::service::WriteStdout -> verified::lean_output::text(output,
+            capacity, position, "(.host .writeStdout)", 20),
+        runtime::service::WriteByte -> verified::lean_output::text(output,
+            capacity, position, "(.host .writeByte)", 18),
+        runtime::service::ArgumentCount -> verified::lean_output::text(output,
+            capacity, position, "(.host .argc)", 13),
+        runtime::service::ArgumentLength -> verified::lean_output::text(output,
+            capacity, position, "(.host .argLen)", 15),
+        runtime::service::ArgumentRead -> verified::lean_output::text(output,
+            capacity, position, "(.host .argRead)", 16),
+        _ -> -1,
+    };
+}

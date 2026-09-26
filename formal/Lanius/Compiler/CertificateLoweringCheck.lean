@@ -74,7 +74,7 @@ structure Checked (encoded : String)
     Extraction.CertificateBoundary.check encoded expectedSources = .ok certificate
   loweringAccepted :
     ProgramLoweringCheck.check certificate.core (contextFor certificate)
-      (environmentFor certificate) resolver = .ok lowering
+      (environmentFor certificate) resolver rfl = .ok lowering
 
 def check (encoded : String) (expectedSources : List Extraction.SourceFile)
     (resolver : ExternalBehaviorResolver) :
@@ -84,7 +84,7 @@ def check (encoded : String) (expectedSources : List Extraction.SourceFile)
   | .ok certificate =>
       match loweringAccepted :
           ProgramLoweringCheck.check certificate.core (contextFor certificate)
-            (environmentFor certificate) resolver with
+            (environmentFor certificate) resolver rfl with
       | .error failure => .error (.lowering failure)
       | .ok lowering =>
           .ok { certificate, lowering, certificateAccepted, loweringAccepted }
@@ -98,7 +98,8 @@ private theorem lowering_fields_eq
     {environment : Names.Environment}
     {resolver : ExternalBehaviorResolver}
     {lowering : ProgramLowering}
-    (accepted : ProgramLoweringCheck.check coreChecked baseContext environment resolver =
+    (canonical : baseContext = CoreBoundary.enumContext frontend program coreChecked.declarations)
+    (accepted : ProgramLoweringCheck.check coreChecked baseContext environment resolver canonical =
       .ok lowering) :
     lowering.pack = FrontendBoundary.frontendPack frontend.frontend ∧
       lowering.catalog = frontend.catalog.catalog ∧
@@ -106,11 +107,11 @@ private theorem lowering_fields_eq
       lowering.environment = environment ∧
       lowering.context = baseContext ∧
       lowering.program = program := by
-  dsimp only [ProgramLoweringCheck.check] at accepted
+  dsimp only [ProgramLoweringCheck.check, ProgramLoweringCheck.checkInput] at accepted
   repeat' split at accepted
   all_goals simp_all
   cases accepted
-  exact ⟨rfl, rfl, rfl, by assumption, rfl, rfl⟩
+  exact ⟨rfl, rfl, rfl, by assumption, canonical, rfl⟩
 
 /- The theorem exposes the non-vacuous part of the join: the context accepted
    by the lowering checker has the canonical source environment and the exact
@@ -124,7 +125,7 @@ theorem context_sound {encoded : String}
         Declarations.nameEnvironment (Pack checked.certificate)
           (Catalog checked.certificate) (Imports checked.certificate) ∧
       checked.lowering.context.target = checked.lowering.program.target := by
-  have fields := lowering_fields_eq checked.loweringAccepted
+  have fields := lowering_fields_eq rfl checked.loweringAccepted
   have names := checked.lowering.contextEnvironment.trans checked.lowering.environmentMatches
   constructor
   · simpa [fields.1, fields.2.1, fields.2.2.1] using names
@@ -136,7 +137,7 @@ theorem program_sound {encoded : String}
     {checked : Checked encoded expectedSources resolver}
     (_accepted : check encoded expectedSources resolver = .ok checked) :
     checked.lowering.program = Program checked.certificate := by
-  exact (lowering_fields_eq checked.loweringAccepted).2.2.2.2.2
+  exact (lowering_fields_eq rfl checked.loweringAccepted).2.2.2.2.2
 
 /- The same dependent result also retains the exact Surface pack selected by
    the certificate frontend; expose that field without introducing another
@@ -147,6 +148,6 @@ theorem source_pack_sound {encoded : String}
     {checked : Checked encoded expectedSources resolver}
     (_accepted : check encoded expectedSources resolver = .ok checked) :
     checked.lowering.pack = Pack checked.certificate := by
-  exact (lowering_fields_eq checked.loweringAccepted).1
+  exact (lowering_fields_eq rfl checked.loweringAccepted).1
 
 end Lanius.Compiler.CertificateLoweringCheck

@@ -21,6 +21,9 @@ fn main() -> i32 {
             resolution_count: 0,
             value_row_offset: 0,
         value_count: 17,
+        declaration_start: -1,
+        declaration_count: 0,
+        module_target: -1,
     };
     if (values[index].source_offset != 11 || values[index].source_length != 13
         || values[index].value_count != 17) {

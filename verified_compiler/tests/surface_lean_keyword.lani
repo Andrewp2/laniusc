@@ -1,0 +1,6 @@
+module app::main;
+
+fn main() -> i32 {
+    let theorem: i32 = 7;
+    return theorem;
+}

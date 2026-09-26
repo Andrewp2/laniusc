@@ -9,14 +9,16 @@ import backend::syntax;
 import backend::literal;
 import ir::body_events;
 import ir::body_catalog;
+import ir::constant_catalog;
 import ir::function_catalog;
 import ir::program;
-import lowering::allocation;
-import lowering::signature_index;
+import ir::type_catalog;
 import x86::control;
 import runtime::service;
 import runtime::string;
 import verified::host;
+
+type ProgramIR = ir::program::Program;
 
 // A standalone backend invocation reads serialized Core. The compiler instead
 // supplies typed catalogs and events; serialized Core is only a certificate
@@ -27,14 +29,9 @@ pub struct CoreSource {
     function_workspace: backend::compile::WordRegion,
 }
 
-pub struct TypedSource {
-    bodies: ir::body_catalog::Catalog,
-    native: ir::program::Storage,
-}
-
 pub enum Source {
     SerializedCore(CoreSource),
-    TypedProgram(TypedSource),
+    TypedProgram(ProgramIR),
 }
 
 pub fn core(program: backend::compile::WordRegion,
@@ -45,10 +42,8 @@ pub fn core(program: backend::compile::WordRegion,
     return SerializedCore(input);
 }
 
-pub fn typed(bodies: ir::body_catalog::Catalog,
-    native: ir::program::Storage) -> Source {
-    let input: TypedSource = TypedSource { bodies: bodies, native: native };
-    return TypedProgram(input);
+pub fn typed(program: ir::program::Program) -> Source {
+    return TypedProgram(program);
 }
 
 pub fn is_typed(source: Source) -> bool {
@@ -71,12 +66,9 @@ fn core_input(source: Source) -> CoreSource {
     };
 }
 
-fn typed_input(source: Source) -> TypedSource {
-    let absent: TypedSource = TypedSource {
-        bodies: ir::body_catalog::empty(), native: ir::program::empty(),
-    };
+fn typed_input(source: Source) -> ir::program::Program {
     return match (source) {
-        SerializedCore(core_value) -> absent,
+        SerializedCore(core_value) -> ir::program::empty(),
         TypedProgram(typed_value) -> typed_value,
     };
 }
@@ -96,8 +88,10 @@ fn native_stride(bodies: ir::body_catalog::Catalog,
     while (index < count) {
         let body: ir::body_catalog::FunctionBody =
             ir::body_catalog::at(bodies, index);
-        if (body.count <= 0 || body.count > remaining) { return -1; }
-        remaining -= body.count;
+        if (body.tree.count <= 0 || body.tree.count > remaining) {
+            return -1;
+        }
+        remaining -= body.tree.count;
         index += 1;
     }
     return backend::compile::MAX_WORDS - remaining;
@@ -107,13 +101,12 @@ pub fn compile(source: Source, workspace: backend::frame::Workspace,
     destination: backend::compile::CodeCursor) -> i32 {
     let native_mode: bool = is_typed(source);
     let core_data: CoreSource = core_input(source);
-    let typed_data: TypedSource = typed_input(source);
+    let typed_data: ir::program::Program = typed_input(source);
     let input: [i32] = core_data.program.data;
     let length: i32 = core_data.program.words;
     let function_input: [i32] = core_data.function_workspace.data;
     let function_capacity: i32 = core_data.function_workspace.words;
     let bodies: ir::body_catalog::Catalog = typed_data.bodies;
-    let native: ir::program::Storage = typed_data.native;
     let work: backend::frame::Workspace = workspace;
     let state: [backend::frame::State] = backend::frame::state_view(work);
     let work_length: i32 = workspace.words;
@@ -122,10 +115,11 @@ pub fn compile(source: Source, workspace: backend::frame::Workspace,
     let cursor: i32 = destination.position;
     let typed_count: i32 = ir::body_catalog::length(bodies);
     if (native_mode && (typed_count <= 0 || typed_count > bodies.capacity
-        || !ir::program::valid(native))) { return -1; }
-    let signatures: lowering::signature_index::Table = native.signatures;
-    let allocations: lowering::allocation::Table = native.allocations;
-    let native_functions: ir::function_catalog::Table = native.functions;
+        || !ir::program::valid(typed_data))) { return -1; }
+    let native_types: ir::type_catalog::Table = typed_data.types;
+    let native_constants: ir::constant_catalog::Table =
+        typed_data.constants;
+    let native_functions: ir::function_catalog::Table = typed_data.functions;
     let stride: i32 = length;
     if (native_mode) {
         stride = native_stride(bodies, native_functions);
@@ -141,26 +135,12 @@ pub fn compile(source: Source, workspace: backend::frame::Workspace,
         > work_length) { return -1; }
     let header: backend::syntax::ProgramHeader;
     if (native_mode) {
-        let native_header: lowering::allocation::AllocationHeader =
-            lowering::allocation::table_header(allocations);
-        if (native_header.functions != typed_count
-            || native_header.externals <= -1
-            || native_header.structures <= -1
-            || native_header.enumerations <= -1
-            || native_header.structures > verified::host::I32_MAX
-                - native_header.enumerations
-            || native_header.functions > verified::host::I32_MAX
-                - native_header.externals
-            || native_header.functions + native_header.externals
-                != native_functions.count) { return -1; }
-        let first_function: ir::function_catalog::Function =
-            ir::function_catalog::at(native_functions, 0);
         header = backend::syntax::ProgramHeader {
             version: backend::syntax::PROGRAM_VERSION,
             pointer_bits: backend::syntax::POINTER_BITS,
-            entry: first_function.id,
-            types: native_header.structures + native_header.enumerations,
-            constants: native_header.constants,
+            entry: typed_data.entrypoint,
+            types: native_types.type_count,
+            constants: native_constants.count,
             functions: native_functions.count,
         };
     } else {
@@ -179,8 +159,7 @@ pub fn compile(source: Source, workspace: backend::frame::Workspace,
     state[0].function_count = 0;
     let required: backend::layout_index::Requirements;
     if (native_mode) {
-        required = backend::layout_index::measure_native(signatures,
-            allocations);
+        required = backend::layout_index::measure_typed(native_types);
     } else {
         required = backend::layout_index::measure(input, length);
     }
@@ -201,10 +180,10 @@ pub fn compile(source: Source, workspace: backend::frame::Workspace,
     let constants: backend::constant_index::Table;
     if (native_mode) {
         constants = backend::constant_index::from_raw_parts(
-            constant_memory, constant_count, signatures.bytes,
-            signatures.byte_count);
-        if (!backend::constant_index::build_native(signatures,
-                allocations, constants)) { return -1; }
+            constant_memory, constant_count, native_constants.bytes,
+            native_constants.byte_count);
+        if (!backend::constant_index::build_typed(native_constants,
+                constants)) { return -1; }
     } else {
         constants = backend::constant_index::from_raw_parts(
             constant_memory, constant_count, input, length);
@@ -261,8 +240,9 @@ pub fn compile(source: Source, workspace: backend::frame::Workspace,
     let layout: backend::layout_index::Table =
         backend::layout_index::from_raw_parts(layout_memory, required);
     if (native_mode) {
-        if (!backend::layout_index::build_native(signatures,
-                allocations, layout)) { return -1; }
+        if (!backend::layout_index::build_typed(native_types, layout)) {
+            return -1;
+        }
     } else {
         if (!backend::layout_index::build(input, length, layout)) {
             return -1;
@@ -290,7 +270,8 @@ pub fn compile(source: Source, workspace: backend::frame::Workspace,
                 let body: ir::body_catalog::FunctionBody =
                     ir::body_catalog::at(bodies, body_index);
                 let events: ir::body_events::Region =
-                    ir::body_events::region(body.events, body.count);
+                    ir::body_events::region(body.tree.events,
+                        body.tree.count);
                 emitted = backend::compile::function_events(events,
                     function, workspace,
                     backend::compile::cursor(output, capacity, next),

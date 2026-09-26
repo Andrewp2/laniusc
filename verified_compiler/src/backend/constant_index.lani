@@ -2,10 +2,7 @@ module backend::constant_index;
 
 import backend::literal;
 import backend::syntax;
-import lowering::allocation;
-import lowering::declarations;
-import lowering::signature_index;
-import lowering::signatures;
+import ir::constant_catalog;
 import ir::type_ref;
 import verified::host;
 
@@ -129,106 +126,31 @@ pub fn build(input: [i32], length: i32, start: i32,
     return position;
 }
 
-pub fn build_native(signatures: lowering::signature_index::Table,
-    allocations: lowering::allocation::Table, table: Table) -> bool {
-    if (!lowering::allocation::table_has_exact_rows(allocations)
-        || table.byte_count != signatures.byte_count) {
-        return false;
-    }
-    let header: lowering::allocation::AllocationHeader =
-        lowering::allocation::table_header(allocations);
-    if (header.constants != table.count) { return false; }
+pub fn build_typed(source: ir::constant_catalog::Table,
+    table: Table) -> bool {
+    if (!ir::constant_catalog::valid(source)
+        || table.count != source.count
+        || table.byte_count != source.byte_count) { return false; }
+    let constants: [ir::constant_catalog::Constant] = source.constants;
     let rows: [Row] = table.rows;
     let index: i32 = 0;
-    let allocation_index: i32 = 0;
-    while (allocation_index < header.rows) {
-        let allocation: lowering::allocation::AllocationRow =
-            lowering::allocation::table_row(allocations, allocation_index);
-        if (lowering::allocation::row_has_kind(allocation,
-                lowering::declarations::Constant)) {
-            if (index >= table.count) { return false; }
-            let declaration: i32 =
-                lowering::allocation::row_declaration_id(allocation);
-            if (!lowering::signature_index::has_shape(signatures,
-                    declaration, lowering::signatures::ConstantShape)) {
-                return false;
-            }
-            let record: lowering::signatures::SignatureRecord =
-                lowering::signature_index::record_at(signatures,
-                    declaration);
-            let id: i32 = lowering::signatures::record_id(record);
-            let encoded: i32 = ir::type_ref::code(
-                lowering::signatures::record_result_type(record));
-            if (id <= -1 || find_prefix(table, index, id) >= 0
-                || encoded < backend::syntax::type_code(
-                    backend::syntax::TypeI32)
-                || encoded > backend::syntax::type_code(
-                    backend::syntax::TypeString)) { return false; }
-            let kind: backend::syntax::ValueType = backend::syntax::TypeI32;
-            if (backend::syntax::type_is(encoded,
-                    backend::syntax::TypeBool)) {
-                kind = backend::syntax::TypeBool;
-            }
-            if (backend::syntax::type_is(encoded,
-                    backend::syntax::TypeUsize)) {
-                kind = backend::syntax::TypeUsize;
-            }
-            if (backend::syntax::type_is(encoded,
-                    backend::syntax::TypePointer)) {
-                kind = backend::syntax::TypePointer;
-            }
-            if (backend::syntax::type_is(encoded,
-                    backend::syntax::TypeString)) {
-                kind = backend::syntax::TypeString;
-            }
-            let constant: lowering::signature_index::ConstantValue =
-                lowering::signature_index::constant_at(signatures,
-                    declaration);
-            let low: i32 = 0;
-            let high: i32 = 0;
-            let byte_start: i32 = -1;
-            let byte_count: i32 = 0;
-            if (kind == backend::syntax::TypeString) {
-                if (constant.encoding
-                        != lowering::signature_index::StringConstant
-                    || constant.byte_start <= -1
-                    || constant.byte_count <= -1
-                    || constant.byte_start > signatures.byte_count
-                        - constant.byte_count) {
-                    return false;
-                }
-                byte_start = constant.byte_start;
-                byte_count = constant.byte_count;
-                let byte: i32 = 0;
-                while (byte < byte_count) {
-                    let value: i32 =
-                        lowering::signature_index::constant_byte(signatures,
-                            declaration, byte);
-                    if (value <= -1 || value > verified::host::BYTE_MASK) {
-                        return false;
-                    }
-                    byte += 1;
-                }
-            } else {
-                if (constant.encoding
-                        != lowering::signature_index::ScalarConstant
-                    || (kind == backend::syntax::TypeBool
-                        && !backend::syntax::valid_boolean(constant.low))
-                    || ((kind == backend::syntax::TypeI32
-                            || kind == backend::syntax::TypeBool)
-                        && constant.high != 0)) {
-                    return false;
-                }
-                low = constant.low;
-                high = constant.high;
-            }
-            rows[index] = Row {
-                id: id, kind: kind, low: low, high: high,
-                byte_start: byte_start, byte_count: byte_count,
-            };
-            index += 1;
-        }
-        allocation_index += 1;
+    while (index != source.count) {
+        let constant: ir::constant_catalog::Constant = constants[index];
+        let code: i32 = ir::type_ref::code(constant.kind);
+        let kind: backend::syntax::ValueType = backend::syntax::TypeI32;
+        if (code == 2) { kind = backend::syntax::TypeBool; }
+        if (code == 3) { kind = backend::syntax::TypeUsize; }
+        if (code == 4) { kind = backend::syntax::TypePointer; }
+        if (code == 5) { kind = backend::syntax::TypeString; }
+        rows[index] = Row {
+            id: constant.id,
+            kind: kind,
+            low: constant.low,
+            high: constant.high,
+            byte_start: constant.byte_start,
+            byte_count: constant.byte_count,
+        };
+        index += 1;
     }
-    return index == table.count;
+    return true;
 }

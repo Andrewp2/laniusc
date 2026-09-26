@@ -1,0 +1,15 @@
+module app::main;
+
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+fn write(values: [Pair]) -> i32 {
+    values[0].left = 3;
+    return 0;
+}
+
+fn main() -> i32 {
+    return 0;
+}

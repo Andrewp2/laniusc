@@ -1,0 +1,14 @@
+module app::main;
+
+enum Choice {
+    Read,
+    Write,
+}
+
+fn main() -> i32 {
+    let selected: Choice = Read;
+    return match (selected) {
+        Read => 7,
+        Write => 2,
+    };
+}

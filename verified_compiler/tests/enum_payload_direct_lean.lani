@@ -1,0 +1,15 @@
+module app::main;
+
+enum Value {
+    One(i32),
+    Zero,
+}
+
+fn make() -> Value {
+    return One(42);
+}
+
+fn main() -> i32 {
+    let value: Value = One(42);
+    return 0;
+}

@@ -34,7 +34,7 @@ theorem quotedEscapingSet_runs
       .next after := RunsStmt.expression (assignedRun
     (StableExpr.assignSetBool program current 5 escapingCellId
       (.boolean escaping) nextEscaping after invariant.escapingCell
-      invariant.escapingLocal assigned) assigned)
+      invariant.escapingLocal assigned rfl) assigned)
   exact ⟨expression, QuotedInvariant.afterEscapingAssignment invariant nextEscaping
     (.boolean nextEscaping) assigned rfl⟩
 

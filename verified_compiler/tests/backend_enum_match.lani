@@ -14,7 +14,7 @@ import verified::host;
 // match Some(42) { Some(value) -> value, None -> 0 }.
 fn main() -> i32 {
     let program: [i32; 13] = [3,64,0,1,0,1, 6,0,1,2, 1,1,0];
-    let input: [i32; 22] = [0,0,0,0,0,0,0,0,0,0,0,
+    let input: [i32; 23] = [0,0,0,0,0,0,0,0,0,0,0,0,
         0,0,0,0,0,0,0,0,0,0,0];
     let header: backend::syntax::FunctionHeader =
         backend::syntax::FunctionHeader {
@@ -23,13 +23,13 @@ fn main() -> i32 {
             id: 0,
             result_type: ir::type_ref::I32,
             parameters: 0,
-            body_words: 22,
+            body_words: 23,
         };
     let function: backend::function_index::Function =
         backend::function_index::Function {
             header: header,
             input_offset: 0,
-            word_count: 28,
+            word_count: 29,
             parameter_start: 0,
             service: runtime::service::NoService,
         };
@@ -41,30 +41,31 @@ fn main() -> i32 {
         backend::syntax::ExprMatch);
     input[cursor + 3] = backend::syntax::type_code(
         backend::syntax::TypeI32);
-    input[cursor + 4] = 2;
-    input[cursor + 5] = backend::syntax::expression_code(
+    input[cursor + 4] = backend::syntax::NOMINAL_TYPE_BASE;
+    input[cursor + 5] = 2;
+    input[cursor + 6] = backend::syntax::expression_code(
         backend::syntax::ExprEnumeration);
-    input[cursor + 6] = backend::syntax::NOMINAL_TYPE_BASE;
-    input[cursor + 7] = 0;
-    input[cursor + 8] = 1;
-    input[cursor + 9] = backend::syntax::expression_code(
+    input[cursor + 7] = backend::syntax::NOMINAL_TYPE_BASE;
+    input[cursor + 8] = 0;
+    input[cursor + 9] = 1;
+    input[cursor + 10] = backend::syntax::expression_code(
         backend::syntax::ExprValue);
-    input[cursor + 10] = backend::syntax::type_code(
+    input[cursor + 11] = backend::syntax::type_code(
         backend::syntax::TypeI32);
-    input[cursor + 11] = 42;
-    input[cursor + 12] = 0;
-    input[cursor + 13] = 1;
-    input[cursor + 14] = 7;
-    input[cursor + 15] = backend::syntax::expression_code(
+    input[cursor + 12] = 42;
+    input[cursor + 13] = 0;
+    input[cursor + 14] = 1;
+    input[cursor + 15] = 7;
+    input[cursor + 16] = backend::syntax::expression_code(
         backend::syntax::ExprLocal);
-    input[cursor + 16] = 7;
-    input[cursor + 17] = 1;
-    input[cursor + 18] = 0;
-    input[cursor + 19] = backend::syntax::expression_code(
+    input[cursor + 17] = 7;
+    input[cursor + 18] = 1;
+    input[cursor + 19] = 0;
+    input[cursor + 20] = backend::syntax::expression_code(
         backend::syntax::ExprValue);
-    input[cursor + 20] = backend::syntax::type_code(
+    input[cursor + 21] = backend::syntax::type_code(
         backend::syntax::TypeI32);
-    input[cursor + 21] = 0;
+    input[cursor + 22] = 0;
     let stride: i32 = 13;
     let work_words: i32 = backend::frame::HEADER
         + stride * backend::frame::WORK_WORDS_PER_STRIDE;
@@ -98,11 +99,11 @@ fn main() -> i32 {
         4096);
     state[0].stride = stride;
     let written: i32 = backend::compile::function(
-        backend::compile::region(input, 22), function,
+        backend::compile::region(input, 23), function,
         work,
         backend::compile::cursor(output, 4096, 0),
         layout, constants,
         functions);
-    if (written <= 0 || state[0].input != 22) { return 1; }
+    if (written <= 0 || state[0].input != 23) { return 1; }
     return 0;
 }

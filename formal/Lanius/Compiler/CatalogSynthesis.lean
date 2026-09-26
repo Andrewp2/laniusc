@@ -1,4 +1,5 @@
 import Lanius.Declarations.CatalogCheck
+import Std.Data.HashMap.Basic
 
 namespace Lanius.Compiler.CatalogSynthesis
 
@@ -95,8 +96,42 @@ def headers? (pack : SourcePack) : Nat → List DeclarationOccurrence →
       let rest ← headers? pack (id + 1) tail
       pure (header :: rest)
 
-def synthesize? (pack : SourcePack) : Option Catalog :=
-  (headers? pack 0 (normalizedOccurrences pack)).map fun headers => { headers }
+/-- Give semantic declarations the same namespace layout as the Lanius
+    allocator. Nested variant names remain in the catalog, but receive IDs
+    after runtime declarations: they have no independent Core declaration. -/
+def allocationOrder (pack : SourcePack) (headers : List DeclarationHeader) :
+    List DeclarationHeader :=
+  let byKind (kind : DeclarationKind) := headers.filter (fun h => h.kind == kind)
+  let callables := pack.files.flatMap fun file =>
+    headers.filter (fun h => h.kind == .function &&
+      match h.source with
+      | .item address => address.file == file.id
+      | _ => false) ++
+    headers.filter (fun h => h.kind == .externalFunction &&
+      match h.source with
+      | .item address => address.file == file.id
+      | _ => false)
+  let other := headers.filter fun h =>
+    h.kind != .structureType && h.kind != .enumeration &&
+      h.kind != .typeAlias && h.kind != .constant &&
+      h.kind != .function && h.kind != .externalFunction
+  byKind .structureType ++ byKind .enumeration ++ byKind .typeAlias ++
+    byKind .constant ++ callables ++ other
+
+def assignSemanticIds? (pack : SourcePack) (headers : List DeclarationHeader) :
+    Option (List DeclarationHeader) := do
+  let order := allocationOrder pack headers
+  let ids := ((List.range order.length).zip order).foldl
+    (fun (index : Std.HashMap DeclarationOccurrence Nat) (pair : Nat × DeclarationHeader) =>
+      index.insert pair.2.source pair.1) {}
+  headers.mapM fun header => do
+    let id ← ids[header.source]?
+    pure { header with declaration := id }
+
+def synthesize? (pack : SourcePack) : Option Catalog := do
+  let headers ← headers? pack 0 (normalizedOccurrences pack)
+  let headers ← assignSemanticIds? pack headers
+  pure { headers }
 
 structure Checked (pack : SourcePack) where
   catalog : Catalog

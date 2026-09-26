@@ -1,38 +1,32 @@
 module app::main;
 import verified::extraction;
 import verified::parser;
-import verified::parse_tree;
 import verified::syntax_tree;
 import verified::byte_io;
 import verified::semantic_tokens;
 import verified::token;
-import verified::compact_artifact_output;
 import verified::host;
-import verified::output;
-import verified::certificate_output_native;
 import verified::grammar;
+import verified::lean_frontend;
 import lowering::program_transport;
 import driver::arguments;
 import lowering::transport;
-import verified::core_output;
+import verified::lean_program;
 
 const PATH_BYTE_CAPACITY: i32 = 1024;
 const PACKED_PATH_WORD_CAPACITY: i32 =
     PATH_BYTE_CAPACITY / verified::host::I32_BYTES;
-const CORE_OPTION_LENGTH: i32 = 6;
-const LEAN_CORE_OPTION_LENGTH: i32 = 11;
-const MODE_SCRATCH_WORDS: i32 = 3;
-const TRANSPORT_WORD_CAPACITY: i32 = 262144;
+const LEAN_CHECKED_OPTION_LENGTH: i32 = 14;
+const MODE_SCRATCH_WORDS: i32 = 4;
 const OUTPUT_BYTE_CAPACITY: i32 = 83886080;
-// Also holds the packed output after parsing; this exceeds the parser's
-// 64 MiB scratch requirement.
+// The parser needs 64 MiB of scratch; ordinary Lean output reuses it after
+// parsing, while checked Lean output uses a separate buffer.
 const WORK_WORD_CAPACITY: i32 =
     OUTPUT_BYTE_CAPACITY / verified::host::I32_BYTES;
 
 enum ExtractorMode {
-    CompactMode,
-    CoreMode,
     LeanCoreMode,
+    LeanCheckedMode,
 }
 
 enum ExtractorExit {
@@ -44,18 +38,12 @@ enum ExtractorExit {
     OpenFailed,
     ReadFailed,
     SemanticFailed,
-    CompactOutputFailed,
     OutputWriteFailed,
     GrammarLoadFailed,
-    CompactHeaderFailed,
     ExtractionFailed,
     BundleFailed,
     LoweringFailed,
     LeanCoreOutputFailed,
-    CertificateHeaderFailed,
-    CertificateTransportFailed,
-    CertificateImageFailed,
-    CertificateFunctionsFailed,
 }
 
 fn exit_code(status: ExtractorExit) -> i32 {
@@ -68,58 +56,27 @@ fn exit_code(status: ExtractorExit) -> i32 {
         OpenFailed -> 5,
         ReadFailed -> 6,
         SemanticFailed -> 20,
-        CompactOutputFailed -> 21,
         OutputWriteFailed -> 22,
         GrammarLoadFailed -> 23,
-        CompactHeaderFailed -> 23,
         ExtractionFailed -> 28,
         BundleFailed -> 30,
         LoweringFailed -> 30,
         LeanCoreOutputFailed -> 30,
-        CertificateHeaderFailed -> 30,
-        CertificateTransportFailed -> 30,
-        CertificateImageFailed -> 30,
-        CertificateFunctionsFailed -> 30,
     };
 }
 
-fn emits_core(mode: ExtractorMode) -> bool {
-    return match (mode) {
-        CompactMode -> false,
-        CoreMode -> true,
-        LeanCoreMode -> true,
-    };
-}
-
-fn emits_lean_core(mode: ExtractorMode) -> bool {
-    return match (mode) {
-        CompactMode -> false,
-        CoreMode -> false,
-        LeanCoreMode -> true,
-    };
-}
-
-fn emits_compact_core(mode: ExtractorMode) -> bool {
-    return match (mode) {
-        CompactMode -> false,
-        CoreMode -> true,
-        LeanCoreMode -> false,
-    };
+fn emits_typed_frontend(mode: ExtractorMode) -> bool {
+    return mode == LeanCheckedMode;
 }
 
 fn selected_mode(scratch: [i32]) -> ExtractorMode {
     let option_length: i32 = driver::arguments::length(1);
-    if (option_length == CORE_OPTION_LENGTH
+    if (option_length == LEAN_CHECKED_OPTION_LENGTH
         && driver::arguments::matches(
-            1, scratch, "--core", CORE_OPTION_LENGTH)) {
-        return CoreMode;
+            1, scratch, "--lean-checked", LEAN_CHECKED_OPTION_LENGTH)) {
+        return LeanCheckedMode;
     }
-    if (option_length == LEAN_CORE_OPTION_LENGTH
-        && driver::arguments::matches(
-            1, scratch, "--lean-core", LEAN_CORE_OPTION_LENGTH)) {
-        return LeanCoreMode;
-    }
-    return CompactMode;
+    return LeanCoreMode;
 }
 
 fn main() -> i32 {
@@ -127,26 +84,21 @@ fn main() -> i32 {
     if (argument_count <= 1) {
         return exit_code(InvalidArguments);
     }
-    // `--core` retains its one-unit v3 certificate contract. `--lean-core`
-    // uses the same aggregate bundle as compiler.lani; support for the full
-    // extractor closure still depends on completing typed Core lowering.
-    // Ordinary mode remains compact-only.
+    // Ordinary output is Core.Program from the semantic IR consumed by x86.
+    // `--lean-checked` additionally emits structured frontend evidence for
+    // bootstrap validation; it is much larger on the full compiler closure.
     let mode_memory: ptr = verified::host::alloc_i32(MODE_SCRATCH_WORDS);
     if (mode_memory == 0) { return exit_code(AllocationFailed); }
     let mode_scratch: [i32] = verified::host::i32_slice_from_raw_parts(
         mode_memory, MODE_SCRATCH_WORDS);
     let mode: ExtractorMode = selected_mode(mode_scratch);
     let first_argument: i32 = match (mode) {
-        CompactMode -> 1,
-        CoreMode -> 2,
-        LeanCoreMode -> 2,
+        LeanCoreMode -> 1,
+        LeanCheckedMode -> 2,
     };
-    if (emits_compact_core(mode) && argument_count != 3) {
-        return exit_code(InvalidArguments);
-    }
     let unit_count: i32 = argument_count - first_argument;
-    if (emits_core(mode) && (unit_count <= 0
-        || unit_count > lowering::program_transport::BUNDLE_UNIT_LIMIT)) {
+    if (unit_count <= 0
+        || unit_count > lowering::program_transport::BUNDLE_UNIT_LIMIT) {
         return exit_code(InvalidArguments);
     }
     let packed_path:[i32];
@@ -156,13 +108,6 @@ fn main() -> i32 {
         if (allocation == 0) { return exit_code(AllocationFailed); }
         packed_path = verified::host::i32_slice_from_raw_parts(
             allocation, PACKED_PATH_WORD_CAPACITY);
-    }
-    let path:[i32];
-    {
-        let allocation: ptr = verified::host::alloc_i32(PATH_BYTE_CAPACITY);
-        if (allocation == 0) { return exit_code(AllocationFailed); }
-        path = verified::host::i32_slice_from_raw_parts(
-            allocation, PATH_BYTE_CAPACITY);
     }
     let source:[i32];
     {
@@ -196,11 +141,6 @@ fn main() -> i32 {
         canonical = verified::host::i32_slice_from_raw_parts(allocation,
             verified::token::TOKEN_WORD_CAPACITY);
     }
-    let token_memory: ptr = verified::host::alloc(
-        lowering::program_transport::BUNDLE_TOKEN_CAP
-            * verified::token::RECORD_BYTES,
-        verified::token::ALIGNMENT);
-    if (token_memory == 0) { return exit_code(AllocationFailed); }
     let kinds:[i32];
     {
         let allocation: ptr = verified::host::alloc_i32(
@@ -209,42 +149,32 @@ fn main() -> i32 {
         kinds = verified::host::i32_slice_from_raw_parts(allocation,
             verified::extraction::TOKEN_KIND_CAPACITY);
     }
-    let workspace:[i32];
-    {
-        let allocation: ptr = verified::host::alloc_i32(
-            WORK_WORD_CAPACITY);
-        if (allocation == 0) { return exit_code(AllocationFailed); }
-        workspace = verified::host::i32_slice_from_raw_parts(allocation,
-            WORK_WORD_CAPACITY);
-    }
-    let records:[i32];
-    {
-        let allocation: ptr = verified::host::alloc_i32(
-            verified::extraction::PARSE_RECORD_WORD_CAPACITY);
-        if (allocation == 0) { return exit_code(AllocationFailed); }
-        records = verified::host::i32_slice_from_raw_parts(allocation,
-            verified::extraction::PARSE_RECORD_WORD_CAPACITY);
-    }
-    let offsets:[i32];
-    {
-        let allocation: ptr = verified::host::alloc_i32(
-            verified::extraction::PARSE_NODE_CAPACITY);
-        if (allocation == 0) { return exit_code(AllocationFailed); }
-        offsets = verified::host::i32_slice_from_raw_parts(allocation,
-            verified::extraction::PARSE_NODE_CAPACITY);
-    }
+    let workspace_memory: ptr = verified::host::alloc_i32(
+        WORK_WORD_CAPACITY);
+    if (workspace_memory == 0) { return exit_code(AllocationFailed); }
+    let workspace:[i32] = verified::host::i32_slice_from_raw_parts(
+        workspace_memory, WORK_WORD_CAPACITY);
     let semantic_memory: ptr = verified::host::alloc(
         verified::semantic_tokens::allocation_bytes(
             verified::extraction::TOKEN_KIND_CAPACITY),
         verified::semantic_tokens::ALIGNMENT);
     if (semantic_memory == 0) { return exit_code(AllocationFailed); }
     let output:[i32];
-    {
+    if (mode == LeanCoreMode) {
+        output = verified::host::i32_slice_from_raw_parts(
+            workspace_memory, WORK_WORD_CAPACITY);
+    } else {
+        // Checked Lean output starts while parser scratch is still in use.
         let allocation: ptr = verified::host::alloc_i32(OUTPUT_BYTE_CAPACITY);
         if (allocation == 0) { return exit_code(AllocationFailed); }
         output = verified::host::i32_slice_from_raw_parts(
             allocation, OUTPUT_BYTE_CAPACITY);
     }
+    let node_counts_memory: ptr = verified::host::alloc_i32(
+        lowering::program_transport::BUNDLE_UNIT_LIMIT);
+    if (node_counts_memory == 0) { return exit_code(AllocationFailed); }
+    let node_counts: [i32] = verified::host::i32_slice_from_raw_parts(
+        node_counts_memory, lowering::program_transport::BUNDLE_UNIT_LIMIT);
     let packed_io:[i32];
     {
         let allocation: ptr = verified::host::alloc_i32(
@@ -253,47 +183,26 @@ fn main() -> i32 {
         packed_io = verified::host::i32_slice_from_raw_parts(
             allocation, verified::byte_io::PACKED_IO_WORDS);
     }
-    let transport:[i32];
-    {
-        let allocation: ptr = verified::host::alloc_i32(
-            TRANSPORT_WORD_CAPACITY);
-        if (allocation == 0) { return exit_code(AllocationFailed); }
-        transport = verified::host::i32_slice_from_raw_parts(
-            allocation, TRANSPORT_WORD_CAPACITY);
-    }
+    let bundle_word_count: i32 =
+        lowering::program_transport::bundle_words(unit_count);
+    if (bundle_word_count <= 0) { return exit_code(AllocationFailed); }
+    let bundle_memory: ptr = verified::host::alloc(
+        bundle_word_count * verified::host::I32_BYTES,
+        lowering::program_transport::BUNDLE_ALIGNMENT);
+    if (bundle_memory == 0) { return exit_code(AllocationFailed); }
     let bundle: lowering::program_transport::Bundle =
-        lowering::program_transport::from_raw_parts(0, 0);
-    if (emits_core(mode)) {
-        let bundle_word_count: i32 = lowering::program_transport::bundle_words(unit_count);
-        if (bundle_word_count <= 0) { return exit_code(AllocationFailed); }
-        let allocation: ptr = verified::host::alloc(
-            bundle_word_count * verified::host::I32_BYTES,
-            lowering::program_transport::BUNDLE_ALIGNMENT);
-        if (allocation == 0) { return exit_code(AllocationFailed); }
-        bundle = lowering::program_transport::from_raw_parts(allocation,
-            unit_count);
-    }
-    let transport_length: i32 = 0;
+        lowering::program_transport::from_raw_parts(bundle_memory, unit_count);
     let packed_path_pointer: ptr = verified::host::i32_slice_data_ptr(packed_path);
     let packed_io_pointer: ptr = verified::host::i32_slice_data_ptr(packed_io);
-    let workspace_pointer: ptr = verified::host::i32_slice_data_ptr(workspace);
     if (verified::grammar::load(grammar, verified::grammar::WORDS)
         != verified::grammar::WORDS) {
         return exit_code(GrammarLoadFailed);
     }
-    let compact_position: i32 = 0;
-    if (emits_compact_core(mode)) {
-        compact_position = verified::certificate_output_native::HEADER_BYTES;
-    }
     let output_length: i32 = 0;
-    if (!emits_lean_core(mode)) {
-        output_length = verified::compact_artifact_output::emit_header(
-            argument_count - first_argument,
-            verified::output::cursor(
-                output, OUTPUT_BYTE_CAPACITY, compact_position));
-        if (output_length <= -1) {
-            return exit_code(CompactHeaderFailed);
-        }
+    if (emits_typed_frontend(mode)) {
+        output_length = verified::lean_frontend::begin(
+            output, OUTPUT_BYTE_CAPACITY, 0);
+        if (output_length < 0) { return exit_code(LeanCoreOutputFailed); }
     }
     let argument: i32 = first_argument;
     while (argument != argument_count) {
@@ -304,15 +213,6 @@ fn main() -> i32 {
         if (driver::arguments::read(argument, packed_path_pointer, path_length)
             != path_length) {
             return exit_code(ArgumentReadFailed);
-        }
-        let index: i32 = 0;
-        while (index != path_length) {
-            path[index] =
-                (packed_path[index / verified::host::I32_BYTES]
-                    >> ((index % verified::host::I32_BYTES)
-                        * verified::host::BITS_PER_BYTE))
-                & verified::host::BYTE_MASK;
-            index += 1;
         }
         let handle: i32 = verified::host::open_read(packed_path_pointer, path_length);
         if (handle <= -1) {
@@ -338,18 +238,13 @@ fn main() -> i32 {
             };
         let unit: i32 = argument - first_argument;
         let native_tokens: verified::token::TokenTable =
-            verified::token::from_raw_parts(token_memory,
-                lowering::program_transport::BUNDLE_TOKEN_CAP);
-        if (emits_core(mode)) {
-            native_tokens = lowering::program_transport::native_token_storage(
-                bundle, unit);
-        }
+            lowering::program_transport::native_token_storage(bundle, unit);
         let parser_storage: verified::parser::WorkspaceStorage =
             verified::parser::storage(
                 verified::host::i32_slice_data_ptr(workspace),
                 verified::extraction::PARSER_WORK_WORD_CAPACITY);
         let artifact_token_words: i32 = 0;
-        if (!emits_lean_core(mode)) {
+        if (emits_typed_frontend(mode)) {
             artifact_token_words = verified::token::TOKEN_WORD_CAPACITY;
         }
         let recognition_workspace:
@@ -382,170 +277,75 @@ fn main() -> i32 {
                 verified::extraction::PARSE_RECORD_WORD_CAPACITY);
         if (tree.node_count <= 0) { return exit_code(ExtractionFailed); }
         let nodes: i32 = tree.node_count;
-        let record_words: i32 = 0;
-        if (!emits_lean_core(mode)) {
-            let semantic_output:
-                verified::semantic_tokens::AssignmentBuffer =
-                verified::semantic_tokens::from_raw_parts(semantic_memory,
-                    verified::extraction::TOKEN_KIND_CAPACITY);
+        let semantic_output:
+            verified::semantic_tokens::AssignmentBuffer =
+            verified::semantic_tokens::from_raw_parts(semantic_memory,
+                verified::extraction::TOKEN_KIND_CAPACITY);
+        if (emits_typed_frontend(mode)) {
             if (verified::semantic_tokens::collect_native(grammar,
                     verified::grammar::WORDS, kinds, tokens,
                     tree, semantic_output) != 0) {
                 return exit_code(SemanticFailed);
             }
-            let serialized: verified::parse_tree::TreeResult =
-                verified::parse_tree::serialize_native(tree, tokens,
-                    verified::parse_tree::storage(records,
-                        verified::extraction::PARSE_RECORD_WORD_CAPACITY,
-                        offsets, verified::extraction::PARSE_NODE_CAPACITY),
-                    verified::extraction::DEFAULT_PARSE_DEPTH_LIMIT);
-            if (!verified::parse_tree::tree_succeeded(serialized)) {
-                return exit_code(ExtractionFailed);
-            }
-            record_words = verified::parse_tree::tree_words_used(serialized);
         }
-        if (emits_core(mode)) {
-            let source_region: lowering::program_transport::WordRegion =
-                lowering::program_transport::region(source, source_length);
-            let native_unit: lowering::program_transport::NativeUnit =
-                lowering::program_transport::NativeUnit {
-                    source: source_region,
+        let source_region: lowering::program_transport::WordRegion =
+            lowering::program_transport::region(source, source_length);
+        let native_unit: lowering::program_transport::NativeUnit =
+            lowering::program_transport::NativeUnit {
+                source: source_region,
+                token_count: tokens,
+                tree: tree,
+            };
+        if (!lowering::program_transport::append_native_unit(
+            bundle, unit, native_unit)) {
+            return exit_code(BundleFailed);
+        }
+        if (emits_typed_frontend(mode)) {
+            node_counts[unit] = nodes;
+            let frontend_unit: verified::lean_frontend::Unit =
+                verified::lean_frontend::Unit {
+                    raw: verified::lean_frontend::token_trace(raw, raw_count),
+                    canonical: native_tokens,
                     token_count: tokens,
+                    semantic: semantic_output,
                     tree: tree,
+                    grammar: grammar,
+                    grammar_length: verified::grammar::WORDS,
+                    source_length: source_length,
                 };
-            if (!lowering::program_transport::append_native_unit(
-                bundle, unit, native_unit)) {
-                return exit_code(BundleFailed);
-            }
-        }
-        if (!emits_lean_core(mode)) {
-            let path_region: verified::compact_artifact_output::WordRegion =
-                verified::compact_artifact_output::WordRegion {
-                    data: path, length: path_length };
-            let source_region: verified::compact_artifact_output::WordRegion =
-                verified::compact_artifact_output::WordRegion {
-                    data: source, length: source_length };
-            let raw_tokens: verified::compact_artifact_output::TokenRows =
-                verified::compact_artifact_output::TokenRows {
-                    data: raw,
-                    length: verified::token::TOKEN_WORD_CAPACITY,
-                    count: raw_count };
-            let canonical_tokens: verified::compact_artifact_output::TokenRows =
-                verified::compact_artifact_output::TokenRows {
-                    data: canonical,
-                    length: verified::token::TOKEN_WORD_CAPACITY,
-                    count: tokens };
-            let semantic_region: verified::semantic_tokens::AssignmentBuffer =
-                verified::semantic_tokens::from_raw_parts(semantic_memory,
-                    verified::extraction::TOKEN_KIND_CAPACITY);
-            let parse_region: verified::compact_artifact_output::WordRegion =
-                verified::compact_artifact_output::WordRegion {
-                    data: records,
-                    length: record_words };
-            let artifact: verified::compact_artifact_output::ArtifactUnit =
-                verified::compact_artifact_output::ArtifactUnit {
-                    path: path_region,
-                    source: source_region,
-                    raw_tokens: raw_tokens,
-                    canonical_tokens: canonical_tokens,
-                    semantic_kinds: semantic_region,
-                    parse_records: parse_region,
-                    node_offsets: offsets,
-                    node_count: nodes,
-                };
-            output_length = verified::compact_artifact_output::emit_unit(
-                artifact, verified::output::cursor(
-                    output, OUTPUT_BYTE_CAPACITY, output_length));
-            if (output_length <= -1) {
-                return exit_code(CompactOutputFailed);
-            }
+            output_length = verified::lean_frontend::emit_unit(frontend_unit,
+                unit, output, OUTPUT_BYTE_CAPACITY, output_length);
+            if (output_length < 0) { return exit_code(LeanCoreOutputFailed); }
         }
         argument += 1;
     }
-    if (emits_core(mode)) {
-        let lowered: lowering::program_transport::LoweredProgram =
-            lowering::program_transport::lower_units(
-            bundle,
-            verified::host::i32_slice_data_ptr(transport),
-            lowering::transport::NativeAndCore);
-        transport_length = lowered.transport_words;
-        if (!lowering::program_transport::succeeded(lowered.status)
-            || !lowering::transport::header_format_valid(transport,
-                transport_length)) {
-            let error: i32 = lowering::program_transport::error_code(
-                lowered.status);
-            if (error > 0) {
-                verified::byte_io::write_stderr_natural(error);
-            }
-            return exit_code(LoweringFailed);
-        }
-        if (emits_lean_core(mode)) {
-            output_length = verified::core_output::emit_program(
-                transport_length, transport, output, OUTPUT_BYTE_CAPACITY, 0);
-            if (output_length <= -1) {
-                return exit_code(LeanCoreOutputFailed);
-            }
-        }
+    if (emits_typed_frontend(mode)) {
+        output_length = verified::lean_frontend::finish(unit_count,
+            node_counts, output, OUTPUT_BYTE_CAPACITY, output_length);
+        if (output_length < 0) { return exit_code(LeanCoreOutputFailed); }
     }
-    if (emits_compact_core(mode)) {
-        // The compact pack was written after the certificate prefix. Keep its exact
-        // end as the continuation position: emit_header only backfills the
-        // v3 prefix and must not overwrite the compact bytes.
-        let compact_length: i32 = output_length
-            - verified::certificate_output_native::HEADER_BYTES;
-        let header_end: i32 = verified::certificate_output_native::emit_header_raw(
-            compact_length, verified::host::i32_slice_data_ptr(output),
-            OUTPUT_BYTE_CAPACITY, 0);
-        if (header_end != verified::certificate_output_native::HEADER_BYTES
-            || transport_length <= lowering::transport::HEADER - 1) {
-            return exit_code(CertificateHeaderFailed);
+    let lowered: lowering::program_transport::LoweredProgram =
+        lowering::program_transport::lower_units(
+            bundle, 0, lowering::transport::NativeOnly);
+    if (!lowering::program_transport::succeeded(lowered.status)) {
+        let error: i32 = lowering::program_transport::error_code(
+            lowered.status);
+        if (error > 0) {
+            verified::byte_io::write_stderr_natural(error);
         }
-        let certificate_length: i32 = verified::certificate_output_native::emit_transport_raw(
-            verified::host::i32_slice_data_ptr(transport),
-            TRANSPORT_WORD_CAPACITY, transport_length,
-            verified::host::i32_slice_data_ptr(output), OUTPUT_BYTE_CAPACITY,
-            output_length);
-        if (certificate_length <= -1) {
-            return exit_code(CertificateTransportFailed);
-        }
-        // Core handoff is intentionally a phase certificate: no native ELF
-        // or function spans are claimed. These are the same v3 fields with
-        // zero lengths/counts, and the existing Lean boundary checks compact,
-        // transport, and Core before any image boundary is requested.
-        certificate_length = verified::certificate_output_native::emit_image_raw(
-            verified::host::i32_slice_data_ptr(packed_io), 0,
-            verified::host::i32_slice_data_ptr(output), OUTPUT_BYTE_CAPACITY,
-            certificate_length);
-        if (certificate_length <= -1) {
-            return exit_code(CertificateImageFailed);
-        }
-        certificate_length = verified::certificate_output_native::emit_empty_functions_raw(
-            verified::host::i32_slice_data_ptr(output), OUTPUT_BYTE_CAPACITY,
-            certificate_length);
-        if (certificate_length <= -1) {
-            return exit_code(CertificateFunctionsFailed);
-        }
-        output_length = certificate_length;
+        return exit_code(LoweringFailed);
     }
-    // Extraction is complete, so its workspace can become the packed
-    // byte buffer for one atomic logical host write.
-    let output_words: i32 = verified::host::packed_words(output_length);
-    let output_word: i32 = 0;
-    while (output_word != output_words) {
-        workspace[output_word] = 0;
-        output_word += 1;
+    if (emits_typed_frontend(mode)) {
+        output_length = verified::lean_program::emit_declarations(
+            lowered.program, output, OUTPUT_BYTE_CAPACITY, output_length);
+    } else {
+        output_length = verified::lean_program::emit(lowered.program,
+            output, OUTPUT_BYTE_CAPACITY, output_length);
     }
-    let output_index: i32 = 0;
-    while (output_index != output_length) {
-        workspace[output_index / verified::host::I32_BYTES] =
-            workspace[output_index / verified::host::I32_BYTES]
-            | (output[output_index]
-                << ((output_index % verified::host::I32_BYTES)
-                    * verified::host::BITS_PER_BYTE));
-        output_index += 1;
-    }
+    if (output_length <= -1) { return exit_code(LeanCoreOutputFailed); }
     let output_size: usize = output_length;
-    if (verified::host::write_stdout(workspace_pointer, output_size) != output_length) {
+    let output_pointer: ptr = verified::host::i32_slice_data_ptr(output);
+    if (verified::host::write_stdout(output_pointer, output_size) != output_length) {
         return exit_code(OutputWriteFailed);
     }
     return exit_code(Success);

@@ -216,7 +216,11 @@ fn match_value(compiler: CompilerContext,
     let scrutinee_kind: ir::type_ref::TypeRef =
         expression(compiler, active, depth + 1);
     if (!backend::layout_index::is_enumeration(layout,
-        scrutinee_kind)) { return ir::type_ref::Invalid; }
+        scrutinee_kind)
+        || !ir::type_ref::same(scrutinee_kind,
+            ir::type_ref::Nominal(match_header.scrutinee_type_id))) {
+        return ir::type_ref::Invalid;
+    }
     let scrutinee_words: i32 = backend::layout_index::words(layout,
         scrutinee_kind);
     let scrutinee_slot: i32 = backend::frame::allocate(work,
@@ -330,6 +334,44 @@ fn match_value(compiler: CompilerContext,
     backend::value::get(output, capacity, work, result_slot,
         match_header.result_kind);
     return match_header.result_kind;
+}
+
+fn slice_element(kind: ir::type_ref::TypeRef)
+    -> ir::type_ref::TypeRef {
+    return match (kind) {
+        ir::type_ref::Slice -> ir::type_ref::I32,
+        ir::type_ref::NominalSlice(id) -> ir::type_ref::Nominal(id),
+        _ -> ir::type_ref::Invalid,
+    };
+}
+
+fn raw_slice(compiler: CompilerContext, active: i32, depth: i32,
+    result: ir::type_ref::TypeRef) -> ir::type_ref::TypeRef {
+    let work: backend::frame::Workspace = compiler.work;
+    let state: [backend::frame::State] = backend::frame::state_view(work);
+    let output: [i32] = compiler.output;
+    let capacity: i32 = compiler.output_capacity;
+    if (!ir::type_ref::same(expression(compiler, active, depth + 1),
+            ir::type_ref::Pointer)) { return ir::type_ref::Invalid; }
+    let slot: i32 = backend::frame::allocate(work, 2);
+    if (slot <= -1) { return ir::type_ref::Invalid; }
+    backend::value::save_word(output, capacity, work, slot,
+        x86::register::RAX);
+    if (!ir::type_ref::same(expression(compiler, active, depth + 1),
+            ir::type_ref::I32)) { return ir::type_ref::Invalid; }
+    let next: i32 = x86::encode::binary(output, capacity, state[0].code,
+        x86::register::WIDTH_32, x86::encode::Test,
+        x86::register::RAX, x86::register::RAX);
+    next = x86::control::branch_over_trap(output, capacity, next,
+        x86::control::GreaterEqual);
+    state[0].code = x86::encode::move_register(output, capacity, next,
+        x86::register::WIDTH_32, x86::register::RAX,
+        x86::register::RAX);
+    backend::value::save_word(output, capacity, work, slot - 1,
+        x86::register::RAX);
+    backend::value::address(output, capacity, work, slot,
+        x86::register::RAX);
+    return result;
 }
 
 fn emit_expression(compiler: CompilerContext, active: i32,
@@ -489,16 +531,39 @@ fn emit_expression(compiler: CompilerContext, active: i32,
         }
         if (ir::type_ref::same(left, ir::type_ref::Usize)
             || ir::type_ref::same(left, ir::type_ref::Pointer)) {
-            // Null checks and other pointer/usize equality compare all bits.
             // Save the left operand before the right expression can call out.
-            if (operation != backend::syntax::BinaryEqual
-                && operation != backend::syntax::BinaryNotEqual) {
-                return ir::type_ref::Invalid;
-            }
             let saved: i32 = backend::frame::allocate(work, 1);
             backend::value::save_word(output, capacity, work, saved, x86::register::RAX);
-            if (!ir::type_ref::same(
-                    expression(compiler, active, depth + 1), left)) {
+            let right: ir::type_ref::TypeRef =
+                expression(compiler, active, depth + 1);
+            if (ir::type_ref::same(left, ir::type_ref::Pointer)
+                && (operation == backend::syntax::BinaryAdd
+                    || operation == backend::syntax::BinarySubtract)
+                && (ir::type_ref::same(right, ir::type_ref::I32)
+                    || ir::type_ref::same(right, ir::type_ref::Usize))) {
+                if (ir::type_ref::same(right, ir::type_ref::I32)) {
+                    state[0].code = x86::encode::sign_extend_i32(output,
+                        capacity, state[0].code, x86::register::RAX,
+                        x86::register::RAX);
+                }
+                backend::value::load_word(output, capacity, work, saved,
+                    x86::register::RCX);
+                let opcode: x86::encode::BinaryOperation =
+                    x86::encode::Add;
+                if (operation == backend::syntax::BinarySubtract) {
+                    opcode = x86::encode::Subtract;
+                }
+                state[0].code = x86::encode::binary(output, capacity,
+                    state[0].code, x86::register::WIDTH_64, opcode,
+                    x86::register::RCX, x86::register::RAX);
+                state[0].code = x86::encode::move_register(output, capacity,
+                    state[0].code, x86::register::WIDTH_64,
+                    x86::register::RAX, x86::register::RCX);
+                return ir::type_ref::Pointer;
+            }
+            if (!ir::type_ref::same(right, left)
+                || (operation != backend::syntax::BinaryEqual
+                    && operation != backend::syntax::BinaryNotEqual)) {
                 return ir::type_ref::Invalid;
             }
             backend::value::load_word(output, capacity, work, saved, x86::register::RCX);
@@ -616,15 +681,29 @@ fn emit_expression(compiler: CompilerContext, active: i32,
         return ir::type_ref::Void; // Core assignment expressions return unit.
     }
     if (tag == backend::syntax::ExprIndex) {
-        if (!ir::type_ref::same(
-                expression(compiler, active, depth + 1),
-                ir::type_ref::Slice)) { return ir::type_ref::Invalid; }
-        if (!indexed(compiler, active, depth + 1)) {
+        let base: ir::type_ref::TypeRef =
+            expression(compiler, active, depth + 1);
+        let element: ir::type_ref::TypeRef = slice_element(base);
+        if (!ir::type_ref::valid(element)
+            || !indexed(compiler, active, depth + 1, base)) {
             return ir::type_ref::Invalid;
         }
-        state[0].code = x86::encode::load(output, capacity, state[0].code, x86::register::WIDTH_32,
-            x86::register::RAX, x86::register::RAX, 0);
-        return ir::type_ref::I32;
+        if (backend::layout::aggregate(element)) {
+            let words: i32 = backend::layout_index::words(layout, element);
+            let snapshot: i32 = backend::frame::allocate(work, words);
+            if (words <= 0 || snapshot <= -1) {
+                return ir::type_ref::Invalid;
+            }
+            backend::value::put(layout, output, capacity, work, snapshot,
+                element);
+            backend::value::address(output, capacity, work, snapshot,
+                x86::register::RAX);
+        } else {
+            state[0].code = x86::encode::load(output, capacity,
+                state[0].code, x86::register::WIDTH_32,
+                x86::register::RAX, x86::register::RAX, 0);
+        }
+        return element;
     }
     if (tag == backend::syntax::ExprSliceDataPointer || tag == backend::syntax::ExprStringDataPointer) {
         let kind: ir::type_ref::TypeRef =
@@ -650,27 +729,25 @@ fn emit_expression(compiler: CompilerContext, active: i32,
         return ir::type_ref::Pointer;
     }
     if (tag == backend::syntax::ExprSliceFromRawParts) {
-        if (!ir::type_ref::same(
-                expression(compiler, active, depth + 1),
-                ir::type_ref::Pointer)) { return ir::type_ref::Invalid; }
-        let slot: i32 = backend::frame::allocate(work, 2);
-        if (slot <= -1) { return ir::type_ref::Invalid; }
-        backend::value::save_word(output, capacity, work, slot, x86::register::RAX);
-        if (!ir::type_ref::same(
-                expression(compiler, active, depth + 1),
-                ir::type_ref::I32)) { return ir::type_ref::Invalid; }
-        // Preserve Core's signed-length rejection. Allocation provenance,
-        // exact backing size and lifetime remain the runtime/storage domain;
-        // constructing this descriptor does not establish those conditions.
-        let next: i32 = x86::encode::binary(output, capacity, state[0].code, x86::register::WIDTH_32,
-            x86::encode::Test, x86::register::RAX, x86::register::RAX);
-        next = x86::control::branch_over_trap(output, capacity, next,
-            x86::control::GreaterEqual);
-        state[0].code = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_32,
-            x86::register::RAX, x86::register::RAX);
-        backend::value::save_word(output, capacity, work, slot - 1, x86::register::RAX);
-        backend::value::address(output, capacity, work, slot, x86::register::RAX);
-        return ir::type_ref::Slice;
+        return raw_slice(compiler, active, depth, ir::type_ref::Slice);
+    }
+    if (tag == backend::syntax::ExprTypedSliceFromRawParts) {
+        let element: ir::body_events::SliceElement =
+            backend::body_reader::typed_slice_element(source, work, node);
+        let kind: ir::type_ref::TypeRef =
+            ir::type_ref::Nominal(element.id);
+        let allowed: bool = match (element.kind) {
+            ir::body_events::StructureSlice ->
+                backend::layout_index::is_structure(layout, kind),
+            ir::body_events::EnumerationSlice ->
+                backend::layout_index::is_enumeration(layout, kind),
+            _ -> false,
+        };
+        if (!allowed || backend::layout_index::words(layout, kind) <= 0) {
+            return ir::type_ref::Invalid;
+        }
+        return raw_slice(compiler, active, depth,
+            ir::type_ref::NominalSlice(element.id));
     }
     if (tag == backend::syntax::ExprStruct) {
         let constructor: backend::body_reader::StructConstructor =
@@ -812,7 +889,8 @@ fn expression(compiler: CompilerContext, active: i32, depth: i32)
 
 // The descriptor in RAX is an owned value snapshot. Index effects may mutate
 // its original local or backing data, but cannot change this captured value.
-fn indexed(compiler: CompilerContext, active: i32, depth: i32) -> bool {
+fn indexed(compiler: CompilerContext, active: i32, depth: i32,
+    base: ir::type_ref::TypeRef) -> bool {
     let work: backend::frame::Workspace = compiler.work;
     let output: [i32] = compiler.output;
     let capacity: i32 = compiler.output_capacity;
@@ -821,8 +899,14 @@ fn indexed(compiler: CompilerContext, active: i32, depth: i32) -> bool {
     backend::value::save_word(output, capacity, work, saved, x86::register::RAX);
     let kind: ir::type_ref::TypeRef =
         expression(compiler, active, depth);
+    let element: ir::type_ref::TypeRef = slice_element(base);
+    let words: i32 = 0;
+    if (!ir::type_ref::same(base, ir::type_ref::Slice)) {
+        words = backend::layout_index::words(compiler.layout, element);
+        if (words <= 0) { return false; }
+    }
     return backend::index::address(output, capacity, work, saved,
-        kind) >= 0;
+        kind, words) >= 0;
 }
 
 // Resolve a typed assignment target once, before the RHS runs. The returned
@@ -884,23 +968,25 @@ fn place(compiler: CompilerContext, active: i32, depth: i32,
         return result;
     }
     if (tag == backend::syntax::PlaceIndex) {
-        if (!ir::type_ref::same(place(compiler, active, depth + 1,
-                true), ir::type_ref::Slice)) {
+        let base: ir::type_ref::TypeRef = place(compiler, active,
+            depth + 1, true);
+        let element: ir::type_ref::TypeRef = slice_element(base);
+        if (!ir::type_ref::valid(element)) {
             return ir::type_ref::Invalid;
         }
         let snapshot_words: i32 = backend::layout_index::words(layout,
-            ir::type_ref::Slice);
+            base);
         if (snapshot_words <= 0) { return ir::type_ref::Invalid; }
         let snapshot: i32 = backend::frame::allocate(work, snapshot_words);
         if (snapshot <= -1) { return ir::type_ref::Invalid; }
         backend::value::put(layout, output, capacity, work, snapshot,
-            ir::type_ref::Slice);
+            base);
         backend::value::address(output, capacity, work, snapshot, x86::register::RAX);
-        if (!indexed(compiler, active, depth + 1)) {
+        if (!indexed(compiler, active, depth + 1, base)) {
             return ir::type_ref::Invalid;
         }
         state[0].place_flag = backend::frame::NoFlag;
-        return ir::type_ref::I32;
+        return element;
     }
     return ir::type_ref::Invalid;
 }

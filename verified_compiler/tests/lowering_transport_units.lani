@@ -253,7 +253,9 @@ fn main() -> i32 {
         || output[20] != 1) { return 3; }
     let entries: [lowering::signature_index::Entry] = signature_index.data;
     entries[0].result_type = ir::type_ref::Void;
-    if (lowering::signature_validation::valid(validation)) { return 11; }
+    // Void is a valid function result even though an executable main must
+    // eventually return i32 at the image boundary.
+    if (!lowering::signature_validation::valid(validation)) { return 11; }
     entries[0].result_type = ir::type_ref::I32;
     entries[1].id = 0;
     if (lowering::signature_validation::valid(validation)) { return 12; }

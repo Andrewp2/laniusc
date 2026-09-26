@@ -1,0 +1,657 @@
+module verified::lean_body;
+
+import ir::body_events;
+import ir::body_tree;
+import ir::type_catalog;
+import ir::type_ref;
+import verified::ascii;
+import verified::lean_syntax;
+import verified::lean_output;
+
+// Emit Core constructors directly from the indexed semantic tree. Each child
+// is visited once; no transport words, Lean-side parser, or source reparse is
+// involved. The tree shape is checked before this writer is entered.
+enum Form {
+    Atom,
+    Arguments,
+    ListArguments,
+    MatchArguments,
+    VariantArm,
+    WildcardArm,
+    SomeArgument,
+    FieldArgument,
+}
+
+struct Name {
+    spelling: str,
+    length: i32,
+}
+
+struct Head {
+    next: i32,
+    form: Form,
+    binding_count: i32,
+    match_type_id: i32,
+}
+
+fn named(spelling: str, length: i32) -> Name {
+    return Name { spelling: spelling, length: length };
+}
+
+fn unknown() -> Name {
+    return named("", 0);
+}
+
+fn binary_name(event: ir::body_events::Event) -> Name {
+    return match (event) {
+        ir::body_events::ExpressionBinaryAndThen -> named("logicalAnd", 10),
+        ir::body_events::ExpressionBinaryOrElse -> named("logicalOr", 9),
+        ir::body_events::ExpressionBinaryEqual -> named("equal", 5),
+        ir::body_events::ExpressionBinaryNotEqual -> named("notEqual", 8),
+        ir::body_events::ExpressionBinaryLess -> named("less", 4),
+        ir::body_events::ExpressionBinaryLessEqual -> named("lessEqual", 9),
+        ir::body_events::ExpressionBinaryGreater -> named("greater", 7),
+        ir::body_events::ExpressionBinaryGreaterEqual -> named("greaterEqual", 12),
+        ir::body_events::ExpressionBinaryAdd -> named("add", 3),
+        ir::body_events::ExpressionBinarySubtract -> named("subtract", 8),
+        ir::body_events::ExpressionBinaryMultiply -> named("multiply", 8),
+        ir::body_events::ExpressionBinaryDivide -> named("divide", 6),
+        ir::body_events::ExpressionBinaryRemainder -> named("remainder", 9),
+        ir::body_events::ExpressionBinaryBitAnd -> named("bitAnd", 6),
+        ir::body_events::ExpressionBinaryBitOr -> named("bitOr", 5),
+        ir::body_events::ExpressionBinaryBitXor -> named("bitXor", 6),
+        ir::body_events::ExpressionBinaryShiftLeft -> named("shiftLeft", 9),
+        ir::body_events::ExpressionBinaryShiftRight -> named("shiftRight", 10),
+        _ -> unknown(),
+    };
+}
+
+fn assignment_name(event: ir::body_events::Event) -> Name {
+    return match (event) {
+        ir::body_events::ExpressionAssignmentSet -> named("set", 3),
+        ir::body_events::ExpressionAssignmentAdd -> named("add", 3),
+        ir::body_events::ExpressionAssignmentSubtract -> named("subtract", 8),
+        ir::body_events::ExpressionAssignmentMultiply -> named("multiply", 8),
+        ir::body_events::ExpressionAssignmentDivide -> named("divide", 6),
+        ir::body_events::ExpressionAssignmentRemainder -> named("remainder", 9),
+        ir::body_events::ExpressionAssignmentBitXor -> named("bitXor", 6),
+        ir::body_events::ExpressionAssignmentShiftLeft -> named("shiftLeft", 9),
+        ir::body_events::ExpressionAssignmentShiftRight -> named("shiftRight", 10),
+        ir::body_events::ExpressionAssignmentBitAnd -> named("bitAnd", 6),
+        ir::body_events::ExpressionAssignmentBitOr -> named("bitOr", 5),
+        _ -> unknown(),
+    };
+}
+
+fn head(next: i32, form: Form) -> Head {
+    return Head { next: next, form: form, binding_count: 0,
+        match_type_id: -1 };
+}
+
+fn fixed(output: [i32], capacity: i32, position: i32,
+    spelling: str, length: i32, form: Form) -> Head {
+    return head(verified::lean_output::text(output, capacity, position,
+        spelling, length), form);
+}
+
+fn number(output: [i32], capacity: i32, position: i32,
+    spelling: str, length: i32, value: i32, form: Form) -> Head {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        spelling, length);
+    next = verified::lean_output::natural(output, capacity, next, value);
+    return head(next, form);
+}
+
+fn atom_number(output: [i32], capacity: i32, position: i32,
+    spelling: str, length: i32, value: i32) -> Head {
+    let start: Head = number(output, capacity, position,
+        spelling, length, value, Atom);
+    return head(verified::lean_output::byte(output, capacity, start.next,
+        verified::ascii::RIGHT_PAREN), Atom);
+}
+
+fn list_number(output: [i32], capacity: i32, position: i32,
+    spelling: str, length: i32, value: i32) -> Head {
+    let start: Head = number(output, capacity, position,
+        spelling, length, value, ListArguments);
+    return head(verified::lean_output::text(output, capacity, start.next,
+        " [", 2), ListArguments);
+}
+
+fn local_decl(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table,
+    declaration: ir::body_events::LocalDeclaration,
+    initialized: bool) -> Head {
+    let next: i32 = position;
+    if (initialized) {
+        next = verified::lean_output::text(output, capacity, next,
+            "(.letLocal ", 11);
+    } else {
+        next = verified::lean_output::text(output, capacity, next,
+            "(.letUninitialized ", 19);
+    }
+    next = verified::lean_output::natural(output, capacity, next,
+        declaration.id);
+    next = verified::lean_output::byte(output, capacity, next,
+        verified::ascii::SPACE);
+    next = verified::lean_syntax::type_ref(output, capacity, next,
+        types, declaration.kind);
+    return head(next, Arguments);
+}
+
+fn variant_arm(output: [i32], capacity: i32, position: i32,
+    type_id: i32, arm: ir::body_events::MatchArm) -> Head {
+    if (type_id < 0 || arm.ordinal < 0 || arm.binding_count < 0) {
+        return head(-1, VariantArm);
+    }
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "((.enumVariant ", 15);
+    next = verified::lean_output::natural(output, capacity, next, type_id);
+    next = verified::lean_output::byte(output, capacity, next,
+        verified::ascii::SPACE);
+    next = verified::lean_output::natural(output, capacity, next,
+        arm.ordinal);
+    next = verified::lean_output::text(output, capacity, next, " [", 2);
+    return Head { next: next, form: VariantArm,
+        binding_count: arm.binding_count, match_type_id: -1 };
+}
+
+fn integer_head(output: [i32], capacity: i32, position: i32,
+    value: i32) -> Head {
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, "(.value (.signed .i32 (", 23);
+    next = verified::lean_syntax::signed(output, capacity, next, value);
+    return head(verified::lean_output::text(output, capacity, next,
+        ")))", 3), Atom);
+}
+
+fn usize_head(output: [i32], capacity: i32, position: i32,
+    value: i32) -> Head {
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, "(.value (.unsigned .usize ", 26);
+    next = verified::lean_output::natural(output, capacity, next, value);
+    return head(verified::lean_output::text(output, capacity, next,
+        "))", 2), Atom);
+}
+
+fn cast_head(output: [i32], capacity: i32, position: i32,
+    target: ir::type_ref::TypeRef) -> Head {
+    if (ir::type_ref::same(target, ir::type_ref::Usize)) {
+        return fixed(output, capacity, position,
+            "(.cast (.unsigned .usize)", 25, Arguments);
+    }
+    if (ir::type_ref::same(target, ir::type_ref::I32)) {
+        return fixed(output, capacity, position,
+            "(.cast (.signed .i32)", 21, Arguments);
+    }
+    return head(-1, Arguments);
+}
+
+fn boolean_head(output: [i32], capacity: i32, position: i32,
+    value: bool) -> Head {
+    if (value) {
+        return fixed(output, capacity, position,
+            "(.value (.boolean true))", 24, Atom);
+    }
+    return fixed(output, capacity, position,
+        "(.value (.boolean false))", 25, Atom);
+}
+
+fn string_head(output: [i32], capacity: i32, position: i32,
+    value: ir::body_events::StringValue) -> Head {
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, "(.value (.string ", 17);
+    next = verified::lean_syntax::string_bytes(output, capacity,
+        next, value.data, value.length, 0, value.length);
+    return head(verified::lean_output::text(output, capacity, next,
+        "))", 2), Atom);
+}
+
+fn enumeration_head(output: [i32], capacity: i32, position: i32,
+    variant: ir::body_events::EnumVariant) -> Head {
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, "(.enumValue ", 12);
+    next = verified::lean_output::natural(output, capacity, next,
+        variant.type_id);
+    next = verified::lean_output::byte(output, capacity, next,
+        verified::ascii::SPACE);
+    next = verified::lean_output::natural(output, capacity, next,
+        variant.ordinal);
+    next = verified::lean_output::text(output, capacity, next, " [", 2);
+    return head(next, ListArguments);
+}
+
+fn match_head(output: [i32], capacity: i32, position: i32,
+    header: ir::body_events::MatchHeader) -> Head {
+    return Head {
+        next: verified::lean_output::text(output, capacity, position,
+            "(.matchValue ", 13),
+        form: MatchArguments,
+        binding_count: 0,
+        match_type_id: header.scrutinee_type_id,
+    };
+}
+
+fn arm_head(output: [i32], capacity: i32, position: i32,
+    type_id: i32, arm: ir::body_events::MatchArm) -> Head {
+    if (arm.ordinal == -1 && arm.binding_count == 0) {
+        return fixed(output, capacity, position,
+            "(.wildcard, ", 12, WildcardArm);
+    }
+    return variant_arm(output, capacity, position, type_id, arm);
+}
+
+fn field_head(output: [i32], capacity: i32, position: i32,
+    field: ir::body_events::FieldReference) -> Head {
+    return Head {
+        next: verified::lean_output::text(output, capacity, position,
+            "(.field", 7),
+        form: FieldArgument,
+        binding_count: field.index,
+        match_type_id: -1,
+    };
+}
+
+// Only emit native raw slices whose entire by-value layout the Core heap
+// interpreter can currently read and write. Descriptor-bearing fields need a
+// borrowed-lifetime interpretation before they can cross this boundary.
+fn native_value_supported(types: ir::type_catalog::Table,
+    kind: ir::type_ref::TypeRef, depth: i32) -> bool {
+    if (depth >= 64) { return false; }
+    let primitive: bool = match (kind) {
+        ir::type_ref::I32 -> true,
+        ir::type_ref::Bool -> true,
+        ir::type_ref::Usize -> true,
+        ir::type_ref::Pointer -> true,
+        _ -> false,
+    };
+    if (primitive) { return true; }
+    if (ir::type_ref::same(kind, ir::type_ref::Slice)) { return true; }
+    let slice_id: i32 = match (kind) {
+        ir::type_ref::NominalSlice(slice_nominal_id) -> slice_nominal_id,
+        _ -> -1,
+    };
+    if (slice_id >= 0) {
+        return native_value_supported(types,
+            ir::type_ref::Nominal(slice_id), depth + 1);
+    }
+    let id: i32 = match (kind) {
+        ir::type_ref::Nominal(nominal_id) -> nominal_id,
+        _ -> -1,
+    };
+    if (id < 0 || id >= types.type_count) { return false; }
+    let declarations: [ir::type_catalog::TypeDecl] = types.types;
+    let fields: [ir::type_catalog::Field] = types.fields;
+    let variants: [ir::type_catalog::Variant] = types.variants;
+    let declaration: ir::type_catalog::TypeDecl = declarations[id];
+    if (declaration.id != id) { return false; }
+    if (declaration.kind == ir::type_catalog::Structure) {
+        let field: i32 = 0;
+        while (field < declaration.field_count) {
+            let slot: i32 = declaration.field_start + field;
+            if (slot < 0 || slot >= types.field_count
+                || !native_value_supported(types,
+                    fields[slot].type_tag, depth + 1)) {
+                return false;
+            }
+            field += 1;
+        }
+        return true;
+    }
+    if (declaration.kind != ir::type_catalog::Enumeration) {
+        return false;
+    }
+    let ordinal: i32 = 0;
+    while (ordinal < declaration.variant_count) {
+        let variant_slot: i32 = declaration.variant_start + ordinal;
+        if (variant_slot < 0 || variant_slot >= types.variant_count) {
+            return false;
+        }
+        let variant: ir::type_catalog::Variant = variants[variant_slot];
+        let field: i32 = 0;
+        while (field < variant.field_count) {
+            let slot: i32 = variant.field_start + field;
+            if (slot < 0 || slot >= types.field_count
+                || !native_value_supported(types,
+                    fields[slot].type_tag, depth + 1)) {
+                return false;
+            }
+            field += 1;
+        }
+        ordinal += 1;
+    }
+    return true;
+}
+
+fn typed_slice_head(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table,
+    element: ir::body_events::SliceElement) -> Head {
+    if (element.id < 0 || element.id >= types.type_count
+        || !native_value_supported(types,
+            ir::type_ref::Nominal(element.id), 0)) {
+        return head(-1, Atom);
+    }
+    let declarations: [ir::type_catalog::TypeDecl] = types.types;
+    let declaration: ir::type_catalog::TypeDecl = declarations[element.id];
+    if ((element.kind == ir::body_events::StructureSlice
+            && declaration.kind != ir::type_catalog::Structure)
+        || (element.kind == ir::body_events::EnumerationSlice
+            && declaration.kind != ir::type_catalog::Enumeration)
+        || element.kind == ir::body_events::I32Slice) {
+        return head(-1, Atom);
+    }
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "(.typedSliceFromRawParts ", 25);
+    next = verified::lean_syntax::type_ref(output, capacity, next, types,
+        ir::type_ref::Nominal(element.id));
+    return head(next, Arguments);
+}
+
+fn start(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table,
+    event: ir::body_events::Event, match_type_id: i32) -> Head {
+    let binary: Name = binary_name(event);
+    if (binary.length > 0) {
+        let next: i32 = verified::lean_output::text(output, capacity, position,
+            "(.binary .", 10);
+        next = verified::lean_output::text(output, capacity, next,
+            binary.spelling, binary.length);
+        return head(next, Arguments);
+    }
+    let assignment: Name = assignment_name(event);
+    if (assignment.length > 0) {
+        let next: i32 = verified::lean_output::text(output, capacity, position,
+            "(.assign .", 10);
+        next = verified::lean_output::text(output, capacity, next,
+            assignment.spelling, assignment.length);
+        return head(next, Arguments);
+    }
+    return match (event) {
+        ir::body_events::ExpressionInteger(integer_value) ->
+            integer_head(output, capacity, position, integer_value),
+        ir::body_events::ExpressionUsize(usize_value) ->
+            usize_head(output, capacity, position, usize_value),
+        ir::body_events::ExpressionPointerNull ->
+            fixed(output, capacity, position,
+                "(.value (.pointer 0))", 21, Atom),
+        ir::body_events::ExpressionCast(target) ->
+            cast_head(output, capacity, position, target.kind),
+        ir::body_events::ExpressionBoolean(boolean_value) ->
+            boolean_head(output, capacity, position, boolean_value),
+        ir::body_events::ExpressionString(string_value) ->
+            string_head(output, capacity, position, string_value),
+        ir::body_events::ExpressionLocal(local_reference) ->
+            atom_number(output, capacity, position, "(.local ", 8,
+                local_reference.id),
+        ir::body_events::ExpressionConstant(constant_id) ->
+            atom_number(output, capacity, position, "(.constant ", 11,
+                constant_id),
+        ir::body_events::ExpressionUnaryPositive ->
+            fixed(output, capacity, position,
+                "(.unary .positive", 17, Arguments),
+        ir::body_events::ExpressionUnaryNot ->
+            fixed(output, capacity, position,
+                "(.unary .logicalNot", 19, Arguments),
+        ir::body_events::ExpressionUnaryNegate ->
+            fixed(output, capacity, position,
+                "(.unary .negate", 15, Arguments),
+        ir::body_events::ExpressionIndex ->
+            fixed(output, capacity, position, "(.index", 7, Arguments),
+        ir::body_events::ExpressionStruct(fields) ->
+            list_number(output, capacity, position, "(.structValue ",
+                14, fields.type_id),
+        ir::body_events::ExpressionEnumeration(variant) ->
+            enumeration_head(output, capacity, position, variant),
+        ir::body_events::ExpressionMatch(header) ->
+            match_head(output, capacity, position, header),
+        ir::body_events::ExpressionField(field_reference) ->
+            field_head(output, capacity, position, field_reference),
+        ir::body_events::ExpressionCall(call_header) ->
+            list_number(output, capacity, position, "(.call ", 7,
+                call_header.function_id),
+        ir::body_events::ExpressionI32SliceFromRawParts ->
+            fixed(output, capacity, position,
+                "(.i32SliceFromRawParts", 22, Arguments),
+        ir::body_events::ExpressionI32SliceDataPointer ->
+            fixed(output, capacity, position,
+                "(.i32SliceDataPtr", 17, Arguments),
+        ir::body_events::ExpressionStringDataPointer ->
+            fixed(output, capacity, position,
+                "(.stringDataPtr", 15, Arguments),
+        ir::body_events::ExpressionTypedSliceFromRawParts(element) ->
+            typed_slice_head(output, capacity, position, types, element),
+        ir::body_events::MatchArmHeader(arm) ->
+            arm_head(output, capacity, position, match_type_id, arm),
+        ir::body_events::MatchBinding(binding) ->
+            atom_number(output, capacity, position, "(.bind ", 7,
+                binding.id),
+        ir::body_events::PlaceLocal(place_local) ->
+            atom_number(output, capacity, position, "(.local ", 8,
+                place_local.id),
+        ir::body_events::PlaceIndex ->
+            fixed(output, capacity, position, "(.index", 7,
+                Arguments),
+        ir::body_events::PlaceField(place_field) ->
+            field_head(output, capacity, position, place_field),
+        ir::body_events::StatementSkip ->
+            fixed(output, capacity, position, ".skip", 5, Atom),
+        ir::body_events::StatementExpression ->
+            fixed(output, capacity, position, "(.expression", 12,
+                Arguments),
+        ir::body_events::StatementSequence ->
+            fixed(output, capacity, position, "(.sequence", 10,
+                Arguments),
+        ir::body_events::StatementLet(local) ->
+            local_decl(output, capacity, position, types, local, true),
+        ir::body_events::StatementLetUninitialized(local_uninitialized) ->
+            local_decl(output, capacity, position, types,
+                local_uninitialized, false),
+        ir::body_events::StatementIf ->
+            fixed(output, capacity, position, "(.ifThenElse", 12,
+                Arguments),
+        ir::body_events::StatementWhile ->
+            fixed(output, capacity, position, "(.whileLoop", 11,
+                Arguments),
+        ir::body_events::StatementReturnVoid ->
+            fixed(output, capacity, position,
+                "(.returnValue none)", 19, Atom),
+        ir::body_events::StatementReturnValue ->
+            fixed(output, capacity, position,
+                "(.returnValue (some ", 20, SomeArgument),
+        _ -> head(-1, Atom),
+    };
+}
+
+fn between(output: [i32], capacity: i32, position: i32,
+    form: Form, ordinal: i32, binding_count: i32) -> i32 {
+    if (form == Arguments || form == FieldArgument) {
+        return verified::lean_output::byte(output, capacity, position,
+            verified::ascii::SPACE);
+    }
+    if (form == ListArguments) {
+        if (ordinal == 0) { return position; }
+        return verified::lean_output::text(output, capacity, position, ", ", 2);
+    }
+    if (form == MatchArguments) {
+        if (ordinal == 0) { return position; }
+        if (ordinal == 1) {
+            return verified::lean_output::text(output, capacity, position,
+                " [", 2);
+        }
+        return verified::lean_output::text(output, capacity, position, ", ", 2);
+    }
+    if (form == VariantArm) {
+        if (ordinal == binding_count) {
+            return verified::lean_output::text(output, capacity, position,
+                "]), ", 4);
+        }
+        if (ordinal == 0) { return position; }
+        return verified::lean_output::text(output, capacity, position, ", ", 2);
+    }
+    return position;
+}
+
+fn finish(output: [i32], capacity: i32, position: i32,
+    form: Form, field_id: i32) -> i32 {
+    if (form == Atom) { return position; }
+    if (form == ListArguments || form == MatchArguments) {
+        return verified::lean_output::text(output, capacity, position,
+            "])", 2);
+    }
+    if (form == SomeArgument) {
+        return verified::lean_output::text(output, capacity, position,
+            "))", 2);
+    }
+    if (form == FieldArgument) {
+        let next: i32 = verified::lean_output::byte(output, capacity,
+            position, verified::ascii::SPACE);
+        next = verified::lean_output::natural(output, capacity, next,
+            field_id);
+        return verified::lean_output::byte(output, capacity, next,
+            verified::ascii::RIGHT_PAREN);
+    }
+    return verified::lean_output::byte(output, capacity, position,
+        verified::ascii::RIGHT_PAREN);
+}
+
+// Cut recursive Core expressions, places, and statements only when a
+// subtree crosses a 128-event size bucket. Preorder indices make reverse
+// emission a dependency order, while sparse cuts bound inline depth.
+fn named_node(tree: ir::body_tree::Tree, index: i32) -> bool {
+    let kind: ir::body_tree::NodeKind = ir::body_tree::kind(tree, index);
+    if (kind != ir::body_tree::ExpressionNode
+        && kind != ir::body_tree::PlaceNode
+        && kind != ir::body_tree::StatementNode) { return false; }
+    let size: i32 = ir::body_tree::subtree_end(tree, index) - index;
+    if (size < 128) { return false; }
+    let largest_child: i32 = 0;
+    let child: i32 = ir::body_tree::first_child(tree, index);
+    while (child != -1) {
+        let child_size: i32 =
+            ir::body_tree::subtree_end(tree, child) - child;
+        if (child_size > largest_child) {
+            largest_child = child_size;
+        }
+        child = ir::body_tree::next_sibling(tree, index, child);
+    }
+    return size / 128 > largest_child / 128;
+}
+
+fn node_name(output: [i32], capacity: i32, position: i32,
+    function_index: i32, node_index: i32,
+    kind: ir::body_tree::NodeKind) -> i32 {
+    let next: i32 = position;
+    if (kind == ir::body_tree::ExpressionNode) {
+        next = verified::lean_output::text(output, capacity, next,
+            "extractedExpr", 13);
+    } else {
+        if (kind == ir::body_tree::PlaceNode) {
+            next = verified::lean_output::text(output, capacity, next,
+                "extractedPlace", 14);
+        } else {
+            if (kind != ir::body_tree::StatementNode) { return -1; }
+            next = verified::lean_output::text(output, capacity, next,
+                "extractedStmt", 13);
+        }
+    }
+    next = verified::lean_output::natural(output, capacity, next,
+        function_index);
+    next = verified::lean_output::byte(output, capacity, next, 95);
+    return verified::lean_output::natural(output, capacity, next,
+        node_index);
+}
+
+fn emit_node(tree: ir::body_tree::Tree,
+    types: ir::type_catalog::Table, index: i32, match_type_id: i32,
+    function_index: i32, expand_root: bool,
+    output: [i32], capacity: i32, position: i32, fuel: i32) -> i32 {
+    if (fuel <= 0 || index < 0 || index >= tree.count) { return -1; }
+    if (!expand_root && named_node(tree, index)) {
+        return node_name(output, capacity, position,
+            function_index, index, ir::body_tree::kind(tree, index));
+    }
+    let events: [ir::body_events::Event] = tree.events;
+    let started: Head = start(output, capacity, position,
+        types, events[index], match_type_id);
+    if (started.next < 0) { return -1; }
+    let count: i32 = ir::body_tree::child_count(tree, index);
+    if (count < 0 || (started.form == Atom && count != 0)) { return -1; }
+    let next: i32 = started.next;
+    let child: i32 = ir::body_tree::first_child(tree, index);
+    let ordinal: i32 = 0;
+    while (ordinal < count) {
+        if (child < 0) { return -1; }
+        next = between(output, capacity, next, started.form,
+            ordinal, started.binding_count);
+        let child_match_type: i32 = -1;
+        if (started.form == MatchArguments && ordinal > 0) {
+            child_match_type = started.match_type_id;
+        }
+        next = emit_node(tree, types, child, child_match_type,
+            function_index, false,
+            output, capacity, next, fuel - 1);
+        if (next < 0) { return -1; }
+        child = ir::body_tree::next_sibling(tree, index, child);
+        ordinal += 1;
+    }
+    if (child != -1) { return -1; }
+    return finish(output, capacity, next, started.form,
+        started.binding_count);
+}
+
+pub fn emit_definitions(tree: ir::body_tree::Tree,
+    types: ir::type_catalog::Table, function_index: i32,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    if (!ir::body_tree::valid(tree)) { return -1; }
+    let next: i32 = position;
+    let index: i32 = tree.count - 1;
+    while (index >= 0) {
+        if (named_node(tree, index)) {
+            next = verified::lean_output::text(output, capacity, next,
+                "\nprivate def ", 13);
+            let kind: ir::body_tree::NodeKind =
+                ir::body_tree::kind(tree, index);
+            next = node_name(output, capacity, next,
+                function_index, index, kind);
+            if (kind == ir::body_tree::ExpressionNode) {
+                next = verified::lean_output::text(output, capacity, next,
+                    " : Lanius.Core.Expr :=\n  ", 25);
+            } else {
+                if (kind == ir::body_tree::PlaceNode) {
+                    next = verified::lean_output::text(output, capacity, next,
+                        " : Lanius.Core.Place :=\n  ", 26);
+                } else {
+                    next = verified::lean_output::text(output, capacity, next,
+                        " : Lanius.Core.Stmt :=\n  ", 25);
+                }
+            }
+            next = emit_node(tree, types, index, -1,
+                function_index, true,
+                output, capacity, next, tree.count + 1);
+            next = verified::lean_output::byte(output, capacity, next, 10);
+            if (next < 0) { return -1; }
+        }
+        index -= 1;
+    }
+    return next;
+}
+
+pub fn emit(tree: ir::body_tree::Tree, types: ir::type_catalog::Table,
+    function_index: i32,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    if (!ir::body_tree::valid(tree)) { return -1; }
+    return emit_node(tree, types, 0, -1,
+        function_index, false, output, capacity,
+        position, tree.count + 1);
+}
+
+pub fn emit_subtree(tree: ir::body_tree::Tree,
+    types: ir::type_catalog::Table, function_index: i32, index: i32,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    if (!ir::body_tree::valid(tree) || index < 0 || index >= tree.count) {
+        return -1;
+    }
+    return emit_node(tree, types, index, -1,
+        function_index, false, output, capacity,
+        position, tree.count + 1);
+}

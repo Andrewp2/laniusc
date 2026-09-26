@@ -222,4 +222,81 @@ example :
       (.structure 11)).isSome = false := by
   rfl
 
+def modePath : Surface.Path := { segments := [.mk "Mode" []] }
+
+def modeSymbol : Names.Symbol := {
+  moduleId := 0
+  lookupNamespace := .type
+  name := "Mode"
+  visibility := .exported
+  declaration := 30 }
+
+def modeScheme : Static.NominalScheme := {
+  declaration := 30
+  type := 4
+  kind := .enumeration }
+
+def modeInstance : Static.NominalInstance := {
+  declaration := 30
+  sourceType := 4
+  kind := .enumeration
+  coreType := 12 }
+
+def modeContext : SurfaceElaboration.Context := {
+  names := { symbols := [modeSymbol] }
+  currentModule := 0
+  monomorphization := {
+    resolveNominal := fun source types constants =>
+      match source, types, constants with
+      | 4, [], [] => some (.enumeration 12)
+      | _, _, _ => none }
+  nominalSchemes := [modeScheme]
+  nominalInstances := [modeInstance] }
+
+example :
+    (check modeContext (.path modePath.segments) (.enumeration 12)).isSome = true := by
+  decide
+
+example :
+    (check modeContext (.path modePath.segments) (.enumeration 13)).isSome = false := by
+  decide
+
+example :
+    (check modeContext (.path modePath.segments) (.structure 12)).isSome = false := by
+  decide
+
+def modeAliasPath : Surface.Path := { segments := [.mk "ModeAlias" []] }
+
+def modeAliasSymbol : Names.Symbol := {
+  moduleId := 0
+  lookupNamespace := .type
+  name := "ModeAlias"
+  visibility := .exported
+  declaration := 31 }
+
+def modeAlias : SurfaceElaboration.TypeAliasEntry := {
+  declaration := 31
+  moduleId := 0
+  target := .path modePath.segments }
+
+def modeAliasContext : SurfaceElaboration.Context := {
+  modeContext with
+  names := { symbols := [modeSymbol, modeAliasSymbol] }
+  symbolsAreUnique := none
+  typeAliases := [modeAlias] }
+
+example :
+    (check modeAliasContext (.path modeAliasPath.segments)
+      (.enumeration 12)).isSome = true := by
+  decide
+
+def ambiguousModeContext : SurfaceElaboration.Context := {
+  modeContext with
+  nominalInstances := [modeInstance, { modeInstance with coreType := 13 }] }
+
+example :
+    (check ambiguousModeContext (.path modePath.segments)
+      (.enumeration 12)).isSome = false := by
+  decide
+
 end Lanius.Compiler.TypeLoweringCheckTests

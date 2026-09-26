@@ -153,6 +153,20 @@ def mkConstant (id : ConstantId) (type : Ty) (value : Value) (rest : List Int) :
       type := type
       value := value }, rest)
 
+def parseBindings : Nat → List Int → Option (List Pattern × List Int)
+  | 0, words => some ([], words)
+  | count + 1, words => do
+      let (id, rest) ← getNat words
+      let (tail, rest) ← parseBindings count rest
+      return (.bind id :: tail, rest)
+
+def matchPattern? (id : TypeId) (ordinal : Int)
+    (bindings : List Pattern) : Option Pattern :=
+  if ordinal = -1 then
+    if bindings.isEmpty then some .wildcard else none
+  else
+    (nat? ordinal).map fun variant => .enumVariant id variant bindings
+
 mutual
   def parseExpr : Nat → List Int → Option (Expr × List Int)
     | 0, _ => none
@@ -171,6 +185,22 @@ mutual
       | 15 => do let (x, rest) ← parseExpr fuel words; let (y, rest) ← parseExpr fuel rest; return (.i32SliceFromRawParts x y, rest)
       | 16 => do let (x, rest) ← parseExpr fuel words; return (.i32SliceDataPtr x, rest)
       | 17 => do let (x, rest) ← parseExpr fuel words; return (.stringDataPtr x, rest)
+      | 18 => do
+          let (tag, rest) ← get words
+          let id ← structId? tag
+          let (variant, rest) ← getNat rest
+          let (count, rest) ← getNat rest
+          let (payload, rest) ← parseExprs fuel count rest
+          return (.enumValue id variant payload, rest)
+      | 21 => do
+          let (resultTag, rest) ← get words
+          let _ ← type? resultTag
+          let (enumTag, rest) ← get rest
+          let id ← structId? enumTag
+          let (count, rest) ← getNat rest
+          let (scrutinee, rest) ← parseExpr fuel rest
+          let (arms, rest) ← parseMatchArms fuel id count rest
+          return (.matchValue scrutinee arms, rest)
       | 22 => do
           let (kind, rest) ← get words
           let (id, rest) ← getNat rest
@@ -231,6 +261,19 @@ mutual
     | 0, _, _ => none
     | fuel + 1, count + 1, words => do
         let (head, rest) ← parseExpr fuel words; let (tail, rest) ← parseExprs fuel count rest; return (head :: tail, rest)
+
+  def parseMatchArms : Nat → TypeId → Nat → List Int →
+      Option (List (Pattern × Expr) × List Int)
+    | _, _, 0, words => some ([], words)
+    | 0, _, _, _ => none
+    | fuel + 1, id, count + 1, words => do
+        let (ordinal, rest) ← get words
+        let (bindingCount, rest) ← getNat rest
+        let (bindings, rest) ← parseBindings bindingCount rest
+        let pattern ← matchPattern? id ordinal bindings
+        let (body, rest) ← parseExpr fuel rest
+        let (tail, rest) ← parseMatchArms fuel id count rest
+        return ((pattern, body) :: tail, rest)
 
   def parseTypes : Nat → List Int → Option (List Ty × List Int)
     | 0, words => some ([], words)

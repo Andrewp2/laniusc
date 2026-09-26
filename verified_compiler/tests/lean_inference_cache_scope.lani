@@ -1,0 +1,10 @@
+module app::main;
+
+fn main() -> i32 {
+    let number = 7;
+    let condition = true;
+    if (condition) {
+        return number;
+    }
+    return 0;
+}

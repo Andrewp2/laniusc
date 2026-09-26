@@ -17,8 +17,5 @@ lean_exe checkCurrentSourceClosure where
 lean_exe checkCertificate where
   root := `Lanius.Extraction.CheckCertificate
 
-lean_exe checkCorePhase where
-  root := `Lanius.Extraction.CheckCorePhase
-
 lean_exe checkELFExecution where
   root := `Lanius.Compiler.CheckELFExecution

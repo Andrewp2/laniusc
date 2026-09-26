@@ -1,0 +1,746 @@
+module verified::lean_typed_body;
+
+import ir::body_events;
+import ir::body_tree;
+import ir::symbol_catalog;
+import ir::type_catalog;
+import ir::type_ref;
+import verified::lean_body;
+import verified::lean_output;
+import verified::lean_syntax;
+import verified::host;
+
+// Readable constructors erase directly to the same Core tree as the x86 IR.
+// Unsupported nodes stay as explicit typed Core subtrees during migration;
+// no second parse or integer transport is introduced.
+const MAX_INLINE_NODES: i32 = 256;
+// Native records use eight-byte slots. Tree: 8, Table: 9, Catalog: 19,
+// function/unit: 2, output/capacity: 3. Reserve 64 slots for the 41-slot
+// context; recursive writers pass its slice handle instead of the value.
+const VIEW_BYTES: i32 = 64 * 8;
+
+struct View {
+    tree: ir::body_tree::Tree,
+    types: ir::type_catalog::Table,
+    names: ir::symbol_catalog::Catalog,
+    function_index: i32,
+    unit: i32,
+    output: [i32],
+    capacity: i32,
+}
+
+fn type_name(views: [View], kind: ir::type_ref::TypeRef,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    return verified::lean_syntax::named_type_ref(output, capacity, position,
+        view.types, view.names, kind);
+}
+
+fn name(views: [View], token: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    if (view.unit < 0) {
+        return verified::lean_output::text(output, capacity,
+            position, "\"\"", 2);
+    }
+    let reference: ir::symbol_catalog::Ref =
+        ir::symbol_catalog::Ref { unit: view.unit, token: token };
+    let spelling: ir::symbol_catalog::Spelling =
+        ir::symbol_catalog::spelling(view.names, reference);
+    if (!spelling.valid) { return -1; }
+    return verified::lean_syntax::source_name(output, capacity, position,
+        view.names, reference);
+}
+
+fn variable(views: [View], id: i32, kind_code: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    if (id < 0 || kind_code <= 0) { return -1; }
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, "((Lanius.TypedIR.Named.Var.named ", 33);
+    next = verified::lean_output::natural(output, capacity, next, id);
+    next = verified::lean_output::byte(output, capacity, next, 32);
+    next = name(views, id, next);
+    if (next < 0) { return -1; }
+    next = verified::lean_output::text(output, capacity, next,
+        ") : Lanius.TypedIR.Named.Var ", 29);
+    next = type_name(views, ir::type_ref::from_code(kind_code), next);
+    return verified::lean_output::byte(output, capacity, next, 41);
+}
+
+fn variant(views: [View], type_id: i32, ordinal: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    if (type_id < 0 || type_id >= view.types.type_count) { return -1; }
+    let declarations: [ir::type_catalog::TypeDecl] = view.types.types;
+    let declaration: ir::type_catalog::TypeDecl = declarations[type_id];
+    if (declaration.kind != ir::type_catalog::Enumeration
+        || ordinal < 0 || ordinal >= declaration.variant_count) { return -1; }
+    let slot: i32 = declaration.variant_start + ordinal;
+    if (slot < 0 || slot >= view.types.variant_count) { return -1; }
+    return verified::lean_syntax::variant_identifier(output, capacity,
+        position, view.names, slot);
+}
+
+fn raw_expr(views: [View], index: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "({ core := ", 11);
+    next = verified::lean_body::emit_subtree(view.tree, view.types,
+        view.function_index, index, output, capacity, next);
+    next = verified::lean_output::text(output, capacity, next,
+        " } : Lanius.TypedIR.Named.Expr ", 31);
+    next = type_name(views, ir::body_tree::result_type(view.tree, index), next);
+    return verified::lean_output::byte(output, capacity, next, 41);
+}
+
+fn raw_stmt(views: [View], index: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "(Lanius.TypedIR.Named.Stmt.mk ", 30);
+    next = verified::lean_body::emit_subtree(view.tree, view.types,
+        view.function_index, index, output, capacity, next);
+    return verified::lean_output::byte(output, capacity, next, 41);
+}
+
+fn integer(views: [View], value: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, "(Lanius.TypedIR.Named.Expr.i32 ", 31);
+    next = verified::lean_syntax::signed(output, capacity, next, value);
+    return verified::lean_output::byte(output, capacity, next, 41);
+}
+
+fn local_expression(views: [View], index: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    let events: [ir::body_events::Event] = view.tree.events;
+    let local: ir::body_events::LocalReference =
+        ir::body_events::local_reference(events[index]);
+    if (local.id < 0) { return -1; }
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, "(Lanius.TypedIR.Named.Expr.local ", 33);
+    next = variable(views, local.id,
+        ir::type_ref::code(ir::body_tree::result_type(view.tree, index)),
+        next);
+    return verified::lean_output::byte(output, capacity, next, 41);
+}
+
+fn expression(views: [View], index: i32, fuel: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    if (fuel <= 0 || index < 0 || index >= view.tree.count
+        || ir::body_tree::kind(view.tree, index)
+            != ir::body_tree::ExpressionNode) { return -1; }
+    let events: [ir::body_events::Event] = view.tree.events;
+    return match (events[index]) {
+        ir::body_events::ExpressionInteger(integer_value) ->
+            integer(views, integer_value, position),
+        ir::body_events::ExpressionLocal(local_reference) ->
+            local_expression(views, index, position),
+        ir::body_events::ExpressionEnumeration(enum_variant) ->
+            enumeration(views, index, fuel, position),
+        ir::body_events::ExpressionMatch(match_header) ->
+            match_value(views, index, fuel, position),
+        _ -> raw_expr(views, index, position),
+    };
+}
+
+fn enumeration(views: [View], index: i32, fuel: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    let events: [ir::body_events::Event] = view.tree.events;
+    let constructor: ir::body_events::EnumVariant =
+        ir::body_events::enumeration_fields(events[index]);
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "(Lanius.TypedIR.Named.Expr.variant ", 35);
+    next = variant(views, constructor.type_id, constructor.ordinal, next);
+    if (next < 0) { return -1; }
+    next = verified::lean_output::byte(output, capacity, next, 32);
+    let child: i32 = ir::body_tree::first_child(view.tree, index);
+    let ordinal: i32 = 0;
+    while (ordinal < constructor.payload_count) {
+        if (child < 0) { return -1; }
+        next = verified::lean_output::text(output, capacity, next,
+            "(.cons ", 7);
+        next = expression(views, child, fuel - 1, next);
+        next = verified::lean_output::byte(output, capacity, next, 32);
+        if (next < 0) { return -1; }
+        child = ir::body_tree::next_sibling(view.tree, index, child);
+        ordinal += 1;
+    }
+    if (child != -1) { return -1; }
+    next = verified::lean_output::text(output, capacity, next, ".nil", 4);
+    ordinal = 0;
+    while (ordinal < constructor.payload_count) {
+        next = verified::lean_output::byte(output, capacity, next, 41);
+        if (next < 0) { return -1; }
+        ordinal += 1;
+    }
+    return verified::lean_output::byte(output, capacity, next, 41);
+}
+
+fn arm(views: [View], index: i32, type_id: i32, fuel: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    if (index < 0 || ir::body_tree::kind(view.tree, index)
+            != ir::body_tree::ArmNode) { return -1; }
+    let events: [ir::body_events::Event] = view.tree.events;
+    let header: ir::body_events::MatchArm =
+        ir::body_events::matching_arm_fields(events[index]);
+    let child: i32 = ir::body_tree::first_child(view.tree, index);
+    if (header.ordinal == -1) {
+        let next: i32 = verified::lean_output::text(output, capacity,
+            position, "(Lanius.TypedIR.Named.Arm.wildcard ", 35);
+        next = expression(views, child, fuel - 1, next);
+        return verified::lean_output::byte(output, capacity, next, 41);
+    }
+    let declarations: [ir::type_catalog::TypeDecl] = view.types.types;
+    let variants: [ir::type_catalog::Variant] = view.types.variants;
+    let fields: [ir::type_catalog::Field] = view.types.fields;
+    let declaration: ir::type_catalog::TypeDecl = declarations[type_id];
+    let payload: ir::type_catalog::Variant =
+        variants[declaration.variant_start + header.ordinal];
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "(Lanius.TypedIR.Named.Arm.variant ", 34);
+    next = variant(views, type_id, header.ordinal, next);
+    next = verified::lean_output::byte(output, capacity, next, 32);
+    let binding: i32 = 0;
+    while (binding < header.binding_count) {
+        if (child < 0) { return -1; }
+        let reference: ir::body_events::LocalReference =
+            ir::body_events::matching_binding_fields(events[child]);
+        if (reference.id < 0) { return -1; }
+        next = verified::lean_output::text(output, capacity, next,
+            "(.cons ", 7);
+        next = variable(views, reference.id,
+            ir::type_ref::code(fields[payload.field_start + binding].type_tag),
+            next);
+        next = verified::lean_output::byte(output, capacity, next, 32);
+        if (next < 0) { return -1; }
+        child = ir::body_tree::next_sibling(view.tree, index, child);
+        binding += 1;
+    }
+    if (child < 0) { return -1; }
+    next = verified::lean_output::text(output, capacity, next, ".nil", 4);
+    binding = 0;
+    while (binding < header.binding_count) {
+        next = verified::lean_output::byte(output, capacity, next, 41);
+        if (next < 0) { return -1; }
+        binding += 1;
+    }
+    next = verified::lean_output::byte(output, capacity, next, 32);
+    next = expression(views, child, fuel - 1, next);
+    return verified::lean_output::byte(output, capacity, next, 41);
+}
+
+fn match_value(views: [View], index: i32, fuel: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    let events: [ir::body_events::Event] = view.tree.events;
+    let header: ir::body_events::MatchHeader =
+        ir::body_events::matching_fields(events[index]);
+    if (header.arm_count <= 0 || header.scrutinee_type_id < 0) {
+        return -1;
+    }
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "(Lanius.TypedIR.Named.Expr.matchValue ", 38);
+    let child: i32 = ir::body_tree::first_child(view.tree, index);
+    if (child < 0) { return -1; }
+    next = expression(views, child, fuel - 1, next);
+    next = verified::lean_output::text(output, capacity, next, " [", 2);
+    child = ir::body_tree::next_sibling(view.tree, index, child);
+    let ordinal: i32 = 0;
+    while (ordinal < header.arm_count) {
+        if (child < 0) { return -1; }
+        if (ordinal != 0) {
+            next = verified::lean_output::text(output, capacity,
+                next, ", ", 2);
+        }
+        next = arm(views, child, header.scrutinee_type_id,
+            fuel - 1, next);
+        if (next < 0) { return -1; }
+        child = ir::body_tree::next_sibling(view.tree, index, child);
+        ordinal += 1;
+    }
+    if (child != -1) { return -1; }
+    return verified::lean_output::text(output, capacity, next, "])", 2);
+}
+
+fn let_local(views: [View], index: i32, fuel: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    let events: [ir::body_events::Event] = view.tree.events;
+    let local: ir::body_events::LocalDeclaration =
+        ir::body_events::local_declaration(events[index]);
+    if (local.id < 0) { return -1; }
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, "(Lanius.TypedIR.Named.Stmt.letLocal ", 36);
+    next = variable(views, local.id, ir::type_ref::code(local.kind), next);
+    if (next < 0) { return -1; }
+    next = verified::lean_output::byte(output, capacity, next, 32);
+    let initializer: i32 = ir::body_tree::first_child(view.tree, index);
+    if (initializer < 0) { return -1; }
+    next = expression(views, initializer, fuel - 1, next);
+    if (next < 0) { return -1; }
+    next = verified::lean_output::byte(output, capacity, next, 32);
+    let body: i32 = ir::body_tree::next_sibling(view.tree,
+        index, initializer);
+    if (body < 0) { return -1; }
+    next = statement(views, body, fuel - 1, next);
+    return verified::lean_output::byte(output, capacity, next, 41);
+}
+
+fn return_value(views: [View], index: i32, fuel: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, "(Lanius.TypedIR.Named.Stmt.returnValue ", 39);
+    next = expression(views,
+        ir::body_tree::first_child(view.tree, index), fuel - 1, next);
+    return verified::lean_output::byte(output, capacity, next, 41);
+}
+
+fn statement(views: [View], index: i32, fuel: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let output: [i32] = view.output;
+    let capacity: i32 = view.capacity;
+    if (fuel <= 0 || index < 0 || index >= view.tree.count
+        || ir::body_tree::kind(view.tree, index)
+            != ir::body_tree::StatementNode) { return -1; }
+    let events: [ir::body_events::Event] = view.tree.events;
+    return match (events[index]) {
+        ir::body_events::StatementLet(local) ->
+            let_local(views, index, fuel, position),
+        ir::body_events::StatementReturnValue ->
+            return_value(views, index, fuel, position),
+        _ -> raw_stmt(views, index, position),
+    };
+}
+
+pub fn emit(tree: ir::body_tree::Tree, types: ir::type_catalog::Table,
+    names: ir::symbol_catalog::Catalog, function_index: i32,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    if (!ir::body_tree::valid(tree)) { return -1; }
+    let unit: i32 = -1;
+    if (names.unit_count > 0) {
+        if (function_index < 0 || function_index >= names.function_count) {
+            return -1;
+        }
+        let functions: [ir::symbol_catalog::Ref] = names.functions;
+        unit = functions[function_index].unit;
+    }
+    let memory: ptr = verified::host::alloc(VIEW_BYTES, 8);
+    if (memory == 0) { return -1; }
+    let views: [View] = slice_from_raw_parts(memory + VIEW_BYTES - 8, 1);
+    views[0] = View { tree: tree, types: types, names: names,
+        function_index: function_index, unit: unit,
+        output: output, capacity: capacity };
+    if (tree.count > MAX_INLINE_NODES
+        || !ir::body_tree::expression_result_annotations_valid(tree)) {
+        return raw_stmt(views, 0, position);
+    }
+    return statement(views, 0, tree.count + 1, position);
+}
+
+// The source-shaped writer is deliberately selected by structural IR shape,
+// not by source spelling. Unsupported nodes still use the exact Core writer
+// until their surface syntax has a checked elaboration rule.
+fn expression_local_id(event: ir::body_events::Event) -> i32 {
+    let reference: ir::body_events::LocalReference =
+        ir::body_events::local_reference(event);
+    return reference.id;
+}
+
+fn statement_let_id(event: ir::body_events::Event) -> i32 {
+    let declaration: ir::body_events::LocalDeclaration =
+        ir::body_events::local_declaration(event);
+    return declaration.id;
+}
+
+fn match_binding_id(event: ir::body_events::Event) -> i32 {
+    let binding: ir::body_events::LocalReference =
+        ir::body_events::matching_binding_fields(event);
+    return binding.id;
+}
+
+fn surface_name(views: [View], token: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    if (view.unit < 0) { return -1; }
+    // Lean keywords are legal Lanius names. Escaped identifiers preserve the
+    // exact spelling without maintaining a second keyword table here.
+    let next: i32 = verified::lean_output::byte(view.output,
+        view.capacity, position, 194);
+    next = verified::lean_output::byte(view.output,
+        view.capacity, next, 171);
+    next = verified::lean_syntax::source_identifier(view.output,
+        view.capacity, next, view.names,
+        ir::symbol_catalog::Ref { unit: view.unit, token: token });
+    next = verified::lean_output::byte(view.output,
+        view.capacity, next, 194);
+    return verified::lean_output::byte(view.output,
+        view.capacity, next, 187);
+}
+
+fn surface_atom(tree: ir::body_tree::Tree, index: i32) -> bool {
+    if (index < 0 || index >= tree.count) { return false; }
+    let events: [ir::body_events::Event] = tree.events;
+    return match (events[index]) {
+        ir::body_events::ExpressionInteger(value) -> value >= 0,
+        ir::body_events::ExpressionLocal(reference) ->
+            expression_local_id(events[index]) >= 0,
+        _ -> false,
+    };
+}
+
+fn surface_binary_op(event: ir::body_events::Event) -> i32 {
+    return match (event) {
+        ir::body_events::ExpressionBinaryAdd -> 0,
+        ir::body_events::ExpressionBinarySubtract -> 1,
+        ir::body_events::ExpressionBinaryMultiply -> 2,
+        _ -> -1,
+    };
+}
+
+fn surface_binary(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    let left: i32 = ir::body_tree::first_child(tree, index);
+    let right: i32 = ir::body_tree::next_sibling(tree, index, left);
+    return surface_expression(tree, left, fuel - 1)
+        && surface_expression(tree, right, fuel - 1);
+}
+
+fn surface_expression(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    if (fuel <= 0 || index < 0 || index >= tree.count) { return false; }
+    if (surface_atom(tree, index)) { return true; }
+    let events: [ir::body_events::Event] = tree.events;
+    if (surface_binary_op(events[index]) >= 0) {
+        return surface_binary(tree, index, fuel - 1);
+    }
+    return match (events[index]) {
+        ir::body_events::ExpressionEnumeration(constructor) ->
+            surface_constructor(tree, index),
+        ir::body_events::ExpressionMatch(header) ->
+            surface_match(tree, index, fuel - 1),
+        _ -> false,
+    };
+}
+
+fn surface_constructor(tree: ir::body_tree::Tree, index: i32) -> bool {
+    let events: [ir::body_events::Event] = tree.events;
+    let constructor: ir::body_events::EnumVariant =
+        ir::body_events::enumeration_fields(events[index]);
+    if (constructor.payload_count == 0) { return true; }
+    if (constructor.payload_count != 1) { return false; }
+    return surface_atom(tree, ir::body_tree::first_child(tree, index));
+}
+
+fn surface_match(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    let child: i32 = ir::body_tree::first_child(tree, index);
+    if (!surface_atom(tree, child)) { return false; }
+    child = ir::body_tree::next_sibling(tree, index, child);
+    let events: [ir::body_events::Event] = tree.events;
+    let header: ir::body_events::MatchHeader =
+        ir::body_events::matching_fields(events[index]);
+    let ordinal: i32 = 0;
+    while (ordinal < header.arm_count) {
+        if (child < 0) { return false; }
+        let arm: ir::body_events::MatchArm =
+            ir::body_events::matching_arm_fields(events[child]);
+        if (arm.ordinal < 0 || arm.binding_count < 0
+            || arm.binding_count > 1) { return false; }
+        let body: i32 = ir::body_tree::first_child(tree, child);
+        if (arm.binding_count == 1) {
+            body = ir::body_tree::next_sibling(tree, child, body);
+        }
+        if (!surface_expression(tree, body, fuel - 1)) {
+            return false;
+        }
+        child = ir::body_tree::next_sibling(tree, index, child);
+        ordinal += 1;
+    }
+    return child == -1;
+}
+
+fn surface_statement(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    if (fuel <= 0 || index < 0 || index >= tree.count) { return false; }
+    let events: [ir::body_events::Event] = tree.events;
+    return match (events[index]) {
+        ir::body_events::StatementLet(declaration) ->
+            surface_let(tree, index, fuel - 1),
+        ir::body_events::StatementReturnValue ->
+            surface_expression(tree,
+                ir::body_tree::first_child(tree, index), fuel - 1),
+        _ -> false,
+    };
+}
+
+fn surface_let(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    let events: [ir::body_events::Event] = tree.events;
+    let local: ir::body_events::LocalDeclaration =
+        ir::body_events::local_declaration(events[index]);
+    if (local.id < 0 || !ir::type_ref::valid(local.kind)) {
+        return false;
+    }
+    let initializer: i32 = ir::body_tree::first_child(tree, index);
+    let body: i32 = ir::body_tree::next_sibling(tree, index, initializer);
+    return surface_expression(tree, initializer, fuel)
+        && surface_statement(tree, body, fuel);
+}
+
+pub fn surface_supported(tree: ir::body_tree::Tree) -> bool {
+    return tree.count > 0 && tree.count <= MAX_INLINE_NODES
+        && ir::body_tree::valid(tree)
+        && ir::body_tree::expression_result_annotations_valid(tree)
+        && surface_statement(tree, 0, tree.count + 1);
+}
+
+pub fn surface_bindings(tree: ir::body_tree::Tree,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    if (!surface_supported(tree)) { return -1; }
+    let next: i32 = verified::lean_output::byte(output, capacity,
+        position, 91);
+    let events: [ir::body_events::Event] = tree.events;
+    let index: i32 = 0;
+    let count: i32 = 0;
+    while (index < tree.count) {
+        let id: i32 = match (events[index]) {
+            ir::body_events::StatementLet(declaration) ->
+                statement_let_id(events[index]),
+            ir::body_events::MatchBinding(binding) ->
+                match_binding_id(events[index]),
+            _ -> -1,
+        };
+        if (id >= 0) {
+            if (count > 0) {
+                next = verified::lean_output::text(output, capacity,
+                    next, ", ", 2);
+            }
+            next = verified::lean_output::natural(output, capacity,
+                next, id);
+            count += 1;
+        }
+        if (next < 0) { return -1; }
+        index += 1;
+    }
+    return verified::lean_output::byte(output, capacity, next, 93);
+}
+
+fn surface_atom_output(views: [View], index: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let events: [ir::body_events::Event] = view.tree.events;
+    return match (events[index]) {
+        ir::body_events::ExpressionInteger(value) ->
+            verified::lean_output::natural(view.output, view.capacity,
+                position, value),
+        ir::body_events::ExpressionLocal(reference) ->
+            surface_name(views, expression_local_id(events[index]), position),
+        _ -> -1,
+    };
+}
+
+fn surface_expression_output(views: [View], index: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let events: [ir::body_events::Event] = view.tree.events;
+    if (surface_atom(view.tree, index)) {
+        return surface_atom_output(views, index, position);
+    }
+    let op: i32 = surface_binary_op(events[index]);
+    if (op >= 0) {
+        return surface_binary_output(views, index, op, position);
+    }
+    return match (events[index]) {
+        ir::body_events::ExpressionEnumeration(constructor) ->
+            surface_constructor_output(views, index, position),
+        ir::body_events::ExpressionMatch(header) ->
+            surface_match_output(views, index, position),
+        _ -> -1,
+    };
+}
+
+fn surface_binary_output(views: [View], index: i32,
+    op: i32, position: i32) -> i32 {
+    let view: View = views[0];
+    let next: i32 = verified::lean_output::byte(view.output,
+        view.capacity, position, 40);
+    let left: i32 = ir::body_tree::first_child(view.tree, index);
+    let right: i32 = ir::body_tree::next_sibling(view.tree, index, left);
+    next = surface_expression_output(views, left, next);
+    if (op == 0) {
+        next = verified::lean_output::text(view.output, view.capacity,
+            next, " + ", 3);
+    } else {
+        if (op == 1) {
+            next = verified::lean_output::text(view.output, view.capacity,
+                next, " - ", 3);
+        } else {
+            if (op != 2) { return -1; }
+            next = verified::lean_output::text(view.output, view.capacity,
+                next, " * ", 3);
+        }
+    }
+    next = surface_expression_output(views, right, next);
+    return verified::lean_output::byte(view.output,
+        view.capacity, next, 41);
+}
+
+fn surface_constructor_output(views: [View], index: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let events: [ir::body_events::Event] = view.tree.events;
+    let constructor: ir::body_events::EnumVariant =
+        ir::body_events::enumeration_fields(events[index]);
+    let next: i32 = variant(views, constructor.type_id,
+        constructor.ordinal, position);
+    if (constructor.payload_count == 0) { return next; }
+    next = verified::lean_output::byte(view.output, view.capacity,
+        next, 32);
+    return surface_atom_output(views,
+        ir::body_tree::first_child(view.tree, index), next);
+}
+
+fn surface_match_output(views: [View], index: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let events: [ir::body_events::Event] = view.tree.events;
+    let header: ir::body_events::MatchHeader =
+        ir::body_events::matching_fields(events[index]);
+    let next: i32 = verified::lean_output::text(view.output,
+        view.capacity, position, "match ", 6);
+    let child: i32 = ir::body_tree::first_child(view.tree, index);
+    next = surface_atom_output(views, child, next);
+    next = verified::lean_output::text(view.output, view.capacity,
+        next, " with\n", 6);
+    child = ir::body_tree::next_sibling(view.tree, index, child);
+    let ordinal: i32 = 0;
+    while (ordinal < header.arm_count) {
+        let arm: ir::body_events::MatchArm =
+            ir::body_events::matching_arm_fields(events[child]);
+        next = verified::lean_output::text(view.output, view.capacity,
+            next, "      | ", 8);
+        next = variant(views, header.scrutinee_type_id,
+            arm.ordinal, next);
+        let body: i32 = ir::body_tree::first_child(view.tree, child);
+        if (arm.binding_count == 1) {
+            let binding: ir::body_events::LocalReference =
+                ir::body_events::matching_binding_fields(events[body]);
+            next = verified::lean_output::byte(view.output,
+                view.capacity, next, 32);
+            next = surface_name(views, binding.id, next);
+            body = ir::body_tree::next_sibling(view.tree, child, body);
+        }
+        next = verified::lean_output::text(view.output, view.capacity,
+            next, " => ", 4);
+        next = surface_expression_output(views, body, next);
+        next = verified::lean_output::byte(view.output,
+            view.capacity, next, 10);
+        if (next < 0) { return -1; }
+        child = ir::body_tree::next_sibling(view.tree, index, child);
+        ordinal += 1;
+    }
+    return next;
+}
+
+fn surface_statement_output(views: [View], index: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let events: [ir::body_events::Event] = view.tree.events;
+    return match (events[index]) {
+        ir::body_events::StatementLet(declaration) ->
+            surface_let_output(views, index, position),
+        ir::body_events::StatementReturnValue ->
+            surface_return_output(views, index, position),
+        _ -> -1,
+    };
+}
+
+fn surface_let_output(views: [View], index: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let events: [ir::body_events::Event] = view.tree.events;
+    let local: ir::body_events::LocalDeclaration =
+        ir::body_events::local_declaration(events[index]);
+    let next: i32 = verified::lean_output::text(view.output,
+        view.capacity, position, "    let ", 8);
+    next = surface_name(views, local.id, next);
+    next = verified::lean_output::text(view.output, view.capacity,
+        next, " : ", 3);
+    next = type_name(views, local.kind, next);
+    next = verified::lean_output::text(view.output, view.capacity,
+        next, " := ", 4);
+    let initializer: i32 = ir::body_tree::first_child(view.tree, index);
+    next = surface_expression_output(views, initializer, next);
+    next = verified::lean_output::byte(view.output, view.capacity,
+        next, 10);
+    let body: i32 = ir::body_tree::next_sibling(view.tree,
+        index, initializer);
+    return surface_statement_output(views, body, next);
+}
+
+fn surface_return_output(views: [View], index: i32,
+    position: i32) -> i32 {
+    let view: View = views[0];
+    let next: i32 = verified::lean_output::text(view.output,
+        view.capacity, position, "    return ", 11);
+    next = surface_expression_output(views,
+        ir::body_tree::first_child(view.tree, index), next);
+    return verified::lean_output::byte(view.output,
+        view.capacity, next, 10);
+}
+
+pub fn emit_surface(tree: ir::body_tree::Tree,
+    types: ir::type_catalog::Table, names: ir::symbol_catalog::Catalog,
+    function_index: i32, output: [i32], capacity: i32,
+    position: i32) -> i32 {
+    if (!surface_supported(tree)
+        || function_index < 0 || function_index >= names.function_count) {
+        return -1;
+    }
+    let functions: [ir::symbol_catalog::Ref] = names.functions;
+    let memory: ptr = verified::host::alloc(VIEW_BYTES, 8);
+    if (memory == 0) { return -1; }
+    let views: [View] = slice_from_raw_parts(memory + VIEW_BYTES - 8, 1);
+    views[0] = View { tree: tree, types: types, names: names,
+        function_index: function_index, unit: functions[function_index].unit,
+        output: output, capacity: capacity };
+    return surface_statement_output(views, 0, position);
+}

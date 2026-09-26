@@ -21,7 +21,6 @@ import Lanius.Compiler.FrontendArtifactBoundary
 import Lanius.Compiler.FrontendArtifactCheck
 import Lanius.Compiler.Phase
 import Lanius.Compiler.DeclarationCheck
-import Lanius.Compiler.EligibilityCheck
 import Lanius.Compiler.ImportSynthesis
 import Lanius.Compiler.SourcePackCheck
 import Lanius.Compiler.FrontendCheck
@@ -35,9 +34,11 @@ import Lanius.Compiler.NamedTypeCheck
 import Lanius.Compiler.TypeLoweringCheck
 import Lanius.Compiler.ConstantCheck
 import Lanius.Compiler.StructureCheck
+import Lanius.Compiler.EnumShapeCheck
 import Lanius.Compiler.SignatureCheck
 import Lanius.Compiler.FunctionContextCheck
 import Lanius.Compiler.DirectCallCheck
+import Lanius.Compiler.VariantConstructorCheck
 import Lanius.Compiler.BodyCheck
 import Lanius.Compiler.ExternalFunctionCheck
 import Lanius.Compiler.SourceCoreBoundary
@@ -75,7 +76,7 @@ import Lanius.Extraction.SyntaxCheck.Soundness
 import Lanius.Extraction.CompactBoundary
 import Lanius.Extraction.CompactFrontendBridge
 import Lanius.Extraction.Certificate
-import Lanius.Extraction.CorePhaseCertificate
+import Lanius.Compiler.DirectCoreCheck
 import Lanius.Extraction.CertificateBoundaryBridge
 import Lanius.Extraction.CertificateEncodingSize
 import Lanius.Extraction.CertificateEmitterPackedExecution

@@ -238,6 +238,8 @@ pub struct BodyUnitWorkspace {
     resolutions: lowering::types::ResolutionTable,
     values: lowering::value_catalog::ValueTable,
     expressions: verified::surface_expr::ExpressionArena,
+    expression_kind_codes: [i32],
+    expression_kind_depths: [i32],
     type_output: lowering::types::Results,
     events: ir::body_events::Region,
     catalog: ir::body_catalog::Catalog,
@@ -452,6 +454,8 @@ pub fn lower_units_owned(input: BodyUnitInputs,
         let body_workspace: lowering::body_context::BodyLoweringWorkspace =
             lowering::body_context::BodyLoweringWorkspace {
                 expressions: expression_work,
+                expression_kind_codes: workspace.expression_kind_codes,
+                expression_kind_depths: workspace.expression_kind_depths,
                 types: type_arena_work,
                 alias_scratch: lowering::body_context::region(alias_work,
                     alias_work_capacity),

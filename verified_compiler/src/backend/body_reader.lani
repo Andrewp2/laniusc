@@ -100,7 +100,8 @@ fn constant_reference(id: i32) -> ConstantReference {
 fn match_fields(result_kind: ir::type_ref::TypeRef, arms: i32)
     -> ir::body_events::MatchHeader {
     return ir::body_events::MatchHeader {
-        result_kind: result_kind, arm_count: arms,
+        result_kind: result_kind, scrutinee_type_id: -1,
+        arm_count: arms,
     };
 }
 
@@ -211,6 +212,12 @@ pub fn expression(source: Source, work: backend::frame::Workspace)
     let kind: backend::syntax::ExpressionKind = match (event) {
         ir::body_events::ExpressionInteger(integer_value) ->
             backend::syntax::ExprValue,
+        ir::body_events::ExpressionUsize(usize_value) ->
+            backend::syntax::ExprValue,
+        ir::body_events::ExpressionPointerNull ->
+            backend::syntax::ExprValue,
+        ir::body_events::ExpressionCast(target) ->
+            backend::syntax::ExprCast,
         ir::body_events::ExpressionBoolean(boolean_value) ->
             backend::syntax::ExprValue,
         ir::body_events::ExpressionString(string_value) ->
@@ -265,6 +272,10 @@ pub fn literal(source: Source, work: backend::frame::Workspace,
     return match (node.event) {
         ir::body_events::ExpressionInteger(integer_value) ->
             literal_values(ir::type_ref::I32, integer_value, 0),
+        ir::body_events::ExpressionUsize(usize_value) ->
+            literal_values(ir::type_ref::Usize, usize_value, 0),
+        ir::body_events::ExpressionPointerNull ->
+            literal_values(ir::type_ref::Pointer, 0, 0),
         ir::body_events::ExpressionBoolean(boolean_value) ->
             literal_values(ir::type_ref::Bool,
                 backend::syntax::boolean_code(boolean_value), 0),
@@ -310,7 +321,30 @@ pub fn cast_target(source: Source, work: backend::frame::Workspace,
     if (is_wire(source)) {
         return ir::type_ref::from_code(take(source, work));
     }
-    return ir::type_ref::Invalid;
+    return match (node.event) {
+        ir::body_events::ExpressionCast(target) -> target.kind,
+        _ -> ir::type_ref::Invalid,
+    };
+}
+
+pub fn typed_slice_element(source: Source,
+    work: backend::frame::Workspace,
+    node: Expression) -> ir::body_events::SliceElement {
+    if (is_wire(source)) {
+        let encoded: i32 = take(source, work);
+        let id: i32 = take(source, work);
+        if (encoded == 0) {
+            return ir::body_events::SliceElement {
+                kind: ir::body_events::StructureSlice, id: id };
+        }
+        if (encoded == 1) {
+            return ir::body_events::SliceElement {
+                kind: ir::body_events::EnumerationSlice, id: id };
+        }
+        return ir::body_events::SliceElement {
+            kind: ir::body_events::I32Slice, id: -1 };
+    }
+    return ir::body_events::typed_slice_fields(node.event);
 }
 
 pub fn unary_operation(source: Source, work: backend::frame::Workspace,
@@ -401,6 +435,8 @@ pub fn match_header(source: Source, work: backend::frame::Workspace,
         return ir::body_events::MatchHeader {
             result_kind: ir::type_ref::from_code(
                 take(source, work)),
+            scrutinee_type_id: take(source, work)
+                - backend::syntax::NOMINAL_TYPE_BASE,
             arm_count: take(source, work),
         };
     }

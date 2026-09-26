@@ -37,11 +37,25 @@ example :
   rfl
 
 example :
-    monomorphization.resolveNominal 3 [] [] = some (.structure 3) := by
+    (monomorphization program).resolveNominal 3 [] [] = none := by
   rfl
 
 example :
-    monomorphization.resolveNominal 3 [.scalar .bool] [] = none := by
+    (monomorphization program).resolveNominal 3 [.scalar .bool] [] = none := by
+  rfl
+
+def nominalProgram : Core.Program := {
+  structures := [{ id := 3, fields := [] }]
+  enumerations := [{ id := 4, variants := [[]] }] }
+
+example :
+    (monomorphization nominalProgram).resolveNominal 3 [] [] =
+      some (.structure 3) := by
+  rfl
+
+example :
+    (monomorphization nominalProgram).resolveNominal 4 [] [] =
+      some (.enumeration 4) := by
   rfl
 
 def function : Core.Function := {

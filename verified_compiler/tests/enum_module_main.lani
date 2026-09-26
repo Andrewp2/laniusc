@@ -1,0 +1,9 @@
+module app::main;
+
+import app::auxiliary;
+
+struct Payload { flag: bool }
+
+fn main() -> i32 {
+    return 0;
+}

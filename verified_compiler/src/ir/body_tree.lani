@@ -1,0 +1,430 @@
+module ir::body_tree;
+
+import ir::body_events;
+import ir::type_ref;
+import verified::host;
+
+// A preorder event stream with an end offset for every subtree. End offsets
+// are exclusive event indices, so children can be visited without decoding
+// Core words or recursively rediscovering event boundaries.
+pub struct Tree {
+    events: [ir::body_events::Event],
+    result_types: [ir::type_ref::TypeRef],
+    has_result_types: bool,
+    ends: [i32],
+    count: i32,
+}
+
+pub enum NodeKind {
+    ExpressionNode,
+    PlaceNode,
+    StatementNode,
+    ArmNode,
+    BindingNode,
+    InvalidNode,
+}
+
+enum ChildRule {
+    NoChildren,
+    Expressions,
+    PlaceThenExpression,
+    ExpressionThenArms,
+    BindingsThenExpression,
+    Places,
+    Statements,
+    ExpressionThenStatements,
+}
+
+struct Shape {
+    kind: NodeKind,
+    arity: i32,
+    rule: ChildRule,
+}
+
+fn node(kind: NodeKind, arity: i32, rule: ChildRule) -> Shape {
+    return Shape { kind: kind, arity: arity, rule: rule };
+}
+
+fn match_shape(header: ir::body_events::MatchHeader) -> Shape {
+    if (header.arm_count <= 0 || header.scrutinee_type_id < 0
+        || !ir::type_ref::valid(header.result_kind)) {
+        return node(InvalidNode, -1, NoChildren);
+    }
+    return node(ExpressionNode, header.arm_count + 1,
+        ExpressionThenArms);
+}
+
+fn arm_shape(arm: ir::body_events::MatchArm) -> Shape {
+    if (arm.binding_count <= -1 || arm.ordinal < -1
+        || (arm.ordinal == -1 && arm.binding_count != 0)) {
+        return node(InvalidNode, -1, NoChildren);
+    }
+    return node(ArmNode, arm.binding_count + 1,
+        BindingsThenExpression);
+}
+
+fn cast_shape(target: ir::type_ref::TypeRef) -> Shape {
+    if (ir::type_ref::same(target, ir::type_ref::I32)
+        || ir::type_ref::same(target, ir::type_ref::Usize)) {
+        return node(ExpressionNode, 1, Expressions);
+    }
+    return node(InvalidNode, -1, NoChildren);
+}
+
+fn shape(event: ir::body_events::Event) -> Shape {
+    return match (event) {
+        ir::body_events::ExpressionInteger(integer_value) ->
+            node(ExpressionNode, 0, NoChildren),
+        ir::body_events::ExpressionUsize(usize_value) ->
+            node(ExpressionNode, 0, NoChildren),
+        ir::body_events::ExpressionPointerNull ->
+            node(ExpressionNode, 0, NoChildren),
+        ir::body_events::ExpressionCast(target) -> cast_shape(target.kind),
+        ir::body_events::ExpressionBoolean(boolean_value) ->
+            node(ExpressionNode, 0, NoChildren),
+        ir::body_events::ExpressionString(string_value) ->
+            node(ExpressionNode, 0, NoChildren),
+        ir::body_events::ExpressionLocal(local_reference) ->
+            node(ExpressionNode, 0, NoChildren),
+        ir::body_events::ExpressionConstant(constant_id) ->
+            node(ExpressionNode, 0, NoChildren),
+        ir::body_events::ExpressionUnaryPositive ->
+            node(ExpressionNode, 1, Expressions),
+        ir::body_events::ExpressionUnaryNot ->
+            node(ExpressionNode, 1, Expressions),
+        ir::body_events::ExpressionUnaryNegate ->
+            node(ExpressionNode, 1, Expressions),
+        ir::body_events::ExpressionBinaryAndThen ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryOrElse ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryEqual ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryNotEqual ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryLess ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryLessEqual ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryGreater ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryGreaterEqual ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryAdd ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinarySubtract ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryMultiply ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryDivide ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryRemainder ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryBitAnd ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryBitOr ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryBitXor ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryShiftLeft ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionBinaryShiftRight ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionAssignmentSet ->
+            node(ExpressionNode, 2, PlaceThenExpression),
+        ir::body_events::ExpressionAssignmentAdd ->
+            node(ExpressionNode, 2, PlaceThenExpression),
+        ir::body_events::ExpressionAssignmentSubtract ->
+            node(ExpressionNode, 2, PlaceThenExpression),
+        ir::body_events::ExpressionAssignmentMultiply ->
+            node(ExpressionNode, 2, PlaceThenExpression),
+        ir::body_events::ExpressionAssignmentDivide ->
+            node(ExpressionNode, 2, PlaceThenExpression),
+        ir::body_events::ExpressionAssignmentRemainder ->
+            node(ExpressionNode, 2, PlaceThenExpression),
+        ir::body_events::ExpressionAssignmentBitXor ->
+            node(ExpressionNode, 2, PlaceThenExpression),
+        ir::body_events::ExpressionAssignmentShiftLeft ->
+            node(ExpressionNode, 2, PlaceThenExpression),
+        ir::body_events::ExpressionAssignmentShiftRight ->
+            node(ExpressionNode, 2, PlaceThenExpression),
+        ir::body_events::ExpressionAssignmentBitAnd ->
+            node(ExpressionNode, 2, PlaceThenExpression),
+        ir::body_events::ExpressionAssignmentBitOr ->
+            node(ExpressionNode, 2, PlaceThenExpression),
+        ir::body_events::ExpressionIndex ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionStruct(fields) ->
+            node(ExpressionNode, fields.count, Expressions),
+        ir::body_events::ExpressionEnumeration(variant) ->
+            node(ExpressionNode, variant.payload_count, Expressions),
+        ir::body_events::ExpressionMatch(header) -> match_shape(header),
+        ir::body_events::ExpressionField(expression_field) ->
+            node(ExpressionNode, 1, Expressions),
+        ir::body_events::ExpressionCall(call) ->
+            node(ExpressionNode, call.argument_count, Expressions),
+        ir::body_events::ExpressionI32SliceFromRawParts ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::ExpressionI32SliceDataPointer ->
+            node(ExpressionNode, 1, Expressions),
+        ir::body_events::ExpressionStringDataPointer ->
+            node(ExpressionNode, 1, Expressions),
+        ir::body_events::ExpressionTypedSliceFromRawParts(element) ->
+            node(ExpressionNode, 2, Expressions),
+        ir::body_events::MatchArmHeader(arm) -> arm_shape(arm),
+        ir::body_events::MatchBinding(binding) ->
+            node(BindingNode, 0, NoChildren),
+        ir::body_events::PlaceLocal(place_local) ->
+            node(PlaceNode, 0, NoChildren),
+        ir::body_events::PlaceIndex ->
+            node(PlaceNode, 2, PlaceThenExpression),
+        ir::body_events::PlaceField(place_field) ->
+            node(PlaceNode, 1, Places),
+        ir::body_events::StatementSkip ->
+            node(StatementNode, 0, NoChildren),
+        ir::body_events::StatementExpression ->
+            node(StatementNode, 1, Expressions),
+        ir::body_events::StatementSequence ->
+            node(StatementNode, 2, Statements),
+        ir::body_events::StatementLet(initialized_local) ->
+            node(StatementNode, 2, ExpressionThenStatements),
+        ir::body_events::StatementLetUninitialized(uninitialized_local) ->
+            node(StatementNode, 1, Statements),
+        ir::body_events::StatementIf ->
+            node(StatementNode, 3, ExpressionThenStatements),
+        ir::body_events::StatementWhile ->
+            node(StatementNode, 2, ExpressionThenStatements),
+        ir::body_events::StatementReturnVoid ->
+            node(StatementNode, 0, NoChildren),
+        ir::body_events::StatementReturnValue ->
+            node(StatementNode, 1, Expressions),
+        _ -> node(InvalidNode, -1, NoChildren),
+    };
+}
+
+fn expected(rule: ChildRule, child: i32, arity: i32) -> NodeKind {
+    if (rule == PlaceThenExpression && child == 0) { return PlaceNode; }
+    if (rule == ExpressionThenArms && child == 0) {
+        return ExpressionNode;
+    }
+    if (rule == BindingsThenExpression && child == arity - 1) {
+        return ExpressionNode;
+    }
+    if (rule == ExpressionThenStatements && child == 0) {
+        return ExpressionNode;
+    }
+    return match (rule) {
+        NoChildren -> InvalidNode,
+        Expressions -> ExpressionNode,
+        PlaceThenExpression -> ExpressionNode,
+        ExpressionThenArms -> ArmNode,
+        BindingsThenExpression -> BindingNode,
+        Places -> PlaceNode,
+        Statements -> StatementNode,
+        ExpressionThenStatements -> StatementNode,
+    };
+}
+
+pub fn empty() -> Tree {
+    let nowhere: ptr = 0;
+    return Tree {
+        events: slice_from_raw_parts(nowhere, 0),
+        result_types: slice_from_raw_parts(nowhere, 0),
+        has_result_types: false,
+        ends: slice_from_raw_parts(nowhere, 0),
+        count: 0,
+    };
+}
+
+// Reverse preorder works without recursion or a temporary stack: every
+// child's end is known before its parent is visited. Each edge is read once.
+pub fn build(source: ir::body_events::Region, count: i32) -> Tree {
+    if (count <= 0 || count > source.capacity) { return empty(); }
+    let memory: ptr = verified::host::alloc_i32(count);
+    if (memory == 0) { return empty(); }
+    let ends: [i32] = verified::host::i32_slice_from_raw_parts(memory, count);
+    let events: [ir::body_events::Event] = source.events;
+    let index: i32 = count - 1;
+    while (index >= 0) {
+        let parent: Shape = shape(events[index]);
+        if (parent.arity <= -1 || parent.arity > count - index - 1
+            || parent.kind == InvalidNode) { return empty(); }
+        let cursor: i32 = index + 1;
+        let child: i32 = 0;
+        while (child < parent.arity) {
+            if (cursor >= count
+                || shape(events[cursor]).kind
+                    != expected(parent.rule, child, parent.arity)) {
+                return empty();
+            }
+            let next: i32 = ends[cursor];
+            if (next <= cursor || next > count) { return empty(); }
+            cursor = next;
+            child += 1;
+        }
+        ends[index] = cursor;
+        index -= 1;
+    }
+    if (ends[0] != count) { return empty(); }
+    return Tree {
+        events: events,
+        result_types: source.result_types,
+        has_result_types: source.has_result_types,
+        ends: ends,
+        count: count,
+    };
+}
+
+pub fn result_type(tree: Tree, index: i32) -> ir::type_ref::TypeRef {
+    if (!tree.has_result_types || index <= -1 || index >= tree.count) {
+        return ir::type_ref::Invalid;
+    }
+    let types: [ir::type_ref::TypeRef] = tree.result_types;
+    return types[index];
+}
+
+// Constructors with a result fixed by their semantic payload cannot be
+// relabeled by a writer. Other expressions depend on their surrounding
+// declarations or operands and are checked at the program/Lean boundary.
+fn fixed_result_type(event: ir::body_events::Event) -> ir::type_ref::TypeRef {
+    return match (event) {
+        ir::body_events::ExpressionInteger(integer_value) -> ir::type_ref::I32,
+        ir::body_events::ExpressionUsize(usize_value) -> ir::type_ref::Usize,
+        ir::body_events::ExpressionPointerNull -> ir::type_ref::Pointer,
+        ir::body_events::ExpressionCast(target) -> target.kind,
+        ir::body_events::ExpressionBoolean(boolean_value) -> ir::type_ref::Bool,
+        ir::body_events::ExpressionString(string_value) -> ir::type_ref::String,
+        ir::body_events::ExpressionUnaryNot -> ir::type_ref::Bool,
+        ir::body_events::ExpressionBinaryAndThen -> ir::type_ref::Bool,
+        ir::body_events::ExpressionBinaryOrElse -> ir::type_ref::Bool,
+        ir::body_events::ExpressionBinaryEqual -> ir::type_ref::Bool,
+        ir::body_events::ExpressionBinaryNotEqual -> ir::type_ref::Bool,
+        ir::body_events::ExpressionBinaryLess -> ir::type_ref::Bool,
+        ir::body_events::ExpressionBinaryLessEqual -> ir::type_ref::Bool,
+        ir::body_events::ExpressionBinaryGreater -> ir::type_ref::Bool,
+        ir::body_events::ExpressionBinaryGreaterEqual -> ir::type_ref::Bool,
+        ir::body_events::ExpressionStruct(fields) ->
+            ir::type_ref::Nominal(fields.type_id),
+        ir::body_events::ExpressionEnumeration(variant) ->
+            ir::type_ref::Nominal(variant.type_id),
+        ir::body_events::ExpressionMatch(header) -> header.result_kind,
+        ir::body_events::ExpressionAssignmentSet -> ir::type_ref::Void,
+        ir::body_events::ExpressionAssignmentAdd -> ir::type_ref::Void,
+        ir::body_events::ExpressionAssignmentSubtract -> ir::type_ref::Void,
+        ir::body_events::ExpressionAssignmentMultiply -> ir::type_ref::Void,
+        ir::body_events::ExpressionAssignmentDivide -> ir::type_ref::Void,
+        ir::body_events::ExpressionAssignmentRemainder -> ir::type_ref::Void,
+        ir::body_events::ExpressionAssignmentBitXor -> ir::type_ref::Void,
+        ir::body_events::ExpressionAssignmentShiftLeft -> ir::type_ref::Void,
+        ir::body_events::ExpressionAssignmentShiftRight -> ir::type_ref::Void,
+        ir::body_events::ExpressionAssignmentBitAnd -> ir::type_ref::Void,
+        ir::body_events::ExpressionAssignmentBitOr -> ir::type_ref::Void,
+        ir::body_events::ExpressionI32SliceFromRawParts -> ir::type_ref::Slice,
+        ir::body_events::ExpressionI32SliceDataPointer -> ir::type_ref::Pointer,
+        ir::body_events::ExpressionStringDataPointer -> ir::type_ref::Pointer,
+        ir::body_events::ExpressionTypedSliceFromRawParts(element) ->
+            ir::type_ref::NominalSlice(element.id),
+        _ -> ir::type_ref::Invalid,
+    };
+}
+
+// A source-lowered tree must retain one resolved result type per expression.
+// Fixed-result constructors must agree with their tags. This is still not a
+// substitute for the independent Lean typing judgment over the Core program.
+pub fn expression_result_annotations_valid(tree: Tree) -> bool {
+    if (!tree.has_result_types || tree.count <= 0) { return false; }
+    let events: [ir::body_events::Event] = tree.events;
+    let index: i32 = 0;
+    while (index != tree.count) {
+        if (kind(tree, index) == ExpressionNode) {
+            let actual: ir::type_ref::TypeRef = result_type(tree, index);
+            let fixed: ir::type_ref::TypeRef = fixed_result_type(events[index]);
+            if (!ir::type_ref::valid_result(actual)
+                || (ir::type_ref::valid_result(fixed)
+                    && !ir::type_ref::same(actual, fixed))) {
+                return false;
+            }
+        }
+        index += 1;
+    }
+    return true;
+}
+
+pub fn valid(tree: Tree) -> bool {
+    if (tree.count <= 0) { return false; }
+    let events: [ir::body_events::Event] = tree.events;
+    let ends: [i32] = tree.ends;
+    let index: i32 = tree.count - 1;
+    while (index >= 0) {
+        let parent: Shape = shape(events[index]);
+        if (parent.arity <= -1 || parent.arity > tree.count - index - 1
+            || parent.kind == InvalidNode) { return false; }
+        let cursor: i32 = index + 1;
+        let child: i32 = 0;
+        while (child != parent.arity) {
+            if (cursor >= tree.count
+                || shape(events[cursor]).kind
+                    != expected(parent.rule, child, parent.arity)) {
+                return false;
+            }
+            let next: i32 = ends[cursor];
+            if (next <= cursor || next > tree.count) { return false; }
+            cursor = next;
+            child += 1;
+        }
+        if (ends[index] != cursor) { return false; }
+        index -= 1;
+    }
+    return ends[0] == tree.count;
+}
+
+pub fn kind(tree: Tree, index: i32) -> NodeKind {
+    if (index <= -1 || index >= tree.count) { return InvalidNode; }
+    let events: [ir::body_events::Event] = tree.events;
+    return shape(events[index]).kind;
+}
+
+pub fn child_count(tree: Tree, index: i32) -> i32 {
+    if (index <= -1 || index >= tree.count) { return -1; }
+    let events: [ir::body_events::Event] = tree.events;
+    return shape(events[index]).arity;
+}
+
+pub fn subtree_end(tree: Tree, index: i32) -> i32 {
+    if (index <= -1 || index >= tree.count) { return -1; }
+    let ends: [i32] = tree.ends;
+    return ends[index];
+}
+
+// A writer can traverse all children in total linear time using first_child
+// and next_sibling; repeated random child lookups are not required.
+pub fn first_child(tree: Tree, parent: i32) -> i32 {
+    if (child_count(tree, parent) <= 0) { return -1; }
+    return parent + 1;
+}
+
+pub fn next_sibling(tree: Tree, parent: i32, current: i32) -> i32 {
+    if (parent <= -1 || parent >= tree.count
+        || current <= parent || current >= tree.count) { return -1; }
+    let ends: [i32] = tree.ends;
+    let next: i32 = ends[current];
+    if (next <= current || next >= ends[parent]) { return -1; }
+    return next;
+}
+
+pub fn child(tree: Tree, parent: i32, ordinal: i32) -> i32 {
+    if (parent <= -1 || parent >= tree.count) { return -1; }
+    let events: [ir::body_events::Event] = tree.events;
+    let shape: Shape = shape(events[parent]);
+    if (ordinal <= -1 || ordinal >= shape.arity) { return -1; }
+    let ends: [i32] = tree.ends;
+    let cursor: i32 = parent + 1;
+    let index: i32 = 0;
+    while (index < ordinal) {
+        if (cursor <= -1 || cursor >= tree.count) { return -1; }
+        cursor = ends[cursor];
+        index += 1;
+    }
+    if (cursor <= -1 || cursor >= tree.count) { return -1; }
+    return cursor;
+}

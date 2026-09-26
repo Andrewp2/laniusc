@@ -73,6 +73,103 @@ def ambiguousCallContext : SurfaceElaboration.Context :=
 example : (checkExpr ambiguousCallContext callSurface callCore).isSome = false := by
   decide
 
+def matchSymbols : List Names.Symbol := [
+  { moduleId := 0, lookupNamespace := .value, name := "Read",
+    visibility := .modulePrivate, declaration := 30 },
+  { moduleId := 0, lookupNamespace := .value, name := "Write",
+    visibility := .modulePrivate, declaration := 31 }]
+
+def matchContext : SurfaceElaboration.Context := {
+  context with
+    names := { modules := [{ id := 0, path := [] }], symbols := matchSymbols }
+    modulesHaveUniquePaths := none
+    symbolsAreUnique := none
+    monomorphization := { resolveNominal := fun id _ _ =>
+      if id == 4 then some (Core.Ty.enumeration 4) else none }
+    variants := [
+      { declaration := 30, receiver := .nominal 4 [] [], coreType := 4, variant := 0 },
+      { declaration := 31, receiver := .nominal 4 [] [], coreType := 4, variant := 1 }]
+    locals := [{ name := "mode", id := 0, type := .nominal 4 [] [] }] }
+
+def matchSource : Surface.Expr :=
+  .matchValue (.path { segments := [.mk "mode" []] }) [
+    (.path { segments := [.mk "Read" []] } [], .literal (.integer "0")),
+    (.path { segments := [.mk "Write" []] } [], .literal (.integer "1"))]
+
+def matchCore : Core.Expr :=
+  .matchValue (.local 0) [
+    (.enumVariant 4 0 [], .value (.signed .i32 0)),
+    (.enumVariant 4 1 [], .value (.signed .i32 1))]
+
+example : (checkExpr matchContext matchSource matchCore).isSome = true := by
+  decide
+
+example :
+    (checkExpr matchContext matchSource
+      (.matchValue (.local 0) [
+        (.enumVariant 4 1 [], .value (.signed .i32 0)),
+        (.enumVariant 4 1 [], .value (.signed .i32 1))])).isSome = false := by
+  decide
+
+example :
+    (checkExpr matchContext matchSource
+      (.matchValue (.local 0) [
+        (.enumVariant 4 0 [], .value (.signed .i32 0)),
+        (.enumVariant 4 1 [], .value (.signed .i32 2))])).isSome = false := by
+  decide
+
+def payloadPatternContext : SurfaceElaboration.Context := {
+  matchContext with
+    names := { matchContext.names with symbols := matchSymbols ++ [
+      { moduleId := 0, lookupNamespace := .value, name := "Pair",
+        visibility := .modulePrivate, declaration := 32 }] }
+    modulesHaveUniquePaths := none
+    symbolsAreUnique := none
+    variants := matchContext.variants ++ [
+      { declaration := 32, receiver := .nominal 4 [] [],
+        coreType := 4, variant := 2,
+        payload := [.scalar (.signed .i32), .scalar (.signed .i32)] }] }
+
+def pairPattern (secondName : String) : Surface.Pattern :=
+  .path { segments := [.mk "Pair" []] } [
+    .path { segments := [.mk "left" []] } [],
+    .path { segments := [.mk secondName []] } []]
+
+example :
+    (checkPattern payloadPatternContext (.nominal 4 [] [])
+      (pairPattern "right") (.enumVariant 4 2 [.bind 10, .bind 11])).isSome = true := by
+  decide
+
+example :
+    (checkPattern payloadPatternContext (.nominal 4 [] [])
+      (pairPattern "left") (.enumVariant 4 2 [.bind 10, .bind 11])).isSome = false := by
+  decide
+
+example :
+    (checkPattern payloadPatternContext (.nominal 4 [] [])
+      (pairPattern "right") (.enumVariant 4 2 [.bind 10])).isSome = false := by
+  decide
+
+example :
+    (checkExpr context
+      (.matchValue (.literal (.integer "7")) [
+        (.integer "7", .literal (.integer "7")),
+        (.wildcard, .literal (.integer "0"))])
+      (.matchValue (.value (.signed .i32 7)) [
+        (.literal (.signed .i32 7), .value (.signed .i32 7)),
+        (.wildcard, .value (.signed .i32 0))])).isSome = true := by
+  decide
+
+example :
+    (checkExpr context
+      (.matchValue (.literal (.integer "7")) [
+        (.integer "7", .literal (.integer "7")),
+        (.wildcard, .literal (.integer "0"))])
+      (.matchValue (.value (.signed .i32 7)) [
+        (.literal (.signed .i32 8), .value (.signed .i32 7)),
+        (.wildcard, .value (.signed .i32 0))])).isSome = false := by
+  decide
+
 example :
     (checkExpr context (.literal (.boolean true)) (.value (.boolean true))).isSome = true := by
   rfl

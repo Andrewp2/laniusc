@@ -63,10 +63,9 @@ const STACK_HEADER_OFFSET: i32 = LOAD_HEADER_OFFSET + ELF_PROGRAM_HEADER_BYTES;
 const STACK_ALIGNMENT_OFFSET: i32 = PROGRAM_ALIGNMENT_OFFSET;
 const STACK_ALIGNMENT: i32 = 16;
 
-fn typed_entry_valid(source: backend::program::TypedSource,
+fn typed_entry_valid(source: ir::program::Program,
     entry: i32) -> bool {
-    let native: ir::program::Storage = source.native;
-    let functions: ir::function_catalog::Table = native.functions;
+    let functions: ir::function_catalog::Table = source.functions;
     let entry_function: ir::function_catalog::Function =
         ir::function_catalog::at(functions, entry);
     return entry_function.kind == ir::function_catalog::DefinedFunction

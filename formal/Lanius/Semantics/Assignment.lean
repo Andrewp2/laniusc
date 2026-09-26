@@ -165,7 +165,9 @@ theorem evalExpr_assign_set_local
     (id : VarId) (cell : CellId) (current replacement : Value) (after : State)
     (cellFound : state.cellId? id = some cell)
     (localFound : state.local? id = some current)
-    (assigned : state.assignLocal id replacement = some after) :
+    (assigned : state.assignLocal id replacement = some after)
+    (currentViewFree : valueMayContainI32ArrayView current = false)
+    (replacementViewFree : valueMayContainI32ArrayView replacement = false) :
     evalExpr fuel.succ.succ program state
       (.assign .set (.local id) (.value replacement)) =
       .done .unit after := by
@@ -178,11 +180,17 @@ theorem evalExpr_assign_set_local
           { root := cell, projections := [], value := some current }
           replacement = .ok after := by
     simp [writeResolvedPlace, assignedCell]
+  have writeNative :
+      writeResolvedPlaceNative program state
+          { root := cell, projections := [], value := some current }
+          replacement = .ok after := by
+    simpa [writeResolvedPlaceNative] using write
   rw [evalExpr.eq_def]
   simp only [place, right]
   rw [show evalAssignValue program.target .set (some current) replacement =
       .ok replacement by rfl]
-  simp only [write]
+  simp [writeNative, ResolvedPlace.viewFreeRootWrite,
+    currentViewFree, replacementViewFree]
 
 private theorem stableExpr_two
     {program : Program} {state after : State} {expression : Expr} {value : Value}
@@ -196,13 +204,15 @@ theorem StableExpr.assignSetBool
     (current : Value) (value : Bool) (after : State)
     (cellFound : state.cellId? id = some cell)
     (localFound : state.local? id = some current)
-    (assigned : state.assignLocal id (.boolean value) = some after) :
+    (assigned : state.assignLocal id (.boolean value) = some after)
+    (currentViewFree : valueMayContainI32ArrayView current = false) :
     StableExpr 2 program state
       (.assign .set (.local id) (.value (.boolean value))) .unit after := by
   apply stableExpr_two
   intro fuel
   exact evalExpr_assign_set_local fuel program state id cell current
     (.boolean value) after cellFound localFound assigned
+    currentViewFree (by rfl)
 
 theorem StableExpr.assignAddI32
     (program : Program) (state : State) (id : VarId) (cell : CellId)

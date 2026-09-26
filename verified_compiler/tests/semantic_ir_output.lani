@@ -1,0 +1,248 @@
+module app::main;
+
+import backend::syntax;
+import ir::body_catalog;
+import ir::body_events;
+import ir::constant_catalog;
+import ir::function_catalog;
+import ir::program;
+import ir::symbol_catalog;
+import ir::type_catalog;
+import ir::type_ref;
+import runtime::service;
+import verified::core_transport;
+import verified::host;
+import verified::lean_program;
+import verified::token;
+
+fn output_contains(output: [i32], length: i32,
+    pattern: str, pattern_length: i32) -> bool {
+    if (pattern_length <= 0 || length < pattern_length) { return false; }
+    let packed: [i32] = verified::host::i32_slice_from_raw_parts(
+        verified::host::string_data_ptr(pattern),
+        verified::host::packed_words(pattern_length));
+    let start: i32 = 0;
+    while (start <= length - pattern_length) {
+        let index: i32 = 0;
+        while (index < pattern_length) {
+            let actual: i32 = (output[(start + index) / 4]
+                >> (((start + index) % 4) * 8)) & 255;
+            let expected: i32 = (packed[index / 4]
+                >> ((index % 4) * 8)) & 255;
+            if (actual != expected) { break; }
+            index += 1;
+        }
+        if (index == pattern_length) { return true; }
+        start += 1;
+    }
+    return false;
+}
+
+fn main() -> i32 {
+    let type_memory: ptr = verified::host::alloc(
+        ir::type_catalog::allocation_bytes(1, 0, 1),
+        ir::type_catalog::ALIGNMENT);
+    let constant_memory: ptr = verified::host::alloc(
+        ir::constant_catalog::allocation_bytes(1, 0),
+        ir::constant_catalog::ALIGNMENT);
+    let function_memory: ptr = verified::host::alloc(
+        ir::function_catalog::allocation_bytes(1, 0),
+        ir::function_catalog::ALIGNMENT);
+    let body_memory: ptr = verified::host::alloc(
+        ir::body_catalog::allocation_bytes(1),
+        ir::body_catalog::ALIGNMENT);
+    let event_memory: ptr = verified::host::alloc(
+        ir::body_events::allocation_bytes(3),
+        ir::body_events::ALIGNMENT);
+    let source_memory: ptr = verified::host::alloc_i32(8);
+    let token_memory: ptr = verified::host::alloc(
+        2 * verified::token::RECORD_BYTES,
+        verified::token::ALIGNMENT);
+    let name_memory: ptr = verified::host::alloc(
+        ir::symbol_catalog::allocation_bytes(1, 1, 0, 1),
+        ir::symbol_catalog::ALIGNMENT);
+    let output_memory: ptr = verified::host::alloc_i32(4096);
+    if (type_memory == 0 || constant_memory == 0
+        || function_memory == 0 || body_memory == 0
+        || event_memory == 0 || source_memory == 0
+        || token_memory == 0 || name_memory == 0
+        || output_memory == 0) { return 1; }
+    let types: ir::type_catalog::Table =
+        ir::type_catalog::from_raw_parts(type_memory, 1, 0, 1);
+    let type_rows: [ir::type_catalog::TypeDecl] = types.types;
+    let fields: [ir::type_catalog::Field] = types.fields;
+    type_rows[0] = ir::type_catalog::TypeDecl {
+        kind: ir::type_catalog::Structure, id: 0,
+        field_start: 0, field_count: 1,
+        variant_start: -1, variant_count: 0,
+    };
+    fields[0] = ir::type_catalog::Field { type_tag: ir::type_ref::I32 };
+    let constants: ir::constant_catalog::Table =
+        ir::constant_catalog::from_raw_parts(constant_memory, 1, 0);
+    let values: [ir::constant_catalog::Constant] = constants.constants;
+    values[0] = ir::constant_catalog::Constant {
+        id: 0, kind: ir::type_ref::Bool,
+        encoding: ir::constant_catalog::Scalar,
+        low: 1, high: 0, byte_start: -1, byte_count: 0,
+    };
+    let functions: ir::function_catalog::Table =
+        ir::function_catalog::from_raw_parts(function_memory, 1, 0);
+    let rows: [ir::function_catalog::Function] = functions.functions;
+    rows[0] = ir::function_catalog::Function {
+        kind: ir::function_catalog::DefinedFunction,
+        id: 0, result_type: ir::type_ref::I32,
+        parameters: 0, parameter_start: 0,
+        service: runtime::service::NoService,
+    };
+    let bodies: ir::body_catalog::Catalog =
+        ir::body_catalog::from_raw_parts(body_memory, 1);
+    let events: ir::body_events::Region =
+        ir::body_events::from_raw_parts(event_memory, 3);
+    let event_rows: [ir::body_events::Event] = events.events;
+    event_rows[0] = ir::body_events::StatementReturnValue;
+    event_rows[1] = ir::body_events::ExpressionInteger(7);
+    if (!ir::body_events::record_result_type(events, 1,
+            ir::type_ref::I32)) { return 28; }
+    if (ir::body_catalog::append(bodies,
+            ir::body_catalog::FunctionSignature {
+                id: 0, result_type: ir::type_ref::I32, parameters: 0,
+            }, events, 2) != 0) { return 2; }
+    let source: [i32] = verified::host::i32_slice_from_raw_parts(
+        source_memory, 8);
+    source[0] = 80; source[1] = 97; source[2] = 105; source[3] = 114;
+    source[4] = 109; source[5] = 97; source[6] = 105; source[7] = 110;
+    let token_table: verified::token::TokenTable =
+        verified::token::from_raw_parts(token_memory, 2);
+    let token_rows: [verified::token::TokenRow] = token_table.data;
+    token_rows[0] = verified::token::TokenRow {
+        kind: verified::token::Identifier, start: 0, finish: 4,
+    };
+    token_rows[1] = verified::token::TokenRow {
+        kind: verified::token::Identifier, start: 4, finish: 8,
+    };
+    let names: ir::symbol_catalog::Catalog =
+        ir::symbol_catalog::from_raw_parts(name_memory,
+            source, 8, token_table, 1, 1, 0, 1);
+    let name_units: [ir::symbol_catalog::Unit] = names.units;
+    let type_names: [ir::symbol_catalog::Ref] = names.types;
+    let function_names: [ir::symbol_catalog::Ref] = names.functions;
+    name_units[0] = ir::symbol_catalog::Unit {
+        source_offset: 0, source_length: 8,
+        token_offset: 0, token_count: 2,
+    };
+    type_names[0] = ir::symbol_catalog::Ref { unit: 0, token: 0 };
+    function_names[0] = ir::symbol_catalog::Ref { unit: 0, token: 1 };
+    let program: ir::program::Program = ir::program::Program {
+        entrypoint: 0,
+        types: types, constants: constants,
+        functions: functions, bodies: bodies,
+        names: names,
+    };
+    if (!ir::program::valid(program)) { return 3; }
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(
+        output_memory, 4096);
+    let count: i32 = verified::core_transport::serialize(program,
+        output, 4096);
+    if (count <= backend::syntax::PROGRAM_HEADER_WORDS) { return 4; }
+    let header: backend::syntax::ProgramHeader =
+        backend::syntax::read_program_header(output);
+    if (header.types != 1 || header.constants != 1
+        || header.functions != 1 || header.entry != 0) { return 5; }
+    let lean_bytes: i32 = verified::lean_program::emit(program,
+        output, 4096, 0);
+    if (lean_bytes <= 0) { return 13; }
+    if (!output_contains(output, lean_bytes,
+            "def extractedProgram : Lanius.Core.Program", 42)) { return 25; }
+    if (!output_contains(output, lean_bytes,
+            "extractedStructure0_Pair", 24)
+        || !output_contains(output, lean_bytes,
+            "extractedFunction0_main", 23)) { return 26; }
+    token_rows[1].kind = verified::token::InvalidToken;
+    if (ir::program::valid(program)) { return 27; }
+    token_rows[1].kind = verified::token::Identifier;
+    fields[0].type_tag = ir::type_ref::Nominal(2);
+    if (ir::program::valid(program)) { return 6; }
+    if (verified::lean_program::emit(program, output,
+            4096, 0) != -1) { return 14; }
+    fields[0].type_tag = ir::type_ref::I32;
+    values[0].low = 2;
+    if (ir::program::valid(program)) { return 7; }
+    values[0].low = 1;
+    if (!ir::program::valid(program)) { return 8; }
+    let malformed: ir::body_events::StructFields =
+        ir::body_events::StructFields { type_id: 0, count: 0 };
+    ir::body_catalog::clear(bodies);
+    event_rows[1] = ir::body_events::ExpressionStruct(malformed);
+    if (ir::body_catalog::append(bodies,
+            ir::body_catalog::FunctionSignature {
+                id: 0, result_type: ir::type_ref::I32, parameters: 0,
+            }, events, 2) != 0) { return 9; }
+    if (ir::program::valid(program)) { return 10; }
+    ir::body_catalog::clear(bodies);
+    let bad_local: ir::body_events::LocalDeclaration =
+        ir::body_events::LocalDeclaration {
+            id: 3, kind: ir::type_ref::Nominal(2),
+        };
+    event_rows[0] = ir::body_events::StatementLetUninitialized(bad_local);
+    event_rows[1] = ir::body_events::StatementReturnVoid;
+    if (ir::body_catalog::append(bodies,
+            ir::body_catalog::FunctionSignature {
+                id: 0, result_type: ir::type_ref::I32, parameters: 0,
+            }, events, 2) != 0) { return 11; }
+    if (ir::program::valid(program)) { return 12; }
+    ir::body_catalog::clear(bodies);
+    bad_local.id = -1;
+    bad_local.kind = ir::type_ref::I32;
+    event_rows[0] = ir::body_events::StatementLetUninitialized(bad_local);
+    if (ir::body_catalog::append(bodies,
+            ir::body_catalog::FunctionSignature {
+                id: 0, result_type: ir::type_ref::I32, parameters: 0,
+            }, events, 2) != 0) { return 15; }
+    if (ir::program::valid(program)
+        || verified::lean_program::emit(program, output, 4096, 0) != -1) {
+        return 16;
+    }
+    ir::body_catalog::clear(bodies);
+    event_rows[0] = ir::body_events::StatementReturnValue;
+    event_rows[1] = ir::body_events::ExpressionConstant(99);
+    if (ir::body_catalog::append(bodies,
+            ir::body_catalog::FunctionSignature {
+                id: 0, result_type: ir::type_ref::I32, parameters: 0,
+            }, events, 2) != 0) { return 21; }
+    if (ir::program::valid(program)
+        || verified::lean_program::emit(program, output, 4096, 0) != -1) {
+        return 22;
+    }
+    ir::body_catalog::clear(bodies);
+    let missing_call: ir::body_events::CallHeader =
+        ir::body_events::CallHeader {
+            function_id: 99, argument_count: 0,
+        };
+    event_rows[1] = ir::body_events::ExpressionCall(missing_call);
+    if (ir::body_catalog::append(bodies,
+            ir::body_catalog::FunctionSignature {
+                id: 0, result_type: ir::type_ref::I32, parameters: 0,
+            }, events, 2) != 0) { return 17; }
+    if (ir::program::valid(program)
+        || verified::lean_program::emit(program, output, 4096, 0) != -1) {
+        return 18;
+    }
+    ir::body_catalog::clear(bodies);
+    missing_call.function_id = 0;
+    missing_call.argument_count = 1;
+    event_rows[1] = ir::body_events::ExpressionCall(missing_call);
+    event_rows[2] = ir::body_events::ExpressionInteger(7);
+    if (ir::body_catalog::append(bodies,
+            ir::body_catalog::FunctionSignature {
+                id: 0, result_type: ir::type_ref::I32, parameters: 0,
+            }, events, 3) != 0) { return 23; }
+    if (ir::program::valid(program)) { return 24; }
+    ir::body_catalog::clear(bodies);
+    event_rows[1] = ir::body_events::ExpressionInteger(7);
+    if (ir::body_catalog::append(bodies,
+            ir::body_catalog::FunctionSignature {
+                id: 0, result_type: ir::type_ref::I32, parameters: 0,
+            }, events, 2) != 0) { return 19; }
+    if (!ir::program::valid(program)) { return 20; }
+    return 0;
+}

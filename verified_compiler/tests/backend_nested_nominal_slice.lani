@@ -1,0 +1,23 @@
+module app::main;
+
+pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+struct Holder {
+    count: i32,
+    items: [Pair],
+}
+
+fn main() -> i32 {
+    let memory: ptr = alloc(16, 8);
+    if (memory == 0) { return 1; }
+    let items: [Pair] = slice_from_raw_parts(memory + 8, 1);
+    items[0].left = 40;
+    let holder: Holder = Holder { count: 2, items: items };
+    let copied: [Pair] = holder.items;
+    return copied[0].left + holder.count;
+}

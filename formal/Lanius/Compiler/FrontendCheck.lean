@@ -1,4 +1,3 @@
-import Lanius.Compiler.EligibilityCheck
 import Lanius.Compiler.SourcePackCheck
 import Lanius.Extraction.SyntaxCheck.Soundness
 
@@ -11,7 +10,6 @@ open Lanius.Extraction
 inductive Failure where
   | compact (stage : SyntaxCheck.PackCheckStage)
   | sourcePack
-  | eligibility (failure : EligibilityCheck.Failure)
 deriving DecidableEq, Repr
 
 structure CheckedFrontend (encoded : String)
@@ -23,9 +21,6 @@ structure CheckedFrontend (encoded : String)
     ProofOf (SourcePackWellFormed (SourcePackCheck.declaredPack compact))
   sourcePackAccepted :
     SourcePackCheck.check compact = some sourcePackEvidence
-  eligibility : EligibilityCheck.Checked (SourcePackCheck.declaredPack compact)
-  eligibilityAccepted :
-    EligibilityCheck.check (SourcePackCheck.declaredPack compact) = .ok eligibility
   decoded : decodeCompactPack? encoded = some compact.compact.pack
   schema : compact.compact.pack.schema_version = schemaVersion
   sourceIdentity : compactPackSources compact.compact.pack = expectedSources
@@ -41,22 +36,46 @@ def check (encoded : String) (expectedSources : List Extraction.SourceFile) :
       match sourcePackAccepted : SourcePackCheck.check compact with
       | none => .error .sourcePack
       | some sourcePackEvidence =>
-          match eligibilityAccepted :
-              EligibilityCheck.check (SourcePackCheck.declaredPack compact) with
-          | .error failure => .error (.eligibility failure)
-          | .ok eligibility =>
-              let sound := SyntaxCheck.checkCompactSourcePack_sound compactAccepted
-              .ok {
-                compact
-                compactAccepted
-                sourcePackAccepted
-                sourcePackEvidence
-                eligibility
-                eligibilityAccepted
-                decoded := sound.1
-                schema := sound.2.1
-                sourceIdentity := sound.2.2.1
-                surfaceAlignment := SourcePackCheck.surface_alignment compact
-              }
+          let sound := SyntaxCheck.checkCompactSourcePack_sound compactAccepted
+          .ok {
+            compact
+            compactAccepted
+            sourcePackAccepted
+            sourcePackEvidence
+            decoded := sound.1
+            schema := sound.2.1
+            sourceIdentity := sound.2.2.1
+            surfaceAlignment := SourcePackCheck.surface_alignment compact
+          }
+
+/-! The direct-Lean frontend carries structured syntax evidence, not a
+    compact wire image. It reuses the same syntax and source-pack checks. -/
+
+inductive TypedFailure where
+  | syntax (stage : SyntaxCheck.TypedPackCheckStage)
+  | sourcePack
+deriving DecidableEq, Repr
+
+structure CheckedTypedFrontend (pack : ArtifactPack)
+    (expectedSources : List Extraction.SourceFile) where
+  typedSyntax : SyntaxCheck.CheckedTypedSourcePack pack expectedSources
+  syntaxAccepted : SyntaxCheck.checkTypedSourcePack pack expectedSources = .ok typedSyntax
+  sourcePackEvidence :
+    ProofOf (SourcePackWellFormed (SourcePackCheck.declaredTypedPack typedSyntax))
+  sourcePackAccepted :
+    checkSourcePackWellFormed (SourcePackCheck.declaredTypedPack typedSyntax) =
+      some sourcePackEvidence
+
+def checkTyped (pack : ArtifactPack)
+    (expectedSources : List Extraction.SourceFile) :
+    Except TypedFailure (CheckedTypedFrontend pack expectedSources) :=
+  match syntaxAccepted : SyntaxCheck.checkTypedSourcePack pack expectedSources with
+  | .error stage => .error (.syntax stage)
+  | .ok typedSyntax =>
+      match sourcePackAccepted :
+          checkSourcePackWellFormed (SourcePackCheck.declaredTypedPack typedSyntax) with
+      | none => .error .sourcePack
+      | some sourcePackEvidence =>
+          .ok { typedSyntax, syntaxAccepted, sourcePackEvidence, sourcePackAccepted }
 
 end Lanius.Compiler.FrontendCheck

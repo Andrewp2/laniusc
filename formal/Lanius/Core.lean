@@ -92,6 +92,9 @@ inductive Value where
   | array (elements : List Value)
   | slice (elementType : Ty) (cell : CellId) (projections : List ValueProjection)
       (start length : Nat)
+  /-- A native slice directly aliases heap bytes. Nominal elements use a
+      high-word pointer and descend; i32 elements use a forward byte pointer. -/
+  | rawSlice (elementType : Ty) (address : Address) (length : Nat)
   | structure (id : TypeId) (fields : List Value)
   | enumeration (id : TypeId) (variant : VariantId) (payload : List Value)
   | reference (referent : Ty) (cell : CellId) (projections : List ValueProjection)
@@ -114,6 +117,8 @@ mutual
     | .array a, .array b => Value.beqList a b
     | .slice aty ac ap axs al, .slice bty bc bp bxs bl =>
         aty == bty && ac == bc && ap == bp && axs == bxs && al == bl
+    | .rawSlice aty aa al, .rawSlice bty ba bl =>
+        aty == bty && aa == ba && al == bl
     | .structure ai av, .structure bi bv => ai == bi && Value.beqList av bv
     | .enumeration ai aty av, .enumeration bi bty bv =>
         ai == bi && aty == bty && Value.beqList av bv
@@ -279,8 +284,9 @@ mutual
     /-- Unsafe compiler intrinsic constructing a pointer/length i32 slice.
         Evaluation validates and protects the complete backing block. -/
     | i32SliceFromRawParts (pointer length : Expr)
-    /-- A raw pointer/length slice whose element type is explicit in the
-        transport. Its memory semantics are not yet admitted by the checker. -/
+    /-- A raw pointer/length slice with a declared nominal element type.
+        Native heap-backed access is defined for supported scalar-field
+        aggregates; descriptor-bearing fields remain outside direct emission. -/
     | typedSliceFromRawParts (element : Ty) (pointer length : Expr)
     /-- Compiler intrinsic exposing the data pointer of an i32 slice. -/
     | i32SliceDataPtr (slice : Expr)

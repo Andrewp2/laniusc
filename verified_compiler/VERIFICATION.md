@@ -1,7 +1,8 @@
 # Verification status
 
-Status: active and incomplete. The replacement proof is one certificate-driven
-spine; it is not a collection of per-program execution proofs.
+Status: active and incomplete. The direct Lean path and the older
+certificate-based backend path share semantic checks but have different trust
+boundaries.
 
 ## Connected proof currently available
 
@@ -27,18 +28,21 @@ public x86 execution theorem.  This is connected evidence for the real output
 path, while the general theorem about the Lanius generator itself remains
 open.
 
-The native Lanius extractor now emits one independently checked compact
-artifact for the exact current 13-unit frontend/emitter source closure.  The
-specialized Lean checker validates exact bytes, lexer traces, grammar
-derivations, and reconstructed Surface for all 13 units.  Older JSON Core
-payloads used by function-level proofs are not treated as current-source
-evidence: the frontend and emitter boundaries each expose one explicit Core
-program equality that must be discharged against a current checked lowering.
+The native Lanius extractor now emits Lean Core directly by default from the
+semantic IR shared with x86 compilation. `--lean-checked` also emits a typed
+frontend artifact that the independent Lean checker validates against source
+bytes, lexer traces, grammar derivations, and reconstructed Surface. This
+checked path is practical for small connected programs; the full extractor
+closure's parser derivation is too large for routine per-program checking.
+The compiler's explicit `--certificate` mode still supports the separate
+legacy backend proof while its migration remains open.
 
-The current full facade builds 224 jobs in about one second cached. Focused
-connected checks are normally below six seconds, and the current 13-unit source
-closure checks in under one second including process startup.  These are
-checking measurements, not substitutes for the remaining semantic proofs.
+With shared Lean infrastructure built, the direct two-source source-to-Core
+check takes about 1.2 seconds. The 86-source extractor emits Core-only Lean in
+about 25 seconds, and that generated module checks in about 20 seconds; this
+is only a Core-typing check, not a full source-to-Core proof. Its full checked
+frontend is about 68 MB and did not finish checking under a 105-second
+diagnostic cap. These timings are measurements, not correctness claims.
 
 ## What remains
 
@@ -54,8 +58,9 @@ open obligations are:
   emission, certificate production, and the same independent checker;
 - prove the Lanius certificate emitter phases produce the evidence accepted by
   the version-3 boundary;
-- make the Lanius extractor emit the typed Core evidence needed to discharge
-  the single current-Core equality at each legacy deep-artifact boundary;
+- prove the Lanius extractor's general source-to-Core and Lean-emission
+  correctness so ordinary Core-only output need not carry a full parser
+  derivation for every program;
 - scale the accepted Core/x86 subset to every construct reachable from the
   compiler and extractor, rejecting unsupported forms explicitly;
 - self-extract and compile the extractor through the verified x86 path.

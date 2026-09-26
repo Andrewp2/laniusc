@@ -49,7 +49,7 @@ fn unsupported_kind() -> ExpressionKind {
 }
 
 fn known_kind(kind: ir::type_ref::TypeRef) -> ExpressionKind {
-    if (!ir::type_ref::valid(kind)) { return unsupported_kind(); }
+    if (!ir::type_ref::valid_result(kind)) { return unsupported_kind(); }
     return ExpressionKind { status: KnownExpression, kind: kind };
 }
 
@@ -97,11 +97,15 @@ fn emit_resolved_enum_variant(context: BodyContext, arena_count: i32,
             payload_count: variant.field_count,
         });
     current = first;
+    let field_index: i32 = 0;
     while (current >= 0) {
-        next = expression(context, arena_count, current, output,
-            next, depth - 1);
+        let field_kind: TypeRef = lowering::body_lookup::enum_variant_field_kind(
+            context, variant, field_index);
+        next = expression_expected(context, arena_count, current,
+            field_kind, output, next, depth - 1);
         if (next <= -1) { return lowering::body_context::invalid(); }
         current = nodes[current].next;
+        field_index += 1;
     }
     return next;
 }
@@ -419,6 +423,20 @@ fn binary_operation(operator: verified::surface_expr::ExpressionOperator)
     };
 }
 
+fn pointer_null_literal(context: BodyContext, arena_count: i32,
+    node: i32) -> bool {
+    if (node < 0 || node >= arena_count) { return false; }
+    let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
+    let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
+    let value: verified::surface_expr::ExpressionNode = nodes[node];
+    return verified::surface_expr::has_kind(value.kind,
+            verified::surface_expr::Literal)
+        && value.operator == verified::surface_expr::LiteralInteger
+        && lowering::body_context::decimal(context.source,
+            context.source_length, context.tokens, context.token_count,
+            value.token) == 0;
+}
+
 fn assignment_operation(operator: verified::surface_expr::ExpressionOperator)
     -> backend::syntax::AssignmentOperation {
     return match (operator) {
@@ -437,7 +455,7 @@ fn assignment_operation(operator: verified::surface_expr::ExpressionOperator)
     };
 }
 
-pub fn expression(context: BodyContext, arena_count: i32, node: i32,
+fn expression_untyped(context: BodyContext, arena_count: i32, node: i32,
     output: Region, position: i32, depth: i32) -> i32 {
     let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
     let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
@@ -505,17 +523,53 @@ pub fn expression(context: BodyContext, arena_count: i32, node: i32,
         let next: i32 = lowering::body_event_write::expression_binary(output,
             position, operation);
         if (next <= -1) { return lowering::body_context::invalid(); }
-        next = expression(context, arena_count,
-            current_node.left, output, next,
-            depth - 1);
+        let pointer_comparison: bool =
+            operation == backend::syntax::BinaryEqual
+            || operation == backend::syntax::BinaryNotEqual;
+        let left_pointer: bool = false;
+        let right_pointer: bool = false;
+        if (pointer_comparison) {
+            left_pointer = ir::type_ref::same(kind_type(expression_kind(
+                context, arena_count, current_node.left, depth - 1)),
+                ir::type_ref::Pointer);
+            right_pointer = ir::type_ref::same(kind_type(expression_kind(
+                context, arena_count, current_node.right, depth - 1)),
+                ir::type_ref::Pointer);
+        }
+        if (right_pointer && pointer_null_literal(context, arena_count,
+                current_node.left)) {
+            next = expression_expected(context, arena_count,
+                current_node.left, ir::type_ref::Pointer, output, next,
+                depth - 1);
+        } else {
+            next = expression(context, arena_count,
+                current_node.left, output, next, depth - 1);
+        }
+        if (next <= -1) { return next; }
+        if (left_pointer && pointer_null_literal(context, arena_count,
+                current_node.right)) {
+            return expression_expected(context, arena_count,
+                current_node.right, ir::type_ref::Pointer, output, next,
+                depth - 1);
+        }
         return expression(context, arena_count,
-            current_node.right, output, next,
-            depth - 1);
+            current_node.right, output, next, depth - 1);
     }
     if (verified::surface_expr::has_kind(kind, verified::surface_expr::Assign)) {
         let operation: backend::syntax::AssignmentOperation =
             assignment_operation(current_node.operator);
         if (operation == backend::syntax::InvalidAssignmentOperation) {
+            return lowering::body_context::unsupported();
+        }
+        let target_result: ExpressionKind = expression_kind(context,
+            arena_count, current_node.left, depth - 1);
+        let target_kind: TypeRef = kind_type(target_result);
+        if (!ir::type_ref::valid(target_kind)) {
+            return kind_failure(target_result);
+        }
+        if (operation != backend::syntax::AssignmentSet
+            && !ir::type_ref::same(target_kind, ir::type_ref::I32)
+            && !ir::type_ref::same(target_kind, ir::type_ref::Usize)) {
             return lowering::body_context::unsupported();
         }
         let next: i32 = lowering::body_event_write::expression_assignment(output,
@@ -525,9 +579,8 @@ pub fn expression(context: BodyContext, arena_count: i32, node: i32,
             current_node.left, output, next,
             depth - 1);
         if (next <= -1) { return lowering::body_context::invalid(); }
-        next = expression(context, arena_count,
-            current_node.right, output, next,
-            depth - 1);
+        next = expression_expected(context, arena_count,
+            current_node.right, target_kind, output, next, depth - 1);
         if (next <= -1) { return lowering::body_context::invalid(); }
         return next;
     }
@@ -636,18 +689,19 @@ pub fn expression(context: BodyContext, arena_count: i32, node: i32,
             fuel -= 1;
         }
         if (arm >= 0 || fuel == 0 || arm_count <= 0) { return lowering::body_context::invalid(); }
+        let scrutinee_kind: ExpressionKind = expression_kind(context, arena_count,
+            current_node.left, depth - 1);
+        let type_id: i32 = nominal_id(scrutinee_kind);
+        if (type_id <= -1) { return lowering::body_context::unsupported(); }
         let next: i32 = lowering::body_event_write::expression_match(output,
             position, ir::body_events::MatchHeader {
                 result_kind: result_kind,
+                scrutinee_type_id: type_id,
                 arm_count: arm_count,
             });
         next = expression(context, arena_count, current_node.left,
             output, next, depth - 1);
         if (next <= -1) { return lowering::body_context::invalid(); }
-        let scrutinee_kind: ExpressionKind = expression_kind(context, arena_count,
-            current_node.left, depth - 1);
-        let type_id: i32 = nominal_id(scrutinee_kind);
-        if (type_id <= -1) { return lowering::body_context::unsupported(); }
         let locals: lowering::locals::Table = context.locals;
         arm = current_node.right;
         while (arm >= 0) {
@@ -789,8 +843,25 @@ pub fn expression(context: BodyContext, arena_count: i32, node: i32,
                 next = expression_expected(context, arena_count, current,
                     parameter.type_tag, output, next, depth - 1);
             } else {
-                next = expression(context, arena_count, current, output,
-                    next, depth - 1);
+                let expected: TypeRef = ir::type_ref::Invalid;
+                if (intrinsic == lowering::body_lookup::I32SliceFromRawParts) {
+                    if (argument_index == 0) {
+                        expected = ir::type_ref::Pointer;
+                    } else {
+                        expected = ir::type_ref::I32;
+                    }
+                }
+                if (intrinsic == lowering::body_lookup::I32SliceDataPointer) {
+                    expected = ir::type_ref::Slice;
+                }
+                if (intrinsic == lowering::body_lookup::StringDataPointer) {
+                    expected = ir::type_ref::String;
+                }
+                if (!ir::type_ref::valid(expected)) {
+                    return lowering::body_context::unsupported();
+                }
+                next = expression_expected(context, arena_count, current,
+                    expected, output, next, depth - 1);
             }
             if (next <= -1) { return lowering::body_context::invalid(); }
             current = nodes[current].next;
@@ -801,10 +872,68 @@ pub fn expression(context: BodyContext, arena_count: i32, node: i32,
     return lowering::body_context::unsupported();
 }
 
+fn annotate_result(output: Region, position: i32, next: i32,
+    kind: TypeRef) -> i32 {
+    if (next <= -1) { return next; }
+    if (!ir::body_events::record_result_type(output, position, kind)) {
+        return lowering::body_context::invalid();
+    }
+    return next;
+}
+
+// Retain the type inferred while lowering this exact source expression. The
+// event writer and the x86 backend still consume one shared body tree; the
+// annotation is not a second source parse or a serialized certificate.
+pub fn expression(context: BodyContext, arena_count: i32, node: i32,
+    output: Region, position: i32, depth: i32) -> i32 {
+    let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
+    let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
+    if (node <= -1 || node >= arena_count) {
+        return lowering::body_context::invalid();
+    }
+    let kind: TypeRef = ir::type_ref::Invalid;
+    if (verified::surface_expr::has_kind(nodes[node].kind,
+            verified::surface_expr::Assign)) {
+        kind = ir::type_ref::Void;
+    } else {
+        kind = kind_type(expression_kind(context, arena_count, node, depth));
+    }
+    let next: i32 = expression_untyped(context, arena_count, node,
+        output, position, depth);
+    if (next <= -1 || !ir::type_ref::valid_result(kind)) { return next; }
+    return annotate_result(output, position, next, kind);
+}
+
+// Reuse a successful inference only for the same extracted expression and
+// at least the depth budget under which it was checked. Failed inferences
+// are never cached, so malformed inputs keep their original failure path.
+pub fn expression_kind(context: BodyContext, arena_count: i32, node: i32,
+    depth: i32) -> ExpressionKind {
+    if (depth <= 0 || node <= -1 || node >= arena_count
+        || node >= context.expression_arena.capacity) {
+        return invalid_kind();
+    }
+    let codes: [i32] = context.expression_kind_codes;
+    let depths: [i32] = context.expression_kind_depths;
+    if (codes[node] >= 0 && depths[node] <= depth) {
+        return known_kind(ir::type_ref::from_code(codes[node]));
+    }
+    let inferred: ExpressionKind = expression_kind_uncached(
+        context, arena_count, node, depth);
+    if (inferred.status == KnownExpression) {
+        let code: i32 = ir::type_ref::code(inferred.kind);
+        if (code >= 0) {
+            codes[node] = code;
+            depths[node] = depth;
+        }
+    }
+    return inferred;
+}
+
 // Infer a typed result for local declarations and match arms. Bindings,
 // signatures, and nominal declarations come from the lowering context;
 // serialized type codes are not part of this query.
-pub fn expression_kind(context: BodyContext, arena_count: i32, node: i32,
+fn expression_kind_uncached(context: BodyContext, arena_count: i32, node: i32,
     depth: i32) -> ExpressionKind {
     let arena: verified::surface_expr::ExpressionArena = context.expression_arena;
     let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
@@ -875,15 +1004,54 @@ pub fn expression_kind(context: BodyContext, arena_count: i32, node: i32,
             return unsupported_kind();
         }
         if (backend::syntax::binary_is_comparison(operation)) {
-            if (ir::type_ref::same(left, ir::type_ref::I32)
-                && ir::type_ref::same(right, ir::type_ref::I32)) {
+            let equality: bool = operation == backend::syntax::BinaryEqual
+                || operation == backend::syntax::BinaryNotEqual;
+            let same_kinds: bool = ir::type_ref::same(left, right);
+            if (equality && same_kinds
+                && (ir::type_ref::same(left, ir::type_ref::I32)
+                    || ir::type_ref::same(left, ir::type_ref::Usize)
+                    || ir::type_ref::same(left, ir::type_ref::Bool)
+                    || ir::type_ref::same(left, ir::type_ref::Pointer))) {
+                return known_kind(ir::type_ref::Bool);
+            }
+            if (equality && same_kinds) {
+                let type_id: i32 = nominal_id(left_result);
+                if (type_id >= 0 && lowering::body_lookup::has_signature(
+                        context, type_id,
+                        lowering::signatures::EnumerationShape)) {
+                    return known_kind(ir::type_ref::Bool);
+                }
+            }
+            if (equality
+                && ((ir::type_ref::same(left, ir::type_ref::Pointer)
+                        && pointer_null_literal(context, arena_count,
+                            current_node.right))
+                    || (ir::type_ref::same(right, ir::type_ref::Pointer)
+                        && pointer_null_literal(context, arena_count,
+                            current_node.left)))) {
+                return known_kind(ir::type_ref::Bool);
+            }
+            if (same_kinds
+                && (ir::type_ref::same(left, ir::type_ref::I32)
+                    || ir::type_ref::same(left, ir::type_ref::Usize))) {
                 return known_kind(ir::type_ref::Bool);
             }
             return unsupported_kind();
         }
+        if ((operation == backend::syntax::BinaryAdd
+                || operation == backend::syntax::BinarySubtract)
+            && ir::type_ref::same(left, ir::type_ref::Pointer)
+            && (ir::type_ref::same(right, ir::type_ref::I32)
+                || ir::type_ref::same(right, ir::type_ref::Usize))) {
+            return known_kind(ir::type_ref::Pointer);
+        }
         if (ir::type_ref::same(left, ir::type_ref::I32)
             && ir::type_ref::same(right, ir::type_ref::I32)) {
             return known_kind(ir::type_ref::I32);
+        }
+        if (ir::type_ref::same(left, ir::type_ref::Usize)
+            && ir::type_ref::same(right, ir::type_ref::Usize)) {
+            return known_kind(ir::type_ref::Usize);
         }
         return unsupported_kind();
     }
@@ -1008,11 +1176,76 @@ pub fn expression_expected(context: BodyContext, arena_count: i32, node: i32,
         return lowering::body_context::invalid();
     }
     let current_node: verified::surface_expr::ExpressionNode = nodes[node];
+    if (ir::type_ref::same(expected, ir::type_ref::Pointer)
+        && pointer_null_literal(context, arena_count, node)) {
+        let next: i32 = ir::body_events::append(output, position,
+            ir::body_events::ExpressionPointerNull);
+        return annotate_result(output, position, next, expected);
+    }
+    if (ir::type_ref::same(expected, ir::type_ref::Usize)
+        && verified::surface_expr::has_kind(current_node.kind,
+            verified::surface_expr::Literal)
+        && current_node.operator == verified::surface_expr::LiteralInteger) {
+        let usize_literal: i32 = lowering::body_context::decimal(context.source,
+            context.source_length, context.tokens, context.token_count,
+            current_node.token);
+        if (usize_literal <= -1) { return lowering::body_context::invalid(); }
+        let next: i32 = ir::body_events::append(output, position,
+            ir::body_events::ExpressionUsize(usize_literal));
+        return annotate_result(output, position, next, expected);
+    }
+    if (ir::type_ref::same(expected, ir::type_ref::Usize)
+        && verified::surface_expr::has_kind(current_node.kind,
+            verified::surface_expr::Binary)) {
+        let operation: backend::syntax::BinaryOperation =
+            binary_operation(current_node.operator);
+        if (operation == backend::syntax::InvalidBinaryOperation
+            || backend::syntax::binary_is_comparison(operation)
+            || operation == backend::syntax::BinaryAndThen
+            || operation == backend::syntax::BinaryOrElse) {
+            return lowering::body_context::unsupported();
+        }
+        let next: i32 = lowering::body_event_write::expression_binary(output,
+            position, operation);
+        if (next <= -1) { return lowering::body_context::invalid(); }
+        next = expression_expected(context, arena_count, current_node.left,
+            ir::type_ref::Usize, output, next, depth - 1);
+        if (next <= -1) { return next; }
+        next = expression_expected(context, arena_count, current_node.right,
+            ir::type_ref::Usize, output, next, depth - 1);
+        return annotate_result(output, position, next, expected);
+    }
     if (!verified::surface_expr::has_kind(current_node.kind,
             verified::surface_expr::Call)
         || lowering::body_lookup::intrinsic_call(context, current_node.left)
             != lowering::body_lookup::TypedSliceFromRawParts) {
-        return expression(context, arena_count, node, output, position, depth);
+        let inferred: ExpressionKind = expression_kind(context,
+            arena_count, node, depth);
+        let actual: TypeRef = kind_type(inferred);
+        if (!ir::type_ref::valid(actual)) {
+            return kind_failure(inferred);
+        }
+        if (!ir::type_ref::same(actual, expected)) {
+            if (ir::type_ref::same(expected, ir::type_ref::Usize)
+                && ir::type_ref::same(actual, ir::type_ref::I32)) {
+                let target: ir::body_events::CastTarget =
+                    ir::body_events::CastTarget {
+                        kind: ir::type_ref::Usize,
+                    };
+                let next: i32 = ir::body_events::append(output, position,
+                    ir::body_events::ExpressionCast(target));
+                if (next <= -1) {
+                    return lowering::body_context::invalid();
+                }
+                next = expression(context, arena_count, node, output,
+                    next, depth);
+                return annotate_result(output, position, next, expected);
+            }
+            return lowering::body_context::unsupported();
+        }
+        let next: i32 = expression(context, arena_count, node,
+            output, position, depth);
+        return annotate_result(output, position, next, expected);
     }
     let element: ir::body_events::SliceElement = ir::body_events::SliceElement {
         kind: ir::body_events::I32Slice, id: 0,
@@ -1044,13 +1277,23 @@ pub fn expression_expected(context: BodyContext, arena_count: i32, node: i32,
         || nodes[nodes[first].next].next >= 0) {
         return lowering::body_context::invalid();
     }
-    let next: i32 = ir::body_events::append(output, position,
-        ir::body_events::ExpressionTypedSliceFromRawParts(element));
+    // Both source spellings have the same packed-i32 semantics. Keep one
+    // canonical IR constructor so Lean and x86 share the implemented path.
+    let next: i32 = -1;
+    if (ir::type_ref::same(expected, ir::type_ref::Slice)) {
+        next = ir::body_events::append(output, position,
+            ir::body_events::ExpressionI32SliceFromRawParts);
+    } else {
+        next = ir::body_events::append(output, position,
+            ir::body_events::ExpressionTypedSliceFromRawParts(element));
+    }
     if (next <= -1) { return lowering::body_context::invalid(); }
-    next = expression(context, arena_count, first, output, next, depth - 1);
+    next = expression_expected(context, arena_count, first,
+        ir::type_ref::Pointer, output, next, depth - 1);
     if (next <= -1) { return next; }
-    return expression(context, arena_count, nodes[first].next, output,
-        next, depth - 1);
+    next = expression_expected(context, arena_count, nodes[first].next,
+        ir::type_ref::I32, output, next, depth - 1);
+    return annotate_result(output, position, next, expected);
 }
 
 pub fn extract_expression(context: BodyContext, surface: i32, depth: i32) -> i32 {
@@ -1060,8 +1303,21 @@ pub fn extract_expression(context: BodyContext, surface: i32, depth: i32) -> i32
             root: surface,
             depth: depth,
         };
-    return verified::surface_expr::extract(input,
+    let root: i32 = verified::surface_expr::extract(input,
         context.expression_arena);
+    if (root < 0) { return root; }
+    let count: i32 = verified::surface_expr::node_count(
+        context.expression_arena);
+    if (count <= 0 || count > context.expression_arena.capacity) {
+        return lowering::body_context::invalid();
+    }
+    let codes: [i32] = context.expression_kind_codes;
+    let index: i32 = 0;
+    while (index < count) {
+        codes[index] = -1;
+        index += 1;
+    }
+    return root;
 }
 
 pub fn expression_from_surface(context: BodyContext, surface: i32,
@@ -1072,8 +1328,18 @@ pub fn expression_from_surface(context: BodyContext, surface: i32,
         || verified::surface_expr::node_count(arena) <= 0) {
         return lowering::body_context::invalid();
     }
+    let count: i32 = verified::surface_expr::node_count(arena);
+    let nodes: [verified::surface_expr::ExpressionNode] = arena.data;
+    if (!verified::surface_expr::has_kind(nodes[root].kind,
+            verified::surface_expr::Assign)) {
+        let inferred: ExpressionKind = expression_kind(context, count,
+            root, depth);
+        if (!ir::type_ref::valid_result(kind_type(inferred))) {
+            return kind_failure(inferred);
+        }
+    }
     return expression(context,
-        verified::surface_expr::node_count(arena), root, output,
+        count, root, output,
         position, depth);
 }
 

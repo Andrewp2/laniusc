@@ -1,5 +1,5 @@
 import Lanius.Declarations.SourceCheck
-import Lanius.Extraction.SyntaxCheck.Pack
+import Lanius.Extraction.SyntaxCheck.TypedPack
 
 namespace Lanius.Compiler.SourcePackCheck
 
@@ -33,9 +33,19 @@ def surfaceFiles : {units : List Artifact} →
   | _, .nil => []
   | _, .cons head tail => head.surface.surface :: surfaceFiles tail
 
+def declaredPackOfUnits {units : List Artifact}
+    (checked : SyntaxCheck.CheckedUnits units) : Declarations.SourcePack :=
+  ⟨declaredFiles 0 checked⟩
+
 def declaredPack {encoded : String} {expectedSources : List Extraction.SourceFile}
     (checked : SyntaxCheck.CheckedSourcePack encoded expectedSources) : Declarations.SourcePack :=
-  ⟨declaredFiles 0 checked.units⟩
+  declaredPackOfUnits checked.units
+
+def declaredTypedPack {pack : ArtifactPack}
+    {expectedSources : List Extraction.SourceFile}
+    (checked : SyntaxCheck.CheckedTypedSourcePack pack expectedSources) :
+    Declarations.SourcePack :=
+  declaredPackOfUnits checked.units
 
 def check {encoded : String} {expectedSources : List Extraction.SourceFile}
     (checked : SyntaxCheck.CheckedSourcePack encoded expectedSources) :
@@ -61,6 +71,13 @@ theorem declaredFiles_surface_alignment (start : Nat) :
 theorem surface_alignment {encoded : String} {expectedSources : List Extraction.SourceFile}
     (checked : SyntaxCheck.CheckedSourcePack encoded expectedSources) :
     (declaredPack checked).files.map (fun file => file.contents) =
+      surfaceFiles checked.units := by
+  exact declaredFiles_surface_alignment 0 checked.units
+
+theorem typed_surface_alignment {pack : ArtifactPack}
+    {expectedSources : List Extraction.SourceFile}
+    (checked : SyntaxCheck.CheckedTypedSourcePack pack expectedSources) :
+    (declaredTypedPack checked).files.map (fun file => file.contents) =
       surfaceFiles checked.units := by
   exact declaredFiles_surface_alignment 0 checked.units
 

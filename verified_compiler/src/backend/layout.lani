@@ -20,6 +20,7 @@ pub const TYPE_RECORD_MEMBER_COUNT_FIELD: i32 = 3;
 pub fn aggregate(kind: ir::type_ref::TypeRef) -> bool {
     return match (kind) {
         ir::type_ref::Slice -> true,
+        ir::type_ref::NominalSlice(id) -> true,
         ir::type_ref::String -> true,
         _ -> ir::type_ref::is_nominal(kind),
     };

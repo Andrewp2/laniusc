@@ -4,7 +4,7 @@ import backend::syntax;
 import ir::body_events;
 import ir::type_ref;
 import lowering::body_event_write;
-import lowering::body_serialization;
+import verified::core_body;
 import verified::host;
 
 fn is_present_return(event: ir::body_events::Event) -> bool {
@@ -50,9 +50,9 @@ fn main() -> i32 {
     if (next != 4) { return 5; }
     let typed: [ir::body_events::Event] = output.events;
     if (!is_present_return(typed[3])) { return 11; }
-    let wire: lowering::body_serialization::WordRegion =
-        lowering::body_serialization::word_region(words, 32);
-    let serialized: i32 = lowering::body_serialization::serialize(output, next,
+    let wire: verified::core_body::WordRegion =
+        verified::core_body::word_region(words, 32);
+    let serialized: i32 = verified::core_body::serialize(output, next,
         wire, 0);
     if (serialized != 12
         || words[0] != backend::syntax::expression_code(
@@ -78,28 +78,29 @@ fn main() -> i32 {
                 type_id: 7, ordinal: 2, payload_count: 1,
             }) != -1) { return 6; }
     words[11] = 77;
-    let short_wire: lowering::body_serialization::WordRegion =
-        lowering::body_serialization::word_region(words, 11);
-    if (lowering::body_serialization::serialize(output, next, short_wire, 0)
+    let short_wire: verified::core_body::WordRegion =
+        verified::core_body::word_region(words, 11);
+    if (verified::core_body::serialize(output, next, short_wire, 0)
         != -1 || words[11] != 77) { return 7; }
     if (lowering::body_event_write::expression_value(output, 0,
             ir::body_events::BooleanValue(false)) != 1
-        || lowering::body_serialization::serialize(output, 1, wire, 0) != 3
+        || verified::core_body::serialize(output, 1, wire, 0) != 3
         || words[1] != backend::syntax::type_code(backend::syntax::TypeBool)
         || words[2] != 0) { return 8; }
     if (lowering::body_event_write::expression_value(output, 0,
             ir::body_events::BooleanValue(true)) != 1
-        || lowering::body_serialization::serialize(output, 1, wire, 0) != 3
+        || verified::core_body::serialize(output, 1, wire, 0) != 3
         || words[2] != 1) { return 14; }
     if (lowering::body_event_write::statement_return(output, 0,
             backend::syntax::Absent) != 1
         || !is_void_return(typed[0])
-        || lowering::body_serialization::serialize(output, 1, wire, 0) != 2
+        || verified::core_body::serialize(output, 1, wire, 0) != 2
         || words[1] != backend::syntax::presence_code(
             backend::syntax::Absent)) { return 15; }
     next = lowering::body_event_write::expression_match(output, 0,
         ir::body_events::MatchHeader {
             result_kind: ir::type_ref::I32,
+            scrutinee_type_id: 7,
             arm_count: 1,
         });
     next = lowering::body_event_write::match_arm(output, next,
@@ -112,19 +113,20 @@ fn main() -> i32 {
         ir::body_events::FieldReference { index: 3 });
     next = lowering::body_event_write::statement_if(output, next);
     if (next != 5) { return 9; }
-    let match_written: i32 = lowering::body_serialization::serialize(output,
+    let match_written: i32 = verified::core_body::serialize(output,
         next, wire, 0);
-    if (match_written != 9
+    if (match_written != 10
         || words[0] != backend::syntax::expression_code(
             backend::syntax::ExprMatch)
         || words[1] != backend::syntax::type_code(
             backend::syntax::TypeI32)
-        || words[2] != 1 || words[3] != 2 || words[4] != 1
-        || words[5] != 9
-        || words[6] != backend::syntax::place_code(
+        || words[2] != backend::syntax::NOMINAL_TYPE_BASE + 7
+        || words[3] != 1 || words[4] != 2 || words[5] != 1
+        || words[6] != 9
+        || words[7] != backend::syntax::place_code(
             backend::syntax::PlaceField)
-        || words[7] != 3
-        || words[8] != backend::syntax::statement_code(
+        || words[8] != 3
+        || words[9] != backend::syntax::statement_code(
             backend::syntax::StatementIf)) { return 10; }
 
     let binary_code: i32 = 0;
@@ -134,7 +136,7 @@ fn main() -> i32 {
             backend::syntax::binary_from_code(binary_code);
         if (lowering::body_event_write::expression_binary(output, 0,
                 operation) != 1
-            || lowering::body_serialization::serialize(output, 1,
+            || verified::core_body::serialize(output, 1,
                 wire, 0) != 2
             || words[0] != backend::syntax::expression_code(
                 backend::syntax::ExprBinary)
@@ -153,7 +155,7 @@ fn main() -> i32 {
             backend::syntax::assignment_from_code(assignment_code);
         if (lowering::body_event_write::expression_assignment(output, 0,
                 operation) != 1
-            || lowering::body_serialization::serialize(output, 1,
+            || verified::core_body::serialize(output, 1,
                 wire, 0) != 2
             || words[0] != backend::syntax::expression_code(
                 backend::syntax::ExprAssign)
@@ -169,7 +171,7 @@ fn main() -> i32 {
                 id: 17,
                 kind: ir::type_ref::I32,
             }) != 1
-        || lowering::body_serialization::serialize(output, 1,
+        || verified::core_body::serialize(output, 1,
             wire, 0) != 3
         || words[0] != backend::syntax::statement_code(
             backend::syntax::StatementLetUninitialized)

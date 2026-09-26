@@ -87,18 +87,117 @@ x86 execution, v3 certificate generation, and the independent Lean checker.
 This is connected evidence for that lowering path, not yet the general
 emitter-correctness theorem.
 
-The Lanius extractor can self-extract its current 18-file, roughly 2,400-line
-source closure. The resulting singular compact embedding passes the
-independent source/lexer/grammar/Surface checker.  Its native `--core` mode
-also emits the same compact payload plus canonical Core transport in a strict
-version-3 phase certificate.  The Lean phase checker now reconstructs and
-checks the exact `ProgramLowering`; the intentionally empty ELF/span fields
-make no backend claim.  This proves facts about an accepted artifact, not yet
-that the extractor executable emits a valid artifact for every valid input.
+The Lanius extractor self-extracts its 88-unit import closure directly to a
+Lean `Core.Program` by default. Its `--lean-checked` mode additionally emits
+typed frontend evidence: the independent checker authenticates the source,
+lexer, grammar, and Surface tree. `Compiler.DirectCoreCheck` joins that
+checked frontend to the directly emitted Lean program and entrypoint, then
+checks the exact `ProgramLowering`. It accepts a two-source cross-unit call and rejects a
+different program or entrypoint. No Core transport certificate is involved in
+this direct extraction path. The shared native IR now retains source identifier
+spans for types, enum variants, and functions, so Lean declarations can carry
+names such as `extractedEnumeration0_Choice` and `extractedFunction0_main`
+without reparsing source. These names are metadata: the body is still a
+numeric `Core.Stmt`, not the desired source-like, type-indexed Lean IR.
+The exact emitted program and entrypoint now also
+yield `Execution.ExecutableWellFormed` through a reusable selection theorem,
+rather than duplicating the entrypoint proof for direct emission. The same
+two-source program evaluates to 7 in
+Lean and exits with status 7 when the normal Lanius compiler emits x86 from
+the shared IR; both modes reject the same invalid expression fixture. The
+focused regression rebuilds both Lanius executables from current source by
+default before testing them. This is a connected representative check, not a
+universal compiler theorem. The source-to-Core checker covers the monomorphic
+subset supported by `ProgramLoweringCheck`. It now accepts and relates enum
+declarations with checked variant payloads, including an enum in a different
+module from a scalar `main`; it does not yet accept the extractor's enum-heavy
+function bodies. The x86 end-to-end checker retains a separate no-enum
+restriction.
+`CoreBoundary` now pairs each source enum with its Core declaration and checks
+every ordered variant payload against the source; catalog IDs follow the
+Lanius allocator's semantic ordering, so nested variant names do not shift
+function IDs. This is proof-producing and rejects a mismatched payload in a
+representative direct-Lean fixture. Context synthesis now populates enum
+nominal instances and variant-constructor tables from the checked catalog
+and Core rows. Enum payloads are checked in their owning module's context;
+the two-module regression has same-named but different `Payload` structures
+and confirms that the auxiliary enum resolves to its own structure while a
+Core row referring to the main module's `Payload` is rejected. That fixture
+also passes the direct source-to-Core checker, reusing the enum-shape proof
+already produced at the Core boundary.
+`ProgramLoweringCheck` still rejects many enum bodies: its body checker
+supports only a limited expression fragment. The shared
+named-type checker now grounds monomorphic enum types and aliases as well as
+struct types; annotated locals use that checker for all supported Core types.
+Bare monomorphic nullary variants are now related through resolved source
+names and checked variant rows. A direct-Lean fixture with an annotated enum
+local passes the complete source-to-Core check; changing its Core body to the
+other valid variant is rejected at body agreement, not Core typing. Binary
+checking grounds both inferred operand types and reuses the general Core
+typing checker, so a direct-Lean fixture with enum equality and inequality
+also passes the complete source-to-Core check and its normal x86 executable
+exits with the expected status 0. A non-generic payload-bearing constructor
+call is also source-to-Core checked; a same-type wrong payload is rejected,
+and a program that constructs a payload value returns 0 in both
+Lean and x86. The body checker now relates match arms with wildcard, boolean,
+i32 literal, and non-generic enum patterns, including payload binders, to the same source
+relation. Connected nullary and payload-match fixtures reject a same-type
+changed arm and return 7 in both Lean and x86. Other pattern and expression
+forms remain unsupported, so the enum-heavy extractor is
+not yet source-to-Core checked. A general theorem
+that the extractor emits a valid artifact for every supported input remains open.
+
+The frontend proof path now also has a structured-input entrypoint:
+`SyntaxCheck.checkTypedSourcePack`, `FrontendCheck.checkTyped`, and
+`FrontendBoundary.checkTyped` accept a Lean `ArtifactPack` directly and reuse
+the existing lexer, parse, Surface, source-pack, catalog, and import checks.
+The focused regression accepts a real frontend pack and rejects a wrong schema
+and a malformed token for both one- and two-source programs. The extractor's
+`--lean-checked` mode now emits that structured pack and the Core program in
+one Lean module; the checker validates the emitted frontend against source
+bytes and rejects a different source. `DirectCoreCheck.checkTyped` now joins
+that same generated module to the source through a common `CoreInput`. The
+direct source-to-Core suite now uses this typed path exclusively; no integer
+artifact is generated or read by those tests. The separate compact frontend
+still uses the same declaration, typing, lowering, and entrypoint checkers for
+the existing certificate-based backend proof. The checked two-source program evaluates to 7 in Lean
+and its x86 executable exits 7. A wrong entrypoint and a different but
+well-typed return body are rejected. With shared Lean infrastructure built,
+the 12.4 KB two-source module's source-to-Core check takes about 1.2 seconds.
+Ordinary extractor output is Core-only Lean; `--lean-checked` adds the typed
+frontend for bootstrap validation. The separate compiler `--certificate` mode
+remains live for the existing certificate-based backend proof. The typed frontend
+adds about 67 MB to a self-extracted module because the grammar derivation has
+roughly 1.05 million parse nodes. A per-unit scan found no repeated
+production/nonterminal/span headers, so subtree interning is not an obvious
+size reduction. The generated self-module did not finish checking within a
+105-second diagnostic limit. This is a bootstrap validation mode, not the
+fast per-program proof path. Completing the migration requires an extractor
+correctness theorem that removes this repeated derivation from normal output.
+
+`verified_compiler/tests/direct_self_typing_check.sh` reproduces direct Lean
+emission for the current 88-source extractor closure, checks the generated
+module, and runs the independent Core typing checker on `extractedProgram`.
+This confirms that the self-emitted Core is well typed; it does not prove that
+the source-to-Core lowering is correct for that full closure. On the current
+bootstrap build, self-emission took 27 seconds and generated-module checking
+21 seconds after source-name retention. Earlier instrumented stage timings
+placed roughly 17 seconds
+of emission in shared function-body lowering, with first-pass expression type
+inference the largest measured substage; the Lean text writer is not the
+dominant cost. These timings are diagnostics, not a performance guarantee.
 
 ## Remaining semantic gaps
 
 The project is not yet a verified compiler. In particular:
+
+The full `lake build Lanius` facade currently has two known failures. The
+legacy `Lexer.Artifact` quotes `lexer.json`, whose embedded source predates the
+current enum-based lexer, so its exact-source provenance theorem correctly
+fails. `Compiler.ELFExecutionBridge` also needs literal-callee evidence for a
+direct-call preservation constructor, while the current authenticated direct
+mode can contain a body callee. Neither failure is bypassed by the direct
+source-to-Core checker; its focused target and connected tests pass separately.
 
 - `FunctionCheck` is still a small backend fragment.  Its recursive
   expression/statement path is now authoritative, but local reads and writes,

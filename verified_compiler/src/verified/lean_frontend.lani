@@ -1,0 +1,369 @@
+module verified::lean_frontend;
+
+import verified::extraction;
+import verified::grammar;
+import verified::host;
+import verified::lean_output;
+import verified::parser;
+import verified::semantic_tokens;
+import verified::syntax_tree;
+import verified::token;
+
+// Frontend evidence is emitted as Lean values, not as compact transport words.
+// Source bytes are supplied by the checker, so the generated module contains
+// one copy of syntax evidence and no second copy of the source files.
+const LIST_CHUNK: i32 = 64;
+const SCHEMA_VERSION: i32 = 5;
+
+pub struct TokenTrace {
+    words: [i32],
+    count: i32,
+}
+
+pub fn token_trace(words: [i32], count: i32) -> TokenTrace {
+    return TokenTrace { words: words, count: count };
+}
+
+pub struct Unit {
+    raw: TokenTrace,
+    canonical: verified::token::TokenTable,
+    token_count: i32,
+    semantic: verified::semantic_tokens::AssignmentBuffer,
+    tree: verified::syntax_tree::Tree,
+    grammar: [i32],
+    grammar_length: i32,
+    source_length: i32,
+}
+
+fn named(output: [i32], capacity: i32, position: i32,
+    name: str, name_length: i32, unit: i32) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, name, name_length);
+    return verified::lean_output::natural(output, capacity, next, unit);
+}
+
+fn chunk_header(output: [i32], capacity: i32, position: i32,
+    name: str, name_length: i32, unit: i32, chunk: i32,
+    kind: str, kind_length: i32) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "\nprivate def ", 13);
+    next = named(output, capacity, next, name, name_length, unit);
+    next = verified::lean_output::text(output, capacity, next, "_", 1);
+    next = verified::lean_output::natural(output, capacity, next, chunk);
+    next = verified::lean_output::text(output, capacity, next, " : List ", 8);
+    next = verified::lean_output::text(output, capacity, next, kind, kind_length);
+    return verified::lean_output::text(output, capacity, next, " :=\n  [", 7);
+}
+
+fn chunk_collection(output: [i32], capacity: i32, position: i32,
+    name: str, name_length: i32, unit: i32,
+    kind: str, kind_length: i32, count: i32) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "\nprivate def ", 13);
+    next = named(output, capacity, next, name, name_length, unit);
+    next = verified::lean_output::text(output, capacity, next, " : List ", 8);
+    next = verified::lean_output::text(output, capacity, next, kind, kind_length);
+    next = verified::lean_output::text(output, capacity, next,
+        " :=\n  List.flatten [", 20);
+    let chunk: i32 = 0;
+    while (chunk < count) {
+        if (chunk != 0) {
+            next = verified::lean_output::text(output, capacity, next, ", ", 2);
+        }
+        next = named(output, capacity, next, name, name_length, unit);
+        next = verified::lean_output::text(output, capacity, next, "_", 1);
+        next = verified::lean_output::natural(output, capacity, next, chunk);
+        if (next < 0) { return -1; }
+        chunk += 1;
+    }
+    return verified::lean_output::text(output, capacity, next, "]\n", 2);
+}
+
+fn emit_token(output: [i32], capacity: i32, position: i32,
+    kind: i32, start: i32, finish: i32, source_length: i32) -> i32 {
+    if (kind < 0 || start < 0 || finish <= start
+        || finish > source_length) { return -1; }
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "extractedToken ", 15);
+    next = verified::lean_output::natural(output, capacity, next, kind);
+    next = verified::lean_output::text(output, capacity, next, " ", 1);
+    next = verified::lean_output::natural(output, capacity, next, start);
+    next = verified::lean_output::text(output, capacity, next, " ", 1);
+    return verified::lean_output::natural(output, capacity, next, finish);
+}
+
+fn emit_raw_tokens(unit: Unit, index: i32,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    let raw: [i32] = unit.raw.words;
+    let count: i32 = unit.raw.count;
+    if (count < 0 || count > verified::token::TOKEN_WORD_CAPACITY
+            / verified::token::ROW_WORDS) { return -1; }
+    let next: i32 = position;
+    let token: i32 = 0;
+    while (token < count) {
+        if (token % LIST_CHUNK == 0) {
+            next = chunk_header(output, capacity, next,
+                "extractedRawTokens", 18, index, token / LIST_CHUNK,
+                "Lanius.Extraction.Token", 23);
+        } else {
+            next = verified::lean_output::text(output, capacity, next, ", ", 2);
+        }
+        let row: i32 = token * verified::token::ROW_WORDS;
+        next = emit_token(output, capacity, next,
+            raw[row + verified::token::KIND_FIELD],
+            raw[row + verified::token::START_FIELD],
+            raw[row + verified::token::END_FIELD], unit.source_length);
+        if (next < 0) { return -1; }
+        token += 1;
+        if (token % LIST_CHUNK == 0) {
+            next = verified::lean_output::text(output, capacity, next, "]\n", 2);
+        }
+    }
+    if (count % LIST_CHUNK != 0) {
+        next = verified::lean_output::text(output, capacity, next, "]\n", 2);
+    }
+    return chunk_collection(output, capacity, next,
+        "extractedRawTokens", 18, index, "Lanius.Extraction.Token", 23,
+        (count + LIST_CHUNK - 1) / LIST_CHUNK);
+}
+
+fn emit_canonical_tokens(unit: Unit, index: i32,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    if (unit.token_count < 0 || unit.token_count > unit.canonical.count) {
+        return -1;
+    }
+    let tokens: [verified::token::TokenRow] = unit.canonical.data;
+    let next: i32 = position;
+    let token: i32 = 0;
+    while (token < unit.token_count) {
+        if (token % LIST_CHUNK == 0) {
+            next = chunk_header(output, capacity, next,
+                "extractedTokens", 15, index, token / LIST_CHUNK,
+                "Lanius.Extraction.Token", 23);
+        } else {
+            next = verified::lean_output::text(output, capacity, next, ", ", 2);
+        }
+        let row: verified::token::TokenRow = tokens[token];
+        next = emit_token(output, capacity, next,
+            verified::token::kind_code(row.kind), row.start, row.finish,
+            unit.source_length);
+        if (next < 0) { return -1; }
+        token += 1;
+        if (token % LIST_CHUNK == 0) {
+            next = verified::lean_output::text(output, capacity, next, "]\n", 2);
+        }
+    }
+    if (unit.token_count % LIST_CHUNK != 0) {
+        next = verified::lean_output::text(output, capacity, next, "]\n", 2);
+    }
+    return chunk_collection(output, capacity, next,
+        "extractedTokens", 15, index, "Lanius.Extraction.Token", 23,
+        (unit.token_count + LIST_CHUNK - 1) / LIST_CHUNK);
+}
+
+fn emit_semantic_kinds(unit: Unit, index: i32,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    if (unit.token_count < 0 || unit.token_count > unit.semantic.capacity) {
+        return -1;
+    }
+    let semantic: [verified::semantic_tokens::Assignment] = unit.semantic.data;
+    let next: i32 = position;
+    let token: i32 = 0;
+    while (token < unit.token_count) {
+        if (token % LIST_CHUNK == 0) {
+            next = chunk_header(output, capacity, next,
+                "extractedSemantic", 17, index, token / LIST_CHUNK,
+                "Nat", 3);
+        } else {
+            next = verified::lean_output::text(output, capacity, next, ", ", 2);
+        }
+        let row: verified::semantic_tokens::Assignment = semantic[token];
+        if (row.inner < 0 || row.inner >= 32768 || row.outer >= 32768) {
+            return -1;
+        }
+        if (row.outer >= 0) {
+            next = verified::lean_output::text(output, capacity, next,
+                "2147483648 + ", 13);
+        }
+        next = verified::lean_output::natural(output, capacity, next,
+            row.inner);
+        if (row.outer >= 0) {
+            next = verified::lean_output::text(output, capacity, next,
+                " + ", 3);
+            next = verified::lean_output::natural(output, capacity, next,
+                row.outer);
+            next = verified::lean_output::text(output, capacity, next,
+                " * 32768", 8);
+        }
+        if (next < 0) { return -1; }
+        token += 1;
+        if (token % LIST_CHUNK == 0) {
+            next = verified::lean_output::text(output, capacity, next, "]\n", 2);
+        }
+    }
+    if (unit.token_count % LIST_CHUNK != 0) {
+        next = verified::lean_output::text(output, capacity, next, "]\n", 2);
+    }
+    return chunk_collection(output, capacity, next,
+        "extractedSemantic", 17, index, "Nat", 3,
+        (unit.token_count + LIST_CHUNK - 1) / LIST_CHUNK);
+}
+
+fn emit_node(unit: Unit, node: i32,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    let nodes: [verified::syntax_tree::Node] = unit.tree.nodes;
+    let children: [verified::syntax_tree::Child] = unit.tree.children;
+    let row: verified::syntax_tree::Node = nodes[node];
+    let production_count: i32 = unit.grammar[
+        verified::parser::HEADER_PRODUCTION_COUNT];
+    if (row.production < 0 || row.production >= production_count
+        || row.origin < 0 || row.end < row.origin
+        || row.first_child < 0 || row.child_count < 0
+        || row.first_child > unit.tree.child_count
+        || row.child_count > unit.tree.child_count - row.first_child) {
+        return -1;
+    }
+    let lhs_offset: i32 = unit.grammar[
+        verified::parser::HEADER_PRODUCTION_LHS_OFFSET];
+    if (lhs_offset < 0 || lhs_offset > unit.grammar_length
+        || production_count > unit.grammar_length - lhs_offset) {
+        return -1;
+    }
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "extractedNode ", 14);
+    next = verified::lean_output::natural(output, capacity, next,
+        row.production);
+    next = verified::lean_output::text(output, capacity, next, " ", 1);
+    next = verified::lean_output::natural(output, capacity, next,
+        unit.grammar[lhs_offset + row.production]);
+    next = verified::lean_output::text(output, capacity, next, " ", 1);
+    next = verified::lean_output::natural(output, capacity, next, row.origin);
+    next = verified::lean_output::text(output, capacity, next, " ", 1);
+    next = verified::lean_output::natural(output, capacity, next, row.end);
+    next = verified::lean_output::text(output, capacity, next, " [", 2);
+    let child: i32 = 0;
+    while (child < row.child_count) {
+        if (child != 0) {
+            next = verified::lean_output::text(output, capacity, next, ", ", 2);
+        }
+        let selected: verified::syntax_tree::Child =
+            children[row.first_child + child];
+        if (selected.payload < 0) { return -1; }
+        if (selected.kind == verified::parser::TokenChild) {
+            if (selected.payload >= unit.token_count) { return -1; }
+            next = verified::lean_output::text(output, capacity, next,
+                ".token ", 7);
+        } else {
+            if (selected.kind != verified::parser::StateChild
+                || selected.payload >= node) { return -1; }
+            next = verified::lean_output::text(output, capacity, next,
+                ".node ", 6);
+        }
+        next = verified::lean_output::natural(output, capacity, next,
+            selected.payload);
+        if (next < 0) { return -1; }
+        child += 1;
+    }
+    return verified::lean_output::text(output, capacity, next, "]", 1);
+}
+
+fn emit_parse_nodes(unit: Unit, index: i32,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    let count: i32 = unit.tree.node_count;
+    if (count <= 0) { return -1; }
+    let next: i32 = position;
+    let node: i32 = 0;
+    while (node < count) {
+        if (node % LIST_CHUNK == 0) {
+            next = chunk_header(output, capacity, next,
+                "extractedParseNodes", 19, index, node / LIST_CHUNK,
+                "Lanius.Extraction.ParseNode", 27);
+        } else {
+            next = verified::lean_output::text(output, capacity, next, ", ", 2);
+        }
+        next = emit_node(unit, node, output, capacity, next);
+        if (next < 0) { return -1; }
+        node += 1;
+        if (node % LIST_CHUNK == 0) {
+            next = verified::lean_output::text(output, capacity, next, "]\n", 2);
+        }
+    }
+    if (count % LIST_CHUNK != 0) {
+        next = verified::lean_output::text(output, capacity, next, "]\n", 2);
+    }
+    return chunk_collection(output, capacity, next,
+        "extractedParseNodes", 19, index,
+        "Lanius.Extraction.ParseNode", 27,
+        (count + LIST_CHUNK - 1) / LIST_CHUNK);
+}
+
+pub fn begin(output: [i32], capacity: i32, position: i32) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "import Lanius.TypedIR\n", 22);
+    next = verified::lean_output::text(output, capacity, next,
+        "import Lanius.TypedIR.Named\n", 28);
+    next = verified::lean_output::text(output, capacity, next,
+        "import Lanius.TypedIR.NamedSyntax\n", 34);
+    return verified::lean_output::text(output, capacity, next,
+        "import Lanius.Core\nimport Lanius.Extraction.Artifact\n\nopen Lanius.Core\nopen scoped Lanius.TypedIR.Named\n\nprivate def extractedToken (kind start finish : Nat) : Lanius.Extraction.Token :=\n  { kind := kind, span := { file := 0, start := start, finish := finish } }\n\nprivate def extractedNode (production nonterminal start finish : Nat)\n    (children : List Lanius.Extraction.ParseChild) : Lanius.Extraction.ParseNode :=\n  { production := production, nonterminal := nonterminal,\n    position_start := start, position_end := finish, children := children }\n",
+        552);
+}
+
+pub fn emit_unit(unit: Unit, index: i32,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    if (index < 0 || unit.source_length < 0
+        || unit.grammar_length < verified::parser::GRAMMAR_HEADER_WORDS) {
+        return -1;
+    }
+    let next: i32 = emit_raw_tokens(unit, index, output, capacity, position);
+    if (next < 0) { return -1; }
+    next = emit_canonical_tokens(unit, index, output, capacity, next);
+    if (next < 0) { return -1; }
+    next = emit_semantic_kinds(unit, index, output, capacity, next);
+    if (next < 0) { return -1; }
+    return emit_parse_nodes(unit, index, output, capacity, next);
+}
+
+pub fn finish(unit_count: i32, node_counts: [i32],
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    if (unit_count <= 0 || unit_count > 128) { return -1; }
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "\ndef extractedFrontend (sources : List Lanius.Extraction.SourceFile) : Lanius.Extraction.ArtifactPack :=\n  { schema_version := ",
+        127);
+    next = verified::lean_output::natural(output, capacity, next,
+        SCHEMA_VERSION);
+    next = verified::lean_output::text(output, capacity, next,
+        ", units := [", 12);
+    let unit: i32 = 0;
+    while (unit < unit_count) {
+        if (node_counts[unit] <= 0) { return -1; }
+        if (unit != 0) {
+            next = verified::lean_output::text(output, capacity, next,
+                ",\n", 2);
+        }
+        next = verified::lean_output::text(output, capacity, next,
+            "\n    { Lanius.Extraction.Artifact.empty with sources := (sources.drop ",
+            70);
+        next = verified::lean_output::natural(output, capacity, next, unit);
+        next = verified::lean_output::text(output, capacity, next,
+            ").take 1, raw_tokens := some ", 29);
+        next = named(output, capacity, next, "extractedRawTokens", 18, unit);
+        next = verified::lean_output::text(output, capacity, next,
+            ", tokens := ", 12);
+        next = named(output, capacity, next, "extractedTokens", 15, unit);
+        next = verified::lean_output::text(output, capacity, next,
+            ", semantic_token_kinds := ", 26);
+        next = named(output, capacity, next, "extractedSemantic", 17, unit);
+        next = verified::lean_output::text(output, capacity, next,
+            ", parse_nodes := ", 17);
+        next = named(output, capacity, next, "extractedParseNodes", 19, unit);
+        next = verified::lean_output::text(output, capacity, next,
+            ", parse_root := some ", 21);
+        next = verified::lean_output::natural(output, capacity, next,
+            node_counts[unit] - 1);
+        next = verified::lean_output::text(output, capacity, next, " }", 2);
+        if (next < 0) { return -1; }
+        unit += 1;
+    }
+    return verified::lean_output::text(output, capacity, next, "] }\n", 4);
+}

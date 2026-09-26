@@ -28,6 +28,8 @@ def SupportedItem : Surface.Item → Prop
       parameters = [] ∧ predicates = []
   | .structure declaration =>
       declaration.genericParameters = [] ∧ declaration.wherePredicates = []
+  | .enumeration declaration =>
+      declaration.genericParameters = [] ∧ declaration.wherePredicates = []
   | _ => False
 
 def SupportedMonomorphic (pack : Declarations.SourcePack) : Prop :=
@@ -37,7 +39,8 @@ def SupportedMonomorphic (pack : Declarations.SourcePack) : Prop :=
    predicate here makes declaration exactness explicit without pretending an
    alias has a Core declaration. -/
 def RuntimeItem : Surface.Item → Prop
-  | .function _ | .externFunction _ | .constant _ _ _ _ | .structure _ => True
+  | .function _ | .externFunction _ | .constant _ _ _ _ |
+    .structure _ | .enumeration _ => True
   | _ => False
 
 def RuntimeOccurrence (pack : Declarations.SourcePack)
@@ -93,11 +96,13 @@ inductive ReturnTypeLower (context : SurfaceElaboration.Context) :
 
 inductive CoreDeclaration where
   | structure (declaration : Core.StructDecl)
+  | enumeration (declaration : Core.EnumDecl)
   | constant (declaration : Core.Constant)
   | function (declaration : Core.Function)
 
 def CoreDeclaration.member (program : Core.Program) : CoreDeclaration → Prop
   | .structure declaration => declaration ∈ program.structures
+  | .enumeration declaration => declaration ∈ program.enumerations
   | .constant declaration => declaration ∈ program.constants
   | .function declaration => declaration ∈ program.functions
 
@@ -108,6 +113,8 @@ def CoreDeclaration.matches
     (header : Declarations.DeclarationHeader) : CoreDeclaration → Prop
   | .structure declaration =>
       header.kind = .structureType ∧ declaration.id = header.declaration
+  | .enumeration declaration =>
+      header.kind = .enumeration ∧ declaration.id = header.declaration
   | .constant declaration =>
       header.kind = .constant ∧ declaration.id = header.declaration
   | .function declaration =>
@@ -129,6 +136,30 @@ structure DeclarationLowering
   member : core.member program
   identified : core.matches header
 
+/-- Ordered enum payloads ground in the declaration's own module. -/
+inductive EnumVariantsLower (context : SurfaceElaboration.Context) :
+    List Surface.EnumVariant → List (List Core.Ty) → Prop where
+  | nil : EnumVariantsLower context [] []
+  | cons (fieldTypes : List Static.GroundTy)
+      (fieldsLowering : SurfaceElaboration.TypesGround context
+        head.payload fieldTypes)
+      (fieldsGrounded : Static.GroundTy.listToCore
+        context.monomorphization fieldTypes = some types)
+      (tail : EnumVariantsLower context rest remaining) :
+      EnumVariantsLower context (head :: rest) (types :: remaining)
+
+def EnumRowShape (pack : Declarations.SourcePack)
+    (context : SurfaceElaboration.Context)
+    (row : DeclarationLowering pack catalog program) : Prop :=
+  match row.core with
+  | .enumeration core =>
+      ∃ address source,
+        row.occurrence = .item address ∧
+        pack.item? address = some (.enumeration source) ∧
+        EnumVariantsLower (context.forModule row.header.moduleId)
+          source.variants core.variants
+  | _ => True
+
 def DeclarationLoweringsExact
     (pack : Declarations.SourcePack) (catalog : Declarations.Catalog)
     (program : Core.Program)
@@ -137,6 +168,8 @@ def DeclarationLoweringsExact
     ∃ row ∈ rows, row.occurrence = occurrence) ∧
   (∀ declaration, declaration ∈ program.structures →
     ∃ row ∈ rows, row.core = .structure declaration) ∧
+  (∀ declaration, declaration ∈ program.enumerations →
+    ∃ row ∈ rows, row.core = .enumeration declaration) ∧
   (∀ declaration, declaration ∈ program.constants →
     ∃ row ∈ rows, row.core = .constant declaration) ∧
   (∀ declaration, declaration ∈ program.functions →
@@ -357,7 +390,7 @@ structure ProgramLowering where
     pack catalog program environment context declarations)
   constantsExact : ConstantLoweringsExact
     pack catalog program environment context declarations constants
-  noEnumerations : program.enumerations = []
+  enumerationsLowered : ∀ row ∈ declarations, EnumRowShape pack context row
   structuresUnique : (program.structures.map fun declaration => declaration.id).Nodup
   constantsUnique : (program.constants.map fun declaration => declaration.id).Nodup
   functionsUnique : (program.functions.map fun declaration => declaration.id).Nodup

@@ -74,23 +74,20 @@ fn type_path(arena: verified::surface_type::TypeArena,
 }
 
 fn module_target(unit: i32,
+    contexts: lowering::unit_context::Table,
     declarations: lowering::declarations::Table) -> i32 {
-    let target: i32 = -1;
-    let row: i32 = 0;
-    let count: i32 = lowering::declarations::count_rows(
+    if (unit <= -1 || unit >= contexts.count) { return -1; }
+    let rows: i32 = lowering::declarations::count_rows(
         lowering::declarations::table_header(declarations));
-    while (row < count) {
-        let item: lowering::declarations::DeclarationRow =
-            lowering::declarations::table_row(declarations, row);
-        if (lowering::declarations::row_unit(item) == unit
-            && lowering::declarations::row_has_kind(item,
-                lowering::declarations::Module)) {
-            if (target != -1) { return -1; }
-            target = lowering::declarations::row_target(item);
-        }
-        row += 1;
+    let view: [lowering::unit_context::UnitContext] = contexts.data;
+    let current: lowering::unit_context::UnitContext = view[unit];
+    if (current.declaration_start <= -1
+        || current.declaration_count <= 0
+        || current.declaration_start > rows
+        || current.declaration_count > rows - current.declaration_start) {
+        return -1;
     }
-    return target;
+    return current.module_target;
 }
 
 fn same_module_path(catalog: lowering::token_names::Catalog,
@@ -113,13 +110,24 @@ fn same_module_path(catalog: lowering::token_names::Catalog,
 
 fn imports_module(catalog: lowering::token_names::Catalog,
     unit: i32, owner: i32,
+    contexts: lowering::unit_context::Table,
     declarations: lowering::declarations::Table,
     trees: verified::syntax_tree::Catalog, owner_target: i32) -> bool {
+    if (unit <= -1 || unit >= contexts.count) { return false; }
     let sources: [verified::syntax_tree::Tree] = trees.data;
     let count: i32 = lowering::declarations::count_rows(
         lowering::declarations::table_header(declarations));
-    let row: i32 = 0;
-    while (row < count) {
+    let view: [lowering::unit_context::UnitContext] = contexts.data;
+    let current: lowering::unit_context::UnitContext = view[unit];
+    if (current.declaration_start <= -1
+        || current.declaration_count <= 0
+        || current.declaration_start > count
+        || current.declaration_count > count - current.declaration_start) {
+        return false;
+    }
+    let row: i32 = current.declaration_start;
+    let end: i32 = row + current.declaration_count;
+    while (row < end) {
         let item: lowering::declarations::DeclarationRow =
             lowering::declarations::table_row(declarations, row);
         if (lowering::declarations::row_unit(item) == unit
@@ -233,12 +241,13 @@ pub fn expression_owner_visible(input: ExpressionOwnerInput) -> bool {
     let catalog: lowering::token_names::Catalog =
         lowering::token_names::catalog(input.contexts,
             input.sources, input.tokens);
-    let target: i32 = module_target(input.owner, input.declarations);
+    let target: i32 = module_target(input.owner, input.contexts,
+        input.declarations);
     if (target < 0) { return false; }
     if (input.owner != input.unit
         && (!input.public_declaration
             || !imports_module(catalog, input.unit, input.owner,
-                input.declarations, input.trees, target))) {
+                input.contexts, input.declarations, input.trees, target))) {
         return false;
     }
     return nodes[first].left == -1
@@ -370,12 +379,14 @@ pub fn resolve_constant_path(input: ConstantPathInput) -> i32 {
             if (owner <= -1 || owner >= input.contexts.count) { return -1; }
             if (lowering::token_names::same(catalog, unit, final_token,
                     owner, lowering::allocation::row_name(selected))) {
-                let target: i32 = module_target(owner, input.declarations);
+                let target: i32 = module_target(owner, input.contexts,
+                    input.declarations);
                 if (target <= -1) { return -1; }
                 let visible: bool = owner == unit
                     || (lowering::allocation::row_is_public(selected)
                         && imports_module(catalog, unit, owner,
-                            input.declarations, input.trees, target));
+                            input.contexts, input.declarations, input.trees,
+                            target));
                 let correct_path: bool = !qualified
                     || expression_module_matches(catalog, unit, owner,
                         first, arena, input.trees, target);
@@ -400,12 +411,14 @@ pub fn resolve_constant_path(input: ConstantPathInput) -> i32 {
                 lowering::declarations::Enumeration)) {
             let owner: i32 = lowering::allocation::row_unit(selected);
             if (owner <= -1 || owner >= input.contexts.count) { return -1; }
-            let target: i32 = module_target(owner, input.declarations);
+            let target: i32 = module_target(owner, input.contexts,
+                input.declarations);
             if (target <= -1) { return -1; }
             let visible: bool = owner == unit
                 || (lowering::allocation::row_is_public(selected)
                     && imports_module(catalog, unit, owner,
-                        input.declarations, input.trees, target));
+                        input.contexts, input.declarations, input.trees,
+                        target));
             let correct_path: bool = !qualified
                 || expression_module_matches(catalog, unit, owner,
                     first, arena, input.trees, target);
@@ -435,6 +448,7 @@ fn name_candidate(unit: i32, path: TypePath,
     arena: verified::surface_type::TypeArena,
     catalog: lowering::token_names::Catalog,
     allocated: lowering::allocation::Table,
+    contexts: lowering::unit_context::Table,
     declarations: lowering::declarations::Table,
     trees: verified::syntax_tree::Catalog) -> NominalLookup {
     let nodes: [verified::surface_type::TypeNode] = arena.data;
@@ -459,12 +473,12 @@ fn name_candidate(unit: i32, path: TypePath,
             let owner: i32 = lowering::allocation::row_unit(allocation);
             if (lowering::token_names::same(catalog, unit, path.last_token,
                     owner, lowering::allocation::row_name(allocation))) {
-                let target: i32 = module_target(owner, declarations);
+                let target: i32 = module_target(owner, contexts, declarations);
                 if (target <= -1) { return Ambiguous; }
                 let visible: bool = owner == unit
                     || (lowering::allocation::row_is_public(allocation)
-                        && imports_module(catalog, unit, owner, declarations,
-                            trees, target));
+                        && imports_module(catalog, unit, owner, contexts,
+                            declarations, trees, target));
                 let correct_path: bool = !qualified
                     || qualified_module_matches(catalog, unit, owner,
                         path.first, arena, trees, target);
@@ -505,6 +519,7 @@ fn resolve_nominal(unit: i32, initial: TypePath,
     arena: verified::surface_type::TypeArena,
     catalog: lowering::token_names::Catalog,
     allocated: lowering::allocation::Table,
+    contexts: lowering::unit_context::Table,
     declarations: lowering::declarations::Table,
     trees: verified::syntax_tree::Catalog) -> NominalLookup {
     let current_unit: i32 = unit;
@@ -514,7 +529,7 @@ fn resolve_nominal(unit: i32, initial: TypePath,
     let sources: [verified::syntax_tree::Tree] = trees.data;
     while (remaining > 0) {
         let selected: NominalLookup = name_candidate(current_unit, path,
-            arena, catalog, allocated, declarations, trees);
+            arena, catalog, allocated, contexts, declarations, trees);
         let missing_alias: AliasDestination = AliasDestination {
             owner: -1, target: -1,
         };
@@ -556,13 +571,20 @@ pub struct ResolutionWorkspace {
     type_arena: verified::surface_type::TypeArena,
 }
 
+fn resolution_position(output: [lowering::types::ResolutionRow],
+    offset: i32, written: i32, key: i32) -> i32 {
+    let position: i32 = 0;
+    while (position < written) {
+        if (output[offset + position].key >= key) { return position; }
+        position += 1;
+    }
+    return written;
+}
+
 fn insert_resolution(output: [lowering::types::ResolutionRow],
     offset: i32, written: i32, capacity: i32,
     key: i32, type_ref: ir::type_ref::TypeRef) -> i32 {
-    let position: i32 = 0;
-    while (position < written && output[offset + position].key < key) {
-        position += 1;
-    }
+    let position: i32 = resolution_position(output, offset, written, key);
     if (position < written && output[offset + position].key == key) {
         if (!ir::type_ref::same(output[offset + position].type_tag,
                 type_ref)) { return -1; }
@@ -620,7 +642,8 @@ pub fn build(input: ResolutionInput,
             if (!path.valid || path.last_token >= token_count) { return -1; }
             let key: i32 = path.last_token;
             let resolved: NominalLookup = resolve_nominal(unit, path,
-                type_arena, token_names, allocated, declarations,
+                type_arena, token_names, allocated, input.contexts,
+                declarations,
                 input.trees);
             if (is_ambiguous(resolved)) { return -1; }
             let core_id: i32 = match (resolved) {

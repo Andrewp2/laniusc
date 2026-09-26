@@ -4,7 +4,6 @@ import backend::compile;
 import backend::frame;
 import backend::image;
 import backend::program;
-import ir::body_catalog;
 import ir::program;
 import verified::host;
 
@@ -30,8 +29,8 @@ fn main() -> i32 {
         backend::frame::from_raw_parts(work_memory, work_words);
     let output: [i32] = verified::host::i32_slice_from_raw_parts(
         output_memory, 2048);
-    let empty_native: ir::program::Storage = ir::program::empty();
-    if (ir::program::valid(empty_native)) { return 2; }
+    let empty_program: ir::program::Program = ir::program::empty();
+    if (ir::program::valid(empty_program)) { return 2; }
     let source: backend::program::Source = backend::program::core(
         backend::compile::region(core, 18),
         backend::compile::region(scratch, 18));
@@ -45,8 +44,8 @@ fn main() -> i32 {
     if (raw_end <= 0) { return 5; }
     // An explicitly typed source cannot fall back to the wire path merely
     // because it has no bodies.
-    let missing_bodies: backend::program::Source = backend::program::typed(
-        ir::body_catalog::empty(), empty_native);
+    let missing_bodies: backend::program::Source =
+        backend::program::typed(empty_program);
     if (!backend::program::is_typed(missing_bodies)
         || backend::image::compile(missing_bodies, work,
             backend::compile::region(output, 2048)) != -1) { return 4; }

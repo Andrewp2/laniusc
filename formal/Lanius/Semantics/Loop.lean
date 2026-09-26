@@ -183,9 +183,15 @@ theorem evalExpr_assign_add_i32_local
           nextValue = .ok after := by
     unfold writeResolvedPlace
     rw [assignedCell]
+  have writeNative :
+      writeResolvedPlaceNative program state
+          { root := cell, projections := [], value := some (.signed .i32 current) }
+          nextValue = .ok after := by
+    simpa [writeResolvedPlaceNative] using write
   rw [evalExpr.eq_def]
   simp only [place, right]
   rw [operation]
-  simp only [write]
+  simp [writeNative, ResolvedPlace.viewFreeRootWrite,
+    valueMayContainI32ArrayView]
 
 end Lanius.Semantics

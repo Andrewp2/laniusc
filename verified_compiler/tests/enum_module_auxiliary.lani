@@ -1,0 +1,8 @@
+module app::auxiliary;
+
+pub struct Payload { value: i32 }
+
+pub enum Message {
+    Empty,
+    Full(Payload),
+}

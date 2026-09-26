@@ -4,7 +4,6 @@ import backend::image;
 import backend::program;
 import backend::compile;
 import backend::frame;
-import ir::body_catalog;
 import ir::program;
 import verified::host;
 
@@ -15,18 +14,14 @@ pub const WORK_ALIGNMENT: i32 = backend::frame::WORK_ALIGNMENT;
 pub const OUTPUT_CAPACITY: i32 = 2097152;
 pub const FUNCTION_INPUT_CAPACITY: i32 = backend::compile::MAX_WORDS;
 
-// Raw-pointer entry avoids passing slice values across the application/backend
-// native boundary. The views are reconstructed only inside this module.
-pub fn compile_raw(work: ptr, output: ptr, body_memory: ptr,
-    body_capacity: i32,
-    native: ir::program::Storage) -> i32 {
+// The compiler hands x86 emission the exact typed program produced by
+// lowering. Only the byte-oriented work and output buffers use raw pointers.
+pub fn compile(work: ptr, output: ptr,
+    program: ir::program::Program) -> i32 {
     let workspace: backend::frame::Workspace =
         backend::frame::from_raw_parts(work, WORK_CAPACITY);
     let output_view:[i32] = verified::host::i32_slice_from_raw_parts(output,
         OUTPUT_CAPACITY);
-    let bodies: ir::body_catalog::Catalog =
-        ir::body_catalog::view_from_raw_parts(body_memory, body_capacity);
-    if (ir::body_catalog::length(bodies) <= 0) { return -1; }
-    return backend::image::compile(backend::program::typed(bodies, native),
+    return backend::image::compile(backend::program::typed(program),
         workspace, backend::compile::region(output_view, OUTPUT_CAPACITY));
 }

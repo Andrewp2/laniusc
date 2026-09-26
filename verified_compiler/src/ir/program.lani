@@ -1,39 +1,257 @@
 module ir::program;
 
+import ir::body_catalog;
+import ir::body_events;
+import ir::body_tree;
+import ir::constant_catalog;
 import ir::function_catalog;
-import lowering::allocation;
-import lowering::signature_index;
+import ir::symbol_catalog;
+import ir::type_catalog;
+import ir::type_ref;
+import runtime::service;
 
-// Native lowering result handed directly to code generation. The serialized
-// Core transport is a separate certificate artifact, not this program view.
-pub struct Storage {
-    signatures: lowering::signature_index::Table,
-    allocations: lowering::allocation::Table,
+// The semantic boundary shared by x86 emission and Core/Lean output. The
+// declaration catalogs and indexed body trees contain no lowering records;
+// serialized Core words are an optional output format. The entrypoint is
+// semantic data, not a convention about function order.
+pub struct Program {
+    entrypoint: i32,
+    types: ir::type_catalog::Table,
+    constants: ir::constant_catalog::Table,
     functions: ir::function_catalog::Table,
+    bodies: ir::body_catalog::Catalog,
+    names: ir::symbol_catalog::Catalog,
 }
 
-pub fn empty() -> Storage {
+pub fn empty() -> Program {
     let nowhere: ptr = 0;
-    let no_signatures: lowering::signature_index::Requirements =
-        lowering::signature_index::Requirements {
-            entries: 0, members: 0, variants: 0, fields: 0,
-            constants: 0, bytes: 0, valid: false,
-        };
-    return Storage {
-        signatures: lowering::signature_index::from_raw_parts(
-            nowhere, no_signatures),
-        allocations: lowering::allocation::from_raw_parts(nowhere, 0),
+    return Program {
+        entrypoint: -1,
+        types: ir::type_catalog::empty(),
+        constants: ir::constant_catalog::empty(),
         functions: ir::function_catalog::from_raw_parts(nowhere, 0, 0),
+        bodies: ir::body_catalog::empty(),
+        names: ir::symbol_catalog::empty(),
     };
 }
 
-pub fn valid(storage: Storage) -> bool {
-    let signatures: lowering::signature_index::Table = storage.signatures;
-    let allocations: lowering::allocation::Table = storage.allocations;
-    let functions: ir::function_catalog::Table = storage.functions;
-    return signatures.count > 0 && signatures.member_count >= 0
-        && signatures.variant_count >= 0 && signatures.field_count >= 0
-        && signatures.constant_count >= 0 && signatures.byte_count >= 0
-        && allocations.memory != 0 && allocations.count > 0
-        && functions.count > 0 && functions.parameter_count >= 0;
+fn has_decl_kind(types: ir::type_catalog::Table, id: i32,
+    expected: ir::type_catalog::TypeKind) -> bool {
+    if (id <= -1 || id >= types.type_count) { return false; }
+    let declarations: [ir::type_catalog::TypeDecl] = types.types;
+    return declarations[id].kind == expected;
+}
+
+fn struct_event_valid(types: ir::type_catalog::Table,
+    fields: ir::body_events::StructFields) -> bool {
+    if (!has_decl_kind(types, fields.type_id,
+            ir::type_catalog::Structure)) { return false; }
+    let declarations: [ir::type_catalog::TypeDecl] = types.types;
+    return declarations[fields.type_id].field_count == fields.count;
+}
+
+fn enum_event_valid(types: ir::type_catalog::Table,
+    type_id: i32, ordinal: i32, payload_count: i32) -> bool {
+    if (!has_decl_kind(types, type_id,
+            ir::type_catalog::Enumeration)) { return false; }
+    let declarations: [ir::type_catalog::TypeDecl] = types.types;
+    let variants: [ir::type_catalog::Variant] = types.variants;
+    let row: ir::type_catalog::TypeDecl = declarations[type_id];
+    if (ordinal <= -1 || ordinal >= row.variant_count) { return false; }
+    return variants[row.variant_start + ordinal].field_count
+        == payload_count;
+}
+
+fn local_event_valid(types: ir::type_catalog::Table,
+    local: ir::body_events::LocalDeclaration) -> bool {
+    return local.id >= 0
+        && ir::type_catalog::valid_type(types, local.kind);
+}
+
+fn slice_element_valid(types: ir::type_catalog::Table,
+    kind: ir::body_events::SliceElementKind, id: i32) -> bool {
+    return match (kind) {
+        ir::body_events::I32Slice -> id == 0,
+        ir::body_events::StructureSlice ->
+            has_decl_kind(types, id,
+                ir::type_catalog::Structure),
+        ir::body_events::EnumerationSlice ->
+            has_decl_kind(types, id,
+                ir::type_catalog::Enumeration),
+    };
+}
+
+fn arm_header_valid(declaration: ir::type_catalog::TypeDecl,
+    variants: [ir::type_catalog::Variant],
+    arm: ir::body_events::MatchArm,
+    position: i32, arm_count: i32) -> bool {
+    if (arm.ordinal == -1) {
+        return arm.binding_count == 0 && position == arm_count - 1;
+    }
+    if (arm.ordinal <= -1 || arm.ordinal >= declaration.variant_count) {
+        return false;
+    }
+    return variants[declaration.variant_start + arm.ordinal].field_count
+        == arm.binding_count;
+}
+
+fn match_event_valid(types: ir::type_catalog::Table,
+    tree: ir::body_tree::Tree, index: i32) -> bool {
+    let events: [ir::body_events::Event] = tree.events;
+    let header: ir::body_events::MatchHeader =
+        ir::body_events::matching_fields(events[index]);
+    if (!has_decl_kind(types, header.scrutinee_type_id,
+            ir::type_catalog::Enumeration)
+        || !ir::type_catalog::valid_type(types, header.result_kind)) {
+        return false;
+    }
+    let declarations: [ir::type_catalog::TypeDecl] = types.types;
+    let variants: [ir::type_catalog::Variant] = types.variants;
+    let enum_decl: ir::type_catalog::TypeDecl =
+        declarations[header.scrutinee_type_id];
+    let scrutinee: i32 = ir::body_tree::first_child(tree, index);
+    let arm_index: i32 = ir::body_tree::next_sibling(tree, index,
+        scrutinee);
+    let position: i32 = 0;
+    while (position != header.arm_count) {
+        if (arm_index <= -1) { return false; }
+        let arm: ir::body_events::MatchArm =
+            ir::body_events::matching_arm_fields(events[arm_index]);
+        let accepted: bool = arm_header_valid(enum_decl, variants,
+            arm, position, header.arm_count);
+        if (!accepted) { return false; }
+        arm_index = ir::body_tree::next_sibling(tree, index, arm_index);
+        position += 1;
+    }
+    return arm_index == -1;
+}
+
+// Check referenced declarations and constructor/pattern arities against the
+// catalogs. Expression typing remains a separate compiler obligation.
+fn body_type_references_valid(types: ir::type_catalog::Table,
+    constants: ir::constant_catalog::Table,
+    functions: ir::function_catalog::Table,
+    tree: ir::body_tree::Tree) -> bool {
+    let rows: [ir::body_events::Event] = tree.events;
+    let index: i32 = 0;
+    while (index != tree.count) {
+        let struct_fields: ir::body_events::StructFields =
+            ir::body_events::structure_fields(rows[index]);
+        let enum_fields: ir::body_events::EnumVariant =
+            ir::body_events::enumeration_fields(rows[index]);
+        let local_fields: ir::body_events::LocalDeclaration =
+            ir::body_events::local_declaration(rows[index]);
+        let call_fields: ir::body_events::CallHeader =
+            ir::body_events::call_fields(rows[index]);
+        let slice_fields: ir::body_events::SliceElement =
+            ir::body_events::typed_slice_fields(rows[index]);
+        let accepted: bool = match (rows[index]) {
+            ir::body_events::ExpressionConstant(id) ->
+                ir::constant_catalog::contains(constants, id),
+            ir::body_events::ExpressionStruct(fields) ->
+                struct_event_valid(types, struct_fields),
+            ir::body_events::ExpressionEnumeration(variant) ->
+                enum_event_valid(types, enum_fields.type_id,
+                    enum_fields.ordinal, enum_fields.payload_count),
+            ir::body_events::ExpressionMatch(header) ->
+                match_event_valid(types, tree, index),
+            ir::body_events::ExpressionCall(call) ->
+                ir::function_catalog::has_call(functions,
+                    call_fields.function_id, call_fields.argument_count),
+            ir::body_events::ExpressionTypedSliceFromRawParts(element) ->
+                slice_element_valid(types,
+                    slice_fields.kind, slice_fields.id),
+            ir::body_events::StatementLet(initialized_local) ->
+                local_event_valid(types, local_fields),
+            ir::body_events::StatementLetUninitialized(uninitialized_local) ->
+                local_event_valid(types, local_fields),
+            _ -> true,
+        };
+        if (!accepted) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+// Check the cross-catalog invariant at the consumer boundary. Defined
+// functions own bodies; runtime functions do not.
+pub fn valid(program: Program) -> bool {
+    let types: ir::type_catalog::Table = program.types;
+    let constants: ir::constant_catalog::Table = program.constants;
+    let functions: ir::function_catalog::Table = program.functions;
+    let bodies: ir::body_catalog::Catalog = program.bodies;
+    let names: ir::symbol_catalog::Catalog = program.names;
+    let body_count: i32 = ir::body_catalog::length(bodies);
+    if (!ir::type_catalog::valid(types)
+        || !ir::constant_catalog::valid(constants)
+        || (names.unit_count > 0
+            && (names.type_count != types.type_count
+                || names.variant_count != types.variant_count
+                || names.function_count != functions.count
+                || !ir::symbol_catalog::valid(names)))
+        || program.entrypoint < 0
+        || functions.count <= 0 || functions.parameter_count <= -1
+        || body_count <= 0 || body_count > bodies.capacity) { return false; }
+    let defined: i32 = 0;
+    let entry_found: bool = false;
+    let parameter_cursor: i32 = 0;
+    let index: i32 = 0;
+    while (index < functions.count) {
+        let function: ir::function_catalog::Function =
+            ir::function_catalog::at(functions, index);
+        if (function.id == program.entrypoint) {
+            if (function.kind != ir::function_catalog::DefinedFunction
+                || function.parameters != 0) { return false; }
+            entry_found = true;
+        }
+        if (function.id <= -1
+            || ir::function_catalog::id_occurrences(functions,
+                function.id) != 1
+            || !ir::type_catalog::valid_result(types,
+                function.result_type)
+            || function.parameters <= -1
+            || function.parameter_start != parameter_cursor
+            || function.parameters > functions.parameter_count
+                - parameter_cursor) { return false; }
+        let parameters: [ir::function_catalog::Parameter] =
+            functions.parameters;
+        let parameter: i32 = 0;
+        while (parameter != function.parameters) {
+            let row: ir::function_catalog::Parameter =
+                parameters[parameter_cursor];
+            if (row.id <= -1
+                || !ir::type_catalog::valid_type(types, row.type_tag)) {
+                return false;
+            }
+            parameter_cursor += 1;
+            parameter += 1;
+        }
+        let body_index: i32 = ir::body_catalog::find(bodies, function.id);
+        if (function.kind == ir::function_catalog::DefinedFunction) {
+            if (function.service != runtime::service::NoService) {
+                return false;
+            }
+            if (body_index <= -1) { return false; }
+            let body: ir::body_catalog::FunctionBody =
+                ir::body_catalog::at(bodies, body_index);
+            if (!ir::body_tree::valid(body.tree)
+                || (names.unit_count > 0
+                    && !ir::body_tree::expression_result_annotations_valid(
+                        body.tree))
+                || !body_type_references_valid(types, constants,
+                    functions, body.tree)
+                || body.signature.parameters != function.parameters
+                || !ir::type_ref::same(body.signature.result_type,
+                    function.result_type)) { return false; }
+            defined += 1;
+        } else {
+            if (body_index >= 0
+                || function.service == runtime::service::NoService) {
+                return false;
+            }
+        }
+        index += 1;
+    }
+    return entry_found && defined == body_count
+        && parameter_cursor == functions.parameter_count;
 }

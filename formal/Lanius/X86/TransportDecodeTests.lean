@@ -91,6 +91,13 @@ example : encodeExpr (.typedSliceFromRawParts (.enumeration 4) (.local 0)
   simp [encodeExpr, encodeValue]
 example : parseExpr 8 [22, 2, 1, 1, 0, 0, 1, 3] = none := by rfl
 example : parseExpr 8 [22, 3, 0, 1, 0, 0, 1, 3] = none := by rfl
+example : parseExpr 12 [18, 16, 0, 1, 0, 1, 3] =
+    some (.enumValue 0 0 [.value (.signed .i32 3)], []) := by rfl
+example : parseExpr 12 [21, 1, 16, 1, 18, 16, 0, 0, 0, 0, 0, 1, 3] =
+    some (.matchValue (.enumValue 0 0 [])
+      [(.enumVariant 0 0 [], .value (.signed .i32 3))], []) := by rfl
+example : parseExpr 12 [21, 1, 16, 1, 18, 16, 0, 0, -1, 1, 7, 0, 1, 3] =
+    none := by rfl
 example : decodeProgram externalWords = some (9, external) := by rfl
 example : type? 1073741827 = some (.slice (.structure 3)) := by rfl
 example : type? 2147483632 = none := by rfl

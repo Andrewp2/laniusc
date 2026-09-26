@@ -74,3 +74,28 @@ pub fn at(table: Table, index: i32) -> Function {
     let functions: [Function] = table.functions;
     return functions[index];
 }
+
+pub fn has_call(table: Table, id: i32, argument_count: i32) -> bool {
+    let functions: [Function] = table.functions;
+    if (table.count <= 0) { return false; }
+    let index: i32 = 0;
+    while (index != table.count) {
+        if (functions[index].id == id) {
+            return functions[index].parameters == argument_count;
+        }
+        index += 1;
+    }
+    return false;
+}
+
+pub fn id_occurrences(table: Table, id: i32) -> i32 {
+    let functions: [Function] = table.functions;
+    if (table.count <= 0) { return 0; }
+    let count: i32 = 0;
+    let index: i32 = 0;
+    while (index != table.count) {
+        if (functions[index].id == id) { count += 1; }
+        index += 1;
+    }
+    return count;
+}

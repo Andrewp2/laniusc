@@ -1,0 +1,6 @@
+module app::main;
+
+fn main() -> i32 {
+    let start: i32 = 2;
+    return (start + 3) * 4;
+}

@@ -3,9 +3,10 @@ module app::main;
 import backend::syntax;
 import ir::body_catalog;
 import ir::body_events;
+import ir::body_tree;
 import ir::type_ref;
 import lowering::body_event_write;
-import lowering::body_serialization;
+import verified::core_body;
 import verified::host;
 
 fn main() -> i32 {
@@ -26,6 +27,8 @@ fn main() -> i32 {
         word_memory, 8);
     if (lowering::body_event_write::expression_value(scratch, 0,
             ir::body_events::IntegerValue(42)) != 1) { return 2; }
+    if (!ir::body_events::record_result_type(scratch, 0,
+            ir::type_ref::I32)) { return 9; }
     let first_signature: ir::body_catalog::FunctionSignature =
         ir::body_catalog::FunctionSignature {
             id: 7, result_type: ir::type_ref::I32, parameters: 0,
@@ -47,15 +50,27 @@ fn main() -> i32 {
     }
     let original: ir::body_catalog::FunctionBody =
         ir::body_catalog::at(catalog, 0);
-    if (original.signature.id != 7 || original.count != 1
-        || lowering::body_serialization::serialize(
-            ir::body_events::region(original.events, original.count),
-            1, lowering::body_serialization::word_region(words, 8), 0) != 3
+    if (original.signature.id != 7 || original.tree.count != 1
+        || !ir::type_ref::same(ir::body_tree::result_type(
+            original.tree, 0), ir::type_ref::I32)
+        || verified::core_body::serialize(
+            ir::body_events::region(original.tree.events,
+                original.tree.count),
+            1, verified::core_body::word_region(words, 8), 0) != 3
         || words[0] != backend::syntax::expression_code(
             backend::syntax::ExprValue)
         || words[1] != backend::syntax::type_code(
             backend::syntax::TypeI32)
         || words[2] != 42) { return 5; }
+    if (!ir::body_tree::expression_result_annotations_valid(original.tree)) {
+        return 10;
+    }
+    let result_types: [ir::type_ref::TypeRef] = original.tree.result_types;
+    result_types[0] = ir::type_ref::Bool;
+    if (ir::body_tree::expression_result_annotations_valid(original.tree)) {
+        return 11;
+    }
+    result_types[0] = ir::type_ref::I32;
     if (ir::body_catalog::append(catalog, second_signature,
             scratch, 1) != 1
         || ir::body_catalog::length(catalog) != 2
@@ -67,21 +82,21 @@ fn main() -> i32 {
     }
     let second: ir::body_catalog::FunctionBody =
         ir::body_catalog::at(catalog, 1);
-    if (second.signature.id != 8 || second.count != 1
+    if (second.signature.id != 8 || second.tree.count != 1
+        || !ir::type_ref::same(ir::body_tree::result_type(
+            second.tree, 0), ir::type_ref::Invalid)
         || ir::type_ref::code(second.signature.result_type) != 0
-        || lowering::body_serialization::serialize(
-            ir::body_events::region(second.events, second.count),
-            1, lowering::body_serialization::word_region(words, 8), 0) != 1
+        || verified::core_body::serialize(
+            ir::body_events::region(second.tree.events,
+                second.tree.count),
+            1, verified::core_body::word_region(words, 8), 0) != 1
         || words[0] != backend::syntax::statement_code(
             backend::syntax::StatementSkip)) { return 7; }
-    let boundary: ir::body_catalog::Catalog =
-        ir::body_catalog::view_from_raw_parts(
-            ir::body_catalog::raw_memory(catalog), 2);
-    if (ir::body_catalog::length(boundary) != 2
-        || ir::body_catalog::find(boundary, 7) != 0
-        || ir::body_catalog::find(boundary, 8) != 1
-        || ir::body_catalog::find(boundary, 9) != -1
-        || ir::body_catalog::at(boundary, 1).signature.id != 8) {
+    if (ir::body_catalog::length(catalog) != 2
+        || ir::body_catalog::find(catalog, 7) != 0
+        || ir::body_catalog::find(catalog, 8) != 1
+        || ir::body_catalog::find(catalog, 9) != -1
+        || ir::body_catalog::at(catalog, 1).signature.id != 8) {
         return 8;
     }
     return 0;

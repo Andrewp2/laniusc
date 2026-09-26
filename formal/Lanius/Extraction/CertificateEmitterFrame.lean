@@ -317,7 +317,9 @@ theorem StableExpr.assignSetLocal
     (localFound : state.local? id = some current)
     (right : StableExpr rightFuel program state expression result afterRight)
     (locals : afterRight.locals = state.locals)
-    (assigned : afterRight.assignLocal id result = some after) :
+    (assigned : afterRight.assignLocal id result = some after)
+    (currentViewFree : valueMayContainI32ArrayView current = false)
+    (resultViewFree : valueMayContainI32ArrayView result = false) :
     StableExpr (rightFuel + 2) program state
       (.assign .set (.local id) expression) .unit after := by
   intro fuel enough
@@ -337,7 +339,12 @@ theorem StableExpr.assignSetLocal
   have operation :
       evalAssignValue program.target .set (some current) result = .ok result := by
     rfl
-  simp only [operation, write]
+  have writeNative :
+      writeResolvedPlaceNative program afterRight
+        { root := cell, projections := [], value := some current } result = .ok after := by
+    simpa [writeResolvedPlaceNative] using write
+  simp [operation, writeNative, ResolvedPlace.viewFreeRootWrite,
+    currentViewFree, resultViewFree]
 
 theorem StableExpr.assignSubtractI32
     (program : Program) (state : State) (id : VarId) (cell : CellId)
@@ -370,8 +377,14 @@ theorem StableExpr.assignSubtractI32
           nextValue = .ok after := by
     unfold writeResolvedPlace
     rw [assignedCell]
+  have writeNative :
+      writeResolvedPlaceNative program state
+          { root := cell, projections := [], value := some (.signed .i32 current) }
+          nextValue = .ok after := by
+    simpa [writeResolvedPlaceNative] using write
   rw [← show (fuel - 2).succ.succ = fuel by omega, evalExpr.eq_def]
-  simp only [place, right, operation, write]
+  simp [place, right, operation, writeNative,
+    ResolvedPlace.viewFreeRootWrite, valueMayContainI32ArrayView]
 
 theorem WriteFrame.cellIdFound
     {before after : State} {root : CellId} {updated : Value}

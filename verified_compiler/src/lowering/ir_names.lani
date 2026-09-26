@@ -1,0 +1,143 @@
+module lowering::ir_names;
+
+import ir::function_catalog;
+import ir::symbol_catalog;
+import ir::type_catalog;
+import lowering::allocation;
+import lowering::declarations;
+import lowering::signature_index;
+import lowering::unit_descriptor;
+import verified::host;
+import verified::token;
+
+// Retain declaration spellings in the shared semantic program. The names
+// refer to canonical identifier tokens that lowering already authenticated;
+// this stage does not parse source a second time.
+pub struct Input {
+    sources: [i32],
+    source_count: i32,
+    tokens: verified::token::TokenTable,
+    descriptors: lowering::unit_descriptor::Table,
+    allocations: lowering::allocation::Table,
+    signatures: lowering::signature_index::Table,
+    types: ir::type_catalog::Table,
+    functions: ir::function_catalog::Table,
+}
+
+fn invalid() -> ir::symbol_catalog::Catalog {
+    return ir::symbol_catalog::empty();
+}
+
+fn unset() -> ir::symbol_catalog::Ref {
+    return ir::symbol_catalog::Ref { unit: -1, token: -1 };
+}
+
+fn function_index(functions: ir::function_catalog::Table,
+    id: i32) -> i32 {
+    let index: i32 = 0;
+    while (index != functions.count) {
+        if (ir::function_catalog::at(functions, index).id == id) {
+            return index;
+        }
+        index += 1;
+    }
+    return -1;
+}
+
+pub fn build(input: Input) -> ir::symbol_catalog::Catalog {
+    let descriptors: [lowering::unit_descriptor::UnitDescriptor] =
+        input.descriptors.data;
+    let bytes: i32 = ir::symbol_catalog::allocation_bytes(
+        input.descriptors.count, input.types.type_count,
+        input.types.variant_count, input.functions.count);
+    if (bytes <= 0) { return invalid(); }
+    let memory: ptr = verified::host::alloc(bytes,
+        ir::symbol_catalog::ALIGNMENT);
+    if (memory == 0) { return invalid(); }
+    let output: ir::symbol_catalog::Catalog =
+        ir::symbol_catalog::from_raw_parts(memory,
+            input.sources, input.source_count, input.tokens,
+            input.descriptors.count, input.types.type_count,
+            input.types.variant_count, input.functions.count);
+    let units: [ir::symbol_catalog::Unit] = output.units;
+    let types: [ir::symbol_catalog::Ref] = output.types;
+    let variants: [ir::symbol_catalog::Ref] = output.variants;
+    let functions: [ir::symbol_catalog::Ref] = output.functions;
+    let ordinal: i32 = 0;
+    while (ordinal != output.unit_count) {
+        units[ordinal] = ir::symbol_catalog::Unit {
+            source_offset: descriptors[ordinal].source_offset,
+            source_length: descriptors[ordinal].source_length,
+            token_offset: descriptors[ordinal].token_offset,
+            token_count: descriptors[ordinal].token_count,
+        };
+        ordinal += 1;
+    }
+    ordinal = 0;
+    while (ordinal != output.type_count) {
+        types[ordinal] = unset();
+        ordinal += 1;
+    }
+    ordinal = 0;
+    while (ordinal != output.variant_count) {
+        variants[ordinal] = unset();
+        ordinal += 1;
+    }
+    ordinal = 0;
+    while (ordinal != output.function_count) {
+        functions[ordinal] = unset();
+        ordinal += 1;
+    }
+    let declaration_rows: [ir::type_catalog::TypeDecl] = input.types.types;
+    let header: lowering::allocation::AllocationHeader =
+        lowering::allocation::table_header(input.allocations);
+    let row_count: i32 = header.rows;
+    let row: i32 = 0;
+    while (row != row_count) {
+        let allocation: lowering::allocation::AllocationRow =
+            lowering::allocation::table_row(input.allocations, row);
+        let unit: i32 = lowering::allocation::row_unit(allocation);
+        let reference: ir::symbol_catalog::Ref = ir::symbol_catalog::Ref {
+            unit: unit,
+            token: lowering::allocation::row_name(allocation),
+        };
+        if (lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Structure)
+            || lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Enumeration)) {
+            let id: i32 = lowering::allocation::row_core_id(allocation);
+            if (id <= -1 || id >= output.type_count) { return invalid(); }
+            types[id] = reference;
+            if (lowering::allocation::row_has_kind(allocation,
+                    lowering::declarations::Enumeration)) {
+                let declaration: ir::type_catalog::TypeDecl =
+                    declaration_rows[id];
+                let variant: i32 = 0;
+                while (variant != declaration.variant_count) {
+                    let signature: lowering::signature_index::Variant =
+                        lowering::signature_index::variant_at(
+                            input.signatures,
+                            lowering::allocation::row_declaration_id(
+                                allocation), variant);
+                    variants[declaration.variant_start + variant] =
+                        ir::symbol_catalog::Ref {
+                            unit: unit, token: signature.name,
+                        };
+                    variant += 1;
+                }
+            }
+        }
+        if (lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Function)
+            || lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::External)) {
+            let index: i32 = function_index(input.functions,
+                lowering::allocation::row_core_id(allocation));
+            if (index <= -1) { return invalid(); }
+            functions[index] = reference;
+        }
+        row += 1;
+    }
+    if (!ir::symbol_catalog::valid(output)) { return invalid(); }
+    return output;
+}

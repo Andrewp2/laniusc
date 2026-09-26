@@ -1,0 +1,11 @@
+module app::main;
+
+enum Mode {
+    Read,
+    Write,
+}
+
+fn main() -> i32 {
+    let mode: Mode = Read;
+    return 0;
+}

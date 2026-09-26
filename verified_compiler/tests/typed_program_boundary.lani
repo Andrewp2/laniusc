@@ -1,0 +1,67 @@
+module app::main;
+
+import ir::body_catalog;
+import ir::body_events;
+import ir::constant_catalog;
+import ir::function_catalog;
+import ir::program;
+import ir::symbol_catalog;
+import ir::type_catalog;
+import ir::type_ref;
+import runtime::service;
+import verified::host;
+
+fn main() -> i32 {
+    let function_memory: ptr = verified::host::alloc(
+        ir::function_catalog::allocation_bytes(1, 0),
+        ir::function_catalog::ALIGNMENT);
+    let body_memory: ptr = verified::host::alloc(
+        ir::body_catalog::allocation_bytes(1),
+        ir::body_catalog::ALIGNMENT);
+    let event_memory: ptr = verified::host::alloc(
+        ir::body_events::allocation_bytes(2),
+        ir::body_events::ALIGNMENT);
+    if (function_memory == 0 || body_memory == 0
+        || event_memory == 0) { return 1; }
+    let functions: ir::function_catalog::Table =
+        ir::function_catalog::from_raw_parts(function_memory, 1, 0);
+    let rows: [ir::function_catalog::Function] = functions.functions;
+    rows[0] = ir::function_catalog::Function {
+        kind: ir::function_catalog::DefinedFunction,
+        id: 0, result_type: ir::type_ref::I32,
+        parameters: 0, parameter_start: 0,
+        service: runtime::service::NoService,
+    };
+    let bodies: ir::body_catalog::Catalog =
+        ir::body_catalog::from_raw_parts(body_memory, 1);
+    let events: ir::body_events::Region =
+        ir::body_events::from_raw_parts(event_memory, 2);
+    let body_events: [ir::body_events::Event] = events.events;
+    body_events[0] = ir::body_events::StatementReturnValue;
+    body_events[1] = ir::body_events::ExpressionInteger(7);
+    let program: ir::program::Program = ir::program::Program {
+        entrypoint: 0,
+        types: ir::type_catalog::empty(),
+        constants: ir::constant_catalog::empty(),
+        functions: functions, bodies: bodies,
+        names: ir::symbol_catalog::empty(),
+    };
+    if (ir::program::valid(program)) { return 2; }
+    if (ir::body_catalog::append(bodies,
+            ir::body_catalog::FunctionSignature {
+                id: 0, result_type: ir::type_ref::I32, parameters: 0,
+            }, events, 2) != 0) { return 3; }
+    if (!ir::program::valid(program)) { return 4; }
+    program.entrypoint = 1;
+    if (ir::program::valid(program)) { return 8; }
+    program.entrypoint = 0;
+    rows[0].result_type = ir::type_ref::Bool;
+    if (ir::program::valid(program)) { return 5; }
+    rows[0].result_type = ir::type_ref::I32;
+    rows[0].parameters = 1;
+    if (ir::program::valid(program)) { return 6; }
+    rows[0].parameters = 0;
+    rows[0].kind = ir::function_catalog::RuntimeFunction;
+    if (ir::program::valid(program)) { return 7; }
+    return 0;
+}

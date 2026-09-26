@@ -1,0 +1,641 @@
+module verified::lean_program;
+
+import ir::body_catalog;
+import ir::constant_catalog;
+import ir::function_catalog;
+import ir::program;
+import ir::symbol_catalog;
+import ir::type_catalog;
+import ir::type_ref;
+import verified::lean_body;
+import verified::lean_named_types;
+import verified::lean_typed_body;
+import verified::lean_syntax;
+import verified::lean_output;
+
+const LIST_CHUNK: i32 = 64;
+
+fn source_name_suffix(output: [i32], capacity: i32, position: i32,
+    names: ir::symbol_catalog::Catalog,
+    reference: ir::symbol_catalog::Ref) -> i32 {
+    if (names.unit_count == 0) { return position; }
+    let spelling: ir::symbol_catalog::Spelling =
+        ir::symbol_catalog::spelling(names, reference);
+    if (!spelling.valid) { return -1; }
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, "_", 1);
+    let bytes: [i32] = spelling.source;
+    let byte: i32 = 0;
+    while (byte != spelling.length) {
+        next = verified::lean_output::byte(output, capacity, next,
+            bytes[spelling.start + byte]);
+        if (next < 0) { return -1; }
+        byte += 1;
+    }
+    return next;
+}
+
+fn type_name(output: [i32], capacity: i32, position: i32,
+    names: ir::symbol_catalog::Catalog, id: i32, enumeration: bool) -> i32 {
+    let next: i32 = position;
+    if (enumeration) {
+        next = verified::lean_output::text(output, capacity, next,
+            "extractedEnumeration", 20);
+    } else {
+        next = verified::lean_output::text(output, capacity, next,
+            "extractedStructure", 18);
+    }
+    next = verified::lean_output::natural(output, capacity, next, id);
+    if (names.unit_count == 0) { return next; }
+    if (id <= -1 || id >= names.type_count) { return -1; }
+    let references: [ir::symbol_catalog::Ref] = names.types;
+    return source_name_suffix(output, capacity, next,
+        names, references[id]);
+}
+
+fn chunk_name(output: [i32], capacity: i32, position: i32,
+    name: str, name_length: i32, index: i32) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity,
+        position, name, name_length);
+    return verified::lean_output::natural(output, capacity, next, index);
+}
+
+fn chunk_header(output: [i32], capacity: i32, position: i32,
+    name: str, name_length: i32, index: i32,
+    element_type: str, type_length: i32) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "\nprivate def ", 13);
+    next = chunk_name(output, capacity, next, name, name_length, index);
+    next = verified::lean_output::text(output, capacity, next,
+        " : List ", 8);
+    next = verified::lean_output::text(output, capacity, next,
+        element_type, type_length);
+    return verified::lean_output::text(output, capacity, next,
+        " :=\n  [", 7);
+}
+
+fn chunk_collection(output: [i32], capacity: i32, position: i32,
+    name: str, name_length: i32, element_type: str, type_length: i32,
+    count: i32) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "\nprivate def ", 13);
+    next = verified::lean_output::text(output, capacity, next,
+        name, name_length);
+    next = verified::lean_output::text(output, capacity, next,
+        " : List ", 8);
+    next = verified::lean_output::text(output, capacity, next,
+        element_type, type_length);
+    next = verified::lean_output::text(output, capacity, next,
+        " :=\n  List.flatten [", 20);
+    let chunk: i32 = 0;
+    while (chunk < count) {
+        if (chunk != 0) {
+            next = verified::lean_output::text(output, capacity, next,
+                ", ", 2);
+        }
+        next = chunk_name(output, capacity, next,
+            name, name_length, chunk);
+        if (next < 0) { return -1; }
+        chunk += 1;
+    }
+    return verified::lean_output::text(output, capacity, next, "]\n", 2);
+}
+
+fn structure(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table,
+    declaration: ir::type_catalog::TypeDecl) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "{ id := ", 8);
+    next = verified::lean_output::natural(output, capacity, next,
+        declaration.id);
+    next = verified::lean_output::text(output, capacity, next,
+        ", fields := [", 13);
+    let fields: [ir::type_catalog::Field] = types.fields;
+    let field: i32 = 0;
+    while (field < declaration.field_count) {
+        if (field != 0) {
+            next = verified::lean_output::text(output, capacity, next,
+                ", ", 2);
+        }
+        next = verified::lean_syntax::type_ref(output, capacity, next,
+            types, fields[declaration.field_start + field].type_tag);
+        if (next < 0) { return -1; }
+        field += 1;
+    }
+    return verified::lean_output::text(output, capacity, next, "] }", 3);
+}
+
+fn enumeration(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table,
+    declaration: ir::type_catalog::TypeDecl) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "{ id := ", 8);
+    next = verified::lean_output::natural(output, capacity, next,
+        declaration.id);
+    next = verified::lean_output::text(output, capacity, next,
+        ", variants := [", 15);
+    let variants: [ir::type_catalog::Variant] = types.variants;
+    let fields: [ir::type_catalog::Field] = types.fields;
+    let ordinal: i32 = 0;
+    while (ordinal < declaration.variant_count) {
+        if (ordinal != 0) {
+            next = verified::lean_output::text(output, capacity, next,
+                ", ", 2);
+        }
+        next = verified::lean_output::text(output, capacity, next, "[", 1);
+        let variant: ir::type_catalog::Variant =
+            variants[declaration.variant_start + ordinal];
+        let field: i32 = 0;
+        while (field < variant.field_count) {
+            if (field != 0) {
+                next = verified::lean_output::text(output, capacity, next,
+                    ", ", 2);
+            }
+            next = verified::lean_syntax::type_ref(output, capacity, next,
+                types, fields[variant.field_start + field].type_tag);
+            if (next < 0) { return -1; }
+            field += 1;
+        }
+        next = verified::lean_output::text(output, capacity, next, "]", 1);
+        if (next < 0) { return -1; }
+        ordinal += 1;
+    }
+    return verified::lean_output::text(output, capacity, next, "] }", 3);
+}
+
+fn type_definitions(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table,
+    names: ir::symbol_catalog::Catalog) -> i32 {
+    let next: i32 = position;
+    let rows: [ir::type_catalog::TypeDecl] = types.types;
+    let index: i32 = 0;
+    while (index < types.type_count) {
+        if (rows[index].kind == ir::type_catalog::Structure) {
+            next = verified::lean_output::text(output, capacity, next,
+                "\nprivate def ", 13);
+            next = type_name(output, capacity, next,
+                names, rows[index].id, false);
+            next = verified::lean_output::text(output, capacity, next,
+                " : Lanius.Core.StructDecl :=\n  ", 31);
+            next = structure(output, capacity, next, types, rows[index]);
+            next = verified::lean_output::byte(output, capacity, next, 10);
+            if (next < 0) { return -1; }
+        }
+        index += 1;
+    }
+    index = 0;
+    let emitted: i32 = 0;
+    while (index < types.type_count) {
+        if (rows[index].kind == ir::type_catalog::Structure) {
+            if (emitted % LIST_CHUNK == 0) {
+                next = chunk_header(output, capacity, next,
+                    "extractedStructures", 19, emitted / LIST_CHUNK,
+                    "Lanius.Core.StructDecl", 22);
+            } else {
+                next = verified::lean_output::text(output, capacity, next,
+                    ", ", 2);
+            }
+            next = type_name(output, capacity, next,
+                names, rows[index].id, false);
+            if (next < 0) { return -1; }
+            emitted += 1;
+            if (emitted % LIST_CHUNK == 0) {
+                next = verified::lean_output::text(output, capacity, next,
+                    "]\n", 2);
+            }
+        }
+        index += 1;
+    }
+    if (emitted % LIST_CHUNK != 0) {
+        next = verified::lean_output::text(output, capacity, next, "]\n", 2);
+    }
+    next = chunk_collection(output, capacity, next,
+        "extractedStructures", 19, "Lanius.Core.StructDecl", 22,
+        (emitted + LIST_CHUNK - 1) / LIST_CHUNK);
+    index = 0;
+    while (index < types.type_count) {
+        if (rows[index].kind == ir::type_catalog::Enumeration) {
+            next = verified::lean_output::text(output, capacity, next,
+                "\nprivate def ", 13);
+            next = type_name(output, capacity, next,
+                names, rows[index].id, true);
+            next = verified::lean_output::text(output, capacity, next,
+                " : Lanius.Core.EnumDecl :=\n  ", 29);
+            next = enumeration(output, capacity, next, types, rows[index]);
+            next = verified::lean_output::byte(output, capacity, next, 10);
+            if (next < 0) { return -1; }
+        }
+        index += 1;
+    }
+    index = 0;
+    emitted = 0;
+    while (index < types.type_count) {
+        if (rows[index].kind == ir::type_catalog::Enumeration) {
+            if (emitted % LIST_CHUNK == 0) {
+                next = chunk_header(output, capacity, next,
+                    "extractedEnumerations", 21, emitted / LIST_CHUNK,
+                    "Lanius.Core.EnumDecl", 20);
+            } else {
+                next = verified::lean_output::text(output, capacity, next,
+                    ", ", 2);
+            }
+            next = type_name(output, capacity, next,
+                names, rows[index].id, true);
+            if (next < 0) { return -1; }
+            emitted += 1;
+            if (emitted % LIST_CHUNK == 0) {
+                next = verified::lean_output::text(output, capacity, next,
+                    "]\n", 2);
+            }
+        }
+        index += 1;
+    }
+    if (emitted % LIST_CHUNK != 0) {
+        next = verified::lean_output::text(output, capacity, next, "]\n", 2);
+    }
+    return chunk_collection(output, capacity, next,
+        "extractedEnumerations", 21, "Lanius.Core.EnumDecl", 20,
+        (emitted + LIST_CHUNK - 1) / LIST_CHUNK);
+}
+
+fn constant_value(output: [i32], capacity: i32, position: i32,
+    table: ir::constant_catalog::Table,
+    value: ir::constant_catalog::Constant) -> i32 {
+    if (value.encoding == ir::constant_catalog::StringBytes) {
+        let next: i32 = verified::lean_output::text(output, capacity, position,
+            "(Value.string ", 14);
+        next = verified::lean_syntax::string_bytes(output, capacity, next,
+            table.bytes, table.byte_count,
+            value.byte_start, value.byte_count);
+        return verified::lean_output::text(output, capacity, next, ")", 1);
+    }
+    if (value.encoding != ir::constant_catalog::Scalar) { return -1; }
+    if (ir::type_ref::same(value.kind, ir::type_ref::I32)) {
+        let next: i32 = verified::lean_output::text(output, capacity,
+            position, "(Value.signed .i32 (", 20);
+        next = verified::lean_syntax::signed(output, capacity, next,
+            value.low);
+        return verified::lean_output::text(output, capacity, next, "))", 2);
+    }
+    if (ir::type_ref::same(value.kind, ir::type_ref::Bool)) {
+        if (value.low == 0) {
+            return verified::lean_output::text(output, capacity, position,
+                "(Value.boolean false)", 21);
+        }
+        if (value.low == 1) {
+            return verified::lean_output::text(output, capacity, position,
+                "(Value.boolean true)", 20);
+        }
+        return -1;
+    }
+    if (ir::type_ref::same(value.kind, ir::type_ref::Usize)) {
+        let next: i32 = verified::lean_output::text(output, capacity, position,
+            "(Value.unsigned .usize ", 23);
+        next = verified::lean_syntax::unsigned64(output, capacity, next,
+            value.low, value.high);
+        return verified::lean_output::text(output, capacity, next, ")", 1);
+    }
+    if (ir::type_ref::same(value.kind, ir::type_ref::Pointer)
+        && value.low == 0 && value.high == 0) {
+        return verified::lean_output::text(output, capacity, position,
+            "(Value.pointer 0)", 17);
+    }
+    return -1;
+}
+
+fn constant(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table,
+    table: ir::constant_catalog::Table,
+    value: ir::constant_catalog::Constant) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "{ id := ", 8);
+    next = verified::lean_output::natural(output, capacity, next,
+        value.id);
+    next = verified::lean_output::text(output, capacity, next,
+        ", type := ", 10);
+    next = verified::lean_syntax::type_ref(output, capacity, next,
+        types, value.kind);
+    next = verified::lean_output::text(output, capacity, next,
+        ", value := ", 11);
+    next = constant_value(output, capacity, next, table, value);
+    return verified::lean_output::text(output, capacity, next, " }", 2);
+}
+
+fn constant_definitions(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table,
+    constants: ir::constant_catalog::Table) -> i32 {
+    let next: i32 = position;
+    let rows: [ir::constant_catalog::Constant] = constants.constants;
+    let index: i32 = 0;
+    while (index < constants.count) {
+        if (index % LIST_CHUNK == 0) {
+            next = chunk_header(output, capacity, next,
+                "extractedConstants", 18, index / LIST_CHUNK,
+                "Lanius.Core.Constant", 20);
+        } else {
+            next = verified::lean_output::text(output, capacity, next,
+                ", ", 2);
+        }
+        next = constant(output, capacity, next, types,
+            constants, rows[index]);
+        if (next < 0) { return -1; }
+        index += 1;
+        if (index % LIST_CHUNK == 0) {
+            next = verified::lean_output::text(output, capacity, next,
+                "]\n", 2);
+        }
+    }
+    if (index % LIST_CHUNK != 0) {
+        next = verified::lean_output::text(output, capacity, next, "]\n", 2);
+    }
+    return chunk_collection(output, capacity, next,
+        "extractedConstants", 18, "Lanius.Core.Constant", 20,
+        (constants.count + LIST_CHUNK - 1) / LIST_CHUNK);
+}
+
+fn typed_type_ref(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table,
+    names: ir::symbol_catalog::Catalog,
+    kind: ir::type_ref::TypeRef) -> i32 {
+    return verified::lean_syntax::named_type_ref(output, capacity, position,
+        types, names, kind);
+}
+
+fn parameter_types(output: [i32], capacity: i32, position: i32,
+    types: ir::type_catalog::Table,
+    names: ir::symbol_catalog::Catalog,
+    functions: ir::function_catalog::Table,
+    function: ir::function_catalog::Function) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "[", 1);
+    let rows: [ir::function_catalog::Parameter] = functions.parameters;
+    let ordinal: i32 = 0;
+    while (ordinal < function.parameters) {
+        if (ordinal != 0) {
+            next = verified::lean_output::text(output, capacity, next,
+                ", ", 2);
+        }
+        let parameter: ir::function_catalog::Parameter =
+            rows[function.parameter_start + ordinal];
+        next = typed_type_ref(output, capacity, next,
+            types, names, parameter.type_tag);
+        if (next < 0) { return -1; }
+        ordinal += 1;
+    }
+    return verified::lean_output::text(output, capacity, next, "]", 1);
+}
+
+fn function_source_name(output: [i32], capacity: i32, position: i32,
+    names: ir::symbol_catalog::Catalog, index: i32) -> i32 {
+    if (names.unit_count == 0) {
+        return verified::lean_output::text(output, capacity,
+            position, "\"\"", 2);
+    }
+    if (index < 0 || index >= names.function_count) { return -1; }
+    let references: [ir::symbol_catalog::Ref] = names.functions;
+    return verified::lean_syntax::source_name(output, capacity, position,
+        names, references[index]);
+}
+
+fn parameter_variables(output: [i32], capacity: i32, position: i32,
+    functions: ir::function_catalog::Table,
+    names: ir::symbol_catalog::Catalog,
+    function: ir::function_catalog::Function, index: i32) -> i32 {
+    let next: i32 = position;
+    let rows: [ir::function_catalog::Parameter] = functions.parameters;
+    let unit: i32 = -1;
+    if (names.unit_count > 0) {
+        if (index < 0 || index >= names.function_count) { return -1; }
+        let references: [ir::symbol_catalog::Ref] = names.functions;
+        unit = references[index].unit;
+    }
+    let ordinal: i32 = 0;
+    while (ordinal < function.parameters) {
+        let parameter: ir::function_catalog::Parameter =
+            rows[function.parameter_start + ordinal];
+        next = verified::lean_output::text(output, capacity, next,
+            "(.cons (Lanius.TypedIR.Named.Var.named ", 39);
+        next = verified::lean_output::natural(output, capacity, next,
+            parameter.id);
+        next = verified::lean_output::byte(output, capacity, next, 32);
+        if (unit < 0) {
+            next = verified::lean_output::text(output, capacity,
+                next, "\"\"", 2);
+        } else {
+            next = verified::lean_syntax::source_name(output, capacity, next, names,
+                ir::symbol_catalog::Ref { unit: unit, token: parameter.id });
+        }
+        next = verified::lean_output::text(output, capacity, next,
+            ") ", 2);
+        if (next < 0) { return -1; }
+        ordinal += 1;
+    }
+    next = verified::lean_output::text(output, capacity, next,
+        ".nil", 4);
+    ordinal = 0;
+    while (ordinal < function.parameters) {
+        next = verified::lean_output::byte(output, capacity, next, 41);
+        if (next < 0) { return -1; }
+        ordinal += 1;
+    }
+    return next;
+}
+
+fn function(output: [i32], capacity: i32, position: i32,
+    program: ir::program::Program,
+    value: ir::function_catalog::Function, index: i32) -> i32 {
+    if (value.kind == ir::function_catalog::DefinedFunction
+        && value.parameters == 0 && program.names.unit_count > 0) {
+        let body_index: i32 = ir::body_catalog::find(program.bodies,
+            value.id);
+        if (body_index < 0) { return -1; }
+        let body: ir::body_catalog::FunctionBody =
+            ir::body_catalog::at(program.bodies, body_index);
+        if (verified::lean_typed_body::surface_supported(body.tree)) {
+            let surface: i32 = verified::lean_output::text(output, capacity,
+                position, "function (id := ", 16);
+            surface = verified::lean_output::natural(output, capacity,
+                surface, value.id);
+            surface = verified::lean_output::text(output, capacity,
+                surface, ", name := ", 10);
+            surface = function_source_name(output, capacity, surface,
+                program.names, index);
+            surface = verified::lean_output::text(output, capacity,
+                surface, ", arguments := .nil, bindings := ", 33);
+            surface = verified::lean_typed_body::surface_bindings(body.tree,
+                output, capacity, surface);
+            surface = verified::lean_output::text(output, capacity,
+                surface, ") do\n", 5);
+            return verified::lean_typed_body::emit_surface(body.tree,
+                program.types, program.names, index,
+                output, capacity, surface);
+        }
+    }
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "{ id := ", 8);
+    next = verified::lean_output::natural(output, capacity, next,
+        value.id);
+    next = verified::lean_output::text(output, capacity, next,
+        ", name := ", 10);
+    next = function_source_name(output, capacity, next,
+        program.names, index);
+    next = verified::lean_output::text(output, capacity, next,
+        ", arguments := ", 15);
+    next = parameter_variables(output, capacity, next,
+        program.functions, program.names, value, index);
+    if (value.kind == ir::function_catalog::RuntimeFunction) {
+        next = verified::lean_output::text(output, capacity, next,
+            ", body := none, external := some (", 34);
+        next = verified::lean_syntax::service(output, capacity, next,
+            value.service);
+        next = verified::lean_output::text(output, capacity, next,
+            " : Lanius.Core.ExternalBehavior)", 32);
+    } else {
+        if (value.kind != ir::function_catalog::DefinedFunction) { return -1; }
+        let body_index: i32 = ir::body_catalog::find(program.bodies,
+            value.id);
+        if (body_index < 0) { return -1; }
+        let body: ir::body_catalog::FunctionBody =
+            ir::body_catalog::at(program.bodies, body_index);
+        next = verified::lean_output::text(output, capacity, next,
+            ", body := some ", 15);
+        next = verified::lean_typed_body::emit(body.tree, program.types,
+            program.names, index, output, capacity, next);
+        next = verified::lean_output::text(output, capacity, next,
+            ", external := none", 18);
+    }
+    return verified::lean_output::text(output, capacity, next, " }", 2);
+}
+
+fn function_name(output: [i32], capacity: i32, position: i32,
+    names: ir::symbol_catalog::Catalog, index: i32) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "extractedFunction", 17);
+    next = verified::lean_output::natural(output, capacity, next, index);
+    if (names.unit_count == 0) { return next; }
+    if (index <= -1 || index >= names.function_count) { return -1; }
+    let references: [ir::symbol_catalog::Ref] = names.functions;
+    return source_name_suffix(output, capacity, next,
+        names, references[index]);
+}
+
+fn function_definitions(output: [i32], capacity: i32, position: i32,
+    program: ir::program::Program) -> i32 {
+    let next: i32 = position;
+    let functions: [ir::function_catalog::Function] =
+        program.functions.functions;
+    let index: i32 = 0;
+    while (index < program.functions.count) {
+        if (functions[index].kind == ir::function_catalog::DefinedFunction) {
+            let body_index: i32 = ir::body_catalog::find(program.bodies,
+                functions[index].id);
+            if (body_index < 0) { return -1; }
+            let body: ir::body_catalog::FunctionBody =
+                ir::body_catalog::at(program.bodies, body_index);
+            next = verified::lean_body::emit_definitions(body.tree,
+                program.types, index, output, capacity, next);
+            if (next < 0) { return -1; }
+        }
+        next = verified::lean_output::text(output, capacity, next,
+            "\nprivate def ", 13);
+        next = function_name(output, capacity, next,
+            program.names, index);
+        next = verified::lean_output::text(output, capacity, next,
+            " : Lanius.TypedIR.Named.Function ", 33);
+        next = parameter_types(output, capacity, next,
+            program.types, program.names, program.functions,
+            functions[index]);
+        next = verified::lean_output::byte(output, capacity, next, 32);
+        next = typed_type_ref(output, capacity, next,
+            program.types, program.names, functions[index].result_type);
+        next = verified::lean_output::text(output, capacity, next,
+            " :=\n  ", 6);
+        next = function(output, capacity, next, program, functions[index],
+            index);
+        if (next < 0) { return -1; }
+        next = verified::lean_output::byte(output, capacity, next, 10);
+        if (next < 0) { return -1; }
+        index += 1;
+    }
+    return next;
+}
+
+fn function_list(output: [i32], capacity: i32, position: i32,
+    program: ir::program::Program) -> i32 {
+    let next: i32 = position;
+    let index: i32 = 0;
+    while (index < program.functions.count) {
+        if (index % LIST_CHUNK == 0) {
+            next = chunk_header(output, capacity, next,
+                "extractedFunctions", 18, index / LIST_CHUNK,
+                "Lanius.TypedIR.Named.AnyFunction", 32);
+        } else {
+            next = verified::lean_output::text(output, capacity, next,
+                ", ", 2);
+        }
+        next = function_name(output, capacity, next,
+            program.names, index);
+        next = verified::lean_output::text(output, capacity, next,
+            ".pack", 5);
+        if (next < 0) { return -1; }
+        index += 1;
+        if (index % LIST_CHUNK == 0) {
+            next = verified::lean_output::text(output, capacity, next,
+                "]\n", 2);
+        }
+    }
+    if (index % LIST_CHUNK != 0) {
+        next = verified::lean_output::text(output, capacity, next, "]\n", 2);
+    }
+    return chunk_collection(output, capacity, next,
+        "extractedFunctions", 18, "Lanius.TypedIR.Named.AnyFunction", 32,
+        (program.functions.count + LIST_CHUNK - 1) / LIST_CHUNK);
+}
+
+pub fn emit_declarations(program: ir::program::Program,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    if (!ir::program::valid(program)
+        || position < 0 || position >= capacity) { return -1; }
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "\ndef extractedEntrypoint : Lanius.FunctionId := ", 48);
+    next = verified::lean_output::natural(output, capacity, next,
+        program.entrypoint);
+    next = verified::lean_named_types::emit(output, capacity, next,
+        program.types, program.names);
+    if (next < 0) { return -1; }
+    next = type_definitions(output, capacity, next,
+        program.types, program.names);
+    if (next < 0) { return -1; }
+    next = constant_definitions(output, capacity, next,
+        program.types, program.constants);
+    if (next < 0) { return -1; }
+    next = function_definitions(output, capacity, next, program);
+    if (next < 0) { return -1; }
+    next = function_list(output, capacity, next, program);
+    if (next < 0) { return -1; }
+    next = verified::lean_output::text(output, capacity, next,
+        "\n\ndef extractedProgram : Lanius.Core.Program :=\n  Lanius.TypedIR.Named.assemble\n    { target := .x86_64,\n      structures := extractedStructures,\n      enumerations := extractedEnumerations,\n      constants := extractedConstants }\n    extractedFunctions\n",
+        254);
+    next = verified::lean_output::text(output, capacity, next,
+        "\n\ndef extractedTypedProgram : Option Lanius.TypedIR.Program :=\n  Lanius.TypedIR.link? extractedEntrypoint extractedProgram\n",
+        123);
+    // The one emitted Core embedding now has a sound checked view. Obtaining
+    // an unconditional Program still needs compositional proof evidence;
+    // whole-program kernel reduction is too deep for self-extraction.
+    return next;
+}
+
+pub fn emit(program: ir::program::Program,
+    output: [i32], capacity: i32, position: i32) -> i32 {
+    let next: i32 = verified::lean_output::text(output, capacity, position,
+        "import Lanius.TypedIR\n", 22);
+    next = verified::lean_output::text(output, capacity, next,
+        "import Lanius.TypedIR.Checked\n", 30);
+    next = verified::lean_output::text(output, capacity, next,
+        "import Lanius.TypedIR.Named\n", 28);
+    next = verified::lean_output::text(output, capacity, next,
+        "import Lanius.TypedIR.NamedSyntax\n", 34);
+    next = verified::lean_output::text(output, capacity, next,
+        "import Lanius.Core\n\nopen Lanius.Core\nopen scoped Lanius.TypedIR.Named\n", 70);
+    return emit_declarations(program, output, capacity, next);
+}

@@ -63,21 +63,27 @@ private theorem findFunction_of_mem_unique
         simp [List.find?, sameFalse,
           inductionHypothesis unique.2 tailMember]
 
+theorem selected_wellFormed (lowering : ProgramLowering.ProgramLowering)
+    (selection : MainSelection lowering) :
+    Execution.ExecutableWellFormed
+      { program := lowering.program, entrypoint := selection.body.core.id } := by
+  have member := selection.body.row.member
+  rw [selection.body.coreMap] at member
+  have found : lowering.program.function?
+      selection.body.core.id = some selection.body.core := by
+    unfold Core.Program.function?
+    exact findFunction_of_mem_unique lowering.functionsUnique member
+  have typed : Typing.FunctionWellTyped lowering.program
+      selection.body.core :=
+    lowering.wellTyped.2 selection.body.core member
+  exact ⟨selection.body.core, found, selection.zeroParameters,
+    selection.allowedReturn, typed⟩
+
 theorem executable_wellFormed
     {encoded : String} {expectedSources : List Extraction.SourceFile}
     {checked : Extraction.SyntaxCheck.CheckedSourcePack encoded expectedSources}
     (boundary : ExecutableBoundary encoded expectedSources checked) :
-    Execution.ExecutableWellFormed (executable boundary) := by
-  have member := boundary.main.body.row.member
-  rw [boundary.main.body.coreMap] at member
-  have found : boundary.source.lowering.program.function?
-      boundary.main.body.core.id = some boundary.main.body.core := by
-    unfold Core.Program.function?
-    exact findFunction_of_mem_unique boundary.source.lowering.functionsUnique member
-  have typed : Typing.FunctionWellTyped boundary.source.lowering.program
-      boundary.main.body.core :=
-    boundary.source.lowering.wellTyped.2 boundary.main.body.core member
-  exact ⟨boundary.main.body.core, found, boundary.main.zeroParameters,
-    boundary.main.allowedReturn, typed⟩
+    Execution.ExecutableWellFormed (executable boundary) :=
+  selected_wellFormed boundary.source.lowering boundary.main
 
 end Lanius.Compiler.ExecutableBoundary
