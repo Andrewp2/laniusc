@@ -9,6 +9,7 @@ limited to native x86_64 output from this worktree.
 
 | Public surface | Classification | Evidence and limit |
 | --- | --- | --- |
+| `core::number_i16` constants and all 23 public functions | Executable on x86_64 | Focused runtime fixture checks signed 16-bit limits, widened arithmetic, saturation, multiplication and power overflow, GCD/LCM, division and Euclidean remainder, zero-divisor and `MIN/-1` fallbacks, parity, signs, and power-of-two boundaries. |
 | `core::number_i32` constants and all 23 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, multiplication and power overflow, signed GCD/LCM, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
 | `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
 | `core::byte` constants and all 44 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
@@ -45,6 +46,12 @@ Lanius logic. No declaration is promoted solely because it type-checks.
 
 ## Executable subset and behavior
 
+- `core::number_i16` widens arithmetic to i32 before checking the signed
+  16-bit bounds. Saturating operations clamp to `MIN` or `MAX`; `mul_or`,
+  `pow_or`, and unrepresentable GCD/LCM results return the caller's fallback.
+  `gcd_or(0, 0, _)` is zero. Division and remainder return the fallback for a
+  zero divisor or `MIN/-1`. Euclidean remainder is nonnegative. The next
+  positive power of two returns zero above 16,384.
 - `core::number_i32` saturates instead of overflowing. `clamp_or` returns its
   caller-supplied fallback when `low > high`; valid inclusive bounds clamp.
   `saturating_mul` clamps an unrepresentable mathematical product to `MIN` or
@@ -234,7 +241,7 @@ the view, and accumulates with saturating arithmetic. It prints `96`.
 | Wasm | Not claimed or required for this foundation. |
 
 Run the focused gate with `cargo test --test stdlib_foundation_execution`.
-The test compiles nineteen small Lanius programs through `--stdlib-root`, executes
+The test compiles twenty small Lanius programs through `--stdlib-root`, executes
 the native ELFs, checks their exit status, checks the example's stdout, and
 checks the slice bounds trap. Each source is also suitable for direct CLI
 compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.

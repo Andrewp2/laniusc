@@ -1,0 +1,71 @@
+module app::main;
+import core::number_i16;
+fn main() -> i32 {
+    let low: i16 = -32768;
+    let high: i16 = 32767;
+    let fallback: i16 = -99;
+    if (core::number_i16::MIN != low || core::number_i16::MAX != high) {
+        return 21;
+    }
+    if (core::number_i16::min(low, high) != low || core::number_i16::max(low, high) != high) {
+        return 1;
+    }
+    if (core::number_i16::clamp_or(5, 0, 4, fallback) != 4 || core::number_i16::clamp_or(-2, 0, 4, fallback) != 0 || core::number_i16::clamp_or(2, 0, 4, fallback) != 2 || core::number_i16::clamp_or(2, 4, 0, fallback) != fallback) {
+        return 2;
+    }
+    if (core::number_i16::saturating_abs(low) != high || core::number_i16::saturating_abs(-7) != 7 || core::number_i16::saturating_abs(0) != 0) {
+        return 3;
+    }
+    if (core::number_i16::gcd_or(24, -18, fallback) != 6 || core::number_i16::gcd_or(0, 0, fallback) != 0 || core::number_i16::gcd_or(low, 0, fallback) != fallback || core::number_i16::gcd_or(low, low, fallback) != fallback) {
+        return 4;
+    }
+    if (core::number_i16::lcm_or(6, -8, fallback) != 24 || core::number_i16::lcm_or(0, low, fallback) != 0 || core::number_i16::lcm_or(high, 2, fallback) != fallback || core::number_i16::lcm_or(low, 1, fallback) != fallback) {
+        return 5;
+    }
+    if (core::number_i16::saturating_add(5, 7) != 12 || core::number_i16::saturating_add(high, 1) != high || core::number_i16::saturating_add(low, -1) != low) {
+        return 6;
+    }
+    if (core::number_i16::saturating_sub(9, 4) != 5 || core::number_i16::saturating_sub(high, -1) != high || core::number_i16::saturating_sub(low, 1) != low) {
+        return 7;
+    }
+    if (core::number_i16::saturating_mul(-7, 9) != -63 || core::number_i16::saturating_mul(high, 2) != high || core::number_i16::saturating_mul(low, 2) != low) {
+        return 8;
+    }
+    if (core::number_i16::mul_or(-7, 9, fallback) != -63 || core::number_i16::mul_or(high, 2, fallback) != fallback || core::number_i16::mul_or(low, -1, fallback) != fallback) {
+        return 9;
+    }
+    if (core::number_i16::pow_or(3, 4, fallback) != 81 || core::number_i16::pow_or(0, 0, fallback) != 1 || core::number_i16::pow_or(2, 14, fallback) != 16384 || core::number_i16::pow_or(2, 15, fallback) != fallback || core::number_i16::pow_or(-2, 15, fallback) != low || core::number_i16::pow_or(-2, 16, fallback) != fallback) {
+        return 10;
+    }
+    if (core::number_i16::saturating_abs_diff(7, 10) != 3 || core::number_i16::saturating_abs_diff(10, 7) != 3 || core::number_i16::saturating_abs_diff(low, high) != high) {
+        return 11;
+    }
+    if (!core::number_i16::is_even(0) || !core::number_i16::is_even(-2) || core::number_i16::is_even(-3) || !core::number_i16::is_odd(-3) || core::number_i16::is_odd(4)) {
+        return 12;
+    }
+    if (!core::number_i16::is_zero(0) || core::number_i16::is_zero(1) || core::number_i16::signum(low) != -1 || core::number_i16::signum(0) != 0 || core::number_i16::signum(high) != 1) {
+        return 13;
+    }
+    if (!core::number_i16::is_multiple_of(12, 3) || core::number_i16::is_multiple_of(13, 3) || core::number_i16::is_multiple_of(0, 0) || !core::number_i16::is_multiple_of(low, -1)) {
+        return 14;
+    }
+    if (core::number_i16::div_or(-7, 3, fallback) != -2 || core::number_i16::div_or(7, -3, fallback) != -2 || core::number_i16::div_or(7, 0, fallback) != fallback || core::number_i16::div_or(low, -1, fallback) != fallback) {
+        return 15;
+    }
+    if (core::number_i16::rem_or(-7, 3, fallback) != -1 || core::number_i16::rem_or(7, -3, fallback) != 1 || core::number_i16::rem_or(7, 0, fallback) != fallback || core::number_i16::rem_or(low, -1, fallback) != fallback) {
+        return 16;
+    }
+    if (core::number_i16::div_euclid_or(-7, 3, fallback) != -3 || core::number_i16::rem_euclid_or(-7, 3, fallback) != 2 || core::number_i16::div_euclid_or(-7, -3, fallback) != 3 || core::number_i16::rem_euclid_or(-7, -3, fallback) != 2 || core::number_i16::div_euclid_or(7, -3, fallback) != -2 || core::number_i16::rem_euclid_or(7, -3, fallback) != 1) {
+        return 17;
+    }
+    if (core::number_i16::div_euclid_or(1, 0, fallback) != fallback || core::number_i16::rem_euclid_or(1, 0, fallback) != fallback || core::number_i16::div_euclid_or(low, -1, fallback) != fallback || core::number_i16::rem_euclid_or(low, -1, fallback) != fallback) {
+        return 18;
+    }
+    if (!core::number_i16::is_power_of_two(1) || !core::number_i16::is_power_of_two(16384) || core::number_i16::is_power_of_two(0) || core::number_i16::is_power_of_two(-2) || core::number_i16::is_power_of_two(high)) {
+        return 19;
+    }
+    if (core::number_i16::next_power_of_two(-5) != 1 || core::number_i16::next_power_of_two(0) != 1 || core::number_i16::next_power_of_two(1) != 1 || core::number_i16::next_power_of_two(3) != 4 || core::number_i16::next_power_of_two(16384) != 16384 || core::number_i16::next_power_of_two(16385) != 0) {
+        return 20;
+    }
+    return 0;
+}
