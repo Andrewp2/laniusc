@@ -215,7 +215,11 @@ Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
    signal 4 (`SIGILL`) on this host. This blocks a concrete struct-based
    Option/Result workaround and needs a compiler-side fix before such APIs can
    be called executable. The stdlib foundation deliberately contains no
-   aggregate-returning workaround.
+   aggregate-returning workaround. A second minimal program,
+   `tests/fixtures/stdlib_foundation/repro_ordering_return.lani`, compiles
+   through the real stdlib root but exits 139 when the non-generic
+   `Ordering` returned by `compare_i32` is passed to `to_i32`. Enum-valued
+   comparison APIs therefore remain outside the executable claim too.
 3. **Portable slice construction and metadata.** The source bodies in
    `core::mem` are placeholders; x86 intrinsic lowering supplies the behavior.
    A real cross-target slice constructor and a way to read slice length are
