@@ -15,7 +15,7 @@ limited to native x86_64 output from this worktree.
 | `core::bits` all 10 public `u32` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across 0 and 32, bit reversal, byte swap, and out-of-range bit fallback. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 12 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII character classes, case-insensitive comparison, punctuation, and printable boundaries. |
-| `core::utf8` all 6 public scalar-codec functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, length boundaries, malformed sequences, surrogate exclusion, and Unicode maximum. It accepts and returns byte values as `u32`; it does not access string storage. |
+| `core::utf8` all 6 public scalar-codec functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, length boundaries, malformed sequences, surrogate exclusion, and Unicode maximum. Byte parameters and results use `u8`; it does not access string storage. |
 | `core::f32` all 12 public functions | Executable on x86_64 for tested finite inputs | Runtime fixture checks sign, comparison, bounds, and square root for zero, negative, small, ordinary, and large inputs. The imported public constant `ONE` is broken; see dependency 5. |
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
 | Legacy `stdlib/i32.lani` power-of-two helpers | Executable on x86_64 | A focused source-level native test checks the highest signed power and the zero overflow sentinel. The legacy file as a whole is not included in this claim. |
@@ -73,8 +73,7 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   the chosen branch value. `core::char` tests ASCII classes; its case-insensitive
   equality folds ASCII letters only.
 - `core::utf8` accepts Unicode scalar values in `0..=0x10FFFF` excluding the
-  surrogate range. Valid encoded bytes are returned as `u32` values in
-  `0..=255`, and decoder byte arguments outside that range are rejected.
+  surrogate range. Valid encoded bytes and decoder arguments use `u8`.
   Encoding returns a caller fallback for an invalid scalar or byte index.
   Decoding accepts exactly one to four bytes, ignores unused arguments, and
   returns the caller fallback for malformed, overlong, surrogate, truncated,
