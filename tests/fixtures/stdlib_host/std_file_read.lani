@@ -1,0 +1,57 @@
+module app::main;
+import alloc::allocator;
+import std::file;
+import std::fs;
+fn exercise(buffer: ptr) -> i32 {
+    let received: i32 = std::file::read_once_into_buffer("input.bin", buffer, 16);
+    if (received != 16) {
+        return 1;
+    }
+    let output: i32 = std::fs::open_write_path("prefix.bin");
+    if (output<0) {
+        return 2;
+    }
+    let written: i32 = std::fs::write(output, buffer, received);
+    let closed: i32 = std::fs::close_file(output);
+    if (written != received || closed<0) {
+        return 3;
+    }
+    let short_read: i32 = std::file::read_once_into_buffer("short.bin", buffer, 16);
+    if (short_read != 3) {
+        return 10;
+    }
+    let short_output: i32 = std::fs::open_write_path("short-copy.bin");
+    if (short_output<0) {
+        return 11;
+    }
+    let short_written: i32 = std::fs::write(short_output, buffer, short_read);
+    let short_closed: i32 = std::fs::close_file(short_output);
+    if (short_written != short_read || short_closed<0) {
+        return 12;
+    }
+    if (std::file::read_once_into_buffer("empty.bin", buffer, 16) != 0) {
+        return 4;
+    }
+    if (std::file::read_once_into_buffer("missing.bin", buffer, 16) >= 0) {
+        return 5;
+    }
+    if (std::file::read_once_into_buffer("input.bin", 0, 16) >= 0) {
+        return 6;
+    }
+    if (std::file::read_once_into_buffer("input.bin", buffer, 0) >= 0) {
+        return 7;
+    }
+    if (std::file::read_once_into_buffer("input.bin", buffer, 2147483648) >= 0) {
+        return 8;
+    }
+    return 0;
+}
+fn main() -> i32 {
+    let buffer: ptr = alloc::allocator::alloc(16, 1);
+    if (buffer == 0) {
+        return 9;
+    }
+    let result: i32 = exercise(buffer);
+    alloc::allocator::dealloc(buffer, 16, 1);
+    return result;
+}

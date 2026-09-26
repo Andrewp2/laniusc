@@ -29,7 +29,7 @@ limited to native x86_64 output from this worktree.
 | `alloc::allocator` | Executable host ABI, separate from portable core | Its listed allocation externs have compiler bindings and x86 tests, but storage ownership and failure behavior are host/runtime concerns. |
 | `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty line, exact byte counts, and invalid handle failure. These are separate from the portable core. |
-| `std::file::{write_text_once,copy_distinct_with_buffer}` | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, a multi-chunk binary copy, empty copy, invalid buffer sizes, missing paths, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
+| `std::file::{write_text_once,read_once_into_buffer,copy_distinct_with_buffer}` | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, caller-buffer reads and their bytes, a multi-chunk binary copy, empty files, invalid buffer sizes, missing paths, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
 | `test::assert` | Contract-only | Passing assertions hit unsupported target LIR opcode 38 during x86 emission. Reproduction programs are included. |
@@ -116,6 +116,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   byte count on success, including zero for empty text; a negative open,
   write, or close result is passed through. A short write is reported by its
   count and is not retried.
+- `std::file::read_once_into_buffer` opens an existing file and makes one read
+  into caller storage. It returns the actual byte count, including zero at EOF
+  and a short positive count when appropriate. A null buffer, zero capacity,
+  or capacity above `i32::MAX` returns `-1` before opening the path. Open,
+  read, and close failures return a negative result; close is attempted even
+  after read failure. The caller must keep at least `capacity` writable bytes
+  alive for the call.
 - `std::file::copy_distinct_with_buffer` copies until EOF using caller storage
   and retries short writes. It returns false for invalid buffer arguments or
   any host failure. The destination can contain a copied prefix on failure.

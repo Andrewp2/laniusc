@@ -22,6 +22,28 @@ pub fn write_text_once(path: str, text: str) -> i32 {
     }
     return written;
 }
+// Read once into caller storage. Capacity must be between 1 and i32::MAX and
+// buffer must cover that many writable bytes for this call. Returns the bytes
+// read (possibly zero or short), or a negative value for invalid arguments,
+// open, read, or close failure. Closing is attempted after a read failure.
+pub fn read_once_into_buffer(path: str, buffer: ptr, capacity: usize) -> i32 {
+    if (buffer == 0 || capacity == 0 || capacity>2147483647) {
+        return -1;
+    }
+    let handle: i32 = std::fs::open_read_path(path);
+    if (handle<0) {
+        return handle;
+    }
+    let received: i32 = std::fs::read(handle, buffer, capacity);
+    let closed: i32 = std::fs::close_file(handle);
+    if (received<0) {
+        return received;
+    }
+    if (closed<0) {
+        return closed;
+    }
+    return received;
+}
 fn copy_open_files(input: i32, output: i32, buffer: ptr, capacity: usize) -> bool {
     while (true) {
         let received: i32 = std::fs::read(input, buffer, capacity);
