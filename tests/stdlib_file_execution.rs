@@ -172,6 +172,105 @@ fn std_file_read_i32_decimal_or_executes_on_x86() {
 }
 
 #[test]
+fn std_file_write_i32_decimal_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_file_write_decimal.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_file_write_decimal", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile signed decimal file writer");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_file_write_decimal", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create write decimal directory");
+        let output = run_in_directory(&bytes, run_dir.path(), "std_file_write_decimal");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        for (name, expected) in [
+            ("zero.txt", "0"),
+            ("negative.txt", "-42"),
+            ("min.txt", "-2147483648"),
+            ("max.txt", "2147483647"),
+        ] {
+            assert_eq!(
+                std::fs::read(run_dir.path().join(name)).expect("read decimal output"),
+                expected.as_bytes(),
+                "{name}"
+            );
+        }
+        assert!(!run_dir.path().join("missing/child.txt").exists());
+        std::fs::remove_dir_all(run_dir.path()).expect("remove write decimal directory");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn std_file_write_i32_decimal_reports_host_failures_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_file_write_decimal_failure.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_file_write_decimal_failure", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile decimal write failure fixture");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let run_dir = common::TempArtifact::new("laniusc_std_file_write_fault", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create write fault directory");
+        let executable = run_dir.path().join("std_file_write_decimal_failure");
+        std::fs::write(&executable, &bytes).expect("write decimal fault ELF");
+        let mut permissions = std::fs::metadata(&executable)
+            .expect("stat decimal fault ELF")
+            .permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(&executable, permissions).expect("chmod decimal fault ELF");
+
+        for (injection, expected_file) in [
+            ("write:retval=0:when=2", b"4".as_slice()),
+            ("write:error=EIO:when=2", b"4".as_slice()),
+            ("close:error=EIO:when=1", b"42".as_slice()),
+        ] {
+            let output = common::short_process_output_with_timeout(
+                format!("decimal file write {injection}"),
+                std::process::Command::new("strace")
+                    .arg("-qq")
+                    .arg("-e")
+                    .arg("trace=write,close")
+                    .arg("-e")
+                    .arg(format!("inject={injection}"))
+                    .arg(&executable)
+                    .current_dir(run_dir.path()),
+            );
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("INJECTED"),
+                "fault was not injected: {output:?}"
+            );
+            assert_eq!(
+                std::fs::read(run_dir.path().join("fault.txt")).expect("read written prefix"),
+                expected_file,
+                "{injection}"
+            );
+        }
+        std::fs::remove_dir_all(run_dir.path()).expect("remove write fault directory");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn std_file_read_i32_decimal_or_handles_host_failures_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_host/std_file_decimal_failure.lani");
@@ -231,11 +330,12 @@ fn std_file_read_i32_decimal_or_handles_host_failures_on_x86() {
 fn std_file_public_functions_have_runtime_cases() {
     let source = include_str!("../stdlib/std/file.lani");
     let fixtures = format!(
-        "{}{}{}{}",
+        "{}{}{}{}{}",
         include_str!("fixtures/stdlib_host/std_file_write.lani"),
         include_str!("fixtures/stdlib_host/std_file_copy.lani"),
         include_str!("fixtures/stdlib_host/std_file_read.lani"),
-        include_str!("fixtures/stdlib_host/std_file_decimal.lani")
+        include_str!("fixtures/stdlib_host/std_file_decimal.lani"),
+        include_str!("fixtures/stdlib_host/std_file_write_decimal.lani")
     );
     let mut count = 0;
     for line in source.lines() {
@@ -252,5 +352,5 @@ fn std_file_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 6);
+    assert_eq!(count, 7);
 }

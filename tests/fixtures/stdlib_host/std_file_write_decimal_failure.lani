@@ -1,0 +1,8 @@
+module app::main;
+import std::file;
+fn main() -> i32 {
+    if (std::file::write_i32_decimal("fault.txt", 42)) {
+        return 1;
+    }
+    return 0;
+}

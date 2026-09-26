@@ -1,0 +1,17 @@
+module app::main;
+import std::file;
+fn main() -> i32 {
+    if (!std::file::write_i32_decimal("zero.txt", 0) || !std::file::write_i32_decimal("negative.txt", -42) || !std::file::write_i32_decimal("min.txt", -2147483648) || !std::file::write_i32_decimal("max.txt", 2147483647)) {
+        return 1;
+    }
+    if (std::file::read_i32_decimal_or("zero.txt", 16, 99) != 0 || std::file::read_i32_decimal_or("negative.txt", 16, 99) != -42 || std::file::read_i32_decimal_or("min.txt", 16, 99) != -2147483648 || std::file::read_i32_decimal_or("max.txt", 16, 99) != 2147483647) {
+        return 2;
+    }
+    if (std::file::write_i32_decimal("missing/child.txt", 7)) {
+        return 3;
+    }
+    if (std::file::write_i32_decimal("/dev/full", 42)) {
+        return 4;
+    }
+    return 0;
+}

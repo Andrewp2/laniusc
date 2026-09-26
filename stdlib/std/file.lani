@@ -8,6 +8,7 @@ module std::file;
 import core::mem;
 import std::fs;
 import std::io;
+import std::io_decimal;
 pub fn write_text_once(path: str, text: str) -> i32 {
     let handle: std::fs::FileHandle = std::fs::open_write_path(path);
     if (handle<0) {
@@ -232,4 +233,35 @@ pub fn read_i32_decimal_or(path: str, max_bytes: u32, fallback: i32) -> i32 {
     }
     let positive: i32 = magnitude;
     return positive;
+}
+
+// Creates or truncates path and writes the full signed decimal representation
+// through single-byte writes. False reports open, write, or close failure; the
+// file may already contain a decimal prefix. Closing is attempted after a
+// failed write. No allocation or host integer formatter is used.
+pub fn write_i32_decimal(path: str, value: i32) -> bool {
+    let handle: i32 = std::fs::open_write_path(path);
+    if (handle < 0) {
+        return false;
+    }
+    let complete: bool = true;
+    let magnitude: u32 = 0;
+    if (value < 0) {
+        if (std::io::write_byte(handle, 45) != 1) {
+            complete = false;
+        }
+        if (value == -2147483648) {
+            magnitude = 2147483648;
+        } else {
+            let positive: i32 = -value;
+            magnitude = positive;
+        }
+    } else {
+        magnitude = value;
+    }
+    if (complete && std::io_decimal::write_u32(handle, magnitude) <= 0) {
+        complete = false;
+    }
+    let closed: i32 = std::fs::close_file(handle);
+    return complete && closed >= 0;
 }

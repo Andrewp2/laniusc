@@ -32,7 +32,7 @@ limited to native x86_64 output from this worktree.
 | `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, and invalid handles. These are separate from the portable core. |
 | `std::io_decimal::write_u32` | Executable x86_64 Linux host wrapper | `tests/stdlib_host_execution.rs` checks unsigned decimal zero and maximum, exact byte counts, invalid handles, and injected failure after a written prefix. |
-| `std::file` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot and exact caller-buffer reads, complete buffer writes, a multi-chunk binary copy, bounded decimal parsing with overflow rejection, empty files, invalid buffer sizes, missing paths, injected read/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
+| `std::file` all 7 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot and exact caller-buffer reads, complete buffer writes, a multi-chunk binary copy, bounded signed decimal reads and writes, empty files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked::secure_u32_or` | Executable x86_64 Linux host wrapper | `tests/stdlib_random_execution.rs` checks successful generation and injects both a host error and a short read, each of which returns the caller's fallback. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
@@ -202,6 +202,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   A successful parsed value can equal that fallback. The reader uses one-byte
   reads into a stack word and checks magnitude before multiplication; it does
   not depend on the raw host `read_i32` parser.
+- `std::file::write_i32_decimal` creates or truncates a file and writes the
+  complete decimal representation of an i32 using checked single-byte writes.
+  It returns false for open, write, or close failure and can leave a decimal
+  prefix on failure. It handles `i32::MIN` without overflowing during
+  negation and does not use the raw host `write_i32` formatter.
 - `std::random_checked::secure_u32_or` reads four bytes into stack storage through the
   status-returning host operation, then returns their native-order `u32` bit
   pattern. A negative or short result returns the caller's fallback. The
@@ -232,7 +237,7 @@ compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.
 Run `cargo test --test stdlib_host_execution` for the separate native I/O
 wrappers; its partial-write fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_file_execution` for the file wrappers; its
-read/close fault cases run when Linux `strace` is available.
+read/write/close fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
 Run `cargo test --test stdlib_random_execution` for the checked random scalar;
 the failure injection cases run when Linux `strace` is available.
@@ -386,6 +391,16 @@ the failure injection cases run when Linux `strace` is available.
     This prevents an imported, array-backed byte-slice utility module from
     having an executable claim. The raw-view behavior in dependency 16 is a
     separate obstacle.
+21. **Raw signed integer short writes.** Compile
+    `tests/fixtures/stdlib_host/repro_io_write_i32_short.lani` with the stdlib
+    root, then run it through
+    `strace -qq -e trace=write -e inject=write:retval=1:when=1`. The injected
+    syscall reports one byte written for the two-byte text `42`, but the ELF
+    exits 1 because `std::io::write_i32` returns success status 0. The host
+    binding canonicalizes every nonnegative syscall result to success, losing
+    short-write information. `std::file::write_i32_decimal` instead uses
+    single-byte writes and checks each result. The raw binding needs a runtime
+    fix before it can promise a complete decimal write.
 
 These are compiler/runtime dependencies, not stdlib implementations in Rust or
 Python. They should be handled in the parallel compiler task before extending
