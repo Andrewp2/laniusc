@@ -59,6 +59,35 @@ pub fn wrapping_sub(left: u8, right: u8) -> u8 {
     }
     return left - right;
 }
+// Multiply modulo 256 without evaluating an overflowing u8 product.
+pub fn wrapping_mul(left: u8, right: u8) -> u8 {
+    let product: u8 = 0;
+    let factor: u8 = left;
+    let remaining: u8 = right;
+    while (remaining != 0) {
+        if ((remaining&1) != 0) {
+            product = wrapping_add(product, factor);
+        }
+        remaining >>= 1;
+        if (remaining != 0) {
+            factor = wrapping_add(factor, factor);
+        }
+    }
+    return product;
+}
+pub fn high_nibble(value: u8) -> u8 {
+    return value >> 4;
+}
+pub fn low_nibble(value: u8) -> u8 {
+    return value&15;
+}
+// A nibble above 15 returns fallback unchanged.
+pub fn join_nibbles_or(high: u8, low: u8, fallback: u8) -> u8 {
+    if (high>15 || low>15) {
+        return fallback;
+    }
+    return(high << 4)|low;
+}
 pub fn abs_diff(left: u8, right: u8) -> u8 {
     if (left >= right) {
         return left - right;
@@ -157,6 +186,25 @@ pub fn ascii_hexdigit_value_or(value: u8, fallback: u8) -> u8 {
     }
     if (value >= 97 && value <= 102) {
         return value - 87;
+    }
+    return fallback;
+}
+// Invalid nibble input returns fallback unchanged.
+pub fn ascii_lower_hex_digit_or(value: u8, fallback: u8) -> u8 {
+    if (value <= 9) {
+        return value + 48;
+    }
+    if (value <= 15) {
+        return value + 87;
+    }
+    return fallback;
+}
+pub fn ascii_upper_hex_digit_or(value: u8, fallback: u8) -> u8 {
+    if (value <= 9) {
+        return value + 48;
+    }
+    if (value <= 15) {
+        return value + 55;
     }
     return fallback;
 }

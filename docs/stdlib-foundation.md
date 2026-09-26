@@ -11,7 +11,7 @@ limited to native x86_64 output from this worktree.
 | --- | --- | --- |
 | `core::number_i32` constants and all 19 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, multiplication and power overflow, division failure fallbacks, and power-of-two overflow. |
 | `core::number_u32` constants and all 23 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero divisor, and alignment fallbacks. |
-| `core::byte` constants and all 33 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, zero divisor, power-of-two overflow, ASCII classes and boundaries, case conversion, and hex fallback. |
+| `core::byte` constants and all 39 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
 | `core::bits` all 10 public `u32` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across 0 and 32, bit reversal, byte swap, and out-of-range bit fallback. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
@@ -62,10 +62,16 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `core::u32::saturating_mul` uses the same constant-time
   source algorithm, but its imported module still lacks a native claim.
 - `core::byte` arithmetic saturates or wraps as its function name says.
+  `wrapping_mul` computes multiplication modulo 256; the focused fixture
+  compares all 65,536 byte pairs with a widened arithmetic reference.
   `is_multiple_of(_, 0)` returns false. Invalid ASCII hex input returns the
   unchanged fallback from `ascii_hexdigit_value_or`. `clamp_or` returns its
   fallback for reversed bounds. `next_power_of_two` returns zero when the next
-  u8 power would exceed 128. Its ASCII whitespace set is SP, HT, LF, CR.
+  u8 power would exceed 128. `high_nibble` and `low_nibble` split a byte;
+  `join_nibbles_or` returns the fallback when either input exceeds 15.
+  `ascii_lower_hex_digit_or` and `ascii_upper_hex_digit_or` accept nibbles
+  `0..=15` and return the fallback otherwise. Its ASCII whitespace set is
+  SP, HT, LF, CR.
 - `core::bits` treats `u32` as exactly 32 bits. Zero has 32 leading and
   trailing zeros; rotations reduce their count modulo 32. `bit_at_or_u32`
   returns the caller's fallback for an index of 32 or more.
