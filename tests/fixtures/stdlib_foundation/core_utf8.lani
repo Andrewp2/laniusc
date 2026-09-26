@@ -1,0 +1,35 @@
+module app::main;
+import core::utf8;
+fn main() -> i32 {
+    if (!core::utf8::is_scalar(0) || !core::utf8::is_scalar(1114111) || core::utf8::is_scalar(55296) || core::utf8::is_scalar(57343) || core::utf8::is_scalar(1114112)) {
+        return 1;
+    }
+    if (!core::utf8::is_continuation_byte(128) || !core::utf8::is_continuation_byte(191) || core::utf8::is_continuation_byte(127) || core::utf8::is_continuation_byte(192) || core::utf8::is_continuation_byte(256)) {
+        return 2;
+    }
+    if (core::utf8::sequence_len_or(65, 99) != 1 || core::utf8::sequence_len_or(194, 99) != 2 || core::utf8::sequence_len_or(223, 99) != 2 || core::utf8::sequence_len_or(224, 99) != 3 || core::utf8::sequence_len_or(239, 99) != 3 || core::utf8::sequence_len_or(240, 99) != 4 || core::utf8::sequence_len_or(244, 99) != 4 || core::utf8::sequence_len_or(128, 99) != 99 || core::utf8::sequence_len_or(192, 99) != 99 || core::utf8::sequence_len_or(245, 99) != 99) {
+        return 3;
+    }
+    if (core::utf8::encoded_len_or(36, 99) != 1 || core::utf8::encoded_len_or(162, 99) != 2 || core::utf8::encoded_len_or(8364, 99) != 3 || core::utf8::encoded_len_or(128578, 99) != 4 || core::utf8::encoded_len_or(55296, 99) != 99 || core::utf8::encoded_len_or(1114112, 99) != 99) {
+        return 4;
+    }
+    if (core::utf8::encoded_byte_or(36, 0, 999) != 36 || core::utf8::encoded_byte_or(162, 0, 999) != 194 || core::utf8::encoded_byte_or(162, 1, 999) != 162 || core::utf8::encoded_byte_or(8364, 0, 999) != 226 || core::utf8::encoded_byte_or(8364, 1, 999) != 130 || core::utf8::encoded_byte_or(8364, 2, 999) != 172 || core::utf8::encoded_byte_or(128578, 0, 999) != 240 || core::utf8::encoded_byte_or(128578, 1, 999) != 159 || core::utf8::encoded_byte_or(128578, 2, 999) != 153 || core::utf8::encoded_byte_or(128578, 3, 999) != 130) {
+        return 5;
+    }
+    if (core::utf8::encoded_byte_or(36, 1, 999) != 999 || core::utf8::encoded_byte_or(55296, 0, 999) != 999 || core::utf8::encoded_byte_or(1114112, 0, 999) != 999 || core::utf8::encoded_byte_or(1114111, 0, 999) != 244 || core::utf8::encoded_byte_or(1114111, 1, 999) != 143 || core::utf8::encoded_byte_or(1114111, 2, 999) != 191 || core::utf8::encoded_byte_or(1114111, 3, 999) != 191) {
+        return 6;
+    }
+    if (core::utf8::decode_or(36, 0, 0, 0, 1, 999) != 36 || core::utf8::decode_or(194, 162, 0, 0, 2, 999) != 162 || core::utf8::decode_or(226, 130, 172, 0, 3, 999) != 8364 || core::utf8::decode_or(240, 159, 153, 130, 4, 999) != 128578 || core::utf8::decode_or(244, 143, 191, 191, 4, 999) != 1114111) {
+        return 7;
+    }
+    if (core::utf8::decode_or(192, 128, 0, 0, 2, 999) != 999 || core::utf8::decode_or(224, 128, 128, 0, 3, 999) != 999 || core::utf8::decode_or(237, 160, 128, 0, 3, 999) != 999 || core::utf8::decode_or(240, 128, 128, 128, 4, 999) != 999 || core::utf8::decode_or(244, 144, 128, 128, 4, 999) != 999 || core::utf8::decode_or(245, 128, 128, 128, 4, 999) != 999 || core::utf8::decode_or(226, 65, 172, 0, 3, 999) != 999 || core::utf8::decode_or(226, 130, 172, 0, 2, 999) != 999 || core::utf8::decode_or(65, 0, 0, 0, 0, 999) != 999 || core::utf8::decode_or(65, 0, 0, 0, 5, 999) != 999 || core::utf8::decode_or(194, 256, 0, 0, 2, 999) != 999) {
+        return 8;
+    }
+    if (core::utf8::encoded_len_or(127, 99) != 1 || core::utf8::encoded_len_or(128, 99) != 2 || core::utf8::encoded_len_or(2047, 99) != 2 || core::utf8::encoded_len_or(2048, 99) != 3 || core::utf8::encoded_len_or(65535, 99) != 3 || core::utf8::encoded_len_or(65536, 99) != 4) {
+        return 9;
+    }
+    if (core::utf8::decode_or(224, 160, 128, 0, 3, 999) != 2048 || core::utf8::decode_or(237, 159, 191, 0, 3, 999) != 55295 || core::utf8::decode_or(238, 128, 128, 0, 3, 999) != 57344 || core::utf8::decode_or(240, 144, 128, 128, 4, 999) != 65536 || core::utf8::decode_or(65, 999, 999, 999, 1, 999) != 65 || core::utf8::decode_or(240, 144, 128, 65, 4, 999) != 999) {
+        return 10;
+    }
+    return 0;
+}

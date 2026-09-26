@@ -1,0 +1,113 @@
+// Allocation-free UTF-8 scalar codec. Byte values are returned and accepted
+// as u32 integers in the inclusive range 0..255; no slice or string storage
+// is read by this module.
+module core::utf8;
+pub fn is_scalar(value: u32) -> bool {
+    return value <= 1114111 &&(value<55296 || value>57343);
+}
+pub fn is_continuation_byte(value: u32) -> bool {
+    return value >= 128 && value <= 191;
+}
+// Invalid leading bytes return fallback, including continuation bytes,
+// overlong two-byte leads, and values beyond the Unicode maximum.
+pub fn sequence_len_or(first: u32, fallback: u32) -> u32 {
+    if (first <= 127) {
+        return 1;
+    }
+    if (first >= 194 && first <= 223) {
+        return 2;
+    }
+    if (first >= 224 && first <= 239) {
+        return 3;
+    }
+    if (first >= 240 && first <= 244) {
+        return 4;
+    }
+    return fallback;
+}
+// An invalid scalar returns fallback.
+pub fn encoded_len_or(value: u32, fallback: u32) -> u32 {
+    if (!is_scalar(value)) {
+        return fallback;
+    }
+    if (value <= 127) {
+        return 1;
+    }
+    if (value <= 2047) {
+        return 2;
+    }
+    if (value <= 65535) {
+        return 3;
+    }
+    return 4;
+}
+// Return byte number index from a scalar's UTF-8 encoding. An invalid scalar
+// or out-of-range index returns fallback unchanged.
+pub fn encoded_byte_or(value: u32, index: u32, fallback: u32) -> u32 {
+    let length: u32 = encoded_len_or(value, 0);
+    if (length == 0 || index >= length) {
+        return fallback;
+    }
+    if (length == 1) {
+        return value;
+    }
+    if (length == 2) {
+        if (index == 0) {
+            return 192|(value >> 6);
+        }
+        return 128|(value&63);
+    }
+    if (length == 3) {
+        if (index == 0) {
+            return 224|(value >> 12);
+        }
+        if (index == 1) {
+            return 128|((value >> 6)&63);
+        }
+        return 128|(value&63);
+    }
+    if (index == 0) {
+        return 240|(value >> 18);
+    }
+    if (index == 1) {
+        return 128|((value >> 12)&63);
+    }
+    if (index == 2) {
+        return 128|((value >> 6)&63);
+    }
+    return 128|(value&63);
+}
+// Decode exactly length (1..4) byte values. Unused arguments are ignored.
+// Malformed, overlong, surrogate, out-of-range, or truncated sequences return
+// fallback unchanged.
+pub fn decode_or(first: u32, second: u32, third: u32, fourth: u32, length: u32, fallback: u32) -> u32 {
+    let expected: u32 = sequence_len_or(first, 0);
+    if (expected == 0 || length != expected) {
+        return fallback;
+    }
+    if (length == 1) {
+        return first;
+    }
+    if (!is_continuation_byte(second)) {
+        return fallback;
+    }
+    if (length == 2) {
+        return((first&31) << 6)|(second&63);
+    }
+    if (!is_continuation_byte(third)) {
+        return fallback;
+    }
+    if (length == 3) {
+        if (first == 224 && second<160 || first == 237 && second>159) {
+            return fallback;
+        }
+        return((first&15) << 12)|((second&63) << 6)|(third&63);
+    }
+    if (!is_continuation_byte(fourth)) {
+        return fallback;
+    }
+    if (first == 240 && second<144 || first == 244 && second>143) {
+        return fallback;
+    }
+    return((first&7) << 18)|((second&63) << 12)|((third&63) << 6)|(fourth&63);
+}

@@ -15,6 +15,7 @@ limited to native x86_64 output from this worktree.
 | `core::bits` all 10 public `u32` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across 0 and 32, bit reversal, byte swap, and out-of-range bit fallback. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 12 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII character classes, case-insensitive comparison, punctuation, and printable boundaries. |
+| `core::utf8` all 6 public scalar-codec functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, length boundaries, malformed sequences, surrogate exclusion, and Unicode maximum. It accepts and returns byte values as `u32`; it does not access string storage. |
 | `core::f32` all 12 public functions | Executable on x86_64 for tested finite inputs | Runtime fixture checks sign, comparison, bounds, and square root for zero, negative, small, ordinary, and large inputs. The imported public constant `ONE` is broken; see dependency 5. |
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
 | Legacy `stdlib/i32.lani` power-of-two helpers | Executable on x86_64 | A focused source-level native test checks the highest signed power and the zero overflow sentinel. The legacy file as a whole is not included in this claim. |
@@ -71,6 +72,14 @@ Lanius logic. No declaration is promoted solely because it type-checks.
 - `core::bool` converts any nonzero i32 to true. Its selector functions return
   the chosen branch value. `core::char` tests ASCII classes; its case-insensitive
   equality folds ASCII letters only.
+- `core::utf8` accepts Unicode scalar values in `0..=0x10FFFF` excluding the
+  surrogate range. Valid encoded bytes are returned as `u32` values in
+  `0..=255`, and decoder byte arguments outside that range are rejected.
+  Encoding returns a caller fallback for an invalid scalar or byte index.
+  Decoding accepts exactly one to four bytes, ignores unused arguments, and
+  returns the caller fallback for malformed, overlong, surrogate, truncated,
+  or out-of-range sequences. It does not yet iterate a `str` or `[u8]` view;
+  those storage operations have separate compiler dependencies below.
 - `core::f32::sqrt` returns zero for nonpositive inputs and scales finite
   positive inputs before Newton iteration, including values far above or below
   one. The other `f32` functions follow their source definitions; no NaN
@@ -144,7 +153,7 @@ window, reads a slice, and accumulates with saturating arithmetic. It prints
 | Wasm | Not claimed or required for this foundation. |
 
 Run the focused gate with `cargo test --test stdlib_foundation_execution`.
-The test compiles fourteen small Lanius programs through `--stdlib-root`, executes
+The test compiles fifteen small Lanius programs through `--stdlib-root`, executes
 the native ELFs, checks their exit status, checks the example's stdout, and
 checks the slice bounds trap. Each source is also suitable for direct CLI
 compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.
