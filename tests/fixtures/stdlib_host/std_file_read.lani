@@ -11,9 +11,10 @@ fn exercise(buffer: ptr) -> i32 {
     if (output<0) {
         return 2;
     }
-    let written: i32 = std::fs::write(output, buffer, received);
+    let received_len: usize = received;
+    let written: bool = std::file::write_all_bytes(output, buffer, received_len);
     let closed: i32 = std::fs::close_file(output);
-    if (written != received || closed<0) {
+    if (!written || closed<0) {
         return 3;
     }
     let short_read: i32 = std::file::read_once_into_buffer("short.bin", buffer, 16);
@@ -24,9 +25,10 @@ fn exercise(buffer: ptr) -> i32 {
     if (short_output<0) {
         return 11;
     }
-    let short_written: i32 = std::fs::write(short_output, buffer, short_read);
+    let short_len: usize = short_read;
+    let short_written: bool = std::file::write_all_bytes(short_output, buffer, short_len);
     let short_closed: i32 = std::fs::close_file(short_output);
-    if (short_written != short_read || short_closed<0) {
+    if (!short_written || short_closed<0) {
         return 12;
     }
     if (std::file::read_once_into_buffer("empty.bin", buffer, 16) != 0) {
@@ -43,6 +45,18 @@ fn exercise(buffer: ptr) -> i32 {
     }
     if (std::file::read_once_into_buffer("input.bin", buffer, 2147483648) >= 0) {
         return 8;
+    }
+    if (std::file::write_all_bytes(-1, buffer, 3) || std::file::write_all_bytes(2147483647, buffer, 3) || std::file::write_all_bytes(1, 0, 3) || std::file::write_all_bytes(1, buffer, 2147483648) || !std::file::write_all_bytes(1, 0, 0)) {
+        return 13;
+    }
+    let full: i32 = std::fs::open_write_path("/dev/full");
+    if (full<0) {
+        return 14;
+    }
+    let full_written: bool = std::file::write_all_bytes(full, buffer, 3);
+    let full_closed: i32 = std::fs::close_file(full);
+    if (full_written || full_closed<0) {
+        return 15;
     }
     return 0;
 }

@@ -44,6 +44,30 @@ pub fn read_once_into_buffer(path: str, buffer: ptr, capacity: usize) -> i32 {
     }
     return received;
 }
+// Write all len bytes to an open file handle, retrying short writes. A valid
+// handle with len zero succeeds without accessing buffer. Invalid handles,
+// null nonempty buffers, lengths above i32::MAX, host errors, and zero-progress
+// writes return false. A failure can leave an already-written prefix.
+pub fn write_all_bytes(handle: i32, buffer: ptr, len: usize) -> bool {
+    if (handle<0 || len>2147483647 || buffer == 0 && len>0) {
+        return false;
+    }
+    let sent: usize = 0;
+    while (sent<len) {
+        let cursor: ptr = buffer + sent;
+        let remaining: usize = len - sent;
+        let written: i32 = std::fs::write(handle, cursor, remaining);
+        if (written <= 0) {
+            return false;
+        }
+        let advanced: usize = written;
+        if (advanced>remaining) {
+            return false;
+        }
+        sent += advanced;
+    }
+    return true;
+}
 fn copy_open_files(input: i32, output: i32, buffer: ptr, capacity: usize) -> bool {
     while (true) {
         let received: i32 = std::fs::read(input, buffer, capacity);
@@ -53,15 +77,9 @@ fn copy_open_files(input: i32, output: i32, buffer: ptr, capacity: usize) -> boo
         if (received == 0) {
             return true;
         }
-        let sent: i32 = 0;
-        while (sent<received) {
-            let cursor: ptr = buffer + sent;
-            let remaining: usize = received - sent;
-            let written: i32 = std::fs::write(output, cursor, remaining);
-            if (written <= 0 || written>received - sent) {
-                return false;
-            }
-            sent += written;
+        let count: usize = received;
+        if (count>capacity || !write_all_bytes(output, buffer, count)) {
+            return false;
         }
     }
     return false;

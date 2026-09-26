@@ -150,5 +150,5 @@ fn std_file_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 3);
+    assert_eq!(count, 4);
 }
