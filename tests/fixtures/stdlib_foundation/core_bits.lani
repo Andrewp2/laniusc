@@ -1,5 +1,8 @@
 module app::main;
 import core::bits;
+fn as_byte(value: u32) -> u8 {
+    return value as u8;
+}
 fn main() -> i32 {
     let high: u32 = 2147483648;
     let max: u32 = 4294967295;
@@ -30,6 +33,28 @@ fn main() -> i32 {
     }
     if (core::bits::swap_bytes_u32(0) != 0 || core::bits::swap_bytes_u32(305419896) != 2018915346 || core::bits::swap_bytes_u32(max) != max) {
         return 9;
+    }
+    if (core::bits::from_be_bytes_u32(18, 52, 86, 120) != 305419896 || core::bits::from_be_bytes_u32(0, 0, 0, 0) != 0 || core::bits::from_be_bytes_u32(255, 255, 255, 255) != max) {
+        return 11;
+    }
+    if (core::bits::from_le_bytes_u32(18, 52, 86, 120) != 2018915346 || core::bits::from_le_bytes_u32(0, 0, 0, 0) != 0 || core::bits::from_le_bytes_u32(255, 255, 255, 255) != max || core::bits::swap_bytes_u32(core::bits::from_be_bytes_u32(18, 52, 86, 120)) != core::bits::from_le_bytes_u32(18, 52, 86, 120)) {
+        return 12;
+    }
+    if (core::bits::byte_at_be_or_u32(305419896, 0, 99) != 18 || core::bits::byte_at_be_or_u32(305419896, 1, 99) != 52 || core::bits::byte_at_be_or_u32(305419896, 2, 99) != 86 || core::bits::byte_at_be_or_u32(305419896, 3, 99) != 120 || core::bits::byte_at_be_or_u32(305419896, 4, 99) != 99 || core::bits::byte_at_be_or_u32(max, 4294967295, 99) != 99) {
+        return 13;
+    }
+    if (core::bits::byte_at_le_or_u32(305419896, 0, 99) != 120 || core::bits::byte_at_le_or_u32(305419896, 1, 99) != 86 || core::bits::byte_at_le_or_u32(305419896, 2, 99) != 52 || core::bits::byte_at_le_or_u32(305419896, 3, 99) != 18 || core::bits::byte_at_le_or_u32(305419896, 4, 99) != 99 || core::bits::byte_at_le_or_u32(max, 4294967295, 99) != 99) {
+        return 14;
+    }
+    let raw: u32 = 0;
+    while (raw<256) {
+        let byte: u8 = as_byte(raw);
+        let packed_be: u32 = core::bits::from_be_bytes_u32(byte, byte, byte, byte);
+        let packed_le: u32 = core::bits::from_le_bytes_u32(byte, byte, byte, byte);
+        if (core::bits::byte_at_be_or_u32(packed_be, 0, 99) != byte || core::bits::byte_at_be_or_u32(packed_be, 1, 99) != byte || core::bits::byte_at_be_or_u32(packed_be, 2, 99) != byte || core::bits::byte_at_be_or_u32(packed_be, 3, 99) != byte || core::bits::byte_at_le_or_u32(packed_le, 0, 99) != byte || core::bits::byte_at_le_or_u32(packed_le, 1, 99) != byte || core::bits::byte_at_le_or_u32(packed_le, 2, 99) != byte || core::bits::byte_at_le_or_u32(packed_le, 3, 99) != byte) {
+            return 15;
+        }
+        raw += 1;
     }
     if (!core::bits::bit_at_or_u32(edge, 31, false) || !core::bits::bit_at_or_u32(edge, 0, false) || core::bits::bit_at_or_u32(edge, 1, false) || !core::bits::bit_at_or_u32(0, 32, true) || core::bits::bit_at_or_u32(max, 32, false)) {
         return 10;

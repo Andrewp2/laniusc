@@ -1,5 +1,11 @@
 // Allocation-free operations on the 32-bit representation of a u32.
 module core::bits;
+fn widen_byte(value: u8) -> u32 {
+    return value as u32;
+}
+fn narrow_byte(value: u32) -> u8 {
+    return value as u8;
+}
 pub fn count_ones_u32(value: u32) -> u32 {
     let remaining: u32 = value;
     let count: u32 = 0;
@@ -66,6 +72,30 @@ pub fn reverse_bits_u32(value: u32) -> u32 {
 }
 pub fn swap_bytes_u32(value: u32) -> u32 {
     return((value&255) << 24)|((value&65280) << 8)|((value >> 8)&65280)|((value >> 24)&255);
+}
+// Pack four bytes with first as the most significant byte.
+pub fn from_be_bytes_u32(first: u8, second: u8, third: u8, fourth: u8) -> u32 {
+    return(widen_byte(first) << 24)|(widen_byte(second) << 16)|(widen_byte(third) << 8)|widen_byte(fourth);
+}
+// Pack four bytes with first as the least significant byte.
+pub fn from_le_bytes_u32(first: u8, second: u8, third: u8, fourth: u8) -> u32 {
+    return widen_byte(first)|(widen_byte(second) << 8)|(widen_byte(third) << 16)|(widen_byte(fourth) << 24);
+}
+// Indices 0..3 address bytes in network order; other indices return fallback.
+pub fn byte_at_be_or_u32(value: u32, index: u32, fallback: u8) -> u8 {
+    if (index >= 4) {
+        return fallback;
+    }
+    let shift: u32 =(3 - index) * 8;
+    return narrow_byte((value >> shift)&255);
+}
+// Indices 0..3 address bytes in least-significant-first order.
+pub fn byte_at_le_or_u32(value: u32, index: u32, fallback: u8) -> u8 {
+    if (index >= 4) {
+        return fallback;
+    }
+    let shift: u32 = index * 8;
+    return narrow_byte((value >> shift)&255);
 }
 // An out-of-range bit position returns the caller's fallback.
 pub fn bit_at_or_u32(value: u32, index: u32, fallback: bool) -> bool {
