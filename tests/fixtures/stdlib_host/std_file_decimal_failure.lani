@@ -1,0 +1,8 @@
+module app::main;
+import std::file;
+fn main() -> i32 {
+    if (std::file::read_i32_decimal_or("valid.txt", 16, 99) != 99) {
+        return 1;
+    }
+    return 0;
+}

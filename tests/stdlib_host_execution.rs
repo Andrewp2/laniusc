@@ -97,3 +97,25 @@ fn std_io_write_u32_reports_partial_write_failure_on_x86() {
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     let _ = bytes;
 }
+
+#[test]
+fn std_io_decimal_public_functions_have_runtime_cases() {
+    let source = include_str!("../stdlib/std/io_decimal.lani");
+    let fixture = include_str!("fixtures/stdlib_host/std_io_u32.lani");
+    let mut count = 0;
+    for line in source.lines() {
+        let Some(tail) = line.strip_prefix("pub fn ") else {
+            continue;
+        };
+        let name = tail
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .next()
+            .expect("public function has a name");
+        assert!(
+            fixture.contains(&format!("std::io_decimal::{name}(")),
+            "std::io_decimal::{name} lacks a runtime case"
+        );
+        count += 1;
+    }
+    assert_eq!(count, 1);
+}

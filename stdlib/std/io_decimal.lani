@@ -1,0 +1,29 @@
+// Unsigned decimal output built on the bound single-byte I/O operation.
+// write_u32 emits every digit without allocation. It returns the byte count
+// (1..10), the first negative host error, or -1 if a byte write does not
+// report exactly one byte. An error can leave a decimal prefix on the handle.
+module std::io_decimal;
+import std::io;
+pub fn write_u32(handle: i32, value: u32) -> i32 {
+    let remaining: u32 = value;
+    let place: u32 = 1000000000;
+    let count: i32 = 0;
+    while (place>0) {
+        let digit: u32 = remaining / place;
+        if (digit != 0 || count>0 || place == 1) {
+            let digit_i32: i32 = digit;
+            let byte: i32 = 48 + digit_i32;
+            let written: i32 = std::io::write_byte(handle, byte);
+            if (written<0) {
+                return written;
+            }
+            if (written != 1) {
+                return -1;
+            }
+            count += 1;
+        }
+        remaining = remaining % place;
+        place = place / 10;
+    }
+    return count;
+}

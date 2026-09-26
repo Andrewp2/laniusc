@@ -1,7 +1,7 @@
 module app::main;
-import std::io;
+import std::io_decimal;
 fn main() -> i32 {
-    let result: i32 = std::io::write_u32(1, 42);
+    let result: i32 = std::io_decimal::write_u32(1, 42);
     if (result == -1) {
         return 1;
     }

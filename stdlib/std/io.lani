@@ -268,33 +268,6 @@ pub extern "lanius_std" fn write_byte(handle: i32, value: i32) -> StdioOperation
 
 pub extern "lanius_std" fn write_newline(handle: i32) -> StdioOperationResult;
 
-// Writes the full decimal representation of an unsigned 32-bit value.
-// Returns the number of bytes written (1..10), the first negative host error,
-// or -1 if a byte write makes no progress. Earlier digits may already have
-// reached the handle when an error is returned.
-pub fn write_u32(handle: i32, value: u32) -> StdioOperationResult {
-    let remaining: u32 = value;
-    let place: u32 = 1000000000;
-    let count: i32 = 0;
-    while (place > 0) {
-        let digit: u32 = remaining / place;
-        if (digit != 0 || count > 0 || place == 1) {
-            let byte: i32 = 48 + (digit as i32);
-            let written: i32 = write_byte(handle, byte);
-            if (written < 0) {
-                return written;
-            }
-            if (written != 1) {
-                return -1;
-            }
-            count += 1;
-        }
-        remaining = remaining % place;
-        place = place / 10;
-    }
-    return count;
-}
-
 // Returns the byte count, or the first negative host error. Partial text
 // writes are reported by their returned count; the newline is still attempted.
 pub fn write_line(handle: i32, text: str) -> StdioOperationResult {

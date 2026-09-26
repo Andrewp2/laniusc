@@ -1,0 +1,27 @@
+module app::main;
+import std::file;
+fn main() -> i32 {
+    let fallback: i32 = 99;
+    if (std::file::read_i32_decimal_or("small.txt", 32, fallback) != -42 || std::file::read_i32_decimal_or("plus.txt", 32, fallback) != 17 || std::file::read_i32_decimal_or("zero.txt", 32, fallback) != 0) {
+        return 1;
+    }
+    if (std::file::read_i32_decimal_or("max.txt", 32, fallback) != 2147483647 || std::file::read_i32_decimal_or("min.txt", 32, fallback) != -2147483648) {
+        return 2;
+    }
+    if (std::file::read_i32_decimal_or("overflow.txt", 32, fallback) != fallback || std::file::read_i32_decimal_or("underflow.txt", 32, fallback) != fallback) {
+        return 3;
+    }
+    if (std::file::read_i32_decimal_or("bad.txt", 32, fallback) != fallback || std::file::read_i32_decimal_or("embedded.txt", 32, fallback) != fallback || std::file::read_i32_decimal_or("sign.txt", 32, fallback) != fallback) {
+        return 4;
+    }
+    if (std::file::read_i32_decimal_or("empty.txt", 32, fallback) != fallback || std::file::read_i32_decimal_or("space.txt", 32, fallback) != fallback || std::file::read_i32_decimal_or("missing.txt", 32, fallback) != fallback) {
+        return 5;
+    }
+    if (std::file::read_i32_decimal_or("long.txt", 2, fallback) != fallback || std::file::read_i32_decimal_or("long.txt", 3, fallback) != 123 || std::file::read_i32_decimal_or("long.txt", 0, fallback) != fallback) {
+        return 6;
+    }
+    if (std::file::read_i32_decimal_or("leading.txt", 64, fallback) != 0) {
+        return 7;
+    }
+    return 0;
+}

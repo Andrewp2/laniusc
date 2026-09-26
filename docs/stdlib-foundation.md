@@ -30,8 +30,9 @@ limited to native x86_64 output from this worktree.
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
 | `alloc::allocator` | Executable host ABI, separate from portable core | Its listed allocation externs have compiler bindings and x86 tests, but storage ownership and failure behavior are host/runtime concerns. |
 | `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
-| `std::io::{write_line,println,eprintln,write_u32}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, unsigned decimal zero and maximum, exact byte counts, invalid handles, and injected failure after a written prefix. These are separate from the portable core. |
-| `std::file::{write_text_once,read_once_into_buffer,read_exact_into_buffer,write_all_bytes,copy_distinct_with_buffer}` | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot and exact caller-buffer reads, complete buffer writes, a multi-chunk binary copy, empty files, invalid buffer sizes, missing paths, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
+| `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, and invalid handles. These are separate from the portable core. |
+| `std::io_decimal::write_u32` | Executable x86_64 Linux host wrapper | `tests/stdlib_host_execution.rs` checks unsigned decimal zero and maximum, exact byte counts, invalid handles, and injected failure after a written prefix. |
+| `std::file` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot and exact caller-buffer reads, complete buffer writes, a multi-chunk binary copy, bounded decimal parsing with overflow rejection, empty files, invalid buffer sizes, missing paths, injected read/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked::secure_u32_or` | Executable x86_64 Linux host wrapper | `tests/stdlib_random_execution.rs` checks successful generation and injects both a host error and a short read, each of which returns the caller's fallback. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
@@ -161,10 +162,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   The focused host fixture also confirms that `write_i32` writes its decimal
   text and returns status `0`, while `write_byte` and `write_newline` return
   byte counts for the tested writes.
-- `std::io::write_u32` writes the complete decimal representation without
+- `std::io_decimal::write_u32` writes the complete decimal representation without
   allocating or reading string storage. It returns a byte count from 1 to 10,
-  the first negative host error, or `-1` for a byte write that made no
-  progress. Failure may leave a decimal prefix on the handle.
+  the first negative host error, or `-1` if a byte write does not report
+  exactly one byte. Failure may leave a decimal prefix on the handle.
 - `std::file::write_text_once` opens or creates a file, truncates it, attempts
   one text write, and attempts to close it even if writing fails. It returns the actual
   byte count on success, including zero for empty text; a negative open,
@@ -194,6 +195,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   any host failure. The destination can contain a copied prefix on failure.
   Source and destination must refer to different files, even through aliases;
   the current file ABI cannot check that precondition before truncation.
+- `std::file::read_i32_decimal_or` reads a complete file of at most
+  `max_bytes` bytes. It accepts ASCII digits with an optional leading sign and
+  surrounding SP, HT, LF, or CR. Empty input, malformed input, overflow,
+  overlong files, host failures, and a zero limit return the caller's fallback.
+  A successful parsed value can equal that fallback. The reader uses one-byte
+  reads into a stack word and checks magnitude before multiplication; it does
+  not depend on the raw host `read_i32` parser.
 - `std::random_checked::secure_u32_or` reads four bytes into stack storage through the
   status-returning host operation, then returns their native-order `u32` bit
   pattern. A negative or short result returns the caller's fallback. The
@@ -223,7 +231,8 @@ checks the slice bounds trap. Each source is also suitable for direct CLI
 compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.
 Run `cargo test --test stdlib_host_execution` for the separate native I/O
 wrappers; its partial-write fault cases run when Linux `strace` is available.
-Run `cargo test --test stdlib_file_execution` for the file wrappers.
+Run `cargo test --test stdlib_file_execution` for the file wrappers; its
+read/close fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
 Run `cargo test --test stdlib_random_execution` for the checked random scalar;
 the failure injection cases run when Linux `strace` is available.
@@ -310,14 +319,15 @@ the failure injection cases run when Linux `strace` is available.
     with `LNC0017` at `values[0]` in the const-generic helper, so the generic
     array module remains contract-only; the concrete `core::array_i32_4`
     scalar functions have separate executable tests.
-13. **Host integer read overflow.** The native host binding for
+13. **Raw host integer read overflow.** The native host binding for
     `std::fs::read_i32(handle, fallback)` returns a wrapped value for input
     `2147483648` instead of the fallback. Compile
     `tests/fixtures/stdlib_host/repro_fs_read_i32_overflow.lani` with the
     stdlib root, then run the ELF from the repository root with the adjacent
-    `overflow_i32.txt` fixture present. It exits 3 instead of 0. A higher-level
-    checked integer file reader cannot safely promise overflow fallback until
-    the runtime parser reports that failure.
+    `overflow_i32.txt` fixture present. It exits 3 instead of 0. The
+    `std::file::read_i32_decimal_or` helper now parses bounded files in Lanius
+    with checked arithmetic, but the raw `std::fs::read_i32` binding still
+    requires a runtime fix before it can claim overflow fallback.
 14. **Direct slice literals.**
     `tests/fixtures/stdlib_foundation/repro_i32_slice_literal.lani` creates
     `[i32] = [3, 5]` and reads both elements. Native emission succeeds, but

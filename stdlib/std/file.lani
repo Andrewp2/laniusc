@@ -5,6 +5,7 @@
 // reports an open, write, or close failure. Closing is attempted even when
 // the write fails.
 module std::file;
+import core::mem;
 import std::fs;
 import std::io;
 pub fn write_text_once(path: str, text: str) -> i32 {
@@ -139,4 +140,96 @@ pub fn copy_distinct_with_buffer(input_path: str, output_path: str, buffer: ptr,
     let output_closed: i32 = std::fs::close_file(output);
     let input_closed: i32 = std::fs::close_file(input);
     return copied && output_closed >= 0 && input_closed >= 0;
+}
+
+// Reads an entire ASCII decimal file containing optional leading and trailing
+// SP, HT, LF, or CR, an optional sign, and at least one digit. At most
+// max_bytes input bytes are accepted. Missing files, invalid syntax, overflow,
+// an overlong file, read/close failures, or max_bytes == 0 return fallback.
+// The fallback may also be a valid parsed number. This x86 host helper uses a
+// stack word as a one-byte read buffer; no allocation or string access occurs.
+pub fn read_i32_decimal_or(path: str, max_bytes: u32, fallback: i32) -> i32 {
+    if (max_bytes == 0) {
+        return fallback;
+    }
+    let handle: i32 = std::fs::open_read_path(path);
+    if (handle < 0) {
+        return fallback;
+    }
+    let cell: [i32; 1] = [0];
+    let data: ptr = core::mem::i32_array_data_ptr(cell);
+    let consumed: u32 = 0;
+    let magnitude: u32 = 0;
+    let started: bool = false;
+    let digits: bool = false;
+    let trailing: bool = false;
+    let negative: bool = false;
+    let valid: bool = true;
+    while (true) {
+        cell[0] = 0;
+        let received: i32 = std::fs::read(handle, data, 1);
+        if (received == 0) {
+            break;
+        }
+        if (received != 1 || consumed >= max_bytes) {
+            valid = false;
+            break;
+        }
+        consumed += 1;
+        let byte: i32 = cell[0];
+        if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
+            if (started && !digits) {
+                valid = false;
+                break;
+            }
+            if (digits) {
+                trailing = true;
+            }
+            continue;
+        }
+        if (byte == 43 || byte == 45) {
+            if (started || trailing) {
+                valid = false;
+                break;
+            }
+            started = true;
+            negative = byte == 45;
+            continue;
+        }
+        if (byte >= 48 && byte <= 57) {
+            if (trailing) {
+                valid = false;
+                break;
+            }
+            started = true;
+            digits = true;
+            let digit_i32: i32 = byte - 48;
+            let digit: u32 = digit_i32;
+            let limit: u32 = 2147483647;
+            if (negative) {
+                limit = 2147483648;
+            }
+            if (magnitude > limit / 10 || magnitude == limit / 10 && digit > limit % 10) {
+                valid = false;
+                break;
+            }
+            magnitude = magnitude * 10 + digit;
+            continue;
+        }
+        valid = false;
+        break;
+    }
+    let closed: i32 = std::fs::close_file(handle);
+    if (!valid || !digits || closed < 0) {
+        return fallback;
+    }
+    if (negative) {
+        if (magnitude == 2147483648) {
+            return -2147483648;
+        }
+        let positive: i32 = magnitude;
+        return -positive;
+    }
+    let positive: i32 = magnitude;
+    return positive;
 }
