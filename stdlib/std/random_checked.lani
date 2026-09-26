@@ -1,0 +1,17 @@
+// Checked scalar random helper built on the status-returning host operation.
+// It returns four secure bytes in native u32 order, or the caller's fallback
+// after a failed or short read. No valid u32 bit pattern is reserved as an
+// error value. Call fill_secure_bytes to distinguish failure from a legitimate
+// random result that equals the fallback.
+module std::random_checked;
+import core::mem;
+import std::random;
+pub fn secure_u32_or(fallback: u32) -> u32 {
+    let word:[i32; 1] =[0];
+    let data: ptr = core::mem::i32_array_data_ptr(word);
+    if (std::random::fill_secure_bytes(data, 4) != 4) {
+        return fallback;
+    }
+    let signed: i32 = word[0];
+    return signed as u32;
+}

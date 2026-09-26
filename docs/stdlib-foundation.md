@@ -31,6 +31,7 @@ limited to native x86_64 output from this worktree.
 | `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty line, exact byte counts, and invalid handle failure. These are separate from the portable core. |
 | `std::file::{write_text_once,read_once_into_buffer,read_exact_into_buffer,write_all_bytes,copy_distinct_with_buffer}` | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot and exact caller-buffer reads, complete buffer writes, a multi-chunk binary copy, empty files, invalid buffer sizes, missing paths, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
+| `std::random_checked::secure_u32_or` | Executable x86_64 Linux host wrapper | `tests/stdlib_random_execution.rs` checks successful generation and injects both a host error and a short read, each of which returns the caller's fallback. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
 | `test::assert` | Contract-only | Passing assertions hit unsupported target LIR opcode 38 during x86 emission. Reproduction programs are included. |
@@ -184,6 +185,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   any host failure. The destination can contain a copied prefix on failure.
   Source and destination must refer to different files, even through aliases;
   the current file ABI cannot check that precondition before truncation.
+- `std::random_checked::secure_u32_or` reads four bytes into stack storage through the
+  status-returning host operation, then returns their native-order `u32` bit
+  pattern. A negative or short result returns the caller's fallback. The
+  fallback can also be a legitimate random output. Callers that must
+  distinguish success from failure should use `fill_secure_bytes` directly.
+  This wrapper relies on the x86 `core::mem::i32_array_data_ptr` intrinsic for
+  stack storage.
 
 The small runnable example is `sample_programs/portable_window_checksum.lani`.
 It validates an ASCII marker, sorts readings in place, selects a half-open
@@ -208,6 +216,8 @@ Run `cargo test --test stdlib_host_execution` for the separate native I/O
 wrappers.
 Run `cargo test --test stdlib_file_execution` for the file wrappers.
 Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
+Run `cargo test --test stdlib_random_execution` for the checked random scalar;
+the failure injection cases run when Linux `strace` is available.
 
 ## Compiler/runtime dependencies and minimal reproductions
 
@@ -325,14 +335,17 @@ Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
     ASCII mappings for executable case conversion, while general conversion
     from a Unicode scalar to `char` remains a compiler dependency. This
     reproduction has been sent to the parallel compiler task.
-18. **Secure random scalar failure channel.** The x86 runtime bytes for
-    `std::random::secure_u32` in
-    `shaders/codegen/lir/x86/runtime_abi.slang` return `0xFFFFFFFF` when the
-    `getrandom` syscall does not return four bytes. That bit pattern is also a
-    valid random `u32`, so callers cannot detect the failure. The bound
-    `fill_secure_bytes` operation has a signed status result; a reliable
-    scalar random API needs an equally unambiguous failure channel. The
-    existing native test demonstrates normal execution, not failure handling.
+18. **Raw secure random scalar failure channel.** The x86 runtime bytes for
+   `std::random::secure_u32` in
+   `shaders/codegen/lir/x86/runtime_abi.slang` return `0xFFFFFFFF` when the
+   `getrandom` syscall does not return four bytes. That bit pattern is also a
+   valid random `u32`, so callers cannot detect the failure. The bound
+   `fill_secure_bytes` operation has a signed status result, and the Lanius
+   `std::random_checked::secure_u32_or` wrapper now uses it to return an
+   explicit caller fallback on failure. The raw function remains ambiguous
+   until its runtime contract changes or it is removed. The wrapper's focused
+   test injects host failure and short reads; the older raw-function test
+   covers normal execution only.
 19. **Transitive host import loses the native entrypoint.** With
     `--stdlib-root tests/fixtures/stdlib_foundation/repro_transitive_host_root`,
     `repro_transitive_host_direct.lani` emits an x86_64 ELF that exits zero.

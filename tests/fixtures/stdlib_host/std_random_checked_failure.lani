@@ -1,0 +1,9 @@
+module app::main;
+import std::random_checked;
+fn main() -> i32 {
+    let fallback: u32 = 305419896;
+    if (std::random_checked::secure_u32_or(fallback) != fallback) {
+        return 1;
+    }
+    return 0;
+}
