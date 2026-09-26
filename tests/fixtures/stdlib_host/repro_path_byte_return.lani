@@ -1,0 +1,8 @@
+module app::main;
+import std::path;
+fn main() -> i32 {
+    if (std::path::path_unix_separator_byte() != 47) {
+        return 1;
+    }
+    return 0;
+}

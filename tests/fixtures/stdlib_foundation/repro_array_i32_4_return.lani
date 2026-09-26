@@ -1,0 +1,10 @@
+module app::main;
+import core::array_i32_4;
+fn main() -> i32 {
+    let values:[i32; 4] =[3, -2, 3, 8];
+    let copied:[i32; 4] = core::array_i32_4::copy(values);
+    if (copied[0] != 3 || copied[3] != 8) {
+        return 1;
+    }
+    return 0;
+}

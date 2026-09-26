@@ -1,0 +1,9 @@
+module app::main;
+import core::pair;
+fn main() -> i32 {
+    let pair: core::pair::Pair = core::pair::zero();
+    if (core::pair::has_zero(pair)) {
+        return 0;
+    }
+    return 1;
+}

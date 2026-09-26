@@ -1,0 +1,124 @@
+// Allocation-free i32 arithmetic. Overflowing arithmetic uses saturation;
+// division, clamp, and power-of-two failures have explicit fallback behavior.
+module core::number_i32;
+pub const MIN: i32 = -2147483648;
+pub const MAX: i32 = 2147483647;
+pub fn min(left: i32, right: i32) -> i32 {
+    if (left<right) {
+        return left;
+    }
+    return right;
+}
+pub fn max(left: i32, right: i32) -> i32 {
+    if (left>right) {
+        return left;
+    }
+    return right;
+}
+// If low > high, return fallback unchanged.
+pub fn clamp_or(value: i32, low: i32, high: i32, fallback: i32) -> i32 {
+    if (low>high) {
+        return fallback;
+    }
+    if (value<low) {
+        return low;
+    }
+    if (value>high) {
+        return high;
+    }
+    return value;
+}
+pub fn saturating_abs(value: i32) -> i32 {
+    if (value == MIN) {
+        return MAX;
+    }
+    if (value<0) {
+        return -value;
+    }
+    return value;
+}
+pub fn saturating_add(left: i32, right: i32) -> i32 {
+    if (right>0 && left>MAX - right) {
+        return MAX;
+    }
+    if (right<0 && left<MIN - right) {
+        return MIN;
+    }
+    return left + right;
+}
+pub fn saturating_sub(left: i32, right: i32) -> i32 {
+    if (right<0 && left>MAX + right) {
+        return MAX;
+    }
+    if (right>0 && left<MIN + right) {
+        return MIN;
+    }
+    return left - right;
+}
+pub fn saturating_abs_diff(left: i32, right: i32) -> i32 {
+    if (left >= right) {
+        return saturating_sub(left, right);
+    }
+    return saturating_sub(right, left);
+}
+pub fn is_even(value: i32) -> bool {
+    return value % 2 == 0;
+}
+pub fn is_odd(value: i32) -> bool {
+    return value % 2 != 0;
+}
+pub fn is_zero(value: i32) -> bool {
+    return value == 0;
+}
+pub fn signum(value: i32) -> i32 {
+    if (value<0) {
+        return -1;
+    }
+    if (value>0) {
+        return 1;
+    }
+    return 0;
+}
+// Zero divisor returns false. The MIN/-1 case is divisible without dividing.
+pub fn is_multiple_of(value: i32, divisor: i32) -> bool {
+    if (divisor == 0) {
+        return false;
+    }
+    if (divisor == -1) {
+        return true;
+    }
+    return value % divisor == 0;
+}
+// Zero divisor and MIN/-1 return fallback instead of triggering an x86 divide trap.
+pub fn div_or(value: i32, divisor: i32, fallback: i32) -> i32 {
+    if (divisor == 0 || value == MIN && divisor == -1) {
+        return fallback;
+    }
+    return value / divisor;
+}
+pub fn rem_or(value: i32, divisor: i32, fallback: i32) -> i32 {
+    if (divisor == 0 || value == MIN && divisor == -1) {
+        return fallback;
+    }
+    return value % divisor;
+}
+pub fn is_power_of_two(value: i32) -> bool {
+    if (value <= 0) {
+        return false;
+    }
+    return(value&(value - 1)) == 0;
+}
+// Zero means the next positive power does not fit in i32.
+pub fn next_power_of_two(value: i32) -> i32 {
+    if (value <= 1) {
+        return 1;
+    }
+    if (value>1073741824) {
+        return 0;
+    }
+    let power: i32 = 1;
+    while (power<value) {
+        power *= 2;
+    }
+    return power;
+}

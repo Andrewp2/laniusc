@@ -1,0 +1,14 @@
+module core::pair;
+pub struct Pair {
+    present: bool,
+    value: i32
+}
+pub fn zero() -> Pair {
+    return Pair {
+        present: true,
+        value: 0
+    };
+}
+pub fn has_zero(pair: Pair) -> bool {
+    return pair.present && pair.value == 0;
+}

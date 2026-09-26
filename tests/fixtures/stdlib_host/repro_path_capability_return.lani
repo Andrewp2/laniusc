@@ -1,0 +1,8 @@
+module app::main;
+import std::path;
+fn main() -> i32 {
+    if (!std::path::path_contract_metadata_is_available()) {
+        return 1;
+    }
+    return 0;
+}

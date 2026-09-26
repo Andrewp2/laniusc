@@ -1,0 +1,31 @@
+module app::main;
+import core::byte;
+import core::mem;
+import core::number_i32;
+import core::range;
+import core::slice;
+fn main() -> i32 {
+    // A packet marker must be one ASCII hex digit before its readings count.
+    let marker: u8 = 70;
+    if (!core::byte::is_ascii_hexdigit(marker)) {
+        return 1;
+    }
+    let readings:[i32; 4] =[18, 42, 24, 30];
+    let data: ptr = core::mem::i32_array_data_ptr(readings);
+    let view:[i32] = core::mem::i32_slice_from_raw_parts(data, 4);
+    if (core::slice::sort_i32(view, 4) != 4 || !core::slice::is_sorted_i32(view, 4)) {
+        return 2;
+    }
+    let window: core::range::Range<i32> = core::range::range_i32(1, 4);
+    let index: i32 = 0;
+    let checksum: i32 = 0;
+    while (index<4) {
+        if (core::range::contains_i32(window, index)) {
+            let reading: i32 = core::slice::get_or_i32(view, 4, index, 0);
+            checksum = core::number_i32::saturating_add(checksum, reading);
+        }
+        index += 1;
+    }
+    print(checksum);
+    return 0;
+}

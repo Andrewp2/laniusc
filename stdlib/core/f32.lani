@@ -1,80 +1,78 @@
 // Module-form f32 helpers for source-level stdlib imports.
-
 module core::f32;
-
 pub const ZERO: f32 = 0.0;
 pub const ONE: f32 = 1.0;
-
 pub fn abs(value: f32) -> f32 {
-    if (value < 0.0) {
+    if (value<0.0) {
         return -value;
     } else {
         return value;
     }
 }
-
 pub fn min(left: f32, right: f32) -> f32 {
-    if (left < right) {
+    if (left<right) {
         return left;
     } else {
         return right;
     }
 }
-
 pub fn max(left: f32, right: f32) -> f32 {
-    if (left > right) {
+    if (left>right) {
         return left;
     } else {
         return right;
     }
 }
-
 pub fn clamp(value: f32, low: f32, high: f32) -> f32 {
-    if (value < low) {
+    if (value<low) {
         return low;
     } else {
-        if (value > high) {
+        if (value>high) {
             return high;
         } else {
             return value;
         }
     }
 }
-
 pub fn sqrt(value: f32) -> f32 {
     if (value <= 0.0) {
         return 0.0;
     }
-
-    let guess: f32 = value;
-    if (guess < 1.0) {
-        guess = 1.0;
+    if (value + value == value) {
+        return value;
     }
-
+    // Scale by powers of four so Newton's method always starts near the root.
+    // The matching powers of two are applied to the final approximation.
+    let scaled: f32 = value;
+    let factor: f32 = 1.0;
+    while (scaled >= 4.0) {
+        scaled = scaled * 0.25;
+        factor = factor * 2.0;
+    }
+    while (scaled<1.0) {
+        scaled = scaled * 4.0;
+        factor = factor * 0.5;
+    }
+    let guess: f32 = 0.5 *(scaled + 1.0);
     let iteration: i32 = 0;
-    while (iteration < 8) {
-        guess = 0.5 * (guess + value / guess);
+    while (iteration<6) {
+        guess = 0.5 *(guess + scaled / guess);
         iteration = iteration + 1;
     }
-    return guess;
+    return guess * factor;
 }
-
 pub fn is_negative(value: f32) -> bool {
-    return value < ZERO;
+    return value<ZERO;
 }
-
 pub fn is_positive(value: f32) -> bool {
-    return value > ZERO;
+    return value>ZERO;
 }
-
 pub fn is_zero(value: f32) -> bool {
     return value == ZERO;
 }
-
 pub fn is_nonzero(value: f32) -> bool {
     return value != ZERO;
 }
-
 pub fn signum(value: f32) -> f32 {
     if (is_positive(value)) {
         return ONE;
@@ -86,11 +84,9 @@ pub fn signum(value: f32) -> f32 {
         }
     }
 }
-
 pub fn between_exclusive(value: f32, low: f32, high: f32) -> bool {
-    return value > low && value < high;
+    return value>low && value<high;
 }
-
 pub fn between_inclusive(value: f32, low: f32, high: f32) -> bool {
     return value >= low && value <= high;
 }

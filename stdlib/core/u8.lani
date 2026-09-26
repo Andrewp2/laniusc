@@ -135,6 +135,9 @@ pub fn is_power_of_two(value: u8) -> bool {
     if (value <= 0) {
         return false;
     } else {
+        if (value > 128) {
+            return false;
+        }
         let power: u8 = 1;
         while (power < value) {
             power *= 2;
@@ -147,6 +150,10 @@ pub fn next_power_of_two(value: u8) -> u8 {
     if (value <= 1) {
         return 1;
     } else {
+        // Zero signals that the next power is not representable in u8.
+        if (value > 128) {
+            return 0;
+        }
         let power: u8 = 1;
         while (power < value) {
             power *= 2;

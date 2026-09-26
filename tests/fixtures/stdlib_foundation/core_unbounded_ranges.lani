@@ -1,0 +1,27 @@
+module app::main;
+import core::range;
+fn main() -> i32 {
+    let from: core::range::RangeFrom<i32> = core::range::range_from_i32(3);
+    if (core::range::start_from_i32(from) != 3 || !core::range::contains_from_i32(from, 3) || !core::range::contains_from_i32(from, 2147483647) || core::range::contains_from_i32(from, 2)) {
+        return 1;
+    }
+    if (from.start() != 3 || !from.contains(4) || from.contains(-2147483648)) {
+        return 2;
+    }
+    let to: core::range::RangeTo<i32> = core::range::range_to_i32(3);
+    if (core::range::end_to_i32(to) != 3 || !core::range::contains_to_i32(to, 2) || core::range::contains_to_i32(to, 3)) {
+        return 3;
+    }
+    if (to.end() != 3 || !to.contains(-2147483648) || to.contains(2147483647)) {
+        return 4;
+    }
+    let empty_to: core::range::RangeTo<i32> = core::range::range_to_i32(-2147483648);
+    if (empty_to.contains(-2147483648)) {
+        return 5;
+    }
+    let full: core::range::RangeFull = core::range::range_full();
+    if (!core::range::contains_full_i32(full, -2147483648) || !core::range::contains_full_i32(full, 2147483647)) {
+        return 6;
+    }
+    return 0;
+}

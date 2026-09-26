@@ -1,0 +1,41 @@
+module app::main;
+import std::path;
+fn main() -> i32 {
+    if (!std::path::path_component_is_current_dir(46, 1) || std::path::path_component_is_current_dir(46, 2) || !std::path::path_component_is_parent_dir(46, 46, 2) || std::path::path_component_is_parent_dir(46, 46, 1)) {
+        return 1;
+    }
+    if (!std::path::path_component_is_current_or_parent_dir(46, 65, 1) || !std::path::path_component_is_current_or_parent_dir(46, 46, 2) || std::path::path_component_is_current_or_parent_dir(65, 65, 2)) {
+        return 2;
+    }
+    if (!std::path::path_component_is_unix_hidden(46, 65, 2) || std::path::path_component_is_unix_hidden(46, 46, 2) || std::path::path_component_is_unix_hidden(46, 65, 1)) {
+        return 3;
+    }
+    if (!std::path::path_component_is_root_separator(47, 1) || !std::path::path_component_is_root_separator(92, 1) || std::path::path_component_is_root_separator(47, 2)) {
+        return 4;
+    }
+    if (!std::path::path_component_is_windows_drive_prefix(67, 58, 2) || std::path::path_component_is_windows_drive_prefix(67, 58, 3) || !std::path::path_header_is_windows_drive_prefix(67, 58, 3)) {
+        return 5;
+    }
+    if (!std::path::path_header_is_windows_drive_root(67, 58, 92, 3) || std::path::path_header_is_windows_drive_root(67, 58, 65, 3)) {
+        return 6;
+    }
+    if (!std::path::path_header_is_lexically_rooted(47, 0, 0, 1) || !std::path::path_header_is_lexically_rooted(67, 58, 92, 3) || std::path::path_header_is_lexically_rooted(67, 58, 65, 3)) {
+        return 7;
+    }
+    if (!std::path::path_header_is_absolute(47, 0, 0, 1) || !std::path::path_header_is_absolute(67, 58, 92, 3) || std::path::path_header_is_absolute(92, 0, 0, 1)) {
+        return 8;
+    }
+    if (!std::path::path_header_is_windows_drive_relative(67, 58, 65, 3) || std::path::path_header_is_windows_drive_relative(67, 58, 92, 3)) {
+        return 9;
+    }
+    if (!std::path::path_component_is_normal_relative(65, 66, 2) || std::path::path_component_is_normal_relative(46, 0, 1) || std::path::path_component_is_normal_relative(46, 46, 2) || std::path::path_component_is_normal_relative(67, 58, 2)) {
+        return 10;
+    }
+    if (!std::path::path_component_header_is_normal_relative(65, 66, 2) || std::path::path_component_header_is_normal_relative(47, 65, 2)) {
+        return 11;
+    }
+    if (!std::path::path_component_header_is_normal_windows_relative(65, 66, 2) || std::path::path_component_header_is_normal_windows_relative(42, 65, 2) || std::path::path_component_header_is_normal_windows_relative(65, 58, 2)) {
+        return 12;
+    }
+    return 0;
+}

@@ -1,0 +1,11 @@
+module app::main;
+import core::f32;
+fn main() -> i32 {
+    if (1.0 != 1.0) {
+        return 1;
+    }
+    if (core::f32::ONE != 1.0) {
+        return 3;
+    }
+    return 0;
+}

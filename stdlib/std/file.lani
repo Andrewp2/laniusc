@@ -1,0 +1,24 @@
+// Convenience file operation built from the bound filesystem and I/O APIs.
+// write_text_once opens or creates `path`, truncates it, makes one write
+// attempt, then closes the handle. A nonnegative result is the number of
+// bytes actually written; it may be shorter than `text`. A negative result
+// reports an open, write, or close failure. The handle is closed even when
+// the write fails.
+module std::file;
+import std::fs;
+import std::io;
+pub fn write_text_once(path: str, text: str) -> i32 {
+    let handle: std::fs::FileHandle = std::fs::open_write_path(path);
+    if (handle<0) {
+        return handle;
+    }
+    let written: i32 = std::io::write_text(handle, text);
+    let closed: i32 = std::fs::close_file(handle);
+    if (written<0) {
+        return written;
+    }
+    if (closed<0) {
+        return closed;
+    }
+    return written;
+}

@@ -1,0 +1,178 @@
+// Allocation-free byte arithmetic and ASCII operations.
+module core::byte;
+pub const MIN: u8 = 0;
+pub const MAX: u8 = 255;
+pub fn min(left: u8, right: u8) -> u8 {
+    if (left<right) {
+        return left;
+    }
+    return right;
+}
+pub fn max(left: u8, right: u8) -> u8 {
+    if (left>right) {
+        return left;
+    }
+    return right;
+}
+pub fn clamp_or(value: u8, low: u8, high: u8, fallback: u8) -> u8 {
+    if (low>high) {
+        return fallback;
+    }
+    if (value<low) {
+        return low;
+    }
+    if (value>high) {
+        return high;
+    }
+    return value;
+}
+pub fn saturating_add(left: u8, right: u8) -> u8 {
+    if (left>MAX - right) {
+        return MAX;
+    }
+    return left + right;
+}
+pub fn saturating_sub(left: u8, right: u8) -> u8 {
+    if (left<right) {
+        return MIN;
+    }
+    return left - right;
+}
+pub fn saturating_mul(left: u8, right: u8) -> u8 {
+    if (right == 0) {
+        return 0;
+    }
+    if (left>MAX / right) {
+        return MAX;
+    }
+    return left * right;
+}
+pub fn wrapping_add(left: u8, right: u8) -> u8 {
+    if (left>MAX - right) {
+        return left - (MAX - right) - 1;
+    }
+    return left + right;
+}
+pub fn wrapping_sub(left: u8, right: u8) -> u8 {
+    if (left<right) {
+        return MAX - (right - left) + 1;
+    }
+    return left - right;
+}
+pub fn abs_diff(left: u8, right: u8) -> u8 {
+    if (left >= right) {
+        return left - right;
+    }
+    return right - left;
+}
+pub fn is_zero(value: u8) -> bool {
+    return value == 0;
+}
+pub fn is_nonzero(value: u8) -> bool {
+    return value != 0;
+}
+pub fn is_even(value: u8) -> bool {
+    return value % 2 == 0;
+}
+pub fn is_odd(value: u8) -> bool {
+    return value % 2 != 0;
+}
+// Zero is not a valid divisor and returns false.
+pub fn is_multiple_of(value: u8, divisor: u8) -> bool {
+    if (divisor == 0) {
+        return false;
+    }
+    return value % divisor == 0;
+}
+pub fn is_power_of_two(value: u8) -> bool {
+    if (value == 0 || value>128) {
+        return false;
+    }
+    let power: u8 = 1;
+    while (power<value) {
+        power *= 2;
+    }
+    return power == value;
+}
+// Zero means the next power of two is not representable in u8.
+pub fn next_power_of_two(value: u8) -> u8 {
+    if (value <= 1) {
+        return 1;
+    }
+    if (value>128) {
+        return 0;
+    }
+    let power: u8 = 1;
+    while (power<value) {
+        power *= 2;
+    }
+    return power;
+}
+pub fn is_ascii(value: u8) -> bool {
+    return value <= 127;
+}
+pub fn is_ascii_digit(value: u8) -> bool {
+    return value >= 48 && value <= 57;
+}
+pub fn is_ascii_lowercase(value: u8) -> bool {
+    return value >= 97 && value <= 122;
+}
+pub fn is_ascii_uppercase(value: u8) -> bool {
+    return value >= 65 && value <= 90;
+}
+pub fn is_ascii_alphabetic(value: u8) -> bool {
+    return is_ascii_lowercase(value) || is_ascii_uppercase(value);
+}
+pub fn is_ascii_alphanumeric(value: u8) -> bool {
+    return is_ascii_alphabetic(value) || is_ascii_digit(value);
+}
+pub fn is_ascii_word(value: u8) -> bool {
+    return is_ascii_alphanumeric(value) || value == 95;
+}
+pub fn to_ascii_lowercase(value: u8) -> u8 {
+    if (is_ascii_uppercase(value)) {
+        return value + 32;
+    }
+    return value;
+}
+pub fn to_ascii_uppercase(value: u8) -> u8 {
+    if (is_ascii_lowercase(value)) {
+        return value - 32;
+    }
+    return value;
+}
+pub fn eq_ignore_ascii_case(left: u8, right: u8) -> bool {
+    return to_ascii_lowercase(left) == to_ascii_lowercase(right);
+}
+pub fn is_ascii_hexdigit(value: u8) -> bool {
+    return is_ascii_digit(value) || value >= 65 && value <= 70 || value >= 97 && value <= 102;
+}
+// A non-hex byte returns fallback unchanged.
+pub fn ascii_hexdigit_value_or(value: u8, fallback: u8) -> u8 {
+    if (is_ascii_digit(value)) {
+        return value - 48;
+    }
+    if (value >= 65 && value <= 70) {
+        return value - 55;
+    }
+    if (value >= 97 && value <= 102) {
+        return value - 87;
+    }
+    return fallback;
+}
+// Portable whitespace matches the existing char/u8 helpers: SP, HT, LF, CR.
+pub fn is_ascii_whitespace(value: u8) -> bool {
+    return value == 32 || value == 9 || value == 10 || value == 13;
+}
+pub fn is_ascii_control(value: u8) -> bool {
+    return value <= 31 || value == 127;
+}
+pub fn is_ascii_graphic(value: u8) -> bool {
+    return value >= 33 && value <= 126;
+}
+pub fn is_ascii_printable(value: u8) -> bool {
+    return value >= 32 && value <= 126;
+}
+pub fn is_ascii_punctuation(value: u8) -> bool {
+    return is_ascii_graphic(value) && !is_ascii_alphanumeric(value);
+}

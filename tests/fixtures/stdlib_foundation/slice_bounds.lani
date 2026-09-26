@@ -1,0 +1,9 @@
+module app::main;
+import core::mem;
+import core::slice;
+fn main() -> i32 {
+    let values:[i32; 3] =[3, 1, 4];
+    let pointer: ptr = core::mem::i32_array_data_ptr(values);
+    let view:[i32] = core::mem::i32_slice_from_raw_parts(pointer, 3);
+    return core::slice::get_or_i32(view, 4, 3, 0);
+}

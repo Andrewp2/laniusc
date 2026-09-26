@@ -268,6 +268,31 @@ pub extern "lanius_std" fn write_byte(handle: i32, value: i32) -> StdioOperation
 
 pub extern "lanius_std" fn write_newline(handle: i32) -> StdioOperationResult;
 
+// Returns the byte count, or the first negative host error. Partial text
+// writes are reported by their returned count; the newline is still attempted.
+pub fn write_line(handle: i32, text: str) -> StdioOperationResult {
+    let written: StdioOperationResult = write_text(handle, text);
+    if (written < 0) {
+        return written;
+    }
+    let newline: StdioOperationResult = write_newline(handle);
+    if (newline < 0) {
+        return newline;
+    }
+    if (written > 2147483647 - newline) {
+        return 2147483647;
+    }
+    return written + newline;
+}
+
+pub fn println(text: str) -> StdioOperationResult {
+    return write_line(1, text);
+}
+
+pub fn eprintln(text: str) -> StdioOperationResult {
+    return write_line(2, text);
+}
+
 pub fn print_i32(value: i32) {
     print(value);
 }

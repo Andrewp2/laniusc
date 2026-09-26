@@ -1,0 +1,16 @@
+module app::main;
+import std::fs;
+fn main() -> i32 {
+    let handle: std::fs::FileHandle = std::fs::open_read_path("tests/fixtures/stdlib_host/overflow_i32.txt");
+    if (handle<0) {
+        return 1;
+    }
+    let value: i32 = std::fs::read_i32(handle, 99);
+    if (std::fs::close_file(handle)<0) {
+        return 2;
+    }
+    if (value != 99) {
+        return 3;
+    }
+    return 0;
+}

@@ -1,0 +1,17 @@
+module app::main;
+import std::path;
+fn main() -> i32 {
+    if (std::path::PATH_SEPARATOR_NONE != 0 || std::path::PATH_SEPARATOR_UNIX_KIND != 1 || std::path::PATH_SEPARATOR_WINDOWS_KIND != 2) {
+        return 1;
+    }
+    if (std::path::PATH_SEPARATOR_UNIX != 47 || std::path::PATH_SEPARATOR_WINDOWS != 92 || std::path::PATH_EXTENSION_SEPARATOR != 46 || std::path::PATH_DRIVE_SEPARATOR != 58 || std::path::PATH_NUL != 0 || std::path::PATH_ASCII_DELETE != 127) {
+        return 2;
+    }
+    if (std::path::PATH_WINDOWS_RESERVED_DOUBLE_QUOTE != 34 || std::path::PATH_WINDOWS_RESERVED_ASTERISK != 42 || std::path::PATH_WINDOWS_RESERVED_LESS_THAN != 60 || std::path::PATH_WINDOWS_RESERVED_GREATER_THAN != 62 || std::path::PATH_WINDOWS_RESERVED_QUESTION_MARK != 63 || std::path::PATH_WINDOWS_RESERVED_PIPE != 124) {
+        return 3;
+    }
+    if (std::path::PATH_HAS_ALLOCATION_API || std::path::PATH_HAS_HOST_NORMALIZATION) {
+        return 4;
+    }
+    return 0;
+}

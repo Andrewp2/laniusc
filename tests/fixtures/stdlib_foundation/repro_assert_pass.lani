@@ -1,0 +1,13 @@
+module app::main;
+import test::assert;
+fn main() -> i32 {
+    test::assert::is_true(true);
+    test::assert::is_false(false);
+    test::assert::eq_i32(7, 7);
+    test::assert::ne_i32(7, 8);
+    test::assert::lt_i32(7, 8);
+    test::assert::le_i32(7, 7);
+    test::assert::gt_i32(8, 7);
+    test::assert::ge_i32(7, 7);
+    return 0;
+}

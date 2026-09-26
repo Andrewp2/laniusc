@@ -1,0 +1,9 @@
+module app::main;
+import core::option;
+fn main() -> i32 {
+    let value: core::option::Option<i32> = core::option::Some(7);
+    if (core::option::is_some(value)) {
+        return 0;
+    }
+    return 1;
+}

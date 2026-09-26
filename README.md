@@ -30,6 +30,12 @@ You can control the diagnostics output using `--diagnostic-format=<json|lsp-json
 `laniusc fmt [--check] <file> [<file> ...]` runs a formatter on the given files, and edits them. `--check` only checks without editing the file.
 `laniusc check` runs frontend checks like lexing, parsing, and typechecking, but it doesn't validate whether the backend accepts that code yet.
 
+## Standard library
+
+The [execution audit and portable foundation](docs/stdlib-foundation.md) lists
+the stdlib APIs verified on x86_64, their edge behavior, and the remaining
+compiler and runtime dependencies.
+
 ## Benchmarks
 
 TODO

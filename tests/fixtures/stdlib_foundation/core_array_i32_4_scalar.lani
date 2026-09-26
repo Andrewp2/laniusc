@@ -1,0 +1,38 @@
+module app::main;
+import core::array_i32_4;
+fn main() -> i32 {
+    let values:[i32; 4] =[3, -2, 3, 8];
+    if (core::array_i32_4::len() != 4 || core::array_i32_4::is_empty()) {
+        return 1;
+    }
+    if (core::array_i32_4::first(values) != 3 || core::array_i32_4::last(values) != 8) {
+        return 2;
+    }
+    if (core::array_i32_4::sum(values) != 12) {
+        return 3;
+    }
+    let overflowing:[i32; 4] =[2147483647, 1, 1, 1];
+    if (core::array_i32_4::sum(overflowing) != 2147483647) {
+        return 9;
+    }
+    let underflowing:[i32; 4] =[-2147483648, -1, -1, -1];
+    if (core::array_i32_4::sum(underflowing) != -2147483648) {
+        return 10;
+    }
+    if (core::array_i32_4::min(values) != -2 || core::array_i32_4::max(values) != 8) {
+        return 4;
+    }
+    if (core::array_i32_4::get_or(values, 2, 99) != 3 || core::array_i32_4::get_or(values, -1, 99) != 99 || core::array_i32_4::get_or(values, 4, 99) != 99) {
+        return 5;
+    }
+    if (!core::array_i32_4::contains(values, -2) || core::array_i32_4::contains(values, 7)) {
+        return 6;
+    }
+    if (core::array_i32_4::count(values, 3) != 2 || core::array_i32_4::count(values, 7) != 0) {
+        return 7;
+    }
+    if (core::array_i32_4::index_of_or(values, 3, 99) != 0 || core::array_i32_4::index_of_or(values, 7, 99) != 99) {
+        return 8;
+    }
+    return 0;
+}

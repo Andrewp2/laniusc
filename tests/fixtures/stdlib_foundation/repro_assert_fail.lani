@@ -1,0 +1,6 @@
+module app::main;
+import test::assert;
+fn main() -> i32 {
+    test::assert::is_true(false);
+    return 0;
+}

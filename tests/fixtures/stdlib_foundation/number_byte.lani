@@ -1,0 +1,89 @@
+module app::main;
+import core::number_i32;
+import core::byte;
+fn main() -> i32 {
+    if (core::byte::MIN != 0 || core::byte::MAX != 255) {
+        return 14;
+    }
+    let maximum: i32 = core::number_i32::MAX;
+    let minimum: i32 = core::number_i32::MIN;
+    if (core::number_i32::min(7, -3) != -3 || core::number_i32::max(7, -3) != 7) {
+        return 1;
+    }
+    if (core::number_i32::clamp_or(9, 2, 6, -1) != 6 || core::number_i32::clamp_or(0, 2, 6, -1) != 2 || core::number_i32::clamp_or(4, 6, 2, -1) != -1) {
+        return 2;
+    }
+    if (core::number_i32::saturating_abs(-7) != 7 || core::number_i32::saturating_abs(minimum) != maximum) {
+        return 3;
+    }
+    if (core::number_i32::saturating_add(maximum, 1) != maximum || core::number_i32::saturating_add(minimum, -1) != minimum || core::number_i32::saturating_add(-3, 2) != -1) {
+        return 4;
+    }
+    if (core::number_i32::saturating_sub(minimum, 1) != minimum || core::number_i32::saturating_sub(maximum, -1) != maximum || core::number_i32::saturating_sub(3, 2) != 1) {
+        return 5;
+    }
+    if (core::number_i32::saturating_abs_diff(minimum, maximum) != maximum || core::number_i32::saturating_abs_diff(3, 7) != 4) {
+        return 6;
+    }
+    if (!core::number_i32::is_even(-4) || core::number_i32::is_even(-3) || !core::number_i32::is_power_of_two(1024) || core::number_i32::is_power_of_two(0) || core::number_i32::is_power_of_two(-2)) {
+        return 7;
+    }
+    if (!core::number_i32::is_odd(-3) || core::number_i32::is_odd(-4) || !core::number_i32::is_zero(0) || core::number_i32::is_zero(1)) {
+        return 22;
+    }
+    if (core::number_i32::signum(-7) != -1 || core::number_i32::signum(0) != 0 || core::number_i32::signum(7) != 1) {
+        return 23;
+    }
+    if (!core::number_i32::is_multiple_of(minimum, -1) || !core::number_i32::is_multiple_of(12, 3) || core::number_i32::is_multiple_of(7, 3) || core::number_i32::is_multiple_of(7, 0)) {
+        return 24;
+    }
+    if (core::number_i32::div_or(-7, 3, 99) != -2 || core::number_i32::div_or(7, 0, 99) != 99 || core::number_i32::div_or(minimum, -1, 99) != 99) {
+        return 25;
+    }
+    if (core::number_i32::rem_or(-7, 3, 99) != -1 || core::number_i32::rem_or(7, 0, 99) != 99 || core::number_i32::rem_or(minimum, -1, 99) != 99) {
+        return 26;
+    }
+    if (core::number_i32::next_power_of_two(0) != 1 || core::number_i32::next_power_of_two(7) != 8 || core::number_i32::next_power_of_two(1073741824) != 1073741824 || core::number_i32::next_power_of_two(maximum) != 0) {
+        return 27;
+    }
+    if (core::byte::saturating_add(250, 10) != 255 || core::byte::saturating_add(2, 3) != 5 || core::byte::saturating_sub(0, 1) != 0 || core::byte::saturating_mul(200, 2) != 255 || core::byte::saturating_mul(3, 5) != 15 || core::byte::saturating_mul(0, 200) != 0) {
+        return 8;
+    }
+    if (core::byte::wrapping_add(255, 1) != 0 || core::byte::wrapping_add(2, 3) != 5 || core::byte::wrapping_sub(0, 1) != 255 || core::byte::wrapping_sub(5, 2) != 3 || core::byte::abs_diff(0, 255) != 255) {
+        return 9;
+    }
+    if (core::byte::is_multiple_of(7, 0) || !core::byte::is_multiple_of(12, 3)) {
+        return 10;
+    }
+    if (!core::byte::is_ascii_digit(48) || !core::byte::is_ascii_digit(57) || core::byte::is_ascii_digit(47) || core::byte::is_ascii_digit(58)) {
+        return 11;
+    }
+    if (!core::byte::is_ascii_lowercase(97) || !core::byte::is_ascii_uppercase(90) || core::byte::to_ascii_lowercase(65) != 97 || core::byte::to_ascii_uppercase(122) != 90 || core::byte::to_ascii_lowercase(200) != 200) {
+        return 12;
+    }
+    if (!core::byte::is_ascii_hexdigit(70) || !core::byte::is_ascii_hexdigit(102) || core::byte::is_ascii_hexdigit(71) || core::byte::ascii_hexdigit_value_or(48, 99) != 0 || core::byte::ascii_hexdigit_value_or(70, 99) != 15 || core::byte::ascii_hexdigit_value_or(102, 99) != 15 || core::byte::ascii_hexdigit_value_or(71, 99) != 99) {
+        return 13;
+    }
+    if (core::byte::min(7, 2) != 2 || core::byte::max(7, 2) != 7 || core::byte::clamp_or(1, 2, 6, 99) != 2 || core::byte::clamp_or(9, 2, 6, 99) != 6 || core::byte::clamp_or(4, 6, 2, 99) != 99) {
+        return 15;
+    }
+    if (!core::byte::is_zero(0) || core::byte::is_zero(1) || !core::byte::is_nonzero(1) || core::byte::is_nonzero(0) || !core::byte::is_even(254) || core::byte::is_even(255) || !core::byte::is_odd(255) || core::byte::is_odd(0)) {
+        return 16;
+    }
+    if (!core::byte::is_power_of_two(128) || core::byte::is_power_of_two(0) || core::byte::is_power_of_two(129) || core::byte::next_power_of_two(0) != 1 || core::byte::next_power_of_two(7) != 8 || core::byte::next_power_of_two(128) != 128 || core::byte::next_power_of_two(129) != 0) {
+        return 17;
+    }
+    if (!core::byte::is_ascii(127) || core::byte::is_ascii(128) || !core::byte::is_ascii_alphabetic(65) || !core::byte::is_ascii_alphabetic(122) || core::byte::is_ascii_alphabetic(48) || !core::byte::is_ascii_alphanumeric(48) || core::byte::is_ascii_alphanumeric(95) || !core::byte::is_ascii_word(95) || core::byte::is_ascii_word(45)) {
+        return 18;
+    }
+    if (!core::byte::eq_ignore_ascii_case(65, 97) || !core::byte::eq_ignore_ascii_case(90, 122) || core::byte::eq_ignore_ascii_case(65, 98)) {
+        return 19;
+    }
+    if (!core::byte::is_ascii_whitespace(32) || !core::byte::is_ascii_whitespace(9) || core::byte::is_ascii_whitespace(11) || !core::byte::is_ascii_control(0) || !core::byte::is_ascii_control(127) || core::byte::is_ascii_control(32) || core::byte::is_ascii_control(128)) {
+        return 20;
+    }
+    if (!core::byte::is_ascii_graphic(33) || !core::byte::is_ascii_graphic(126) || core::byte::is_ascii_graphic(32) || !core::byte::is_ascii_printable(32) || core::byte::is_ascii_printable(127) || !core::byte::is_ascii_punctuation(95) || core::byte::is_ascii_punctuation(65) || core::byte::is_ascii_punctuation(32)) {
+        return 21;
+    }
+    return 0;
+}

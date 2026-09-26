@@ -1,0 +1,35 @@
+module app::main;
+import core::bool;
+fn main() -> i32 {
+    if (!core::bool::not(false) || core::bool::not(true)) {
+        return 1;
+    }
+    if (!core::bool::and(true, true) || core::bool::and(true, false)) {
+        return 2;
+    }
+    if (!core::bool::or(false, true) || core::bool::or(false, false)) {
+        return 3;
+    }
+    if (!core::bool::xor(true, false) || core::bool::xor(true, true)) {
+        return 4;
+    }
+    if (!core::bool::eq(true, true) || core::bool::eq(true, false)) {
+        return 5;
+    }
+    if (!core::bool::ne(true, false) || core::bool::ne(false, false)) {
+        return 6;
+    }
+    if (core::bool::to_i32(true) != 1 || core::bool::to_i32(false) != 0) {
+        return 7;
+    }
+    if (!core::bool::from_i32(-3) || core::bool::from_i32(0)) {
+        return 8;
+    }
+    if (core::bool::select_i32(true, 7, 9) != 7 || core::bool::select_i32(false, 7, 9) != 9) {
+        return 9;
+    }
+    if (core::bool::choose_i32(true, 11, 13) != 11 || core::bool::choose_i32(false, 11, 13) != 13) {
+        return 10;
+    }
+    return 0;
+}

@@ -1,14 +1,21 @@
-// Source-level slice helpers for [i32] views.
-// Slices do not have runtime metadata yet, so helpers take length explicitly.
-
+// Allocation-free helpers for [i32] views. The caller supplies the view length
+// because the source language cannot read slice metadata yet. A length larger
+// than the actual view is invalid; native indexing traps if it reaches beyond
+// the view. Negative lengths behave as empty views.
 module core::slice;
-
-pub fn first_i32(values: [i32]) -> i32 {
+import core::number_i32;
+pub fn first_i32(values:[i32]) -> i32 {
+    // Native indexing traps if values is empty.
     return values[0];
 }
-
-pub fn get_or_i32(values: [i32], len: i32, index: i32, fallback: i32) -> i32 {
-    if (index < 0) {
+pub fn first_or_i32(values:[i32], len: i32, fallback: i32) -> i32 {
+    if (len <= 0) {
+        return fallback;
+    }
+    return values[0];
+}
+pub fn get_or_i32(values:[i32], len: i32, index: i32, fallback: i32) -> i32 {
+    if (index<0) {
         return fallback;
     } else {
         if (index >= len) {
@@ -18,10 +25,80 @@ pub fn get_or_i32(values: [i32], len: i32, index: i32, fallback: i32) -> i32 {
         }
     }
 }
-
-pub fn contains_i32(values: [i32], len: i32, needle: i32) -> bool {
+// Returns false and leaves the view unchanged for an out-of-range index.
+pub fn set_i32(values:[i32], len: i32, index: i32, value: i32) -> bool {
+    if (index<0 || index >= len) {
+        return false;
+    }
+    values[index] = value;
+    return true;
+}
+// Returns false and leaves the view unchanged if either index is invalid.
+pub fn swap_i32(values:[i32], len: i32, left: i32, right: i32) -> bool {
+    if (left<0 || right<0 || left >= len || right >= len) {
+        return false;
+    }
+    let previous: i32 = values[left];
+    values[left] = values[right];
+    values[right] = previous;
+    return true;
+}
+// Returns the number of elements written; nonpositive lengths write nothing.
+pub fn fill_i32(values:[i32], len: i32, value: i32) -> i32 {
     let index: i32 = 0;
-    while (index < len) {
+    while (index<len) {
+        values[index] = value;
+        index += 1;
+    }
+    return index;
+}
+// Returns the number of swaps performed.
+pub fn reverse_in_place_i32(values:[i32], len: i32) -> i32 {
+    if (len <= 1) {
+        return 0;
+    }
+    let left: i32 = 0;
+    let right: i32 = len - 1;
+    let swaps: i32 = 0;
+    while (left<right) {
+        let previous: i32 = values[left];
+        values[left] = values[right];
+        values[right] = previous;
+        left += 1;
+        right -= 1;
+        swaps += 1;
+    }
+    return swaps;
+}
+// Copies [source_start, source_end) to destination_start within one view.
+// Overlap is supported. Bounds invalid relative to `len` return false without
+// writing; the caller must still supply the actual backing view length.
+pub fn copy_within_i32(values:[i32], len: i32, source_start: i32, source_end: i32, destination_start: i32) -> bool {
+    if (len<0 || source_start<0 || source_end<source_start || source_end>len || destination_start<0) {
+        return false;
+    }
+    let count: i32 = source_end - source_start;
+    if (destination_start>len - count) {
+        return false;
+    }
+    if (destination_start>source_start) {
+        let remaining: i32 = count;
+        while (remaining>0) {
+            remaining -= 1;
+            values[destination_start + remaining] = values[source_start + remaining];
+        }
+    } else {
+        let offset: i32 = 0;
+        while (offset<count) {
+            values[destination_start + offset] = values[source_start + offset];
+            offset += 1;
+        }
+    }
+    return true;
+}
+pub fn contains_i32(values:[i32], len: i32, needle: i32) -> bool {
+    let index: i32 = 0;
+    while (index<len) {
         if (values[index] == needle) {
             return true;
         }
@@ -29,12 +106,156 @@ pub fn contains_i32(values: [i32], len: i32, needle: i32) -> bool {
     }
     return false;
 }
-
-pub fn sum_i32(values: [i32], len: i32) -> i32 {
+pub fn count_i32(values:[i32], len: i32, needle: i32) -> i32 {
+    let index: i32 = 0;
+    let count: i32 = 0;
+    while (index<len) {
+        if (values[index] == needle) {
+            count += 1;
+        }
+        index += 1;
+    }
+    return count;
+}
+// Returns the first matching index or the caller's fallback.
+pub fn index_of_or_i32(values:[i32], len: i32, needle: i32, fallback: i32) -> i32 {
+    let index: i32 = 0;
+    while (index<len) {
+        if (values[index] == needle) {
+            return index;
+        }
+        index += 1;
+    }
+    return fallback;
+}
+// Returns the last matching index or the caller's fallback.
+pub fn last_index_of_or_i32(values:[i32], len: i32, needle: i32, fallback: i32) -> i32 {
+    if (len <= 0) {
+        return fallback;
+    }
+    let index: i32 = len - 1;
+    while (index >= 0) {
+        if (values[index] == needle) {
+            return index;
+        }
+        index -= 1;
+    }
+    return fallback;
+}
+pub fn min_or_i32(values:[i32], len: i32, fallback: i32) -> i32 {
+    if (len <= 0) {
+        return fallback;
+    }
+    let lowest: i32 = values[0];
+    let index: i32 = 1;
+    while (index<len) {
+        if (values[index]<lowest) {
+            lowest = values[index];
+        }
+        index += 1;
+    }
+    return lowest;
+}
+pub fn max_or_i32(values:[i32], len: i32, fallback: i32) -> i32 {
+    if (len <= 0) {
+        return fallback;
+    }
+    let highest: i32 = values[0];
+    let index: i32 = 1;
+    while (index<len) {
+        if (values[index]>highest) {
+            highest = values[index];
+        }
+        index += 1;
+    }
+    return highest;
+}
+// Empty and single-element views are sorted.
+pub fn is_sorted_i32(values:[i32], len: i32) -> bool {
+    let index: i32 = 1;
+    while (index<len) {
+        if (values[index - 1]>values[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+fn sift_down_max_i32(values:[i32], heap_len: i32, start: i32) {
+    if (heap_len>1) {
+        let root: i32 = start;
+        while (root <=(heap_len - 2) / 2) {
+            let child: i32 = root * 2 + 1;
+            let largest: i32 = root;
+            if (values[largest]<values[child]) {
+                largest = child;
+            }
+            if (child + 1<heap_len && values[largest]<values[child + 1]) {
+                largest = child + 1;
+            }
+            if (largest == root) {
+                break;
+            }
+            let previous: i32 = values[root];
+            values[root] = values[largest];
+            values[largest] = previous;
+            root = largest;
+        }
+    }
+}
+// In-place ascending heapsort. Returns the number of elements sorted;
+// nonpositive lengths return zero and do not touch storage.
+pub fn sort_i32(values:[i32], len: i32) -> i32 {
+    if (len <= 0) {
+        return 0;
+    }
+    if (len == 1) {
+        return 1;
+    }
+    let start: i32 =(len - 2) / 2;
+    while (start >= 0) {
+        sift_down_max_i32(values, len, start);
+        if (start == 0) {
+            break;
+        }
+        start -= 1;
+    }
+    let remaining: i32 = len;
+    while (remaining>1) {
+        remaining -= 1;
+        let previous: i32 = values[0];
+        values[0] = values[remaining];
+        values[remaining] = previous;
+        sift_down_max_i32(values, remaining, 0);
+    }
+    return len;
+}
+// Requires nondecreasing input and returns the first matching index.
+// The midpoint calculation avoids overflowing i32 for a large valid view.
+pub fn binary_search_first_or_i32(values:[i32], len: i32, needle: i32, fallback: i32) -> i32 {
+    if (len <= 0) {
+        return fallback;
+    }
+    let low: i32 = 0;
+    let high: i32 = len;
+    while (low<high) {
+        let middle: i32 = low +(high - low) / 2;
+        if (values[middle]<needle) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    if (low<len && values[low] == needle) {
+        return low;
+    }
+    return fallback;
+}
+pub fn sum_i32(values:[i32], len: i32) -> i32 {
     let index: i32 = 0;
     let total: i32 = 0;
-    while (index < len) {
-        total += values[index];
+    while (index<len) {
+        total = core::number_i32::saturating_add(total, values[index]);
         index += 1;
     }
     return total;

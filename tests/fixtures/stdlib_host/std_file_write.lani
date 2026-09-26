@@ -1,0 +1,20 @@
+module app::main;
+import std::file;
+fn main() -> i32 {
+    if (std::file::write_text_once("note.txt", "alpha") != 5) {
+        return 1;
+    }
+    if (std::file::write_text_once("note.txt", "xy") != 2) {
+        return 2;
+    }
+    if (std::file::write_text_once("empty.txt", "") != 0) {
+        return 3;
+    }
+    if (std::file::write_text_once("missing/child.txt", "x") >= 0) {
+        return 4;
+    }
+    if (std::file::write_text_once("/dev/full", "x") >= 0) {
+        return 5;
+    }
+    return 0;
+}

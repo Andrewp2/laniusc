@@ -1,0 +1,52 @@
+module app::main;
+import core::f32;
+fn main() -> i32 {
+    if (core::f32::ZERO != 0.0) {
+        return 1;
+    }
+    if (1.0 != 1.0) {
+        return 16;
+    }
+    if (core::f32::abs(-2.5) != 2.5 || core::f32::abs(2.5) != 2.5) {
+        return 2;
+    }
+    if (core::f32::min(2.5, -1.0) != -1.0 || core::f32::max(2.5, -1.0) != 2.5) {
+        return 3;
+    }
+    if (core::f32::clamp(-3.0, -1.0, 2.0) != -1.0 || core::f32::clamp(4.0, -1.0, 2.0) != 2.0 || core::f32::clamp(1.0, -1.0, 2.0) != 1.0) {
+        return 4;
+    }
+    if (core::f32::sqrt(0.0) != 0.0 || core::f32::sqrt(-1.0) != 0.0 || core::f32::sqrt(4.0) != 2.0) {
+        return 5;
+    }
+    let large_root: f32 = core::f32::sqrt(100000000000000000000.0);
+    if (large_root<9999990000.0 || large_root>10000010000.0) {
+        return 6;
+    }
+    let small_root: f32 = core::f32::sqrt(0.00000001);
+    if (small_root<0.0000999 || small_root>0.0001001) {
+        return 7;
+    }
+    if (!core::f32::is_negative(-1.0) || core::f32::is_negative(0.0)) {
+        return 8;
+    }
+    if (!core::f32::is_positive(1.0) || core::f32::is_positive(0.0)) {
+        return 9;
+    }
+    if (!core::f32::is_zero(0.0) || core::f32::is_zero(1.0)) {
+        return 10;
+    }
+    if (!core::f32::is_nonzero(-1.0) || core::f32::is_nonzero(0.0)) {
+        return 11;
+    }
+    if (core::f32::signum(-1.0) != -1.0 || core::f32::signum(0.0) != 0.0 || core::f32::signum(2.0) != 1.0) {
+        return 12;
+    }
+    if (!core::f32::between_exclusive(1.0, 0.0, 2.0) || core::f32::between_exclusive(0.0, 0.0, 2.0)) {
+        return 13;
+    }
+    if (!core::f32::between_inclusive(0.0, 0.0, 2.0) || !core::f32::between_inclusive(2.0, 0.0, 2.0) || core::f32::between_inclusive(3.0, 0.0, 2.0)) {
+        return 14;
+    }
+    return 0;
+}

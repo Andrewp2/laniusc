@@ -1,0 +1,38 @@
+module app::main;
+import core::bits;
+fn main() -> i32 {
+    let high: u32 = 2147483648;
+    let max: u32 = 4294967295;
+    let edge: u32 = high|1;
+    if (core::bits::count_ones_u32(0) != 0 || core::bits::count_ones_u32(max) != 32 || core::bits::count_ones_u32(edge) != 2) {
+        return 1;
+    }
+    if (core::bits::count_zeros_u32(0) != 32 || core::bits::count_zeros_u32(max) != 0 || core::bits::count_zeros_u32(3) != 30) {
+        return 2;
+    }
+    if (core::bits::leading_zeros_u32(0) != 32 || core::bits::leading_zeros_u32(1) != 31 || core::bits::leading_zeros_u32(high) != 0) {
+        return 3;
+    }
+    if (core::bits::trailing_zeros_u32(0) != 32 || core::bits::trailing_zeros_u32(8) != 3 || core::bits::trailing_zeros_u32(high) != 31 || core::bits::trailing_zeros_u32(max) != 0) {
+        return 4;
+    }
+    if (!core::bits::has_single_bit_u32(1) || !core::bits::has_single_bit_u32(high) || core::bits::has_single_bit_u32(0) || core::bits::has_single_bit_u32(3)) {
+        return 5;
+    }
+    if (core::bits::rotate_left_u32(edge, 1) != 3 || core::bits::rotate_left_u32(edge, 0) != edge || core::bits::rotate_left_u32(edge, 32) != edge || core::bits::rotate_left_u32(edge, 33) != 3) {
+        return 6;
+    }
+    if (core::bits::rotate_right_u32(edge, 1) != 3221225472 || core::bits::rotate_right_u32(edge, 0) != edge || core::bits::rotate_right_u32(edge, 32) != edge || core::bits::rotate_right_u32(edge, 33) != 3221225472) {
+        return 7;
+    }
+    if (core::bits::reverse_bits_u32(0) != 0 || core::bits::reverse_bits_u32(1) != high || core::bits::reverse_bits_u32(edge) != edge) {
+        return 8;
+    }
+    if (core::bits::swap_bytes_u32(0) != 0 || core::bits::swap_bytes_u32(305419896) != 2018915346 || core::bits::swap_bytes_u32(max) != max) {
+        return 9;
+    }
+    if (!core::bits::bit_at_or_u32(edge, 31, false) || !core::bits::bit_at_or_u32(edge, 0, false) || core::bits::bit_at_or_u32(edge, 1, false) || !core::bits::bit_at_or_u32(0, 32, true) || core::bits::bit_at_or_u32(max, 32, false)) {
+        return 10;
+    }
+    return 0;
+}

@@ -1,0 +1,32 @@
+module app::main;
+import std::io;
+fn main() -> i32 {
+    if (std::io::println("alpha") != 6) {
+        return 1;
+    }
+    if (std::io::eprintln("beta") != 5) {
+        return 2;
+    }
+    if (std::io::write_line(-1, "ignored") >= 0) {
+        return 3;
+    }
+    if (std::io::write_line(1, "gamma") != 6) {
+        return 4;
+    }
+    if (std::io::println("") != 1) {
+        return 5;
+    }
+    if (std::io::write_text(1, "omega") != 5) {
+        return 6;
+    }
+    if (std::io::write_i32(1, -42) != 0) {
+        return 7;
+    }
+    if (std::io::write_byte(1, 33) != 1) {
+        return 8;
+    }
+    if (std::io::write_newline(1) != 1) {
+        return 9;
+    }
+    return 0;
+}

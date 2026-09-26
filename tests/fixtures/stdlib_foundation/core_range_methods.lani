@@ -1,0 +1,36 @@
+module app::main;
+import core::range;
+fn main() -> i32 {
+    let half: core::range::Range<i32> = core::range::range_i32(2, 6);
+    let half_overlap: core::range::Range<i32> = core::range::range_i32(5, 8);
+    let half_touch: core::range::Range<i32> = core::range::range_i32(6, 8);
+    let half_empty: core::range::Range<i32> = core::range::range_i32(6, 2);
+    if (half.start() != 2 || half.end() != 6) {
+        return 1;
+    }
+    if (half.is_empty() || !half_empty.is_empty()) {
+        return 2;
+    }
+    if (!half.contains(2) || !half.contains(5) || half.contains(6)) {
+        return 3;
+    }
+    if (!half.overlaps(half_overlap) || half.overlaps(half_touch) || half.overlaps(half_empty)) {
+        return 4;
+    }
+    let closed: core::range::RangeInclusive<i32> = core::range::range_inclusive_i32(2, 6);
+    let closed_touch: core::range::RangeInclusive<i32> = core::range::range_inclusive_i32(6, 8);
+    let closed_empty: core::range::RangeInclusive<i32> = core::range::range_inclusive_i32(7, 3);
+    if (closed.start() != 2 || closed.end() != 6) {
+        return 5;
+    }
+    if (closed.is_empty() || !closed_empty.is_empty()) {
+        return 6;
+    }
+    if (!closed.contains(2) || !closed.contains(6) || closed.contains(7)) {
+        return 7;
+    }
+    if (!closed.overlaps(closed_touch) || closed.overlaps(closed_empty)) {
+        return 8;
+    }
+    return 0;
+}

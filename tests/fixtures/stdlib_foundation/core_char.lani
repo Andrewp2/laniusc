@@ -1,0 +1,41 @@
+module app::main;
+import core::char;
+fn main() -> i32 {
+    if (!core::char::is_ascii_digit('5') || core::char::is_ascii_digit('/')) {
+        return 1;
+    }
+    if (!core::char::is_ascii_lowercase('q') || core::char::is_ascii_lowercase('Q')) {
+        return 2;
+    }
+    if (!core::char::is_ascii_uppercase('Q') || core::char::is_ascii_uppercase('q')) {
+        return 3;
+    }
+    if (!core::char::is_ascii_alphabetic('Q') || !core::char::is_ascii_alphabetic('q') || core::char::is_ascii_alphabetic('5')) {
+        return 4;
+    }
+    if (!core::char::is_ascii_alphanumeric('5') || !core::char::is_ascii_alphanumeric('q') || core::char::is_ascii_alphanumeric('_')) {
+        return 5;
+    }
+    if (!core::char::is_ascii_word('_') || !core::char::is_ascii_word('z') || core::char::is_ascii_word('-')) {
+        return 6;
+    }
+    if (!core::char::eq_ignore_ascii_case('A', 'a') || !core::char::eq_ignore_ascii_case('z', 'Z') || !core::char::eq_ignore_ascii_case('7', '7') || core::char::eq_ignore_ascii_case('A', 'b')) {
+        return 7;
+    }
+    if (!core::char::is_ascii_hexdigit('F') || !core::char::is_ascii_hexdigit('f') || core::char::is_ascii_hexdigit('g')) {
+        return 8;
+    }
+    if (!core::char::is_ascii_whitespace(' ') || !core::char::is_ascii_whitespace('\n') || core::char::is_ascii_whitespace('_')) {
+        return 9;
+    }
+    if (!core::char::is_ascii_punctuation('!') || !core::char::is_ascii_punctuation('[') || !core::char::is_ascii_punctuation('~') || core::char::is_ascii_punctuation('A')) {
+        return 10;
+    }
+    if (!core::char::is_ascii_graphic('!') || !core::char::is_ascii_graphic('~') || core::char::is_ascii_graphic(' ')) {
+        return 11;
+    }
+    if (!core::char::is_ascii_printable(' ') || !core::char::is_ascii_printable('~') || core::char::is_ascii_printable('\n')) {
+        return 12;
+    }
+    return 0;
+}

@@ -104,6 +104,9 @@ pub fn lstd_i32_is_power_of_two(value: i32) -> bool {
     if (value <= 0) {
         return false;
     } else {
+        if (value > 1073741824) {
+            return false;
+        }
         let power: i32 = 1;
         while (power < value) {
             power *= 2;
@@ -116,6 +119,10 @@ pub fn lstd_i32_next_power_of_two(value: i32) -> i32 {
     if (value <= 1) {
         return 1;
     } else {
+        // Zero signals that the next positive power is not representable.
+        if (value > 1073741824) {
+            return 0;
+        }
         let power: i32 = 1;
         while (power < value) {
             power *= 2;

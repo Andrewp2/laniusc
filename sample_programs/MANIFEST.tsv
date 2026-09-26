@@ -25,6 +25,7 @@ function_calls	function_calls.stdout	0	-	-	direct function calls	x86_64,wasm	che
 loop_control	loop_control.stdout	0	-	-	break and continue control flow	x86_64,wasm	checked by sample_programs target tests
 nested_blocks_shadowing	nested_blocks_shadowing.stdout	0	-	-	nested scopes and shadowing	x86_64,wasm	checked by sample_programs target tests
 numeric_range_sum	numeric_range_sum.stdout	0	-	-	numeric range accumulation	x86_64,wasm	checked by sample_programs target tests
+portable_window_checksum	portable_window_checksum.stdout	0	-	-	portable byte numeric range and slice helpers	x86_64	checked by focused stdlib execution test
 option_result_helpers	option_result_helpers.stdout	0	-	-	core option and result helpers	-	documentation-smoke only; not backend or conformance evidence
 process_exit_status	process_exit_status.stdout	7	-	-	nonzero process exit status	x86_64,wasm	checked by sample_programs target tests
 random_fill	random_fill.stdout	0	-	-	secure random byte filling	x86_64,wasm	checked by sample_programs target tests

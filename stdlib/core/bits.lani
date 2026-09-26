@@ -1,0 +1,76 @@
+// Allocation-free operations on the 32-bit representation of a u32.
+module core::bits;
+pub fn count_ones_u32(value: u32) -> u32 {
+    let remaining: u32 = value;
+    let count: u32 = 0;
+    while (remaining != 0) {
+        count += remaining&1;
+        remaining >>= 1;
+    }
+    return count;
+}
+pub fn count_zeros_u32(value: u32) -> u32 {
+    return 32 - count_ones_u32(value);
+}
+// Zero has 32 leading zero bits.
+pub fn leading_zeros_u32(value: u32) -> u32 {
+    let remaining: u32 = value;
+    let length: u32 = 0;
+    while (remaining != 0) {
+        length += 1;
+        remaining >>= 1;
+    }
+    return 32 - length;
+}
+// Zero has 32 trailing zero bits.
+pub fn trailing_zeros_u32(value: u32) -> u32 {
+    if (value == 0) {
+        return 32;
+    }
+    let remaining: u32 = value;
+    let count: u32 = 0;
+    while ((remaining&1) == 0) {
+        count += 1;
+        remaining >>= 1;
+    }
+    return count;
+}
+pub fn has_single_bit_u32(value: u32) -> bool {
+    return value != 0 &&(value&(value - 1)) == 0;
+}
+// The shift amount is reduced modulo 32. The zero case avoids a shift by 32.
+pub fn rotate_left_u32(value: u32, amount: u32) -> u32 {
+    let shift: u32 = amount % 32;
+    if (shift == 0) {
+        return value;
+    }
+    return(value << shift)|(value >>(32 - shift));
+}
+pub fn rotate_right_u32(value: u32, amount: u32) -> u32 {
+    let shift: u32 = amount % 32;
+    if (shift == 0) {
+        return value;
+    }
+    return(value >> shift)|(value <<(32 - shift));
+}
+pub fn reverse_bits_u32(value: u32) -> u32 {
+    let remaining: u32 = value;
+    let reversed: u32 = 0;
+    let count: u32 = 0;
+    while (count<32) {
+        reversed =(reversed << 1)|(remaining&1);
+        remaining >>= 1;
+        count += 1;
+    }
+    return reversed;
+}
+pub fn swap_bytes_u32(value: u32) -> u32 {
+    return((value&255) << 24)|((value&65280) << 8)|((value >> 8)&65280)|((value >> 24)&255);
+}
+// An out-of-range bit position returns the caller's fallback.
+pub fn bit_at_or_u32(value: u32, index: u32, fallback: bool) -> bool {
+    if (index >= 32) {
+        return fallback;
+    }
+    return((value >> index)&1) != 0;
+}

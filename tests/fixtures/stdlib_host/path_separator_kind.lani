@@ -1,0 +1,14 @@
+module app::main;
+import std::path;
+fn main() -> i32 {
+    if (std::path::path_separator_kind(47) != std::path::PATH_SEPARATOR_UNIX_KIND) {
+        return 1;
+    }
+    if (std::path::path_separator_kind(92) != std::path::PATH_SEPARATOR_WINDOWS_KIND) {
+        return 2;
+    }
+    if (std::path::path_separator_kind(65) != std::path::PATH_SEPARATOR_NONE) {
+        return 3;
+    }
+    return 0;
+}

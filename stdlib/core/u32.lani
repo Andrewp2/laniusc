@@ -144,6 +144,9 @@ pub fn is_power_of_two(value: u32) -> bool {
     if (value <= 0) {
         return false;
     } else {
+        if (value > 2147483648) {
+            return false;
+        }
         let power: u32 = 1;
         while (power < value) {
             power *= 2;
@@ -156,6 +159,10 @@ pub fn next_power_of_two(value: u32) -> u32 {
     if (value <= 1) {
         return 1;
     } else {
+        // Zero signals that the next power is not representable in u32.
+        if (value > 2147483648) {
+            return 0;
+        }
         let power: u32 = 1;
         while (power < value) {
             power *= 2;
