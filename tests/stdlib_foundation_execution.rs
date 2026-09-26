@@ -61,6 +61,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "number_i8",
+            "tests/fixtures/stdlib_foundation/number_i8.lani",
+            0,
+            b"",
+        ),
+        (
             "number_u16",
             "tests/fixtures/stdlib_foundation/number_u16.lani",
             0,

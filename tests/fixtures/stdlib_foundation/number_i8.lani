@@ -1,0 +1,71 @@
+module app::main;
+import core::number_i8;
+fn main() -> i32 {
+    let low: i8 = -128;
+    let high: i8 = 127;
+    let fallback: i8 = -99;
+    if (core::number_i8::MIN != low || core::number_i8::MAX != high) {
+        return 21;
+    }
+    if (core::number_i8::min(low, high) != low || core::number_i8::max(low, high) != high) {
+        return 1;
+    }
+    if (core::number_i8::clamp_or(5, 0, 4, fallback) != 4 || core::number_i8::clamp_or(-2, 0, 4, fallback) != 0 || core::number_i8::clamp_or(2, 0, 4, fallback) != 2 || core::number_i8::clamp_or(2, 4, 0, fallback) != fallback) {
+        return 2;
+    }
+    if (core::number_i8::saturating_abs(low) != high || core::number_i8::saturating_abs(-7) != 7 || core::number_i8::saturating_abs(0) != 0) {
+        return 3;
+    }
+    if (core::number_i8::gcd_or(24, -18, fallback) != 6 || core::number_i8::gcd_or(0, 0, fallback) != 0 || core::number_i8::gcd_or(low, 0, fallback) != fallback || core::number_i8::gcd_or(low, low, fallback) != fallback) {
+        return 4;
+    }
+    if (core::number_i8::lcm_or(6, -8, fallback) != 24 || core::number_i8::lcm_or(0, low, fallback) != 0 || core::number_i8::lcm_or(high, 2, fallback) != fallback || core::number_i8::lcm_or(low, 1, fallback) != fallback) {
+        return 5;
+    }
+    if (core::number_i8::saturating_add(5, 7) != 12 || core::number_i8::saturating_add(high, 1) != high || core::number_i8::saturating_add(low, -1) != low) {
+        return 6;
+    }
+    if (core::number_i8::saturating_sub(9, 4) != 5 || core::number_i8::saturating_sub(high, -1) != high || core::number_i8::saturating_sub(low, 1) != low) {
+        return 7;
+    }
+    if (core::number_i8::saturating_mul(-7, 9) != -63 || core::number_i8::saturating_mul(high, 2) != high || core::number_i8::saturating_mul(low, 2) != low) {
+        return 8;
+    }
+    if (core::number_i8::mul_or(-7, 9, fallback) != -63 || core::number_i8::mul_or(high, 2, fallback) != fallback || core::number_i8::mul_or(low, -1, fallback) != fallback) {
+        return 9;
+    }
+    if (core::number_i8::pow_or(3, 4, fallback) != 81 || core::number_i8::pow_or(0, 0, fallback) != 1 || core::number_i8::pow_or(2, 6, fallback) != 64 || core::number_i8::pow_or(2, 7, fallback) != fallback || core::number_i8::pow_or(-2, 7, fallback) != low || core::number_i8::pow_or(-2, 8, fallback) != fallback) {
+        return 10;
+    }
+    if (core::number_i8::saturating_abs_diff(7, 10) != 3 || core::number_i8::saturating_abs_diff(10, 7) != 3 || core::number_i8::saturating_abs_diff(low, high) != high) {
+        return 11;
+    }
+    if (!core::number_i8::is_even(0) || !core::number_i8::is_even(-2) || core::number_i8::is_even(-3) || !core::number_i8::is_odd(-3) || core::number_i8::is_odd(4)) {
+        return 12;
+    }
+    if (!core::number_i8::is_zero(0) || core::number_i8::is_zero(1) || core::number_i8::signum(low) != -1 || core::number_i8::signum(0) != 0 || core::number_i8::signum(high) != 1) {
+        return 13;
+    }
+    if (!core::number_i8::is_multiple_of(12, 3) || core::number_i8::is_multiple_of(13, 3) || core::number_i8::is_multiple_of(0, 0) || !core::number_i8::is_multiple_of(low, -1)) {
+        return 14;
+    }
+    if (core::number_i8::div_or(-7, 3, fallback) != -2 || core::number_i8::div_or(7, -3, fallback) != -2 || core::number_i8::div_or(7, 0, fallback) != fallback || core::number_i8::div_or(low, -1, fallback) != fallback) {
+        return 15;
+    }
+    if (core::number_i8::rem_or(-7, 3, fallback) != -1 || core::number_i8::rem_or(7, -3, fallback) != 1 || core::number_i8::rem_or(7, 0, fallback) != fallback || core::number_i8::rem_or(low, -1, fallback) != fallback) {
+        return 16;
+    }
+    if (core::number_i8::div_euclid_or(-7, 3, fallback) != -3 || core::number_i8::rem_euclid_or(-7, 3, fallback) != 2 || core::number_i8::div_euclid_or(-7, -3, fallback) != 3 || core::number_i8::rem_euclid_or(-7, -3, fallback) != 2 || core::number_i8::div_euclid_or(7, -3, fallback) != -2 || core::number_i8::rem_euclid_or(7, -3, fallback) != 1) {
+        return 17;
+    }
+    if (core::number_i8::div_euclid_or(1, 0, fallback) != fallback || core::number_i8::rem_euclid_or(1, 0, fallback) != fallback || core::number_i8::div_euclid_or(low, -1, fallback) != fallback || core::number_i8::rem_euclid_or(low, -1, fallback) != fallback) {
+        return 18;
+    }
+    if (!core::number_i8::is_power_of_two(1) || !core::number_i8::is_power_of_two(64) || core::number_i8::is_power_of_two(0) || core::number_i8::is_power_of_two(-2) || core::number_i8::is_power_of_two(high)) {
+        return 19;
+    }
+    if (core::number_i8::next_power_of_two(-5) != 1 || core::number_i8::next_power_of_two(0) != 1 || core::number_i8::next_power_of_two(1) != 1 || core::number_i8::next_power_of_two(3) != 4 || core::number_i8::next_power_of_two(64) != 64 || core::number_i8::next_power_of_two(65) != 0) {
+        return 20;
+    }
+    return 0;
+}

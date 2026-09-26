@@ -9,6 +9,7 @@ limited to native x86_64 output from this worktree.
 
 | Public surface | Classification | Evidence and limit |
 | --- | --- | --- |
+| `core::number_i8` constants and all 23 public functions | Executable on x86_64 | Focused runtime fixture checks signed 8-bit limits, widened arithmetic, saturation, multiplication and power overflow, GCD/LCM, division and Euclidean remainder, zero-divisor and `MIN/-1` fallbacks, parity, signs, and power-of-two boundaries. |
 | `core::number_i16` constants and all 23 public functions | Executable on x86_64 | Focused runtime fixture checks signed 16-bit limits, widened arithmetic, saturation, multiplication and power overflow, GCD/LCM, division and Euclidean remainder, zero-divisor and `MIN/-1` fallbacks, parity, signs, and power-of-two boundaries. |
 | `core::number_u16` constants and all 25 public functions | Executable on x86_64 | Focused runtime fixture checks unsigned 16-bit limits, widened saturation and wrapping, multiplication and power overflow, GCD/LCM, zero-divisor fallbacks, parity, and power-of-two and alignment boundaries. |
 | `core::number_i32` constants and all 23 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, multiplication and power overflow, signed GCD/LCM, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
@@ -47,6 +48,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
 
 ## Executable subset and behavior
 
+- `core::number_i8` widens arithmetic to i16 before checking the signed 8-bit
+  bounds. Saturating operations clamp to `MIN` or `MAX`; unrepresentable
+  multiplication, powers, GCD, and LCM return the caller's fallback. Division
+  and remainder return the fallback for zero or `MIN/-1`. The next positive
+  power of two returns zero above 64.
 - `core::number_i16` widens arithmetic to i32 before checking the signed
   16-bit bounds. Saturating operations clamp to `MIN` or `MAX`; `mul_or`,
   `pow_or`, and unrepresentable GCD/LCM results return the caller's fallback.
@@ -249,7 +255,7 @@ the view, and accumulates with saturating arithmetic. It prints `96`.
 | Wasm | Not claimed or required for this foundation. |
 
 Run the focused gate with `cargo test --test stdlib_foundation_execution`.
-The test compiles twenty-one small Lanius programs through `--stdlib-root`, executes
+The test compiles twenty-two small Lanius programs through `--stdlib-root`, executes
 the native ELFs, checks their exit status, checks the example's stdout, and
 checks the slice bounds trap. Each source is also suitable for direct CLI
 compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.
