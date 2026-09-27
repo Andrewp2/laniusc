@@ -65,7 +65,7 @@ limited to native x86_64 output from this worktree.
 | `std::env` all 54 public functions, 13 constants, and 6 host calls | Executable on x86_64 Linux | The foundation runtime fixture checks every metadata function and constant and calls `current_dir_len`. Native source-pack tests exercise environment lookup, enumeration, key reads, and current-directory reads with real host state. The focused environment suite checks missing keys, bounded storage, host failure, and allocation failure in `current_dir_len`. GPU device execution is not claimed. |
 | `std::io` all 54 public Lanius functions, 12 constants, and 7 host calls | Executable on x86_64 Linux | The foundation runtime fixture checks every metadata function and constant. Existing I/O fixtures execute all six higher-level public functions, including line output, `print_i32`, and synchronous flush semantics. Native tests exercise the seven bound calls with real stdin, stdout, stderr, and file handles, including short writes and host errors. GPU device execution is not claimed. |
 | `std::fs` all 67 public Lanius functions, 18 constants, and 14 host calls | Executable on x86_64 Linux | The foundation fixture checks every metadata function and constant. Native tests exercise raw open, append, read, write, close, path mutation, string paths, and decimal reads. Pointer path calls consume their supplied lengths and reject invalid bounds or embedded NUL bytes; decimal reads reject overflow. The file suite covers normal paths, missing paths, and host failures. GPU device execution is not claimed. |
-| `std::random` all 28 metadata functions, 8 constants, and 2 host calls | Partially executable on x86_64 Linux | The foundation fixture executes every metadata function and reads every constant. `fill_secure_bytes` returns a byte count or negative error, including after unrelated host calls (resolved dependency 44). The scalar `secure_u32` draws normally, but its failure result is ambiguous with a valid value (dependency 18), so the complete module is not claimed. |
+| `std::random` all 28 metadata functions, 8 constants, and 2 host calls | Executable on x86_64 Linux | The foundation fixture executes every metadata function and reads every constant. `fill_secure_bytes` returns a byte count or negative error, including after unrelated host calls (resolved dependency 44). The raw `secure_u32` returns a full-width draw or traps on a short read or host error (resolved dependency 18). GPU device execution is not claimed. |
 | `std::time` | Mixed: bound calls executable; i64 declarations contract-only | The x86 binding supports 16-byte clock reads, i32 millisecond sleep, and Unix seconds. The i64 clock and sleep declarations remain unbound. `std::time_checked` exercises the bounded operations. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::args_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks argument count including the executable, exact byte lengths and bytes, absent/negative indices, sufficient and insufficient capacity, null storage, and capacity above `i32::MAX`. Caller storage avoids allocation. |
 | `std::env_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_env_execution.rs` checks exact value and key bytes, missing and invalid indices, capacity and null-storage failures, current-directory bytes and its NUL terminator, and injected `getcwd` failure. Caller storage avoids allocation. |
@@ -81,7 +81,7 @@ limited to native x86_64 output from this worktree.
 | `std::file_hex` all 9 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_hex_execution.rs` checks lowercase and uppercase writes, bounded hexadecimal file reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed and overflowing input, missing and overlong files, and injected read/write/close errors. |
 | `std::file_binary` all 6 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_binary_execution.rs` checks shortest binary file writes and bounded reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed, missing, overlong, and overflowing input, plus injected read/write/close errors. |
 | `std::file` all 21 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, multi-chunk binary copies between files and standard streams, bounded decimal reads and writes across 8-, 16-, and 32-bit integers, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
-| `std::random_checked` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded and inclusive unsigned and signed outputs, forced draws and rejection, full-range failure fallbacks, and secure i32 slice shuffling with preserved contents, a forced swap, and injected failure. The suite also runs a raw fill after a directory read to guard the runtime flags fix. The raw `secure_u32` failure result remains ambiguous (dependency 18). |
+| `std::random_checked` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded and inclusive unsigned and signed outputs, forced draws and rejection, full-range failure fallbacks, and secure i32 slice shuffling with preserved contents, a forced swap, and injected failure. The suite also runs a raw fill after a directory read to guard the runtime flags fix, and confirms that the raw scalar traps on host failure and short reads. |
 | `std::path` all 17 constants and all 31 public functions | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. Redundant no-argument functions that failed natively were removed in favor of the tested constants. Allocation and host normalization are unavailable. |
 | `std::vec_i32` all 12 public functions and its capacity constant | Executable on x86_64 Linux | `tests/fixtures/stdlib_foundation/vec_i32.lani` checks construction, growth, element access and mutation, bounds, reserve, pop, clear, and destruction. `tests/stdlib_vec_i32_execution.rs` injects allocation and reallocation failures and checks the vector and prior data stay unchanged. This is a linear-ownership API by convention; source-level moves are not enforced. |
 | `std::vec_u32` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, `2^31`, and `u32::MAX`. The allocation-failure suite injects failed initial allocation and reallocation; the real checksum sample combines it with `core::number_u32` and `OptionU32`. Storage uses 32-bit cells and preserves every unsigned bit pattern. Ownership is linear by convention. |
@@ -739,7 +739,8 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   caller-supplied length beyond the actual backing view can trap on indexing.
 
 The checked random helpers report failure if the host call fails. The raw
-`secure_u32` result cannot distinguish failure from a valid all-ones draw.
+`secure_u32` returns a full-width draw or traps on a short read or host error.
+Use `fill_secure_bytes` or the checked helpers when failure must be recoverable.
 
 The small runnable example is `sample_programs/portable_window_checksum.lani`.
 It validates an ASCII marker, copies readings into a separate backed view,
@@ -1022,16 +1023,14 @@ also fixes the imported struct-return relocation path described below.
     ASCII mappings for executable case conversion, while general conversion
     from a Unicode scalar to `char` remains a GPU compiler dependency. The
     reproduction is recorded here.
-18. **Raw secure random scalar failure channel.** The x86 runtime bytes for
-   `std::random::secure_u32` in
-   `shaders/codegen/lir/x86/runtime_abi.slang` return `0xFFFFFFFF` when the
-   `getrandom` syscall does not return four bytes. That bit pattern is also a
-   valid random `u32`, so callers cannot detect the failure. The bound
-   `fill_secure_bytes` operation has a signed status result, and the Lanius
-   `std::random_checked` wrappers now use it to report failure or retry short
-   reads. The raw scalar function remains ambiguous until its runtime contract
-   changes or it is removed. Focused tests inject host failure, zero progress,
-   and a short read; the older raw-function test covers normal execution only.
+18. **Resolved: raw secure random scalar failure channel.** The x86 runtime
+   bytes for `std::random::secure_u32` previously returned `0xFFFFFFFF` when
+   the `getrandom` syscall did not return four bytes. That bit pattern is a
+   valid random `u32`, so the failure was ambiguous. The runtime binding now
+   traps with `ud2` on a short read or host error. The focused native test
+   executes a successful draw and injects both `EIO` and a two-byte read,
+   checking for SIGILL. Callers needing a recoverable error can use the signed
+   status from `fill_secure_bytes` or the Lanius `std::random_checked` wrappers.
 19. **Transitive host import loses the native entrypoint.** With
     `--stdlib-root tests/fixtures/stdlib_foundation/repro_transitive_host_root`,
     `repro_transitive_host_direct.lani` emits an x86_64 ELF that exits zero.
@@ -1285,8 +1284,8 @@ also fixes the imported struct-return relocation path described below.
     now exits 0 and `strace` shows `getrandom(ptr, 4, 0) = 4`. A focused
     native test and the host smoke sample exercise the sequence; the sample
     checks the returned byte count instead of a tautological `secure_u32`
-    self-comparison. The raw scalar's separate ambiguous failure result is
-    still dependency 18.
+    self-comparison. The raw scalar's separate failure channel is resolved in
+    dependency 18.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

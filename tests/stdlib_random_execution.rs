@@ -32,6 +32,54 @@ fn raw_secure_fill_ignores_prior_host_call_registers_on_x86() {
     let _ = bytes;
 }
 
+#[test]
+fn raw_secure_u32_traps_on_host_failure_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/random_raw_scalar.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("random_raw_scalar", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile raw random scalar fixture");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        use std::os::unix::process::ExitStatusExt;
+
+        let normal =
+            common::run_x86_64_elf_output("random_raw_scalar", "random_raw_scalar", &bytes);
+        assert!(matches!(normal.status.code(), Some(0 | 1)), "{normal:?}");
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let executable = write_executable(&bytes, "random_raw_scalar_failure");
+        for injection in ["getrandom:error=EIO:when=1", "getrandom:retval=2:when=1"] {
+            let output = common::short_process_output_with_timeout(
+                format!("raw random scalar {injection}"),
+                std::process::Command::new("strace")
+                    .arg("-qq")
+                    .arg("-e")
+                    .arg("trace=getrandom")
+                    .arg("-e")
+                    .arg(format!("inject={injection}"))
+                    .arg(executable.path()),
+            );
+            assert_eq!(output.status.signal(), Some(4), "{output:?}");
+            let trace = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                trace.contains("INJECTED") && trace.contains("SIGILL"),
+                "{output:?}"
+            );
+        }
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
 #[cfg(target_os = "linux")]
 fn write_executable(bytes: &[u8], name: &str) -> common::TempArtifact {
     use std::os::unix::fs::PermissionsExt;

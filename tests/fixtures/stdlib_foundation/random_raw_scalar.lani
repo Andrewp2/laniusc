@@ -1,0 +1,10 @@
+module app::main;
+import std::random;
+
+fn main() -> i32 {
+    let draw: u32 = std::random::secure_u32();
+    if (draw % 2 == 0) {
+        return 0;
+    }
+    return 1;
+}

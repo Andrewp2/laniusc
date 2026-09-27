@@ -146,4 +146,7 @@ pub fn secure_u32_requires_runtime_binding() -> RandomCapability {
 
 pub extern "lanius_std" fn fill_secure_bytes(ptr: ptr, len: usize) -> RandomOperationResult;
 
+// The native x86 binding traps on a short read or host error because no u32
+// sentinel can represent failure. Use fill_secure_bytes for a recoverable
+// status result.
 pub extern "lanius_std" fn secure_u32() -> u32;
