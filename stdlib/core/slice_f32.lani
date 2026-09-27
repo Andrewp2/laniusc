@@ -379,6 +379,70 @@ fn all_finite(values: [f32], len: i32) -> bool {
     return true;
 }
 
+// Finite values use ordinary numeric order, with signed zeros equal. Both
+// entire views are validated before comparing; invalid input returns fallback.
+pub fn compare_lexicographic_finite_or(
+    left: [f32], left_len: i32, right: [f32], right_len: i32, fallback: i32
+) -> i32 {
+    if (!all_finite(left, left_len) || !all_finite(right, right_len)) {
+        return fallback;
+    }
+    let common: i32 = left_len;
+    if (right_len < common) { common = right_len; }
+    let index: i32 = 0;
+    while (index < common) {
+        if (left[index] < right[index]) { return -1; }
+        if (left[index] > right[index]) { return 1; }
+        index += 1;
+    }
+    if (left_len < right_len) { return -1; }
+    if (left_len > right_len) { return 1; }
+    return 0;
+}
+
+// Empty, negative, NaN, or infinite views return fallback.
+pub fn min_finite_or(values: [f32], len: i32, fallback: f32) -> f32 {
+    if (len <= 0 || !all_finite(values, len)) { return fallback; }
+    let minimum: f32 = values[0];
+    let index: i32 = 1;
+    while (index < len) {
+        if (values[index] < minimum) { minimum = values[index]; }
+        index += 1;
+    }
+    return minimum;
+}
+
+pub fn max_finite_or(values: [f32], len: i32, fallback: f32) -> f32 {
+    if (len <= 0 || !all_finite(values, len)) { return fallback; }
+    let maximum: f32 = values[0];
+    let index: i32 = 1;
+    while (index < len) {
+        if (values[index] > maximum) { maximum = values[index]; }
+        index += 1;
+    }
+    return maximum;
+}
+
+// Places values below pivot before values at or above it. Invalid inputs
+// return fallback without writing. Relative order within groups is unspecified.
+pub fn partition_lt_finite_or(values: [f32], len: i32, pivot: f32, fallback: i32) -> i32 {
+    if (!core::f32::is_finite(pivot) || !all_finite(values, len)) {
+        return fallback;
+    }
+    let write: i32 = 0;
+    let read: i32 = 0;
+    while (read < len) {
+        if (values[read] < pivot) {
+            let previous: f32 = values[write];
+            values[write] = values[read];
+            values[read] = previous;
+            write += 1;
+        }
+        read += 1;
+    }
+    return write;
+}
+
 // Nonfinite values and negative lengths are invalid. Equal signed zeros are
 // accepted because ordinary f32 comparisons do not distinguish them.
 pub fn is_sorted_finite(values: [f32], len: i32) -> bool {
