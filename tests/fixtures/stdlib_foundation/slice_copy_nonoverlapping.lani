@@ -38,5 +38,26 @@ fn main() -> i32 {
     if (!core::slice::copy_nonoverlapping_prefix_i32(empty_destination, 0, empty_source, 0)) {
         return 10;
     }
+    if (!core::slice::copy_nonoverlapping_range_i32(destination_view, 6, 2, source_view, 5, 1, 3)) {
+        return 11;
+    }
+    if (destination[0] != 7 || destination[1] != 11 || destination[2] != 11 ||
+        destination[3] != 13 || destination[4] != 17 || destination[5] != 0) {
+        return 12;
+    }
+    if (!core::slice::copy_nonoverlapping_range_i32(destination_view, 6, 6, source_view, 5, 5, 0)) {
+        return 13;
+    }
+    if (core::slice::copy_nonoverlapping_range_i32(destination_view, 6, 5, source_view, 5, 1, 2) ||
+        core::slice::copy_nonoverlapping_range_i32(destination_view, 6, 2, source_view, 5, 4, 2) ||
+        core::slice::copy_nonoverlapping_range_i32(destination_view, 6, -1, source_view, 5, 0, 1) ||
+        core::slice::copy_nonoverlapping_range_i32(destination_view, 6, 0, source_view, -1, 0, 1) ||
+        core::slice::copy_nonoverlapping_range_i32(destination_view, 6, 0, source_view, 5, 0, -1)) {
+        return 14;
+    }
+    if (destination[0] != 7 || destination[1] != 11 || destination[2] != 11 ||
+        destination[3] != 13 || destination[4] != 17 || destination[5] != 0) {
+        return 15;
+    }
     return 0;
 }

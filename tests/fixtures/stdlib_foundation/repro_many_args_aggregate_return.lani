@@ -1,0 +1,9 @@
+module app::main;
+import core::args;
+fn main() -> i32 {
+    let seven: core::args::Triple = core::args::triple7(1, 2, 3, 4, 5, 6, 7);
+    if (!core::args::triple_matches(seven, 6, 8, 14)) { return 1; }
+    let eight: core::args::Triple = core::args::triple8(1, 2, 3, 4, 5, 6, 7, 8);
+    if (!core::args::triple_matches(eight, 9, 9, 18)) { return 2; }
+    return 0;
+}

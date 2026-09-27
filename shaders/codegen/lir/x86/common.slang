@@ -27,6 +27,24 @@ uint x86_imported_call_result_words(OptIrNodeCore core)
     return core.value_word_count;
 }
 
+// CALL_SYMBOL has no spare operand: a/b/c identify the imported symbol.
+// Its local ordinal carries the result width and aligned outgoing stack
+// word count. Scatter rejects either count above 65535 before packing.
+uint x86_symbol_call_layout(uint result_words, uint stack_words)
+{
+    return (stack_words << 16u) | result_words;
+}
+
+uint x86_symbol_call_result_words(uint layout)
+{
+    return layout & 0xffffu;
+}
+
+uint x86_symbol_call_stack_bytes(uint layout)
+{
+    return (layout >> 16u) * 8u;
+}
+
 uint x86_aggregate_value_word_count(OptIrNodeCore core,
                                     OptIrNodeOperands operands)
 {

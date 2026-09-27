@@ -2,3 +2,25 @@ module core::args;
 pub fn sum7(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32) -> i32 {
     return a + b + c + d + e + f + g;
 }
+
+pub fn weighted8(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32) -> i32 {
+    return a + b * 2 + c * 3 + d * 4 + e * 5 + f * 6 + g * 7 + h * 8;
+}
+
+pub fn weighted9(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32, i: i32) -> i32 {
+    return a + b * 2 + c * 3 + d * 4 + e * 5 + f * 6 + g * 7 + h * 8 + i * 9;
+}
+
+pub struct Triple { first: i32, second: i32, third: i32 }
+
+pub fn triple7(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32) -> Triple {
+    return Triple { first: a + e, second: b + f, third: c + d + g };
+}
+
+pub fn triple8(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32) -> Triple {
+    return Triple { first: a + h, second: b + g, third: c + d + e + f };
+}
+
+pub fn triple_matches(value: Triple, first: i32, second: i32, third: i32) -> bool {
+    return value.first == first && value.second == second && value.third == third;
+}

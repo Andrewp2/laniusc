@@ -71,7 +71,9 @@ void emit_float_predicate_al(inout uint cursor, uint predicate)
 bool x86_emit_uses_specialized_pass(X86LirCore core,
                                    X86LirOperands operands)
 {
-    return (operands.metadata & X86_LIR_METADATA_INDEX_AGGREGATE_COPY) != 0u ||
+    return core.op == X86_LIR_OP_PRINT_I32 ||
+        core.op == X86_LIR_OP_INTRINSIC_IDENTITY ||
+        (operands.metadata & X86_LIR_METADATA_INDEX_AGGREGATE_COPY) != 0u ||
         ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u &&
          (core.op == X86_LIR_OP_COMPARE ||
           core.op == X86_LIR_OP_COMPARE_BRANCH_FALSE ||
@@ -907,21 +909,26 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     }
     else if (core.op == X86_LIR_OP_CALL_SYMBOL)
     {
-        // Object projection records a PC-relative relocation at the four-byte
-        // placeholder following E8. Executable mode never admits unresolved
-        // dependencies, so no symbol policy is hidden in this emitter.
+        // Object projection relocates the placeholder following E8.
         uint storage_slot = value_slot(locations.result, function) + 1u;
+        uint result_words = x86_symbol_call_result_words(core.local_ordinal);
         if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u &&
-            core.local_ordinal > 2u)
+            result_words > 2u)
             emit_stack_address(cursor, 7u, storage_slot);
         emit_u8(cursor, 0xe8u);
         emit_u32(cursor, 0u);
+        uint stack_bytes = x86_symbol_call_stack_bytes(core.local_ordinal);
+        if (stack_bytes != 0u)
+        {
+            emit_u8(cursor, 0x48u); emit_u8(cursor, 0x81u); emit_u8(cursor, 0xc4u);
+            emit_u32(cursor, stack_bytes);
+        }
         if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
         {
-            if (core.local_ordinal <= 2u)
+            if (result_words <= 2u)
             {
                 store_stack64(cursor, 0u, storage_slot);
-                if (core.local_ordinal > 1u)
+                if (result_words > 1u)
                     store_stack64(cursor, 2u, storage_slot + 1u);
                 emit_stack_address(cursor, 0u, storage_slot);
                 store_value64(cursor, 0u, locations.result, function);
@@ -953,19 +960,6 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
                 store_value64(cursor, 0u, locations.result, function);
             else store_value32(cursor, 0u, locations.result, function);
         }
-    }
-    else if (core.op == X86_LIR_OP_PRINT_I32)
-    {
-        // Scatter accepts only print (1) and assert (2) for this opcode.
-        uint target = layout.runtime_offset + (operands.a == 2u
-            ? X86_RUNTIME_ASSERT_OFFSET : X86_RUNTIME_PRINT_I32_OFFSET);
-        uint next = cursor + 5u;
-        emit_u8(cursor, 0xe8u); emit_u32(cursor, target - next);
-    }
-    else if (core.op == X86_LIR_OP_INTRINSIC_IDENTITY)
-    {
-        // The preceding CALL_ARG row placed the aggregate pointer in RDI.
-        store_value64(cursor, 7u, locations.result, function);
     }
     else if (core.op == X86_LIR_OP_AGGREGATE_RETURN_WORD)
     {

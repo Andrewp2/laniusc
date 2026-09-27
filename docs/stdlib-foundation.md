@@ -32,7 +32,7 @@ limited to native x86_64 output from this worktree.
 | `core::range_i8` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-128`, `127`, touching intervals, and empty or reversed bounds. |
 | `core::range_u16` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check half-open, inclusive, from, to, and full ranges, including equal or reversed bounds, touching intervals, and the `65535` endpoint. |
 | `core::range_i16` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-32768`, `32767`, touching intervals, and empty or reversed bounds. |
-| `core::slice` all 36 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, first and last contiguous subsequence matches, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Sorting also runs all 243 five-element arrays over `{-1, 0, 1}` against independently counted expected groups. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
+| `core::slice` all 37 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, first and last contiguous subsequence matches, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Sorting also runs all 243 five-element arrays over `{-1, 0, 1}` against independently counted expected groups. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
 | `core::slice_u8` all 36 public byte-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures exercise access, swaps, fill, rotation, overlap-safe and nonoverlapping copies, compaction, insertion, sequence comparison and search, unsigned ordering, heapsort, binary search, partitioning, and saturating sum. They cover empty and invalid logical lengths, rejected mutation, zero, and 255. Sorting also runs every five-element sequence over `{0,1,2}` against independently counted groups. A source scan requires a runtime call for every public function. Byte views over string or raw pointer storage remain outside this claim. |
 | `core::slice_i8` all 36 public signed-byte-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every public function and cover search, mutation, copy, rotation, compaction, insertion, signed ordering, sorting, binary search, partitioning, and left-to-right saturating sum. Cases include `-128`, `127`, empty and invalid logical lengths, every five-element sequence over `{-1,0,1}`, and a native trap on physical length overclaim. |
 | `core::slice_i16` all 36 public signed-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Matching fixtures cover every public function, `-32768`, `32767`, signed ordering and binary search, sums clamped after each addition, all 243 small sorting sequences, invalid logical lengths, and a native trap on physical length overclaim. |
@@ -446,6 +446,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   separate backed view, returns false without writing for negative lengths or
   insufficient destination length, and accepts an empty source. Its source and
   destination element ranges must not overlap in memory.
+  `copy_nonoverlapping_range_i32` accepts source and destination offsets plus
+  a count. It returns false before writing for a negative or out-of-range
+  argument, accepts an empty range at either view's end, and requires the
+  copied element ranges to be disjoint. The seven-argument imported call is
+  exercised by the runtime fixture and `portable_window_checksum.lani`.
   `starts_with_i32`, `ends_with_i32`, and `equals_i32` compare elements in
   backed views; they treat negative lengths as empty.
   `compare_lexicographic_i32` returns -1, 0, or 1 after comparing the first
@@ -1106,14 +1111,14 @@ also fixes the imported struct-return relocation path described below.
     the `core::pair::Pair { ... }` literal. This is a second obstacle to a
     public struct-based collection handle unless construction goes through a
     tested module function instead of an imported struct literal.
-24. **Seven-argument imported calls.** With
-    `--stdlib-root tests/fixtures/stdlib_foundation/repro_many_args_root`,
-    `repro_seven_arguments.lani` passes `laniusc check`, but x86 emission stops
-    with `LNC0017`, unsupported target LIR opcode 21 at the imported call.
-    A corresponding six-scalar-argument probe emitted and executed. This
-    prevented a general range-copy helper with two views and five scalar
-    arguments; `core::slice::copy_nonoverlapping_prefix_i32` uses four arguments
-    and has a native runtime test.
+24. **Resolved: imported calls with stack arguments.** The x86 backend now
+    pushes arguments past the six register words, restores the aligned outgoing
+    stack area after imported calls, and keeps object relocation offsets at the
+    call site. `tests/stdlib_imported_aggregate_execution.rs` executes
+    seven-, eight-, and nine-argument imported calls, plus seven- and
+    eight-argument calls with a three-word return and hidden return pointer.
+    `core::slice::copy_nonoverlapping_range_i32` uses two backed views and five
+    scalar arguments and runs in the native fixture and checksum sample.
 25. **Uninitialized array backing for stack buffers.**
     `tests/fixtures/stdlib_foundation/repro_uninitialized_array_data_ptr.lani`
     passes `laniusc check --stdlib-root stdlib`, but `--emit x86_64` stops with

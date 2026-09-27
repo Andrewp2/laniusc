@@ -14,7 +14,7 @@ fn main() -> i32 {
     let sorted:[i32; 4] =[0, 0, 0, 0];
     let readings_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(readings), 4);
     let view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(sorted), 4);
-    if (!core::slice::copy_nonoverlapping_prefix_i32(view, 4, readings_view, 4)) {
+    if (!core::slice::copy_nonoverlapping_range_i32(view, 4, 0, readings_view, 4, 0, 4)) {
         return 2;
     }
     if (core::slice::sort_i32(view, 4) != 4 || !core::slice::is_sorted_i32(view, 4)) {

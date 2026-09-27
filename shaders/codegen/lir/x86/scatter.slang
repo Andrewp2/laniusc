@@ -245,8 +245,7 @@ void write_call_arg(uint page_row, uint row, uint semantic_row, uint source_hir,
         opt_ir_source_hir[argument.call_instruction] == source_hir &&
         opt_ir_op(opt_ir_core[argument.call_instruction]) == opt_ir_op(source);
     target_lir_flags[page_row] = matching_call &&
-        argument.value_instruction < gParams.semantic_capacity &&
-        (abi_ordinal + sret_shift < 6u || opt_ir_op(source) == SEMANTIC_LIR_OP_CALL)
+        argument.value_instruction < gParams.semantic_capacity
         ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
 }
 
@@ -1040,16 +1039,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     X86LirCore core;
     core.source_hir = source_hir;
+    uint stack_words = argument_rows + (call_result_words > 2u ? 1u : 0u) > 6u
+        ? argument_rows + (call_result_words > 2u ? 1u : 0u) - 6u : 0u;
+    uint aligned_stack_words = (stack_words + 1u) & ~1u;
     core.local_ordinal = op == X86_LIR_OP_COMPARE_BRANCH_FALSE ||
         op == X86_LIR_OP_SELECT_STORE || op == X86_LIR_OP_FIELD_STORE
         ? local_ordinal
         : (op == X86_LIR_OP_INDEX_LOAD || op == X86_LIR_OP_INDEX_STORE)
         ? semantic_lir_layout_word_offset[semantic_row]
-        : op == X86_LIR_OP_CALL_SYMBOL ? call_result_words
-        : op == X86_LIR_OP_CALL && argument_rows + (call_result_words > 2u ? 1u : 0u) > 6u
-        ? ((argument_rows + (call_result_words > 2u ? 1u : 0u) - 6u + 1u) & ~1u) * 8u
+        : op == X86_LIR_OP_CALL_SYMBOL
+        ? x86_symbol_call_layout(call_result_words, aligned_stack_words)
+        : op == X86_LIR_OP_CALL && stack_words != 0u
+        ? aligned_stack_words * 8u
         : 0u;
     core.op = op;
+    if (op == X86_LIR_OP_CALL_SYMBOL &&
+        (call_result_words > 0xffffu || aligned_stack_words > 0xffffu))
+        flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     // `result` is a semantic instruction identity. The target stream may
     // have inserted CALL_ARG rows before this operation, so machine emission
     // must address the concrete target row for the result value and any

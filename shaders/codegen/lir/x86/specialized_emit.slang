@@ -9,7 +9,9 @@ import gpu_index;
 bool x86_is_specialized_instruction(X86LirCore core,
                                    X86LirOperands operands)
 {
-    return (operands.metadata & X86_LIR_METADATA_INDEX_AGGREGATE_COPY) != 0u ||
+    return core.op == X86_LIR_OP_PRINT_I32 ||
+        core.op == X86_LIR_OP_INTRINSIC_IDENTITY ||
+        (operands.metadata & X86_LIR_METADATA_INDEX_AGGREGATE_COPY) != 0u ||
         ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u &&
          (core.op == X86_LIR_OP_COMPARE ||
           core.op == X86_LIR_OP_COMPARE_BRANCH_FALSE ||
@@ -54,7 +56,21 @@ void emit_specialized_instruction(inout uint cursor, X86LirCore core,
                                  X86LirLocations locations,
                                  TargetLirFunction function)
 {
-    if (core.op == X86_LIR_OP_COMPARE)
+    if (core.op == X86_LIR_OP_PRINT_I32)
+    {
+        // Scatter accepts only print (1) and assert (2) for this opcode.
+        uint target = x86_artifact_layout[0u].runtime_offset +
+            (operands.a == 2u
+                ? X86_RUNTIME_ASSERT_OFFSET : X86_RUNTIME_PRINT_I32_OFFSET);
+        uint next = cursor + 5u;
+        emit_u8(cursor, 0xe8u); emit_u32(cursor, target - next);
+    }
+    else if (core.op == X86_LIR_OP_INTRINSIC_IDENTITY)
+    {
+        // The preceding CALL_ARG row placed the aggregate pointer in RDI.
+        store_value64(cursor, 7u, locations.result, function);
+    }
+    else if (core.op == X86_LIR_OP_COMPARE)
     {
         emit_aggregate_word_compare(cursor, locations.b, locations.c,
             function);

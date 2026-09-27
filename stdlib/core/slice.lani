@@ -152,6 +152,27 @@ pub fn copy_nonoverlapping_prefix_i32(destination:[i32], destination_len: i32, s
     }
     return true;
 }
+// Copies `count` elements between distinct backed view ranges. The source
+// and destination ranges must not overlap in memory; use copy_within_i32 for
+// overlap. Invalid logical lengths or ranges return false without writing.
+// Claimed lengths must fit the actual backing views or native indexing traps.
+pub fn copy_nonoverlapping_range_i32(destination:[i32], destination_len: i32, destination_start: i32, source:[i32], source_len: i32, source_start: i32, count: i32) -> bool {
+    if (destination_len<0 || source_len<0 || destination_start<0 || source_start<0 || count<0) {
+        return false;
+    }
+    if (destination_start>destination_len || source_start>source_len) {
+        return false;
+    }
+    if (count>destination_len - destination_start || count>source_len - source_start) {
+        return false;
+    }
+    let offset: i32 = 0;
+    while (offset<count) {
+        destination[destination_start + offset] = source[source_start + offset];
+        offset += 1;
+    }
+    return true;
+}
 // Keep the first element of each adjacent run, preserving order. Returns the
 // new logical length; elements at or beyond it are unspecified. A nonpositive
 // len returns zero without writing.

@@ -243,10 +243,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         (semantic_lir_functions[operands.a].flags & SEMANTIC_FUNCTION_FLAG_EXTERN) != 0u)
         report_diagnostic(LOWERING_DIAGNOSTIC_X86_CALL_ABI,
             LOWERING_DIAGNOSTIC_DETAIL_HIR, source_hir, source_hir, semantic_row);
-    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL &&
-        result_words != 0u && argument_rows >= 6u)
-        report_diagnostic(LOWERING_DIAGNOSTIC_X86_CALL_ABI,
-            LOWERING_DIAGNOSTIC_DETAIL_HIR, source_hir, source_hir, semantic_row);
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_HOST &&
         operands.a != HOST_SERVICE_I32_TO_F32 &&
         !x86_runtime_service_supported(operands.a))

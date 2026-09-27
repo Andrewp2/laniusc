@@ -8808,6 +8808,7 @@ fn build_lowering_compiler_graph(
                 PassAccess::read("opt_ir_source_hir", opt_source_hir),
                 PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
                 PassAccess::read("semantic_to_target_start", semantic_to_target_start),
+                PassAccess::read("target_lir_core", target_core),
                 PassAccess::read("target_lir_operands", target_operands.unwrap()),
                 PassAccess::read("target_lir_locations", x86_target_locations.unwrap()),
                 PassAccess::read("target_function_count", function_count),

@@ -409,7 +409,7 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
     if (core.op == X86_LIR_OP_CALL || core.op == X86_LIR_OP_CALL_SYMBOL)
     {
         uint result_words = core.op == X86_LIR_OP_CALL
-            ? operands.c : core.local_ordinal;
+            ? operands.c : x86_symbol_call_result_words(core.local_ordinal);
         return x86_call_result_instruction_bytes(
             operands.metadata, result_words, locations.result);
     }
@@ -661,7 +661,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         report_unsupported(page_row, core.source_hir);
     }
     uint hidden_sret = semantic_function.result_word_count > 2u ? 1u : 0u;
-    if (core.op == X86_LIR_OP_CALL && core.local_ordinal != 0u)
+    if ((core.op == X86_LIR_OP_CALL && core.local_ordinal != 0u) ||
+        (core.op == X86_LIR_OP_CALL_SYMBOL &&
+         x86_symbol_call_stack_bytes(core.local_ordinal) != 0u))
         bytes += 7u; // release outgoing stack arguments after call
     if (row == function.instruction_start)
     {

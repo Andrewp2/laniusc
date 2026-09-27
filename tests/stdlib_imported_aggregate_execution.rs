@@ -6,6 +6,54 @@ use laniusc_compiler::compiler::{
 };
 
 #[test]
+fn imported_calls_with_seven_to_nine_arguments_execute_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_seven_arguments.lani");
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_many_args_root");
+    let bytes = common::run_gpu_codegen_with_timeout("imported stack arguments", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile imported stack arguments");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported stack arguments",
+            "repro_seven_arguments",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "unexpected stdout: {output:?}");
+        assert!(output.stderr.is_empty(), "unexpected stderr: {output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_stack_arguments_with_hidden_aggregate_return_execute_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_many_args_aggregate_return.lani");
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_many_args_root");
+    let bytes = common::run_gpu_codegen_with_timeout("imported stack aggregate", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile imported stack aggregate");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported stack aggregate",
+            "repro_many_args_aggregate_return",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn imported_aggregate_returns_execute_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_aggregate_root");
