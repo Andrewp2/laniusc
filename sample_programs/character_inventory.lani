@@ -2,6 +2,7 @@ module app::main;
 import core::char;
 import core::number_i32;
 import core::range;
+import core::range_char;
 import core::slice_char;
 
 fn main() -> i32 {
@@ -15,11 +16,14 @@ fn main() -> i32 {
     let after: i32 = core::slice_char::upper_bound_or(letters, 6, z, -1);
     if (first < 0 || after < first) { return 2; }
     let matches: core::range::Range<i32> = core::range::range_i32(first, after);
+    let lowercase: core::range_char::RangeInclusiveChar =
+        core::range_char::range_inclusive(a, z);
     let count: i32 = 0;
     let index: i32 = 0;
     while (index < 6) {
         let letter: char = core::slice_char::get_or(letters, 6, index, a);
         if (core::range::contains_i32(matches, index) &&
+            core::range_char::contains_inclusive(lowercase, letter) &&
             core::char::is_ascii_alphabetic(letter)) {
             count = core::number_i32::saturating_add(count, 1);
         }

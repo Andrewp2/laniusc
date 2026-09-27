@@ -540,6 +540,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_range_char",
+            "tests/fixtures/stdlib_foundation/range_char.lani",
+            0,
+            b"",
+        ),
+        (
             "core_range_i8",
             "tests/fixtures/stdlib_foundation/range_i8.lani",
             0,
@@ -966,6 +972,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             "range_u8",
             include_str!("../stdlib/core/range_u8.lani"),
             include_str!("fixtures/stdlib_foundation/range_u8.lani"),
+        ),
+        (
+            "range_char",
+            include_str!("../stdlib/core/range_char.lani"),
+            include_str!("fixtures/stdlib_foundation/range_char.lani"),
         ),
         (
             "range_i8",

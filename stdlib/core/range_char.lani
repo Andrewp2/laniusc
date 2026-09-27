@@ -1,0 +1,94 @@
+// Allocation-free character ranges ordered by Unicode scalar value.
+module core::range_char;
+
+// Half-open [start, end). Equal or reversed bounds are empty.
+pub fn half_open_is_empty(start: char, end: char) -> bool {
+    return start >= end;
+}
+
+pub fn half_open_contains(start: char, end: char, value: char) -> bool {
+    return value >= start && value < end;
+}
+
+pub fn half_open_overlaps(left_start: char, left_end: char, right_start: char, right_end: char) -> bool {
+    return left_start < left_end && right_start < right_end &&
+        left_start < right_end && right_start < left_end;
+}
+
+// Inclusive [start, end]. Equal bounds contain exactly one character.
+pub fn inclusive_is_empty(start: char, end: char) -> bool {
+    return start > end;
+}
+
+pub fn inclusive_contains(start: char, end: char, value: char) -> bool {
+    return value >= start && value <= end;
+}
+
+pub fn inclusive_overlaps(left_start: char, left_end: char, right_start: char, right_end: char) -> bool {
+    return left_start <= left_end && right_start <= right_end &&
+        left_start <= right_end && right_start <= left_end;
+}
+
+pub fn from_contains(start: char, value: char) -> bool {
+    return value >= start;
+}
+
+pub fn to_contains(end: char, value: char) -> bool {
+    return value < end;
+}
+
+// Every valid character is in the full range.
+pub fn full_contains(value: char) -> bool {
+    return true;
+}
+
+pub struct RangeChar { start: char, end: char, }
+pub struct RangeInclusiveChar { start: char, end: char, }
+pub struct RangeFromChar { start: char, }
+pub struct RangeToChar { end: char, }
+
+pub fn range(start: char, end: char) -> RangeChar {
+    return RangeChar { start: start, end: end };
+}
+pub fn start(value: RangeChar) -> char { return value.start; }
+pub fn end(value: RangeChar) -> char { return value.end; }
+pub fn is_empty(value: RangeChar) -> bool {
+    return half_open_is_empty(value.start, value.end);
+}
+pub fn contains(value: RangeChar, item: char) -> bool {
+    return half_open_contains(value.start, value.end, item);
+}
+pub fn overlaps(left: RangeChar, right: RangeChar) -> bool {
+    return half_open_overlaps(left.start, left.end, right.start, right.end);
+}
+
+pub fn range_inclusive(start: char, end: char) -> RangeInclusiveChar {
+    return RangeInclusiveChar { start: start, end: end };
+}
+pub fn start_inclusive(value: RangeInclusiveChar) -> char { return value.start; }
+pub fn end_inclusive(value: RangeInclusiveChar) -> char { return value.end; }
+pub fn is_empty_inclusive(value: RangeInclusiveChar) -> bool {
+    return inclusive_is_empty(value.start, value.end);
+}
+pub fn contains_inclusive(value: RangeInclusiveChar, item: char) -> bool {
+    return inclusive_contains(value.start, value.end, item);
+}
+pub fn overlaps_inclusive(left: RangeInclusiveChar, right: RangeInclusiveChar) -> bool {
+    return inclusive_overlaps(left.start, left.end, right.start, right.end);
+}
+
+pub fn range_from(start: char) -> RangeFromChar {
+    return RangeFromChar { start: start };
+}
+pub fn start_from(value: RangeFromChar) -> char { return value.start; }
+pub fn contains_from(value: RangeFromChar, item: char) -> bool {
+    return from_contains(value.start, item);
+}
+
+pub fn range_to(end: char) -> RangeToChar {
+    return RangeToChar { end: end };
+}
+pub fn end_to(value: RangeToChar) -> char { return value.end; }
+pub fn contains_to(value: RangeToChar, item: char) -> bool {
+    return to_contains(value.end, item);
+}

@@ -1,0 +1,83 @@
+module app::main;
+import core::range_char;
+
+fn main() -> i32 {
+    let nul: char = '\0';
+    let a: char = 'a';
+    let z: char = 'z';
+    let e: char = 'é';
+    let enye: char = 'ñ';
+    let omega: char = 'Ω';
+    let smile: char = '😀';
+    if (e as i32 != 233 || enye as i32 != 241 ||
+        omega as i32 != 937 || smile as i32 != 128512) { return 1; }
+
+    if (core::range_char::half_open_is_empty(e, omega) ||
+        !core::range_char::half_open_is_empty(e, e) ||
+        !core::range_char::half_open_is_empty(omega, e) ||
+        !core::range_char::half_open_contains(e, omega, e) ||
+        !core::range_char::half_open_contains(e, omega, enye) ||
+        core::range_char::half_open_contains(e, omega, z) ||
+        core::range_char::half_open_contains(e, omega, omega) ||
+        !core::range_char::half_open_overlaps(e, omega, enye, smile) ||
+        core::range_char::half_open_overlaps(e, omega, omega, smile) ||
+        core::range_char::half_open_overlaps(e, e, e, omega) ||
+        core::range_char::half_open_overlaps(omega, e, enye, smile)) { return 2; }
+    if (core::range_char::inclusive_is_empty(e, omega) ||
+        core::range_char::inclusive_is_empty(omega, omega) ||
+        !core::range_char::inclusive_is_empty(omega, e) ||
+        !core::range_char::inclusive_contains(e, omega, e) ||
+        !core::range_char::inclusive_contains(e, omega, omega) ||
+        core::range_char::inclusive_contains(e, omega, smile) ||
+        core::range_char::inclusive_contains(omega, e, omega) ||
+        !core::range_char::inclusive_overlaps(e, omega, omega, smile) ||
+        core::range_char::inclusive_overlaps(e, enye, omega, smile) ||
+        core::range_char::inclusive_overlaps(omega, e, e, omega)) { return 3; }
+    if (!core::range_char::from_contains(omega, omega) ||
+        !core::range_char::from_contains(omega, smile) ||
+        core::range_char::from_contains(omega, enye) ||
+        !core::range_char::to_contains(e, z) ||
+        core::range_char::to_contains(e, e) ||
+        core::range_char::to_contains(nul, nul) ||
+        !core::range_char::full_contains(nul) ||
+        !core::range_char::full_contains(smile)) { return 4; }
+
+    let half: core::range_char::RangeChar = core::range_char::range(e, omega);
+    let overlapping: core::range_char::RangeChar = core::range_char::range(enye, smile);
+    let touching: core::range_char::RangeChar = core::range_char::range(omega, smile);
+    let reversed: core::range_char::RangeChar = core::range_char::range(omega, e);
+    if (core::range_char::start(half) != e ||
+        core::range_char::end(half) != omega ||
+        core::range_char::is_empty(half) ||
+        !core::range_char::is_empty(reversed) ||
+        !core::range_char::contains(half, enye) ||
+        core::range_char::contains(half, omega) ||
+        !core::range_char::overlaps(half, overlapping) ||
+        core::range_char::overlaps(half, touching) ||
+        core::range_char::overlaps(half, reversed)) { return 5; }
+
+    let closed: core::range_char::RangeInclusiveChar =
+        core::range_char::range_inclusive(e, omega);
+    let closed_touch: core::range_char::RangeInclusiveChar =
+        core::range_char::range_inclusive(omega, smile);
+    let closed_reversed: core::range_char::RangeInclusiveChar =
+        core::range_char::range_inclusive(omega, e);
+    if (core::range_char::start_inclusive(closed) != e ||
+        core::range_char::end_inclusive(closed) != omega ||
+        core::range_char::is_empty_inclusive(closed) ||
+        !core::range_char::is_empty_inclusive(closed_reversed) ||
+        !core::range_char::contains_inclusive(closed, omega) ||
+        core::range_char::contains_inclusive(closed, smile) ||
+        !core::range_char::overlaps_inclusive(closed, closed_touch) ||
+        core::range_char::overlaps_inclusive(closed, closed_reversed)) { return 6; }
+
+    let from: core::range_char::RangeFromChar = core::range_char::range_from(omega);
+    if (core::range_char::start_from(from) != omega ||
+        core::range_char::contains_from(from, enye) ||
+        !core::range_char::contains_from(from, smile)) { return 7; }
+    let to: core::range_char::RangeToChar = core::range_char::range_to(e);
+    if (core::range_char::end_to(to) != e ||
+        !core::range_char::contains_to(to, z) ||
+        core::range_char::contains_to(to, e)) { return 8; }
+    return 0;
+}
