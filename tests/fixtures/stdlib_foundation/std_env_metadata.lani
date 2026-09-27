@@ -1,0 +1,91 @@
+module app::main;
+import std::env;
+
+fn main() -> i32 {
+    if (std::env::ENV_RUNTIME_ABI_VERSION != 1 ||
+        std::env::ENV_SERVICE_ID != 12 ||
+        std::env::ENV_SERVICE_STATUS_AVAILABLE != 2 ||
+        std::env::ENV_SERVICE_STATUS_UNAVAILABLE != 1 ||
+        !std::env::ENV_HAS_RUNTIME_BINDING ||
+        !std::env::ENV_VAR_LEN_HAS_RUNTIME_BINDING ||
+        !std::env::ENV_VAR_READ_HAS_RUNTIME_BINDING ||
+        !std::env::ENV_VAR_COUNT_HAS_RUNTIME_BINDING ||
+        !std::env::ENV_VAR_KEY_LEN_HAS_RUNTIME_BINDING ||
+        !std::env::ENV_VAR_KEY_READ_HAS_RUNTIME_BINDING ||
+        !std::env::ENV_CURRENT_DIR_READ_HAS_RUNTIME_BINDING ||
+        !std::env::ENV_CURRENT_DIR_LEN_HAS_RUNTIME_BINDING ||
+        std::env::ENV_READ_UNAVAILABLE != -1) {
+        return 1;
+    }
+    if (std::env::env_runtime_abi_version() != 1 ||
+        std::env::env_service_id() != 12 ||
+        !std::env::env_service_is_known() ||
+        !std::env::env_contract_metadata_is_available() ||
+        std::env::env_service_status() != 2 ||
+        !std::env::env_is_available() ||
+        std::env::env_is_blocked() ||
+        std::env::env_is_known_but_unbound() ||
+        std::env::env_requires_runtime_binding() ||
+        std::env::env_host_abi_is_contract_only()) {
+        return 2;
+    }
+    if (std::env::env_read_unavailable() != -1 ||
+        !std::env::env_read_result_succeeded(0) ||
+        !std::env::env_read_result_succeeded(8) ||
+        std::env::env_read_result_succeeded(-1) ||
+        !std::env::env_read_result_failed(-1) ||
+        std::env::env_read_result_failed(0) ||
+        !std::env::env_read_result_is_unavailable(-1) ||
+        std::env::env_read_result_is_unavailable(-2) ||
+        std::env::env_read_result_is_fail_closed(-1)) {
+        return 3;
+    }
+    if (!std::env::environment_variables_api_is_executable() ||
+        std::env::environment_variables_api_is_blocked() ||
+        std::env::environment_variables_api_is_known_but_unbound() ||
+        std::env::environment_variables_api_requires_runtime_binding() ||
+        std::env::environment_variable_read_result_is_fail_closed(-1)) {
+        return 4;
+    }
+    if (!std::env::var_len_is_executable() ||
+        std::env::var_len_is_blocked() ||
+        std::env::var_len_is_known_but_unbound() ||
+        std::env::var_len_requires_runtime_binding() ||
+        !std::env::var_read_is_executable() ||
+        std::env::var_read_is_blocked() ||
+        std::env::var_read_is_known_but_unbound() ||
+        std::env::var_read_requires_runtime_binding() ||
+        !std::env::var_count_is_executable() ||
+        std::env::var_count_is_blocked() ||
+        std::env::var_count_is_known_but_unbound() ||
+        std::env::var_count_requires_runtime_binding()) {
+        return 5;
+    }
+    if (!std::env::var_key_len_is_executable() ||
+        std::env::var_key_len_is_blocked() ||
+        std::env::var_key_len_is_known_but_unbound() ||
+        std::env::var_key_len_requires_runtime_binding() ||
+        !std::env::var_key_read_is_executable() ||
+        std::env::var_key_read_is_blocked() ||
+        std::env::var_key_read_is_known_but_unbound() ||
+        std::env::var_key_read_requires_runtime_binding()) {
+        return 6;
+    }
+    if (!std::env::current_dir_api_is_executable() ||
+        std::env::current_dir_api_is_blocked() ||
+        std::env::current_dir_api_is_known_but_unbound() ||
+        std::env::current_dir_api_requires_runtime_binding() ||
+        std::env::current_dir_read_result_is_fail_closed(-1) ||
+        !std::env::current_dir_len_is_executable() ||
+        std::env::current_dir_len_is_blocked() ||
+        std::env::current_dir_len_is_known_but_unbound() ||
+        std::env::current_dir_len_requires_runtime_binding() ||
+        !std::env::current_dir_read_is_executable() ||
+        std::env::current_dir_read_is_blocked() ||
+        std::env::current_dir_read_is_known_but_unbound() ||
+        std::env::current_dir_read_requires_runtime_binding() ||
+        std::env::current_dir_len() <= 0) {
+        return 7;
+    }
+    return 0;
+}
