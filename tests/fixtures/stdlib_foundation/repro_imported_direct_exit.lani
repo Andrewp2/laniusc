@@ -1,0 +1,6 @@
+module app::main;
+import test::probe_direct_exit;
+fn main() -> i32 {
+    test::probe_direct_exit::require(true);
+    return 0;
+}

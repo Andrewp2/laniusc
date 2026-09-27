@@ -1,0 +1,8 @@
+module test::probe_direct_exit;
+extern "lanius_std" fn exit(code: i32);
+pub fn require(value: bool) {
+    if (!value) {
+        exit(7);
+    }
+    return;
+}

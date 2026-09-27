@@ -787,8 +787,11 @@ the failure injection cases run when Linux `strace` is available.
     `repro_transitive_host_import.lani` type-checks with the same root, but
     native emission reports `LNC0017: missing main entrypoint` at the
     transitive `std::process` source. It calls the same bound exit operation
-    through `test::probe`; these four small source files reproduce the issue.
-    This blocks a source-level `test::assert` using process exit.
+    through `test::probe`; the adjacent small sources reproduce the issue.
+    `repro_imported_direct_exit.lani` also type-checks but fails native
+    emission with the same error when its imported helper declares the host
+    exit operation directly. This rules out that Lanius-source workaround and
+    blocks a source-level `test::assert` with a terminating failure path.
 20. **Imported non-i32 slice arguments.** With
     `--stdlib-root tests/fixtures/stdlib_foundation/repro_u8_imported_root`,
     `repro_u8_local_slice.lani` compiles and exits zero when a fixed `[u8; 1]`
