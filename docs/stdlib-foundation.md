@@ -926,14 +926,19 @@ also fixes the imported struct-return relocation path described below.
     allocation failure is injected in `tests/stdlib_env_execution.rs`.
     Callers can use the tested `std::env_checked::current_dir_read_into` with
     their own buffer.
-26. **Unsigned 64-bit division above `i64::MAX`.** Compile
+26. **Unsigned 64-bit arithmetic above the low 32 bits.** Compile
     `tests/fixtures/stdlib_foundation/repro_u64_division.lani` with
     `--stdlib-root stdlib --emit x86_64` and run the ELF. It exits 1 because
     `18446744073709551615 / 2` as `u64` does not equal the correct
-    `9223372036854775807`. A candidate `core::number_u64` module compiled but
-    failed its executable saturating-multiplication case, which relies on
-    division for its overflow guard. The candidate was removed rather than
-    publishing arithmetic with incorrect high-value behavior.
+    `9223372036854775807`. The smaller
+    `tests/fixtures/stdlib_foundation/repro_u64_high_half_add.lani` also exits
+    1: adding one to `9223372036854775808` loses the high half. Native x86
+    lowering currently uses 32-bit integer operations for these expressions.
+    A candidate `core::number_u64` module compiled but failed its executable
+    saturating-multiplication case, which relies on division for its overflow
+    guard. The candidate was removed rather than publishing arithmetic with
+    incorrect high-value behavior. Complete 64-bit arithmetic lowering is a
+    compiler dependency before a public u64 numeric module can be claimed.
 27. **Resolved: specialized generic range method dispatch for scalar receiver arguments.** Compile
     `tests/fixtures/stdlib_foundation/repro_u32_range_method.lani` with
     `--stdlib-root tests/fixtures/stdlib_foundation/repro_u32_range_method_root`
