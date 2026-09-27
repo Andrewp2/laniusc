@@ -1,0 +1,67 @@
+module app::main;
+import std::path;
+
+fn main() -> i32 {
+    let a: u8 = 97;
+    let b: u8 = 98;
+    let c: u8 = 99;
+    let l: u8 = 108;
+    let p: u8 = 112;
+    let h: u8 = 104;
+    let x: u8 = 120;
+    let period: u8 = 46;
+    let capital_c: u8 = 67;
+    let colon: u8 = 58;
+    let slash: u8 = 47;
+    let backslash: u8 = 92;
+    let nul: u8 = 0;
+    let question: u8 = 63;
+    let control: u8 = 10;
+    let space: u8 = 32;
+    let capital_o: u8 = 79;
+    let capital_n: u8 = 78;
+    let ordinary: [u8; 5] = [a, l, p, h, a];
+    let lone: [u8; 1] = [x];
+    if (!std::path::path_component_is_normal_relative_bytes(ordinary, 5) ||
+        !std::path::path_component_matches_windows_relative_byte_rules(ordinary, 5) ||
+        !std::path::path_component_is_normal_relative_bytes(lone, 1) ||
+        !std::path::path_component_matches_windows_relative_byte_rules(lone, 1)) { return 1; }
+    if (std::path::path_component_is_normal_relative_bytes(ordinary, 0) ||
+        std::path::path_component_is_normal_relative_bytes(ordinary, -1) ||
+        std::path::path_component_matches_windows_relative_byte_rules(ordinary, 0) ||
+        std::path::path_component_matches_windows_relative_byte_rules(ordinary, -1)) { return 2; }
+    let dot: [u8; 1] = [period];
+    let parent: [u8; 2] = [period, period];
+    let drive: [u8; 2] = [capital_c, colon];
+    if (std::path::path_component_is_normal_relative_bytes(dot, 1) ||
+        std::path::path_component_is_normal_relative_bytes(parent, 2) ||
+        std::path::path_component_is_normal_relative_bytes(drive, 2) ||
+        std::path::path_component_matches_windows_relative_byte_rules(dot, 1) ||
+        std::path::path_component_matches_windows_relative_byte_rules(parent, 2) ||
+        std::path::path_component_matches_windows_relative_byte_rules(drive, 2)) { return 3; }
+    let late_slash: [u8; 4] = [a, b, slash, c];
+    let late_backslash: [u8; 4] = [a, b, backslash, c];
+    let late_nul: [u8; 4] = [a, b, nul, c];
+    if (std::path::path_component_is_normal_relative_bytes(late_slash, 4) ||
+        std::path::path_component_is_normal_relative_bytes(late_backslash, 4) ||
+        std::path::path_component_is_normal_relative_bytes(late_nul, 4) ||
+        std::path::path_component_matches_windows_relative_byte_rules(late_slash, 4) ||
+        std::path::path_component_matches_windows_relative_byte_rules(late_backslash, 4) ||
+        std::path::path_component_matches_windows_relative_byte_rules(late_nul, 4)) { return 4; }
+    let late_colon: [u8; 4] = [a, b, colon, c];
+    let late_question: [u8; 4] = [a, b, question, c];
+    let late_control: [u8; 4] = [a, b, control, c];
+    if (!std::path::path_component_is_normal_relative_bytes(late_colon, 4) ||
+        !std::path::path_component_is_normal_relative_bytes(late_question, 4) ||
+        !std::path::path_component_is_normal_relative_bytes(late_control, 4) ||
+        std::path::path_component_matches_windows_relative_byte_rules(late_colon, 4) ||
+        std::path::path_component_matches_windows_relative_byte_rules(late_question, 4) ||
+        std::path::path_component_matches_windows_relative_byte_rules(late_control, 4)) { return 5; }
+    let reserved_name: [u8; 3] = [capital_c, capital_o, capital_n];
+    let trailing_dot: [u8; 2] = [a, period];
+    let trailing_space: [u8; 2] = [a, space];
+    if (!std::path::path_component_matches_windows_relative_byte_rules(reserved_name, 3) ||
+        !std::path::path_component_matches_windows_relative_byte_rules(trailing_dot, 2) ||
+        !std::path::path_component_matches_windows_relative_byte_rules(trailing_space, 2)) { return 6; }
+    return 0;
+}

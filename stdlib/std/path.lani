@@ -301,3 +301,57 @@ pub fn path_component_header_is_normal_windows_relative(first: PathByte, second:
     }
     return false;
 }
+
+// Check the complete caller-backed component under the portable relative
+// byte rules used by the header helper. Empty, negative-length, dot, parent,
+// exact drive-prefix, NUL, and either separator byte are rejected. The caller
+// must back length elements; an overclaim may trap on native indexing.
+pub fn path_component_is_normal_relative_bytes(bytes: [PathByte], length: i32) -> PathCapability {
+    if (length <= 0) {
+        return false;
+    }
+    let first: PathByte = bytes[0];
+    let second: PathByte = 0;
+    if (length > 1) {
+        second = bytes[1];
+    }
+    let width: PathComponentLength = length as PathComponentLength;
+    if (!path_component_header_is_normal_relative(first, second, width)) {
+        return false;
+    }
+    let index: i32 = 2;
+    while (index < length) {
+        if (!path_byte_can_continue_relative_component(bytes[index])) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Apply the header rule and check every byte against the Windows reserved-byte
+// rule. This byte-level check permits reserved device names and trailing
+// spaces/dots; it is not a complete Windows filename validity check.
+// The caller must back length elements; an overclaim may trap on native indexing.
+pub fn path_component_matches_windows_relative_byte_rules(bytes: [PathByte], length: i32) -> PathCapability {
+    if (length <= 0) {
+        return false;
+    }
+    let first: PathByte = bytes[0];
+    let second: PathByte = 0;
+    if (length > 1) {
+        second = bytes[1];
+    }
+    let width: PathComponentLength = length as PathComponentLength;
+    if (!path_component_header_is_normal_windows_relative(first, second, width)) {
+        return false;
+    }
+    let index: i32 = 2;
+    while (index < length) {
+        if (!path_byte_can_continue_windows_component(bytes[index])) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}

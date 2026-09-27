@@ -35,6 +35,7 @@ fn path_lexical_helpers_execute_on_x86() {
         "path_components",
         "path_separator_kind",
         "path_constants",
+        "path_full_components",
     ] {
         let entry = root.join(format!("tests/fixtures/stdlib_host/{name}.lani"));
         let stdlib_root = stdlib_root.clone();
@@ -56,12 +57,35 @@ fn path_lexical_helpers_execute_on_x86() {
 }
 
 #[test]
+fn full_component_length_overclaim_traps_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let stdlib_root = root.join("stdlib");
+    let entry = root.join("tests/fixtures/stdlib_host/path_full_component_bounds.lani");
+    let bytes = common::run_gpu_codegen_with_timeout("path_full_component_bounds", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile full-component bounds fixture");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "path_full_component_bounds",
+            "path_full_component_bounds",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(101), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn public_path_functions_have_runtime_cases() {
     let cases = format!(
-        "{}{}{}",
+        "{}{}{}{}",
         include_str!("fixtures/stdlib_host/path_bytes.lani"),
         include_str!("fixtures/stdlib_host/path_components.lani"),
-        include_str!("fixtures/stdlib_host/path_separator_kind.lani")
+        include_str!("fixtures/stdlib_host/path_separator_kind.lani"),
+        include_str!("fixtures/stdlib_host/path_full_components.lani")
     );
     let mut covered = 0;
     for line in include_str!("../stdlib/std/path.lani").lines() {
@@ -76,7 +100,7 @@ fn public_path_functions_have_runtime_cases() {
         assert!(cases.contains(&call), "{call} lacks a runtime case");
         covered += 1;
     }
-    assert_eq!(covered, 31);
+    assert_eq!(covered, 33);
 
     let constants = include_str!("fixtures/stdlib_host/path_constants.lani");
     let mut constant_count = 0;

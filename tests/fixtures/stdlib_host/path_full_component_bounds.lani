@@ -1,0 +1,12 @@
+module app::main;
+import std::path;
+
+fn main() -> i32 {
+    let a: u8 = 97;
+    let b: u8 = 98;
+    let short: [u8; 2] = [a, b];
+    if (std::path::path_component_is_normal_relative_bytes(short, 3)) {
+        return 0;
+    }
+    return 1;
+}
