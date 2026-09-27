@@ -12,6 +12,16 @@ fn compile_fixture(name: &str) -> Vec<u8> {
     .expect("compile LF line I/O fixture")
 }
 
+fn compile_owned_line_sample() -> Vec<u8> {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("sample_programs/utf8_owned_line.lani");
+    let stdlib_root = root.join("stdlib");
+    common::run_gpu_codegen_with_timeout("utf8_owned_line", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile owned UTF-8 line sample")
+}
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn write_executable(bytes: &[u8], name: &str) -> common::TempArtifact {
     use std::os::unix::fs::PermissionsExt;
@@ -67,6 +77,33 @@ fn utf8_line_counter_composes_line_io_validation_and_decimal_output() {
             (b"\xc0\x80\n", 3, b""),
             (b"\xe2\x82\n", 3, b""),
             (b"abcdefghijklmnopq\n", 2, b""),
+            (b"", 2, b""),
+        ];
+        for &(input, expected_exit, expected_stdout) in cases {
+            let output = run_with_input(&executable, input);
+            assert_eq!(output.status.code(), Some(expected_exit), "{input:?}: {output:?}");
+            assert_eq!(output.stdout, expected_stdout, "{input:?}: {output:?}");
+            assert!(output.stderr.is_empty(), "{input:?}: {output:?}");
+        }
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn owned_utf8_line_sample_executes_normal_and_edge_inputs() {
+    let bytes = compile_owned_line_sample();
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let executable = write_executable(&bytes, "utf8_owned_line");
+        let cases: &[(&[u8], i32, &[u8])] = &[
+            (b"A\xc2\xa2\n", 0, b"A\xc2\xa2\xf0\x9f\x99\x82 3\n"),
+            (b"\n", 0, b"\xf0\x9f\x99\x82 1\n"),
+            (b"\xc2\xa2", 0, b"\xc2\xa2\xf0\x9f\x99\x82 2\n"),
+            (b"abcdefghijkl\n", 0, b"abcdefghijkl\xf0\x9f\x99\x82 13\n"),
+            (b"\xc0\x80\n", 3, b""),
+            (b"\xe2\x82\n", 3, b""),
+            (b"abcdefghijklm\n", 2, b""),
             (b"", 2, b""),
         ];
         for &(input, expected_exit, expected_stdout) in cases {

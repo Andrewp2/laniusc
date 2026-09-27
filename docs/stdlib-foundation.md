@@ -93,7 +93,7 @@ limited to native x86_64 output from this worktree.
 | `std::vec_i32` all 12 public functions and its capacity constant | Executable on x86_64 Linux | `tests/fixtures/stdlib_foundation/vec_i32.lani` checks construction, growth, element access and mutation, bounds, reserve, pop, clear, and destruction. `tests/stdlib_vec_i32_execution.rs` injects allocation and reallocation failures and checks the vector and prior data stay unchanged. This is a linear-ownership API by convention; source-level moves are not enforced. |
 | `std::vec_u32` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, `2^31`, and `u32::MAX`. The allocation-failure suite injects failed initial allocation and reallocation; the real checksum sample combines it with `core::number_u32` and `OptionU32`. Storage uses 32-bit cells and preserves every unsigned bit pattern. Ownership is linear by convention. |
 | `std::vec_u8` all 13 public functions and its capacity constant | Executable on x86_64 Linux | The byte vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, 128, and 255. `data_ptr` exposes its 32-bit byte-code cells for a caller-bounded borrowed view; the fixture checks empty and initialized views. The allocation-failure suite injects failed initial allocation and reallocation; the byte checksum sample combines it with `core::byte` and `OptionU8`. Each byte occupies one 32-bit cell because the raw-slice intrinsic currently accepts i32 cells. Ownership is linear by convention. |
-| `std::utf8_vec` all 22 public text helpers | Executable on x86_64 Linux | The runtime fixtures construct text from individual and batched Unicode scalars, check multibyte bytes, scalar count and lookup, first and last search, equality, prefixes, suffixes, ordering, byte-offset sequence search, scalar insertion, removal, replacement, pop, clear, and destruction. They check edits at the start, middle, and end across one- through four-byte encodings; malformed caller-modified bytes, invalid indices, and invalid scalars leave data unchanged. Injected allocation failures check that failed single and batched scalar appends, insertion, and replacement write no partial encoding and preserve prior bytes. Storage is a `VecU8` with one 32-bit cell per encoded byte and linear ownership by convention. |
+| `std::utf8_vec` all 23 public text helpers | Executable on x86_64 Linux | The runtime fixtures construct text from individual and batched Unicode scalars and complete caller-backed UTF-8 byte-code views; check multibyte bytes, scalar count and lookup, first and last search, equality, prefixes, suffixes, ordering, byte-offset sequence search, scalar insertion, removal, replacement, pop, clear, and destruction. They check edits at the start, middle, and end across one- through four-byte encodings; malformed caller-modified bytes, invalid indices, and invalid scalars leave data unchanged. Injected allocation failures check that failed single and batched scalar appends, byte-code append, insertion, and replacement write no partial encoding and preserve prior bytes. Storage is a `VecU8` with one 32-bit cell per encoded byte and linear ownership by convention. |
 | `std::vec_i8` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The signed byte vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, `-128`, and 127. The allocation-failure suite injects failed initial allocation and reallocation; the signed byte sum sample combines it with `core::number_i8` and `OptionI8`. Each signed byte occupies one 32-bit cell, preserving its sign. Ownership is linear by convention. |
 | `std::vec_u16` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, 32768, and 65535. The allocation-failure suite injects failed initial allocation and reallocation; the halfword checksum sample combines it with `core::number_u16` and `OptionU16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
 | `std::vec_i16` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The signed halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, `-32768`, and 32767. The allocation-failure suite injects failed initial allocation and reallocation; the signed halfword sum sample combines it with `core::number_i16` and `OptionI16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
@@ -375,8 +375,14 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   and after the call to detect failure. `try_append_scalars` validates one
   caller-backed scalar view, computes its total encoded size, and reserves
   once; construction runs in time linear in the old and new text lengths.
-  The scalar view must physically back its claimed count and must not alias
-  the vector allocation because growth can move it. `try_insert_scalar`
+  `try_append_codes` validates a complete caller-backed UTF-8 byte-code view,
+  including that every cell is in `0..=255`, and reserves the full append
+  before writing. Negative lengths, malformed input or existing text,
+  capacity overflow, and allocation failure return the original vector
+  unchanged. A zero-length valid append also returns it unchanged. Compare
+  byte lengths to detect a nonempty append failure. Both input views must
+  physically back their claimed counts and must not alias the vector
+  allocation because growth can move it. `try_insert_scalar`
   accepts scalar indices from zero through the scalar count and shifts whole
   encoded sequences after reserving space; invalid inputs or allocation
   failure leave the old vector unchanged. `try_remove_scalar` accepts only
@@ -901,6 +907,14 @@ releases its storage.
 vector, validates and searches Unicode scalars, writes its encoded bytes, and
 prints the scalar count. The native fixture checks exact output
 `A¢A¢B5\n` and releases its storage.
+
+`sample_programs/utf8_owned_line.lani` reads one bounded LF line, validates
+its UTF-8 byte codes, copies them into an owned text vector, appends a
+four-byte smiley, and prints the text with its scalar count. It checks both
+allocation-backed appends, releases the vector on every path after creation,
+and returns distinct statuses for input, encoding, allocation, and output
+failures. The focused native test runs multibyte, empty, malformed, overlong,
+and EOF inputs.
 
 `sample_programs/vector_signed_byte_sum.lani` stores signed bytes in
 `std::vec_i8`, checks every push, reads them through a bounded accessor,

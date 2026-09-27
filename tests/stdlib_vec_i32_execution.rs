@@ -40,6 +40,7 @@ fn vector_growth_failures_leave_storage_unchanged_on_x86() {
         ("utf8_vec_bulk_realloc_failure", "mremap", 4),
         ("utf8_vec_insert_realloc_failure", "mremap", 4),
         ("utf8_vec_replace_realloc_failure", "mremap", 4),
+        ("utf8_vec_codes_realloc_failure", "mremap", 4),
         ("vec_i8_alloc_failure", "mmap", 1),
         ("vec_i8_realloc_failure", "mremap", 4),
         ("vec_u16_alloc_failure", "mmap", 1),

@@ -161,6 +161,55 @@ pub fn try_append_scalars(
     return grown;
 }
 
+// Append an existing complete UTF-8 byte-code view. Both the old text and
+// source must be valid before reserving and writing; each source element must
+// be in 0..=255. Invalid text, negative length, malformed source, capacity
+// overflow, or allocation failure leaves the vector unchanged. The source
+// must physically back len elements and must not alias this vector's storage,
+// since growth can move the allocation. An overclaimed view may trap.
+pub fn try_append_codes(
+    value: std::vec_u8::VecU8, codes: [i32], len: i32
+) -> std::vec_u8::VecU8 {
+    if (len < 0 || !is_valid(value) || !core::utf8::codes_are_valid(codes, len)) {
+        return value;
+    }
+    if (len == 0) {
+        return value;
+    }
+    let old_len: i32 = std::vec_u8::len(value);
+    if (old_len > std::vec_u8::MAX_CAPACITY - len) {
+        return value;
+    }
+    let needed: i32 = old_len + len;
+    let grown: std::vec_u8::VecU8 = value;
+    let current_capacity: i32 = std::vec_u8::capacity(grown);
+    if (current_capacity < needed) {
+        let target: i32 = 4;
+        if (current_capacity > 0) {
+            if (current_capacity > std::vec_u8::MAX_CAPACITY / 2) {
+                target = std::vec_u8::MAX_CAPACITY;
+            } else {
+                target = current_capacity * 2;
+            }
+        }
+        if (target < needed) {
+            target = needed;
+        }
+        grown = std::vec_u8::try_reserve(grown, target);
+        if (std::vec_u8::capacity(grown) < needed) {
+            return value;
+        }
+    }
+    let index: i32 = 0;
+    while (index < len) {
+        let raw_byte: i32 = codes[index];
+        let byte: u8 = raw_byte as u8;
+        grown = std::vec_u8::try_push(grown, byte);
+        index += 1;
+    }
+    return grown;
+}
+
 // Insert a scalar before scalar_index, including at the end. Validate the
 // complete old text and reserve the entire encoding before changing bytes.
 // Invalid text, index, scalar, capacity, or allocation returns the original
