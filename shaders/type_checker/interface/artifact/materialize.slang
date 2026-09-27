@@ -44,7 +44,7 @@ static const uint MODULE_WORDS = 2u;
 static const uint MODULE_SEGMENT_WORDS = 4u;
 static const uint DECLARATION_WORDS = 14u;
 static const uint TYPE_WORDS = 9u;
-static const uint MEMBER_WORDS = 10u;
+static const uint MEMBER_WORDS = 11u;
 
 uint linear_thread_id(uint3 dtid)
 {

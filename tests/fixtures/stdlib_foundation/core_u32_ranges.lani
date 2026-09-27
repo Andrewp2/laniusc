@@ -4,6 +4,8 @@ import core::range;
 fn main() -> i32 {
     let high: u32 = 2147483648;
     let maximum: u32 = 4294967295;
+    let low: u32 = 1;
+    let zero: u32 = 0;
     let open: core::range::Range<u32> = core::range::range_u32(high, maximum);
     let touching: core::range::Range<u32> = core::range::range_u32(maximum, maximum);
     let overlapping: core::range::Range<u32> = core::range::range_u32(high + 1, maximum);
@@ -41,6 +43,18 @@ fn main() -> i32 {
     let full: core::range::RangeFull = core::range::range_full();
     if (!core::range::contains_full_u32(full, 0) || !core::range::contains_full_u32(full, maximum)) {
         return 9;
+    }
+    if (open.start() != high || open.end() != maximum || open.is_empty() || !touching.is_empty() || !reversed.is_empty()) {
+        return 10;
+    }
+    if (!open.contains(high) || !open.contains(maximum - 1) || open.contains(maximum) || open.contains(low) || reversed.contains(high) || !open.overlaps(overlapping) || open.overlaps(touching) || open.overlaps(reversed)) {
+        return 11;
+    }
+    if (closed.start() != high || closed.end() != maximum || closed.is_empty() || singleton.is_empty() || !closed_reversed.is_empty() || !closed.contains(high) || !closed.contains(maximum) || closed.contains(low) || !singleton.contains(maximum) || closed_reversed.contains(high) || !closed.overlaps(singleton) || closed.overlaps(closed_reversed)) {
+        return 12;
+    }
+    if (from.start() != high || !from.contains(high) || !from.contains(maximum) || from.contains(low) || to.end() != high || !to.contains(high - 1) || to.contains(high) || empty_to.contains(zero)) {
+        return 13;
     }
     return 0;
 }

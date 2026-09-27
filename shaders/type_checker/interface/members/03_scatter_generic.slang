@@ -10,7 +10,7 @@ StructuredBuffer<uint> public_decl_index_by_hir; StructuredBuffer<uint> interfac
 RWStructuredBuffer<uint> interface_member_words; RWStructuredBuffer<uint> interface_member_name_id;
 RWStructuredBuffer<uint> interface_member_index_by_generic_row; RWStructuredBuffer<uint> interface_member_written;
 RWStructuredBuffer<uint> interface_status;
-static const uint INVALID=0xffffffffu,MEMBER_WORDS=10u,GENERIC_TYPE=1u,GENERIC_CONST=2u;
+static const uint INVALID=0xffffffffu,MEMBER_WORDS=11u,GENERIC_TYPE=1u,GENERIC_CONST=2u;
 static const uint MEMBER_GENERIC_TYPE=2u,MEMBER_GENERIC_CONST=3u,WG_SIZE=256u,MAX_GROUPS_X=65535u;
 uint linear_thread_id(uint3 d){return d.x+d.y*MAX_GROUPS_X*WG_SIZE;}
 void fail(uint d){atomic_u32_or(interface_status,0u,8192u);atomic_u32_min(interface_status,1u,d);}
@@ -27,7 +27,7 @@ void main(uint3 dtid:SV_DispatchThreadID)
  uint dst=interface_member_prefix[owner]+slot,base=dst*MEMBER_WORDS;
  interface_member_words[base+0u]=owner;interface_member_words[base+1u]=member_kind;interface_member_words[base+2u]=slot;
  interface_member_words[base+3u]=0u;interface_member_words[base+4u]=0u;interface_member_words[base+5u]=0u;interface_member_words[base+6u]=0u;
- interface_member_words[base+7u]=INVALID;interface_member_words[base+8u]=0u;interface_member_words[base+9u]=0u;
+ interface_member_words[base+7u]=INVALID;interface_member_words[base+8u]=0u;interface_member_words[base+9u]=0u;interface_member_words[base+10u]=INVALID;
  uint prior=atomic_u32_compare_exchange(interface_member_written,dst,0u,1u);if(prior!=0u){fail(dst);return;}
  interface_member_name_id[dst]=name_id;interface_member_index_by_generic_row[row]=dst;
 }

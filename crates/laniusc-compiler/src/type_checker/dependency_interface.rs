@@ -263,6 +263,7 @@ impl PackedGpuDependencyInterfacePage {
                 member.type_index,
                 member.value_lo,
                 member.value_hi,
+                member.receiver_type_index,
             ]
         })?;
         let mut name_byte_words = Vec::with_capacity(batch.name_bytes.len().div_ceil(4));

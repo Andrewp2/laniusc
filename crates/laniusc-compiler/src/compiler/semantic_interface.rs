@@ -5,7 +5,7 @@
 //! be translated into these records before a unit can be released.
 
 /// Current binary schema version for GPU semantic-interface artifacts.
-pub const GPU_SEMANTIC_INTERFACE_VERSION: u32 = 4;
+pub const GPU_SEMANTIC_INTERFACE_VERSION: u32 = 5;
 const GPU_SEMANTIC_INTERFACE_MAGIC: [u8; 8] = *b"LNSIFACE";
 const HEADER_U32S: usize = 16;
 const MODULE_U32S: usize = 2;
@@ -13,7 +13,7 @@ const MODULE_SEGMENT_U32S: usize = 4;
 const DECLARATION_U32S: usize = 14;
 const TYPE_U32S: usize = 9;
 const TYPE_EDGE_U32S: usize = 1;
-const MEMBER_U32S: usize = 10;
+const MEMBER_U32S: usize = 11;
 const INVALID: u32 = u32::MAX;
 const MAX_CANONICAL_NAME_BYTES: usize = 64;
 
@@ -153,6 +153,8 @@ pub struct GpuSemanticInterfaceMemberRecord {
     pub type_index: u32,
     pub value_lo: u32,
     pub value_hi: u32,
+    /// Full receiver type for an associated method; INVALID for other members.
+    pub receiver_type_index: u32,
 }
 
 /// Canonical identity portion emitted before typed signature/member graph
@@ -392,6 +394,28 @@ impl GpuSemanticInterfaceArtifact {
             validate_optional_index("member type", index, member.type_index, self.types.len())?;
             let kind = GpuSemanticInterfaceMemberKind::from_u32(member.kind)
                 .expect("member kind was validated above");
+            if kind == GpuSemanticInterfaceMemberKind::AssociatedMethod {
+                validate_index(
+                    "associated method receiver type",
+                    index,
+                    member.receiver_type_index,
+                    self.types.len(),
+                )?;
+                let receiver = &self.types[member.receiver_type_index as usize];
+                if receiver.kind != GpuSemanticInterfaceTypeKind::Declaration as u32
+                    || receiver.payload_lo != self.library_id
+                    || receiver.nominal_unit_id != self.unit_id
+                    || receiver.payload_hi != member.owner_declaration
+                {
+                    return Err(format!(
+                        "semantic-interface associated method {index} receiver does not name its owner declaration"
+                    ));
+                }
+            } else if member.receiver_type_index != INVALID {
+                return Err(format!(
+                    "semantic-interface member record {index} has a receiver type without an associated method"
+                ));
+            }
             if member.type_index == INVALID
                 && !matches!(
                     kind,
@@ -523,6 +547,7 @@ impl GpuSemanticInterfaceArtifact {
             push_u32(&mut bytes, row.type_index);
             push_u32(&mut bytes, row.value_lo);
             push_u32(&mut bytes, row.value_hi);
+            push_u32(&mut bytes, row.receiver_type_index);
         }
         bytes.extend_from_slice(&self.name_bytes);
         debug_assert_eq!(bytes.len(), byte_len);
@@ -635,6 +660,7 @@ impl GpuSemanticInterfaceArtifact {
                 type_index: read_u32(bytes, &mut cursor)?,
                 value_lo: read_u32(bytes, &mut cursor)?,
                 value_hi: read_u32(bytes, &mut cursor)?,
+                receiver_type_index: read_u32(bytes, &mut cursor)?,
             });
         }
         let name_bytes = bytes[cursor..].to_vec();
@@ -919,6 +945,7 @@ mod tests {
                 type_index: 0,
                 value_lo: 0,
                 value_hi: 0,
+                receiver_type_index: INVALID,
             }],
             name_bytes,
         }
@@ -934,6 +961,37 @@ mod tests {
     }
 
     #[test]
+    fn associated_method_receiver_type_roundtrips_and_must_name_its_owner() {
+        let mut interface = representative_interface();
+        let receiver = interface.types.len() as u32;
+        interface.types.push(GpuSemanticInterfaceTypeRecord {
+            kind: GpuSemanticInterfaceTypeKind::Declaration as u32,
+            payload_lo: interface.library_id,
+            payload_hi: 0,
+            first_edge: interface.type_edges.len() as u32,
+            edge_count: 0,
+            length_kind: 0,
+            length_lo: 0,
+            length_hi: 0,
+            nominal_unit_id: interface.unit_id,
+        });
+        interface.declarations[0].kind = 6;
+        interface.declarations[0].signature_type = receiver;
+        interface.members[0].kind = GpuSemanticInterfaceMemberKind::AssociatedMethod as u32;
+        interface.members[0].receiver_type_index = receiver;
+        let bytes = interface.to_bytes().expect("serialize method receiver");
+        assert_eq!(
+            GpuSemanticInterfaceArtifact::from_bytes(&bytes).expect("parse method receiver"),
+            interface
+        );
+
+        interface.members[0].receiver_type_index = 0;
+        assert!(interface.validate().unwrap_err().contains("receiver"));
+        interface.members[0].kind = GpuSemanticInterfaceMemberKind::Parameter as u32;
+        assert!(interface.validate().unwrap_err().contains("receiver type without"));
+    }
+
+    #[test]
     fn semantic_interface_rejects_hash_only_or_out_of_range_identity_records() {
         let mut interface = representative_interface();
         interface.declarations[0].name_hash_lo ^= 1;
@@ -944,7 +1002,7 @@ mod tests {
         assert!(interface.validate().unwrap_err().contains("module"));
 
         let mut interface = representative_interface();
-        interface.version = 1;
+        interface.version = GPU_SEMANTIC_INTERFACE_VERSION - 1;
         assert!(interface.validate().unwrap_err().contains("version"));
 
         let mut interface = representative_interface();

@@ -17,7 +17,7 @@ ConstantBuffer<Params> gParams;
 RWStructuredBuffer<uint> declaration_generic_arity;
 RWStructuredBuffer<uint> declaration_field_count;
 
-static const uint MEMBER_WORDS = 10u;
+static const uint MEMBER_WORDS = 11u;
 static const uint MEMBER_GENERIC_TYPE_PARAMETER = 2u;
 static const uint MEMBER_GENERIC_CONST_PARAMETER = 3u;
 static const uint MEMBER_FIELD = 4u;

@@ -34,7 +34,7 @@ RWStructuredBuffer<uint> interface_member_words;
 RWStructuredBuffer<uint> interface_member_name_id;
 RWStructuredBuffer<uint> interface_member_written;
 RWStructuredBuffer<uint> interface_status;
-static const uint INVALID=0xffffffffu, MEMBER_WORDS=10u;
+static const uint INVALID=0xffffffffu, MEMBER_WORDS=11u;
 static const uint MEMBER_PARAMETER=1u, MEMBER_FIELD=4u, MEMBER_ENUM_VARIANT=5u, MEMBER_ASSOCIATED_METHOD=6u;
 static const uint TYPE_REF_INSTANCE=3u, METHOD_VIS_PUBLIC=1u, METHOD_SIGNATURE_INHERENT_IMPL=4u;
 static const uint WG_SIZE=256u, MAX_GROUPS_X=65535u;
@@ -45,7 +45,7 @@ void emit(uint owner,uint kind,uint ordinal,uint name_id,uint type_index,uint va
  uint dst=interface_member_prefix[owner]+ordinal; uint base=dst*MEMBER_WORDS;
  interface_member_words[base+0u]=owner;interface_member_words[base+1u]=kind;interface_member_words[base+2u]=ordinal;
  interface_member_words[base+3u]=0u;interface_member_words[base+4u]=0u;interface_member_words[base+5u]=0u;interface_member_words[base+6u]=0u;
- interface_member_words[base+7u]=type_index;interface_member_words[base+8u]=value_lo;interface_member_words[base+9u]=value_hi;
+ interface_member_words[base+7u]=type_index;interface_member_words[base+8u]=value_lo;interface_member_words[base+9u]=value_hi;interface_member_words[base+10u]=INVALID;
  uint prior=atomic_u32_compare_exchange(interface_member_written,dst,0u,1u);if(prior!=0u){fail(detail);return;}
  interface_member_name_id[dst]=name_id;
 }
@@ -124,17 +124,23 @@ void main(uint3 dtid:SV_DispatchThreadID)
    uint name_id=method_token<gParams.token_capacity?name_id_by_token[method_token]:INVALID;
    uint return_hir=method.node<gParams.hir_capacity?compact_fn_return_type[method.node]:INVALID;
    uint type_index=return_hir<gParams.hir_capacity?interface_type_index_by_hir[return_hir]:interface_type_count[0u];
+   uint receiver_type_index=signature.impl_receiver_type<gParams.hir_capacity
+       ?interface_type_index_by_hir[signature.impl_receiver_type]:INVALID;
    uint param_count=compact_param_ranges[method.node].count;
    if(signature.receiver_mode!=0u&&param_count!=0u)param_count-=1u;
    uint ordinal=atomic_u32_add(interface_member_cursor,owner,1u);
    uint generic_count=interface_generic_type_count_by_decl[owner]+interface_generic_const_count_by_decl[owner];
    if(ordinal<generic_count) { fail(row); return; }
    ordinal = ordinal;
-   if(name_id==INVALID||type_index==INVALID)fail(row);
+   if(name_id==INVALID||type_index==INVALID||receiver_type_index==INVALID)fail(row);
    // Method symbols occupy a namespace disjoint from declaration indices. The
    // compact method HIR row is stable within the unit and is carried through
    // the persisted member record for dependency calls and object definitions.
-   else emit(owner,MEMBER_ASSOCIATED_METHOD,ordinal,name_id,type_index,param_count,0x80000000u|method.node,row);
+   else
+   {
+    emit(owner,MEMBER_ASSOCIATED_METHOD,ordinal,name_id,type_index,param_count,0x80000000u|method.node,row);
+    interface_member_words[(interface_member_prefix[owner]+ordinal)*MEMBER_WORDS+10u]=receiver_type_index;
+   }
   }
  }
 }

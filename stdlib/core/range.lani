@@ -87,8 +87,8 @@ pub fn range_full() -> RangeFull {
 pub fn contains_full_i32(range: RangeFull, value: i32) -> bool {
     return true;
 }
-// Unsigned range operations use free functions. Specialized Range<u32>
-// methods are withheld until native generic method dispatch is correct.
+// Unsigned range operations mirror the signed forms, including their
+// concrete receiver methods.
 pub fn range_u32(start: u32, end: u32) -> Range<u32> {
     return Range {
         start: start,
@@ -203,6 +203,56 @@ pub impl RangeTo<i32> {
         return self.end;
     }
     pub fn contains(&self, value: i32) -> bool {
+        return value<self.end;
+    }
+}
+pub impl Range<u32> {
+    pub fn start(self) -> u32 {
+        return self.start;
+    }
+    pub fn end(self: Range<u32>) -> u32 {
+        return self.end;
+    }
+    pub fn is_empty(&self) -> bool {
+        return self.start >= self.end;
+    }
+    pub fn contains(&self, value: u32) -> bool {
+        return value >= self.start && value<self.end;
+    }
+    pub fn overlaps(&self, other: Range<u32>) -> bool {
+        return self.start<self.end && other.start<other.end && self.start<other.end && other.start<self.end;
+    }
+}
+pub impl RangeInclusive<u32> {
+    pub fn start(self) -> u32 {
+        return self.start;
+    }
+    pub fn end(self: RangeInclusive<u32>) -> u32 {
+        return self.end;
+    }
+    pub fn is_empty(&self) -> bool {
+        return self.start>self.end;
+    }
+    pub fn contains(&self, value: u32) -> bool {
+        return value >= self.start && value <= self.end;
+    }
+    pub fn overlaps(&self, other: RangeInclusive<u32>) -> bool {
+        return self.start <= self.end && other.start <= other.end && self.start <= other.end && other.start <= self.end;
+    }
+}
+pub impl RangeFrom<u32> {
+    pub fn start(self) -> u32 {
+        return self.start;
+    }
+    pub fn contains(&self, value: u32) -> bool {
+        return value >= self.start;
+    }
+}
+pub impl RangeTo<u32> {
+    pub fn end(self) -> u32 {
+        return self.end;
+    }
+    pub fn contains(&self, value: u32) -> bool {
         return value<self.end;
     }
 }

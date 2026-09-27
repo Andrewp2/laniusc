@@ -27,7 +27,7 @@ limited to native x86_64 output from this worktree.
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
 | Legacy `stdlib/bool.lani` all 9 public functions and `stdlib/i32.lani` all 16 public functions | Executable on x86_64 when included as source | A source-level native fixture checks both boolean values, both selection branches, ordinary and boundary signed arithmetic, wrapping overflow, comparisons, clamp bounds, and power-of-two overflow. The test calls every public function in both files. `abs` requires input above `i32::MIN`; `clamp` requires ordered bounds. |
 | Legacy `stdlib/array_i32_4.lani` 11 scalar-returning functions | Executable on x86_64 when included as source | A source-level native fixture checks length, access, search, fallback indices, extrema, and a representable sum. Its three array-returning functions fail natively; see dependency 7. |
-| `core::range` free functions for all five i32 and u32 range forms, and methods for `Range<i32>`, `RangeInclusive<i32>`, `RangeFrom<i32>`, and `RangeTo<i32>` | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership, including values across the u32 high bit. Specialized u32 methods remain blocked by dependency 27; there is no `RangeFull` method claim. |
+| `core::range` free functions for all five i32 and u32 range forms, and methods for `Range`, `RangeInclusive`, `RangeFrom`, and `RangeTo` specialized to i32 or u32 | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership, including values across the u32 high bit. The imported u32 method reproducer also checks that same-name i32 and u32 methods select the correct body. There is no `RangeFull` method claim. |
 | `core::range_u8` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks half-open, inclusive, from, to, and full byte ranges, including reversed and equal bounds, touching intervals, and the byte maximum. The scalar interface does not depend on imported `Range<u8>` aggregates, which need a new execution check after the struct-return repair in dependency 2. |
 | `core::range_i8` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-128`, `127`, touching intervals, and empty or reversed bounds. |
 | `core::range_u16` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks half-open, inclusive, from, to, and full ranges, including equal or reversed bounds, touching intervals, and the `65535` endpoint. |
@@ -263,9 +263,9 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   empty range contains no values and overlaps no range. `RangeFrom<i32>` includes
   its start, `RangeTo<i32>` excludes its end, and `RangeFull` contains all i32
   values. `RangeTo<i32>` ending at `MIN` contains no i32 value. The u32 free
-  functions apply the same endpoint rules over `0..=u32::MAX`. A `RangeTo<u32>`
+  functions and methods apply the same endpoint rules over `0..=u32::MAX`. A `RangeTo<u32>`
   ending at zero is empty; an inclusive range ending at `u32::MAX` includes
-  that value. The u32 range structs have no executable method claim.
+  that value.
 - `core::range_u8` accepts scalar byte bounds, so a caller does not need an
   imported aggregate. Half-open equal or reversed bounds are empty;
   inclusive equal bounds contain one byte and reversed bounds are empty.
@@ -934,19 +934,18 @@ also fixes the imported struct-return relocation path described below.
     failed its executable saturating-multiplication case, which relies on
     division for its overflow guard. The candidate was removed rather than
     publishing arithmetic with incorrect high-value behavior.
-27. **Specialized generic range method dispatch.** Compile
+27. **Resolved: specialized generic range method dispatch for scalar receiver arguments.** Compile
     `tests/fixtures/stdlib_foundation/repro_u32_range_method.lani` with
     `--stdlib-root tests/fixtures/stdlib_foundation/repro_u32_range_method_root`
-    and `--emit x86_64`, then run the ELF. It exits 2: the free u32 function
-    correctly excludes `1` from a range starting at `2147483648`, but the
-    corresponding `RangeFrom<u32>::contains` method returns true. The minimal
-    imported module defines both `RangeFrom<i32>` and `RangeFrom<u32>` impls.
-    Native disassembly shows that both method bodies are emitted, but the call
-    from `RangeFrom<u32>` targets the signed i32 body; the unsigned body is
-    unused. The remaining defect is method target selection for the annotated
-    generic receiver, rather than unsigned comparison lowering.
-    The unsigned free functions now execute in `core::range`; specialized
-    unsigned methods remain withheld until method dispatch is correct.
+    and `--emit x86_64`, then run the ELF. It now exits 0; before the fix it
+    exited 2 because the imported method call targeted the signed i32 body.
+    The GPU semantic interface now records each public method's full receiver
+    type, and imported lookup compares scalar generic arguments before
+    selecting a target. Ambiguous and unsupported compound receiver arguments
+    fail closed. Interface version 5 rejects older artifacts, which must be
+    rebuilt. `tests/imported_concrete_method_execution.rs` and the u32 range
+    fixture execute this path. Compound generic receiver argument comparison
+    remains a compiler dependency for methods specialized to nested types.
 28. **Resolved: unsigned arithmetic with a left integer literal.** The GPU
     expression-type pass now inherits a checked u32 type from the right operand
     when the left operand is an unsuffixed integer literal. The original

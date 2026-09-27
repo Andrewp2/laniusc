@@ -202,6 +202,11 @@ impl GpuSemanticInterfaceDependencyBatch {
                 },
                 value_lo: member.value_lo,
                 value_hi: member.value_hi,
+                receiver_type_index: if member.receiver_type_index == INVALID {
+                    INVALID
+                } else {
+                    type_base + member.receiver_type_index
+                },
             }
         }));
         self.name_bytes.extend_from_slice(&interface.name_bytes);
@@ -296,6 +301,12 @@ impl GpuSemanticInterfaceDependencyBatch {
                 "dependency member type",
                 index,
                 member.type_index,
+                self.types.len(),
+            )?;
+            validate_optional_index(
+                "dependency associated method receiver type",
+                index,
+                member.receiver_type_index,
                 self.types.len(),
             )?;
         }

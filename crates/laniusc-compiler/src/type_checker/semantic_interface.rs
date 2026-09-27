@@ -12,7 +12,7 @@ pub(super) const MODULE_SEGMENT_WORDS: usize = 4;
 pub(super) const DECLARATION_WORDS: usize = 14;
 const COUNT_WORDS: usize = 5;
 pub(super) const TYPE_WORDS: usize = 9;
-pub(super) const MEMBER_WORDS: usize = 10;
+pub(super) const MEMBER_WORDS: usize = 11;
 
 #[derive(Clone, Copy)]
 struct ActiveHirDomain<'a> {

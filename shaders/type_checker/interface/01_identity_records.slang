@@ -270,7 +270,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         else
         {
-            uint base = row * 10u;
+            uint base = row * 11u;
             interface_member_words[base + 3u] = name_hash_lo[name_id];
             interface_member_words[base + 4u] = name_hash_hi[name_id];
             interface_member_words[base + 5u] = interface_name_ref_prefix[name_ref];

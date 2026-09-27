@@ -1,7 +1,7 @@
 // Seed direct dense type roots owned by public declarations and associated
 // methods.  Method signatures are exported as members rather than ordinary
-// declarations, but their return types still belong to the owning public type
-// declaration's reachable interface graph.
+// declarations, but their receiver and return types still belong to the owning
+// public type declaration's reachable interface graph.
 
 import hir_records;
 import atomics;
@@ -122,13 +122,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     // Public inherent methods are represented as associated members.  Seed
-    // their return type under the owning public declaration so the later
-    // topology and member normalization passes assign it a persisted index.
+    // their receiver and return types under the owning public declaration so
+    // imported calls can distinguish concrete generic receiver impls.
     if (row < min(compact_method_count[0u], gParams.hir_capacity))
     {
         uint method_owner_id = method_owner(row);
         uint method_node = compact_method_cores[row].node;
         if (method_owner_id != INVALID && method_node < active_hir_count())
+        {
+            seed(compact_method_signatures[row].impl_receiver_type, method_owner_id);
             seed(compact_fn_return_type[method_node], method_owner_id);
+        }
     }
 }
