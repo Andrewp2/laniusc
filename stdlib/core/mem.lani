@@ -1,6 +1,6 @@
-// Generic value helpers for no-runtime core programs.
-// These are frontend/type-check contracts only; they do not define allocation,
-// destruction, moves, borrowing, or object layout.
+// Generic value helpers and compiler-provided memory intrinsics.
+// Value helpers do not define allocation, destruction, moves, borrowing, or
+// object layout. Intrinsic lowering is target-specific and has no Lanius body.
 
 module core::mem;
 
@@ -93,25 +93,10 @@ pub fn select<T>(condition: bool, when_true: T, when_false: T) -> T {
     }
 }
 
-pub fn i32_array_data_ptr<const N: usize>(values: [i32; N]) -> ptr {
-    return 0;
-}
-
-// Unsafe raw-storage boundary. The returned pointer borrows `values` and must
-// not outlive its backing storage.
-pub fn i32_slice_data_ptr(values: [i32]) -> ptr {
-    return 0;
-}
-
-// Unsafe raw-storage boundary. The returned pointer borrows the immutable
-// decoded UTF-8 storage of `value` and must not outlive it.
-pub fn string_data_ptr(value: str) -> ptr {
-    return 0;
-}
-
-// Unsafe raw-storage boundary. The caller must provide at least `length`
-// aligned i32 elements whose lifetime covers every use of the returned slice.
-// Native code represents the result as the pair (data, length).
-pub fn i32_slice_from_raw_parts(data: ptr, length: i32) -> [i32] {
-    return [];
-}
+// Compiler-provided intrinsics available through this module:
+// i32_array_data_ptr, i32_slice_data_ptr, string_data_ptr, and
+// i32_slice_from_raw_parts. They are not defined in Lanius source because a
+// placeholder body would silently return a null pointer or empty view on a
+// target without intrinsic lowering. Callers must keep borrowed backing
+// storage alive. Constructing a view also requires a valid aligned pointer
+// with at least the claimed number of i32 elements.

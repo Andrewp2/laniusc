@@ -25,7 +25,7 @@ limited to native x86_64 output from this worktree.
 | Legacy `stdlib/i32.lani` power-of-two helpers | Executable on x86_64 | A focused source-level native test checks the highest signed power and the zero overflow sentinel. The legacy file as a whole is not included in this claim. |
 | `core::range` free functions for all five range forms and methods for `Range<i32>`, `RangeInclusive<i32>`, `RangeFrom<i32>`, and `RangeTo<i32>` | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership. There is no `RangeFull` method claim. |
 | `core::slice` all 29 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, rotations, compaction, search and insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. A separate fixture confirms native index trapping on an overclaimed length. |
-| `core::mem::{i32_array_data_ptr,i32_slice_from_raw_parts}` | Misleading source stubs; executable x86_64 compiler intrinsics | The source bodies return `0` and `[]`; x86 lowers the recognized calls as intrinsics, demonstrated by the slice fixture. Do not use these bodies as evidence for another target. `string_data_ptr` and `i32_slice_data_ptr` have the same placeholder issue and are outside this subset. |
+| `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
 | Generic `core::option`, `core::result`, and `core::{i32,i64,u32,u8}` as complete imported modules | Contract-only for native execution | Their Lanius bodies type-check, but generic enum use or import prevents reliable x86 output. The numeric modules import generic `Option` for checked results. A minimal failing program is included below. |
@@ -181,7 +181,8 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   array sees these mutations.
 - `core::mem` raw-view construction borrows the backing array. The array must
   remain alive for every use of the view. The selected tests use stack-backed
-  arrays and no allocator.
+  arrays and no allocator. These four intrinsics are compiler-provided, with
+  no Lanius source bodies. Behavior on other targets remains unverified.
 - `std::args_checked::read_exact_into` copies the selected process argument's
   bytes into caller storage without a terminator. It checks the reported
   length before writing. An empty argument succeeds with a null buffer;
@@ -334,10 +335,12 @@ the failure injection cases run when Linux `strace` is available.
    through the real stdlib root but exits 139 when the non-generic
    `Ordering` returned by `compare_i32` is passed to `to_i32`. Enum-valued
    comparison APIs therefore remain outside the executable claim too.
-3. **Portable slice construction and metadata.** The source bodies in
-   `core::mem` are placeholders; x86 intrinsic lowering supplies the behavior.
-   A real cross-target slice constructor and a way to read slice length are
-   needed before the same API can be claimed for another target or made
+3. **Portable slice construction and metadata.** The four `core::mem` pointer
+   and view helpers are compiler-injected intrinsics with no Lanius source
+   bodies. X86 lowering passes the backed-view fixture, and an existing Wasm
+   byte-write test passes for `i32_array_data_ptr`; no full cross-target
+   behavioral claim follows from those checks. A portable slice constructor
+   and a way to read slice length are still needed before slice APIs can be
    independent of caller-supplied lengths.
 4. **Allocation-backed vectors.** `std::vec` requires storage, mutation,
    allocation failure, and ownership semantics. Its silent `push` stub is

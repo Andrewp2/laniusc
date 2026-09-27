@@ -1,0 +1,28 @@
+module app::main;
+import core::mem;
+fn main() -> i32 {
+    let words:[i32; 3] =[7, 11, 19];
+    let data: ptr = core::mem::i32_array_data_ptr(words);
+    if (data == 0) {
+        return 1;
+    }
+    let view:[i32] = core::mem::i32_slice_from_raw_parts(data, 3);
+    if (view[0] != 7 || view[2] != 19) {
+        return 2;
+    }
+    let view_data: ptr = core::mem::i32_slice_data_ptr(view);
+    if (view_data != data) {
+        return 3;
+    }
+    let second:[i32] = core::mem::i32_slice_from_raw_parts(view_data, 3);
+    second[1] = 23;
+    if (words[1] != 23 || view[1] != 23) {
+        return 4;
+    }
+    let text_data: ptr = core::mem::string_data_ptr("0123");
+    let text_word:[i32] = core::mem::i32_slice_from_raw_parts(text_data, 1);
+    if ((text_word[0]&255) != 48) {
+        return 5;
+    }
+    return 0;
+}

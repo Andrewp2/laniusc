@@ -127,6 +127,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_mem_intrinsics",
+            "tests/fixtures/stdlib_foundation/core_mem_intrinsics.lani",
+            0,
+            b"",
+        ),
+        (
             "core_hash_i32",
             "tests/fixtures/stdlib_foundation/core_hash_i32.lani",
             0,
@@ -242,6 +248,21 @@ fn executable_core_function_surface_has_runtime_cases() {
             include_str!("fixtures/stdlib_foundation/number_byte.lani"),
         ),
         (
+            "number_i8",
+            include_str!("../stdlib/core/number_i8.lani"),
+            include_str!("fixtures/stdlib_foundation/number_i8.lani"),
+        ),
+        (
+            "number_i16",
+            include_str!("../stdlib/core/number_i16.lani"),
+            include_str!("fixtures/stdlib_foundation/number_i16.lani"),
+        ),
+        (
+            "number_u16",
+            include_str!("../stdlib/core/number_u16.lani"),
+            include_str!("fixtures/stdlib_foundation/number_u16.lani"),
+        ),
+        (
             "number_u32",
             include_str!("../stdlib/core/number_u32.lani"),
             include_str!("fixtures/stdlib_foundation/number_u32.lani"),
@@ -270,6 +291,9 @@ fn executable_core_function_surface_has_runtime_cases() {
                         .contains(&call)
                 || module == "slice"
                     && include_str!("fixtures/stdlib_foundation/slice_compaction.lani")
+                        .contains(&call)
+                || module == "slice"
+                    && include_str!("fixtures/stdlib_foundation/slice_copy_nonoverlapping.lani")
                         .contains(&call);
             assert!(covered, "{module}::{name} lacks a runtime case");
             count += 1;
