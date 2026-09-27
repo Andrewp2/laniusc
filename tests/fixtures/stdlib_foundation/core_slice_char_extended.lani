@@ -1,0 +1,96 @@
+module app::main;
+import core::slice_char;
+
+fn main() -> i32 {
+    let a: char = 'a';
+    let z: char = 'z';
+    let e: char = 'é';
+    let enye: char = 'ñ';
+    let omega: char = 'Ω';
+    let smile: char = '😀';
+    let digit: char = '0';
+    let sequence: [char; 5] = [a, z, e, omega, smile];
+    if (core::slice_char::first_or(sequence, 5, digit) != a ||
+        core::slice_char::first_or(sequence, 0, digit) != digit ||
+        core::slice_char::first_or(sequence, -1, digit) != digit) { return 1; }
+    if (core::slice_char::rotate_left(sequence, 5, -1) ||
+        core::slice_char::rotate_right(sequence, 5, 6) ||
+        sequence[0] != a || sequence[4] != smile ||
+        !core::slice_char::rotate_left(sequence, 5, 2) ||
+        sequence[0] != e || sequence[1] != omega ||
+        sequence[2] != smile || sequence[3] != a || sequence[4] != z ||
+        !core::slice_char::rotate_right(sequence, 5, 2) ||
+        sequence[0] != a || sequence[1] != z || sequence[4] != smile ||
+        !core::slice_char::rotate_left(sequence, 0, 0) ||
+        !core::slice_char::rotate_right(sequence, 5, 5) ||
+        core::slice_char::rotate_left(sequence, -1, 0)) { return 2; }
+
+    let source: [char; 4] = [a, e, enye, omega];
+    let destination: [char; 5] = [digit, digit, digit, digit, digit];
+    if (core::slice_char::copy_nonoverlapping_range(destination, 5, 0, source, -1, 0, 1) ||
+        core::slice_char::copy_nonoverlapping_range(destination, 5, -1, source, 4, 0, 1) ||
+        core::slice_char::copy_nonoverlapping_range(destination, 5, 4, source, 4, 0, 2) ||
+        core::slice_char::copy_nonoverlapping_range(destination, 5, 0, source, 4, 3, 2) ||
+        core::slice_char::copy_nonoverlapping_range(destination, 5, 0, source, 4, 0, -1) ||
+        destination[0] != digit || destination[4] != digit ||
+        !core::slice_char::copy_nonoverlapping_range(destination, 5, 2, source, 4, 1, 2) ||
+        destination[0] != digit || destination[1] != digit ||
+        destination[2] != e || destination[3] != enye ||
+        destination[4] != digit ||
+        !core::slice_char::copy_nonoverlapping_range(destination, 5, 5, source, 4, 4, 0)) {
+        return 3;
+    }
+
+    let compact: [char; 7] = [a, a, e, e, enye, enye, omega];
+    if (core::slice_char::dedup_adjacent(compact, -1) != -1 ||
+        compact[0] != a || compact[1] != a ||
+        core::slice_char::dedup_adjacent(compact, 7) != 4 ||
+        compact[0] != a || compact[1] != e ||
+        compact[2] != enye || compact[3] != omega ||
+        core::slice_char::dedup_adjacent(compact, 0) != 0) { return 4; }
+    let retained: [char; 5] = [a, e, enye, e, omega];
+    if (core::slice_char::retain_not_equal(retained, -1, e) != -1 ||
+        retained[1] != e ||
+        core::slice_char::retain_not_equal(retained, 5, e) != 3 ||
+        retained[0] != a || retained[1] != enye || retained[2] != omega ||
+        core::slice_char::retain_not_equal(retained, 0, a) != 0 ||
+        core::slice_char::remove_at(retained, 3, -1) ||
+        core::slice_char::remove_at(retained, 3, 3) ||
+        retained[1] != enye ||
+        !core::slice_char::remove_at(retained, 3, 1) ||
+        retained[0] != a || retained[1] != omega ||
+        core::slice_char::remove_at(retained, 0, 0)) { return 5; }
+
+    let insertion: [char; 4] = [a, omega, digit, digit];
+    if (core::slice_char::insert(insertion, 2, 2, 1, e) ||
+        core::slice_char::insert(insertion, -1, 4, 0, e) ||
+        core::slice_char::insert(insertion, 2, 4, 3, e) ||
+        core::slice_char::push(insertion, 4, 4, e) ||
+        insertion[0] != a || insertion[1] != omega ||
+        !core::slice_char::insert(insertion, 2, 4, 1, e) ||
+        insertion[0] != a || insertion[1] != e || insertion[2] != omega ||
+        !core::slice_char::push(insertion, 3, 4, smile) ||
+        insertion[3] != smile ||
+        core::slice_char::push(insertion, 4, 4, enye)) { return 6; }
+
+    let extrema: [char; 5] = [smile, z, e, enye, omega];
+    if (core::slice_char::min_or(extrema, 5, digit) != z ||
+        core::slice_char::max_or(extrema, 5, digit) != smile ||
+        core::slice_char::min_or(extrema, 0, digit) != digit ||
+        core::slice_char::max_or(extrema, -1, digit) != digit) { return 7; }
+    let partition: [char; 6] = [smile, z, enye, a, omega, e];
+    if (core::slice_char::partition_lt(partition, -1, omega) != -1 ||
+        partition[0] != smile ||
+        core::slice_char::partition_lt(partition, 6, omega) != 4 ||
+        partition[0] >= omega || partition[1] >= omega ||
+        partition[2] >= omega || partition[3] >= omega ||
+        partition[4] < omega || partition[5] < omega ||
+        core::slice_char::count(partition, 6, smile) != 1 ||
+        core::slice_char::count(partition, 6, z) != 1 ||
+        core::slice_char::count(partition, 6, enye) != 1 ||
+        core::slice_char::count(partition, 6, a) != 1 ||
+        core::slice_char::count(partition, 6, omega) != 1 ||
+        core::slice_char::count(partition, 6, e) != 1 ||
+        core::slice_char::partition_lt(partition, 0, omega) != 0) { return 8; }
+    return 0;
+}

@@ -8,6 +8,10 @@ pub fn get_or(values: [char], len: i32, index: i32, fallback: char) -> char {
     return values[index];
 }
 
+pub fn first_or(values: [char], len: i32, fallback: char) -> char {
+    return get_or(values, len, 0, fallback);
+}
+
 // Invalid indices leave the view unchanged.
 pub fn set(values: [char], len: i32, index: i32, value: char) -> bool {
     if (len <= 0 || index < 0 || index >= len) { return false; }
@@ -71,6 +75,34 @@ pub fn reverse(values: [char], len: i32) -> i32 {
     return len;
 }
 
+fn reverse_segment(values: [char], start: i32, end: i32) {
+    let left: i32 = start;
+    let right: i32 = end - 1;
+    while (left < right) {
+        let previous: char = values[left];
+        values[left] = values[right];
+        values[right] = previous;
+        left += 1;
+        right -= 1;
+    }
+}
+
+// Rotates the logical prefix by an amount in [0, len]. Invalid bounds leave
+// the view unchanged. Empty views accept a zero rotation.
+pub fn rotate_left(values: [char], len: i32, amount: i32) -> bool {
+    if (len < 0 || amount < 0 || amount > len) { return false; }
+    if (amount == 0 || amount == len) { return true; }
+    reverse_segment(values, 0, amount);
+    reverse_segment(values, amount, len);
+    reverse_segment(values, 0, len);
+    return true;
+}
+
+pub fn rotate_right(values: [char], len: i32, amount: i32) -> bool {
+    if (len < 0 || amount < 0 || amount > len) { return false; }
+    return rotate_left(values, len, len - amount);
+}
+
 // Copies the shorter prefix. Negative lengths return -1 without writing.
 // The ranges must be disjoint or start at the same element; otherwise use
 // copy_within for overlap in one view.
@@ -84,6 +116,25 @@ pub fn copy_prefix(source: [char], source_len: i32, destination: [char], destina
         index += 1;
     }
     return count;
+}
+
+// Copies a checked range between disjoint source and destination backings.
+// destination_len is writable capacity. Invalid bounds write nothing.
+pub fn copy_nonoverlapping_range(
+    destination: [char], destination_len: i32, destination_start: i32,
+    source: [char], source_len: i32, source_start: i32, count: i32
+) -> bool {
+    if (destination_len < 0 || source_len < 0 || count < 0 ||
+        destination_start < 0 || source_start < 0 ||
+        count > destination_len || count > source_len ||
+        destination_start > destination_len - count ||
+        source_start > source_len - count) { return false; }
+    let index: i32 = 0;
+    while (index < count) {
+        destination[destination_start + index] = source[source_start + index];
+        index += 1;
+    }
+    return true;
 }
 
 pub fn contains(values: [char], len: i32, target: char) -> bool {
@@ -118,6 +169,113 @@ pub fn last_index_or(values: [char], len: i32, target: char, fallback: i32) -> i
         if (values[remaining] == target) { return remaining; }
     }
     return fallback;
+}
+
+// Compacts consecutive equal characters and returns the new logical length.
+// A negative length returns -1 without writing. The tail is unspecified.
+pub fn dedup_adjacent(values: [char], len: i32) -> i32 {
+    if (len < 0) { return -1; }
+    if (len == 0) { return 0; }
+    let write: i32 = 1;
+    let read: i32 = 1;
+    while (read < len) {
+        let current: char = values[read];
+        if (current != values[write - 1]) {
+            values[write] = current;
+            write += 1;
+        }
+        read += 1;
+    }
+    return write;
+}
+
+// Retains order, returning the new logical length. A negative length returns
+// -1 without writing. The tail is unspecified.
+pub fn retain_not_equal(values: [char], len: i32, target: char) -> i32 {
+    if (len < 0) { return -1; }
+    let read: i32 = 0;
+    let write: i32 = 0;
+    while (read < len) {
+        let current: char = values[read];
+        if (current != target) {
+            values[write] = current;
+            write += 1;
+        }
+        read += 1;
+    }
+    return write;
+}
+
+// Valid removal shifts the suffix left. The caller reduces its logical len
+// by one after success; the old last slot is unspecified.
+pub fn remove_at(values: [char], len: i32, index: i32) -> bool {
+    if (len <= 0 || index < 0 || index >= len) { return false; }
+    let read: i32 = index + 1;
+    while (read < len) {
+        values[read - 1] = values[read];
+        read += 1;
+    }
+    return true;
+}
+
+// Capacity must fit writable backing. Successful insertion grows the logical
+// length by one; invalid bounds leave all elements unchanged.
+pub fn insert(values: [char], len: i32, capacity: i32, index: i32, value: char) -> bool {
+    if (len < 0 || capacity <= 0 || len >= capacity || index < 0 || index > len) {
+        return false;
+    }
+    let cursor: i32 = len;
+    while (cursor > index) {
+        values[cursor] = values[cursor - 1];
+        cursor -= 1;
+    }
+    values[index] = value;
+    return true;
+}
+
+pub fn push(values: [char], len: i32, capacity: i32, value: char) -> bool {
+    return insert(values, len, capacity, len, value);
+}
+
+pub fn min_or(values: [char], len: i32, fallback: char) -> char {
+    if (len <= 0) { return fallback; }
+    let result: char = values[0];
+    let index: i32 = 1;
+    while (index < len) {
+        if (values[index] < result) { result = values[index]; }
+        index += 1;
+    }
+    return result;
+}
+
+pub fn max_or(values: [char], len: i32, fallback: char) -> char {
+    if (len <= 0) { return fallback; }
+    let result: char = values[0];
+    let index: i32 = 1;
+    while (index < len) {
+        if (values[index] > result) { result = values[index]; }
+        index += 1;
+    }
+    return result;
+}
+
+// Partitions values less than pivot before all other values. Returns the
+// boundary, or -1 for a negative length without writing. Order within each
+// partition is unspecified; all original values are preserved.
+pub fn partition_lt(values: [char], len: i32, pivot: char) -> i32 {
+    if (len < 0) { return -1; }
+    let write: i32 = 0;
+    let read: i32 = 0;
+    while (read < len) {
+        if (values[read] < pivot) {
+            let previous: char = values[write];
+            values[write] = values[read];
+            values[read] = previous;
+            write += 1;
+        }
+        read += 1;
+    }
+    return write;
 }
 
 // Negative or unequal lengths are unequal; two empty views are equal.

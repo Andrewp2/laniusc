@@ -432,6 +432,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_slice_char_extended",
+            "tests/fixtures/stdlib_foundation/core_slice_char_extended.lani",
+            0,
+            b"",
+        ),
+        (
             "core_slice_char_bounds",
             "tests/fixtures/stdlib_foundation/core_slice_char_bounds.lani",
             101,
@@ -1074,6 +1080,9 @@ fn executable_core_function_surface_has_runtime_cases() {
                         .contains(&call)
                 || module == "range_i16"
                     && include_str!("fixtures/stdlib_foundation/core_range_i16_aggregate.lani")
+                        .contains(&call)
+                || module == "slice_char"
+                    && include_str!("fixtures/stdlib_foundation/core_slice_char_extended.lani")
                         .contains(&call)
                 || module == "slice_u8"
                     && include_str!("fixtures/stdlib_foundation/core_slice_u8_complete.lani")
