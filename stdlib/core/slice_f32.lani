@@ -3,6 +3,8 @@
 // overclaimed length reaches an element outside that backing.
 module core::slice_f32;
 
+import core::f32;
+
 // Invalid logical bounds return the caller's fallback without indexing.
 pub fn get_or(values: [f32], len: i32, index: i32, fallback: f32) -> f32 {
     if (len <= 0 || index < 0 || index >= len) {
@@ -181,4 +183,114 @@ pub fn sum_or(values: [f32], len: i32, fallback: f32) -> f32 {
         index += 1;
     }
     return total;
+}
+
+fn all_finite(values: [f32], len: i32) -> bool {
+    if (len < 0) { return false; }
+    let index: i32 = 0;
+    while (index < len) {
+        if (!core::f32::is_finite(values[index])) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+// Nonfinite values and negative lengths are invalid. Equal signed zeros are
+// accepted because ordinary f32 comparisons do not distinguish them.
+pub fn is_sorted_finite(values: [f32], len: i32) -> bool {
+    if (!all_finite(values, len)) { return false; }
+    let index: i32 = 1;
+    while (index < len) {
+        if (values[index - 1] > values[index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+fn sift_down_max_finite(values: [f32], heap_len: i32, start: i32) {
+    if (heap_len > 1) {
+        let root: i32 = start;
+        while (root <= (heap_len - 2) / 2) {
+            let child: i32 = root * 2 + 1;
+            let largest: i32 = root;
+            if (values[largest] < values[child]) { largest = child; }
+            if (child + 1 < heap_len && values[largest] < values[child + 1]) {
+                largest = child + 1;
+            }
+            if (largest == root) { break; }
+            let previous: f32 = values[root];
+            values[root] = values[largest];
+            values[largest] = previous;
+            root = largest;
+        }
+    }
+}
+
+// In-place ascending heapsort over finite values. Checks the entire logical
+// view before writing, so a negative length, NaN, or infinity returns false
+// without mutation. Signed zeros may appear in either order.
+pub fn sort_finite(values: [f32], len: i32) -> bool {
+    if (!all_finite(values, len)) { return false; }
+    if (len <= 1) { return true; }
+    let start: i32 = (len - 2) / 2;
+    while (start >= 0) {
+        sift_down_max_finite(values, len, start);
+        if (start == 0) { break; }
+        start -= 1;
+    }
+    let remaining: i32 = len;
+    while (remaining > 1) {
+        remaining -= 1;
+        let previous: f32 = values[0];
+        values[0] = values[remaining];
+        values[remaining] = previous;
+        sift_down_max_finite(values, remaining, 0);
+    }
+    return true;
+}
+
+// Returns the first position whose value is at least needle. Invalid input
+// returns fallback: the view must be sorted and all values finite.
+pub fn lower_bound_finite_or(values: [f32], len: i32, needle: f32, fallback: i32) -> i32 {
+    if (!core::f32::is_finite(needle) || !is_sorted_finite(values, len)) {
+        return fallback;
+    }
+    let low: i32 = 0;
+    let high: i32 = len;
+    while (low < high) {
+        let middle: i32 = low + (high - low) / 2;
+        if (values[middle] < needle) { low = middle + 1; }
+        else { high = middle; }
+    }
+    return low;
+}
+
+// Returns the first position whose value is greater than needle.
+pub fn upper_bound_finite_or(values: [f32], len: i32, needle: f32, fallback: i32) -> i32 {
+    if (!core::f32::is_finite(needle) || !is_sorted_finite(values, len)) {
+        return fallback;
+    }
+    let low: i32 = 0;
+    let high: i32 = len;
+    while (low < high) {
+        let middle: i32 = low + (high - low) / 2;
+        if (values[middle] <= needle) { low = middle + 1; }
+        else { high = middle; }
+    }
+    return low;
+}
+
+// Returns the first equal index or fallback. Invalid views and needles use
+// the same fallback; a valid index is never negative.
+pub fn binary_search_first_finite_or(values: [f32], len: i32, needle: f32, fallback: i32) -> i32 {
+    let index: i32 = lower_bound_finite_or(values, len, needle, -1);
+    if (index >= 0 && index < len && values[index] == needle) { return index; }
+    return fallback;
+}
+
+// Returns the last equal index or fallback.
+pub fn binary_search_last_finite_or(values: [f32], len: i32, needle: f32, fallback: i32) -> i32 {
+    let after: i32 = upper_bound_finite_or(values, len, needle, -1);
+    if (after > 0 && values[after - 1] == needle) { return after - 1; }
+    return fallback;
 }

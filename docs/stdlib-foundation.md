@@ -39,7 +39,7 @@ limited to native x86_64 output from this worktree.
 | `core::slice_u16` all 36 public unsigned-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every public function and check access, mutation, copy and rotation, compaction, insertion, sequence search, unsigned ordering across `32768`, sort and binary search, partitioning, and sums saturating at `65535`. They cover empty and invalid logical lengths, rejected mutation, and all 243 five-element sequences over `{0,1,2}` for sorting. A separate fixture confirms exit 101 when the claimed length exceeds the physical backing and is indexed. |
 | `core::slice_u32` all 36 public unsigned-word-view functions | Executable on x86_64 for fixed-array-backed views | Matching runtime fixtures cover the same operations and failure cases, including unsigned ordering across `2^31` and saturation at `u32::MAX`, plus the exhaustive small-sort fixture. The caller supplies a logical length within the physical backing. A source scan requires a runtime call for every public function. |
 | `core::slice_bool` all 14 public boolean-view functions | Executable on x86_64 for fixed-array-backed views | The runtime fixture calls every function and checks reads, writes, fill, swap, overlapping copy, reversal, prefix copy, true counts, `any` and `all`, first and last matching indices, equality, sorting, invalid lengths, and an overclaimed physical length that traps. Sorting checks every five-element Boolean sequence. The boolean checksum sample uses it with numeric and Option helpers. Generic `[T]` operations are withheld because signed element instantiations misexecute; see dependency 41. |
-| `core::slice_f32` all 12 public floating-view functions | Executable on x86_64 for fixed-array-backed views | The runtime fixture calls every function and checks finite and NaN values, IEEE equality and signed zero, left-to-right sums, overlapping copy, invalid bounds, and native trapping on an overclaimed physical length. The floating window sample combines it with `core::f32` and `OptionF32`. It does not offer a total-order sort because NaN has no ordinary comparison order. |
+| `core::slice_f32` all 18 public floating-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every function and check finite and NaN values, IEEE equality and signed zero, left-to-right sums, overlapping copy, invalid bounds, and native trapping on an overclaimed physical length. Finite-only heapsort checks all 243 five-element sequences over `{-1, 0, 1}`; binary bounds and searches cover duplicates, missing values, signed zero, and invalid input. The floating window sample combines it with `core::f32` and `OptionF32`. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash` three public free functions and two FNV-1a constants | Executable on x86_64 | The runtime fixture checks the existing `hash_i32` bit-pattern behavior, both constants, a one-byte step, known byte-sequence hashes, empty input, binary bytes, and a negative-length fallback. A separate native fixture confirms that overstating the physical byte view traps. The stdin fingerprint sample combines hashing with byte input and hexadecimal output. The generic `Hash<T>` trait remains outside the claim. |
@@ -427,8 +427,14 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   over caller-backed float views. Invalid indices return a fallback or false;
   a negative length makes `sum_or` return its fallback. Searches and equality
   use IEEE equality: NaN never matches, even against itself, while signed zeros
-  compare equal. No sorting order is claimed. Physical backing overclaims can
-  trap when indexed.
+  compare equal. `sort_finite` checks the entire view first and returns false
+  without writing for a negative length, NaN, or infinity. It sorts finite
+  values ascending in place; signed zeros can appear in either order.
+  `is_sorted_finite` checks the same finite precondition. Lower and upper bound
+  helpers return the first index at least or greater than a finite needle;
+  binary search returns the first or last matching index. They validate sorted
+  finite input and return the caller's fallback for invalid views or needles.
+  Physical backing overclaims can trap when indexed.
   `sum_i32` folds from left to right with saturating i32 addition, so each
   overflow clamps to `MIN` or `MAX` before the next element. Search helpers
   return the first or last matching index as named, or the caller's fallback.
@@ -782,8 +788,8 @@ an Option returned by its local search helper and concrete Result helpers,
 then accumulates the selected values with
 saturation. It combines five portable modules and prints `32786`.
 
-`sample_programs/floating_window_total.lani` checks readings through
-`core::slice_f32`, sums and clamps them, and carries the result through
+`sample_programs/floating_window_total.lani` sorts finite readings and searches
+them through `core::slice_f32`, sums and clamps them, and carries the result through
 `OptionF32`. It prints the matched reading's index, `2`, after verifying the
 floating total is `7.0`. Floating-to-integer conversion remains a compiler
 dependency; see item 43 below.
