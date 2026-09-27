@@ -1,0 +1,28 @@
+// Bounded environment-variable copy into caller-owned storage. This host
+// helper allocates no memory. Keys are nonempty byte sequences supplied by
+// pointer and length; values are copied without a trailing NUL. A missing
+// key, insufficient capacity, or invalid pointer/length returns false before
+// writing. An empty value succeeds with a null destination. A host short read
+// returns false and may leave a prefix in the destination.
+module std::env_checked;
+import std::env;
+pub fn var_read_exact_into(key: ptr, key_len: usize, value: ptr, capacity: usize) -> bool {
+    if (key == 0 || key_len == 0 || key_len>2147483647 || capacity>2147483647) {
+        return false;
+    }
+    let expected: i32 = std::env::var_len(key, key_len);
+    if (expected<0) {
+        return false;
+    }
+    let needed: usize = expected;
+    if (needed>capacity) {
+        return false;
+    }
+    if (needed == 0) {
+        return true;
+    }
+    if (value == 0) {
+        return false;
+    }
+    return std::env::var_read(key, key_len, value, needed) == expected;
+}
