@@ -30,7 +30,7 @@ limited to native x86_64 output from this worktree.
 | `core::range_i8` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-128`, `127`, touching intervals, and empty or reversed bounds. |
 | `core::range_u16` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks half-open, inclusive, from, to, and full ranges, including equal or reversed bounds, touching intervals, and the `65535` endpoint. |
 | `core::range_i16` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-32768`, `32767`, touching intervals, and empty or reversed bounds. |
-| `core::slice` all 33 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
+| `core::slice` all 36 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, first and last contiguous subsequence matches, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
@@ -229,7 +229,14 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   insufficient destination length, and accepts an empty source. Its source and
   destination element ranges must not overlap in memory.
   `starts_with_i32`, `ends_with_i32`, and `equals_i32` compare elements in
-  backed views; they treat negative lengths as empty. `rotate_left_i32` and
+  backed views; they treat negative lengths as empty.
+  `compare_lexicographic_i32` returns -1, 0, or 1 after comparing the first
+  differing element, then the lengths. `index_of_subslice_i32` and
+  `last_index_of_subslice_i32` return the first or last contiguous match, or
+  -1 when absent. An empty needle matches at index zero for the first search
+  and at the logical view length for the last search; negative lengths count
+  as empty. All three require valid backed views for any indexed element.
+  `rotate_left_i32` and
   `rotate_right_i32` mutate in place and return false without writing unless
   `len >= 0` and `0 <= amount <= len`. Rotating an empty view by zero succeeds.
   `dedup_adjacent_i32` retains one element from each adjacent run;

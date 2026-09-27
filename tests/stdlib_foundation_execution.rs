@@ -97,6 +97,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "slice_subsequence",
+            "tests/fixtures/stdlib_foundation/slice_subsequence.lani",
+            0,
+            b"",
+        ),
+        (
             "slice_copy_nonoverlapping",
             "tests/fixtures/stdlib_foundation/slice_copy_nonoverlapping.lani",
             0,
@@ -378,6 +384,9 @@ fn executable_core_function_surface_has_runtime_cases() {
             let covered = fixture.contains(&call)
                 || module == "slice"
                     && include_str!("fixtures/stdlib_foundation/slice_sequence.lani")
+                        .contains(&call)
+                || module == "slice"
+                    && include_str!("fixtures/stdlib_foundation/slice_subsequence.lani")
                         .contains(&call)
                 || module == "slice"
                     && include_str!("fixtures/stdlib_foundation/slice_compaction.lani")
