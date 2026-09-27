@@ -300,11 +300,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
                  actual_tag == TYPE_REF_INSTANCE &&
                  actual_payload < gParams.visible_capacity)
         {
-            uint expected_instance_kind = expected_kind == INTERFACE_TYPE_ARRAY
-                ? TYPE_INSTANCE_ARRAY
-                : TYPE_INSTANCE_SLICE;
-            matches = type_instance_kind[actual_payload] == expected_instance_kind &&
-                      expected_count == 1u;
+            uint actual_instance_kind = type_instance_kind[actual_payload];
+            // A fixed array can supply a slice parameter. The call lowering
+            // builds the slice view, just as it does for a local callee.
+            matches = expected_count == 1u &&
+                (expected_kind == INTERFACE_TYPE_ARRAY
+                    ? actual_instance_kind == TYPE_INSTANCE_ARRAY
+                    : actual_instance_kind == TYPE_INSTANCE_SLICE ||
+                      actual_instance_kind == TYPE_INSTANCE_ARRAY);
             // A dependency interface preserves a const-generic array length
             // as TYPE_LEN_CONST_PARAM. Its concrete value is inferred from
             // the argument; only literal-length parameters require an exact

@@ -121,6 +121,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_slice_u8",
+            "tests/fixtures/stdlib_foundation/core_slice_u8.lani",
+            0,
+            b"",
+        ),
+        (
             "slice_subsequence",
             "tests/fixtures/stdlib_foundation/slice_subsequence.lani",
             0,
@@ -245,6 +251,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             "sample_programs/portable_window_checksum.lani",
             0,
             b"96\n",
+        ),
+        (
+            "hex_packet_checksum",
+            "sample_programs/hex_packet_checksum.lani",
+            0,
+            b"28\n",
         ),
         (
             "vec_i32",
@@ -463,6 +475,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             "slice",
             include_str!("../stdlib/core/slice.lani"),
             include_str!("fixtures/stdlib_foundation/range_slice.lani"),
+        ),
+        (
+            "slice_u8",
+            include_str!("../stdlib/core/slice_u8.lani"),
+            include_str!("fixtures/stdlib_foundation/core_slice_u8.lani"),
         ),
     ];
 

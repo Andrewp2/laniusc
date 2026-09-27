@@ -1,0 +1,143 @@
+// Allocation-free operations on caller-backed byte views. Every len must be
+// no greater than the physical view length. Native indexing traps if the
+// caller overstates it. A negative logical length is rejected or empty as
+// described for each operation.
+module core::slice_u8;
+
+pub fn get_or(values: [u8], len: i32, index: i32, fallback: u8) -> u8 {
+    if (len <= 0 || index < 0 || index >= len) {
+        return fallback;
+    }
+    return values[index];
+}
+
+// Invalid logical bounds leave the view unchanged.
+pub fn set(values: [u8], len: i32, index: i32, value: u8) -> bool {
+    if (len <= 0 || index < 0 || index >= len) {
+        return false;
+    }
+    values[index] = value;
+    return true;
+}
+
+// A nonpositive length writes nothing and returns zero.
+pub fn fill(values: [u8], len: i32, value: u8) -> i32 {
+    let index: i32 = 0;
+    while (index < len) {
+        values[index] = value;
+        index += 1;
+    }
+    return index;
+}
+
+// Overlap is supported. Invalid logical bounds write nothing.
+pub fn copy_within(values: [u8], len: i32, start: i32, end: i32, destination: i32) -> bool {
+    if (len < 0 || start < 0 || end < start || end > len || destination < 0) {
+        return false;
+    }
+    let count: i32 = end - start;
+    if (destination > len - count) {
+        return false;
+    }
+    if (destination > start) {
+        let remaining: i32 = count;
+        while (remaining > 0) {
+            remaining -= 1;
+            values[destination + remaining] = values[start + remaining];
+        }
+    } else {
+        let offset: i32 = 0;
+        while (offset < count) {
+            values[destination + offset] = values[start + offset];
+            offset += 1;
+        }
+    }
+    return true;
+}
+
+// A nonpositive length is empty. Missing values return fallback.
+pub fn index_of_or(values: [u8], len: i32, needle: u8, fallback: i32) -> i32 {
+    let index: i32 = 0;
+    while (index < len) {
+        if (values[index] == needle) {
+            return index;
+        }
+        index += 1;
+    }
+    return fallback;
+}
+
+pub fn last_index_of_or(values: [u8], len: i32, needle: u8, fallback: i32) -> i32 {
+    let index: i32 = len;
+    while (index > 0) {
+        index -= 1;
+        if (values[index] == needle) {
+            return index;
+        }
+    }
+    return fallback;
+}
+
+// A negative length is invalid. Two empty views compare equal.
+pub fn equals(left: [u8], left_len: i32, right: [u8], right_len: i32) -> bool {
+    if (left_len < 0 || right_len < 0 || left_len != right_len) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index < left_len) {
+        if (left[index] != right[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// A negative length is invalid; an empty prefix matches every valid view.
+pub fn starts_with(values: [u8], len: i32, prefix: [u8], prefix_len: i32) -> bool {
+    if (len < 0 || prefix_len < 0 || prefix_len > len) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index < prefix_len) {
+        if (values[index] != prefix[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+pub fn ends_with(values: [u8], len: i32, suffix: [u8], suffix_len: i32) -> bool {
+    if (len < 0 || suffix_len < 0 || suffix_len > len) {
+        return false;
+    }
+    let index: i32 = 0;
+    let offset: i32 = len - suffix_len;
+    while (index < suffix_len) {
+        if (values[offset + index] != suffix[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Returns the number of swaps. A nonpositive length writes nothing.
+pub fn reverse_in_place(values: [u8], len: i32) -> i32 {
+    if (len <= 1) {
+        return 0;
+    }
+    let left: i32 = 0;
+    let right: i32 = len - 1;
+    let swaps: i32 = 0;
+    while (left < right) {
+        let previous: u8 = values[left];
+        values[left] = values[right];
+        values[right] = previous;
+        left += 1;
+        right -= 1;
+        swaps += 1;
+    }
+    return swaps;
+}

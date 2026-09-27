@@ -1,0 +1,11 @@
+module app::main;
+import core::byte_view;
+
+fn main() -> i32 {
+    let values: [i32; 1] = [65];
+    let value: u8 = core::byte_view::first(values);
+    if (value == 65) {
+        return 0;
+    }
+    return 1;
+}

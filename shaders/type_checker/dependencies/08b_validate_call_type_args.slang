@@ -233,7 +233,7 @@ bool generic_claim_matches(uint callee, uint slot, uint form, uint tag, uint pay
            generic_claim_row_matches(canonical, form, tag, payload, token);
 }
 
-bool node_matches(uint expected_row, uint local_row, uint callee)
+bool node_matches(uint expected_row, uint local_row, uint callee, bool root_array_to_slice)
 {
     uint type_count = dependency_count(4u);
     uint semantic_count = active_hir_count();
@@ -286,8 +286,11 @@ bool node_matches(uint expected_row, uint local_row, uint callee)
                 (type_instance_len_kind[payload] == dependency_type_word(base + 5u) &&
                  type_instance_len_payload[payload] == dependency_type_word(base + 6u)));
     if (kind == INTERFACE_TYPE_SLICE)
-        return form == HIR_TYPE_FORM_SLICE && type_instance_kind[payload] == TYPE_INSTANCE_SLICE &&
-               edge_count == 1u;
+        return edge_count == 1u &&
+               ((form == HIR_TYPE_FORM_SLICE &&
+                 type_instance_kind[payload] == TYPE_INSTANCE_SLICE) ||
+                (root_array_to_slice && form == HIR_TYPE_FORM_ARRAY &&
+                 type_instance_kind[payload] == TYPE_INSTANCE_ARRAY));
     return false;
 }
 
@@ -313,7 +316,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint local_row = local_semantic_row(
         dependency_call_compare_actual_instance[request], relative);
     uint callee = dependency_call_compare_error_token[request];
-    if (!node_matches(expected, local_row, callee))
+    if (!node_matches(expected, local_row, callee, relative == 0u))
         record_min_token_error(
             status,
             dependency_call_compare_error_token[request],
