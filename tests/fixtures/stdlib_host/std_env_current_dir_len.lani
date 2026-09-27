@@ -1,0 +1,9 @@
+module app::main;
+import std::env;
+
+fn main() -> i32 {
+    let length: i32 = std::env::current_dir_len();
+    if (length == -1) { return 77; }
+    if (length <= 0) { return 1; }
+    return 0;
+}

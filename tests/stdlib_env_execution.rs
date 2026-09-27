@@ -175,6 +175,54 @@ fn std_env_current_dir_read_into_reports_host_failure_on_x86() {
 }
 
 #[test]
+fn std_env_current_dir_len_reports_allocation_failure_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_env_current_dir_len.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_env_current_dir_len", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile current directory length fixture");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let executable = common::TempArtifact::new("laniusc_std_env", "std_env_current_dir_len", None);
+        executable.write_bytes(&bytes);
+        let mut permissions = std::fs::metadata(executable.path()).unwrap().permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(executable.path(), permissions).unwrap();
+        let normal = common::short_process_output_with_timeout(
+            "current directory length normal",
+            &mut std::process::Command::new(executable.path()),
+        );
+        assert_eq!(normal.status.code(), Some(0), "{normal:?}");
+
+        if std::process::Command::new("strace").arg("-V").output().is_err() {
+            return;
+        }
+        let fault = common::short_process_output_with_timeout(
+            "current directory length allocation failure",
+            std::process::Command::new("strace")
+                .arg("-qq")
+                .arg("-e")
+                .arg("trace=mmap")
+                .arg("-e")
+                .arg("inject=mmap:error=ENOMEM:when=1")
+                .arg(executable.path()),
+        );
+        assert_eq!(fault.status.code(), Some(77), "{fault:?}");
+        assert!(
+            String::from_utf8_lossy(&fault.stderr).contains("INJECTED"),
+            "allocation fault was not injected: {fault:?}"
+        );
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn std_env_checked_public_functions_have_runtime_cases() {
     let source = include_str!("../stdlib/std/env_checked.lani");
     let fixtures = format!(
