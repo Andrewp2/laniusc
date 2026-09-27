@@ -1,5 +1,4 @@
-// Allocation-free unsigned 16-bit range predicates. Bounds are scalar values;
-// no imported aggregate or allocation is needed.
+// Allocation-free unsigned 16-bit scalar and concrete aggregate ranges.
 module core::range_u16;
 
 // Half-open [start, end). Equal or reversed bounds are empty.
@@ -41,4 +40,57 @@ pub fn to_contains(end: u16, value: u16) -> bool {
 // A full unsigned 16-bit range contains every u16 value.
 pub fn full_contains(value: u16) -> bool {
     return true;
+}
+
+// Caller-owned concrete range values for this width. Scalar predicates above
+// remain convenient when no aggregate needs to cross a function boundary.
+pub struct RangeU16 { start: u16, end: u16, }
+pub struct RangeInclusiveU16 { start: u16, end: u16, }
+pub struct RangeFromU16 { start: u16, }
+pub struct RangeToU16 { end: u16, }
+
+pub fn range(start: u16, end: u16) -> RangeU16 {
+    return RangeU16 { start: start, end: end };
+}
+pub fn start(value: RangeU16) -> u16 { return value.start; }
+pub fn end(value: RangeU16) -> u16 { return value.end; }
+pub fn is_empty(value: RangeU16) -> bool {
+    return half_open_is_empty(value.start, value.end);
+}
+pub fn contains(value: RangeU16, item: u16) -> bool {
+    return half_open_contains(value.start, value.end, item);
+}
+pub fn overlaps(left: RangeU16, right: RangeU16) -> bool {
+    return half_open_overlaps(left.start, left.end, right.start, right.end);
+}
+
+pub fn range_inclusive(start: u16, end: u16) -> RangeInclusiveU16 {
+    return RangeInclusiveU16 { start: start, end: end };
+}
+pub fn start_inclusive(value: RangeInclusiveU16) -> u16 { return value.start; }
+pub fn end_inclusive(value: RangeInclusiveU16) -> u16 { return value.end; }
+pub fn is_empty_inclusive(value: RangeInclusiveU16) -> bool {
+    return inclusive_is_empty(value.start, value.end);
+}
+pub fn contains_inclusive(value: RangeInclusiveU16, item: u16) -> bool {
+    return inclusive_contains(value.start, value.end, item);
+}
+pub fn overlaps_inclusive(left: RangeInclusiveU16, right: RangeInclusiveU16) -> bool {
+    return inclusive_overlaps(left.start, left.end, right.start, right.end);
+}
+
+pub fn range_from(start: u16) -> RangeFromU16 {
+    return RangeFromU16 { start: start };
+}
+pub fn start_from(value: RangeFromU16) -> u16 { return value.start; }
+pub fn contains_from(value: RangeFromU16, item: u16) -> bool {
+    return from_contains(value.start, item);
+}
+
+pub fn range_to(end: u16) -> RangeToU16 {
+    return RangeToU16 { end: end };
+}
+pub fn end_to(value: RangeToU16) -> u16 { return value.end; }
+pub fn contains_to(value: RangeToU16, item: u16) -> bool {
+    return to_contains(value.end, item);
 }

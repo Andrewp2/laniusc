@@ -1,0 +1,46 @@
+module app::main;
+import core::range_i16;
+
+fn main() -> i32 {
+    let start: i16 = -32768;
+    let middle: i16 = -1;
+    let end: i16 = 30000;
+    let maximum: i16 = 32767;
+    let half: core::range_i16::RangeI16 = core::range_i16::range(start, end);
+    let overlap: core::range_i16::RangeI16 = core::range_i16::range(middle, maximum);
+    let touch: core::range_i16::RangeI16 = core::range_i16::range(end, maximum);
+    let reversed: core::range_i16::RangeI16 = core::range_i16::range(end, start);
+    if (core::range_i16::start(half) != start ||
+        core::range_i16::end(half) != end) { return 1; }
+    if (core::range_i16::is_empty(half) ||
+        !core::range_i16::is_empty(reversed)) { return 2; }
+    if (!core::range_i16::contains(half, start) ||
+        !core::range_i16::contains(half, middle) ||
+        core::range_i16::contains(half, end)) { return 3; }
+    if (!core::range_i16::overlaps(half, overlap) ||
+        core::range_i16::overlaps(half, touch) ||
+        core::range_i16::overlaps(half, reversed)) { return 4; }
+
+    let closed: core::range_i16::RangeInclusiveI16 = core::range_i16::range_inclusive(start, end);
+    let closed_touch: core::range_i16::RangeInclusiveI16 = core::range_i16::range_inclusive(end, maximum);
+    let closed_reversed: core::range_i16::RangeInclusiveI16 = core::range_i16::range_inclusive(end, start);
+    if (core::range_i16::start_inclusive(closed) != start ||
+        core::range_i16::end_inclusive(closed) != end) { return 5; }
+    if (core::range_i16::is_empty_inclusive(closed) ||
+        !core::range_i16::is_empty_inclusive(closed_reversed)) { return 6; }
+    if (!core::range_i16::contains_inclusive(closed, start) ||
+        !core::range_i16::contains_inclusive(closed, end) ||
+        core::range_i16::contains_inclusive(closed, maximum)) { return 7; }
+    if (!core::range_i16::overlaps_inclusive(closed, closed_touch) ||
+        core::range_i16::overlaps_inclusive(closed, closed_reversed)) { return 8; }
+
+    let from: core::range_i16::RangeFromI16 = core::range_i16::range_from(middle);
+    if (core::range_i16::start_from(from) != middle ||
+        core::range_i16::contains_from(from, start) ||
+        !core::range_i16::contains_from(from, maximum)) { return 9; }
+    let to: core::range_i16::RangeToI16 = core::range_i16::range_to(end);
+    if (core::range_i16::end_to(to) != end ||
+        !core::range_i16::contains_to(to, middle) ||
+        core::range_i16::contains_to(to, end)) { return 10; }
+    return 0;
+}

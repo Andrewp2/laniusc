@@ -1,5 +1,4 @@
-// Allocation-free signed 8-bit range predicates. Bounds are scalar values;
-// no imported aggregate or allocation is needed.
+// Allocation-free signed 8-bit scalar and concrete aggregate ranges.
 module core::range_i8;
 
 // Half-open [start, end). Equal or reversed bounds are empty.
@@ -41,4 +40,57 @@ pub fn to_contains(end: i8, value: i8) -> bool {
 // A full signed 8-bit range contains every i8 value.
 pub fn full_contains(value: i8) -> bool {
     return true;
+}
+
+// Caller-owned concrete range values for this width. Scalar predicates above
+// remain convenient when no aggregate needs to cross a function boundary.
+pub struct RangeI8 { start: i8, end: i8, }
+pub struct RangeInclusiveI8 { start: i8, end: i8, }
+pub struct RangeFromI8 { start: i8, }
+pub struct RangeToI8 { end: i8, }
+
+pub fn range(start: i8, end: i8) -> RangeI8 {
+    return RangeI8 { start: start, end: end };
+}
+pub fn start(value: RangeI8) -> i8 { return value.start; }
+pub fn end(value: RangeI8) -> i8 { return value.end; }
+pub fn is_empty(value: RangeI8) -> bool {
+    return half_open_is_empty(value.start, value.end);
+}
+pub fn contains(value: RangeI8, item: i8) -> bool {
+    return half_open_contains(value.start, value.end, item);
+}
+pub fn overlaps(left: RangeI8, right: RangeI8) -> bool {
+    return half_open_overlaps(left.start, left.end, right.start, right.end);
+}
+
+pub fn range_inclusive(start: i8, end: i8) -> RangeInclusiveI8 {
+    return RangeInclusiveI8 { start: start, end: end };
+}
+pub fn start_inclusive(value: RangeInclusiveI8) -> i8 { return value.start; }
+pub fn end_inclusive(value: RangeInclusiveI8) -> i8 { return value.end; }
+pub fn is_empty_inclusive(value: RangeInclusiveI8) -> bool {
+    return inclusive_is_empty(value.start, value.end);
+}
+pub fn contains_inclusive(value: RangeInclusiveI8, item: i8) -> bool {
+    return inclusive_contains(value.start, value.end, item);
+}
+pub fn overlaps_inclusive(left: RangeInclusiveI8, right: RangeInclusiveI8) -> bool {
+    return inclusive_overlaps(left.start, left.end, right.start, right.end);
+}
+
+pub fn range_from(start: i8) -> RangeFromI8 {
+    return RangeFromI8 { start: start };
+}
+pub fn start_from(value: RangeFromI8) -> i8 { return value.start; }
+pub fn contains_from(value: RangeFromI8, item: i8) -> bool {
+    return from_contains(value.start, item);
+}
+
+pub fn range_to(end: i8) -> RangeToI8 {
+    return RangeToI8 { end: end };
+}
+pub fn end_to(value: RangeToI8) -> i8 { return value.end; }
+pub fn contains_to(value: RangeToI8, item: i8) -> bool {
+    return to_contains(value.end, item);
 }

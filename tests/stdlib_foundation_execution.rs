@@ -241,8 +241,20 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_range_u8_aggregate",
+            "tests/fixtures/stdlib_foundation/core_range_u8_aggregate.lani",
+            0,
+            b"",
+        ),
+        (
             "core_range_i8",
             "tests/fixtures/stdlib_foundation/range_i8.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_range_i8_aggregate",
+            "tests/fixtures/stdlib_foundation/core_range_i8_aggregate.lani",
             0,
             b"",
         ),
@@ -253,8 +265,20 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_range_u16_aggregate",
+            "tests/fixtures/stdlib_foundation/core_range_u16_aggregate.lani",
+            0,
+            b"",
+        ),
+        (
             "core_range_i16",
             "tests/fixtures/stdlib_foundation/range_i16.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_range_i16_aggregate",
+            "tests/fixtures/stdlib_foundation/core_range_i16_aggregate.lani",
             0,
             b"",
         ),
@@ -589,6 +613,18 @@ fn executable_core_function_surface_has_runtime_cases() {
                 .expect("public function has a name");
             let call = format!("core::{module}::{name}(");
             let covered = fixture.contains(&call)
+                || module == "range_u8"
+                    && include_str!("fixtures/stdlib_foundation/core_range_u8_aggregate.lani")
+                        .contains(&call)
+                || module == "range_i8"
+                    && include_str!("fixtures/stdlib_foundation/core_range_i8_aggregate.lani")
+                        .contains(&call)
+                || module == "range_u16"
+                    && include_str!("fixtures/stdlib_foundation/core_range_u16_aggregate.lani")
+                        .contains(&call)
+                || module == "range_i16"
+                    && include_str!("fixtures/stdlib_foundation/core_range_i16_aggregate.lani")
+                        .contains(&call)
                 || module == "slice_u8"
                     && include_str!("fixtures/stdlib_foundation/core_slice_u8_complete.lani")
                         .contains(&call)

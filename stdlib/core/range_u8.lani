@@ -1,5 +1,4 @@
-// Allocation-free byte-range predicates. Bounds are scalar values because
-// imported Range<u8> aggregates do not yet have reliable native lowering.
+// Allocation-free byte scalar and concrete aggregate ranges.
 module core::range_u8;
 
 // Half-open [start, end). Equal or reversed bounds are empty.
@@ -41,4 +40,57 @@ pub fn to_contains(end: u8, value: u8) -> bool {
 // A full byte range contains every u8 value.
 pub fn full_contains(value: u8) -> bool {
     return true;
+}
+
+// Caller-owned concrete range values for this width. Scalar predicates above
+// remain convenient when no aggregate needs to cross a function boundary.
+pub struct RangeU8 { start: u8, end: u8, }
+pub struct RangeInclusiveU8 { start: u8, end: u8, }
+pub struct RangeFromU8 { start: u8, }
+pub struct RangeToU8 { end: u8, }
+
+pub fn range(start: u8, end: u8) -> RangeU8 {
+    return RangeU8 { start: start, end: end };
+}
+pub fn start(value: RangeU8) -> u8 { return value.start; }
+pub fn end(value: RangeU8) -> u8 { return value.end; }
+pub fn is_empty(value: RangeU8) -> bool {
+    return half_open_is_empty(value.start, value.end);
+}
+pub fn contains(value: RangeU8, item: u8) -> bool {
+    return half_open_contains(value.start, value.end, item);
+}
+pub fn overlaps(left: RangeU8, right: RangeU8) -> bool {
+    return half_open_overlaps(left.start, left.end, right.start, right.end);
+}
+
+pub fn range_inclusive(start: u8, end: u8) -> RangeInclusiveU8 {
+    return RangeInclusiveU8 { start: start, end: end };
+}
+pub fn start_inclusive(value: RangeInclusiveU8) -> u8 { return value.start; }
+pub fn end_inclusive(value: RangeInclusiveU8) -> u8 { return value.end; }
+pub fn is_empty_inclusive(value: RangeInclusiveU8) -> bool {
+    return inclusive_is_empty(value.start, value.end);
+}
+pub fn contains_inclusive(value: RangeInclusiveU8, item: u8) -> bool {
+    return inclusive_contains(value.start, value.end, item);
+}
+pub fn overlaps_inclusive(left: RangeInclusiveU8, right: RangeInclusiveU8) -> bool {
+    return inclusive_overlaps(left.start, left.end, right.start, right.end);
+}
+
+pub fn range_from(start: u8) -> RangeFromU8 {
+    return RangeFromU8 { start: start };
+}
+pub fn start_from(value: RangeFromU8) -> u8 { return value.start; }
+pub fn contains_from(value: RangeFromU8, item: u8) -> bool {
+    return from_contains(value.start, item);
+}
+
+pub fn range_to(end: u8) -> RangeToU8 {
+    return RangeToU8 { end: end };
+}
+pub fn end_to(value: RangeToU8) -> u8 { return value.end; }
+pub fn contains_to(value: RangeToU8, item: u8) -> bool {
+    return to_contains(value.end, item);
 }

@@ -28,10 +28,10 @@ limited to native x86_64 output from this worktree.
 | Legacy `stdlib/bool.lani` all 9 public functions and `stdlib/i32.lani` all 16 public functions | Executable on x86_64 when included as source | A source-level native fixture checks both boolean values, both selection branches, ordinary and boundary signed arithmetic, wrapping overflow, comparisons, clamp bounds, and power-of-two overflow. The test calls every public function in both files. `abs` requires input above `i32::MIN`; `clamp` requires ordered bounds. |
 | Legacy `stdlib/array_i32_4.lani` all 14 public functions | Executable on x86_64 when included as source | A source-level native fixture checks length, access, search, fallback indices, extrema, a representable sum, and caller-backed copy, fill, and reverse. Fixed-array-returning predecessors were removed; see dependency 7. |
 | `core::range` free functions for all five i32 and u32 range forms, and methods for `Range`, `RangeInclusive`, `RangeFrom`, and `RangeTo` specialized to i32 or u32 | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership, including values across the u32 high bit. The imported u32 method reproducer also checks that same-name i32 and u32 methods select the correct body. There is no `RangeFull` method claim. |
-| `core::range_u8` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks half-open, inclusive, from, to, and full byte ranges, including reversed and equal bounds, touching intervals, and the byte maximum. The scalar interface does not depend on imported `Range<u8>` aggregates, which need a new execution check after the struct-return repair in dependency 2. |
-| `core::range_i8` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-128`, `127`, touching intervals, and empty or reversed bounds. |
-| `core::range_u16` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks half-open, inclusive, from, to, and full ranges, including equal or reversed bounds, touching intervals, and the `65535` endpoint. |
-| `core::range_i16` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-32768`, `32767`, touching intervals, and empty or reversed bounds. |
+| `core::range_u8` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check half-open, inclusive, from, to, and full byte ranges, including reversed and equal bounds, touching intervals, and the byte maximum. The aggregate forms use `RangeU8`, `RangeInclusiveU8`, `RangeFromU8`, and `RangeToU8`. |
+| `core::range_i8` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-128`, `127`, touching intervals, and empty or reversed bounds. |
+| `core::range_u16` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check half-open, inclusive, from, to, and full ranges, including equal or reversed bounds, touching intervals, and the `65535` endpoint. |
+| `core::range_i16` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-32768`, `32767`, touching intervals, and empty or reversed bounds. |
 | `core::slice` all 36 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, first and last contiguous subsequence matches, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Sorting also runs all 243 five-element arrays over `{-1, 0, 1}` against independently counted expected groups. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
 | `core::slice_u8` all 36 public byte-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures exercise access, swaps, fill, rotation, overlap-safe and nonoverlapping copies, compaction, insertion, sequence comparison and search, unsigned ordering, heapsort, binary search, partitioning, and saturating sum. They cover empty and invalid logical lengths, rejected mutation, zero, and 255. Sorting also runs every five-element sequence over `{0,1,2}` against independently counted groups. A source scan requires a runtime call for every public function. Byte views over string or raw pointer storage remain outside this claim. |
 | `core::slice_u32` all 36 public unsigned-word-view functions | Executable on x86_64 for fixed-array-backed views | Matching runtime fixtures cover the same operations and failure cases, including unsigned ordering across `2^31` and saturation at `u32::MAX`, plus the exhaustive small-sort fixture. The caller supplies a logical length within the physical backing. A source scan requires a runtime call for every public function. |
@@ -296,19 +296,22 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   functions and methods apply the same endpoint rules over `0..=u32::MAX`. A `RangeTo<u32>`
   ending at zero is empty; an inclusive range ending at `u32::MAX` includes
   that value.
-- `core::range_u8` accepts scalar byte bounds, so a caller does not need an
-  imported aggregate. Half-open equal or reversed bounds are empty;
+- `core::range_u8` accepts scalar byte bounds or concrete caller-owned range
+  values. Half-open equal or reversed bounds are empty;
   inclusive equal bounds contain one byte and reversed bounds are empty.
   Touching half-open intervals do not overlap, while inclusive intervals
   sharing an endpoint do. `from_contains` includes its start, `to_contains`
   excludes its end, and `full_contains` is true for every `u8` value.
-- `core::range_i8` applies the same scalar endpoint rules across
+- `core::range_i8` applies the same endpoint rules across
   `-128..=127`. Half-open ranges exclude the upper endpoint even when it is
   `127`; inclusive ranges can contain both extrema. A to-range ending at
   `-128` is empty.
 - `core::range_u16` and `core::range_i16` apply these rules across
   `0..=65535` and `-32768..=32767`. The unsigned inclusive range can contain
-  `65535`; the signed inclusive range can contain both signed extrema.
+  `65535`; the signed inclusive range can contain both signed extrema. Each
+  small-width module provides concrete half-open, inclusive, from, and to
+  aggregates, with constructors, endpoint readers, and predicates. The
+  `full_contains` scalar helper covers the full range without an aggregate.
 - Slice callers supply `len` because source code cannot read slice metadata
   yet. `len <= 0` is empty for the safe fallback and accumulation helpers.
   `first_i32` traps on an empty view. `get_or_i32` returns the fallback for an
@@ -779,10 +782,12 @@ also fixes the imported struct-return relocation path described below.
    Deeper nested aggregate payloads still need exact projected widths before
    they can be claimed. The complete `core::ordering` module remains blocked
    by dependencies 11 and 34.
-   An earlier byte-range experiment also encountered an imported `RangeFull`
-   lowering failure and a crash after several imported `Range<u8>` values
-   were used together. Those shapes need a new executable check after this
-   repair. The scalar `core::range_u8` API has a passing runtime fixture.
+   Concrete small-width range aggregates and their imported constructors,
+   readers, and predicates now execute in dedicated fixtures. Adding the same
+   functions to generic `core::range` still makes its existing `range_full()`
+   return fail x86 lowering with `LNC0017` (no canonical ABI layout); see
+   dependency 38. The concrete per-width modules keep that working generic
+   module unchanged.
 3. **Portable slice construction and metadata.** The four `core::mem` pointer
    and view helpers are compiler-injected intrinsics with no Lanius source
    bodies. X86 lowering passes the backed-view fixture, and an existing Wasm
@@ -1083,6 +1088,25 @@ also fixes the imported struct-return relocation path described below.
     array-to-slice conversion (dependency 20). Generic slice parameter
     substitution remains a GPU source-pack type-check dependency. The concrete
     `core::slice_u8` and `core::slice_u32` modules avoid that unsupported shape.
+37. **Third same-name concrete method specialization.**
+    `laniusc check tests/fixtures/stdlib_foundation/repro_third_concrete_method.lani`
+    reports `LNC0016` at the third `get` method, claiming that the function
+    name is unexpected. The first two `Small<i32>` and `Small<u32>` methods
+    parse, and renaming the `Small<i8>` method makes the file compile and run.
+    This prevents adding the same method names for all small-width generic
+    `Range<T>` specializations in `core::range`. The executable modules use
+    concrete range types and distinctly named free functions instead.
+38. **RangeFull layout after unrelated exports.**
+    `repro_range_full_growth.lani` imports the adjacent
+    `repro_range_full_growth_root` copy of `core::range` with seven extra
+    scalar identity functions. Run it with `--stdlib-root
+    tests/fixtures/stdlib_foundation/repro_range_full_growth_root --emit
+    x86_64`. The unmodified module and the copy with six extra functions
+    compile; seven produce `LNC0017` at the existing `range_full()` call:
+    the empty nominal result has no canonical ABI layout (LIR opcode 23).
+    This is a native lowering dependency. Adding free functions for more
+    `Range<T>` widths to the shared module crosses the same boundary, so the
+    small-width aggregate APIs reside in separate modules.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

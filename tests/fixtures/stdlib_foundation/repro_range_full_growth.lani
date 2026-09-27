@@ -1,0 +1,8 @@
+module app::main;
+import core::range;
+
+fn main() -> i32 {
+    let full: core::range::RangeFull = core::range::range_full();
+    if (!core::range::contains_full_i32(full, 0)) { return 1; }
+    return 0;
+}
