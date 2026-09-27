@@ -1,0 +1,53 @@
+// A concrete i32 result with an i32 error code until generic enums execute.
+// The inactive payload is zero; inspect `success` before reading a payload.
+module core::result_i32;
+
+pub struct ResultI32 {
+    success: bool,
+    value: i32,
+    error: i32,
+}
+
+pub fn ok(value: i32) -> ResultI32 {
+    return ResultI32 { success: true, value: value, error: 0 };
+}
+
+pub fn err(error: i32) -> ResultI32 {
+    return ResultI32 { success: false, value: 0, error: error };
+}
+
+pub fn is_ok(value: ResultI32) -> bool {
+    return value.success;
+}
+
+pub fn is_err(value: ResultI32) -> bool {
+    return !value.success;
+}
+
+pub fn contains(value: ResultI32, expected: i32) -> bool {
+    return value.success && value.value == expected;
+}
+
+pub fn contains_err(value: ResultI32, expected: i32) -> bool {
+    return !value.success && value.error == expected;
+}
+
+pub fn unwrap_or(value: ResultI32, fallback: i32) -> i32 {
+    if (value.success) { return value.value; }
+    return fallback;
+}
+
+pub fn unwrap_err_or(value: ResultI32, fallback: i32) -> i32 {
+    if (!value.success) { return value.error; }
+    return fallback;
+}
+
+pub fn or(value: ResultI32, fallback: ResultI32) -> ResultI32 {
+    if (value.success) { return value; }
+    return fallback;
+}
+
+pub fn and(value: ResultI32, next: ResultI32) -> ResultI32 {
+    if (value.success) { return next; }
+    return value;
+}

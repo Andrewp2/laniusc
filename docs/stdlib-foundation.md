@@ -28,7 +28,7 @@ limited to native x86_64 output from this worktree.
 | Legacy `stdlib/bool.lani` all 9 public functions and `stdlib/i32.lani` all 16 public functions | Executable on x86_64 when included as source | A source-level native fixture checks both boolean values, both selection branches, ordinary and boundary signed arithmetic, wrapping overflow, comparisons, clamp bounds, and power-of-two overflow. The test calls every public function in both files. `abs` requires input above `i32::MIN`; `clamp` requires ordered bounds. |
 | Legacy `stdlib/array_i32_4.lani` 11 scalar-returning functions | Executable on x86_64 when included as source | A source-level native fixture checks length, access, search, fallback indices, extrema, and a representable sum. Its three array-returning functions fail natively; see dependency 7. |
 | `core::range` free functions for all five i32 and u32 range forms, and methods for `Range<i32>`, `RangeInclusive<i32>`, `RangeFrom<i32>`, and `RangeTo<i32>` | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership, including values across the u32 high bit. Specialized u32 methods remain blocked by dependency 27; there is no `RangeFull` method claim. |
-| `core::range_u8` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks half-open, inclusive, from, to, and full byte ranges, including reversed and equal bounds, touching intervals, and the byte maximum. The scalar interface avoids the unsupported imported `Range<u8>` aggregate path; see dependency 2. |
+| `core::range_u8` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks half-open, inclusive, from, to, and full byte ranges, including reversed and equal bounds, touching intervals, and the byte maximum. The scalar interface does not depend on imported `Range<u8>` aggregates, which need a new execution check after the struct-return repair in dependency 2. |
 | `core::range_i8` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-128`, `127`, touching intervals, and empty or reversed bounds. |
 | `core::range_u16` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks half-open, inclusive, from, to, and full ranges, including equal or reversed bounds, touching intervals, and the `65535` endpoint. |
 | `core::range_i16` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-32768`, `32767`, touching intervals, and empty or reversed bounds. |
@@ -36,6 +36,7 @@ limited to native x86_64 output from this worktree.
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
+| `core::option_i32` all 9 public functions and `core::result_i32` all 10 public functions | Executable on x86_64 | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, and both branches of `or`, `and`, and `xor`. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function to have a runtime call. These concrete structs do not make generic `Option<T>` or `Result<T,E>` executable. |
 | Generic `core::option`, `core::result`, and `core::{i32,i64,u32,u8}` as complete imported modules | Contract-only for native execution | Their Lanius bodies type-check, but generic enum use or import prevents reliable x86 output. The numeric modules import generic `Option` for checked results. A minimal failing program is included below. The former by-value `Option::replace` ignored its input and was removed. |
 | `core::{cmp,hash,ordering,array_i32}` and complete legacy `stdlib/array_i32_4.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs, traits, and array-returning legacy helpers depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
@@ -234,6 +235,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   their exact sum in `0..=1020`; endian conversion interprets the first array
   element as the most or least significant byte as named. `get_or` and
   `index_of_or` return caller fallbacks for invalid indices or absent bytes.
+- `core::option_i32` distinguishes `None` from `Some(0)` with a presence flag;
+  `contains` ignores the inactive payload, and `unwrap_or` returns its caller
+  fallback only for `None`. `or`, `and`, and `xor` use the ordinary optional
+  value truth table and return complete values. `core::result_i32` similarly
+  distinguishes `Ok(0)` from `Err(0)` with a success flag. Its `contains` and
+  `contains_err` inspect only the active payload, and both unwrap helpers
+  return the caller fallback on the opposite variant. Neither module allocates.
 - Half-open ranges exclude `end`; inclusive ranges include it. A reversed or
   empty range contains no values and overlaps no range. `RangeFrom<i32>` includes
   its start, `RangeTo<i32>` excludes its end, and `RangeFull` contains all i32
@@ -640,7 +648,7 @@ These reproductions concern the GPU-based `laniusc` compiler and its target
 runtime, chiefly under `crates/laniusc-compiler` and `shaders`. The separate
 `verified_compiler` and Lean workstream verifies a Lanius compiler; it is not
 the owner of these GPU compiler or x86 runtime fixes. This stdlib worktree
-records the dependency without changing either compiler.
+also fixes the imported struct-return relocation path described below.
 
 1. **Generic Option/Result native lowering.** `laniusc check --stdlib-root
    stdlib tests/fixtures/stdlib_foundation/repro_generic_option.lani` succeeds,
@@ -652,22 +660,22 @@ records the dependency without changing either compiler.
    changing `value`; it was removed rather than retained as a misleading
    mutation API. A real replacement operation needs a mutable Option receiver
    and executable generic enum behavior.
-2. **Imported aggregate result ABI.** Compile
-   `tests/fixtures/stdlib_foundation/repro_aggregate_app.lani` with
-   `--stdlib-root tests/fixtures/stdlib_foundation/repro_aggregate_root` and
-   `--emit x86_64`. The compiler emits an ELF, but running it terminates by
-   signal 4 (`SIGILL`) on this host. This blocks a concrete struct-based
-   Option/Result workaround and needs a compiler-side fix before such APIs can
-   be called executable. The stdlib foundation deliberately contains no
-   aggregate-returning workaround. A second minimal program,
-   `tests/fixtures/stdlib_foundation/repro_ordering_return.lani`, compiles
-   through the real stdlib root but exits 139 when the non-generic
-   `Ordering` returned by `compare_i32` is passed to `to_i32`. Enum-valued
-   comparison APIs therefore remain outside the executable claim too.
-   A byte-range experiment also encountered an imported `RangeFull` lowering
-   failure and a crash after several imported `Range<u8>` values were used
-   together. The scalar `core::range_u8` API avoids that aggregate path;
-   its complete runtime fixture passes.
+2. **Imported aggregate results: struct returns fixed, enum returns blocked.**
+   `tests/stdlib_imported_aggregate_execution.rs` now compiles and executes
+   imported one-, two-, and three-word struct constructors and consumers on
+   x86_64. The object relocation pass previously guessed the call instruction
+   width and patched its `rel32` field three bytes early, corrupting the
+   caller's prologue. It now shares the exact byte count with code emission and
+   recognizes imported nominal aggregate results without treating scalar
+   results as aggregates. This makes a concrete struct-based Option/Result
+   implementation possible. The separate minimal program
+   `tests/fixtures/stdlib_foundation/repro_ordering_return.lani` still exits
+   139 when the non-generic `Ordering` returned by `compare_i32` is passed to
+   `to_i32`. Enum-valued comparison APIs remain outside the executable claim.
+   An earlier byte-range experiment also encountered an imported `RangeFull`
+   lowering failure and a crash after several imported `Range<u8>` values
+   were used together. Those shapes need a new executable check after this
+   repair. The scalar `core::range_u8` API has a passing runtime fixture.
 3. **Portable slice construction and metadata.** The four `core::mem` pointer
    and view helpers are compiler-injected intrinsics with no Lanius source
    bodies. X86 lowering passes the backed-view fixture, and an existing Wasm
@@ -697,7 +705,8 @@ records the dependency without changing either compiler.
    `core::array_i32_4::copy` and accesses its returned array. Native emission
    succeeds, but the ELF segfaults (exit 139 under `timeout`). The scalar
    returning functions of the same module do execute. `copy`, `filled`, and
-   `reversed` cannot be claimed until the aggregate return ABI is fixed.
+   `reversed` cannot be claimed until fixed-array returns execute; the
+   imported struct-return repair in dependency 2 does not cover this shape.
    `repro_local_array_return.lani` shows that a local source-level copy also
    returns wrong values: it passes type checking and emits an ELF, but that
    ELF exits 1 instead of 0. Thus including the legacy array helpers directly
@@ -834,8 +843,8 @@ records the dependency without changing either compiler.
     `--stdlib-root tests/fixtures/stdlib_foundation/repro_aggregate_root`.
     Native emission stops with `LNC0017`, unsupported target LIR opcode 31 at
     the `core::pair::Pair { ... }` literal. This is a second obstacle to a
-    public struct-based collection handle, alongside the imported aggregate
-    result failure in dependency 2.
+    public struct-based collection handle unless construction goes through a
+    tested module function instead of an imported struct literal.
 24. **Seven-argument imported calls.** With
     `--stdlib-root tests/fixtures/stdlib_foundation/repro_many_args_root`,
     `repro_seven_arguments.lani` passes `laniusc check`, but x86 emission stops

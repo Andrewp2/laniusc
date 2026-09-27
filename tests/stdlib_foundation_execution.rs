@@ -97,6 +97,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "option_result_i32",
+            "tests/fixtures/stdlib_foundation/option_result_i32.lani",
+            0,
+            b"",
+        ),
+        (
             "slice_sequence",
             "tests/fixtures/stdlib_foundation/slice_sequence.lani",
             0,
@@ -532,4 +538,36 @@ fn executable_core_function_surface_has_runtime_cases() {
         hash_count += 1;
     }
     assert_eq!(hash_count, 1);
+
+    let concrete_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i32.lani");
+    for (module, source, expected_count) in [
+        (
+            "option_i32",
+            include_str!("../stdlib/core/option_i32.lani"),
+            9,
+        ),
+        (
+            "result_i32",
+            include_str!("../stdlib/core/result_i32.lani"),
+            10,
+        ),
+    ] {
+        let mut count = 0;
+        for line in source.lines() {
+            let Some(tail) = line.strip_prefix("pub fn ") else {
+                continue;
+            };
+            let name = tail
+                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .next()
+                .expect("public function has a name");
+            let call = format!("core::{module}::{name}(");
+            assert!(
+                concrete_result_fixture.contains(&call),
+                "{call} lacks a runtime case"
+            );
+            count += 1;
+        }
+        assert_eq!(count, expected_count);
+    }
 }
