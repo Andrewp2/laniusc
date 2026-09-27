@@ -1,0 +1,9 @@
+module app::main;
+fn from_scalar(value: i32) -> char {
+    return value as char;
+}
+fn main() -> i32 {
+    let letter: char = from_scalar(937);
+    if (letter == 'Ω') { return 0; }
+    return 1;
+}

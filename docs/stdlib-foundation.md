@@ -1080,8 +1080,11 @@ also fixes the imported struct-return relocation path described below.
     `u32` value as `char`. Native compilation reports `LNC0006`: the return
     context expects `char` but still sees `u32`. `core::char` uses explicit
     ASCII mappings for executable case conversion, while general conversion
-    from a Unicode scalar to `char` remains a GPU compiler dependency. The
-    reproduction is recorded here.
+    from a Unicode scalar to `char` remains a GPU compiler dependency.
+    `repro_i32_to_char.lani` shows the same `LNC0006` for an `i32` source;
+    that conversion is needed to read a character vector backed by the
+    currently available 32-bit raw-slice intrinsic. These reproductions are
+    recorded here.
 18. **Resolved: raw secure random scalar failure channel.** The x86 runtime
    bytes for `std::random::secure_u32` previously returned `0xFFFFFFFF` when
    the `getrandom` syscall did not return four bytes. That bit pattern is a
