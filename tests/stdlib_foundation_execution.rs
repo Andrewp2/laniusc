@@ -546,8 +546,20 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "vec_u8",
+            "tests/fixtures/stdlib_foundation/vec_u8.lani",
+            0,
+            b"",
+        ),
+        (
             "vector_unsigned_checksum",
             "sample_programs/vector_unsigned_checksum.lani",
+            0,
+            b"4\n",
+        ),
+        (
+            "vector_byte_checksum",
+            "sample_programs/vector_byte_checksum.lani",
             0,
             b"4\n",
         ),
@@ -1066,6 +1078,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             "vec_u32",
             include_str!("../stdlib/std/vec_u32.lani"),
             include_str!("fixtures/stdlib_foundation/vec_u32.lani"),
+        ),
+        (
+            "vec_u8",
+            include_str!("../stdlib/std/vec_u8.lani"),
+            include_str!("fixtures/stdlib_foundation/vec_u8.lani"),
         ),
     ] {
         let mut vector_function_count = 0;

@@ -1,0 +1,138 @@
+// Owned, allocation-backed u8 vector for the current native target. Storage
+// uses 32-bit cells accessed through the available i32 raw-slice intrinsic;
+// each byte is stored as one nonnegative 32-bit cell, so all 256 values are
+// preserved. This representation uses four bytes of storage per element.
+// Ownership is linear by convention: keep only the newest returned VecU8,
+// do not copy it or use it after destroy. The language cannot enforce moves yet.
+// Growth failure returns the original vector unchanged. Compare len after
+// try_push, or capacity after try_reserve/try_with_capacity, to detect failure.
+module std::vec_u8;
+import alloc::allocator;
+import core::mem;
+
+pub struct VecU8 {
+    storage: ptr,
+    length: i32,
+    reserved: i32,
+}
+
+// i32 indexing and byte-size arithmetic limit capacity to MAX_I32 / 4.
+pub const MAX_CAPACITY: i32 = 536870911;
+
+pub fn new() -> VecU8 {
+    let empty: ptr = 0;
+    return VecU8 { storage: empty, length: 0, reserved: 0 };
+}
+
+pub fn len(value: VecU8) -> i32 {
+    return value.length;
+}
+
+pub fn capacity(value: VecU8) -> i32 {
+    return value.reserved;
+}
+
+pub fn is_empty(value: VecU8) -> bool {
+    return value.length == 0;
+}
+
+// A negative or oversized request leaves the vector unchanged. Allocation
+// failure does the same and preserves every existing element.
+pub fn try_reserve(value: VecU8, minimum_capacity: i32) -> VecU8 {
+    if (minimum_capacity < 0 || minimum_capacity > MAX_CAPACITY) {
+        return value;
+    }
+    if (minimum_capacity <= value.reserved) {
+        return value;
+    }
+    let byte_count: i32 = minimum_capacity * 4;
+    let new_bytes: usize = byte_count as usize;
+    let next: ptr = 0;
+    if (value.storage == 0) {
+        next = alloc::allocator::alloc(new_bytes, 4);
+    } else {
+        let old_byte_count: i32 = value.reserved * 4;
+        let old_bytes: usize = old_byte_count as usize;
+        next = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
+    }
+    if (next == 0) {
+        return value;
+    }
+    return VecU8 { storage: next, length: value.length, reserved: minimum_capacity };
+}
+
+// On invalid capacity or allocation failure, returns an empty zero-capacity
+// vector. A nonnegative request succeeded exactly when capacity(result) is
+// at least the request.
+pub fn try_with_capacity(initial_capacity: i32) -> VecU8 {
+    return try_reserve(new(), initial_capacity);
+}
+
+// On failure, returns the original value unchanged. A successful push always
+// increments len by one, so callers can check len without a separate status.
+pub fn try_push(value: VecU8, item: u8) -> VecU8 {
+    let grown: VecU8 = value;
+    if (grown.length == grown.reserved) {
+        let target: i32 = 4;
+        if (grown.reserved > 0) {
+            if (grown.reserved > MAX_CAPACITY / 2) {
+                target = MAX_CAPACITY;
+            } else {
+                target = grown.reserved * 2;
+            }
+        }
+        grown = try_reserve(grown, target);
+        if (grown.length == grown.reserved) {
+            return value;
+        }
+    }
+    let elements: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
+    let raw_item: i32 = item as i32;
+    elements[grown.length] = raw_item;
+    return VecU8 { storage: grown.storage, length: grown.length + 1, reserved: grown.reserved };
+}
+
+// Invalid indices return fallback without accessing storage.
+pub fn get_or(value: VecU8, index: i32, fallback: u8) -> u8 {
+    if (index < 0 || index >= value.length) {
+        return fallback;
+    }
+    let elements: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
+    let raw_item: i32 = elements[index];
+    return raw_item as u8;
+}
+
+// Mutates the owned allocation only for an in-bounds index.
+pub fn try_set(value: VecU8, index: i32, item: u8) -> bool {
+    if (index < 0 || index >= value.length) {
+        return false;
+    }
+    let elements: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
+    let raw_item: i32 = item as i32;
+    elements[index] = raw_item;
+    return true;
+}
+
+// On an empty vector, returns it unchanged. Read the last element with get_or
+// before popping if its value is needed.
+pub fn try_pop(value: VecU8) -> VecU8 {
+    if (value.length == 0) {
+        return value;
+    }
+    return VecU8 { storage: value.storage, length: value.length - 1, reserved: value.reserved };
+}
+
+// Keeps the allocation for reuse; old elements are no longer in the vector.
+pub fn clear(value: VecU8) -> VecU8 {
+    return VecU8 { storage: value.storage, length: 0, reserved: value.reserved };
+}
+
+// Releases the one owned allocation. The caller must never use any copy of
+// the vector after this call.
+pub fn destroy(value: VecU8) {
+    if (value.storage != 0) {
+        let byte_count: i32 = value.reserved * 4;
+        let bytes: usize = byte_count as usize;
+        alloc::allocator::dealloc(value.storage, bytes, 4);
+    }
+}

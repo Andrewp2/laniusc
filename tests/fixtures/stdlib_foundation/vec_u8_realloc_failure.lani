@@ -1,0 +1,14 @@
+module app::main;
+import std::vec_u8;
+
+fn main() -> i32 {
+    let value: std::vec_u8::VecU8 = std::vec_u8::try_with_capacity(1);
+    if (std::vec_u8::capacity(value) != 1) { return 2; }
+    value = std::vec_u8::try_push(value, 255);
+    if (std::vec_u8::len(value) != 1) { return 3; }
+    value = std::vec_u8::try_push(value, 128);
+    if (std::vec_u8::len(value) != 1 || std::vec_u8::capacity(value) != 1) { return 4; }
+    if (std::vec_u8::get_or(value, 0, 0) != 255) { return 5; }
+    std::vec_u8::destroy(value);
+    return 0;
+}

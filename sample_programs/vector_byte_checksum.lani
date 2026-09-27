@@ -1,0 +1,29 @@
+module app::main;
+import core::byte;
+import core::option_u8;
+import std::vec_u8;
+
+fn main() -> i32 {
+    let values: std::vec_u8::VecU8 = std::vec_u8::new();
+    values = std::vec_u8::try_push(values, 255);
+    values = std::vec_u8::try_push(values, 2);
+    values = std::vec_u8::try_push(values, 3);
+    if (std::vec_u8::len(values) != 3) {
+        std::vec_u8::destroy(values);
+        return 1;
+    }
+
+    let checksum: u8 = 0;
+    let index: i32 = 0;
+    while (index < std::vec_u8::len(values)) {
+        checksum = core::byte::wrapping_add(
+            checksum, std::vec_u8::get_or(values, index, 0));
+        index += 1;
+    }
+    std::vec_u8::destroy(values);
+    let result: core::option_u8::OptionU8 = core::option_u8::some(checksum);
+    let byte_result: u8 = core::option_u8::unwrap_or(result, 0);
+    let printable: i32 = byte_result as i32;
+    print(printable);
+    return 0;
+}

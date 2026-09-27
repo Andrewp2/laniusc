@@ -78,6 +78,7 @@ limited to native x86_64 output from this worktree.
 | `std::path` all 17 constants and all 31 public functions | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. Redundant no-argument functions that failed natively were removed in favor of the tested constants. Allocation and host normalization are unavailable. |
 | `std::vec_i32` all 12 public functions and its capacity constant | Executable on x86_64 Linux | `tests/fixtures/stdlib_foundation/vec_i32.lani` checks construction, growth, element access and mutation, bounds, reserve, pop, clear, and destruction. `tests/stdlib_vec_i32_execution.rs` injects allocation and reallocation failures and checks the vector and prior data stay unchanged. This is a linear-ownership API by convention; source-level moves are not enforced. |
 | `std::vec_u32` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, `2^31`, and `u32::MAX`. The allocation-failure suite injects failed initial allocation and reallocation; the real checksum sample combines it with `core::number_u32` and `OptionU32`. Storage uses 32-bit cells and preserves every unsigned bit pattern. Ownership is linear by convention. |
+| `std::vec_u8` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The byte vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, 128, and 255. The allocation-failure suite injects failed initial allocation and reallocation; the byte checksum sample combines it with `core::byte` and `OptionU8`. Each byte occupies one 32-bit cell because the raw-slice intrinsic currently accepts i32 cells. Ownership is linear by convention. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
 | `test::assert` all 8 public helpers | Executable on x86_64 Linux | `tests/stdlib_assert_execution.rs` runs all passing conditions and separately checks that every false condition terminates with SIGILL. The helpers use no allocation or host calls. See dependency 35 for a separate compiler issue with explicit void returns. |
 | `std::vec` | Contract-only after stub removal | The former `Vec<T>::push` returned without storing its argument and was removed. `Vec<T>::new`, `len`, and `is_empty` remain as an empty-value type-checking contract; no storage or mutation is provided. |
@@ -301,9 +302,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   value, including NaN. Presence and success predicates still report the
   active variant, and unwrap helpers preserve a stored NaN. Both modules are
   allocation-free.
-- `std::vec_i32` and `std::vec_u32` own allocated 32-bit cells. The unsigned
-  module accesses those cells through the currently available i32 raw-slice
-  intrinsic and casts bit patterns on read and write, preserving the high bit.
+- `std::vec_i32`, `std::vec_u32`, and `std::vec_u8` own allocated 32-bit cells.
+  The unsigned modules access those cells through the currently available i32
+  raw-slice intrinsic and cast on read and write. `vec_u32` preserves every
+  bit pattern; `vec_u8` preserves all values from 0 through 255 and uses four
+  bytes of storage per element.
   `try_push` doubles capacity when
   full, starting at four elements, and returns the prior vector unchanged on
   allocation failure. Compare the returned length with the prior length to
@@ -720,6 +723,11 @@ saturation. It combines five portable modules and prints `32786`.
 checked push length, bounded indexed reads, saturating arithmetic, and native
 integer output. It prints `285` and releases its storage.
 
+`sample_programs/vector_byte_checksum.lani` stores bytes in `std::vec_u8`,
+checks every push, reads them through a bounded accessor, combines them with
+`core::byte` arithmetic, and uses `OptionU8` for its result. It prints `4` and
+releases its storage.
+
 `tests/fixtures/stdlib_host/std_utf8_line_count.lani` is a second runnable
 program. It reads one LF line into a 16-byte caller-backed view, validates and
 counts its Unicode scalars, and prints the count in decimal. The focused x86
@@ -847,9 +855,9 @@ also fixes the imported struct-return relocation path described below.
    independent of caller-supplied lengths.
 4. **Generic allocation-backed vectors remain blocked.** The old `std::vec`
    silently dropped values in `push`, so that stub was removed. The empty
-   generic `Vec<T>` remains a type-checking contract. `std::vec_i32` and
-   `std::vec_u32` have tested storage, growth, mutation, failure, and
-   destruction on x86 Linux.
+   generic `Vec<T>` remains a type-checking contract. `std::vec_i32`,
+   `std::vec_u32`, and `std::vec_u8` have tested storage, growth, mutation,
+   failure, and destruction on x86 Linux.
    A generic collection still needs executable generic value layout and a
    language-level move/borrow rule to enforce ownership rather than relying
    on caller discipline.
