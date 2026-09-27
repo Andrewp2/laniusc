@@ -1,0 +1,122 @@
+// Allocation-free binary ASCII access and bounded parsing for unsigned words.
+module core::binary;
+
+pub fn len_u32(value: u32) -> u32 {
+    let remaining: u32 = value;
+    let length: u32 = 1;
+    while (remaining >= 2) {
+        remaining >>= 1;
+        length += 1;
+    }
+    return length;
+}
+
+// Index zero is the most significant digit of the shortest representation.
+// Zero is "0". An out-of-range index returns fallback unchanged.
+pub fn byte_at_or_u32(value: u32, index: u32, fallback: u8) -> u8 {
+    let length: u32 = len_u32(value);
+    if (index >= length) {
+        return fallback;
+    }
+    let shift: u32 = length - index - 1;
+    let digit: u32 = (value >> shift) & 1;
+    let ascii: u32 = 48 + digit;
+    return ascii as u8;
+}
+
+pub fn len_u16(value: u16) -> u32 {
+    let widened: u32 = value as u32;
+    return len_u32(widened);
+}
+
+pub fn byte_at_or_u16(value: u16, index: u32, fallback: u8) -> u8 {
+    let widened: u32 = value as u32;
+    return byte_at_or_u32(widened, index, fallback);
+}
+
+pub fn len_u8(value: u8) -> u32 {
+    let widened: u32 = value as u32;
+    return len_u32(widened);
+}
+
+pub fn byte_at_or_u8(value: u8, index: u32, fallback: u8) -> u8 {
+    let widened: u32 = value as u32;
+    return byte_at_or_u32(widened, index, fallback);
+}
+
+// Test syntax and limit before multiplication by two. Limit may be below MAX.
+pub fn can_append_ascii_digit_u32(current: u32, digit_byte: u8, limit: u32) -> bool {
+    if (digit_byte != 48 && digit_byte != 49) {
+        return false;
+    }
+    let small: u8 = digit_byte - 48;
+    let digit: u32 = small as u32;
+    return current < limit / 2 || current == limit / 2 && digit <= limit % 2;
+}
+
+// Invalid input or overflow returns fallback. A successful value may equal
+// fallback; use the predicate when a separate success channel is needed.
+pub fn append_ascii_digit_or_u32(current: u32, digit_byte: u8, limit: u32, fallback: u32) -> u32 {
+    if (!can_append_ascii_digit_u32(current, digit_byte, limit)) {
+        return fallback;
+    }
+    let small: u8 = digit_byte - 48;
+    let digit: u32 = small as u32;
+    return current * 2 + digit;
+}
+
+// Parse exactly len ASCII codes from a backed [i32] view. An optional 0b or
+// 0B prefix is accepted only with a following digit. Empty input, signs,
+// spaces, malformed codes, and values above limit return fallback. An
+// overstated physical view length may trap on native indexing.
+fn parse_ascii_with_limit_or(values: [i32], len: i32, limit: u32, fallback: u32) -> u32 {
+    if (len <= 0) {
+        return fallback;
+    }
+    let index: i32 = 0;
+    if (len >= 2 && values[0] == 48 && (values[1] == 98 || values[1] == 66)) {
+        index = 2;
+    }
+    if (index == len) {
+        return fallback;
+    }
+    let result: u32 = 0;
+    while (index < len) {
+        let code: i32 = values[index];
+        if (code < 48 || code > 49) {
+            return fallback;
+        }
+        let digit: u8 = code as u8;
+        if (!can_append_ascii_digit_u32(result, digit, limit)) {
+            return fallback;
+        }
+        result = append_ascii_digit_or_u32(result, digit, limit, fallback);
+        index += 1;
+    }
+    return result;
+}
+
+// A valid value may equal fallback; callers needing a separate success
+// channel should reserve a fallback outside their application range.
+pub fn parse_ascii_u32_or(values: [i32], len: i32, fallback: u32) -> u32 {
+    let maximum: u32 = 4294967295;
+    return parse_ascii_with_limit_or(values, len, maximum, fallback);
+}
+
+pub fn parse_ascii_u16_or(values: [i32], len: i32, fallback: u16) -> u16 {
+    let missing: u32 = 65536;
+    let parsed: u32 = parse_ascii_with_limit_or(values, len, 65535, missing);
+    if (parsed == missing) {
+        return fallback;
+    }
+    return parsed as u16;
+}
+
+pub fn parse_ascii_u8_or(values: [i32], len: i32, fallback: u8) -> u8 {
+    let missing: u32 = 256;
+    let parsed: u32 = parse_ascii_with_limit_or(values, len, 255, missing);
+    if (parsed == missing) {
+        return fallback;
+    }
+    return parsed as u8;
+}

@@ -49,6 +49,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_binary",
+            "tests/fixtures/stdlib_foundation/core_binary.lani",
+            0,
+            b"",
+        ),
+        (
             "core_f32",
             "tests/fixtures/stdlib_foundation/core_f32.lani",
             0,
@@ -391,6 +397,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             "hex",
             include_str!("../stdlib/core/hex.lani"),
             include_str!("fixtures/stdlib_foundation/core_hex.lani"),
+        ),
+        (
+            "binary",
+            include_str!("../stdlib/core/binary.lani"),
+            include_str!("fixtures/stdlib_foundation/core_binary.lani"),
         ),
         (
             "range_u8",

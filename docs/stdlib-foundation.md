@@ -21,6 +21,7 @@ limited to native x86_64 output from this worktree.
 | `core::utf8` all 8 public codec and backed-view functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, scalar counts, empty and truncated views, out-of-byte-range integer codes, malformed sequences, surrogate exclusion, and Unicode maximum. Scalar byte parameters and results use `u8`; the view functions use caller-backed `[i32]` byte codes and do not access string storage. |
 | `core::decimal` all 20 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of extrema across 8-, 16-, and 32-bit integers, ordinary values, sign placement, zero, out-of-range fallbacks, incremental and complete ASCII parsing for all six widths, and overflow against each width's limits. `std::io_decimal` and both bounded decimal file readers use the portable scalar helpers. |
 | `core::hex` all 14 public functions | Executable on x86_64 | Runtime fixture checks shortest lowercase and uppercase hexadecimal representations of `u8`, `u16`, and `u32`, zero and maximum values, invalid-index fallbacks, mixed-case digit accumulation, complete prefixed and unprefixed parsing, and overflow against each width's limit. The helpers allocate no storage and use no host calls. |
+| `core::binary` all 11 public functions | Executable on x86_64 | Runtime fixture checks shortest unsigned binary representations across `u8`, `u16`, and `u32`, zero and high-bit values, invalid-index fallbacks, bounded digit accumulation, optional prefixes, malformed and overflowing input, and format/parse round trips for all 256 byte values. The helpers allocate no storage and use no host calls. |
 | `core::f32` all 13 public functions | Executable on x86_64 for tested finite inputs | Runtime fixture checks sign, comparison, valid and reversed clamp bounds, fallback behavior, and square root for zero, negative, small, ordinary, and large inputs. The imported public constant `ONE` is broken (dependency 5), and unordered NaN comparisons produce wrong results (dependency 32). |
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
@@ -193,6 +194,16 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   one digit. Empty, prefix-only, malformed, whitespace-containing, or
   overflowing input returns the caller fallback. A valid value can equal that
   fallback. An overstated physical view length can trap on native indexing.
+- `core::binary` returns the shortest unsigned binary length and ASCII byte
+  at a zero-based index for `u8`, `u16`, and `u32`. Zero is one digit;
+  out-of-range indices return fallback. Its digit predicate accepts only
+  ASCII `0` and `1` and checks the caller's limit before multiplication by
+  two. The append helper returns fallback for malformed or overflowing input;
+  that fallback can equal a valid value. The three `parse_ascii_*_or` helpers
+  read exactly the supplied length of a backed `[i32]` code view, accept an
+  optional `0b` or `0B` prefix followed by at least one digit, and reject
+  empty, sign-containing, whitespace-containing, malformed, and overflowing
+  input. An overstated physical view length can trap on native indexing.
 - `core::f32::clamp_or` returns its caller fallback when `low > high`;
   `clamp` returns its input unchanged for those invalid bounds. Valid bounds
   clamp inclusively. The native fixture checks finite values.

@@ -1,0 +1,138 @@
+module app::main;
+import core::binary;
+import core::mem;
+
+fn main() -> i32 {
+    let max_u8: u8 = 255;
+    let max_u16: u16 = 65535;
+    let max_u32: u32 = 4294967295;
+    if (core::binary::len_u8(0) != 1 || core::binary::len_u8(max_u8) != 8 ||
+        core::binary::len_u16(0) != 1 || core::binary::len_u16(max_u16) != 16 ||
+        core::binary::len_u32(0) != 1 || core::binary::len_u32(max_u32) != 32) {
+        return 1;
+    }
+    if (core::binary::byte_at_or_u8(0, 0, 88) != 48 ||
+        core::binary::byte_at_or_u8(max_u8, 0, 88) != 49 ||
+        core::binary::byte_at_or_u8(max_u8, 7, 88) != 49 ||
+        core::binary::byte_at_or_u8(max_u8, 8, 88) != 88 ||
+        core::binary::byte_at_or_u16(max_u16, 0, 88) != 49 ||
+        core::binary::byte_at_or_u16(max_u16, 15, 88) != 49 ||
+        core::binary::byte_at_or_u16(max_u16, 16, 88) != 88 ||
+        core::binary::byte_at_or_u32(max_u32, 0, 88) != 49 ||
+        core::binary::byte_at_or_u32(max_u32, 31, 88) != 49 ||
+        core::binary::byte_at_or_u32(max_u32, 32, 88) != 88) {
+        return 2;
+    }
+    let pattern: [i32; 8] = [49, 48, 49, 48, 48, 49, 48, 49];
+    let index: u32 = 0;
+    while (index < 8) {
+        let slot: i32 = index;
+        let actual: i32 = core::binary::byte_at_or_u32(165, index, 0);
+        if (actual != pattern[slot]) {
+            return 3;
+        }
+        index += 1;
+    }
+    let high_u16: u16 = 32769;
+    if (core::binary::byte_at_or_u16(high_u16, 0, 88) != 49 ||
+        core::binary::byte_at_or_u16(high_u16, 1, 88) != 48 ||
+        core::binary::byte_at_or_u16(high_u16, 15, 88) != 49 ||
+        core::binary::byte_at_or_u32(2147483648, 0, 88) != 49 ||
+        core::binary::byte_at_or_u32(2147483648, 31, 88) != 48) {
+        return 4;
+    }
+    if (!core::binary::can_append_ascii_digit_u32(0, 48, max_u32) ||
+        !core::binary::can_append_ascii_digit_u32(2147483647, 49, max_u32) ||
+        core::binary::can_append_ascii_digit_u32(2147483648, 48, max_u32) ||
+        !core::binary::can_append_ascii_digit_u32(2, 49, 5) ||
+        core::binary::can_append_ascii_digit_u32(3, 48, 5) ||
+        !core::binary::can_append_ascii_digit_u32(0, 48, 0) ||
+        core::binary::can_append_ascii_digit_u32(0, 49, 0) ||
+        core::binary::can_append_ascii_digit_u32(0, 50, max_u32)) {
+        return 5;
+    }
+    if (core::binary::append_ascii_digit_or_u32(2, 49, 5, 99) != 5 ||
+        core::binary::append_ascii_digit_or_u32(2147483647, 49, max_u32, 99) != max_u32 ||
+        core::binary::append_ascii_digit_or_u32(2147483648, 48, max_u32, 99) != 99 ||
+        core::binary::append_ascii_digit_or_u32(0, 50, max_u32, 99) != 99) {
+        return 6;
+    }
+
+    let zero: [i32; 1] = [48];
+    let zero_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(zero), 1);
+    let pattern_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(pattern), 8);
+    let prefixed: [i32; 10] = [48, 98, 49, 48, 49, 48, 48, 49, 48, 49];
+    let prefixed_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(prefixed), 10);
+    let upper_prefix: [i32; 10] = [48, 66, 49, 49, 49, 49, 49, 49, 49, 49];
+    let upper_prefix_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(upper_prefix), 10);
+    let prefix_only: [i32; 2] = [48, 98];
+    let prefix_only_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(prefix_only), 2);
+    let malformed: [i32; 2] = [49, 50];
+    let malformed_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(malformed), 2);
+    let invalid_code: [i32; 2] = [49, 256];
+    let invalid_code_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(invalid_code), 2);
+    let spaced: [i32; 2] = [32, 49];
+    let spaced_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(spaced), 2);
+    let negative: [i32; 2] = [45, 49];
+    let negative_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(negative), 2);
+    let max_word: [i32; 32] = [49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49,
+                               49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49];
+    let max_word_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(max_word), 32);
+    let overflow_word: [i32; 33] = [49, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48,
+                                   48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48];
+    let overflow_word_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(overflow_word), 33);
+    let overflow_u16: [i32; 17] = [49, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48];
+    let overflow_u16_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(overflow_u16), 17);
+    let overflow_u8: [i32; 9] = [49, 48, 48, 48, 48, 48, 48, 48, 48];
+    let overflow_u8_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(overflow_u8), 9);
+    if (core::binary::parse_ascii_u32_or(zero_view, 1, 99) != 0 ||
+        core::binary::parse_ascii_u32_or(pattern_view, 8, 99) != 165 ||
+        core::binary::parse_ascii_u32_or(prefixed_view, 10, 99) != 165 ||
+        core::binary::parse_ascii_u32_or(max_word_view, 32, 99) != max_u32) {
+        return 7;
+    }
+    if (core::binary::parse_ascii_u32_or(overflow_word_view, 33, 99) != 99 ||
+        core::binary::parse_ascii_u32_or(prefix_only_view, 2, 99) != 99 ||
+        core::binary::parse_ascii_u32_or(malformed_view, 2, 99) != 99 ||
+        core::binary::parse_ascii_u32_or(invalid_code_view, 2, 99) != 99 ||
+        core::binary::parse_ascii_u32_or(spaced_view, 2, 99) != 99 ||
+        core::binary::parse_ascii_u32_or(negative_view, 2, 99) != 99 ||
+        core::binary::parse_ascii_u32_or(zero_view, 0, 99) != 99 ||
+        core::binary::parse_ascii_u32_or(zero_view, -1, 99) != 99) {
+        return 8;
+    }
+    if (core::binary::parse_ascii_u16_or(max_word_view, 16, 77) != 65535 ||
+        core::binary::parse_ascii_u16_or(prefixed_view, 10, 77) != 165 ||
+        core::binary::parse_ascii_u16_or(overflow_u16_view, 17, 77) != 77 ||
+        core::binary::parse_ascii_u16_or(malformed_view, 2, 77) != 77) {
+        return 9;
+    }
+    if (core::binary::parse_ascii_u8_or(upper_prefix_view, 10, 77) != max_u8 ||
+        core::binary::parse_ascii_u8_or(prefixed_view, 10, 77) != 165 ||
+        core::binary::parse_ascii_u8_or(zero_view, 1, 77) != 0 ||
+        core::binary::parse_ascii_u8_or(overflow_u8_view, 9, 77) != 77 ||
+        core::binary::parse_ascii_u8_or(prefix_only_view, 2, 77) != 77) {
+        return 10;
+    }
+
+    let digits: [i32; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
+    let digits_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(digits), 8);
+    let candidate: u32 = 0;
+    while (candidate < 256) {
+        let value: u8 = candidate as u8;
+        let length: u32 = core::binary::len_u8(value);
+        let offset: u32 = 0;
+        while (offset < length) {
+            let slot: i32 = offset;
+            let ascii: i32 = core::binary::byte_at_or_u8(value, offset, 0);
+            digits[slot] = ascii;
+            offset += 1;
+        }
+        let size: i32 = length;
+        if (core::binary::parse_ascii_u8_or(digits_view, size, 99) != value) {
+            return 11;
+        }
+        candidate += 1;
+    }
+    return 0;
+}
