@@ -994,15 +994,13 @@ also fixes the imported struct-return relocation path described below.
    zero through the native path. The foundation runtime fixture executes every
    `std::io` metadata function, and the public wrapper and raw host tests
    exercise the I/O operations.
-10. **Imported no-argument returns.** With
-    `--stdlib-root tests/fixtures/stdlib_host/repro_path_no_arg_root`, compile
-    `repro_path_byte_return.lani` and `repro_path_capability_return.lani` to
-    x86_64 ELFs and run them. Both segfault (exit 139 under `timeout`) despite
-    returning only a byte literal or a Boolean literal from an imported
-    function. The redundant public `std::path` functions were removed in favor
-    of runtime-tested constants, leaving all 31 public lexical functions
-    executable. The minimal root keeps this compiler defect reproducible for
-    other imported no-argument APIs.
+10. **Resolved in the current compiler: imported no-argument scalar returns.**
+    With `--stdlib-root tests/fixtures/stdlib_host/repro_path_no_arg_root`,
+    `repro_path_byte_return.lani` and `repro_path_capability_return.lani` now
+    compile and execute with exit zero. `tests/stdlib_path_execution.rs` keeps
+    executable regression coverage for both imported byte and Boolean returns.
+    The redundant public `std::path` functions were removed earlier; its 31
+    lexical functions and constants retain their own runtime tests.
 11. **Native i64 literal and comparison lowering.**
     `tests/fixtures/stdlib_foundation/repro_i64_compare.lani` compares
     an i64 value of `4,611,686,018,427,387,904` with `1,073,741,824`. Native emission

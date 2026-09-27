@@ -3,6 +3,30 @@ mod common;
 use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 
 #[test]
+fn imported_no_argument_byte_and_bool_returns_execute_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let stdlib_root = root.join("tests/fixtures/stdlib_host/repro_path_no_arg_root");
+    for name in ["repro_path_byte_return", "repro_path_capability_return"] {
+        let entry = root.join(format!("tests/fixtures/stdlib_host/{name}.lani"));
+        let stdlib_root = stdlib_root.clone();
+        let bytes = common::run_gpu_codegen_with_timeout(name, move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+        })
+        .unwrap_or_else(|err| panic!("{name}: compile: {err}"));
+
+        #[cfg(all(unix, target_arch = "x86_64"))]
+        {
+            let output = common::run_x86_64_elf_output(name, name, &bytes);
+            assert_eq!(output.status.code(), Some(0), "{name}: {output:?}");
+            assert!(output.stdout.is_empty(), "{name}: unexpected stdout");
+            assert!(output.stderr.is_empty(), "{name}: unexpected stderr");
+        }
+        #[cfg(not(all(unix, target_arch = "x86_64")))]
+        let _ = bytes;
+    }
+}
+
+#[test]
 fn path_lexical_helpers_execute_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let stdlib_root = root.join("stdlib");
