@@ -1,0 +1,53 @@
+// A concrete bool result with a bool error value until generic enums execute.
+// The inactive payload is false; inspect `success` before reading a payload.
+module core::result_bool;
+
+pub struct ResultBool {
+    success: bool,
+    value: bool,
+    error: bool,
+}
+
+pub fn ok(value: bool) -> ResultBool {
+    return ResultBool { success: true, value: value, error: false };
+}
+
+pub fn err(error: bool) -> ResultBool {
+    return ResultBool { success: false, value: false, error: error };
+}
+
+pub fn is_ok(value: ResultBool) -> bool {
+    return value.success;
+}
+
+pub fn is_err(value: ResultBool) -> bool {
+    return !value.success;
+}
+
+pub fn contains(value: ResultBool, expected: bool) -> bool {
+    return value.success && value.value == expected;
+}
+
+pub fn contains_err(value: ResultBool, expected: bool) -> bool {
+    return !value.success && value.error == expected;
+}
+
+pub fn unwrap_or(value: ResultBool, fallback: bool) -> bool {
+    if (value.success) { return value.value; }
+    return fallback;
+}
+
+pub fn unwrap_err_or(value: ResultBool, fallback: bool) -> bool {
+    if (!value.success) { return value.error; }
+    return fallback;
+}
+
+pub fn or(value: ResultBool, fallback: ResultBool) -> ResultBool {
+    if (value.success) { return value; }
+    return fallback;
+}
+
+pub fn and(value: ResultBool, next: ResultBool) -> ResultBool {
+    if (value.success) { return next; }
+    return value;
+}

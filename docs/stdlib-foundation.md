@@ -45,6 +45,7 @@ limited to native x86_64 output from this worktree.
 | `core::option_i32` all 12 public functions and `core::result_i32` all 10 public functions | Executable on x86_64 for direct imported calls | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, both branches of `or`, `and`, and `xor`, and conversions between the two concrete types. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function to have a runtime call. Local aggregate forwarding remains broken; see dependency 39. |
 | `core::option_u32` all 12 public functions and `core::result_u32` all 10 public functions | Executable on x86_64 for direct imported calls | The matching runtime fixture covers every function and both variants with zero, ordinary values, the high bit, and `u32::MAX`. Both the success payload and error code are `u32`; inactive fields are zero. A source scan requires every public function to have a runtime call. See dependency 39 for the local return limit. |
 | `core::option_u8` all 12 public functions and `core::result_u8` all 10 public functions | Executable on x86_64 for direct imported calls | The byte fixture executes every function with `None`, `Some`, `Ok`, and `Err`, including zero, 128, and 255 payloads. A source scan requires every public function to have a runtime call. See dependency 39 for the local return limit. |
+| `core::option_bool` all 12 public functions and `core::result_bool` all 10 public functions | Executable on x86_64 for direct imported calls | The runtime fixture calls every function with both boolean values and all presence and success states. It distinguishes `Some(false)`, `Ok(false)`, and `Err(false)` from absence or the opposite variant, and checks conversions, fallbacks, `or`, `and`, and `xor`. A source scan requires a runtime call for every public function. Local aggregate forwarding remains subject to dependency 39. |
 | `core::option_i8` all 12 public functions and `core::result_i8` all 10 public functions | Executable on x86_64 for direct imported calls | The signed byte fixture executes every function with both variants, zero, `-128`, and `127`, including Option to Result and Result to Option conversions. A source scan requires every public function to have a runtime call. See dependency 39 for the local return limit. |
 | `core::option_i16` all 12 public functions and `core::result_i16` all 10 public functions | Executable on x86_64 for direct imported calls | The signed halfword fixture executes every function with both variants, zero, `-32768`, and `32767`, including conversions. A source scan requires every public function to have a runtime call. See dependency 39 for the local return limit. |
 | `core::option_u16` all 12 public functions and `core::result_u16` all 10 public functions | Executable on x86_64 for direct imported calls | The unsigned halfword fixture executes every function with both variants, zero, `32768`, and `65535`, including conversions. A source scan requires every public function to have a runtime call. See dependency 39 for the local return limit. |
@@ -285,6 +286,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `align_up` and `align_down` return zero for zero alignment, and `align_up`
   returns zero if rounding would overflow. Callers that need an arbitrary
   failure value can use `core::number_u32::{align_up_or,align_down_or}`.
+- `core::option_bool` and `core::result_bool` use separate presence and
+  success flags. Stored `false` is distinct from `None`, and both `Ok(false)`
+  and `Err(false)` retain their variant. Inactive fields are `false`.
+  `unwrap_or` and `unwrap_err_or` return the caller fallback on the inactive
+  branch. The Option to Result conversion uses the supplied boolean error;
+  `ok` and `err` extract only the matching Result variant. Both modules are
+  allocation-free.
 - `std::vec_i32` and `std::vec_u32` own allocated 32-bit cells. The unsigned
   module accesses those cells through the currently available i32 raw-slice
   intrinsic and casts bit patterns on read and write, preserving the high bit.

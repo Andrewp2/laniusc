@@ -1,0 +1,73 @@
+module app::main;
+import core::option_bool;
+import core::result_bool;
+
+fn main() -> i32 {
+    let yes: core::option_bool::OptionBool = core::option_bool::some(true);
+    let no_value: core::option_bool::OptionBool = core::option_bool::some(false);
+    let absent: core::option_bool::OptionBool = core::option_bool::none();
+    if (!core::option_bool::is_some(yes) ||
+        !core::option_bool::is_some(no_value) ||
+        core::option_bool::is_some(absent) ||
+        core::option_bool::is_none(yes) ||
+        !core::option_bool::is_none(absent)) { return 1; }
+    if (!core::option_bool::contains(yes, true) ||
+        !core::option_bool::contains(no_value, false) ||
+        core::option_bool::contains(no_value, true) ||
+        core::option_bool::contains(absent, false)) { return 2; }
+    if (!core::option_bool::unwrap_or(yes, false) ||
+        core::option_bool::unwrap_or(no_value, true) ||
+        !core::option_bool::unwrap_or(absent, true) ||
+        core::option_bool::unwrap_or(absent, false)) { return 3; }
+    if (!core::option_bool::contains(core::option_bool::or(yes, absent), true) ||
+        !core::option_bool::contains(core::option_bool::or(absent, no_value), false) ||
+        !core::option_bool::is_none(core::option_bool::or(absent, absent))) { return 4; }
+    if (!core::option_bool::contains(core::option_bool::and(yes, no_value), false) ||
+        !core::option_bool::is_none(core::option_bool::and(absent, yes)) ||
+        !core::option_bool::is_none(core::option_bool::and(yes, absent))) { return 5; }
+    if (!core::option_bool::is_none(core::option_bool::xor(yes, no_value)) ||
+        !core::option_bool::is_none(core::option_bool::xor(absent, absent)) ||
+        !core::option_bool::contains(core::option_bool::xor(no_value, absent), false) ||
+        !core::option_bool::contains(core::option_bool::xor(absent, yes), true)) { return 6; }
+
+    let true_ok: core::result_bool::ResultBool = core::result_bool::ok(true);
+    let false_ok: core::result_bool::ResultBool = core::result_bool::ok(false);
+    let true_error: core::result_bool::ResultBool = core::result_bool::err(true);
+    let false_error: core::result_bool::ResultBool = core::result_bool::err(false);
+    if (!core::result_bool::is_ok(true_ok) ||
+        !core::result_bool::is_ok(false_ok) ||
+        core::result_bool::is_ok(true_error) ||
+        core::result_bool::is_err(true_ok) ||
+        !core::result_bool::is_err(false_error)) { return 7; }
+    if (!core::result_bool::contains(true_ok, true) ||
+        !core::result_bool::contains(false_ok, false) ||
+        core::result_bool::contains(true_error, false) ||
+        !core::result_bool::contains_err(true_error, true) ||
+        !core::result_bool::contains_err(false_error, false) ||
+        core::result_bool::contains_err(true_ok, false)) { return 8; }
+    if (!core::result_bool::unwrap_or(true_ok, false) ||
+        core::result_bool::unwrap_or(false_ok, true) ||
+        !core::result_bool::unwrap_or(true_error, true) ||
+        core::result_bool::unwrap_or(false_error, false) ||
+        !core::result_bool::unwrap_err_or(true_ok, true) ||
+        !core::result_bool::unwrap_err_or(true_error, false) ||
+        core::result_bool::unwrap_err_or(false_error, true)) { return 9; }
+    if (!core::result_bool::contains(core::result_bool::or(true_ok, true_error), true) ||
+        !core::result_bool::contains(core::result_bool::or(true_error, false_ok), false) ||
+        !core::result_bool::is_err(core::result_bool::or(false_error, true_error))) { return 10; }
+    if (!core::result_bool::contains_err(core::result_bool::and(true_ok, true_error), true) ||
+        !core::result_bool::contains_err(core::result_bool::and(false_error, true_ok), false) ||
+        !core::result_bool::contains(core::result_bool::and(true_ok, false_ok), false)) { return 11; }
+
+    if (!core::result_bool::contains(core::option_bool::ok_or(yes, false), true) ||
+        !core::result_bool::contains(core::option_bool::ok_or(no_value, true), false) ||
+        !core::result_bool::contains_err(core::option_bool::ok_or(absent, true), true) ||
+        !core::result_bool::contains_err(core::option_bool::ok_or(absent, false), false)) { return 12; }
+    if (!core::option_bool::contains(core::option_bool::ok(true_ok), true) ||
+        !core::option_bool::contains(core::option_bool::ok(false_ok), false) ||
+        !core::option_bool::is_none(core::option_bool::ok(true_error)) ||
+        !core::option_bool::is_none(core::option_bool::err(false_ok)) ||
+        !core::option_bool::contains(core::option_bool::err(true_error), true) ||
+        !core::option_bool::contains(core::option_bool::err(false_error), false)) { return 13; }
+    return 0;
+}
