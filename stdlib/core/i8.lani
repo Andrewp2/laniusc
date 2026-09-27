@@ -1,0 +1,149 @@
+// Module-form signed byte helpers. Operations that can overflow either
+// saturate, wrap, or return OptionI8 as named.
+module core::i8;
+
+import core::number_i8;
+import core::option_i8;
+
+pub const MIN: i8 = -128;
+pub const MAX: i8 = 127;
+pub const BITS: u32 = 8;
+pub const BYTES: u32 = 1;
+
+// The mathematical absolute value of MIN cannot fit; return MAX there.
+pub fn abs(value: i8) -> i8 {
+    return core::number_i8::saturating_abs(value);
+}
+
+pub fn saturating_abs(value: i8) -> i8 {
+    return core::number_i8::saturating_abs(value);
+}
+
+pub fn checked_abs(value: i8) -> core::option_i8::OptionI8 {
+    if (value == MIN) {
+        return core::option_i8::none();
+    }
+    return core::option_i8::some(abs(value));
+}
+
+pub fn min(left: i8, right: i8) -> i8 {
+    return core::number_i8::min(left, right);
+}
+
+pub fn max(left: i8, right: i8) -> i8 {
+    return core::number_i8::max(left, right);
+}
+
+// Reversed bounds leave the input unchanged.
+pub fn clamp(value: i8, low: i8, high: i8) -> i8 {
+    return core::number_i8::clamp_or(value, low, high, value);
+}
+
+pub fn signum(value: i8) -> i8 {
+    return core::number_i8::signum(value);
+}
+
+pub fn is_zero(value: i8) -> bool {
+    return core::number_i8::is_zero(value);
+}
+
+pub fn is_nonzero(value: i8) -> bool {
+    return !core::number_i8::is_zero(value);
+}
+
+pub fn is_even(value: i8) -> bool {
+    return core::number_i8::is_even(value);
+}
+
+pub fn is_odd(value: i8) -> bool {
+    return core::number_i8::is_odd(value);
+}
+
+pub fn is_negative(value: i8) -> bool {
+    return value < 0;
+}
+
+pub fn is_positive(value: i8) -> bool {
+    return value > 0;
+}
+
+pub fn is_nonnegative(value: i8) -> bool {
+    return value >= 0;
+}
+
+pub fn is_nonpositive(value: i8) -> bool {
+    return value <= 0;
+}
+
+pub fn between_inclusive(value: i8, low: i8, high: i8) -> bool {
+    return value >= low && value <= high;
+}
+
+pub fn between_exclusive(value: i8, low: i8, high: i8) -> bool {
+    return value > low && value < high;
+}
+
+pub fn compare_as_i32(left: i8, right: i8) -> i32 {
+    if (left < right) {
+        return -1;
+    }
+    if (left > right) {
+        return 1;
+    }
+    return 0;
+}
+
+pub fn wrapping_add(left: i8, right: i8) -> i8 {
+    return core::number_i8::wrapping_add(left, right);
+}
+
+pub fn wrapping_sub(left: i8, right: i8) -> i8 {
+    return core::number_i8::wrapping_sub(left, right);
+}
+
+pub fn wrapping_mul(left: i8, right: i8) -> i8 {
+    return core::number_i8::wrapping_mul(left, right);
+}
+
+pub fn checked_add(left: i8, right: i8) -> core::option_i8::OptionI8 {
+    let wide_left: i32 = left;
+    let wide_right: i32 = right;
+    let sum: i32 = wide_left + wide_right;
+    if (sum < -128 || sum > 127) {
+        return core::option_i8::none();
+    }
+    let narrowed: i8 = sum;
+    return core::option_i8::some(narrowed);
+}
+
+pub fn saturating_add(left: i8, right: i8) -> i8 {
+    return core::number_i8::saturating_add(left, right);
+}
+
+pub fn checked_sub(left: i8, right: i8) -> core::option_i8::OptionI8 {
+    let wide_left: i32 = left;
+    let wide_right: i32 = right;
+    let difference: i32 = wide_left - wide_right;
+    if (difference < -128 || difference > 127) {
+        return core::option_i8::none();
+    }
+    let narrowed: i8 = difference;
+    return core::option_i8::some(narrowed);
+}
+
+pub fn saturating_sub(left: i8, right: i8) -> i8 {
+    return core::number_i8::saturating_sub(left, right);
+}
+
+pub fn saturating_abs_diff(left: i8, right: i8) -> i8 {
+    return core::number_i8::saturating_abs_diff(left, right);
+}
+
+pub fn is_power_of_two(value: i8) -> bool {
+    return core::number_i8::is_power_of_two(value);
+}
+
+// Zero signals that the next positive power cannot fit in i8.
+pub fn next_power_of_two(value: i8) -> i8 {
+    return core::number_i8::next_power_of_two(value);
+}
