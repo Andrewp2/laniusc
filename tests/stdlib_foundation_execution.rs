@@ -157,8 +157,26 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_slice_u8_complete",
+            "tests/fixtures/stdlib_foundation/core_slice_u8_complete.lani",
+            0,
+            b"",
+        ),
+        (
             "core_slice_u32",
             "tests/fixtures/stdlib_foundation/core_slice_u32.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_slice_u32_complete",
+            "tests/fixtures/stdlib_foundation/core_slice_u32_complete.lani",
+            0,
+            b"",
+        ),
+        (
+            "slice_unsigned_sort_exhaustive",
+            "tests/fixtures/stdlib_foundation/slice_unsigned_sort_exhaustive.lani",
             0,
             b"",
         ),
@@ -557,6 +575,12 @@ fn executable_core_function_surface_has_runtime_cases() {
                 .expect("public function has a name");
             let call = format!("core::{module}::{name}(");
             let covered = fixture.contains(&call)
+                || module == "slice_u8"
+                    && include_str!("fixtures/stdlib_foundation/core_slice_u8_complete.lani")
+                        .contains(&call)
+                || module == "slice_u32"
+                    && include_str!("fixtures/stdlib_foundation/core_slice_u32_complete.lani")
+                        .contains(&call)
                 || module == "slice"
                     && include_str!("fixtures/stdlib_foundation/slice_sequence.lani")
                         .contains(&call)

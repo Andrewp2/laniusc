@@ -33,8 +33,8 @@ limited to native x86_64 output from this worktree.
 | `core::range_u16` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks half-open, inclusive, from, to, and full ranges, including equal or reversed bounds, touching intervals, and the `65535` endpoint. |
 | `core::range_i16` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-32768`, `32767`, touching intervals, and empty or reversed bounds. |
 | `core::slice` all 36 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, first and last contiguous subsequence matches, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Sorting also runs all 243 five-element arrays over `{-1, 0, 1}` against independently counted expected groups. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
-| `core::slice_u8` all 10 public byte-view functions | Executable on x86_64 for fixed-array-backed views | A runtime fixture exercises indexed reads and writes, fill, overlap-safe copying in both directions, first and last search, equality, prefix and suffix checks, and reversal with ordinary bytes, zero, and 255. It checks empty and negative logical lengths, invalid indices, rejected copy bounds, and unchanged storage after rejected mutation. This does not establish byte views over string or raw pointer storage. |
-| `core::slice_u32` all 10 public unsigned-word-view functions | Executable on x86_64 for fixed-array-backed views | The same runtime behaviors and failure cases are exercised with unsigned words, including `0`, `2^31 - 1`, `2^31`, and `u32::MAX`. The caller supplies a logical length within the physical backing. |
+| `core::slice_u8` all 36 public byte-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures exercise access, swaps, fill, rotation, overlap-safe and nonoverlapping copies, compaction, insertion, sequence comparison and search, unsigned ordering, heapsort, binary search, partitioning, and saturating sum. They cover empty and invalid logical lengths, rejected mutation, zero, and 255. Sorting also runs every five-element sequence over `{0,1,2}` against independently counted groups. A source scan requires a runtime call for every public function. Byte views over string or raw pointer storage remain outside this claim. |
+| `core::slice_u32` all 36 public unsigned-word-view functions | Executable on x86_64 for fixed-array-backed views | Matching runtime fixtures cover the same operations and failure cases, including unsigned ordering across `2^31` and saturation at `u32::MAX`, plus the exhaustive small-sort fixture. The caller supplies a logical length within the physical backing. A source scan requires a runtime call for every public function. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
@@ -306,15 +306,21 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   index outside the supplied length; if the supplied length exceeds the actual
   view and indexing reaches beyond it, native execution traps with exit 101.
   `core::slice_u8` and `core::slice_u32` use the same caller-supplied logical
-  length for fixed byte or word arrays. `get_or` and both search helpers return a caller fallback on
-  invalid or absent positions. `set` and `copy_within` return false without
-  mutation for invalid logical bounds; overlapping copies are supported.
-  `fill` and `reverse_in_place` return the number of writes and swaps. Search,
-  fill, and reverse treat nonpositive lengths as empty. Equality and prefix or
-  suffix checks reject negative lengths; empty views and patterns work normally.
-  The physical backing must contain at least the claimed length, or native
-  indexing can trap. String-backed and arbitrary raw byte views are outside
-  this module's executable claim.
+  length for fixed byte or word arrays. `first` traps on an empty physical
+  view; `first_or`, `get_or`, and first/last search helpers return their
+  fallback for empty, invalid, or absent positions. `set`, `swap`, rotation,
+  insertion, append, and copy helpers reject invalid logical bounds without
+  mutation. `copy_within` supports overlap; `copy_nonoverlapping_prefix`
+  requires separate backing. `insert` and `push` need capacity within the
+  physical view, and the caller increments its logical length after success.
+  Search, fill, compaction, sort, and reverse treat nonpositive lengths as
+  empty. Equality and prefix or suffix checks reject negative lengths.
+  `compare_lexicographic` returns -2 for negative lengths; subsequence search
+  returns -1 for invalid lengths or no match and treats an empty needle as a
+  match at the first or final boundary. Binary search requires sorted input.
+  Unsigned `sum` saturates at the element type's maximum. The physical backing
+  must contain at least the claimed length, or native indexing can trap.
+  String-backed and arbitrary raw byte views remain outside this claim.
   `sum_i32` folds from left to right with saturating i32 addition, so each
   overflow clamps to `MIN` or `MAX` before the next element. Search helpers
   return the first or last matching index as named, or the caller's fallback.

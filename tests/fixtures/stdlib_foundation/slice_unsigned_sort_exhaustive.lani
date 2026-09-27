@@ -1,0 +1,50 @@
+module app::main;
+import core::slice_u8;
+import core::slice_u32;
+
+fn main() -> i32 {
+    let zero_byte: u8 = 0;
+    let zero_word: u32 = 0;
+    let bytes: [u8; 5] = [zero_byte, zero_byte, zero_byte, zero_byte, zero_byte];
+    let words: [u32; 5] = [zero_word, zero_word, zero_word, zero_word, zero_word];
+    let code: i32 = 0;
+    while (code < 243) {
+        let digits: i32 = code;
+        let zero_count: i32 = 0;
+        let one_count: i32 = 0;
+        let index: i32 = 0;
+        while (index < 5) {
+            let digit: i32 = digits % 3;
+            digits = digits / 3;
+            let byte_digit: u8 = 0;
+            let word_digit: u32 = 0;
+            if (digit == 1) { byte_digit = 1; word_digit = 1; }
+            if (digit == 2) { byte_digit = 2; word_digit = 2; }
+            bytes[index] = byte_digit;
+            words[index] = word_digit;
+            if (digit == 0) { zero_count += 1; }
+            if (digit == 1) { one_count += 1; }
+            index += 1;
+        }
+        if (core::slice_u8::sort(bytes, 5) != 5 ||
+            core::slice_u32::sort(words, 5) != 5) { return 1; }
+        index = 0;
+        while (index < 5) {
+            let expected: i32 = 2;
+            if (index < zero_count) {
+                expected = 0;
+            } else {
+                if (index < zero_count + one_count) { expected = 1; }
+            }
+            let expected_byte: u8 = 2;
+            let expected_word: u32 = 2;
+            if (expected == 0) { expected_byte = 0; expected_word = 0; }
+            if (expected == 1) { expected_byte = 1; expected_word = 1; }
+            if (bytes[index] != expected_byte ||
+                words[index] != expected_word) { return 2; }
+            index += 1;
+        }
+        code += 1;
+    }
+    return 0;
+}
