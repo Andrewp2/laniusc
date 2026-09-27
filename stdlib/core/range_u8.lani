@@ -1,0 +1,44 @@
+// Allocation-free byte-range predicates. Bounds are scalar values because
+// imported Range<u8> aggregates do not yet have reliable native lowering.
+module core::range_u8;
+
+// Half-open [start, end). Equal or reversed bounds are empty.
+pub fn half_open_is_empty(start: u8, end: u8) -> bool {
+    return start >= end;
+}
+
+pub fn half_open_contains(start: u8, end: u8, value: u8) -> bool {
+    return value >= start && value < end;
+}
+
+pub fn half_open_overlaps(left_start: u8, left_end: u8, right_start: u8, right_end: u8) -> bool {
+    return left_start < left_end && right_start < right_end &&
+        left_start < right_end && right_start < left_end;
+}
+
+// Inclusive [start, end]. Equal bounds contain exactly one byte.
+pub fn inclusive_is_empty(start: u8, end: u8) -> bool {
+    return start > end;
+}
+
+pub fn inclusive_contains(start: u8, end: u8, value: u8) -> bool {
+    return value >= start && value <= end;
+}
+
+pub fn inclusive_overlaps(left_start: u8, left_end: u8, right_start: u8, right_end: u8) -> bool {
+    return left_start <= left_end && right_start <= right_end &&
+        left_start <= right_end && right_start <= left_end;
+}
+
+pub fn from_contains(start: u8, value: u8) -> bool {
+    return value >= start;
+}
+
+pub fn to_contains(end: u8, value: u8) -> bool {
+    return value < end;
+}
+
+// A full byte range contains every u8 value.
+pub fn full_contains(value: u8) -> bool {
+    return true;
+}

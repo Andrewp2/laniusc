@@ -139,6 +139,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_range_u8",
+            "tests/fixtures/stdlib_foundation/range_u8.lani",
+            0,
+            b"",
+        ),
+        (
             "core_array_i32_4_scalar",
             "tests/fixtures/stdlib_foundation/core_array_i32_4_scalar.lani",
             0,
@@ -314,6 +320,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             include_str!("fixtures/stdlib_foundation/core_hex.lani"),
         ),
         (
+            "range_u8",
+            include_str!("../stdlib/core/range_u8.lani"),
+            include_str!("fixtures/stdlib_foundation/range_u8.lani"),
+        ),
+        (
             "slice",
             include_str!("../stdlib/core/slice.lani"),
             include_str!("fixtures/stdlib_foundation/range_slice.lani"),
@@ -345,8 +356,7 @@ fn executable_core_function_surface_has_runtime_cases() {
                     && include_str!("fixtures/stdlib_foundation/slice_partition_search.lani")
                         .contains(&call)
                 || module == "slice"
-                    && include_str!("fixtures/stdlib_foundation/slice_insert.lani")
-                        .contains(&call);
+                    && include_str!("fixtures/stdlib_foundation/slice_insert.lani").contains(&call);
             assert!(covered, "{module}::{name} lacks a runtime case");
             count += 1;
         }

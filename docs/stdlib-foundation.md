@@ -26,6 +26,7 @@ limited to native x86_64 output from this worktree.
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
 | Legacy `stdlib/i32.lani` power-of-two helpers | Executable on x86_64 | A focused source-level native test checks the highest signed power and the zero overflow sentinel. The legacy file as a whole is not included in this claim. |
 | `core::range` free functions for all five i32 and u32 range forms, and methods for `Range<i32>`, `RangeInclusive<i32>`, `RangeFrom<i32>`, and `RangeTo<i32>` | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership, including values across the u32 high bit. Specialized u32 methods remain blocked by dependency 27; there is no `RangeFull` method claim. |
+| `core::range_u8` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks half-open, inclusive, from, to, and full byte ranges, including reversed and equal bounds, touching intervals, and the byte maximum. The scalar interface avoids the unsupported imported `Range<u8>` aggregate path; see dependency 2. |
 | `core::slice` all 33 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
@@ -180,6 +181,12 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   functions apply the same endpoint rules over `0..=u32::MAX`. A `RangeTo<u32>`
   ending at zero is empty; an inclusive range ending at `u32::MAX` includes
   that value. The u32 range structs have no executable method claim.
+- `core::range_u8` accepts scalar byte bounds, so a caller does not need an
+  imported aggregate. Half-open equal or reversed bounds are empty;
+  inclusive equal bounds contain one byte and reversed bounds are empty.
+  Touching half-open intervals do not overlap, while inclusive intervals
+  sharing an endpoint do. `from_contains` includes its start, `to_contains`
+  excludes its end, and `full_contains` is true for every `u8` value.
 - Slice callers supply `len` because source code cannot read slice metadata
   yet. `len <= 0` is empty for the safe fallback and accumulation helpers.
   `first_i32` traps on an empty view. `get_or_i32` returns the fallback for an
@@ -485,6 +492,10 @@ the failure injection cases run when Linux `strace` is available.
    through the real stdlib root but exits 139 when the non-generic
    `Ordering` returned by `compare_i32` is passed to `to_i32`. Enum-valued
    comparison APIs therefore remain outside the executable claim too.
+   A byte-range experiment also encountered an imported `RangeFull` lowering
+   failure and a crash after several imported `Range<u8>` values were used
+   together. The scalar `core::range_u8` API avoids that aggregate path;
+   its complete runtime fixture passes.
 3. **Portable slice construction and metadata.** The four `core::mem` pointer
    and view helpers are compiler-injected intrinsics with no Lanius source
    bodies. X86 lowering passes the backed-view fixture, and an existing Wasm

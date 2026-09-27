@@ -1,0 +1,56 @@
+module app::main;
+import core::range_u8;
+
+fn main() -> i32 {
+    if (core::range_u8::half_open_is_empty(10, 20) ||
+        !core::range_u8::half_open_is_empty(20, 20) ||
+        !core::range_u8::half_open_is_empty(20, 10)) {
+        return 1;
+    }
+    if (!core::range_u8::half_open_contains(10, 20, 10) ||
+        !core::range_u8::half_open_contains(10, 20, 19) ||
+        core::range_u8::half_open_contains(10, 20, 20) ||
+        core::range_u8::half_open_contains(10, 20, 9)) {
+        return 2;
+    }
+    if (!core::range_u8::half_open_contains(250, 255, 254) ||
+        core::range_u8::half_open_contains(250, 255, 255)) {
+        return 3;
+    }
+    if (!core::range_u8::half_open_overlaps(10, 20, 19, 25) ||
+        core::range_u8::half_open_overlaps(10, 20, 20, 25) ||
+        core::range_u8::half_open_overlaps(10, 20, 15, 15) ||
+        core::range_u8::half_open_overlaps(20, 10, 11, 12)) {
+        return 4;
+    }
+    if (core::range_u8::inclusive_is_empty(250, 255) ||
+        core::range_u8::inclusive_is_empty(255, 255) ||
+        !core::range_u8::inclusive_is_empty(255, 250)) {
+        return 5;
+    }
+    if (!core::range_u8::inclusive_contains(250, 255, 255) ||
+        !core::range_u8::inclusive_contains(255, 255, 255) ||
+        core::range_u8::inclusive_contains(250, 255, 249) ||
+        core::range_u8::inclusive_contains(255, 250, 255)) {
+        return 6;
+    }
+    if (!core::range_u8::inclusive_overlaps(250, 255, 255, 255) ||
+        core::range_u8::inclusive_overlaps(250, 255, 0, 249) ||
+        core::range_u8::inclusive_overlaps(250, 255, 255, 250)) {
+        return 7;
+    }
+    if (!core::range_u8::from_contains(250, 250) ||
+        !core::range_u8::from_contains(250, 255) ||
+        core::range_u8::from_contains(250, 249)) {
+        return 8;
+    }
+    if (!core::range_u8::to_contains(5, 0) ||
+        core::range_u8::to_contains(5, 5) ||
+        core::range_u8::to_contains(0, 0)) {
+        return 9;
+    }
+    if (!core::range_u8::full_contains(0) || !core::range_u8::full_contains(255)) {
+        return 10;
+    }
+    return 0;
+}
