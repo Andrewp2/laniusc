@@ -1,0 +1,9 @@
+module app::main;
+import core::hash;
+
+fn main() -> i32 {
+    let value: u8 = 97;
+    let bytes: [u8; 1] = [value];
+    core::hash::fnv1a_bytes_or(bytes, 2, 0);
+    return 0;
+}

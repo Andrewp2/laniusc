@@ -2,6 +2,12 @@
 
 module core::hash;
 
+import core::number_u32;
+
+// Stable, noncryptographic 32-bit FNV-1a hashing for caller-backed byte views.
+pub const FNV1A_OFFSET_BASIS: u32 = 2166136261;
+pub const FNV1A_PRIME: u32 = 16777619;
+
 pub trait Hash<T> {
     pub fn hash(value: T) -> u32;
 }
@@ -14,4 +20,24 @@ pub impl Hash<i32> for i32 {
 
 pub fn hash_i32(value: i32) -> u32 {
     return value;
+}
+
+pub fn fnv1a_step(state: u32, value: u8) -> u32 {
+    let byte: u32 = value;
+    return core::number_u32::wrapping_mul(state ^ byte, FNV1A_PRIME);
+}
+
+// A negative logical length returns fallback. A length greater than the
+// physical view traps when indexing reaches its end.
+pub fn fnv1a_bytes_or(values: [u8], len: i32, fallback: u32) -> u32 {
+    if (len < 0) {
+        return fallback;
+    }
+    let state: u32 = FNV1A_OFFSET_BASIS;
+    let index: i32 = 0;
+    while (index < len) {
+        state = fnv1a_step(state, values[index]);
+        index += 1;
+    }
+    return state;
 }

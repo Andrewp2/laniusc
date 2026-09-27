@@ -1,0 +1,40 @@
+module app::main;
+import core::hash;
+fn main() -> i32 {
+    if (core::hash::hash_i32(0) != 0) {
+        return 1;
+    }
+    if (core::hash::hash_i32(42) != 42) {
+        return 2;
+    }
+    if (core::hash::hash_i32(2147483647) != 2147483647) {
+        return 3;
+    }
+    if (core::hash::hash_i32(-1) != 4294967295) {
+        return 4;
+    }
+    if (core::hash::FNV1A_OFFSET_BASIS != 2166136261 ||
+        core::hash::FNV1A_PRIME != 16777619) {
+        return 5;
+    }
+    let f: u8 = 102;
+    let o: u8 = 111;
+    let b: u8 = 98;
+    let a: u8 = 97;
+    let r: u8 = 114;
+    let word: [u8; 6] = [f, o, o, b, a, r];
+    if (core::hash::fnv1a_step(core::hash::FNV1A_OFFSET_BASIS, a) != 3826002220 ||
+        core::hash::fnv1a_bytes_or(word, 6, 0) != 3214735720 ||
+        core::hash::fnv1a_bytes_or(word, 0, 0) != 2166136261 ||
+        core::hash::fnv1a_bytes_or(word, -1, 1234567) != 1234567) {
+        return 6;
+    }
+    let zero: u8 = 0;
+    let high: u8 = 255;
+    let upper: u8 = 128;
+    let binary: [u8; 3] = [zero, high, upper];
+    if (core::hash::fnv1a_bytes_or(binary, 3, 0) != 1921939296) {
+        return 7;
+    }
+    return 0;
+}

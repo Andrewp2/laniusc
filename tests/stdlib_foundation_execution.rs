@@ -582,9 +582,15 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
-            "core_hash_i32",
-            "tests/fixtures/stdlib_foundation/core_hash_i32.lani",
+            "core_hash",
+            "tests/fixtures/stdlib_foundation/core_hash.lani",
             0,
+            b"",
+        ),
+        (
+            "core_hash_bounds",
+            "tests/fixtures/stdlib_foundation/core_hash_bounds.lani",
+            101,
             b"",
         ),
         (
@@ -1100,7 +1106,7 @@ fn executable_core_function_surface_has_runtime_cases() {
         "core::f32::ONE lacks a runtime case"
     );
 
-    let hash_fixture = include_str!("fixtures/stdlib_foundation/core_hash_i32.lani");
+    let hash_fixture = include_str!("fixtures/stdlib_foundation/core_hash.lani");
     let mut hash_count = 0;
     for line in include_str!("../stdlib/core/hash.lani").lines() {
         let Some(tail) = line.strip_prefix("pub fn ") else {
@@ -1114,7 +1120,7 @@ fn executable_core_function_surface_has_runtime_cases() {
         assert!(hash_fixture.contains(&call), "{call} lacks a runtime case");
         hash_count += 1;
     }
-    assert_eq!(hash_count, 1);
+    assert_eq!(hash_count, 3);
 
     let i32_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i32.lani");
     let u8_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_u8.lani");

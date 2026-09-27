@@ -1,0 +1,26 @@
+// Print a deterministic hexadecimal fingerprint of every byte on stdin.
+module app::main;
+import core::hash;
+import std::io_byte;
+import std::io_hex;
+
+fn main() -> i32 {
+    let state: u32 = core::hash::FNV1A_OFFSET_BASIS;
+    while (true) {
+        let next: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+        if (next == -1) {
+            break;
+        }
+        if (next == -2) {
+            return 2;
+        }
+        state = core::hash::fnv1a_step(state, next as u8);
+    }
+    if (std::io_hex::write_lower_u32(1, state) <= 0) {
+        return 3;
+    }
+    if (!std::io_byte::write_stdout_byte(10)) {
+        return 4;
+    }
+    return 0;
+}

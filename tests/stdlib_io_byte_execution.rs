@@ -136,6 +136,40 @@ fn hex_to_decimal_program_uses_scalar_byte_io_and_portable_helpers() {
 }
 
 #[test]
+fn fnv1a_stdin_program_hashes_text_empty_and_binary_input() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("sample_programs/fnv1a_stdin.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("fnv1a_stdin", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile stdin fingerprint sample");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let executable = write_executable(&bytes, "fnv1a_stdin");
+        for (label, data, expected) in [
+            ("text", b"foobar".as_slice(), b"bf9cf968\n".as_slice()),
+            ("empty", b"".as_slice(), b"811c9dc5\n".as_slice()),
+            ("binary", &[0, 255, 128][..], b"728e7760\n".as_slice()),
+        ] {
+            let input = common::TempArtifact::new("laniusc_fnv1a", label, None);
+            input.write_bytes(data);
+            let output = common::short_process_output_with_timeout(
+                format!("fnv1a stdin {label}"),
+                std::process::Command::new(executable.path()).stdin(std::process::Stdio::from(
+                    std::fs::File::open(input.path()).expect("open fingerprint input"),
+                )),
+            );
+            assert_eq!(output.status.code(), Some(0), "{label}: {output:?}");
+            assert_eq!(output.stdout, expected, "{label}: {output:?}");
+        }
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn scalar_byte_io_public_functions_have_runtime_cases() {
     let source = include_str!("../stdlib/std/io_byte.lani");
     let fixture = include_str!("fixtures/stdlib_host/std_io_byte.lani");
