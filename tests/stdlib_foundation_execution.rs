@@ -145,6 +145,24 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_range_i8",
+            "tests/fixtures/stdlib_foundation/range_i8.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_range_u16",
+            "tests/fixtures/stdlib_foundation/range_u16.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_range_i16",
+            "tests/fixtures/stdlib_foundation/range_i16.lani",
+            0,
+            b"",
+        ),
+        (
             "core_array_i32_4_scalar",
             "tests/fixtures/stdlib_foundation/core_array_i32_4_scalar.lani",
             0,
@@ -323,6 +341,21 @@ fn executable_core_function_surface_has_runtime_cases() {
             "range_u8",
             include_str!("../stdlib/core/range_u8.lani"),
             include_str!("fixtures/stdlib_foundation/range_u8.lani"),
+        ),
+        (
+            "range_i8",
+            include_str!("../stdlib/core/range_i8.lani"),
+            include_str!("fixtures/stdlib_foundation/range_i8.lani"),
+        ),
+        (
+            "range_u16",
+            include_str!("../stdlib/core/range_u16.lani"),
+            include_str!("fixtures/stdlib_foundation/range_u16.lani"),
+        ),
+        (
+            "range_i16",
+            include_str!("../stdlib/core/range_i16.lani"),
+            include_str!("fixtures/stdlib_foundation/range_i16.lani"),
         ),
         (
             "slice",

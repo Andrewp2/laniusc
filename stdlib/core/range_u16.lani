@@ -1,0 +1,44 @@
+// Allocation-free unsigned 16-bit range predicates. Bounds are scalar values;
+// no imported aggregate or allocation is needed.
+module core::range_u16;
+
+// Half-open [start, end). Equal or reversed bounds are empty.
+pub fn half_open_is_empty(start: u16, end: u16) -> bool {
+    return start >= end;
+}
+
+pub fn half_open_contains(start: u16, end: u16, value: u16) -> bool {
+    return value >= start && value < end;
+}
+
+pub fn half_open_overlaps(left_start: u16, left_end: u16, right_start: u16, right_end: u16) -> bool {
+    return left_start < left_end && right_start < right_end &&
+        left_start < right_end && right_start < left_end;
+}
+
+// Inclusive [start, end]. Equal bounds contain exactly one value.
+pub fn inclusive_is_empty(start: u16, end: u16) -> bool {
+    return start > end;
+}
+
+pub fn inclusive_contains(start: u16, end: u16, value: u16) -> bool {
+    return value >= start && value <= end;
+}
+
+pub fn inclusive_overlaps(left_start: u16, left_end: u16, right_start: u16, right_end: u16) -> bool {
+    return left_start <= left_end && right_start <= right_end &&
+        left_start <= right_end && right_start <= left_end;
+}
+
+pub fn from_contains(start: u16, value: u16) -> bool {
+    return value >= start;
+}
+
+pub fn to_contains(end: u16, value: u16) -> bool {
+    return value < end;
+}
+
+// A full unsigned 16-bit range contains every u16 value.
+pub fn full_contains(value: u16) -> bool {
+    return true;
+}

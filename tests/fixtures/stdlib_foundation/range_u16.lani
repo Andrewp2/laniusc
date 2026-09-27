@@ -1,0 +1,56 @@
+module app::main;
+import core::range_u16;
+
+fn main() -> i32 {
+    if (core::range_u16::half_open_is_empty(10, 20) ||
+        !core::range_u16::half_open_is_empty(20, 20) ||
+        !core::range_u16::half_open_is_empty(20, 10)) {
+        return 1;
+    }
+    if (!core::range_u16::half_open_contains(10, 20, 10) ||
+        !core::range_u16::half_open_contains(10, 20, 19) ||
+        core::range_u16::half_open_contains(10, 20, 20) ||
+        core::range_u16::half_open_contains(10, 20, 9)) {
+        return 2;
+    }
+    if (!core::range_u16::half_open_contains(65530, 65535, 65534) ||
+        core::range_u16::half_open_contains(65530, 65535, 65535)) {
+        return 3;
+    }
+    if (!core::range_u16::half_open_overlaps(10, 20, 19, 25) ||
+        core::range_u16::half_open_overlaps(10, 20, 20, 25) ||
+        core::range_u16::half_open_overlaps(10, 20, 15, 15) ||
+        core::range_u16::half_open_overlaps(20, 10, 11, 12)) {
+        return 4;
+    }
+    if (core::range_u16::inclusive_is_empty(65530, 65535) ||
+        core::range_u16::inclusive_is_empty(65535, 65535) ||
+        !core::range_u16::inclusive_is_empty(65535, 65530)) {
+        return 5;
+    }
+    if (!core::range_u16::inclusive_contains(65530, 65535, 65535) ||
+        !core::range_u16::inclusive_contains(65535, 65535, 65535) ||
+        core::range_u16::inclusive_contains(65530, 65535, 65529) ||
+        core::range_u16::inclusive_contains(65535, 65530, 65535)) {
+        return 6;
+    }
+    if (!core::range_u16::inclusive_overlaps(65530, 65535, 65535, 65535) ||
+        core::range_u16::inclusive_overlaps(65530, 65535, 0, 65529) ||
+        core::range_u16::inclusive_overlaps(65530, 65535, 65535, 65530)) {
+        return 7;
+    }
+    if (!core::range_u16::from_contains(65530, 65530) ||
+        !core::range_u16::from_contains(65530, 65535) ||
+        core::range_u16::from_contains(65530, 65529)) {
+        return 8;
+    }
+    if (!core::range_u16::to_contains(5, 0) ||
+        core::range_u16::to_contains(5, 5) ||
+        core::range_u16::to_contains(0, 0)) {
+        return 9;
+    }
+    if (!core::range_u16::full_contains(0) || !core::range_u16::full_contains(65535)) {
+        return 10;
+    }
+    return 0;
+}
