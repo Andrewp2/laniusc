@@ -26,6 +26,18 @@ fn write_executable(bytes: &[u8], name: &str) -> common::TempArtifact {
     executable
 }
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn run_with_input(executable: &common::TempArtifact, input: &[u8]) -> std::process::Output {
+    let source = common::TempArtifact::new("laniusc_std_io_checked", "copy_input", None);
+    source.write_bytes(input);
+    common::short_process_output_with_timeout(
+        "checked stream copy",
+        std::process::Command::new(executable.path()).stdin(std::process::Stdio::from(
+            std::fs::File::open(source.path()).expect("open copy input"),
+        )),
+    )
+}
+
 #[test]
 fn checked_streams_read_and_write_exact_bytes_on_x86() {
     let bytes = compile_fixture("std_io_checked");
@@ -222,9 +234,145 @@ fn checked_streams_retry_short_writes_on_x86() {
 }
 
 #[test]
+fn checked_stdin_to_stdout_copy_executes_on_x86() {
+    let copy_bytes = compile_fixture("std_io_checked_copy");
+    let invalid_bytes = compile_fixture("std_io_checked_copy_invalid");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let executable = write_executable(&copy_bytes, "copy");
+        for input in [b"".as_slice(), b"ABC".as_slice()] {
+            let output = run_with_input(&executable, input);
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert_eq!(output.stdout, input);
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+        let input: Vec<u8> = (0..517).map(|index| ((index * 37) % 256) as u8).collect();
+        let output = run_with_input(&executable, &input);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, input);
+        assert!(output.stderr.is_empty(), "{output:?}");
+
+        let invalid = write_executable(&invalid_bytes, "copy_invalid");
+        let output = run_with_input(&invalid, b"ABCDEFGH");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, b"ABCDEFGH");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = (copy_bytes, invalid_bytes);
+}
+
+#[test]
+fn checked_stdin_to_stdout_copy_reports_failures_on_x86() {
+    let bytes = compile_fixture("std_io_checked_copy_failure");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let executable = write_executable(&bytes, "copy_failure");
+        for (injection, expected) in [
+            ("read:error=EIO:when=1", b"".as_slice()),
+            ("read:error=EIO:when=2", b"ABCD".as_slice()),
+            ("read:retval=5:when=1", b"".as_slice()),
+            ("write:error=EIO:when=1", b"".as_slice()),
+            ("write:error=EIO:when=2", b"ABCD".as_slice()),
+            ("write:retval=0:when=1", b"".as_slice()),
+        ] {
+            let source = common::TempArtifact::new("laniusc_std_io_checked", "fault_input", None);
+            source.write_bytes(b"ABCDEFGH");
+            let trace = common::TempArtifact::new("laniusc_std_io_checked", "copy_trace", None);
+            let output = common::short_process_output_with_timeout(
+                format!("checked copy {injection}"),
+                std::process::Command::new("strace")
+                    .arg("-qq")
+                    .arg("-o")
+                    .arg(trace.path())
+                    .arg("-e")
+                    .arg("trace=read,write")
+                    .arg("-e")
+                    .arg(format!("inject={injection}"))
+                    .arg(executable.path())
+                    .stdin(std::process::Stdio::from(
+                        std::fs::File::open(source.path()).expect("open copy fault input"),
+                    )),
+            );
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert_eq!(output.stdout, expected, "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+            let trace_text = std::fs::read_to_string(trace.path()).expect("read copy trace");
+            assert!(trace_text.contains("INJECTED"), "{trace_text}");
+        }
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn checked_stdin_to_stdout_copy_handles_short_transfers_on_x86() {
+    let bytes = compile_fixture("std_io_checked_copy");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let executable = write_executable(&bytes, "copy_short");
+        for (injection, expected, syscall) in [
+            ("read:retval=2:when=1", b"\0\0ABCDEFGH".as_slice(), "read"),
+            ("write:retval=2:when=1", b"CDEFGH".as_slice(), "write"),
+        ] {
+            let source = common::TempArtifact::new("laniusc_std_io_checked", "short_input", None);
+            source.write_bytes(b"ABCDEFGH");
+            let trace = common::TempArtifact::new("laniusc_std_io_checked", "short_trace", None);
+            let output = common::short_process_output_with_timeout(
+                format!("checked copy {injection}"),
+                std::process::Command::new("strace")
+                    .arg("-qq")
+                    .arg("-o")
+                    .arg(trace.path())
+                    .arg("-e")
+                    .arg("trace=read,write")
+                    .arg("-e")
+                    .arg(format!("inject={injection}"))
+                    .arg(executable.path())
+                    .stdin(std::process::Stdio::from(
+                        std::fs::File::open(source.path()).expect("open short copy input"),
+                    )),
+            );
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert_eq!(output.stdout, expected, "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+            let trace_text = std::fs::read_to_string(trace.path()).expect("read short copy trace");
+            assert!(trace_text.contains("INJECTED"), "{trace_text}");
+            assert!(
+                trace_text.matches(&format!("{syscall}(")).count() >= 2,
+                "{trace_text}"
+            );
+        }
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn checked_stream_public_functions_have_runtime_cases() {
     let source = include_str!("../stdlib/std/io_checked.lani");
-    let fixture = include_str!("fixtures/stdlib_host/std_io_checked.lani");
+    let fixture = format!(
+        "{}{}",
+        include_str!("fixtures/stdlib_host/std_io_checked.lani"),
+        include_str!("fixtures/stdlib_host/std_io_checked_copy.lani")
+    );
     let mut count = 0;
     for line in source.lines() {
         let Some(tail) = line.strip_prefix("pub fn ") else {
@@ -240,5 +388,5 @@ fn checked_stream_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 3);
+    assert_eq!(count, 4);
 }

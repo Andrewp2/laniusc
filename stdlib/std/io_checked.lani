@@ -64,3 +64,27 @@ pub fn write_all_stdout(buffer: ptr, len: usize) -> bool {
 pub fn write_all_stderr(buffer: ptr, len: usize) -> bool {
     return write_all(buffer, len, true);
 }
+
+// Copy stdin through caller storage to stdout until EOF. Capacity must be
+// 1..=i32::MAX and the pointer must name at least capacity writable bytes.
+// Read and write failures return false; stdout may contain a copied prefix.
+// Neither stream is closed. Empty input succeeds without writing.
+pub fn copy_stdin_to_stdout_with_buffer(buffer: ptr, capacity: usize) -> bool {
+    if (buffer == 0 || capacity == 0 || capacity>2147483647) {
+        return false;
+    }
+    while (true) {
+        let received: i32 = std::io::read_stdin(buffer, capacity);
+        if (received<0) {
+            return false;
+        }
+        if (received == 0) {
+            return true;
+        }
+        let count: usize = received;
+        if (count>capacity || !write_all_stdout(buffer, count)) {
+            return false;
+        }
+    }
+    return false;
+}
