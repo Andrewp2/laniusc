@@ -37,7 +37,7 @@ limited to native x86_64 output from this worktree.
 | `std::env_checked::var_read_exact_into` | Executable x86_64 Linux host wrapper | `tests/stdlib_env_execution.rs` runs a Lanius program with present, empty, and missing environment values. It checks exact bytes, capacity, null storage, invalid keys, and untouched storage on preflight rejection. Caller storage avoids allocation. |
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, and invalid handles. These are separate from the portable core. |
-| `std::io_decimal::write_u32` | Executable x86_64 Linux host wrapper | `tests/stdlib_host_execution.rs` checks unsigned decimal zero and maximum, exact byte counts, invalid handles, and injected failure after a written prefix. |
+| `std::io_decimal::{write_u32,write_i32}` | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned extrema, exact byte counts, invalid handles, and injected sign and digit write failures. |
 | `std::file` all 9 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, a multi-chunk binary copy, bounded signed decimal reads and writes, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked::secure_u32_or` | Executable x86_64 Linux host wrapper | `tests/stdlib_random_execution.rs` checks successful generation and injects both a host error and a short read, each of which returns the caller's fallback. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
@@ -210,6 +210,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   allocating or reading string storage. It returns a byte count from 1 to 10,
   the first negative host error, or `-1` if a byte write does not report
   exactly one byte. Failure may leave a decimal prefix on the handle.
+- `std::io_decimal::write_i32` writes an optional minus sign followed by the
+  full decimal magnitude. It returns 1 to 11 bytes, the first negative host
+  error, or `-1` if a byte write does not report exactly one byte. A failure
+  may leave a sign or decimal prefix. It handles `i32::MIN` without signed
+  negation overflow.
 - `std::file::write_text_once` opens or creates a file, truncates it, attempts
   one text write, and attempts to close it even if writing fails. It returns the actual
   byte count on success, including zero for empty text; a negative open,
@@ -259,7 +264,7 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   reads into a stack word and checks magnitude before multiplication; it does
   not depend on the raw host `read_i32` parser.
 - `std::file::write_i32_decimal` creates or truncates a file and writes the
-  complete decimal representation of an i32 using checked single-byte writes.
+  complete decimal representation of an i32 through `std::io_decimal::write_i32`.
   It returns false for open, write, or close failure and can leave a decimal
   prefix on failure. It handles `i32::MIN` without overflowing during
   negation and does not use the raw host `write_i32` formatter.

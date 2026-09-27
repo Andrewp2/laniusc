@@ -309,24 +309,7 @@ pub fn write_i32_decimal(path: str, value: i32) -> bool {
     if (handle < 0) {
         return false;
     }
-    let complete: bool = true;
-    let magnitude: u32 = 0;
-    if (value < 0) {
-        if (std::io::write_byte(handle, 45) != 1) {
-            complete = false;
-        }
-        if (value == -2147483648) {
-            magnitude = 2147483648;
-        } else {
-            let positive: i32 = -value;
-            magnitude = positive;
-        }
-    } else {
-        magnitude = value;
-    }
-    if (complete && std::io_decimal::write_u32(handle, magnitude) <= 0) {
-        complete = false;
-    }
+    let written: i32 = std::io_decimal::write_i32(handle, value);
     let closed: i32 = std::fs::close_file(handle);
-    return complete && closed >= 0;
+    return written > 0 && closed >= 0;
 }

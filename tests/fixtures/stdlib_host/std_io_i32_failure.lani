@@ -1,0 +1,12 @@
+module app::main;
+import std::io_decimal;
+fn main() -> i32 {
+    let result: i32 = std::io_decimal::write_i32(1, -42);
+    if (result == -1) {
+        return 1;
+    }
+    if (result == -5) {
+        return 5;
+    }
+    return 99;
+}

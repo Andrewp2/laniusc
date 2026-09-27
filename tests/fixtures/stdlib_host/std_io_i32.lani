@@ -1,0 +1,24 @@
+module app::main;
+import std::io;
+import std::io_decimal;
+fn main() -> i32 {
+    if (std::io_decimal::write_i32(1, 0) != 1 || std::io::write_newline(1) != 1) {
+        return 1;
+    }
+    if (std::io_decimal::write_i32(1, -42) != 3 || std::io::write_newline(1) != 1) {
+        return 2;
+    }
+    if (std::io_decimal::write_i32(1, -2147483648) != 11 || std::io::write_newline(1) != 1) {
+        return 3;
+    }
+    if (std::io_decimal::write_i32(1, 2147483647) != 10 || std::io::write_newline(1) != 1) {
+        return 4;
+    }
+    if (std::io_decimal::write_i32(1, -1000000000) != 11 || std::io::write_newline(1) != 1) {
+        return 5;
+    }
+    if (std::io_decimal::write_i32(-1, -7) >= 0) {
+        return 6;
+    }
+    return 0;
+}
