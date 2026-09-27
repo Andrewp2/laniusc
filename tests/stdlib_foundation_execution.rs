@@ -181,6 +181,24 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_slice_u16",
+            "tests/fixtures/stdlib_foundation/core_slice_u16.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_slice_u16_complete",
+            "tests/fixtures/stdlib_foundation/core_slice_u16_complete.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_slice_u16_bounds",
+            "tests/fixtures/stdlib_foundation/core_slice_u16_bounds.lani",
+            101,
+            b"",
+        ),
+        (
             "core_slice_u32",
             "tests/fixtures/stdlib_foundation/core_slice_u32.lani",
             0,
@@ -365,6 +383,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             "sample_programs/hex_packet_checksum.lani",
             0,
             b"28\n",
+        ),
+        (
+            "halfword_window_total",
+            "sample_programs/halfword_window_total.lani",
+            0,
+            b"32786\n",
         ),
         (
             "vec_i32",
@@ -613,6 +637,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             include_str!("fixtures/stdlib_foundation/core_slice_u8.lani"),
         ),
         (
+            "slice_u16",
+            include_str!("../stdlib/core/slice_u16.lani"),
+            include_str!("fixtures/stdlib_foundation/core_slice_u16.lani"),
+        ),
+        (
             "slice_u32",
             include_str!("../stdlib/core/slice_u32.lani"),
             include_str!("fixtures/stdlib_foundation/core_slice_u32.lani"),
@@ -645,6 +674,9 @@ fn executable_core_function_surface_has_runtime_cases() {
                         .contains(&call)
                 || module == "slice_u8"
                     && include_str!("fixtures/stdlib_foundation/core_slice_u8_complete.lani")
+                        .contains(&call)
+                || module == "slice_u16"
+                    && include_str!("fixtures/stdlib_foundation/core_slice_u16_complete.lani")
                         .contains(&call)
                 || module == "slice_u32"
                     && include_str!("fixtures/stdlib_foundation/core_slice_u32_complete.lani")

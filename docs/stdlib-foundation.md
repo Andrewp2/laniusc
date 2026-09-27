@@ -34,16 +34,17 @@ limited to native x86_64 output from this worktree.
 | `core::range_i16` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-32768`, `32767`, touching intervals, and empty or reversed bounds. |
 | `core::slice` all 36 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, first and last contiguous subsequence matches, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Sorting also runs all 243 five-element arrays over `{-1, 0, 1}` against independently counted expected groups. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
 | `core::slice_u8` all 36 public byte-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures exercise access, swaps, fill, rotation, overlap-safe and nonoverlapping copies, compaction, insertion, sequence comparison and search, unsigned ordering, heapsort, binary search, partitioning, and saturating sum. They cover empty and invalid logical lengths, rejected mutation, zero, and 255. Sorting also runs every five-element sequence over `{0,1,2}` against independently counted groups. A source scan requires a runtime call for every public function. Byte views over string or raw pointer storage remain outside this claim. |
+| `core::slice_u16` all 36 public unsigned-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every public function and check access, mutation, copy and rotation, compaction, insertion, sequence search, unsigned ordering across `32768`, sort and binary search, partitioning, and sums saturating at `65535`. They cover empty and invalid logical lengths, rejected mutation, and all 243 five-element sequences over `{0,1,2}` for sorting. A separate fixture confirms exit 101 when the claimed length exceeds the physical backing and is indexed. |
 | `core::slice_u32` all 36 public unsigned-word-view functions | Executable on x86_64 for fixed-array-backed views | Matching runtime fixtures cover the same operations and failure cases, including unsigned ordering across `2^31` and saturation at `u32::MAX`, plus the exhaustive small-sort fixture. The caller supplies a logical length within the physical backing. A source scan requires a runtime call for every public function. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
-| `core::option_i32` all 12 public functions and `core::result_i32` all 10 public functions | Executable on x86_64 | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, both branches of `or`, `and`, and `xor`, and conversions between the two concrete types. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function to have a runtime call. These concrete structs do not make generic `Option<T>` or `Result<T,E>` executable. |
-| `core::option_u32` all 12 public functions and `core::result_u32` all 10 public functions | Executable on x86_64 | The matching runtime fixture covers every function and both variants with zero, ordinary values, the high bit, and `u32::MAX`. Both the success payload and error code are `u32`; inactive fields are zero. A source scan requires every public function to have a runtime call. |
-| `core::option_u8` all 12 public functions and `core::result_u8` all 10 public functions | Executable on x86_64 | The byte fixture executes every function with `None`, `Some`, `Ok`, and `Err`, including zero, 128, and 255 payloads. A source scan requires every public function to have a runtime call. |
-| `core::option_i8` all 12 public functions and `core::result_i8` all 10 public functions | Executable on x86_64 | The signed byte fixture executes every function with both variants, zero, `-128`, and `127`, including Option to Result and Result to Option conversions. A source scan requires every public function to have a runtime call. |
-| `core::option_i16` all 12 public functions and `core::result_i16` all 10 public functions | Executable on x86_64 | The signed halfword fixture executes every function with both variants, zero, `-32768`, and `32767`, including conversions. A source scan requires every public function to have a runtime call. |
-| `core::option_u16` all 12 public functions and `core::result_u16` all 10 public functions | Executable on x86_64 | The unsigned halfword fixture executes every function with both variants, zero, `32768`, and `65535`, including conversions. A source scan requires every public function to have a runtime call. |
+| `core::option_i32` all 12 public functions and `core::result_i32` all 10 public functions | Executable on x86_64 for direct imported calls | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, both branches of `or`, `and`, and `xor`, and conversions between the two concrete types. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function to have a runtime call. Local aggregate forwarding remains broken; see dependency 39. |
+| `core::option_u32` all 12 public functions and `core::result_u32` all 10 public functions | Executable on x86_64 for direct imported calls | The matching runtime fixture covers every function and both variants with zero, ordinary values, the high bit, and `u32::MAX`. Both the success payload and error code are `u32`; inactive fields are zero. A source scan requires every public function to have a runtime call. See dependency 39 for the local return limit. |
+| `core::option_u8` all 12 public functions and `core::result_u8` all 10 public functions | Executable on x86_64 for direct imported calls | The byte fixture executes every function with `None`, `Some`, `Ok`, and `Err`, including zero, 128, and 255 payloads. A source scan requires every public function to have a runtime call. See dependency 39 for the local return limit. |
+| `core::option_i8` all 12 public functions and `core::result_i8` all 10 public functions | Executable on x86_64 for direct imported calls | The signed byte fixture executes every function with both variants, zero, `-128`, and `127`, including Option to Result and Result to Option conversions. A source scan requires every public function to have a runtime call. See dependency 39 for the local return limit. |
+| `core::option_i16` all 12 public functions and `core::result_i16` all 10 public functions | Executable on x86_64 for direct imported calls | The signed halfword fixture executes every function with both variants, zero, `-32768`, and `32767`, including conversions. A source scan requires every public function to have a runtime call. See dependency 39 for the local return limit. |
+| `core::option_u16` all 12 public functions and `core::result_u16` all 10 public functions | Executable on x86_64 for direct imported calls | The unsigned halfword fixture executes every function with both variants, zero, `32768`, and `65535`, including conversions. A source scan requires every public function to have a runtime call. See dependency 39 for the local return limit. |
 | `core::i32` all 28 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks each function's ordinary result and selected edge cases: `MIN` absolute value, checked and saturating overflow, wrapping arithmetic, signed predicates, range boundaries, and power-of-two overflow. Checked results use concrete `OptionI32`. |
 | `core::u8` all 37 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, overflow and zero-divisor behavior, wrapping multiplication, ASCII classes and case conversion, and checked results through `OptionU8`. Its multiplication delegates to the tested `core::byte` implementation. |
 | `core::u32` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, unsigned high-bit and maximum values, checked and wrapping arithmetic, alignment failures, and power-of-two overflow. Checked results use concrete `OptionU32`. |
@@ -323,8 +324,9 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `first_i32` traps on an empty view. `get_or_i32` returns the fallback for an
   index outside the supplied length; if the supplied length exceeds the actual
   view and indexing reaches beyond it, native execution traps with exit 101.
-  `core::slice_u8` and `core::slice_u32` use the same caller-supplied logical
-  length for fixed byte or word arrays. `first` traps on an empty physical
+  `core::slice_u8`, `core::slice_u16`, and `core::slice_u32` use the same
+  caller-supplied logical length for fixed byte, halfword, or word arrays.
+  `first` traps on an empty physical
   view; `first_or`, `get_or`, and first/last search helpers return their
   fallback for empty, invalid, or absent positions. `set`, `swap`, rotation,
   insertion, append, and copy helpers reject invalid logical bounds without
@@ -671,6 +673,11 @@ the view, and accumulates with saturating arithmetic. It prints `96`.
 `sample_programs/hex_packet_checksum.lani` validates a fixed byte packet's
 header and hexadecimal payload with `core::slice_u8`, `core::range`,
 `core::byte`, and `core::number_u32`. It prints the digit checksum `28`.
+
+`sample_programs/halfword_window_total.lani` sorts six unsigned halfword
+readings, selects an inclusive value range, checks its first match through
+concrete Option/Result helpers, and accumulates the selected values with
+saturation. It combines five portable modules and prints `32786`.
 
 `sample_programs/vector_square_sum.lani` uses the allocation-backed vector,
 checked push length, bounded indexed reads, saturating arithmetic, and native
@@ -1115,6 +1122,18 @@ also fixes the imported struct-return relocation path described below.
     This is a native lowering dependency. Adding free functions for more
     `Range<T>` widths to the shared module crosses the same boundary, so the
     small-width aggregate APIs reside in separate modules.
+39. **Returning an imported concrete Option or Result from a local helper.**
+    `repro_option_u16_local_return.lani` calls a local `wrap(u16)` function
+    that returns `core::option_u16::some(value)`. It compiles with
+    `--stdlib-root stdlib --emit x86_64`, but the ELF segfaults (exit 139)
+    before checking the result. A direct imported `some` call in the
+    Option/Result runtime fixture succeeds, as does a local helper returning
+    a scalar from a `[u16]` view. The same local forwarding shape was checked
+    for both Option and Result at i8, u8, i16, u16, i32, and u32 widths; all
+    twelve emitted ELFs segfaulted. The halfword sample returns a scalar index
+    from its local search helper and constructs `OptionU16` in `main`.
+    Local forwarding of imported aggregate results remains a native compiler
+    dependency; the direct-call tests do not prove this composition works.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those
