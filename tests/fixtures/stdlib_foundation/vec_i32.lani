@@ -1,0 +1,50 @@
+module app::main;
+import std::vec_i32;
+
+fn main() -> i32 {
+    let value: std::vec_i32::VecI32 = std::vec_i32::new();
+    if (std::vec_i32::len(value) != 0 || std::vec_i32::capacity(value) != 0) { return 1; }
+    if (!std::vec_i32::is_empty(value)) { return 2; }
+    if (std::vec_i32::get_or(value, 0, 77) != 77) { return 3; }
+    if (std::vec_i32::try_set(value, 0, 5)) { return 4; }
+    let unchanged: std::vec_i32::VecI32 = std::vec_i32::try_pop(value);
+    if (std::vec_i32::len(unchanged) != 0) { return 5; }
+
+    value = std::vec_i32::try_push(value, 10);
+    if (std::vec_i32::len(value) != 1 || std::vec_i32::capacity(value) != 4) { return 6; }
+    value = std::vec_i32::try_push(value, 20);
+    value = std::vec_i32::try_push(value, 30);
+    value = std::vec_i32::try_push(value, 40);
+    value = std::vec_i32::try_push(value, 50);
+    if (std::vec_i32::len(value) != 5 || std::vec_i32::capacity(value) != 8) { return 7; }
+    if (std::vec_i32::is_empty(value)) { return 8; }
+    if (std::vec_i32::get_or(value, 0, -1) != 10 || std::vec_i32::get_or(value, 4, -1) != 50) { return 9; }
+    if (std::vec_i32::get_or(value, -1, 88) != 88 || std::vec_i32::get_or(value, 5, 88) != 88) { return 10; }
+    if (std::vec_i32::try_set(value, -1, 99) || std::vec_i32::try_set(value, 5, 99)) { return 11; }
+    if (!std::vec_i32::try_set(value, 2, 33) || std::vec_i32::get_or(value, 2, -1) != 33) { return 12; }
+
+    value = std::vec_i32::try_reserve(value, 11);
+    if (std::vec_i32::capacity(value) != 11 || std::vec_i32::get_or(value, 2, -1) != 33) { return 13; }
+    value = std::vec_i32::try_reserve(value, -1);
+    value = std::vec_i32::try_reserve(value, 536870912);
+    value = std::vec_i32::try_reserve(value, 5);
+    if (std::vec_i32::capacity(value) != 11) { return 14; }
+    value = std::vec_i32::try_pop(value);
+    if (std::vec_i32::len(value) != 4 || std::vec_i32::get_or(value, 4, 91) != 91) { return 15; }
+    value = std::vec_i32::clear(value);
+    if (std::vec_i32::len(value) != 0 || std::vec_i32::capacity(value) != 11) { return 16; }
+    value = std::vec_i32::try_push(value, -2147483648);
+    if (std::vec_i32::get_or(value, 0, 0) != -2147483648) { return 17; }
+    std::vec_i32::destroy(value);
+
+    let preallocated: std::vec_i32::VecI32 = std::vec_i32::try_with_capacity(2);
+    if (std::vec_i32::capacity(preallocated) != 2) { return 18; }
+    preallocated = std::vec_i32::try_push(preallocated, 2147483647);
+    if (std::vec_i32::get_or(preallocated, 0, 0) != 2147483647) { return 19; }
+    std::vec_i32::destroy(preallocated);
+    let invalid: std::vec_i32::VecI32 = std::vec_i32::try_with_capacity(-1);
+    if (std::vec_i32::capacity(invalid) != 0) { return 20; }
+    std::vec_i32::destroy(invalid);
+    if (std::vec_i32::MAX_CAPACITY != 536870911) { return 21; }
+    return 0;
+}

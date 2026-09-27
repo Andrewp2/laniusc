@@ -41,7 +41,7 @@ limited to native x86_64 output from this worktree.
 | `core::{cmp,hash,ordering,array_i32}` and complete legacy `stdlib/array_i32_4.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs, traits, and array-returning legacy helpers depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
 | `alloc::allocator` | Executable x86_64 Linux host ABI for valid allocation arguments | Normal allocation, reallocation, and release have x86 tests. `tests/stdlib_allocator_failure_execution.rs` injects `ENOMEM` into `mmap` and `mremap`: both return null, and failed reallocation leaves the old storage readable and releasable. The API is low-level; callers must pass a valid pointer and matching sizes to `realloc` and `dealloc`. |
-| `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs` path calls ignore their declared length and require NUL-terminated storage; see dependency 29. `std::env::current_dir_len` still has an unsafe allocator failure path; see dependency 25. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
+| `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs` path calls ignore their declared length and require NUL-terminated storage; see dependency 29. `std::env::current_dir_len` checks allocation failure but has no direct fault-injection test yet; see dependency 25. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::args_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks argument count including the executable, exact byte lengths and bytes, absent/negative indices, sufficient and insufficient capacity, null storage, and capacity above `i32::MAX`. Caller storage avoids allocation. |
 | `std::env_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_env_execution.rs` checks exact value and key bytes, missing and invalid indices, capacity and null-storage failures, current-directory bytes and its NUL terminator, and injected `getcwd` failure. Caller storage avoids allocation. |
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
@@ -58,6 +58,7 @@ limited to native x86_64 output from this worktree.
 | `std::file` all 21 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, multi-chunk binary copies between files and standard streams, bounded decimal reads and writes across 8-, 16-, and 32-bit integers, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded and inclusive unsigned and signed outputs, forced draws and rejection, full-range failure fallbacks, and secure i32 slice shuffling with preserved contents, a forced swap, and injected failure. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and all 31 public functions | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. Redundant no-argument functions that failed natively were removed in favor of the tested constants. Allocation and host normalization are unavailable. |
+| `std::vec_i32` all 12 public functions and its capacity constant | Executable on x86_64 Linux | `tests/fixtures/stdlib_foundation/vec_i32.lani` checks construction, growth, element access and mutation, bounds, reserve, pop, clear, and destruction. `tests/stdlib_vec_i32_execution.rs` injects allocation and reallocation failures and checks the vector and prior data stay unchanged. This is a linear-ownership API by convention; source-level moves are not enforced. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
 | `test::assert` | Contract-only | Passing assertions hit unsupported target LIR opcode 38 during x86 emission. Reproduction programs are included. |
 | `std::vec` | Contract-only after stub removal | The former `Vec<T>::push` returned without storing its argument and was removed. `Vec<T>::new`, `len`, and `is_empty` remain as an empty-value type-checking contract; no storage or mutation is provided. |
@@ -242,6 +243,17 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   distinguishes `Ok(0)` from `Err(0)` with a success flag. Its `contains` and
   `contains_err` inspect only the active payload, and both unwrap helpers
   return the caller fallback on the opposite variant. Neither module allocates.
+- `std::vec_i32` owns an allocated i32 array. `try_push` doubles capacity when
+  full, starting at four elements, and returns the prior vector unchanged on
+  allocation failure. Compare the returned length with the prior length to
+  detect failure. `try_reserve` grows to the requested absolute capacity;
+  compare the returned capacity with the request to detect failure. Invalid
+  indices return the caller fallback or `false`, and invalid capacities leave
+  the vector unchanged. `try_pop` on an empty vector returns it unchanged;
+  `clear` keeps its allocation. `destroy` releases storage. The caller must
+  retain only the newest returned value, must call `destroy` once, and must not
+  use aliases or copies after growth or destruction. These ownership rules
+  are not yet checked by the language.
 - Half-open ranges exclude `end`; inclusive ranges include it. A reversed or
   empty range contains no values and overlaps no range. `RangeFrom<i32>` includes
   its start, `RangeTo<i32>` excludes its end, and `RangeFull` contains all i32
@@ -588,6 +600,10 @@ It validates an ASCII marker, copies readings into a separate backed view,
 sorts the copy, selects a half-open window from sorted-value boundaries, reads
 the view, and accumulates with saturating arithmetic. It prints `96`.
 
+`sample_programs/vector_square_sum.lani` uses the allocation-backed vector,
+checked push length, bounded indexed reads, saturating arithmetic, and native
+integer output. It prints `285` and releases its storage.
+
 `tests/fixtures/stdlib_host/std_utf8_line_count.lani` is a second runnable
 program. It reads one LF line into a 16-byte caller-backed view, validates and
 counts its Unicode scalars, and prints the count in decimal. The focused x86
@@ -616,6 +632,9 @@ The test compiles small Lanius programs through `--stdlib-root`, executes
 the native ELFs, checks their exit status, checks the example's stdout, and
 checks the slice bounds trap. Each source is also suitable for direct CLI
 compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.
+Run `cargo test --test stdlib_allocator_failure_execution` and
+`cargo test --test stdlib_vec_i32_execution` for native allocation failures;
+fault injection runs when Linux `strace` is available.
 Run `cargo test --test stdlib_host_execution` for the separate native I/O
 wrappers; its partial-write fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_decimal_input_execution` for bounded decimal
@@ -667,8 +686,11 @@ also fixes the imported struct-return relocation path described below.
    width and patched its `rel32` field three bytes early, corrupting the
    caller's prologue. It now shares the exact byte count with code emission and
    recognizes imported nominal aggregate results without treating scalar
-   results as aggregates. This makes a concrete struct-based Option/Result
-   implementation possible. The separate minimal program
+   results as aggregates. A later `repro_vec_get_empty.lani` showed imported
+   scalar calls inheriting an enclosing struct's word count and shifting all
+   their arguments by one ABI register; x86 call counting, scattering, and
+   stack allocation now use the checked result type to exclude that width.
+   Both fixes support the concrete Option/Result and vector modules. The separate minimal program
    `tests/fixtures/stdlib_foundation/repro_ordering_return.lani` still exits
    139 when the non-generic `Ordering` returned by `compare_i32` is passed to
    `to_i32`. Enum-valued comparison APIs remain outside the executable claim.
@@ -683,13 +705,13 @@ also fixes the imported struct-return relocation path described below.
    behavioral claim follows from those checks. A portable slice constructor
    and a way to read slice length are still needed before slice APIs can be
    independent of caller-supplied lengths.
-4. **Allocation-backed vectors.** `std::vec` requires storage, mutation,
-   allocation failure, and ownership semantics. Its silent `push` stub is
-   removed until those runtime pieces exist; the empty `Vec<T>` contract is
-   still type-checkable but not an executable collection. The x86 allocator
-   now returns null on `mmap` and `mremap` failure (dependency 22), so a
-   concrete i32 collection can report these failures safely. Its public API
-   still needs ownership rules and executable tests before publication.
+4. **Generic allocation-backed vectors remain blocked.** The old `std::vec`
+   silently dropped values in `push`, so that stub was removed. The empty
+   generic `Vec<T>` remains a type-checking contract. `std::vec_i32` now has
+   tested storage, growth, mutation, failure, and destruction on x86 Linux.
+   A generic collection still needs executable generic value layout and a
+   language-level move/borrow rule to enforce ownership rather than relying
+   on caller discipline.
 5. **Imported f32 constant lowering.** With the minimal library in
    `tests/fixtures/stdlib_foundation/repro_f32_const_root`, native emission of
    `repro_f32_const.lani` succeeds, but the ELF exits 3 because imported

@@ -16,10 +16,23 @@ bool x86_semantic_type_is_aggregate(OptIrNodeCore core)
         (type_ref_tag == SEMANTIC_TYPE_REF_INVALID && core.type_id >= 128u);
 }
 
+uint x86_imported_call_result_words(OptIrNodeCore core)
+{
+    // A scalar imported call can inherit the width of a containing aggregate
+    // in value_word_count. Only its checked result type may authorize an
+    // aggregate result slot and the hidden sret ABI argument.
+    if (!x86_semantic_type_is_aggregate(core) &&
+        core.type_id != 0u && core.type_id <= SEMANTIC_LIR_TY_POINTER)
+        return 0u;
+    return core.value_word_count;
+}
+
 uint x86_aggregate_value_word_count(OptIrNodeCore core,
                                     OptIrNodeOperands operands)
 {
     uint op = opt_ir_op(core);
+    if (op == SEMANTIC_LIR_OP_CALL_SYMBOL)
+        return x86_imported_call_result_words(core);
     if (op == SEMANTIC_LIR_OP_AGGREGATE_NEW)
         return max(core.value_word_count, operands.b);
     // Intrinsics do not have a SemanticLirFunction row from which the x86

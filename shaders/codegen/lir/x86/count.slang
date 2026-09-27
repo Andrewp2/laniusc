@@ -218,7 +218,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     uint result_words = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL &&
         operands.a < function_count ? semantic_lir_functions[operands.a].result_word_count :
-        opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? core.value_word_count :
+        opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
+            ? x86_imported_call_result_words(core) :
         opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
         intrinsic_slice_from_raw_parts(operands.a) ? 2u : 0u;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL && operands.a >= function_count)

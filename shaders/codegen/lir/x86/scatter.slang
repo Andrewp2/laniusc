@@ -288,7 +288,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool inline_call = inline_info.return_value != INVALID;
     uint call_result_words = opt_ir_op(source) == SEMANTIC_LIR_OP_CALL &&
         args.a < function_count ? semantic_lir_functions[args.a].result_word_count :
-        opt_ir_op(source) == SEMANTIC_LIR_OP_CALL_SYMBOL ? source.value_word_count :
+        opt_ir_op(source) == SEMANTIC_LIR_OP_CALL_SYMBOL
+            ? x86_imported_call_result_words(source) :
         opt_ir_op(source) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
         intrinsic_slice_from_raw_parts(args.a) ? 2u : 0u;
     // A call expands to argument-move rows followed by the value-producing
@@ -664,8 +665,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // also carry an enclosing aggregate's width, so retain the scalar type
     // classification before using that width as a result-shape fallback.
     bool imported_aggregate_result = op == X86_LIR_OP_CALL_SYMBOL &&
-        source.value_word_count != 0u &&
-        (source.type_id == 0u || source.type_id > SEMANTIC_LIR_TY_POINTER);
+        x86_imported_call_result_words(source) != 0u;
     uint metadata = (source.type_id & 0xffu) | (source.flags << 8u) |
         (x86_semantic_type_is_aggregate(source) || copy_words != 0u ||
          imported_aggregate_result

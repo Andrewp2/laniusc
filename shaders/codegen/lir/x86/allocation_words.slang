@@ -254,7 +254,7 @@ uint spill_word_count(uint row, uint total, uint function_total)
         return 1u + words;
     }
     if (op == SEMANTIC_LIR_OP_CALL_SYMBOL)
-        return 1u + core.value_word_count;
+        return 1u + x86_imported_call_result_words(core);
     if (op == SEMANTIC_LIR_OP_CALL_HOST)
         return operands.a == HOST_SERVICE_I32_TO_F32 ||
             x86_runtime_service_has_result(operands.a) ? 1u : 0u;
