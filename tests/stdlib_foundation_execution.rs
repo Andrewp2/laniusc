@@ -133,6 +133,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "slice_sort_exhaustive_small",
+            "tests/fixtures/stdlib_foundation/slice_sort_exhaustive_small.lani",
+            0,
+            b"",
+        ),
+        (
             "core_range_methods",
             "tests/fixtures/stdlib_foundation/core_range_methods.lani",
             0,
