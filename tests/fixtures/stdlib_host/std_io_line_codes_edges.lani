@@ -1,0 +1,35 @@
+module app::main;
+import core::mem;
+import std::io_line;
+
+fn main() -> i32 {
+    let backing: [i32; 4] = [99, 99, 99, 99];
+    let view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(backing), 4);
+    if (std::io_line::read_stdin_lf_line_into_i32(view, 3) != std::io_line::LINE_TOO_LONG ||
+        backing[0] != 65 || backing[1] != 66 || backing[2] != 67 || backing[3] != 99) {
+        return 1;
+    }
+    if (std::io_line::read_stdin_lf_line_into_i32(view, 4) != 1 || backing[0] != 90) {
+        return 2;
+    }
+    if (std::io_line::read_stdin_lf_line_into_i32(view, 0) != 0) {
+        return 3;
+    }
+    if (std::io_line::read_stdin_lf_line_into_i32(view, 0) != std::io_line::LINE_TOO_LONG) {
+        return 4;
+    }
+    if (std::io_line::read_stdin_lf_line_into_i32(view, 1) != 1 || backing[0] != 13) {
+        return 5;
+    }
+    if (std::io_line::read_stdin_lf_line_into_i32(view, 4) != 4 ||
+        backing[0] != 87 || backing[1] != 88 || backing[2] != 89 || backing[3] != 90) {
+        return 6;
+    }
+    if (std::io_line::read_stdin_lf_line_into_i32(view, 4) != 1 || backing[0] != 0) {
+        return 7;
+    }
+    if (std::io_line::read_stdin_lf_line_into_i32(view, 4) != std::io_line::LINE_EOF) {
+        return 8;
+    }
+    return 0;
+}

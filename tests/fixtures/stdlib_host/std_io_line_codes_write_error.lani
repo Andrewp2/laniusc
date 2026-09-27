@@ -1,0 +1,12 @@
+module app::main;
+import core::mem;
+import std::io_line;
+
+fn main() -> i32 {
+    let backing: [i32; 1] = [65];
+    let view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(backing), 1);
+    if (std::io_line::write_stdout_lf_line_from_i32(view, 1)) {
+        return 1;
+    }
+    return 0;
+}

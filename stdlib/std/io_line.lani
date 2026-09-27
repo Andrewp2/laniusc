@@ -1,0 +1,99 @@
+// Bounded LF lines using caller-owned [i32] views of byte values. This is an
+// x86_64 Linux host module; no allocation or implicit buffering occurs.
+module std::io_line;
+import std::io_byte;
+
+pub const LINE_EOF: i32 = -1;
+pub const LINE_HOST_ERROR: i32 = -2;
+pub const LINE_INVALID_CAPACITY: i32 = -3;
+pub const LINE_TOO_LONG: i32 = -4;
+
+// Read through the next LF and store each preceding byte as an i32 in
+// 0..=255. Return the length, including zero for an empty LF-terminated line.
+// EOF before any byte returns LINE_EOF; EOF after bytes returns their length.
+// An invalid negative capacity returns LINE_INVALID_CAPACITY without reading.
+// A line over capacity is consumed through LF or EOF and returns LINE_TOO_LONG;
+// the first capacity bytes remain in the view. Host failure returns
+// LINE_HOST_ERROR and may leave a prefix. The backed view must contain at
+// least capacity writable elements; overstating it can trap on indexing.
+pub fn read_stdin_lf_line_into_i32(values: [i32], capacity: i32) -> i32 {
+    if (capacity<0) {
+        return LINE_INVALID_CAPACITY;
+    }
+    let count: i32 = 0;
+    let too_long: bool = false;
+    while (true) {
+        let code: i32 = std::io_byte::read_stdin_byte_or(LINE_EOF, LINE_HOST_ERROR);
+        if (code == LINE_HOST_ERROR) {
+            return LINE_HOST_ERROR;
+        }
+        if (code == LINE_EOF) {
+            if (too_long) {
+                return LINE_TOO_LONG;
+            }
+            if (count == 0) {
+                return LINE_EOF;
+            }
+            return count;
+        }
+        if (code == 10) {
+            if (too_long) {
+                return LINE_TOO_LONG;
+            }
+            return count;
+        }
+        if (count<capacity) {
+            values[count] = code;
+            count += 1;
+        } else {
+            too_long = true;
+        }
+    }
+    return LINE_HOST_ERROR;
+}
+
+fn codes_are_bytes(values: [i32], len: i32) -> bool {
+    if (len<0) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index<len) {
+        let code: i32 = values[index];
+        if (code<0 || code>255) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Validate every code before writing. Invalid lengths or codes return false
+// with no output. A host failure returns false and may leave a written prefix.
+// The backed view must contain at least len elements; an overclaim can trap.
+pub fn write_stdout_lf_line_from_i32(values: [i32], len: i32) -> bool {
+    if (!codes_are_bytes(values, len)) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index<len) {
+        if (!std::io_byte::write_stdout_byte(values[index])) {
+            return false;
+        }
+        index += 1;
+    }
+    return std::io_byte::write_stdout_byte(10);
+}
+
+pub fn write_stderr_lf_line_from_i32(values: [i32], len: i32) -> bool {
+    if (!codes_are_bytes(values, len)) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index<len) {
+        if (!std::io_byte::write_stderr_byte(values[index])) {
+            return false;
+        }
+        index += 1;
+    }
+    return std::io_byte::write_stderr_byte(10);
+}

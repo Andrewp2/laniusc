@@ -45,6 +45,7 @@ limited to native x86_64 output from this worktree.
 | `std::io::{write_line,println,eprintln,flush_stdout,flush_stderr,print_i32}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, invalid handles, synchronous flushes, and signed printing through the real stdlib root. These are separate from the portable core. |
 | `std::io_checked` all 5 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_checked_execution.rs` checks exact stdin, bounded read-to-EOF, stdout, and stderr bytes; empty, exact-fit, and overlong input; invalid storage; EOF after a read prefix; host errors and zero progress; retries after short transfers; and a multi-chunk binary stdin-to-stdout copy. Caller storage avoids allocation. |
 | `std::io_byte` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_byte_execution.rs` checks scalar reads of ASCII, NUL, and 255, a distinct EOF fallback, checked stdout and stderr bytes, invalid values without writes, and injected read and write errors. `sample_programs/hex_to_decimal.lani` combines it with portable byte and hex helpers. The implementation uses one synchronous host call per byte. |
+| `std::io_line` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_line_execution.rs` checks multiple LF lines, exact-fit and zero capacities, EOF after a partial line, overlong-line consumption, CR and NUL bytes, stdout and stderr output, invalid codes without output, injected host errors, and native trapping on an overstated backing view. Bytes are stored as integers in caller-owned `[i32]` storage. |
 | `std::io_decimal` all 12 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned output extrema across 8-, 16-, and 32-bit integers, exact byte counts, invalid handles, and injected sign and digit write failures for the underlying 32-bit writers. `tests/stdlib_io_decimal_input_execution.rs` checks bounded stdin parsing across all six widths, EOF, whitespace and signs, malformed and overlong input, overflow, and injected read failures in the underlying 32-bit readers. |
 | `std::io_hex` all 9 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_hex_execution.rs` checks exact lowercase and uppercase writes across `u8`, `u16`, and `u32`, counts, invalid handles, injected write failures, bounded stdin parsing with optional prefix and whitespace, malformed and overflowing input, and injected read failures. |
 | `std::file_hex` all 9 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_hex_execution.rs` checks lowercase and uppercase writes, bounded hexadecimal file reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed and overflowing input, missing and overlong files, and injected read/write/close errors. Raw filesystem path lengths remain broken; see dependency 29. |
@@ -294,6 +295,20 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   return false on host failure or a short write. No heap storage is used.
   The hex-to-decimal sample ignores ASCII whitespace, rejects invalid or
   overflowing input, and prints a decimal `u32` followed by a newline.
+- `std::io_line::read_stdin_lf_line_into_i32` stores each byte before LF as an
+  integer in `0..=255` and returns the count. An empty LF-terminated line
+  returns zero; EOF before a byte returns `LINE_EOF` (`-1`), while EOF after
+  bytes returns their count. A host failure returns `LINE_HOST_ERROR` (`-2`)
+  and can leave a prefix. A negative capacity returns `LINE_INVALID_CAPACITY`
+  (`-3`) without reading. An overlong line consumes through LF or EOF,
+  preserves its first `capacity` bytes, and returns `LINE_TOO_LONG` (`-4`),
+  so the next call starts at the next line. CR is retained, and NUL is a
+  normal byte. `write_stdout_lf_line_from_i32` and
+  `write_stderr_lf_line_from_i32` validate all codes before output, reject a
+  negative length, and append LF even for an empty line. A host failure can
+  leave an output prefix. Callers must provide backed views at least as long
+  as the stated capacity or length; native indexing traps on an overclaim.
+  The implementation uses one synchronous host call per byte.
 - `std::io_checked::{write_all_stdout,write_all_stderr}` retry short writes
   until all requested bytes are sent. They return false for invalid pointer
   or length arguments, negative host results, zero progress, or impossible
@@ -489,6 +504,8 @@ Run `cargo test --test stdlib_io_checked_execution` for complete caller-buffer
 stream operations; fault injection cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_byte_execution` for scalar binary I/O and the
 hex-to-decimal sample; fault injection cases run when Linux `strace` is available.
+Run `cargo test --test stdlib_io_line_execution` for bounded LF line I/O;
+fault injection cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_file_execution` for the file wrappers; its
 read/write/close fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_file_hex_execution` for hexadecimal file input

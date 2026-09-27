@@ -1,0 +1,47 @@
+module app::main;
+import core::mem;
+import std::io_line;
+
+fn main() -> i32 {
+    let backing: [i32; 4] = [99, 99, 99, 99];
+    let view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(backing), 4);
+    if (std::io_line::read_stdin_lf_line_into_i32(view, -1) != std::io_line::LINE_INVALID_CAPACITY) {
+        return 1;
+    }
+    if (std::io_line::read_stdin_lf_line_into_i32(view, 4) != 2 ||
+        backing[0] != 65 || backing[1] != 66 || backing[2] != 99) {
+        return 2;
+    }
+    if (!std::io_line::write_stdout_lf_line_from_i32(view, 2) ||
+        !std::io_line::write_stderr_lf_line_from_i32(view, 2)) {
+        return 3;
+    }
+    if (std::io_line::read_stdin_lf_line_into_i32(view, 4) != 0 ||
+        !std::io_line::write_stdout_lf_line_from_i32(view, 0)) {
+        return 4;
+    }
+    if (std::io_line::read_stdin_lf_line_into_i32(view, 4) != 4 ||
+        backing[0] != 88 || backing[1] != 89 || backing[2] != 90 || backing[3] != 87) {
+        return 5;
+    }
+    if (!std::io_line::write_stdout_lf_line_from_i32(view, 4)) {
+        return 6;
+    }
+    if (std::io_line::read_stdin_lf_line_into_i32(view, 4) != 1 || backing[0] != 81) {
+        return 7;
+    }
+    if (!std::io_line::write_stdout_lf_line_from_i32(view, 1)) {
+        return 8;
+    }
+    if (std::io_line::read_stdin_lf_line_into_i32(view, 4) != std::io_line::LINE_EOF) {
+        return 9;
+    }
+    let invalid: [i32; 2] = [65, 256];
+    let invalid_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(invalid), 2);
+    if (std::io_line::write_stdout_lf_line_from_i32(invalid_view, 2) ||
+        std::io_line::write_stderr_lf_line_from_i32(invalid_view, 2) ||
+        std::io_line::write_stdout_lf_line_from_i32(invalid_view, -1)) {
+        return 10;
+    }
+    return 0;
+}

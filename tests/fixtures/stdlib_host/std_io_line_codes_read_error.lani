@@ -1,0 +1,13 @@
+module app::main;
+import core::mem;
+import std::io_line;
+
+fn main() -> i32 {
+    let backing: [i32; 1] = [99];
+    let view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(backing), 1);
+    if (std::io_line::read_stdin_lf_line_into_i32(view, 1) != std::io_line::LINE_HOST_ERROR ||
+        backing[0] != 99) {
+        return 1;
+    }
+    return 0;
+}
