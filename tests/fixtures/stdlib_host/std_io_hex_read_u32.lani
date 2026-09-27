@@ -1,0 +1,14 @@
+module app::main;
+import std::io_hex;
+
+fn main() -> i32 {
+    let fallback: u32 = 777;
+    if (std::io_hex::read_u32_stdin_or(0, fallback) != fallback) {
+        return 1;
+    }
+    let value: u32 = std::io_hex::read_u32_stdin_or(32, fallback);
+    if (std::io_hex::write_lower_u32(1, value) < 0) {
+        return 2;
+    }
+    return 0;
+}
