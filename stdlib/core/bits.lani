@@ -104,3 +104,59 @@ pub fn bit_at_or_u32(value: u32, index: u32, fallback: bool) -> bool {
     }
     return((value >> index)&1) != 0;
 }
+
+// Byte operations widen before shifting so the intermediate value cannot
+// overflow u8. Counts use 8 as the zero-value leading/trailing convention.
+pub fn count_ones_u8(value: u8) -> u32 {
+    return count_ones_u32(widen_byte(value));
+}
+pub fn count_zeros_u8(value: u8) -> u32 {
+    return 8 - count_ones_u8(value);
+}
+pub fn leading_zeros_u8(value: u8) -> u32 {
+    return leading_zeros_u32(widen_byte(value)) - 24;
+}
+pub fn trailing_zeros_u8(value: u8) -> u32 {
+    if (value == 0) {
+        return 8;
+    }
+    return trailing_zeros_u32(widen_byte(value));
+}
+pub fn has_single_bit_u8(value: u8) -> bool {
+    return has_single_bit_u32(widen_byte(value));
+}
+// Rotation counts are reduced modulo 8; the zero case avoids a shift by 8.
+pub fn rotate_left_u8(value: u8, amount: u32) -> u8 {
+    let shift: u32 = amount % 8;
+    if (shift == 0) {
+        return value;
+    }
+    let bits: u32 = widen_byte(value);
+    return narrow_byte(((bits << shift)|(bits >>(8 - shift)))&255);
+}
+pub fn rotate_right_u8(value: u8, amount: u32) -> u8 {
+    let shift: u32 = amount % 8;
+    if (shift == 0) {
+        return value;
+    }
+    let bits: u32 = widen_byte(value);
+    return narrow_byte(((bits >> shift)|(bits <<(8 - shift)))&255);
+}
+pub fn reverse_bits_u8(value: u8) -> u8 {
+    let remaining: u32 = widen_byte(value);
+    let reversed: u32 = 0;
+    let count: u32 = 0;
+    while (count<8) {
+        reversed =(reversed << 1)|(remaining&1);
+        remaining >>= 1;
+        count += 1;
+    }
+    return narrow_byte(reversed);
+}
+// Out-of-range indices return the caller's fallback unchanged.
+pub fn bit_at_or_u8(value: u8, index: u32, fallback: bool) -> bool {
+    if (index >= 8) {
+        return fallback;
+    }
+    return((widen_byte(value) >> index)&1) != 0;
+}

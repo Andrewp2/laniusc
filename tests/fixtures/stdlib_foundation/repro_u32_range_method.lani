@@ -1,0 +1,15 @@
+module app::main;
+import core::range;
+
+fn main() -> i32 {
+    let high: u32 = 2147483648;
+    let low: u32 = 1;
+    let range: core::range::RangeFrom<u32> = core::range::range_from_u32(high);
+    if (core::range::contains_from_u32(range, low)) {
+        return 1;
+    }
+    if (range.contains(low)) {
+        return 2;
+    }
+    return 0;
+}

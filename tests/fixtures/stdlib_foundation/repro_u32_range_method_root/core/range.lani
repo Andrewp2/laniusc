@@ -1,0 +1,27 @@
+module core::range;
+
+pub struct RangeFrom<T> {
+    start: T,
+}
+
+pub fn range_from_u32(start: u32) -> RangeFrom<u32> {
+    return RangeFrom {
+        start: start,
+    };
+}
+
+pub fn contains_from_u32(range: RangeFrom<u32>, value: u32) -> bool {
+    return value >= range.start;
+}
+
+pub impl RangeFrom<i32> {
+    pub fn contains(&self, value: i32) -> bool {
+        return value >= self.start;
+    }
+}
+
+pub impl RangeFrom<u32> {
+    pub fn contains(&self, value: u32) -> bool {
+        return value >= self.start;
+    }
+}

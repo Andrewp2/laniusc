@@ -1,0 +1,19 @@
+module app::main;
+
+fn main() -> i32 {
+    let maximum: u64 = 18446744073709551615;
+    let highest: u64 = 9223372036854775808;
+    if (maximum / 2 != 9223372036854775807) {
+        return 1;
+    }
+    if (highest / 2 != 4611686018427387904) {
+        return 2;
+    }
+    if (maximum % 2 != 1) {
+        return 3;
+    }
+    if (highest > maximum / 2) {
+        return 0;
+    }
+    return 4;
+}

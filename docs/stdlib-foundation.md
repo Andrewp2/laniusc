@@ -15,7 +15,7 @@ limited to native x86_64 output from this worktree.
 | `core::number_i32` constants and all 23 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, multiplication and power overflow, signed GCD/LCM, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
 | `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
 | `core::byte` constants and all 44 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
-| `core::bits` all 14 public `u32` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across 0 and 32, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. |
+| `core::bits` all 23 public `u32` and `u8` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across word widths, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. The byte operations also run exhaustive byte values and rotation round trips. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 6 public scalar-codec functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, length boundaries, malformed sequences, surrogate exclusion, and Unicode maximum. Byte parameters and results use `u8`; it does not access string storage. |
@@ -118,6 +118,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   helpers accept four `u8` values in big- or little-endian order; extraction
   indices 0 through 3 use the named order and higher indices return the
   caller's fallback.
+- The `u8` operations in `core::bits` widen before shifting and return eight
+  leading or trailing zeros for zero. Rotation counts reduce modulo eight.
+  `bit_at_or_u8` accepts indices 0 through 7 and returns the caller's
+  fallback for larger indices.
 - `core::bool` converts any nonzero i32 to true. Its selector functions return
   the chosen branch value. `core::char` tests ASCII classes; its case-insensitive
   equality and case conversion fold ASCII letters only. `is_ascii_control`
@@ -532,6 +536,22 @@ the failure injection cases run when Linux `strace` is available.
     replace its 4096-byte allocation safely and retains dependency 22's
     allocation-failure hazard. Callers can use the tested
     `std::env_checked::current_dir_read_into` with their own buffer.
+26. **Unsigned 64-bit division above `i64::MAX`.** Compile
+    `tests/fixtures/stdlib_foundation/repro_u64_division.lani` with
+    `--stdlib-root stdlib --emit x86_64` and run the ELF. It exits 1 because
+    `18446744073709551615 / 2` as `u64` does not equal the correct
+    `9223372036854775807`. A candidate `core::number_u64` module compiled but
+    failed its executable saturating-multiplication case, which relies on
+    division for its overflow guard. The candidate was removed rather than
+    publishing arithmetic with incorrect high-value behavior.
+27. **Specialized generic range method dispatch.** Compile
+    `tests/fixtures/stdlib_foundation/repro_u32_range_method.lani` with
+    `--stdlib-root tests/fixtures/stdlib_foundation/repro_u32_range_method_root`
+    and `--emit x86_64`, then run the ELF. It exits 2: the free u32 function
+    correctly excludes `1` from a range starting at `2147483648`, but the
+    corresponding `RangeFrom<u32>::contains` method returns true. The minimal
+    imported module defines both `RangeFrom<i32>` and `RangeFrom<u32>` impls.
+    Unsigned range extensions were removed until method dispatch is correct.
 
 These are compiler/runtime dependencies, not stdlib implementations in Rust or
 Python. They should be handled in the parallel compiler task before extending
