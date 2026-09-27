@@ -1,0 +1,111 @@
+module app::main;
+import std::fs;
+
+fn main() -> i32 {
+    if (std::fs::FILESYSTEM_RUNTIME_ABI_VERSION != 1 ||
+        std::fs::FILESYSTEM_SERVICE_ID != 2 ||
+        std::fs::FILESYSTEM_SERVICE_STATUS_UNAVAILABLE != 1 ||
+        std::fs::FILESYSTEM_SERVICE_STATUS_AVAILABLE != 2 ||
+        !std::fs::FILESYSTEM_HAS_RUNTIME_BINDING ||
+        !std::fs::FILESYSTEM_OPEN_READ_HAS_RUNTIME_BINDING ||
+        !std::fs::FILESYSTEM_OPEN_WRITE_HAS_RUNTIME_BINDING ||
+        !std::fs::FILESYSTEM_OPEN_APPEND_HAS_RUNTIME_BINDING ||
+        !std::fs::FILESYSTEM_CLOSE_HAS_RUNTIME_BINDING ||
+        !std::fs::FILESYSTEM_READ_HAS_RUNTIME_BINDING ||
+        !std::fs::FILESYSTEM_WRITE_HAS_RUNTIME_BINDING ||
+        !std::fs::FILESYSTEM_REMOVE_FILE_HAS_RUNTIME_BINDING ||
+        !std::fs::FILESYSTEM_CREATE_DIR_HAS_RUNTIME_BINDING ||
+        !std::fs::FILESYSTEM_REMOVE_DIR_HAS_RUNTIME_BINDING ||
+        !std::fs::FILESYSTEM_RENAME_HAS_RUNTIME_BINDING ||
+        std::fs::FILESYSTEM_OPERATION_OK != 0 ||
+        std::fs::FILESYSTEM_OPERATION_UNAVAILABLE != -1 ||
+        std::fs::FILE_HANDLE_INVALID != -1) {
+        return 1;
+    }
+    if (std::fs::filesystem_runtime_abi_version() != 1 ||
+        std::fs::filesystem_service_id() != 2 ||
+        !std::fs::filesystem_service_is_known() ||
+        !std::fs::filesystem_contract_metadata_is_available() ||
+        std::fs::filesystem_service_status() != 2 ||
+        !std::fs::filesystem_is_available() ||
+        std::fs::filesystem_is_blocked() ||
+        std::fs::filesystem_is_known_but_unbound() ||
+        std::fs::filesystem_requires_runtime_binding() ||
+        std::fs::filesystem_host_abi_is_contract_only() ||
+        !std::fs::file_io_is_executable() ||
+        std::fs::file_io_is_blocked() ||
+        std::fs::file_io_is_known_but_unbound() ||
+        std::fs::file_io_requires_runtime_binding()) {
+        return 2;
+    }
+    if (std::fs::filesystem_operation_ok() != 0 ||
+        std::fs::filesystem_operation_unavailable() != -1 ||
+        !std::fs::filesystem_operation_succeeded(0) ||
+        !std::fs::filesystem_operation_succeeded(7) ||
+        std::fs::filesystem_operation_succeeded(-1) ||
+        !std::fs::filesystem_operation_failed(-1) ||
+        std::fs::filesystem_operation_failed(0) ||
+        !std::fs::filesystem_operation_is_unavailable(-1) ||
+        std::fs::filesystem_operation_is_unavailable(-2) ||
+        std::fs::filesystem_operation_is_fail_closed(-1) ||
+        std::fs::file_handle_invalid() != -1 ||
+        !std::fs::file_handle_is_valid(0) ||
+        std::fs::file_handle_is_valid(-1) ||
+        !std::fs::file_handle_is_invalid(-1) ||
+        std::fs::file_handle_is_invalid(0)) {
+        return 3;
+    }
+    if (!std::fs::open_read_is_executable() ||
+        std::fs::open_read_is_blocked() ||
+        std::fs::open_read_is_known_but_unbound() ||
+        std::fs::open_read_requires_runtime_binding() ||
+        !std::fs::open_write_is_executable() ||
+        std::fs::open_write_is_blocked() ||
+        std::fs::open_write_is_known_but_unbound() ||
+        std::fs::open_write_requires_runtime_binding() ||
+        !std::fs::open_append_is_executable() ||
+        std::fs::open_append_is_blocked() ||
+        std::fs::open_append_is_known_but_unbound() ||
+        std::fs::open_append_requires_runtime_binding()) {
+        return 4;
+    }
+    if (!std::fs::close_is_executable() ||
+        std::fs::close_is_blocked() ||
+        std::fs::close_is_known_but_unbound() ||
+        std::fs::close_requires_runtime_binding() ||
+        !std::fs::read_is_executable() ||
+        std::fs::read_is_blocked() ||
+        std::fs::read_is_known_but_unbound() ||
+        std::fs::read_requires_runtime_binding() ||
+        !std::fs::write_is_executable() ||
+        std::fs::write_is_blocked() ||
+        std::fs::write_is_known_but_unbound() ||
+        std::fs::write_requires_runtime_binding()) {
+        return 5;
+    }
+    if (!std::fs::path_mutation_api_is_executable() ||
+        std::fs::path_mutation_api_is_blocked() ||
+        std::fs::path_mutation_api_is_known_but_unbound() ||
+        std::fs::path_mutation_api_requires_runtime_binding() ||
+        !std::fs::remove_file_is_executable() ||
+        std::fs::remove_file_is_blocked() ||
+        std::fs::remove_file_is_known_but_unbound() ||
+        std::fs::remove_file_requires_runtime_binding() ||
+        !std::fs::create_dir_is_executable() ||
+        std::fs::create_dir_is_blocked() ||
+        std::fs::create_dir_is_known_but_unbound() ||
+        std::fs::create_dir_requires_runtime_binding()) {
+        return 6;
+    }
+    if (!std::fs::remove_dir_is_executable() ||
+        std::fs::remove_dir_is_blocked() ||
+        std::fs::remove_dir_is_known_but_unbound() ||
+        std::fs::remove_dir_requires_runtime_binding() ||
+        !std::fs::rename_is_executable() ||
+        std::fs::rename_is_blocked() ||
+        std::fs::rename_is_known_but_unbound() ||
+        std::fs::rename_requires_runtime_binding()) {
+        return 7;
+    }
+    return 0;
+}

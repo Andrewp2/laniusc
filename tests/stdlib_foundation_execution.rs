@@ -132,6 +132,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "std_fs_metadata",
+            "tests/fixtures/stdlib_foundation/std_fs_metadata.lani",
+            0,
+            b"",
+        ),
+        (
             "process_exit",
             "sample_programs/process_exit.lani",
             7,
@@ -1234,6 +1240,13 @@ fn executable_core_function_surface_has_runtime_cases() {
             io_fixtures.as_str(),
             54,
             12,
+        ),
+        (
+            "std::fs",
+            include_str!("../stdlib/std/fs.lani"),
+            include_str!("fixtures/stdlib_foundation/std_fs_metadata.lani"),
+            67,
+            18,
         ),
     ] {
         let mut function_count = 0;
