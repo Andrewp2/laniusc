@@ -34,6 +34,84 @@ fn imported_aggregate_returns_execute_on_x86() {
 }
 
 #[test]
+fn local_helpers_forward_imported_option_and_result_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for name in [
+        "repro_option_u16_local_return",
+        "option_result_u16_local_returns",
+        "option_result_f32_local_returns",
+    ] {
+        let entry = root.join(format!("tests/fixtures/stdlib_foundation/{name}.lani"));
+        let stdlib_root = root.join("stdlib");
+        let bytes = common::run_gpu_codegen_with_timeout(name, move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+        })
+        .unwrap_or_else(|error| panic!("{name}: compile: {error}"));
+
+        #[cfg(all(unix, target_arch = "x86_64"))]
+        {
+            let output = common::run_x86_64_elf_output(name, name, &bytes);
+            assert_eq!(output.status.code(), Some(0), "{name}: {output:?}");
+        }
+        #[cfg(not(all(unix, target_arch = "x86_64")))]
+        let _ = bytes;
+    }
+}
+
+#[test]
+fn imported_concrete_option_and_result_returns_cover_payload_widths_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let stdlib_root = root.join("stdlib");
+    for (module, suffix, ty, value) in [
+        ("i8", "I8", "i8", "-128"),
+        ("u8", "U8", "u8", "255"),
+        ("i16", "I16", "i16", "-32768"),
+        ("u16", "U16", "u16", "65535"),
+        ("i32", "I32", "i32", "-2147483648"),
+        ("u32", "U32", "u32", "4294967295"),
+        ("bool", "Bool", "bool", "true"),
+        ("f32", "F32", "f32", "-2.5"),
+    ] {
+        let source = format!(
+            "module app::main;\n\
+             import core::option_{module};\n\
+             import core::result_{module};\n\
+             fn forward_option(value: {ty}) -> core::option_{module}::Option{suffix} {{\n\
+                 return core::option_{module}::some(value);\n\
+             }}\n\
+             fn forward_result(value: {ty}) -> core::result_{module}::Result{suffix} {{\n\
+                 return core::result_{module}::ok(value);\n\
+             }}\n\
+             fn main() -> i32 {{\n\
+                 let option: core::option_{module}::Option{suffix} = forward_option({value});\n\
+                 if (!core::option_{module}::contains(option, {value})) {{ return 1; }}\n\
+                 let result: core::result_{module}::Result{suffix} = forward_result({value});\n\
+                 if (!core::result_{module}::contains(result, {value})) {{ return 2; }}\n\
+                 return 0;\n\
+             }}\n"
+        );
+        let temp = common::TempArtifact::new("laniusc", &format!("forward_{module}"), Some("lani"));
+        temp.write_str(&source);
+        let entry = temp.path().to_owned();
+        let stdlib_root = stdlib_root.clone();
+        let label = format!("local imported {module} Option/Result return");
+        let bytes = common::run_gpu_codegen_with_timeout(&label, move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+        })
+        .unwrap_or_else(|error| panic!("{label}: compile: {error}"));
+
+        #[cfg(all(unix, target_arch = "x86_64"))]
+        {
+            let output =
+                common::run_x86_64_elf_output(&label, &format!("forward_{module}"), &bytes);
+            assert_eq!(output.status.code(), Some(0), "{label}: {output:?}");
+        }
+        #[cfg(not(all(unix, target_arch = "x86_64")))]
+        let _ = bytes;
+    }
+}
+
+#[test]
 fn imported_scalar_result_after_aggregate_argument_uses_correct_abi_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_foundation/repro_vec_get_empty.lani");

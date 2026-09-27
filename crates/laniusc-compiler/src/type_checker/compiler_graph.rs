@@ -2612,6 +2612,9 @@ fn add_dependency_page_replay_passes(
     declaration_field_count: ResourceId,
     resolved_type_decl: ResourceId,
 ) -> Result<(), String> {
+    let type_instance_aggregate_word_count = graph
+        .resource_id("type_instance_aggregate_word_count")
+        .ok_or_else(|| "missing type-instance aggregate layout workspace".to_owned())?;
     for operation in [
         DEPENDENCY_MODULE_LOOKUP_CLEAR.with_name(names.clear_module_lookup),
         DEPENDENCY_MODULE_LOOKUP_BUILD.with_name(names.build_module_lookup),
@@ -2651,6 +2654,9 @@ fn add_dependency_page_replay_passes(
         reflected_bindings![
             "resolved_dependency_decl" => resolved_type_decl: Read,
             "canonical_type_roots" => final_roots: Read,
+            "declaration_generic_arity" => declaration_generic_arity: Read,
+            "declaration_field_count" => declaration_field_count: Read,
+            "type_instance_aggregate_word_count" => type_instance_aggregate_word_count: Write,
         ],
     )?;
     graph.add_indirect_dispatch(names.project_types, "path_dispatch_args")?;
@@ -4090,8 +4096,11 @@ fn build_graph(
         reflected_bindings![
             "resolved_dependency_decl" => dependency_resolved_type_decl: Read,
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
+            "declaration_field_count" => dependency_declaration_field_count: Read,
             "type_expr_ref_tag" => _type_expr_ref_tag: Write,
             "type_expr_ref_payload" => _type_expr_ref_payload: Write,
+            "type_instance_aggregate_word_count" => _type_instance_aggregate_word_count: Write,
             "module_type_path_type" => _module_type_path_type: Write,
             "module_type_path_status" => _module_type_path_status: Write,
             "external_type_library_id" => _external_type_library_id: Write,
@@ -4130,6 +4139,9 @@ fn build_graph(
         reflected_bindings![
             "resolved_dependency_decl" => dependency_resolved_type_decl: Read,
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
+            "declaration_field_count" => dependency_declaration_field_count: Read,
+            "type_instance_aggregate_word_count" => _type_instance_aggregate_word_count: Write,
         ],
     )?;
     graph.add_indirect_dispatch(
@@ -4415,6 +4427,7 @@ fn build_graph(
                     "compact_expr_scalar_type" => final_scalar,
                     "type_instance_decl_token" => _type_instance_decl_token: Read,
                     "type_instance_aggregate_word_count" => _type_instance_aggregate_word_count: Read,
+                    "path_owner_token" => _path_owner_token: Read,
                     "resolved_type_decl" => _resolved_type_decl: Read,
                     "decl_name_token" => decl_name_token: Read,
                     "semantic_expr_ref_tag_by_hir" => semantic_expr_ref_tag_by_hir: Write,

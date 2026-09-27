@@ -22,8 +22,11 @@ StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_dependency_decl;
 StructuredBuffer<uint> dependency_resolved_value_decl;
 StructuredBuffer<uint> canonical_type_roots;
+StructuredBuffer<uint> declaration_generic_arity;
+StructuredBuffer<uint> declaration_field_count;
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
+RWStructuredBuffer<uint> type_instance_aggregate_word_count;
 RWStructuredBuffer<uint> module_type_path_type;
 RWStructuredBuffer<uint> module_type_path_status;
 RWStructuredBuffer<uint> external_type_library_id;
@@ -40,9 +43,11 @@ static const uint INTERFACE_TYPE_SCALAR = 1u;
 static const uint INTERFACE_TYPE_DECLARATION = 3u;
 static const uint INTERFACE_TYPE_FUNCTION = 7u;
 static const uint HIR_ITEM_KIND_CONST = 3u;
+static const uint HIR_ITEM_KIND_STRUCT = 6u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint IMPORTED_PAYLOAD_VARIANT = 10u;
+static const uint MEMBER_FIELD = 4u;
 static const uint MEMBER_GENERIC_TYPE = 2u;
 static const uint MEMBER_GENERIC_CONST = 3u;
 static const uint MEMBER_ENUM_VARIANT = 5u;
@@ -51,6 +56,33 @@ static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
+
+uint concrete_flat_struct_words(uint declaration_i)
+{
+    uint base = declaration_i * DECL_WORDS;
+    uint start = dependency_declaration_word(base + 8u);
+    uint count = dependency_declaration_word(base + 9u);
+    if (start > dependency_member_count() ||
+        count > dependency_member_count() - start)
+        return 0u;
+    uint words = 0u;
+    for (uint offset = 0u; offset < count; offset += 1u)
+    {
+        uint member_base = (start + offset) * MEMBER_WORDS;
+        if (dependency_member_word(member_base + 1u) != MEMBER_FIELD)
+            continue;
+        uint type_i = dependency_member_word(member_base + 7u);
+        if (type_i >= dependency_type_count()) return 0u;
+        uint root = canonical_type_roots[type_i];
+        if (root >= dependency_type_count() ||
+            dependency_type_word(root * TYPE_WORDS) != INTERFACE_TYPE_SCALAR)
+            return 0u;
+        uint scalar = dependency_type_word(root * TYPE_WORDS + 1u);
+        if (scalar == 0u || scalar == 7u) return 0u;
+        words += 1u;
+    }
+    return words == declaration_field_count[declaration_i] ? words : 0u;
+}
 
 uint name_byte(uint byte_i)
 {
@@ -211,6 +243,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         type_expr_ref_tag[owner_token] = TYPE_REF_EXTERNAL_CANONICAL;
         type_expr_ref_payload[owner_token] = root;
+        // A concrete imported struct's ABI width is already checked by the
+        // dependency type index. Preserve it at the resolved type-path token
+        // so a local function returning that type can use the same aggregate
+        // return convention as an imported function. Generic declarations and
+        // enums require their own resolved layout and stay at width zero.
+        if (type_kind == INTERFACE_TYPE_DECLARATION &&
+            dependency_declaration_word(declaration_base + 6u) == HIR_ITEM_KIND_STRUCT &&
+            declaration_generic_arity[declaration_i] == 0u)
+            type_instance_aggregate_word_count[owner_token] =
+                concrete_flat_struct_words(declaration_i);
         external_type_library_id[owner_token] = type_kind == 3u
             ? dependency_type_word(type_base + 1u)
             : dependency_type_library_id(root);

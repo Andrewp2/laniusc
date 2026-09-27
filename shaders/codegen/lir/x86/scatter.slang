@@ -668,9 +668,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // classification before using that width as a result-shape fallback.
     bool imported_aggregate_result = op == X86_LIR_OP_CALL_SYMBOL &&
         x86_imported_call_result_words(source) != 0u;
+    bool local_aggregate_result = op == X86_LIR_OP_CALL &&
+        call_result_words != 0u;
     uint metadata = (source.type_id & 0xffu) | (source.flags << 8u) |
         (x86_semantic_type_is_aggregate(source) || copy_words != 0u ||
-         imported_aggregate_result
+         imported_aggregate_result || local_aggregate_result
             ? X86_LIR_METADATA_AGGREGATE : 0u);
     // Alias width follows the checked type/pair metadata. Narrow local stores
     // initialize four bytes even though their stack homes occupy eight bytes.

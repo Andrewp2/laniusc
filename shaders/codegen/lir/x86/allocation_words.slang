@@ -141,6 +141,22 @@ uint parallel_register_location(uint row, uint position, uint total)
     // result as an ordinary scalar lets the first load overwrite RAX and makes
     // the second load dereference field zero as a pointer.
     if (x86_semantic_type_is_aggregate(core)) return INVALID;
+    // Imported canonical refs can have no nominal type ID on the OptIR row.
+    // Their checked result width still requires an address and payload slots;
+    // assigning a register here makes the emitter write beyond the frame and
+    // can overwrite a callee-saved register's home.
+    if (op == SEMANTIC_LIR_OP_CALL_SYMBOL &&
+        x86_imported_call_result_words(core) != 0u)
+        return INVALID;
+    if (op == SEMANTIC_LIR_OP_CALL)
+    {
+        uint callee = opt_ir_operands[row].a;
+        uint function_total = min(gParams.function_capacity,
+            semantic_lir_function_total[0u]);
+        if (callee < function_total &&
+            semantic_lir_functions[callee].result_word_count != 0u)
+            return INVALID;
+    }
     uint last = x86_last_use_by_semantic[row];
     if (last <= position) return INVALID;
 

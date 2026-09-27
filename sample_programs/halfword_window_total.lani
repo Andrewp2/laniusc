@@ -5,16 +5,16 @@ import core::number_u16;
 import core::option_u16;
 import core::result_u16;
 
-fn first_index_in_band(values: [u16], len: i32, band: core::range_u16::RangeInclusiveU16) -> i32 {
+fn first_in_band(values: [u16], len: i32, band: core::range_u16::RangeInclusiveU16) -> core::option_u16::OptionU16 {
     let index: i32 = 0;
     while (index < len) {
         let value: u16 = core::slice_u16::get_or(values, len, index, 0);
         if (core::range_u16::contains_inclusive(band, value)) {
-            return index;
+            return core::option_u16::some(value);
         }
         index += 1;
     }
-    return -1;
+    return core::option_u16::none();
 }
 
 fn main() -> i32 {
@@ -27,11 +27,7 @@ fn main() -> i32 {
     if (core::slice_u16::sort(readings, 6) != 6) { return 1; }
 
     let band: core::range_u16::RangeInclusiveU16 = core::range_u16::range_inclusive(four, high);
-    let first_index: i32 = first_index_in_band(readings, 6, band);
-    let first: core::option_u16::OptionU16 = core::option_u16::none();
-    if (first_index >= 0) {
-        first = core::option_u16::some(core::slice_u16::get_or(readings, 6, first_index, 0));
-    }
+    let first: core::option_u16::OptionU16 = first_in_band(readings, 6, band);
     let chosen: core::result_u16::ResultU16 = core::option_u16::ok_or(first, maximum);
     if (!core::result_u16::contains(chosen, four)) { return 2; }
 

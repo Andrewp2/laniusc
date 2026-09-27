@@ -21,6 +21,7 @@ StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_count_out;
+StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
@@ -43,6 +44,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint HIR_TYPE = 5u;
@@ -102,6 +104,15 @@ uint type_head_token(uint node)
             return path_segment_token[row];
     }
     return node < active_hir_count() ? compact_hir_core[node].token_start : INVALID;
+}
+
+uint external_type_path_width(uint node)
+{
+    uint path = path_id_by_owner_hir[node];
+    uint path_count = min(path_count_out[0u], gParams.n_hir_nodes);
+    uint owner = path < path_count ? path_owner_token[path]
+        : compact_hir_core[node].token_start;
+    return valid_token(owner) ? type_instance_aggregate_word_count[owner] : 0u;
 }
 
 uint resolved_path_decl_token(uint node)
@@ -224,6 +235,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 tag = type_expr_ref_tag[token];
                 payload = type_expr_ref_payload[token];
             }
+            // Qualified dependency paths publish their canonical reference
+            // at the path owner. The final segment token is only the written
+            // name and may have no independently resolved type reference.
+            if (tag == TYPE_REF_INVALID)
+            {
+                uint path = path_id_by_owner_hir[node];
+                uint path_count = min(path_count_out[0u], gParams.n_hir_nodes);
+                uint owner = path < path_count ? path_owner_token[path]
+                    : core.token_start;
+                if (valid_token(owner))
+                {
+                    tag = type_expr_ref_tag[owner];
+                    payload = type_expr_ref_payload[owner];
+                }
+            }
             // Type rows, including function returns and declaration fields,
             // need the resolver's declaration identity for the same reason as
             // struct literals: scalar type-code windows cannot encode an
@@ -285,6 +311,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         valid_hir(node) && compact_hir_core[node].kind == HIR_CALL_EXPR
             ? semantic_aggregate_word_count_by_hir[node]
             : tag == TYPE_REF_INSTANCE && valid_token(payload)
-                ? type_instance_aggregate_word_count[payload] : 0u;
+                ? type_instance_aggregate_word_count[payload]
+            : tag == TYPE_REF_EXTERNAL_CANONICAL && valid_hir(node) &&
+              compact_hir_core[node].kind == HIR_TYPE
+                ? external_type_path_width(node) : 0u;
     semantic_array_length_by_hir[node] = INVALID;
 }
