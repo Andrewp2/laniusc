@@ -16,7 +16,7 @@ fn compile_fixture(name: &str) -> Vec<u8> {
 fn write_executable(bytes: &[u8], name: &str) -> common::TempArtifact {
     use std::os::unix::fs::PermissionsExt;
 
-    let executable = common::TempArtifact::new("laniusc_vec_i32", name, None);
+    let executable = common::TempArtifact::new("laniusc_vec", name, None);
     executable.write_bytes(bytes);
     let mut permissions = std::fs::metadata(executable.path())
         .expect("stat vector fixture")
@@ -31,6 +31,8 @@ fn vector_growth_failures_leave_storage_unchanged_on_x86() {
     for (name, syscall, normal_exit) in [
         ("vec_i32_alloc_failure", "mmap", 1),
         ("vec_i32_realloc_failure", "mremap", 4),
+        ("vec_u32_alloc_failure", "mmap", 1),
+        ("vec_u32_realloc_failure", "mremap", 4),
     ] {
         let bytes = compile_fixture(name);
 
@@ -49,7 +51,7 @@ fn vector_growth_failures_leave_storage_unchanged_on_x86() {
             {
                 continue;
             }
-            let trace = common::TempArtifact::new("laniusc_vec_i32", "trace", None);
+            let trace = common::TempArtifact::new("laniusc_vec", "trace", None);
             let injected = common::short_process_output_with_timeout(
                 format!("{name} injected {syscall} failure"),
                 std::process::Command::new("strace")

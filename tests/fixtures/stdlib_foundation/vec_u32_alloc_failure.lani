@@ -1,0 +1,9 @@
+module app::main;
+import std::vec_u32;
+
+fn main() -> i32 {
+    let value: std::vec_u32::VecU32 = std::vec_u32::try_with_capacity(2);
+    if (std::vec_u32::capacity(value) != 0 || std::vec_u32::len(value) != 0) { return 1; }
+    std::vec_u32::destroy(value);
+    return 0;
+}

@@ -325,6 +325,18 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "vec_u32",
+            "tests/fixtures/stdlib_foundation/vec_u32.lani",
+            0,
+            b"",
+        ),
+        (
+            "vector_unsigned_checksum",
+            "sample_programs/vector_unsigned_checksum.lani",
+            0,
+            b"4\n",
+        ),
+        (
             "vector_square_sum",
             "sample_programs/vector_square_sum.lani",
             0,
@@ -727,21 +739,32 @@ fn executable_core_function_surface_has_runtime_cases() {
         assert_eq!(count, expected_count);
     }
 
-    let vector_source = include_str!("../stdlib/std/vec_i32.lani");
-    let vector_fixture = include_str!("fixtures/stdlib_foundation/vec_i32.lani");
-    let mut vector_function_count = 0;
-    for line in vector_source.lines() {
-        let Some(tail) = line.strip_prefix("pub fn ") else {
-            continue;
-        };
-        let name = tail
-            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-            .next()
-            .expect("public vector function has a name");
-        let call = format!("std::vec_i32::{name}(");
-        assert!(vector_fixture.contains(&call), "{call} lacks a runtime case");
-        vector_function_count += 1;
+    for (module, vector_source, vector_fixture) in [
+        (
+            "vec_i32",
+            include_str!("../stdlib/std/vec_i32.lani"),
+            include_str!("fixtures/stdlib_foundation/vec_i32.lani"),
+        ),
+        (
+            "vec_u32",
+            include_str!("../stdlib/std/vec_u32.lani"),
+            include_str!("fixtures/stdlib_foundation/vec_u32.lani"),
+        ),
+    ] {
+        let mut vector_function_count = 0;
+        for line in vector_source.lines() {
+            let Some(tail) = line.strip_prefix("pub fn ") else {
+                continue;
+            };
+            let name = tail
+                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .next()
+                .expect("public vector function has a name");
+            let call = format!("std::{module}::{name}(");
+            assert!(vector_fixture.contains(&call), "{call} lacks a runtime case");
+            vector_function_count += 1;
+        }
+        assert_eq!(vector_function_count, 12);
+        assert!(vector_fixture.contains(&format!("std::{module}::MAX_CAPACITY")));
     }
-    assert_eq!(vector_function_count, 12);
-    assert!(vector_fixture.contains("std::vec_i32::MAX_CAPACITY"));
 }

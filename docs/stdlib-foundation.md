@@ -68,6 +68,7 @@ limited to native x86_64 output from this worktree.
 | `std::random_checked` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded and inclusive unsigned and signed outputs, forced draws and rejection, full-range failure fallbacks, and secure i32 slice shuffling with preserved contents, a forced swap, and injected failure. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and all 31 public functions | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. Redundant no-argument functions that failed natively were removed in favor of the tested constants. Allocation and host normalization are unavailable. |
 | `std::vec_i32` all 12 public functions and its capacity constant | Executable on x86_64 Linux | `tests/fixtures/stdlib_foundation/vec_i32.lani` checks construction, growth, element access and mutation, bounds, reserve, pop, clear, and destruction. `tests/stdlib_vec_i32_execution.rs` injects allocation and reallocation failures and checks the vector and prior data stay unchanged. This is a linear-ownership API by convention; source-level moves are not enforced. |
+| `std::vec_u32` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, `2^31`, and `u32::MAX`. The allocation-failure suite injects failed initial allocation and reallocation; the real checksum sample combines it with `core::number_u32` and `OptionU32`. Storage uses 32-bit cells and preserves every unsigned bit pattern. Ownership is linear by convention. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
 | `test::assert` all 8 public helpers | Executable on x86_64 Linux | `tests/stdlib_assert_execution.rs` runs all passing conditions and separately checks that every false condition terminates with SIGILL. The helpers use no allocation or host calls. See dependency 35 for a separate compiler issue with explicit void returns. |
 | `std::vec` | Contract-only after stub removal | The former `Vec<T>::push` returned without storing its argument and was removed. `Vec<T>::new`, `len`, and `is_empty` remain as an empty-value type-checking contract; no storage or mutation is provided. |
@@ -269,7 +270,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `align_up` and `align_down` return zero for zero alignment, and `align_up`
   returns zero if rounding would overflow. Callers that need an arbitrary
   failure value can use `core::number_u32::{align_up_or,align_down_or}`.
-- `std::vec_i32` owns an allocated i32 array. `try_push` doubles capacity when
+- `std::vec_i32` and `std::vec_u32` own allocated 32-bit cells. The unsigned
+  module accesses those cells through the currently available i32 raw-slice
+  intrinsic and casts bit patterns on read and write, preserving the high bit.
+  `try_push` doubles capacity when
   full, starting at four elements, and returns the prior vector unchanged on
   allocation failure. Compare the returned length with the prior length to
   detect failure. `try_reserve` grows to the requested absolute capacity;
@@ -783,8 +787,9 @@ also fixes the imported struct-return relocation path described below.
    independent of caller-supplied lengths.
 4. **Generic allocation-backed vectors remain blocked.** The old `std::vec`
    silently dropped values in `push`, so that stub was removed. The empty
-   generic `Vec<T>` remains a type-checking contract. `std::vec_i32` now has
-   tested storage, growth, mutation, failure, and destruction on x86 Linux.
+   generic `Vec<T>` remains a type-checking contract. `std::vec_i32` and
+   `std::vec_u32` have tested storage, growth, mutation, failure, and
+   destruction on x86 Linux.
    A generic collection still needs executable generic value layout and a
    language-level move/borrow rule to enforce ownership rather than relying
    on caller discipline.
