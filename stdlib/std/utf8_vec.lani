@@ -338,6 +338,49 @@ pub fn try_remove_scalar(
     return shortened;
 }
 
+// Remove count complete Unicode scalars starting at scalar_index. Both ends
+// must be valid scalar boundaries in the complete old text. Invalid text,
+// negative indices or counts, and out-of-range requests leave value and its
+// bytes unchanged. A valid zero-count range is an unchanged success. Removal
+// does not allocate and keeps capacity for reuse.
+pub fn try_remove_scalar_range(
+    value: std::vec_u8::VecU8, scalar_index: i32, count: i32
+) -> std::vec_u8::VecU8 {
+    let length: i32 = std::vec_u8::len(value);
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(
+        std::vec_u8::data_ptr(value), length);
+    let scalar_count: i32 = core::utf8::scalar_count_or(cells, length, -1);
+    if (scalar_count < 0 || scalar_index < 0 || scalar_index > scalar_count ||
+        count < 0 || count > scalar_count - scalar_index) {
+        return value;
+    }
+    if (count == 0) {
+        return value;
+    }
+    let start: i32 = core::utf8::byte_offset_of_scalar_or(
+        cells, length, scalar_index, -1);
+    let end: i32 = core::utf8::byte_offset_of_scalar_or(
+        cells, length, scalar_index + count, -1);
+    if (start < 0 || end <= start || end > length) {
+        return value;
+    }
+    let read: i32 = end;
+    let write: i32 = start;
+    while (read < length) {
+        cells[write] = cells[read];
+        read += 1;
+        write += 1;
+    }
+    let shortened: std::vec_u8::VecU8 = value;
+    let width: i32 = end - start;
+    let index: i32 = 0;
+    while (index < width) {
+        shortened = std::vec_u8::try_pop(shortened);
+        index += 1;
+    }
+    return shortened;
+}
+
 // Replace one existing scalar with another, shifting bytes when their UTF-8
 // widths differ. Validate the complete old text and the new scalar first.
 // Invalid text, index, scalar, capacity, or allocation returns the original
