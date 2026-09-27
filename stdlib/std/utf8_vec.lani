@@ -1,0 +1,175 @@
+// Owned UTF-8 text built from std::vec_u8's caller-owned byte cells.
+// Each byte occupies one 32-bit allocation cell. The caller keeps only the
+// newest returned VecU8 and destroys it once; moves are not enforced yet.
+// Read-only functions validate the complete byte sequence before answering.
+module std::utf8_vec;
+import std::vec_u8;
+import core::mem;
+import core::utf8;
+
+pub fn new() -> std::vec_u8::VecU8 {
+    return std::vec_u8::new();
+}
+
+pub fn byte_len(value: std::vec_u8::VecU8) -> i32 {
+    return std::vec_u8::len(value);
+}
+
+pub fn is_empty(value: std::vec_u8::VecU8) -> bool {
+    return std::vec_u8::is_empty(value);
+}
+
+pub fn is_valid(value: std::vec_u8::VecU8) -> bool {
+    let len: i32 = std::vec_u8::len(value);
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(value), len);
+    return core::utf8::codes_are_valid(cells, len);
+}
+
+// Invalid UTF-8 returns fallback; the empty text has zero scalars. A caller
+// fallback may equal a valid count, so call is_valid when that matters.
+pub fn scalar_count_or(value: std::vec_u8::VecU8, fallback: i32) -> i32 {
+    let len: i32 = std::vec_u8::len(value);
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(value), len);
+    return core::utf8::scalar_count_or(cells, len, fallback);
+}
+
+// Invalid UTF-8 and out-of-range indices return fallback. A fallback may
+// equal a valid scalar value.
+pub fn scalar_at_or(value: std::vec_u8::VecU8, index: i32, fallback: u32) -> u32 {
+    let len: i32 = std::vec_u8::len(value);
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(value), len);
+    return core::utf8::scalar_at_or(cells, len, index, fallback);
+}
+
+pub fn index_of_scalar_or(value: std::vec_u8::VecU8, needle: u32, fallback: i32) -> i32 {
+    let len: i32 = std::vec_u8::len(value);
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(value), len);
+    return core::utf8::index_of_scalar_or(cells, len, needle, fallback);
+}
+
+pub fn last_index_of_scalar_or(value: std::vec_u8::VecU8, needle: u32, fallback: i32) -> i32 {
+    let len: i32 = std::vec_u8::len(value);
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(value), len);
+    return core::utf8::last_index_of_scalar_or(cells, len, needle, fallback);
+}
+
+// Append one Unicode scalar atomically. Invalid existing UTF-8, an invalid
+// scalar, capacity overflow, or allocation failure leaves the vector and its
+// bytes unchanged. A successful append increases byte_len by one to four.
+pub fn try_append_scalar(value: std::vec_u8::VecU8, scalar: u32) -> std::vec_u8::VecU8 {
+    let width_u32: u32 = core::utf8::encoded_len_or(scalar, 0);
+    if (width_u32 == 0 || !is_valid(value)) {
+        return value;
+    }
+    let width: i32 = width_u32 as i32;
+    let length: i32 = std::vec_u8::len(value);
+    if (length > std::vec_u8::MAX_CAPACITY - width) {
+        return value;
+    }
+    let needed: i32 = length + width;
+    let grown: std::vec_u8::VecU8 = value;
+    let current_capacity: i32 = std::vec_u8::capacity(grown);
+    if (current_capacity < needed) {
+        let target: i32 = 4;
+        if (current_capacity > 0) {
+            if (current_capacity > std::vec_u8::MAX_CAPACITY / 2) {
+                target = std::vec_u8::MAX_CAPACITY;
+            } else {
+                target = current_capacity * 2;
+            }
+        }
+        if (target < needed) {
+            target = needed;
+        }
+        grown = std::vec_u8::try_reserve(grown, target);
+        if (std::vec_u8::capacity(grown) < needed) {
+            return value;
+        }
+    }
+    let index: u32 = 0;
+    while (index < width_u32) {
+        let byte: u8 = core::utf8::encoded_byte_or(scalar, index, 0);
+        grown = std::vec_u8::try_push(grown, byte);
+        index += 1;
+    }
+    return grown;
+}
+
+// Remove the final Unicode scalar without freeing capacity. Empty or invalid
+// UTF-8 leaves the value unchanged.
+pub fn try_pop_scalar(value: std::vec_u8::VecU8) -> std::vec_u8::VecU8 {
+    let len: i32 = std::vec_u8::len(value);
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(value), len);
+    let count: i32 = core::utf8::scalar_count_or(cells, len, -1);
+    if (count <= 0) {
+        return value;
+    }
+    let start: i32 = core::utf8::byte_offset_of_scalar_or(cells, len, count - 1, -1);
+    let shortened: std::vec_u8::VecU8 = value;
+    while (std::vec_u8::len(shortened) > start) {
+        shortened = std::vec_u8::try_pop(shortened);
+    }
+    return shortened;
+}
+
+// Invalid input makes predicates false, including two identical malformed
+// vectors. Empty prefixes and suffixes match every valid vector.
+pub fn equal(left: std::vec_u8::VecU8, right: std::vec_u8::VecU8) -> bool {
+    let left_len: i32 = std::vec_u8::len(left);
+    let right_len: i32 = std::vec_u8::len(right);
+    let left_cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(left), left_len);
+    let right_cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(right), right_len);
+    return core::utf8::equal_codes(left_cells, left_len, right_cells, right_len);
+}
+
+pub fn starts_with(value: std::vec_u8::VecU8, prefix: std::vec_u8::VecU8) -> bool {
+    let len: i32 = std::vec_u8::len(value);
+    let prefix_len: i32 = std::vec_u8::len(prefix);
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(value), len);
+    let prefix_cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(prefix), prefix_len);
+    return core::utf8::starts_with_codes(cells, len, prefix_cells, prefix_len);
+}
+
+pub fn ends_with(value: std::vec_u8::VecU8, suffix: std::vec_u8::VecU8) -> bool {
+    let len: i32 = std::vec_u8::len(value);
+    let suffix_len: i32 = std::vec_u8::len(suffix);
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(value), len);
+    let suffix_cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(suffix), suffix_len);
+    return core::utf8::ends_with_codes(cells, len, suffix_cells, suffix_len);
+}
+
+// Valid UTF-8 compares lexicographically as -1, 0, or 1. Invalid UTF-8
+// returns fallback, which should be outside that result set when needed.
+pub fn compare_or(left: std::vec_u8::VecU8, right: std::vec_u8::VecU8, fallback: i32) -> i32 {
+    let left_len: i32 = std::vec_u8::len(left);
+    let right_len: i32 = std::vec_u8::len(right);
+    let left_cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(left), left_len);
+    let right_cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(right), right_len);
+    return core::utf8::compare_codes_or(left_cells, left_len, right_cells, right_len, fallback);
+}
+
+// First or last byte offset of a valid complete UTF-8 needle. Invalid or
+// missing input returns fallback. An empty needle matches at 0 or byte_len.
+pub fn index_of_byte_or(value: std::vec_u8::VecU8, needle: std::vec_u8::VecU8, fallback: i32) -> i32 {
+    let len: i32 = std::vec_u8::len(value);
+    let needle_len: i32 = std::vec_u8::len(needle);
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(value), len);
+    let needle_cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(needle), needle_len);
+    return core::utf8::index_of_codes_byte_or(cells, len, needle_cells, needle_len, fallback);
+}
+
+pub fn last_index_of_byte_or(value: std::vec_u8::VecU8, needle: std::vec_u8::VecU8, fallback: i32) -> i32 {
+    let len: i32 = std::vec_u8::len(value);
+    let needle_len: i32 = std::vec_u8::len(needle);
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(value), len);
+    let needle_cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(needle), needle_len);
+    return core::utf8::last_index_of_codes_byte_or(cells, len, needle_cells, needle_len, fallback);
+}
+
+pub fn clear(value: std::vec_u8::VecU8) -> std::vec_u8::VecU8 {
+    return std::vec_u8::clear(value);
+}
+
+pub fn destroy(value: std::vec_u8::VecU8) {
+    std::vec_u8::destroy(value);
+}

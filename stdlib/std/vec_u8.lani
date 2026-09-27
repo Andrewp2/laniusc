@@ -36,6 +36,16 @@ pub fn is_empty(value: VecU8) -> bool {
     return value.length == 0;
 }
 
+// Borrow the underlying 32-bit cells, which hold byte values in 0..=255.
+// Construct a view with core::mem::i32_slice_from_raw_parts(data_ptr(value),
+// len(value)). The pointer is invalid after growth or destruction. Keep the
+// owner alive and do not mutate it while a borrowed view is in use.
+// A new zero-capacity vector returns null; an empty vector that retained its
+// capacity can return a non-null pointer but has zero initialized cells.
+pub fn data_ptr(value: VecU8) -> ptr {
+    return value.storage;
+}
+
 // A negative or oversized request leaves the vector unchanged. Allocation
 // failure does the same and preserves every existing element.
 pub fn try_reserve(value: VecU8, minimum_capacity: i32) -> VecU8 {

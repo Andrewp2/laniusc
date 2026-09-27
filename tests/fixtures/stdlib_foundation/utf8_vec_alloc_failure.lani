@@ -1,0 +1,19 @@
+module app::main;
+import std::utf8_vec;
+import std::vec_u8;
+
+fn main() -> i32 {
+    let value: std::vec_u8::VecU8 = std::utf8_vec::new();
+    value = std::utf8_vec::try_append_scalar(value, 128578);
+    if (std::utf8_vec::byte_len(value) == 4) {
+        std::utf8_vec::destroy(value);
+        return 1;
+    }
+    if (std::utf8_vec::byte_len(value) != 0 ||
+        std::vec_u8::capacity(value) != 0 ||
+        !std::utf8_vec::is_valid(value)) {
+        return 2;
+    }
+    std::utf8_vec::destroy(value);
+    return 0;
+}

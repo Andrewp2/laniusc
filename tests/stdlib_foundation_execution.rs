@@ -732,6 +732,18 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "utf8_text_report",
+            "sample_programs/utf8_text_report.lani",
+            0,
+            b"A\xc2\xa2A\xc2\xa2B5\n",
+        ),
+        (
+            "utf8_vec",
+            "tests/fixtures/stdlib_foundation/utf8_vec.lani",
+            0,
+            b"",
+        ),
+        (
             "vec_i8",
             "tests/fixtures/stdlib_foundation/vec_i8.lani",
             0,
@@ -1495,7 +1507,25 @@ fn executable_core_function_surface_has_runtime_cases() {
             assert!(vector_fixture.contains(&call), "{call} lacks a runtime case");
             vector_function_count += 1;
         }
-        assert_eq!(vector_function_count, 12);
+        let expected_functions = if module == "vec_u8" { 13 } else { 12 };
+        assert_eq!(vector_function_count, expected_functions);
         assert!(vector_fixture.contains(&format!("std::{module}::MAX_CAPACITY")));
     }
+
+    let text_source = include_str!("../stdlib/std/utf8_vec.lani");
+    let text_fixture = include_str!("fixtures/stdlib_foundation/utf8_vec.lani");
+    let mut text_function_count = 0;
+    for line in text_source.lines() {
+        let Some(tail) = line.strip_prefix("pub fn ") else {
+            continue;
+        };
+        let name = tail
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .next()
+            .expect("public UTF-8 vector function has a name");
+        let call = format!("std::utf8_vec::{name}(");
+        assert!(text_fixture.contains(&call), "{call} lacks a runtime case");
+        text_function_count += 1;
+    }
+    assert_eq!(text_function_count, 18);
 }

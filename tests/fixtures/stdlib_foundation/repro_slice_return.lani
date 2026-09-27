@@ -1,0 +1,13 @@
+module app::main;
+import core::mem;
+
+fn view(data: ptr, len: i32) -> [i32] {
+    return core::mem::i32_slice_from_raw_parts(data, len);
+}
+
+fn main() -> i32 {
+    let backing: [i32; 1] = [7];
+    let cells: [i32] = view(core::mem::i32_array_data_ptr(backing), 1);
+    if (cells[0] == 7) { return 0; }
+    return 1;
+}

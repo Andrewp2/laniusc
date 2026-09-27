@@ -1,0 +1,32 @@
+module app::main;
+import std::utf8_vec;
+import std::vec_u8;
+import std::io_utf8;
+import core::utf8;
+import core::mem;
+
+fn main() -> i32 {
+    let text: std::vec_u8::VecU8 = std::utf8_vec::new();
+    text = std::utf8_vec::try_append_scalar(text, 65);
+    text = std::utf8_vec::try_append_scalar(text, 162);
+    text = std::utf8_vec::try_append_scalar(text, 65);
+    text = std::utf8_vec::try_append_scalar(text, 162);
+    text = std::utf8_vec::try_append_scalar(text, 66);
+    if (std::utf8_vec::byte_len(text) != 7 ||
+        std::utf8_vec::index_of_scalar_or(text, 162, -1) != 1 ||
+        std::utf8_vec::last_index_of_scalar_or(text, 162, -1) != 3) {
+        std::utf8_vec::destroy(text);
+        return 1;
+    }
+    let count: i32 = std::utf8_vec::scalar_count_or(text, -1);
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(
+        std::vec_u8::data_ptr(text), std::utf8_vec::byte_len(text));
+    if (!core::utf8::codes_are_valid(cells, 7) ||
+        !std::io_utf8::write_stdout_codes(cells, 7)) {
+        std::utf8_vec::destroy(text);
+        return 2;
+    }
+    std::utf8_vec::destroy(text);
+    print(count);
+    return 0;
+}

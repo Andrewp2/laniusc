@@ -1,0 +1,147 @@
+module app::main;
+import std::utf8_vec;
+import std::vec_u8;
+
+fn main() -> i32 {
+    let empty: std::vec_u8::VecU8 = std::utf8_vec::new();
+    if (std::utf8_vec::byte_len(empty) != 0 ||
+        !std::utf8_vec::is_empty(empty) ||
+        !std::utf8_vec::is_valid(empty) ||
+        std::utf8_vec::scalar_count_or(empty, -9) != 0 ||
+        std::utf8_vec::scalar_at_or(empty, 0, 4294967295) != 4294967295 ||
+        std::utf8_vec::index_of_scalar_or(empty, 65, -9) != -9 ||
+        std::utf8_vec::last_index_of_scalar_or(empty, 65, -9) != -9 ||
+        !std::utf8_vec::equal(empty, empty) ||
+        !std::utf8_vec::starts_with(empty, empty) ||
+        !std::utf8_vec::ends_with(empty, empty) ||
+        std::utf8_vec::compare_or(empty, empty, -9) != 0 ||
+        std::utf8_vec::index_of_byte_or(empty, empty, -9) != 0 ||
+        std::utf8_vec::last_index_of_byte_or(empty, empty, -9) != 0) {
+        return 1;
+    }
+    let text: std::vec_u8::VecU8 = std::utf8_vec::new();
+    text = std::utf8_vec::try_append_scalar(text, 65);
+    text = std::utf8_vec::try_append_scalar(text, 162);
+    text = std::utf8_vec::try_append_scalar(text, 65);
+    text = std::utf8_vec::try_append_scalar(text, 162);
+    text = std::utf8_vec::try_append_scalar(text, 66);
+    if (std::utf8_vec::byte_len(text) != 7 ||
+        std::utf8_vec::is_empty(text) ||
+        !std::utf8_vec::is_valid(text) ||
+        std::utf8_vec::scalar_count_or(text, -9) != 5 ||
+        std::utf8_vec::scalar_at_or(text, 0, 4294967295) != 65 ||
+        std::utf8_vec::scalar_at_or(text, 1, 4294967295) != 162 ||
+        std::utf8_vec::scalar_at_or(text, 4, 4294967295) != 66 ||
+        std::utf8_vec::scalar_at_or(text, 5, 4294967295) != 4294967295 ||
+        std::utf8_vec::index_of_scalar_or(text, 162, -9) != 1 ||
+        std::utf8_vec::last_index_of_scalar_or(text, 162, -9) != 3 ||
+        std::utf8_vec::index_of_scalar_or(text, 8364, -9) != -9) {
+        return 2;
+    }
+    if (std::vec_u8::get_or(text, 0, 0) != 65 ||
+        std::vec_u8::get_or(text, 1, 0) != 194 ||
+        std::vec_u8::get_or(text, 2, 0) != 162 ||
+        std::vec_u8::get_or(text, 3, 0) != 65 ||
+        std::vec_u8::get_or(text, 4, 0) != 194 ||
+        std::vec_u8::get_or(text, 5, 0) != 162 ||
+        std::vec_u8::get_or(text, 6, 0) != 66) {
+        return 3;
+    }
+    let before: i32 = std::utf8_vec::byte_len(text);
+    text = std::utf8_vec::try_append_scalar(text, 55296);
+    if (std::utf8_vec::byte_len(text) != before ||
+        std::utf8_vec::scalar_count_or(text, -9) != 5) {
+        return 4;
+    }
+
+    let prefix: std::vec_u8::VecU8 = std::utf8_vec::new();
+    prefix = std::utf8_vec::try_append_scalar(prefix, 65);
+    prefix = std::utf8_vec::try_append_scalar(prefix, 162);
+    let suffix: std::vec_u8::VecU8 = std::utf8_vec::new();
+    suffix = std::utf8_vec::try_append_scalar(suffix, 162);
+    suffix = std::utf8_vec::try_append_scalar(suffix, 66);
+    if (!std::utf8_vec::equal(text, text) ||
+        std::utf8_vec::equal(text, prefix) ||
+        !std::utf8_vec::starts_with(text, prefix) ||
+        !std::utf8_vec::ends_with(text, suffix) ||
+        !std::utf8_vec::starts_with(text, empty) ||
+        !std::utf8_vec::ends_with(text, empty) ||
+        std::utf8_vec::starts_with(prefix, text) ||
+        std::utf8_vec::ends_with(prefix, text) ||
+        std::utf8_vec::compare_or(prefix, text, -9) != -1 ||
+        std::utf8_vec::compare_or(text, prefix, -9) != 1 ||
+        std::utf8_vec::compare_or(text, text, -9) != 0 ||
+        std::utf8_vec::index_of_byte_or(text, prefix, -9) != 0 ||
+        std::utf8_vec::last_index_of_byte_or(text, prefix, -9) != 3 ||
+        std::utf8_vec::index_of_byte_or(text, suffix, -9) != 4 ||
+        std::utf8_vec::last_index_of_byte_or(text, suffix, -9) != 4 ||
+        std::utf8_vec::index_of_byte_or(text, empty, -9) != 0 ||
+        std::utf8_vec::last_index_of_byte_or(text, empty, -9) != 7) {
+        return 5;
+    }
+    text = std::utf8_vec::try_pop_scalar(text);
+    if (std::utf8_vec::byte_len(text) != 6 ||
+        std::utf8_vec::scalar_count_or(text, -9) != 4) {
+        return 6;
+    }
+    text = std::utf8_vec::try_pop_scalar(text);
+    if (std::utf8_vec::byte_len(text) != 4 ||
+        std::utf8_vec::scalar_count_or(text, -9) != 3) {
+        return 7;
+    }
+    text = std::utf8_vec::clear(text);
+    text = std::utf8_vec::try_pop_scalar(text);
+    if (std::utf8_vec::byte_len(text) != 0 ||
+        !std::utf8_vec::is_valid(text)) {
+        return 8;
+    }
+    text = std::utf8_vec::try_append_scalar(text, 128578);
+    text = std::utf8_vec::try_append_scalar(text, 8364);
+    text = std::utf8_vec::try_append_scalar(text, 1114111);
+    if (std::utf8_vec::byte_len(text) != 11 ||
+        std::utf8_vec::scalar_count_or(text, -9) != 3 ||
+        std::utf8_vec::scalar_at_or(text, 0, 4294967295) != 128578 ||
+        std::utf8_vec::scalar_at_or(text, 1, 4294967295) != 8364 ||
+        std::utf8_vec::scalar_at_or(text, 2, 4294967295) != 1114111) {
+        return 9;
+    }
+
+    let invalid: std::vec_u8::VecU8 = std::vec_u8::new();
+    invalid = std::vec_u8::try_push(invalid, 65);
+    invalid = std::vec_u8::try_push(invalid, 128);
+    if (std::utf8_vec::is_valid(invalid) ||
+        std::utf8_vec::scalar_count_or(invalid, -9) != -9 ||
+        std::utf8_vec::scalar_at_or(invalid, 0, 4294967295) != 4294967295 ||
+        std::utf8_vec::index_of_scalar_or(invalid, 65, -9) != -9 ||
+        std::utf8_vec::last_index_of_scalar_or(invalid, 65, -9) != -9 ||
+        std::utf8_vec::equal(invalid, invalid) ||
+        std::utf8_vec::starts_with(invalid, empty) ||
+        std::utf8_vec::ends_with(invalid, empty) ||
+        std::utf8_vec::compare_or(invalid, empty, -9) != -9 ||
+        std::utf8_vec::index_of_byte_or(invalid, empty, -9) != -9 ||
+        std::utf8_vec::last_index_of_byte_or(invalid, empty, -9) != -9) {
+        return 10;
+    }
+    if (std::utf8_vec::equal(text, invalid) ||
+        std::utf8_vec::starts_with(text, invalid) ||
+        std::utf8_vec::ends_with(text, invalid) ||
+        std::utf8_vec::compare_or(text, invalid, -9) != -9 ||
+        std::utf8_vec::index_of_byte_or(text, invalid, -9) != -9 ||
+        std::utf8_vec::last_index_of_byte_or(text, invalid, -9) != -9) {
+        return 12;
+    }
+    invalid = std::utf8_vec::try_append_scalar(invalid, 66);
+    invalid = std::utf8_vec::try_pop_scalar(invalid);
+    if (std::utf8_vec::byte_len(invalid) != 2 ||
+        std::vec_u8::get_or(invalid, 0, 0) != 65 ||
+        std::vec_u8::get_or(invalid, 1, 0) != 128) {
+        return 11;
+    }
+
+    std::utf8_vec::destroy(invalid);
+    std::utf8_vec::destroy(text);
+    std::utf8_vec::destroy(prefix);
+    std::utf8_vec::destroy(suffix);
+    std::utf8_vec::destroy(empty);
+    return 0;
+}

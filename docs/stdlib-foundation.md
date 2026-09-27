@@ -92,7 +92,8 @@ limited to native x86_64 output from this worktree.
 | `std::path` all 17 constants and all 31 public functions | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. Redundant no-argument functions that failed natively were removed in favor of the tested constants. Allocation and host normalization are unavailable. |
 | `std::vec_i32` all 12 public functions and its capacity constant | Executable on x86_64 Linux | `tests/fixtures/stdlib_foundation/vec_i32.lani` checks construction, growth, element access and mutation, bounds, reserve, pop, clear, and destruction. `tests/stdlib_vec_i32_execution.rs` injects allocation and reallocation failures and checks the vector and prior data stay unchanged. This is a linear-ownership API by convention; source-level moves are not enforced. |
 | `std::vec_u32` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, `2^31`, and `u32::MAX`. The allocation-failure suite injects failed initial allocation and reallocation; the real checksum sample combines it with `core::number_u32` and `OptionU32`. Storage uses 32-bit cells and preserves every unsigned bit pattern. Ownership is linear by convention. |
-| `std::vec_u8` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The byte vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, 128, and 255. The allocation-failure suite injects failed initial allocation and reallocation; the byte checksum sample combines it with `core::byte` and `OptionU8`. Each byte occupies one 32-bit cell because the raw-slice intrinsic currently accepts i32 cells. Ownership is linear by convention. |
+| `std::vec_u8` all 13 public functions and its capacity constant | Executable on x86_64 Linux | The byte vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, 128, and 255. `data_ptr` exposes its 32-bit byte-code cells for a caller-bounded borrowed view; the fixture checks empty and initialized views. The allocation-failure suite injects failed initial allocation and reallocation; the byte checksum sample combines it with `core::byte` and `OptionU8`. Each byte occupies one 32-bit cell because the raw-slice intrinsic currently accepts i32 cells. Ownership is linear by convention. |
+| `std::utf8_vec` all 18 public text helpers | Executable on x86_64 Linux | The runtime fixture constructs text from Unicode scalars, checks multibyte bytes, scalar count and lookup, first and last search, equality, prefixes, suffixes, ordering, byte-offset sequence search, removal, clear, and destruction. It checks malformed caller-modified bytes and invalid scalars leave data unchanged. Injected allocator failures check that a failed scalar append writes no partial encoding and preserves prior bytes. Storage is a `VecU8` with one 32-bit cell per encoded byte and linear ownership by convention. |
 | `std::vec_i8` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The signed byte vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, `-128`, and 127. The allocation-failure suite injects failed initial allocation and reallocation; the signed byte sum sample combines it with `core::number_i8` and `OptionI8`. Each signed byte occupies one 32-bit cell, preserving its sign. Ownership is linear by convention. |
 | `std::vec_u16` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, 32768, and 65535. The allocation-failure suite injects failed initial allocation and reallocation; the halfword checksum sample combines it with `core::number_u16` and `OptionU16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
 | `std::vec_i16` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The signed halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, `-32768`, and 32767. The allocation-failure suite injects failed initial allocation and reallocation; the signed halfword sum sample combines it with `core::number_i16` and `OptionI16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
@@ -366,6 +367,20 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   retain only the newest returned value, must call `destroy` once, and must not
   use aliases or copies after growth or destruction. These ownership rules
   are not yet checked by the language.
+- `std::utf8_vec` stores canonical UTF-8 in `VecU8`. `try_append_scalar`
+  validates the existing complete byte sequence, checks the scalar and
+  capacity bound, and reserves storage for every encoded byte before writing.
+  An invalid scalar, malformed existing text, capacity overflow, or allocation
+  failure returns the original vector unchanged. Compare byte lengths before
+  and after the call to detect failure. `try_pop_scalar` removes one complete
+  final scalar and leaves empty or malformed text unchanged. Read-only
+  operations validate complete text, including bytes beyond a requested
+  match; malformed inputs return false or the caller fallback. Sequence
+  search returns byte offsets, while scalar search returns scalar indices.
+  `std::vec_u8::data_ptr` is a borrowed pointer to its initialized 32-bit
+  cells. A view built from it must not outlive the owner or survive growth or
+  destruction. This is an x86_64 Linux allocation-backed API, separate from
+  the allocation-free `core::utf8` codec and from host I/O.
 - Half-open ranges exclude `end`; inclusive ranges include it. A reversed or
   empty range contains no values and overlaps no range. `RangeFrom<i32>` includes
   its start, `RangeTo<i32>` excludes its end, and `RangeFull` contains all i32
@@ -868,6 +883,11 @@ integer output. It prints `285` and releases its storage.
 checks every push, reads them through a bounded accessor, combines them with
 `core::byte` arithmetic, and uses `OptionU8` for its result. It prints `4` and
 releases its storage.
+
+`sample_programs/utf8_text_report.lani` builds `A¢A¢B` in an owned UTF-8
+vector, validates and searches Unicode scalars, writes its encoded bytes, and
+prints the scalar count. The native fixture checks exact output
+`A¢A¢B5\n` and releases its storage.
 
 `sample_programs/vector_signed_byte_sum.lani` stores signed bytes in
 `std::vec_i8`, checks every push, reads them through a bounded accessor,
@@ -1433,6 +1453,14 @@ also fixes the imported struct-return relocation path described below.
     locals first and then using `[a, e]` compiles and executes, including
     imported `core::slice_char` access. The character-slice fixtures and sample
     use that workaround; direct literal arrays need a type-checker fix.
+49. **Returned slice values in native code.**
+    `tests/fixtures/stdlib_foundation/repro_slice_return.lani` constructs a
+    `[i32]` view in a helper and returns it. GPU `check` succeeds, but native
+    compilation reports `LNC0017`: the slice result has no canonical x86
+    aggregate ABI layout. `std::utf8_vec` uses `std::vec_u8::data_ptr`, which
+    returns a scalar pointer, and constructs the borrowed view at its use
+    site. This keeps text operations executable without claiming that a
+    function can return a slice yet.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those
