@@ -35,7 +35,7 @@ limited to native x86_64 output from this worktree.
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
 | Generic `core::option`, `core::result`, and `core::{i32,i64,u32,u8}` as complete imported modules | Contract-only for native execution | Their Lanius bodies type-check, but generic enum use or import prevents reliable x86 output. The numeric modules import generic `Option` for checked results. A minimal failing program is included below. |
-| `core::{cmp,hash,ordering,array_i32}` and legacy root `stdlib/{i32,bool,array_i32_4}.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs and traits also depend on backend support. |
+| `core::{cmp,hash,ordering,array_i32}` and legacy root `stdlib/{i32,bool,array_i32_4}.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs and traits also depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependency 31. |
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
 | `alloc::allocator` | Native host ABI with an unsafe allocation-failure path | Normal allocation, reallocation, and release have x86 tests. An injected `mmap` failure returns a nonzero error-shaped pointer from `alloc`; see dependency 22. Callers cannot currently rely on a null-pointer failure check. |
 | `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs` path calls ignore their declared length and require NUL-terminated storage; see dependency 29. `std::env::current_dir_len` still has an unsafe allocator failure path; see dependency 25. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
@@ -777,6 +777,16 @@ the failure injection cases run when Linux `strace` is available.
     This is broader than dependency 26's division failure. A complete
     `core::number_u64` cannot claim native correctness while these operations
     fail; fixing one division call in Lanius would leave other wrong results.
+31. **Calling comparison trait implementations.**
+    `tests/fixtures/stdlib_foundation/repro_cmp_trait_call.lani` imports
+    `core::cmp` and calls `core::cmp::Eq<i32>::eq` and
+    `core::cmp::Ord<i32>::lt`. `laniusc check --stdlib-root stdlib` rejects the
+    first call with `LNC0027` (no resolved function or method signature);
+    native emission rejects it with `LNC0005` (unresolved identifier).
+    The `i32` implementations have function bodies, but the public trait
+    methods are not executable through this qualified call form. The compiler
+    task needs to establish supported trait dispatch and native lowering
+    before the complete `core::cmp` module can be promoted.
 
 These are compiler/runtime dependencies, not stdlib implementations in Rust or
 Python. They should be handled in the parallel compiler task before extending
