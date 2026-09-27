@@ -689,11 +689,15 @@ the owner of these GPU compiler or x86 runtime fixes. This stdlib worktree
 also fixes the imported struct-return relocation path described below.
 
 1. **Generic Option/Result native lowering.** `laniusc check --stdlib-root
-   stdlib tests/fixtures/stdlib_foundation/repro_generic_option.lani` succeeds,
-   while native emission stops with `LNC0057` before a useful backend
-   diagnostic. A same-file generic enum also reports unsupported target opcode
-   8 (`LNC0017`). This blocks the generic Option/Result modules and checked
-   numeric helpers that return them. The former by-value
+   stdlib tests/fixtures/stdlib_foundation/repro_generic_option.lani` succeeds.
+   Interface export now resolves `Some(T)`, `Ok(T)`, and `Err(E)` against their
+   parent enum parameters; `tests/stdlib_generic_interface.rs` checks the
+   exported records from the real modules. Native emission reaches lowering
+   but stops with `LNC0017`, unsupported target opcode 8 (alias). The enum
+   layout pass requires concrete payload types, while these definitions still
+   contain generic `T` and `E`; a fixed one-word assumption would miscompile
+   wider instantiations. This blocks executable generic Option/Result modules
+   and checked numeric helpers that return them. The former by-value
    `core::option::replace(value, next)` always returned `Some(next)` without
    changing `value`; it was removed rather than retained as a misleading
    mutation API. A real replacement operation needs a mutable Option receiver

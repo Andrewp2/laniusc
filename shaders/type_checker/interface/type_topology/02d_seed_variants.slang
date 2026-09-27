@@ -7,10 +7,12 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> compact_variant_count;
+StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> compact_variant_payload_row_count;
 StructuredBuffer<HirVariantPayload> compact_variant_payloads;
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> public_decl_index_by_local;
+StructuredBuffer<uint> public_decl_index_by_hir;
 StructuredBuffer<uint> interface_type_parent;
 RWStructuredBuffer<uint> interface_type_seed_owner;
 RWStructuredBuffer<uint> interface_status;
@@ -32,8 +34,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint decl_count = min(decl_count_out[0u], gParams.decl_capacity);
     uint local = decl_count >= variant_count
         ? decl_count - variant_count + payload.variant : INVALID;
-    uint owner = local < gParams.decl_capacity ? public_decl_index_by_local[local] : INVALID;
-    if (owner >= gParams.decl_capacity) return;
+    uint variant_owner = local < gParams.decl_capacity
+        ? public_decl_index_by_local[local] : INVALID;
+    if (variant_owner >= gParams.decl_capacity) return;
+    // A variant payload may mention a generic parameter declared by its
+    // parent enum. Normalize that type using the enum's member slots, while
+    // the variant's signature still owns the payload edge.
+    uint enum_hir = compact_variants[payload.variant].owner;
+    uint owner = enum_hir < gParams.hir_capacity
+        ? public_decl_index_by_hir[enum_hir] : INVALID;
+    if (owner >= gParams.decl_capacity)
+    { atomic_u32_or(interface_status, 0u, 256u); atomic_u32_min(interface_status, 1u, row); return; }
     if (!type_node(payload.type_node) || interface_type_parent[payload.type_node] != INVALID)
     { atomic_u32_or(interface_status, 0u, 256u); atomic_u32_min(interface_status, 1u, row); return; }
     uint prior = atomic_u32_compare_exchange(interface_type_seed_owner, payload.type_node, INVALID, owner);
