@@ -1,0 +1,33 @@
+module app::main;
+import core::mem;
+import std::file;
+fn main() -> i32 {
+    let words:[i32; 10] =[0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let buffer: ptr = core::mem::i32_array_data_ptr(words);
+    if (std::file::write_all_bytes_to_path("seed.bin", 0, 1)) {
+        return 1;
+    }
+    let too_large: usize = 2147483648;
+    if (std::file::write_all_bytes_to_path("seed.bin", buffer, too_large)) {
+        return 2;
+    }
+    if (!std::file::read_exact_into_buffer("input.bin", buffer, 37)) {
+        return 3;
+    }
+    if (!std::file::write_all_bytes_to_path("copy.bin", buffer, 37)) {
+        return 4;
+    }
+    if (!std::file::write_all_bytes_to_path("short.bin", buffer, 2)) {
+        return 5;
+    }
+    if (!std::file::write_all_bytes_to_path("empty.bin", 0, 0)) {
+        return 6;
+    }
+    if (std::file::write_all_bytes_to_path("missing/child.bin", buffer, 2)) {
+        return 7;
+    }
+    if (std::file::write_all_bytes_to_path("/dev/full", buffer, 2)) {
+        return 8;
+    }
+    return 0;
+}

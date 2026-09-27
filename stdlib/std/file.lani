@@ -150,6 +150,23 @@ pub fn write_all_bytes(handle: i32, buffer: ptr, len: usize) -> bool {
     }
     return true;
 }
+// Creates or truncates path, writes all len bytes from caller storage, and
+// closes the handle. Invalid buffer/length arguments fail before opening, so
+// they do not truncate an existing file. A write or close error returns false;
+// after opening, a failure may leave a truncated file or written prefix.
+// A null buffer is allowed only when len is zero, which creates an empty file.
+pub fn write_all_bytes_to_path(path: str, buffer: ptr, len: usize) -> bool {
+    if (len>2147483647 || buffer == 0 && len>0) {
+        return false;
+    }
+    let handle: i32 = std::fs::open_write_path(path);
+    if (handle<0) {
+        return false;
+    }
+    let written: bool = write_all_bytes(handle, buffer, len);
+    let closed: i32 = std::fs::close_file(handle);
+    return written && closed >= 0;
+}
 fn copy_open_files(input: i32, output: i32, buffer: ptr, capacity: usize) -> bool {
     while (true) {
         let received: i32 = std::fs::read(input, buffer, capacity);

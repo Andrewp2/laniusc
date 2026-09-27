@@ -38,7 +38,7 @@ limited to native x86_64 output from this worktree.
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, and invalid handles. These are separate from the portable core. |
 | `std::io_decimal::write_u32` | Executable x86_64 Linux host wrapper | `tests/stdlib_host_execution.rs` checks unsigned decimal zero and maximum, exact byte counts, invalid handles, and injected failure after a written prefix. |
-| `std::file` all 8 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete buffer writes, a multi-chunk binary copy, bounded signed decimal reads and writes, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
+| `std::file` all 9 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, a multi-chunk binary copy, bounded signed decimal reads and writes, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked::secure_u32_or` | Executable x86_64 Linux host wrapper | `tests/stdlib_random_execution.rs` checks successful generation and injects both a host error and a short read, each of which returns the caller's fallback. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
@@ -240,6 +240,12 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   Invalid handles, a null nonempty buffer, lengths above `i32::MAX`, host
   failures, or a zero-progress write return false. A failed call may leave a
   written prefix in the file; it does not close the handle.
+- `std::file::write_all_bytes_to_path` creates or truncates a path and writes
+  all bytes from caller storage, then closes the handle. Invalid buffer or
+  length arguments fail before opening and leave an existing file unchanged.
+  A null buffer with zero length creates an empty file. Open, write, or close
+  failure returns false; a failure after opening can leave a truncated file
+  or written prefix.
 - `std::file::copy_distinct_with_buffer` copies until EOF using caller storage
   and retries short writes. It returns false for invalid buffer arguments or
   any host failure. The destination can contain a copied prefix on failure.

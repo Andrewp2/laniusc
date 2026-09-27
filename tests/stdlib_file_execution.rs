@@ -50,6 +50,116 @@ fn std_file_write_text_once_executes_on_x86() {
 }
 
 #[test]
+fn std_file_write_all_bytes_to_path_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_file_write_all_path.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_file_write_all_path", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile full path writer");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_file_write_all", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create write directory");
+        let input: Vec<u8> = (0..37).map(|index| (index * 37 % 256) as u8).collect();
+        std::fs::write(run_dir.path().join("input.bin"), &input).expect("write input file");
+        std::fs::write(run_dir.path().join("seed.bin"), b"keep").expect("write seed file");
+        std::fs::write(run_dir.path().join("short.bin"), b"a much longer old file")
+            .expect("write old short file");
+
+        let output = run_in_directory(&bytes, run_dir.path(), "std_file_write_all_path");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(
+            std::fs::read(run_dir.path().join("copy.bin")).expect("read copied file"),
+            input
+        );
+        assert_eq!(
+            std::fs::read(run_dir.path().join("short.bin")).expect("read truncated file"),
+            input[..2]
+        );
+        assert_eq!(
+            std::fs::read(run_dir.path().join("empty.bin")).expect("read empty file"),
+            b""
+        );
+        assert_eq!(
+            std::fs::read(run_dir.path().join("seed.bin")).expect("read unchanged seed"),
+            b"keep"
+        );
+        assert!(!run_dir.path().join("missing/child.bin").exists());
+        std::fs::remove_dir_all(run_dir.path()).expect("remove write directory");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn std_file_write_all_bytes_to_path_reports_host_failures_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_file_write_all_path_failure.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes =
+        common::run_gpu_codegen_with_timeout("std_file_write_all_path_failure", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+        })
+        .expect("compile full path writer failure fixture");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let run_dir =
+            common::TempArtifact::new("laniusc_std_file_write_all_fault", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create write fault directory");
+        let executable = run_dir.path().join("std_file_write_all_path_failure");
+        std::fs::write(&executable, &bytes).expect("write fault ELF");
+        let mut permissions = std::fs::metadata(&executable)
+            .expect("stat fault ELF")
+            .permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(&executable, permissions).expect("chmod fault ELF");
+
+        for (injection, expected_file) in [
+            ("write:error=EIO:when=1", b"".as_slice()),
+            ("close:error=EIO:when=1", b"abcd".as_slice()),
+        ] {
+            let output = common::short_process_output_with_timeout(
+                format!("path write {injection}"),
+                std::process::Command::new("strace")
+                    .arg("-qq")
+                    .arg("-e")
+                    .arg("trace=write,close")
+                    .arg("-e")
+                    .arg(format!("inject={injection}"))
+                    .arg(&executable)
+                    .current_dir(run_dir.path()),
+            );
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("INJECTED"),
+                "fault was not injected: {output:?}"
+            );
+            assert_eq!(
+                std::fs::read(run_dir.path().join("fault.bin")).expect("read fault output"),
+                expected_file,
+                "{injection}"
+            );
+        }
+        std::fs::remove_dir_all(run_dir.path()).expect("remove write fault directory");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn std_file_copy_distinct_with_buffer_executes_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_host/std_file_copy.lani");
@@ -422,8 +532,9 @@ fn std_file_read_i32_decimal_or_handles_host_failures_on_x86() {
 fn std_file_public_functions_have_runtime_cases() {
     let source = include_str!("../stdlib/std/file.lani");
     let fixtures = format!(
-        "{}{}{}{}{}{}",
+        "{}{}{}{}{}{}{}",
         include_str!("fixtures/stdlib_host/std_file_write.lani"),
+        include_str!("fixtures/stdlib_host/std_file_write_all_path.lani"),
         include_str!("fixtures/stdlib_host/std_file_copy.lani"),
         include_str!("fixtures/stdlib_host/std_file_read.lani"),
         include_str!("fixtures/stdlib_host/std_file_read_to_end.lani"),
@@ -445,5 +556,5 @@ fn std_file_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 8);
+    assert_eq!(count, 9);
 }
