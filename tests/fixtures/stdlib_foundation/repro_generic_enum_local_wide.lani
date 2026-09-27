@@ -1,0 +1,13 @@
+pub struct Pair { first: i32, second: i32 }
+pub enum Maybe<T> { Some(T), None }
+
+fn main() -> i32 {
+    let pair: Pair = Pair { first: 4, second: 9 };
+    let value: Maybe<Pair> = Some(pair);
+    let extracted: i32 = match (value) {
+        Some(inner) -> inner.second,
+        None -> 1,
+    };
+    if (extracted != 9) { return 1; }
+    return 0;
+}

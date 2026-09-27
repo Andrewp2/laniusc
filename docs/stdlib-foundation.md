@@ -885,7 +885,17 @@ also fixes the imported struct-return relocation path described below.
    The 8- and 32-bit checked numeric helpers now return concrete Option structs.
    `repro_generic_enum_only.lani` with its three-line `Maybe<T>` dependency
    narrows the failure to generic enum construction: native emission stops in
-   GPU lowering before x86 output. The former by-value
+   GPU lowering before x86 output. The local
+   `repro_generic_enum_local_scalar.lani` and
+   `repro_generic_enum_local_wide.lani` both pass GPU `check` and both report
+   `LNC0017` for native output. Each fixture checks construction and matching
+   by returning zero on the expected payload. A reverted layout experiment
+   treated every generic payload as one word: the scalar case then exited zero, but
+   the two-word `Pair` case compiled and exited one. That representation is
+   unsafe; generic enum layout must account for the concrete type argument
+   before these APIs can be claimed. The imported scalar reproducer also
+   reached an optimizer failure (`LNC0057`) under that experiment, so layout
+   alone is not the remaining compiler work. The former by-value
    `core::option::replace(value, next)` always returned `Some(next)` without
    changing `value`; it was removed rather than retained as a misleading
    mutation API. A real replacement operation needs a mutable Option receiver
