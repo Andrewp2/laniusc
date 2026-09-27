@@ -54,6 +54,33 @@ fn lf_line_io_executes_on_x86() {
 }
 
 #[test]
+fn utf8_line_counter_composes_line_io_validation_and_decimal_output() {
+    let bytes = compile_fixture("std_utf8_line_count");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let executable = write_executable(&bytes, "std_utf8_line_count");
+        let cases: &[(&[u8], i32, &[u8])] = &[
+            (b"A\xc2\xa2\xe2\x82\xac\xf0\x9f\x99\x82\n", 0, b"4\n"),
+            (b"A\0B\n", 0, b"3\n"),
+            (b"\n", 0, b"0\n"),
+            (b"\xc2\xa2", 0, b"1\n"),
+            (b"\xc0\x80\n", 3, b""),
+            (b"\xe2\x82\n", 3, b""),
+            (b"abcdefghijklmnopq\n", 2, b""),
+            (b"", 2, b""),
+        ];
+        for &(input, expected_exit, expected_stdout) in cases {
+            let output = run_with_input(&executable, input);
+            assert_eq!(output.status.code(), Some(expected_exit), "{input:?}: {output:?}");
+            assert_eq!(output.stdout, expected_stdout, "{input:?}: {output:?}");
+            assert!(output.stderr.is_empty(), "{input:?}: {output:?}");
+        }
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn lf_line_io_consumes_overflow_and_handles_binary_boundaries() {
     let bytes = compile_fixture("std_io_line_codes_edges");
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]

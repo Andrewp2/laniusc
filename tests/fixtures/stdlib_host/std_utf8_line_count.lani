@@ -1,0 +1,29 @@
+// Read one LF-delimited UTF-8 line and print its Unicode scalar count.
+// Exit 2 for EOF, overlong input, or a host read error; 3 for invalid UTF-8;
+// 4 or 5 for a failed count or newline write. A final line without LF works.
+module app::main;
+import core::mem;
+import core::utf8;
+import std::io_byte;
+import std::io_decimal;
+import std::io_line;
+
+fn main() -> i32 {
+    let backing:[i32; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let line:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(backing), 16);
+    let length:i32 = std::io_line::read_stdin_lf_line_into_i32(line, 16);
+    if (length<0) {
+        return 2;
+    }
+    let count:i32 = core::utf8::scalar_count_or(line, length, -1);
+    if (count<0) {
+        return 3;
+    }
+    if (std::io_decimal::write_i32(1, count)<=0) {
+        return 4;
+    }
+    if (!std::io_byte::write_stdout_byte(10)) {
+        return 5;
+    }
+    return 0;
+}

@@ -517,6 +517,14 @@ It validates an ASCII marker, copies readings into a separate backed view,
 sorts the copy, selects a half-open window from sorted-value boundaries, reads
 the view, and accumulates with saturating arithmetic. It prints `96`.
 
+`tests/fixtures/stdlib_host/std_utf8_line_count.lani` is a second runnable
+program. It reads one LF line into a 16-byte caller-backed view, validates and
+counts its Unicode scalars, and prints the count in decimal. The focused x86
+test runs ASCII, multibyte, NUL, empty, and unterminated valid lines, plus
+malformed UTF-8, overlong input, and EOF failure cases. It returns a distinct
+nonzero status for line input, UTF-8, decimal output, and newline output
+failures.
+
 ## Target support and focused verification
 
 | Target / path | Status |
