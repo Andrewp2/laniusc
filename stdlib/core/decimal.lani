@@ -59,3 +59,26 @@ pub fn byte_at_or_i32(value: i32, index: u32, fallback: u8) -> u8 {
     }
     return byte_at_or_u32(magnitude_i32(value), index, fallback);
 }
+
+// A decimal ASCII byte can extend current without exceeding limit only when
+// both the syntax and the arithmetic bound are valid. Limit may be below MAX.
+pub fn can_append_ascii_digit_u32(current: u32, byte: u8, limit: u32) -> bool {
+    if (byte < 48 || byte > 57) {
+        return false;
+    }
+    let widened: u32 = byte as u32;
+    let digit: u32 = widened - 48;
+    return current < limit / 10 || current == limit / 10 && digit <= limit % 10;
+}
+
+// On malformed input or overflow, return fallback without arithmetic wrap.
+// A successful value may equal fallback; use can_append_ascii_digit_u32 when
+// the caller needs a separate success result.
+pub fn append_ascii_digit_or_u32(current: u32, byte: u8, limit: u32, fallback: u32) -> u32 {
+    if (!can_append_ascii_digit_u32(current, byte, limit)) {
+        return fallback;
+    }
+    let widened: u32 = byte as u32;
+    let digit: u32 = widened - 48;
+    return current * 10 + digit;
+}

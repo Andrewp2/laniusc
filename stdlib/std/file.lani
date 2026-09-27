@@ -5,6 +5,7 @@
 // reports an open, write, or close failure. Closing is attempted even when
 // the write fails.
 module std::file;
+import core::decimal;
 import core::mem;
 import std::fs;
 import std::io;
@@ -269,17 +270,16 @@ pub fn read_i32_decimal_or(path: str, max_bytes: u32, fallback: i32) -> i32 {
             }
             started = true;
             digits = true;
-            let digit_i32: i32 = byte - 48;
-            let digit: u32 = digit_i32;
+            let ascii: u8 = byte;
             let limit: u32 = 2147483647;
             if (negative) {
                 limit = 2147483648;
             }
-            if (magnitude > limit / 10 || magnitude == limit / 10 && digit > limit % 10) {
+            if (!core::decimal::can_append_ascii_digit_u32(magnitude, ascii, limit)) {
                 valid = false;
                 break;
             }
-            magnitude = magnitude * 10 + digit;
+            magnitude = core::decimal::append_ascii_digit_or_u32(magnitude, ascii, limit, magnitude);
             continue;
         }
         valid = false;
@@ -358,13 +358,13 @@ pub fn read_u32_decimal_or(path: str, max_bytes: u32, fallback: u32) -> u32 {
             }
             started = true;
             digits = true;
-            let digit_i32: i32 = byte - 48;
-            let digit: u32 = digit_i32;
-            if (value > 429496729 || value == 429496729 && digit>5) {
+            let ascii: u8 = byte;
+            let limit: u32 = 4294967295;
+            if (!core::decimal::can_append_ascii_digit_u32(value, ascii, limit)) {
                 valid = false;
                 break;
             }
-            value = value * 10 + digit;
+            value = core::decimal::append_ascii_digit_or_u32(value, ascii, limit, value);
             continue;
         }
         valid = false;

@@ -40,5 +40,32 @@ fn main() -> i32 {
         }
         position += 1;
     }
+    if (!core::decimal::can_append_ascii_digit_u32(0, 48, 4294967295) || !core::decimal::can_append_ascii_digit_u32(429496729, 53, 4294967295) || core::decimal::can_append_ascii_digit_u32(429496729, 54, 4294967295)) {
+        return 9;
+    }
+    if (!core::decimal::can_append_ascii_digit_u32(214748364, 55, 2147483647) || core::decimal::can_append_ascii_digit_u32(214748364, 56, 2147483647) || !core::decimal::can_append_ascii_digit_u32(214748364, 56, 2147483648) || core::decimal::can_append_ascii_digit_u32(214748364, 57, 2147483648)) {
+        return 10;
+    }
+    if (core::decimal::can_append_ascii_digit_u32(0, 47, 4294967295) || core::decimal::can_append_ascii_digit_u32(0, 58, 4294967295) || !core::decimal::can_append_ascii_digit_u32(0, 48, 0) || core::decimal::can_append_ascii_digit_u32(0, 49, 0) || core::decimal::can_append_ascii_digit_u32(10, 48, 9)) {
+        return 11;
+    }
+    if (core::decimal::append_ascii_digit_or_u32(0, 48, 4294967295, 99) != 0 || core::decimal::append_ascii_digit_or_u32(429496729, 53, 4294967295, 99) != 4294967295 || core::decimal::append_ascii_digit_or_u32(429496729, 54, 4294967295, 99) != 99 || core::decimal::append_ascii_digit_or_u32(12, 65, 4294967295, 99) != 99) {
+        return 12;
+    }
+    let digits: [i32; 3] = [49, 50, 51];
+    let parsed: u32 = 0;
+    let digit_index: i32 = 0;
+    while (digit_index < 3) {
+        let ascii_number: i32 = digits[digit_index];
+        let ascii: u8 = ascii_number as u8;
+        if (!core::decimal::can_append_ascii_digit_u32(parsed, ascii, 1000)) {
+            return 13;
+        }
+        parsed = core::decimal::append_ascii_digit_or_u32(parsed, ascii, 1000, 9999);
+        digit_index += 1;
+    }
+    if (parsed != 123) {
+        return 14;
+    }
     return 0;
 }

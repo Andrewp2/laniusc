@@ -19,7 +19,7 @@ limited to native x86_64 output from this worktree.
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 6 public scalar-codec functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, length boundaries, malformed sequences, surrogate exclusion, and Unicode maximum. Byte parameters and results use `u8`; it does not access string storage. |
-| `core::decimal` all 4 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of `u32::MAX` and `i32::MIN`, ordinary values, sign placement, zero, and out-of-range fallbacks. `std::io_decimal` uses the same portable formatter and has separate output tests. |
+| `core::decimal` all 6 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of `u32::MAX` and `i32::MIN`, ordinary values, sign placement, zero, out-of-range fallbacks, incremental ASCII parsing, and overflow against caller limits. `std::io_decimal` and both bounded decimal file readers use the portable helpers. |
 | `core::f32` all 12 public functions | Executable on x86_64 for tested finite inputs | Runtime fixture checks sign, comparison, bounds, and square root for zero, negative, small, ordinary, and large inputs. The imported public constant `ONE` is broken; see dependency 5. |
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
@@ -146,6 +146,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   includes `-` at index zero when negative, including `i32::MIN` without
   negating it. An index outside the representation returns the caller's
   fallback unchanged. It performs no allocation or host I/O.
+  `can_append_ascii_digit_u32` rejects non-digits and decimal appends above
+  the supplied limit before multiplication. `append_ascii_digit_or_u32` returns
+  the caller's fallback on either failure; that fallback can equal a valid
+  parsed value, so callers needing a separate success check use the predicate.
 - `core::f32::sqrt` returns zero for nonpositive inputs and scales finite
   positive inputs before Newton iteration, including values far above or below
   one. The other `f32` functions follow their source definitions; no NaN
@@ -299,13 +303,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   surrounding SP, HT, LF, or CR. Empty input, malformed input, overflow,
   overlong files, host failures, and a zero limit return the caller's fallback.
   A successful parsed value can equal that fallback. The reader uses one-byte
-  reads into a stack word and checks magnitude before multiplication; it does
-  not depend on the raw host `read_i32` parser.
+  reads into a stack word and uses `core::decimal` to check magnitude before
+  multiplication. It does not depend on the raw host `read_i32` parser.
 - `std::file::read_u32_decimal_or` has the same byte limit and whitespace
   rules, accepts an optional leading plus, and rejects a minus. It checks
-  overflow before each digit and returns the caller's fallback for malformed,
-  empty, overlong, or inaccessible input and read or close failures. The
-  fallback can also be a valid parsed value.
+  overflow through `core::decimal` before each digit. It returns the caller's
+  fallback for malformed, empty, overlong, or inaccessible input and read or
+  close failures. The fallback can also be a valid parsed value.
 - `std::file::write_i32_decimal` creates or truncates a file and writes the
   complete decimal representation of an i32 through `std::io_decimal::write_i32`.
   It returns false for open, write, or close failure and can leave a decimal
