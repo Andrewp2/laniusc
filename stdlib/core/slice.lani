@@ -201,6 +201,29 @@ pub fn remove_at_i32(values:[i32], len: i32, index: i32) -> bool {
     }
     return true;
 }
+// Insert at an index in [0, len], shifting the suffix right by one. A valid
+// call needs 0 <= len < capacity, and the backed view must actually contain
+// at least capacity writable elements. Invalid logical bounds return false
+// without writing. On success the caller's new logical length is len + 1.
+// If capacity overstates the physical view, native indexing can trap.
+pub fn insert_i32(values:[i32], len: i32, capacity: i32, index: i32, value: i32) -> bool {
+    if (len<0 || capacity<=0 || len>=capacity || index<0 || index>len) {
+        return false;
+    }
+    let cursor: i32 = len;
+    while (cursor>index) {
+        values[cursor] = values[cursor - 1];
+        cursor -= 1;
+    }
+    values[index] = value;
+    return true;
+}
+// Append within caller-owned capacity; the caller increments len on success.
+// Rejected bounds leave the backing view unchanged. A capacity greater than
+// the actual view length can trap when the appended element is indexed.
+pub fn push_i32(values:[i32], len: i32, capacity: i32, value: i32) -> bool {
+    return insert_i32(values, len, capacity, len, value);
+}
 // Negative lengths count as empty. An empty prefix matches every view.
 pub fn starts_with_i32(values:[i32], len: i32, prefix:[i32], prefix_len: i32) -> bool {
     let count: i32 = nonnegative_len_i32(len);

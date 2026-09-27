@@ -26,7 +26,7 @@ limited to native x86_64 output from this worktree.
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
 | Legacy `stdlib/i32.lani` power-of-two helpers | Executable on x86_64 | A focused source-level native test checks the highest signed power and the zero overflow sentinel. The legacy file as a whole is not included in this claim. |
 | `core::range` free functions for all five range forms and methods for `Range<i32>`, `RangeInclusive<i32>`, `RangeFrom<i32>`, and `RangeTo<i32>` | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership. There is no `RangeFull` method claim. |
-| `core::slice` all 31 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, rotations, compaction, partition boundaries and preserved contents, first and last binary matches, insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. A separate fixture confirms native index trapping on an overclaimed length. |
+| `core::slice` all 33 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
@@ -212,6 +212,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   for a nonpositive length. `remove_at_i32` shifts successors left and returns
   false without writing for an invalid index. After any of these operations,
   elements outside the new logical length are unspecified.
+  `insert_i32` shifts a suffix right and writes at an index in `0..=len`;
+  `push_i32` appends at `len`. Both require `0 <= len < capacity`, reject invalid
+  bounds without writing, and return true when the caller should advance the
+  logical length by one. The backed view must contain at least `capacity`
+  writable elements; an overstated capacity can trap on native indexing.
   `sort_i32` uses an in-place heapsort in ascending order and returns the
   number of elements sorted, or zero for a nonpositive length. The backing
   array sees these mutations.
