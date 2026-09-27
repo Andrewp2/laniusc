@@ -1,0 +1,28 @@
+module app::main;
+import std::vec_u16;
+
+fn main() -> i32 {
+    let first: u16 = 32768;
+    let second: u16 = 65535;
+    let inserted: u16 = 1;
+    let fallback: u16 = 0;
+    let value: std::vec_u16::VecU16 = std::vec_u16::try_with_capacity(2);
+    if (std::vec_u16::capacity(value) != 2) { return 2; }
+    value = std::vec_u16::try_push(value, first);
+    value = std::vec_u16::try_push(value, second);
+    if (std::vec_u16::len(value) != 2) { return 3; }
+    value = std::vec_u16::try_insert(value, 1, inserted);
+    if (std::vec_u16::len(value) == 3) {
+        if (std::vec_u16::get_or(value, 0, fallback) != first ||
+            std::vec_u16::get_or(value, 1, fallback) != inserted ||
+            std::vec_u16::get_or(value, 2, fallback) != second) { return 6; }
+        std::vec_u16::destroy(value);
+        return 4;
+    }
+    if (std::vec_u16::len(value) != 2 ||
+        std::vec_u16::capacity(value) != 2 ||
+        std::vec_u16::get_or(value, 0, fallback) != first ||
+        std::vec_u16::get_or(value, 1, fallback) != second) { return 5; }
+    std::vec_u16::destroy(value);
+    return 0;
+}

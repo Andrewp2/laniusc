@@ -126,6 +126,45 @@ pub fn try_push(value: VecBool, item: bool) -> VecBool {
     return VecBool { storage: grown.storage, length: grown.length + 1, reserved: grown.reserved };
 }
 
+// Insert at [0, len]. Invalid indices or allocation failure leave the value
+// unchanged. A successful insert increases len by one. This operation may
+// move the allocation, so only the returned vector remains owned.
+pub fn try_insert(value: VecBool, index: i32, item: bool) -> VecBool {
+    let old_len: i32 = value.length;
+    if (index < 0 || index > old_len) {
+        return value;
+    }
+    let grown: VecBool = try_push(value, item);
+    if (grown.length == old_len) {
+        return grown;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
+    let inserted: i32 = cells[old_len];
+    let cursor: i32 = old_len;
+    while (cursor > index) {
+        cells[cursor] = cells[cursor - 1];
+        cursor -= 1;
+    }
+    cells[index] = inserted;
+    return grown;
+}
+
+// Remove one element at [0, len). Invalid indices leave the vector unchanged.
+// A successful removal decreases len by one and keeps the allocation for reuse.
+// Read the removed element with get_or before calling when it is needed.
+pub fn try_remove(value: VecBool, index: i32) -> VecBool {
+    if (index < 0 || index >= value.length) {
+        return value;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
+    let cursor: i32 = index;
+    while (cursor + 1 < value.length) {
+        cells[cursor] = cells[cursor + 1];
+        cursor += 1;
+    }
+    return try_pop(value);
+}
+
 // Invalid indices return fallback without accessing storage.
 pub fn get_or(value: VecBool, index: i32, fallback: bool) -> bool {
     if (index < 0 || index >= value.length) {

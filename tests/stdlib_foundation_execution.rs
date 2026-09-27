@@ -845,6 +845,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             0,
             b"285\n",
         ),
+        (
+            "vector_edit_checksum",
+            "sample_programs/vector_edit_checksum.lani",
+            0,
+            b"19\n",
+        ),
     ];
 
     for &(name, path, expected_exit, expected_stdout) in cases {
@@ -1543,7 +1549,7 @@ fn executable_core_function_surface_has_runtime_cases() {
             assert!(vector_fixture.contains(&call), "{call} lacks a runtime case");
             vector_function_count += 1;
         }
-        let expected_functions = if module == "vec_u8" { 14 } else { 13 };
+        let expected_functions = if module == "vec_u8" { 16 } else { 15 };
         assert_eq!(vector_function_count, expected_functions);
         assert!(vector_fixture.contains(&format!("std::{module}::MAX_CAPACITY")));
     }

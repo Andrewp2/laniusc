@@ -1,0 +1,28 @@
+module app::main;
+import std::vec_bool;
+
+fn main() -> i32 {
+    let first: bool = false;
+    let second: bool = true;
+    let inserted: bool = false;
+    let fallback: bool = true;
+    let value: std::vec_bool::VecBool = std::vec_bool::try_with_capacity(2);
+    if (std::vec_bool::capacity(value) != 2) { return 2; }
+    value = std::vec_bool::try_push(value, first);
+    value = std::vec_bool::try_push(value, second);
+    if (std::vec_bool::len(value) != 2) { return 3; }
+    value = std::vec_bool::try_insert(value, 1, inserted);
+    if (std::vec_bool::len(value) == 3) {
+        if (std::vec_bool::get_or(value, 0, fallback) != first ||
+            std::vec_bool::get_or(value, 1, fallback) != inserted ||
+            std::vec_bool::get_or(value, 2, fallback) != second) { return 6; }
+        std::vec_bool::destroy(value);
+        return 4;
+    }
+    if (std::vec_bool::len(value) != 2 ||
+        std::vec_bool::capacity(value) != 2 ||
+        std::vec_bool::get_or(value, 0, fallback) != first ||
+        std::vec_bool::get_or(value, 1, fallback) != second) { return 5; }
+    std::vec_bool::destroy(value);
+    return 0;
+}

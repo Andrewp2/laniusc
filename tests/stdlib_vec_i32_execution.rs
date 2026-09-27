@@ -31,10 +31,13 @@ fn vector_growth_failures_leave_storage_unchanged_on_x86() {
     for (name, syscall, normal_exit) in [
         ("vec_i32_alloc_failure", "mmap", 1),
         ("vec_i32_realloc_failure", "mremap", 4),
+        ("vec_i32_insert_realloc_failure", "mremap", 4),
         ("vec_u32_alloc_failure", "mmap", 1),
         ("vec_u32_realloc_failure", "mremap", 4),
+        ("vec_u32_insert_realloc_failure", "mremap", 4),
         ("vec_u8_alloc_failure", "mmap", 1),
         ("vec_u8_realloc_failure", "mremap", 4),
+        ("vec_u8_insert_realloc_failure", "mremap", 4),
         ("utf8_vec_alloc_failure", "mmap", 1),
         ("utf8_vec_realloc_failure", "mremap", 4),
         ("utf8_vec_bulk_realloc_failure", "mremap", 4),
@@ -45,12 +48,16 @@ fn vector_growth_failures_leave_storage_unchanged_on_x86() {
         ("utf8_vec_splice_codes_realloc_failure", "mremap", 4),
         ("vec_i8_alloc_failure", "mmap", 1),
         ("vec_i8_realloc_failure", "mremap", 4),
+        ("vec_i8_insert_realloc_failure", "mremap", 4),
         ("vec_u16_alloc_failure", "mmap", 1),
         ("vec_u16_realloc_failure", "mremap", 4),
+        ("vec_u16_insert_realloc_failure", "mremap", 4),
         ("vec_i16_alloc_failure", "mmap", 1),
         ("vec_i16_realloc_failure", "mremap", 4),
+        ("vec_i16_insert_realloc_failure", "mremap", 4),
         ("vec_bool_alloc_failure", "mmap", 1),
         ("vec_bool_realloc_failure", "mremap", 4),
+        ("vec_bool_insert_realloc_failure", "mremap", 4),
     ] {
         let bytes = compile_fixture(name);
 

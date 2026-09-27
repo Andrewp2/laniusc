@@ -1,0 +1,38 @@
+// Maintain a small ordered sequence and report its checksum after two edits.
+module app::main;
+import core::number_i32;
+import core::option_i32;
+import std::io;
+import std::vec_i32;
+
+fn main() -> i32 {
+    let readings: std::vec_i32::VecI32 = std::vec_i32::new();
+    readings = std::vec_i32::try_push(readings, 3);
+    readings = std::vec_i32::try_push(readings, 7);
+    readings = std::vec_i32::try_push(readings, 11);
+    if (std::vec_i32::len(readings) != 3) {
+        std::vec_i32::destroy(readings);
+        return 1;
+    }
+    readings = std::vec_i32::try_insert(readings, 1, 5);
+    if (std::vec_i32::len(readings) != 4) {
+        std::vec_i32::destroy(readings);
+        return 2;
+    }
+    readings = std::vec_i32::try_remove(readings, 2);
+    if (std::vec_i32::len(readings) != 3) {
+        std::vec_i32::destroy(readings);
+        return 3;
+    }
+    let total: i32 = 0;
+    let index: i32 = 0;
+    while (index < std::vec_i32::len(readings)) {
+        total = core::number_i32::saturating_add(
+            total, std::vec_i32::get_or(readings, index, 0));
+        index += 1;
+    }
+    std::vec_i32::destroy(readings);
+    let result: core::option_i32::OptionI32 = core::option_i32::some(total);
+    std::io::print_i32(core::option_i32::unwrap_or(result, -1));
+    return 0;
+}
