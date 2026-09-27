@@ -1,0 +1,14 @@
+module app::main;
+import helpers::maybe;
+
+fn main() -> i32 {
+    let hit: helpers::maybe::Maybe = helpers::maybe::choose(true, -7);
+    let absent: helpers::maybe::Maybe = helpers::maybe::choose(false, 99);
+    let zero: helpers::maybe::Maybe = helpers::maybe::choose(true, 0);
+    let pair: helpers::maybe::Maybe = helpers::maybe::choose_pair(-4, 11);
+    if (helpers::maybe::score(hit) != -5) { return 1; }
+    if (helpers::maybe::score(absent) != 5) { return 2; }
+    if (helpers::maybe::score(zero) != 2) { return 3; }
+    if (helpers::maybe::score(pair) != 7) { return 4; }
+    return 0;
+}

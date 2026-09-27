@@ -1,0 +1,24 @@
+module helpers::maybe;
+
+pub enum Maybe {
+    Some(i32),
+    None,
+    Pair(i32, i32),
+}
+
+pub fn choose(present: bool, value: i32) -> Maybe {
+    if (present) { return Some(value); }
+    return None;
+}
+
+pub fn score(value: Maybe) -> i32 {
+    return match (value) {
+        Some(inner) -> inner + 2,
+        None -> 5,
+        Pair(left, right) -> left + right,
+    };
+}
+
+pub fn choose_pair(left: i32, right: i32) -> Maybe {
+    return Pair(left, right);
+}

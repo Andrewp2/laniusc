@@ -75,3 +75,49 @@ fn imported_fieldless_enum_result_uses_aggregate_abi_on_x86() {
     #[cfg(not(all(unix, target_arch = "x86_64")))]
     let _ = bytes;
 }
+
+#[test]
+fn imported_scalar_payload_enum_result_uses_aggregate_abi_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_enum_payload_app.lani");
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_enum_root");
+    let bytes = common::run_gpu_codegen_with_timeout("imported enum scalar payload", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile imported enum with scalar payload");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported enum scalar payload",
+            "repro_enum_payload_app",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_flat_struct_payload_enum_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_enum_nested_app.lani");
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_enum_nested_root");
+    let bytes =
+        common::run_gpu_codegen_with_timeout("imported enum flat struct payload", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+        })
+        .expect("compile imported enum with flat struct payload");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported enum flat struct payload",
+            "repro_enum_nested_app",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}

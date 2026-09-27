@@ -698,7 +698,7 @@ also fixes the imported struct-return relocation path described below.
    changing `value`; it was removed rather than retained as a misleading
    mutation API. A real replacement operation needs a mutable Option receiver
    and executable generic enum behavior.
-2. **Imported aggregate results: struct and fieldless enum returns fixed.**
+2. **Imported aggregate results: struct and flat-payload enum returns fixed.**
    `tests/stdlib_imported_aggregate_execution.rs` now compiles and executes
    imported one-, two-, and three-word struct constructors and consumers on
    x86_64. The object relocation pass previously guessed the call instruction
@@ -710,13 +710,18 @@ also fixes the imported struct-return relocation path described below.
    their arguments by one ABI register; x86 call counting, scattering, and
    stack allocation now use the checked result type to exclude that width.
    Both fixes support the concrete Option/Result and vector modules. The
-   fieldless enum case is now handled by checking the imported variant
-   signatures and retaining the discriminant word as aggregate storage;
+   enum case now reads imported variant signatures and retains the
+   discriminant plus the maximum supported payload width as aggregate
+   storage. `tests/fixtures/stdlib_foundation/repro_enum_payload_app.lani`
+   executes absent, single-scalar, and two-scalar variants through separate
+   library calls, including a three-word return;
    `tests/fixtures/stdlib_foundation/repro_ordering_return.lani` exits 0 and
    `tests/stdlib_imported_aggregate_execution.rs` guards the calling
-   convention. Payload-bearing imported enums still need an exact projected
-   payload width before they can be claimed. The complete `core::ordering`
-   module remains blocked by dependencies 11 and 34.
+   convention. The imported `Wrapped::Payload(Pair)` fixture checks a flat
+   two-field struct inside an enum variant through a separate-library call.
+   Deeper nested aggregate payloads still need exact projected widths before
+   they can be claimed. The complete `core::ordering` module remains blocked
+   by dependencies 11 and 34.
    An earlier byte-range experiment also encountered an imported `RangeFull`
    lowering failure and a crash after several imported `Range<u8>` values
    were used together. Those shapes need a new executable check after this
@@ -985,9 +990,12 @@ also fixes the imported struct-return relocation path described below.
     `laniusc check --stdlib-root stdlib
     tests/fixtures/stdlib_foundation/repro_ordering_variant_import.lani`
     succeeds, but native compilation of the same program reports `LNC0005`
-    at `core::ordering::Less`. Calling imported functions that construct and
-    consume `Ordering` now executes; direct variant path resolution still
-    needs a GPU compiler fix.
+    at `core::ordering::Less`. Interface export contains `Less`, `Equal`, and
+    `Greater` as public variant declarations. A separate dependency-interface
+    type check reproduces the same error: imported value consumers project
+    constants and calls, but have no corresponding variant-value projection.
+    Calling imported functions that construct and consume `Ordering` now
+    executes; direct variant path resolution still needs a GPU compiler fix.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

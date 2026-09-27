@@ -1,0 +1,23 @@
+module helpers::wrapped;
+
+pub struct Pair {
+    left: i32,
+    right: i32,
+}
+
+pub enum Wrapped {
+    Payload(Pair),
+    Empty,
+}
+
+pub fn make(left: i32, right: i32) -> Wrapped {
+    let pair: Pair = Pair { left: left, right: right };
+    return Payload(pair);
+}
+
+pub fn score(value: Wrapped) -> i32 {
+    return match (value) {
+        Payload(pair) -> pair.left + pair.right,
+        Empty -> 0,
+    };
+}
