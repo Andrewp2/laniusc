@@ -54,6 +54,20 @@ uint float_setcc_opcode(uint predicate)
     return 0x93u;
 }
 
+void emit_float_predicate_al(inout uint cursor, uint predicate)
+{
+    // UCOMISS sets ZF, PF, and CF for unordered operands. Combine SETcc
+    // with parity so NaN is true only for !=, regardless of result use.
+    emit_u8(cursor, 0x0fu);
+    emit_u8(cursor, predicate == 1u ? 0x9au : 0x9bu);
+    emit_u8(cursor, 0xc4u); // SETP/SETNP AH
+    emit_u8(cursor, 0x0fu);
+    emit_u8(cursor, float_setcc_opcode(predicate));
+    emit_u8(cursor, 0xc0u); // SETcc AL
+    emit_u8(cursor, predicate == 1u ? 0x08u : 0x20u);
+    emit_u8(cursor, 0xe0u); // OR/AND AL, AH
+}
+
 bool x86_emit_uses_specialized_pass(X86LirCore core,
                                    X86LirOperands operands)
 {
@@ -661,8 +675,10 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
         if (x86_scalar_float(operands.metadata))
         {
             emit_f32_compare(cursor, locations.b, locations.c);
-            emit_boolean_result(cursor, float_setcc_opcode(operands.a),
-                locations.result, function);
+            emit_float_predicate_al(cursor, operands.a);
+            emit_u8(cursor, 0x0fu); emit_u8(cursor, 0xb6u);
+            emit_u8(cursor, 0xc0u); // MOVZX EAX, AL
+            store_value32(cursor, 0u, locations.result, function);
             return;
         }
         bool pointer = (operands.metadata & X86_LIR_METADATA_AGGREGATE) == 0u &&
@@ -689,10 +705,20 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
     else if (core.op == X86_LIR_OP_COMPARE_BRANCH_FALSE)
     {
         bool f32 = x86_scalar_float(operands.metadata);
+        if (f32 && (operands.metadata & X86_LIR_METADATA_IMMEDIATE) == 0u)
+        {
+            emit_f32_compare(cursor, locations.a, locations.b);
+            emit_float_predicate_al(cursor, core.local_ordinal);
+            emit_u8(cursor, 0x84u); emit_u8(cursor, 0xc0u); // TEST AL, AL
+            uint target = layout.body_offset +
+                target_byte_offset[core.result_or_target];
+            uint next = cursor + 6u;
+            emit_u8(cursor, 0x0fu); emit_u8(cursor, 0x84u); // JZ target
+            emit_u32(cursor, target - next);
+            return;
+        }
         if ((operands.metadata & X86_LIR_METADATA_IMMEDIATE) != 0u)
             emit_compare32_immediate(cursor, operands.b, locations.a);
-        else if (f32)
-            emit_f32_compare(cursor, locations.a, locations.b);
         else
         {
             bool pointer = (operands.metadata & X86_LIR_METADATA_AGGREGATE) == 0u &&

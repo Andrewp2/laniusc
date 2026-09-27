@@ -1,5 +1,5 @@
-// IEEE-754 unordered comparisons should produce mask 2. Native x86 currently
-// exits 85: ==self, <0, <=0, and ==0 are true for 0.0 / 0.0.
+// IEEE-754 unordered comparisons produce mask 2. Before the native parity
+// correction, this exited 85 instead.
 module app::main;
 
 fn main() -> i32 {

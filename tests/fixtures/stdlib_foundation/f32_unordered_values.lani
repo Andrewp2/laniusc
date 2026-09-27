@@ -1,0 +1,37 @@
+module app::main;
+
+fn bits(a: bool, b: bool, c: bool, d: bool) -> i32 {
+    let mask: i32 = 0;
+    if (a) { mask += 1; }
+    if (b) { mask += 2; }
+    if (c) { mask += 4; }
+    if (d) { mask += 8; }
+    return mask;
+}
+
+fn main() -> i32 {
+    let zero: f32 = 0.0;
+    let nan: f32 = zero / zero;
+    let eq: bool = nan == nan;
+    let ne: bool = nan != nan;
+    let lt: bool = nan < zero;
+    let le: bool = nan <= zero;
+    if (bits(eq, ne, lt, le) != 2) { return 1; }
+
+    let gt: bool = nan > zero;
+    let ge: bool = nan >= zero;
+    let reverse_lt: bool = zero < nan;
+    let reverse_le: bool = zero <= nan;
+    if (bits(gt, ge, reverse_lt, reverse_le) != 0) { return 2; }
+
+    let reverse_eq: bool = zero == nan;
+    let reverse_ne: bool = zero != nan;
+    let reverse_gt: bool = zero > nan;
+    let reverse_ge: bool = zero >= nan;
+    if (bits(reverse_eq, reverse_ne, reverse_gt, reverse_ge) != 2) { return 3; }
+
+    let negative_zero: f32 = -zero;
+    if (bits(zero == negative_zero, zero != negative_zero,
+             zero <= negative_zero, zero >= negative_zero) != 13) { return 4; }
+    return 0;
+}

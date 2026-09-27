@@ -180,8 +180,8 @@ uint f32_compare_instruction_bytes(uint left, uint right)
 
 uint f32_compare_bytes(uint left, uint right, uint result)
 {
-    return f32_compare_instruction_bytes(left, right) +
-        x86_boolean_result_bytes(result);
+    return f32_compare_instruction_bytes(left, right) + 11u +
+        x86_move32_from_fixed_bytes(0u, result);
 }
 
 uint instruction_bytes(X86LirCore core, X86LirOperands operands,
@@ -302,7 +302,7 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
                 operands.b, locations.a) + 6u;
         if (x86_scalar_float(operands.metadata))
             return f32_compare_instruction_bytes(
-                locations.a, locations.b) + 6u;
+                locations.a, locations.b) + 16u;
         if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u)
             return x86_compare_aggregate_word_bytes(
                 locations.a, locations.b) + 6u;

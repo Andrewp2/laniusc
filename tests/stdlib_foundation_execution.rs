@@ -61,6 +61,18 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "f32_unordered_branch",
+            "tests/fixtures/stdlib_foundation/repro_f32_unordered.lani",
+            2,
+            b"",
+        ),
+        (
+            "f32_unordered_values",
+            "tests/fixtures/stdlib_foundation/f32_unordered_values.lani",
+            0,
+            b"",
+        ),
+        (
             "number_byte",
             "tests/fixtures/stdlib_foundation/number_byte.lani",
             0,

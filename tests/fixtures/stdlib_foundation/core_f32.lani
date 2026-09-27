@@ -57,5 +57,25 @@ fn main() -> i32 {
     if (!core::f32::between_inclusive(0.0, 0.0, 2.0) || !core::f32::between_inclusive(2.0, 0.0, 2.0) || core::f32::between_inclusive(3.0, 0.0, 2.0)) {
         return 14;
     }
+    let zero: f32 = 0.0;
+    let nan: f32 = zero / zero;
+    if (core::f32::min(nan, 2.0) != 2.0 || core::f32::min(2.0, nan) != 2.0 ||
+        core::f32::max(nan, 2.0) != 2.0 || core::f32::max(2.0, nan) != 2.0) {
+        return 18;
+    }
+    if (core::f32::min(nan, nan) == core::f32::min(nan, nan) ||
+        core::f32::max(nan, nan) == core::f32::max(nan, nan)) { return 19; }
+    if (core::f32::clamp_or(1.0, nan, 2.0, -7.0) != -7.0 ||
+        core::f32::clamp_or(1.0, 0.0, nan, -7.0) != -7.0 ||
+        core::f32::clamp(1.0, nan, 2.0) != 1.0 ||
+        core::f32::clamp_or(nan, 0.0, 2.0, -7.0) ==
+            core::f32::clamp_or(nan, 0.0, 2.0, -7.0)) { return 20; }
+    if (core::f32::abs(nan) == core::f32::abs(nan) ||
+        core::f32::sqrt(nan) == core::f32::sqrt(nan) ||
+        core::f32::signum(nan) == core::f32::signum(nan)) { return 21; }
+    if (core::f32::is_negative(nan) || core::f32::is_positive(nan) ||
+        core::f32::is_zero(nan) || !core::f32::is_nonzero(nan) ||
+        core::f32::between_exclusive(nan, 0.0, 1.0) ||
+        core::f32::between_inclusive(nan, 0.0, 1.0)) { return 22; }
     return 0;
 }

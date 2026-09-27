@@ -1782,7 +1782,7 @@ fn main() -> i32 {
 }
 
 #[test]
-fn x86_keeps_reused_f32_comparison_boolean_in_a_gpr() {
+fn x86_keeps_reused_f32_comparison_boolean_correct() {
     let bytes = compile_source(
         "x86 reused f32 comparison Boolean register",
         r#"
@@ -1806,10 +1806,8 @@ fn main() -> i32 {
 
     assert_x86_64_elf_header(&bytes);
     assert!(
-        bytes.windows(3).any(|window| {
-            (window[0] == 0x40 || window[0] == 0x41) && window[1..] == [0x0f, 0x93]
-        }),
-        "a reused f32 comparison should materialize directly in its allocated non-RAX GPR"
+        bytes.windows(3).any(|window| window == [0x0f, 0x9b, 0xc4]),
+        "a reused f32 comparison should reject unordered operands"
     );
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(

@@ -22,7 +22,7 @@ limited to native x86_64 output from this worktree.
 | `core::decimal` all 20 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of extrema across 8-, 16-, and 32-bit integers, ordinary values, sign placement, zero, out-of-range fallbacks, incremental and complete ASCII parsing for all six widths, and overflow against each width's limits. `std::io_decimal` and both bounded decimal file readers use the portable scalar helpers. |
 | `core::hex` all 14 public functions | Executable on x86_64 | Runtime fixture checks shortest lowercase and uppercase hexadecimal representations of `u8`, `u16`, and `u32`, zero and maximum values, invalid-index fallbacks, mixed-case digit accumulation, complete prefixed and unprefixed parsing, and overflow against each width's limit. The helpers allocate no storage and use no host calls. |
 | `core::binary` all 11 public functions | Executable on x86_64 | Runtime fixture checks shortest unsigned binary representations across `u8`, `u16`, and `u32`, zero and high-bit values, invalid-index fallbacks, bounded digit accumulation, optional prefixes, malformed and overflowing input, and format/parse round trips for all 256 byte values. The helpers allocate no storage and use no host calls. |
-| `core::f32` all 13 public functions | Executable on x86_64 for tested finite inputs | Runtime fixture checks sign, comparison, valid and reversed clamp bounds, fallback behavior, and square root for zero, negative, small, ordinary, and large inputs. The imported public constant `ONE` is broken (dependency 5), and unordered NaN comparisons produce wrong results (dependency 32). |
+| `core::f32` all 13 public functions | Executable on x86_64 for tested finite and NaN inputs | Runtime fixtures check sign, comparison, valid and reversed clamp bounds, fallback behavior, and square root for zero, negative, small, ordinary, large, and NaN inputs. Direct and materialized NaN comparisons now follow unordered semantics. The imported public constant `ONE` remains broken (dependency 5). |
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
 | Legacy `stdlib/bool.lani` all 9 public functions and `stdlib/i32.lani` all 16 public functions | Executable on x86_64 when included as source | A source-level native fixture checks both boolean values, both selection branches, ordinary and boundary signed arithmetic, wrapping overflow, comparisons, clamp bounds, and power-of-two overflow. The test calls every public function in both files. `abs` requires input above `i32::MIN`; `clamp` requires ordered bounds. |
@@ -220,15 +220,16 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   optional `0b` or `0B` prefix followed by at least one digit, and reject
   empty, sign-containing, whitespace-containing, malformed, and overflowing
   input. An overstated physical view length can trap on native indexing.
-- `core::f32::clamp_or` returns its caller fallback when `low > high`;
-  `clamp` returns its input unchanged for those invalid bounds. Valid bounds
-  clamp inclusively. The native fixture checks finite values.
-- `core::f32::sqrt` returns zero for nonpositive inputs and scales finite
+- `core::f32::clamp_or` returns its caller fallback when bounds are reversed
+  or either bound is NaN; `clamp` returns its input unchanged for those invalid
+  bounds. Valid bounds clamp inclusively, and a NaN value propagates.
+  `min` and `max` return the non-NaN argument when exactly one is NaN; two
+  NaNs yield NaN. `signum` and `sqrt` propagate NaN. Predicates treat NaN as
+  unordered: it is nonzero, neither positive nor negative, and outside every
+  finite interval. `sqrt` returns zero for nonpositive inputs and scales finite
   positive inputs before Newton iteration, including values far above or below
-  one. The other `f32` functions follow their source definitions; no NaN
-  contract is claimed by this gate because unordered comparisons fail natively
-  as shown in dependency 32. Imported `core::f32::ONE` is not usable on x86_64
-  until the constant lowering issue below is fixed.
+  one. Imported `core::f32::ONE` is not usable on x86_64 until the constant
+  lowering issue below is fixed.
 - `core::array_i32_4::sum` folds with saturating addition; overflowing sums
   clamp to the corresponding i32 endpoint at each element. `get_or` and
   `index_of_or` return the caller's fallback for out-of-range or absent values.
@@ -957,15 +958,13 @@ also fixes the imported struct-return relocation path described below.
     methods are not executable through this qualified call form. The compiler
     task needs to establish supported trait dispatch and native lowering
     before the complete `core::cmp` module can be promoted.
-32. **Unordered f32 comparisons.**
-    `tests/fixtures/stdlib_foundation/repro_f32_unordered.lani` passes
-    `laniusc check --stdlib-root stdlib` and emits native x86_64 output. It
-    computes `nan = 0.0 / 0.0` at runtime and returns a comparison bit mask.
-    IEEE-style unordered comparisons produce mask 2 (`nan != nan` only), but
-    the ELF exits 85: `nan == nan`, `nan < 0`, `nan <= 0`, and `nan == 0`
-    evaluate true. This is evidence of incorrect native f32 comparison
-    behavior; its exact lowering cause still needs compiler investigation.
-    `core::f32` cannot claim NaN behavior while comparisons have this result.
+32. **Resolved: unordered f32 comparisons.**
+    `tests/fixtures/stdlib_foundation/repro_f32_unordered.lani` now exits 2:
+    only `nan != nan` is true. Native x86 `UCOMISS` sets parity for unordered
+    operands, so comparison results and fused branches now combine their
+    ordinary condition with the parity flag. The executable fixtures cover
+    direct branches, bool values passed between functions, both operand
+    orders, signed zero, and NaN behavior of `core::f32` helpers.
 33. **Out-of-range signed narrowing casts.**
     `tests/fixtures/stdlib_foundation/repro_signed_narrow_cast.lani` passes
     `laniusc check --stdlib-root stdlib` and emits x86_64 output. It casts
