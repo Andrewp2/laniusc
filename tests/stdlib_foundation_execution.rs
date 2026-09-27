@@ -426,6 +426,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_slice_bool_search",
+            "tests/fixtures/stdlib_foundation/core_slice_bool_search.lani",
+            0,
+            b"",
+        ),
+        (
             "core_slice_bool_bounds",
             "tests/fixtures/stdlib_foundation/core_slice_bool_bounds.lani",
             101,
@@ -1092,6 +1098,9 @@ fn executable_core_function_surface_has_runtime_cases() {
                         .contains(&call)
                 || module == "slice_bool"
                     && include_str!("fixtures/stdlib_foundation/core_slice_bool_extended.lani")
+                        .contains(&call)
+                || module == "slice_bool"
+                    && include_str!("fixtures/stdlib_foundation/core_slice_bool_search.lani")
                         .contains(&call)
                 || module == "slice_u8"
                     && include_str!("fixtures/stdlib_foundation/core_slice_u8_complete.lani")

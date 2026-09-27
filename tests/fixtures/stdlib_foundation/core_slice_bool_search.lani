@@ -1,0 +1,101 @@
+module app::main;
+import core::slice_bool;
+
+fn main() -> i32 {
+    let left: [bool; 3] = [false, true, false];
+    let same: [bool; 3] = [false, true, false];
+    let greater: [bool; 3] = [false, true, true];
+    let prefix: [bool; 2] = [false, true];
+    if (core::slice_bool::compare_lexicographic_or(left, 3, same, 3, -7) != 0 ||
+        core::slice_bool::compare_lexicographic_or(left, 3, greater, 3, -7) != -1 ||
+        core::slice_bool::compare_lexicographic_or(greater, 3, left, 3, -7) != 1 ||
+        core::slice_bool::compare_lexicographic_or(prefix, 2, left, 3, -7) != -1 ||
+        core::slice_bool::compare_lexicographic_or(left, -1, same, 3, -7) != -7 ||
+        core::slice_bool::compare_lexicographic_or(left, 0, same, 0, -7) != 0) { return 1; }
+
+    let sequence: [bool; 5] = [true, false, true, false, true];
+    let needle: [bool; 2] = [true, false];
+    let absent: [bool; 2] = [false, false];
+    if (core::slice_bool::index_of_subslice_or(sequence, 5, needle, 2, -7) != 0 ||
+        core::slice_bool::last_index_of_subslice_or(sequence, 5, needle, 2, -7) != 2 ||
+        core::slice_bool::index_of_subslice_or(sequence, 5, needle, 0, -7) != 0 ||
+        core::slice_bool::last_index_of_subslice_or(sequence, 5, needle, 0, -7) != 5 ||
+        core::slice_bool::index_of_subslice_or(sequence, 5, absent, 2, -7) != -7 ||
+        core::slice_bool::last_index_of_subslice_or(sequence, 5, absent, 2, -7) != -7 ||
+        core::slice_bool::index_of_subslice_or(sequence, -1, needle, 2, -7) != -7 ||
+        core::slice_bool::last_index_of_subslice_or(sequence, 5, needle, -1, -7) != -7) {
+        return 2;
+    }
+
+    let sorted: [bool; 5] = [false, false, true, true, true];
+    let unsorted: [bool; 2] = [true, false];
+    if (!core::slice_bool::is_sorted(sorted, 5) ||
+        !core::slice_bool::is_sorted(sorted, 0) ||
+        core::slice_bool::is_sorted(sorted, -1) ||
+        core::slice_bool::is_sorted(unsorted, 2) ||
+        core::slice_bool::lower_bound_or(sorted, 5, false, -7) != 0 ||
+        core::slice_bool::upper_bound_or(sorted, 5, false, -7) != 2 ||
+        core::slice_bool::lower_bound_or(sorted, 5, true, -7) != 2 ||
+        core::slice_bool::upper_bound_or(sorted, 5, true, -7) != 5 ||
+        core::slice_bool::binary_search_first_or(sorted, 5, false, -7) != 0 ||
+        core::slice_bool::binary_search_last_or(sorted, 5, false, -7) != 1 ||
+        core::slice_bool::binary_search_first_or(sorted, 5, true, -7) != 2 ||
+        core::slice_bool::binary_search_last_or(sorted, 5, true, -7) != 4) { return 3; }
+    if (core::slice_bool::lower_bound_or(sorted, 0, true, -7) != 0 ||
+        core::slice_bool::upper_bound_or(sorted, 0, false, -7) != 0 ||
+        core::slice_bool::binary_search_first_or(sorted, 0, true, -7) != -7 ||
+        core::slice_bool::binary_search_last_or(sorted, 0, false, -7) != -7 ||
+        core::slice_bool::lower_bound_or(sorted, -1, true, -7) != -7 ||
+        core::slice_bool::upper_bound_or(unsorted, 2, true, -7) != -7 ||
+        core::slice_bool::binary_search_first_or(unsorted, 2, false, -7) != -7 ||
+        core::slice_bool::binary_search_last_or(unsorted, 2, true, -7) != -7) { return 4; }
+
+    let partition: [bool; 5] = [true, false, true, false, false];
+    if (core::slice_bool::partition_lt(partition, -1, true) != -1 ||
+        !partition[0] ||
+        core::slice_bool::partition_lt(partition, 5, true) != 3 ||
+        partition[0] || partition[1] || partition[2] ||
+        !partition[3] || !partition[4] ||
+        core::slice_bool::count_true(partition, 5) != 2 ||
+        core::slice_bool::partition_lt(partition, 5, false) != 0 ||
+        core::slice_bool::partition_lt(partition, 0, true) != 0) { return 5; }
+
+    // Every five-element Boolean sequence has one of these 32 masks.
+    let mask: i32 = 0;
+    while (mask < 32) {
+        let work: [bool; 5] = [false, false, false, false, false];
+        let bits: i32 = mask;
+        let true_count: i32 = 0;
+        let index: i32 = 0;
+        while (index < 5) {
+            if (bits % 2 == 1) { work[index] = true; true_count += 1; }
+            bits = bits / 2;
+            index += 1;
+        }
+        if (!core::slice_bool::sort(work, 5) ||
+            !core::slice_bool::is_sorted(work, 5) ||
+            core::slice_bool::lower_bound_or(work, 5, false, -7) != 0 ||
+            core::slice_bool::upper_bound_or(work, 5, false, -7) != 5 - true_count ||
+            core::slice_bool::lower_bound_or(work, 5, true, -7) != 5 - true_count ||
+            core::slice_bool::upper_bound_or(work, 5, true, -7) != 5 ||
+            core::slice_bool::partition_lt(work, 5, true) != 5 - true_count) { return 6; }
+        if (true_count == 0) {
+            if (core::slice_bool::binary_search_first_or(work, 5, true, -7) != -7 ||
+                core::slice_bool::binary_search_last_or(work, 5, true, -7) != -7) { return 7; }
+        } else {
+            if (core::slice_bool::binary_search_first_or(work, 5, true, -7) != 5 - true_count ||
+                core::slice_bool::binary_search_last_or(work, 5, true, -7) != 4) { return 8; }
+        }
+        if (true_count == 5) {
+            if (core::slice_bool::binary_search_first_or(work, 5, false, -7) != -7 ||
+                core::slice_bool::binary_search_last_or(work, 5, false, -7) != -7) { return 9; }
+        } else {
+            if (core::slice_bool::binary_search_first_or(work, 5, false, -7) != 0 ||
+                core::slice_bool::binary_search_last_or(work, 5, false, -7) != 4 - true_count) {
+                return 10;
+            }
+        }
+        mask += 1;
+    }
+    return 0;
+}

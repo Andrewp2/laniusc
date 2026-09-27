@@ -262,6 +262,62 @@ pub fn ends_with(values: [bool], len: i32, suffix: [bool], suffix_len: i32) -> b
     return true;
 }
 
+fn less(left: bool, right: bool) -> bool {
+    return !left && right;
+}
+
+// False precedes true. Returns -1, 0, or 1; invalid lengths return fallback.
+pub fn compare_lexicographic_or(
+    left: [bool], left_len: i32, right: [bool], right_len: i32, fallback: i32
+) -> i32 {
+    if (left_len < 0 || right_len < 0) { return fallback; }
+    let common: i32 = left_len;
+    if (right_len < common) { common = right_len; }
+    let index: i32 = 0;
+    while (index < common) {
+        if (less(left[index], right[index])) { return -1; }
+        if (less(right[index], left[index])) { return 1; }
+        index += 1;
+    }
+    if (left_len < right_len) { return -1; }
+    if (left_len > right_len) { return 1; }
+    return 0;
+}
+
+// An empty needle matches at zero; invalid lengths and misses return fallback.
+pub fn index_of_subslice_or(
+    values: [bool], len: i32, needle: [bool], needle_len: i32, fallback: i32
+) -> i32 {
+    if (len < 0 || needle_len < 0 || needle_len > len) { return fallback; }
+    let start: i32 = 0;
+    while (start <= len - needle_len) {
+        let offset: i32 = 0;
+        while (offset < needle_len && values[start + offset] == needle[offset]) {
+            offset += 1;
+        }
+        if (offset == needle_len) { return start; }
+        start += 1;
+    }
+    return fallback;
+}
+
+// The last match of an empty needle is at len.
+pub fn last_index_of_subslice_or(
+    values: [bool], len: i32, needle: [bool], needle_len: i32, fallback: i32
+) -> i32 {
+    if (len < 0 || needle_len < 0 || needle_len > len) { return fallback; }
+    let start: i32 = len - needle_len;
+    while (start >= 0) {
+        let offset: i32 = 0;
+        while (offset < needle_len && values[start + offset] == needle[offset]) {
+            offset += 1;
+        }
+        if (offset == needle_len) { return start; }
+        start -= 1;
+    }
+    return fallback;
+}
+
 // Negative and empty lengths return false.
 pub fn any(values: [bool], len: i32) -> bool {
     if (len <= 0) {
@@ -335,6 +391,73 @@ pub fn equal(left: [bool], left_len: i32, right: [bool], right_len: i32) -> bool
         index += 1;
     }
     return true;
+}
+
+// False precedes true. A negative length is invalid.
+pub fn is_sorted(values: [bool], len: i32) -> bool {
+    if (len < 0) { return false; }
+    let index: i32 = 1;
+    while (index < len) {
+        if (values[index - 1] && !values[index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+// Search functions check sortedness first. Invalid or unsorted views return
+// fallback; valid insertion indices range from zero through len.
+pub fn lower_bound_or(values: [bool], len: i32, needle: bool, fallback: i32) -> i32 {
+    if (!is_sorted(values, len)) { return fallback; }
+    let low: i32 = 0;
+    let high: i32 = len;
+    while (low < high) {
+        let middle: i32 = low + (high - low) / 2;
+        if (less(values[middle], needle)) { low = middle + 1; }
+        else { high = middle; }
+    }
+    return low;
+}
+
+pub fn upper_bound_or(values: [bool], len: i32, needle: bool, fallback: i32) -> i32 {
+    if (!is_sorted(values, len)) { return fallback; }
+    let low: i32 = 0;
+    let high: i32 = len;
+    while (low < high) {
+        let middle: i32 = low + (high - low) / 2;
+        if (!less(needle, values[middle])) { low = middle + 1; }
+        else { high = middle; }
+    }
+    return low;
+}
+
+pub fn binary_search_first_or(values: [bool], len: i32, needle: bool, fallback: i32) -> i32 {
+    let index: i32 = lower_bound_or(values, len, needle, -1);
+    if (index >= 0 && index < len && values[index] == needle) { return index; }
+    return fallback;
+}
+
+pub fn binary_search_last_or(values: [bool], len: i32, needle: bool, fallback: i32) -> i32 {
+    let after: i32 = upper_bound_or(values, len, needle, -1);
+    if (after > 0 && values[after - 1] == needle) { return after - 1; }
+    return fallback;
+}
+
+// Partitions false values before true values, preserving the multiset but
+// leaving within-partition order unspecified. Negative lengths return -1.
+pub fn partition_lt(values: [bool], len: i32, pivot: bool) -> i32 {
+    if (len < 0) { return -1; }
+    let write: i32 = 0;
+    let read: i32 = 0;
+    while (read < len) {
+        if (less(values[read], pivot)) {
+            let previous: bool = values[write];
+            values[write] = values[read];
+            values[read] = previous;
+            write += 1;
+        }
+        read += 1;
+    }
+    return write;
 }
 
 // Sorts false before true. A negative length writes nothing and returns false.
