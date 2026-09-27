@@ -1,0 +1,84 @@
+module app::main;
+import core::hex;
+
+fn main() -> i32 {
+    if (core::hex::len_u32(0) != 1 || core::hex::len_u32(15) != 1 ||
+        core::hex::len_u32(16) != 2 || core::hex::len_u32(4294967295) != 8) {
+        return 1;
+    }
+    if (core::hex::byte_at_lower_or_u32(0, 0, 88) != 48 ||
+        core::hex::byte_at_upper_or_u32(0, 0, 88) != 48 ||
+        core::hex::byte_at_lower_or_u32(0, 1, 88) != 88 ||
+        core::hex::byte_at_upper_or_u32(0, 4294967295, 89) != 89) {
+        return 2;
+    }
+    let mixed_lower: [i32; 8] = [49, 97, 50, 98, 51, 99, 52, 100];
+    let mixed_upper: [i32; 8] = [49, 65, 50, 66, 51, 67, 52, 68];
+    let index: u32 = 0;
+    while (index < 8) {
+        let slot: i32 = index;
+        let lower: i32 = core::hex::byte_at_lower_or_u32(439041101, index, 0);
+        let upper: i32 = core::hex::byte_at_upper_or_u32(439041101, index, 0);
+        let maximum: i32 = core::hex::byte_at_lower_or_u32(4294967295, index, 0);
+        if (lower != mixed_lower[slot] || upper != mixed_upper[slot] || maximum != 102) {
+            return 3;
+        }
+        index += 1;
+    }
+    let max_u8: u8 = 255;
+    let mixed_u8: u8 = 171;
+    if (core::hex::len_u8(0) != 1 || core::hex::len_u8(max_u8) != 2 ||
+        core::hex::byte_at_lower_or_u8(max_u8, 0, 88) != 102 ||
+        core::hex::byte_at_lower_or_u8(max_u8, 1, 88) != 102 ||
+        core::hex::byte_at_upper_or_u8(mixed_u8, 0, 88) != 65 ||
+        core::hex::byte_at_upper_or_u8(mixed_u8, 1, 88) != 66 ||
+        core::hex::byte_at_lower_or_u8(max_u8, 2, 88) != 88 ||
+        core::hex::byte_at_upper_or_u8(max_u8, 2, 89) != 89) {
+        return 4;
+    }
+    let max_u16: u16 = 65535;
+    let mixed_u16: u16 = 48879;
+    if (core::hex::len_u16(0) != 1 || core::hex::len_u16(max_u16) != 4 ||
+        core::hex::byte_at_lower_or_u16(mixed_u16, 0, 88) != 98 ||
+        core::hex::byte_at_lower_or_u16(mixed_u16, 1, 88) != 101 ||
+        core::hex::byte_at_lower_or_u16(mixed_u16, 2, 88) != 101 ||
+        core::hex::byte_at_lower_or_u16(mixed_u16, 3, 88) != 102 ||
+        core::hex::byte_at_upper_or_u16(mixed_u16, 0, 88) != 66 ||
+        core::hex::byte_at_upper_or_u16(mixed_u16, 3, 88) != 70 ||
+        core::hex::byte_at_lower_or_u16(max_u16, 4, 88) != 88 ||
+        core::hex::byte_at_upper_or_u16(max_u16, 4, 89) != 89) {
+        return 5;
+    }
+    if (!core::hex::can_append_ascii_digit_u32(0, 48, 4294967295) ||
+        !core::hex::can_append_ascii_digit_u32(268435455, 70, 4294967295) ||
+        core::hex::can_append_ascii_digit_u32(268435456, 48, 4294967295) ||
+        core::hex::can_append_ascii_digit_u32(0, 71, 4294967295) ||
+        !core::hex::can_append_ascii_digit_u32(15, 65, 255) ||
+        core::hex::can_append_ascii_digit_u32(15, 66, 250) ||
+        !core::hex::can_append_ascii_digit_u32(0, 48, 0) ||
+        core::hex::can_append_ascii_digit_u32(0, 49, 0)) {
+        return 6;
+    }
+    if (core::hex::append_ascii_digit_or_u32(0, 70, 4294967295, 99) != 15 ||
+        core::hex::append_ascii_digit_or_u32(268435455, 102, 4294967295, 99) != 4294967295 ||
+        core::hex::append_ascii_digit_or_u32(268435456, 48, 4294967295, 99) != 99 ||
+        core::hex::append_ascii_digit_or_u32(0, 71, 4294967295, 99) != 99) {
+        return 7;
+    }
+    let ascii_digits: [i32; 3] = [49, 97, 70];
+    let parsed: u32 = 0;
+    let digit_index: i32 = 0;
+    while (digit_index < 3) {
+        let source: i32 = ascii_digits[digit_index];
+        let ascii: u8 = source as u8;
+        if (!core::hex::can_append_ascii_digit_u32(parsed, ascii, 4096)) {
+            return 8;
+        }
+        parsed = core::hex::append_ascii_digit_or_u32(parsed, ascii, 4096, 9999);
+        digit_index += 1;
+    }
+    if (parsed != 431) {
+        return 9;
+    }
+    return 0;
+}

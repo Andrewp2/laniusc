@@ -20,6 +20,7 @@ limited to native x86_64 output from this worktree.
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 6 public scalar-codec functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, length boundaries, malformed sequences, surrogate exclusion, and Unicode maximum. Byte parameters and results use `u8`; it does not access string storage. |
 | `core::decimal` all 14 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of extrema across 8-, 16-, and 32-bit integers, ordinary values, sign placement, zero, out-of-range fallbacks, incremental ASCII parsing, and overflow against caller limits. `std::io_decimal` and both bounded decimal file readers use the portable helpers. |
+| `core::hex` all 11 public functions | Executable on x86_64 | Runtime fixture checks shortest lowercase and uppercase hexadecimal representations of `u8`, `u16`, and `u32`, zero and maximum values, invalid-index fallbacks, mixed-case digit accumulation, and overflow against caller limits. The helpers allocate no storage and use no host calls. |
 | `core::f32` all 12 public functions | Executable on x86_64 for tested finite inputs | Runtime fixture checks sign, comparison, bounds, and square root for zero, negative, small, ordinary, and large inputs. The imported public constant `ONE` is broken; see dependency 5. |
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
@@ -40,6 +41,7 @@ limited to native x86_64 output from this worktree.
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, and invalid handles. These are separate from the portable core. |
 | `std::io_checked` all 5 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_checked_execution.rs` checks exact stdin, bounded read-to-EOF, stdout, and stderr bytes; empty, exact-fit, and overlong input; invalid storage; EOF after a read prefix; host errors and zero progress; retries after short transfers; and a multi-chunk binary stdin-to-stdout copy. Caller storage avoids allocation. |
 | `std::io_decimal` all 12 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned output extrema across 8-, 16-, and 32-bit integers, exact byte counts, invalid handles, and injected sign and digit write failures for the underlying 32-bit writers. `tests/stdlib_io_decimal_input_execution.rs` checks bounded stdin parsing across all six widths, EOF, whitespace and signs, malformed and overlong input, overflow, and injected read failures in the underlying 32-bit readers. |
+| `std::io_hex` all 6 public writers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_hex_execution.rs` checks exact lowercase and uppercase bytes across `u8`, `u16`, and `u32`, counts, invalid handles, and injected first- and second-byte write failures. |
 | `std::file` all 21 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, multi-chunk binary copies between files and standard streams, bounded decimal reads and writes across 8-, 16-, and 32-bit integers, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded outputs, and a forced rejection-and-retry path. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
@@ -151,6 +153,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   the supplied limit before multiplication. `append_ascii_digit_or_u32` returns
   the caller's fallback on either failure; that fallback can equal a valid
   parsed value, so callers needing a separate success check use the predicate.
+- `core::hex` returns the shortest unsigned hexadecimal length and lowercase
+  or uppercase ASCII byte at a zero-based index for `u8`, `u16`, and `u32`.
+  Zero is one digit; out-of-range indices return the caller's fallback. Its
+  digit predicate accepts ASCII `0..9`, `a..f`, and `A..F`, and rejects an
+  append above a caller-supplied limit before multiplying by 16. The append
+  helper returns fallback for malformed or overflowing input, which can equal
+  a valid parsed value; call the predicate when success must be separate.
 - `core::f32::sqrt` returns zero for nonpositive inputs and scales finite
   positive inputs before Newton iteration, including values far above or below
   one. The other `f32` functions follow their source definitions; no NaN
@@ -286,6 +295,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   apply the same syntax and byte limit, then reject values outside the narrower
   type with the caller's fallback. They consume the input through the 32-bit
   reader and return the fallback for malformed input or host errors too.
+- `std::io_hex` writes the shortest lowercase or uppercase hexadecimal form
+  of `u8`, `u16`, or `u32` without allocation. A successful call returns the
+  number of bytes written. A negative host error is returned directly; a
+  write reporting anything other than one byte returns `-1`. Failure can
+  leave a hexadecimal prefix on the handle.
 - `std::file::write_text_once` opens or creates a file, truncates it, attempts
   one text write, and attempts to close it even if writing fails. It returns the actual
   byte count on success, including zero for empty text; a negative open,
@@ -401,6 +415,8 @@ Run `cargo test --test stdlib_host_execution` for the separate native I/O
 wrappers; its partial-write fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_decimal_input_execution` for bounded decimal
 stdin reads; fault injection cases run when Linux `strace` is available.
+Run `cargo test --test stdlib_io_hex_execution` for hexadecimal stream output;
+its write-failure cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_checked_execution` for complete caller-buffer
 stream operations; fault injection cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_file_execution` for the file wrappers; its

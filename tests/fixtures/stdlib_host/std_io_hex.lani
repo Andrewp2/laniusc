@@ -1,0 +1,26 @@
+module app::main;
+import std::io;
+import std::io_hex;
+
+fn main() -> i32 {
+    let max_u8: u8 = 255;
+    let mixed_u8: u8 = 171;
+    let mixed_u16: u16 = 48879;
+    if (std::io_hex::write_lower_u32(1, 0) != 1 || std::io::write_newline(1) != 1) { return 1; }
+    if (std::io_hex::write_lower_u8(1, max_u8) != 2 || std::io::write_newline(1) != 1) { return 2; }
+    if (std::io_hex::write_upper_u8(1, mixed_u8) != 2 || std::io::write_newline(1) != 1) { return 3; }
+    if (std::io_hex::write_lower_u16(1, mixed_u16) != 4 || std::io::write_newline(1) != 1) { return 4; }
+    if (std::io_hex::write_upper_u16(1, mixed_u16) != 4 || std::io::write_newline(1) != 1) { return 5; }
+    if (std::io_hex::write_lower_u32(1, 439041101) != 8 || std::io::write_newline(1) != 1) { return 6; }
+    if (std::io_hex::write_upper_u32(1, 439041101) != 8 || std::io::write_newline(1) != 1) { return 7; }
+    if (std::io_hex::write_lower_u32(1, 4294967295) != 8 || std::io::write_newline(1) != 1) { return 8; }
+    if (std::io_hex::write_lower_u8(-1, max_u8) >= 0 ||
+        std::io_hex::write_upper_u8(-1, mixed_u8) >= 0 ||
+        std::io_hex::write_lower_u16(-1, mixed_u16) >= 0 ||
+        std::io_hex::write_upper_u16(-1, mixed_u16) >= 0 ||
+        std::io_hex::write_lower_u32(-1, 42) >= 0 ||
+        std::io_hex::write_upper_u32(-1, 42) >= 0) {
+        return 9;
+    }
+    return 0;
+}

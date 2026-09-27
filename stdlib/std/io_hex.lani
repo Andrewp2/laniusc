@@ -1,0 +1,58 @@
+// Checked hexadecimal stream output built on bound one-byte host writes.
+module std::io_hex;
+import core::hex;
+import std::io;
+
+fn write_u32_digits(handle: i32, value: u32, uppercase: bool) -> i32 {
+    let length: u32 = core::hex::len_u32(value);
+    let position: u32 = 0;
+    while (position < length) {
+        let digit: u8 = 0;
+        if (uppercase) {
+            digit = core::hex::byte_at_upper_or_u32(value, position, 0);
+        } else {
+            digit = core::hex::byte_at_lower_or_u32(value, position, 0);
+        }
+        let byte: i32 = digit;
+        let written: i32 = std::io::write_byte(handle, byte);
+        if (written < 0) {
+            return written;
+        }
+        if (written != 1) {
+            return -1;
+        }
+        position += 1;
+    }
+    return length;
+}
+
+// Write the shortest lowercase or uppercase representation. Success returns
+// its byte count. A negative host error is passed through; an impossible
+// non-one-byte write returns -1. Failure may leave a visible digit prefix.
+pub fn write_lower_u32(handle: i32, value: u32) -> i32 {
+    return write_u32_digits(handle, value, false);
+}
+
+pub fn write_upper_u32(handle: i32, value: u32) -> i32 {
+    return write_u32_digits(handle, value, true);
+}
+
+pub fn write_lower_u8(handle: i32, value: u8) -> i32 {
+    let widened: u32 = value as u32;
+    return write_lower_u32(handle, widened);
+}
+
+pub fn write_upper_u8(handle: i32, value: u8) -> i32 {
+    let widened: u32 = value as u32;
+    return write_upper_u32(handle, widened);
+}
+
+pub fn write_lower_u16(handle: i32, value: u16) -> i32 {
+    let widened: u32 = value as u32;
+    return write_lower_u32(handle, widened);
+}
+
+pub fn write_upper_u16(handle: i32, value: u16) -> i32 {
+    let widened: u32 = value as u32;
+    return write_upper_u32(handle, widened);
+}

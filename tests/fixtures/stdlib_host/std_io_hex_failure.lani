@@ -1,0 +1,9 @@
+module app::main;
+import std::io_hex;
+
+fn main() -> i32 {
+    if (std::io_hex::write_lower_u32(1, 171) >= 0) {
+        return 1;
+    }
+    return 0;
+}
