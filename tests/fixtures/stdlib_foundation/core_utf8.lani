@@ -124,5 +124,32 @@ fn main() -> i32 {
         core::utf8::scalar_at_or(high_code_view, 2, 0, 4294967295) != 4294967295) {
         return 16;
     }
+    let repeated:[i32; 7] = [65, 194, 162, 65, 194, 162, 66];
+    let repeated_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(repeated), 7);
+    if (core::utf8::index_of_scalar_or(repeated_view, 7, 65, -9) != 0 ||
+        core::utf8::index_of_scalar_or(repeated_view, 7, 162, -9) != 1 ||
+        core::utf8::index_of_scalar_or(repeated_view, 7, 66, -9) != 4 ||
+        core::utf8::index_of_scalar_or(text_view, 10, 8364, -9) != 2 ||
+        core::utf8::index_of_scalar_or(maximum_view, 4, 1114111, -9) != 0 ||
+        core::utf8::index_of_scalar_or(repeated_view, 7, 8364, -9) != -9 ||
+        core::utf8::index_of_scalar_or(repeated_view, 7, 55296, -9) != -9 ||
+        core::utf8::index_of_scalar_or(empty, 0, 65, -9) != -9 ||
+        core::utf8::index_of_scalar_or(repeated_view, -1, 65, -9) != -9 ||
+        core::utf8::index_of_scalar_or(truncated_view, 2, 226, -9) != -9 ||
+        core::utf8::index_of_scalar_or(high_code_view, 2, 65, -9) != -9) {
+        return 17;
+    }
+    if (core::utf8::last_index_of_scalar_or(repeated_view, 7, 65, -9) != 2 ||
+        core::utf8::last_index_of_scalar_or(repeated_view, 7, 162, -9) != 3 ||
+        core::utf8::last_index_of_scalar_or(repeated_view, 7, 66, -9) != 4 ||
+        core::utf8::last_index_of_scalar_or(text_view, 10, 128578, -9) != 3 ||
+        core::utf8::last_index_of_scalar_or(repeated_view, 7, 8364, -9) != -9 ||
+        core::utf8::last_index_of_scalar_or(repeated_view, 7, 1114112, -9) != -9 ||
+        core::utf8::last_index_of_scalar_or(empty, 0, 65, -9) != -9 ||
+        core::utf8::last_index_of_scalar_or(repeated_view, -1, 65, -9) != -9 ||
+        core::utf8::last_index_of_scalar_or(bad_continuation_view, 2, 65, -9) != -9 ||
+        core::utf8::last_index_of_scalar_or(high_code_view, 2, 65, -9) != -9) {
+        return 18;
+    }
     return 0;
 }
