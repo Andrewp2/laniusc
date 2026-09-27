@@ -40,3 +40,32 @@ pub fn secure_u32_or(fallback: u32) -> u32 {
     let signed: i32 = word[0];
     return signed as u32;
 }
+
+// Return a uniformly sampled value in [0, bound), or fallback if bound is zero
+// or the host fails. Bound one returns zero without reading the host. For
+// larger bounds, rejection sampling removes the modulo bias from a 32-bit
+// random word. The caller's fallback may itself lie in the valid range.
+pub fn secure_u32_below_or(bound: u32, fallback: u32) -> u32 {
+    if (bound == 0) {
+        return fallback;
+    }
+    if (bound == 1) {
+        return 0;
+    }
+    let maximum: u32 = 4294967295;
+    let threshold: u32 = ((maximum % bound) + 1) % bound;
+    let word: [i32; 1] = [0];
+    let data: ptr = core::mem::i32_array_data_ptr(word);
+    while (true) {
+        word[0] = 0;
+        if (!fill_secure_exact(data, 4)) {
+            return fallback;
+        }
+        let signed: i32 = word[0];
+        let sample: u32 = signed as u32;
+        if (sample >= threshold) {
+            return sample % bound;
+        }
+    }
+    return fallback;
+}

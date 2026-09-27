@@ -41,7 +41,7 @@ limited to native x86_64 output from this worktree.
 | `std::io_checked` all 5 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_checked_execution.rs` checks exact stdin, bounded read-to-EOF, stdout, and stderr bytes; empty, exact-fit, and overlong input; invalid storage; EOF after a read prefix; host errors and zero progress; retries after short transfers; and a multi-chunk binary stdin-to-stdout copy. Caller storage avoids allocation. |
 | `std::io_decimal` all 12 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned output extrema across 8-, 16-, and 32-bit integers, exact byte counts, invalid handles, and injected sign and digit write failures for the underlying 32-bit writers. `tests/stdlib_io_decimal_input_execution.rs` checks bounded stdin parsing across all six widths, EOF, whitespace and signs, malformed and overlong input, overflow, and injected read failures in the underlying 32-bit readers. |
 | `std::file` all 19 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, a multi-chunk binary copy, bounded decimal reads and writes across 8-, 16-, and 32-bit integers, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
-| `std::random_checked` both public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, and retries after an injected short read. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
+| `std::random_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded outputs, and a forced rejection-and-retry path. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
 | `test::assert` | Contract-only | Passing assertions hit unsupported target LIR opcode 38 during x86 emission. Reproduction programs are included. |
@@ -362,6 +362,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   the caller's fallback, which can also be a legitimate random output. Use
   `fill_secure_exact` when success must be distinguishable from that value.
   This wrapper relies on the x86 `core::mem::i32_array_data_ptr` intrinsic.
+- `std::random_checked::secure_u32_below_or` uses rejection sampling to draw
+  uniformly from `0..bound` without modulo bias. A zero bound or random-host
+  failure returns the caller's fallback, which may also be a valid result.
+  Bound one returns zero without host access. Larger bounds use the checked
+  four-byte fill and may retry rejected words.
 
 The small runnable example is `sample_programs/portable_window_checksum.lani`.
 It validates an ASCII marker, copies readings into a separate backed view,
@@ -606,6 +611,13 @@ the failure injection cases run when Linux `strace` is available.
     corresponding `RangeFrom<u32>::contains` method returns true. The minimal
     imported module defines both `RangeFrom<i32>` and `RangeFrom<u32>` impls.
     Unsigned range extensions were removed until method dispatch is correct.
+28. **Unsigned remainder with a maximum-value literal.** Compile
+    `tests/fixtures/stdlib_foundation/repro_u32_literal_mod.lani` with
+    `--stdlib-root stdlib --emit x86_64`, then run the ELF. It exits 1 because
+    `4294967295 % divisor` is not 5 for `divisor: u32 = 10`; the same maximum
+    stored in a typed `u32` variable produces 5. `std::random_checked` uses a
+    typed maximum for its rejection threshold. The literal expression still
+    needs a compiler fix so general user code has correct unsigned remainder.
 
 These are compiler/runtime dependencies, not stdlib implementations in Rust or
 Python. They should be handled in the parallel compiler task before extending
