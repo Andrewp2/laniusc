@@ -765,7 +765,12 @@ also fixes the imported struct-return relocation path described below.
    `repro_local_array_return.lani` shows that a local source-level copy also
    returns wrong values: it passes type checking and emits an ELF, but that
    ELF exits 1 instead of 0. Thus including the legacy array helpers directly
-   does not make their three array-returning functions executable.
+   does not make their three array-returning functions executable. The x86
+   disassembly shows a layout mismatch: fixed i32 arrays hold packed 32-bit
+   elements at increasing addresses, while aggregate return rows copy 64-bit
+   words toward decreasing addresses. The subsequent local copy also needs
+   the checked array shape to select the right destination layout; a width-only
+   special case changes the wrong copy when a literal precedes the call.
 8. **Native numeric module imports.** The `core::{i32,u8,u32}` power-of-two
    helpers had overflow loops for values above their highest representable
    power of two. Source guards now return false for `is_power_of_two` and zero
