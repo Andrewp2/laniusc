@@ -39,6 +39,7 @@ limited to native x86_64 output from this worktree.
 | `core::slice_u16` all 36 public unsigned-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every public function and check access, mutation, copy and rotation, compaction, insertion, sequence search, unsigned ordering across `32768`, sort and binary search, partitioning, and sums saturating at `65535`. They cover empty and invalid logical lengths, rejected mutation, and all 243 five-element sequences over `{0,1,2}` for sorting. A separate fixture confirms exit 101 when the claimed length exceeds the physical backing and is indexed. |
 | `core::slice_u32` all 36 public unsigned-word-view functions | Executable on x86_64 for fixed-array-backed views | Matching runtime fixtures cover the same operations and failure cases, including unsigned ordering across `2^31` and saturation at `u32::MAX`, plus the exhaustive small-sort fixture. The caller supplies a logical length within the physical backing. A source scan requires a runtime call for every public function. |
 | `core::slice_bool` all 14 public boolean-view functions | Executable on x86_64 for fixed-array-backed views | The runtime fixture calls every function and checks reads, writes, fill, swap, overlapping copy, reversal, prefix copy, true counts, `any` and `all`, first and last matching indices, equality, sorting, invalid lengths, and an overclaimed physical length that traps. Sorting checks every five-element Boolean sequence. The boolean checksum sample uses it with numeric and Option helpers. Generic `[T]` operations are withheld because signed element instantiations misexecute; see dependency 41. |
+| `core::slice_f32` all 12 public floating-view functions | Executable on x86_64 for fixed-array-backed views | The runtime fixture calls every function and checks finite and NaN values, IEEE equality and signed zero, left-to-right sums, overlapping copy, invalid bounds, and native trapping on an overclaimed physical length. The floating window sample combines it with `core::f32` and `OptionF32`. It does not offer a total-order sort because NaN has no ordinary comparison order. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
@@ -392,6 +393,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   before true, returning false without writing for a negative length. A fallback can
   equal a stored value; callers that need a distinct success indication use
   `set` for mutation or validate the index separately for reading.
+  `core::slice_f32` offers bounded access and mutation, fill, swap, overlap-safe
+  in-place copy, reverse, prefix copy, search, equality, and left-to-right sum
+  over caller-backed float views. Invalid indices return a fallback or false;
+  a negative length makes `sum_or` return its fallback. Searches and equality
+  use IEEE equality: NaN never matches, even against itself, while signed zeros
+  compare equal. No sorting order is claimed. Physical backing overclaims can
+  trap when indexed.
   `sum_i32` folds from left to right with saturating i32 addition, so each
   overflow clamps to `MIN` or `MAX` before the next element. Search helpers
   return the first or last matching index as named, or the caller's fallback.
@@ -729,6 +737,12 @@ header and hexadecimal payload with `core::slice_u8`, `core::range`,
 readings, selects an inclusive value range, checks its first match through
 concrete Option/Result helpers, and accumulates the selected values with
 saturation. It combines five portable modules and prints `32786`.
+
+`sample_programs/floating_window_total.lani` checks readings through
+`core::slice_f32`, sums and clamps them, and carries the result through
+`OptionF32`. It prints the matched reading's index, `2`, after verifying the
+floating total is `7.0`. Floating-to-integer conversion remains a compiler
+dependency; see item 43 below.
 
 `sample_programs/vector_square_sum.lani` uses the allocation-backed vector,
 checked push length, bounded indexed reads, saturating arithmetic, and native
@@ -1236,6 +1250,13 @@ also fixes the imported struct-return relocation path described below.
     following expression wrappers. The reproducer and
     `sample_programs/vector_true_count.lani` compile and execute on x86. A
     separate negative fixture confirms that passing a bare i32 still fails.
+43. **Floating-to-integer casts are rejected.**
+    `repro_f32_to_i32_cast.lani` assigns `7.0 as i32` to an i32 local.
+    `laniusc check --stdlib-root stdlib` reports `LNC0006`, expecting i32 but
+    seeing float. The executable floating-window sample checks its f32 total
+    and prints a separately computed integer index. The language needs a
+    defined checked or saturating conversion rule and compiler support before
+    an f32-to-i32 helper can be claimed.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

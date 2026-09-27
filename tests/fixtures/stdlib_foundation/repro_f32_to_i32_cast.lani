@@ -1,0 +1,8 @@
+module app::main;
+
+fn main() -> i32 {
+    let floating: f32 = 7.0;
+    let integer: i32 = floating as i32;
+    if (integer == 7) { return 0; }
+    return 1;
+}

@@ -354,6 +354,18 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_slice_f32",
+            "tests/fixtures/stdlib_foundation/core_slice_f32.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_slice_f32_bounds",
+            "tests/fixtures/stdlib_foundation/core_slice_f32_bounds.lani",
+            101,
+            b"",
+        ),
+        (
             "core_slice_u32_complete",
             "tests/fixtures/stdlib_foundation/core_slice_u32_complete.lani",
             0,
@@ -550,6 +562,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             "sample_programs/boolean_window_checksum.lani",
             0,
             b"3\n",
+        ),
+        (
+            "floating_window_total",
+            "sample_programs/floating_window_total.lani",
+            0,
+            b"2\n",
         ),
         (
             "vec_i32",
@@ -881,6 +899,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             "slice_bool",
             include_str!("../stdlib/core/slice_bool.lani"),
             include_str!("fixtures/stdlib_foundation/core_slice_bool.lani"),
+        ),
+        (
+            "slice_f32",
+            include_str!("../stdlib/core/slice_f32.lani"),
+            include_str!("fixtures/stdlib_foundation/core_slice_f32.lani"),
         ),
     ];
 

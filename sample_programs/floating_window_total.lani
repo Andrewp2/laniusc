@@ -1,0 +1,20 @@
+module app::main;
+import core::f32;
+import core::option_f32;
+import core::slice_f32;
+
+fn main() -> i32 {
+    let readings: [f32; 3] = [1.5, 2.5, 3.0];
+    if (!core::slice_f32::contains(readings, 3, 2.5) ||
+        core::slice_f32::first_index_or(readings, 3, 3.0, -1) != 2) {
+        return 1;
+    }
+    let raw_total: f32 = core::slice_f32::sum_or(readings, 3, -1.0);
+    let bounded: f32 = core::f32::clamp_or(raw_total, 0.0, 100.0, -1.0);
+    let result: core::option_f32::OptionF32 = core::option_f32::some(bounded);
+    let total: f32 = core::option_f32::unwrap_or(result, -1.0);
+    if (total != 7.0) { return 2; }
+    let matched_index: i32 = core::slice_f32::first_index_or(readings, 3, 3.0, -1);
+    print(matched_index);
+    return 0;
+}
