@@ -1,0 +1,12 @@
+module std::path;
+
+pub type PathByte = u8;
+pub type PathCapability = bool;
+
+pub fn path_unix_separator_byte() -> PathByte {
+    return 47;
+}
+
+pub fn path_contract_metadata_is_available() -> PathCapability {
+    return true;
+}

@@ -93,7 +93,7 @@ import std::path;
 fn main() {
     let dot: PathByte = std::path::PATH_EXTENSION_SEPARATOR;
     let slash: std::path::PathByte = std::path::PATH_SEPARATOR_UNIX;
-    let colon: PathByte = path_drive_separator_byte();
+    let colon: PathByte = PATH_DRIVE_SEPARATOR;
     let nul: std::path::PathByte = std::path::PATH_NUL;
     let letter: PathByte = 97;
     let drive_letter: std::path::PathByte = 67;
@@ -169,7 +169,7 @@ import std::path;
 
 fn main() {
     let slash: PathByte = std::path::PATH_SEPARATOR_UNIX;
-    let backslash: std::path::PathByte = path_windows_separator_byte();
+    let backslash: std::path::PathByte = PATH_SEPARATOR_WINDOWS;
     let drive_letter: PathByte = 67;
     let colon: std::path::PathByte = std::path::PATH_DRIVE_SEPARATOR;
     let name_byte: PathByte = 110;
@@ -238,7 +238,7 @@ import std::path;
 
 fn main() {
     let slash: PathByte = std::path::PATH_SEPARATOR_UNIX;
-    let backslash: std::path::PathByte = path_windows_separator_byte();
+    let backslash: std::path::PathByte = PATH_SEPARATOR_WINDOWS;
     let drive_letter: PathByte = 67;
     let colon: std::path::PathByte = std::path::PATH_DRIVE_SEPARATOR;
     let name_byte: PathByte = 110;
@@ -313,9 +313,9 @@ fn main() {
     let name_first: PathByte = 110;
     let name_second: std::path::PathByte = 97;
     let dot: PathByte = std::path::PATH_EXTENSION_SEPARATOR;
-    let colon: std::path::PathByte = path_drive_separator_byte();
-    let slash: PathByte = path_unix_separator_byte();
-    let backslash: std::path::PathByte = path_windows_separator_byte();
+    let colon: std::path::PathByte = PATH_DRIVE_SEPARATOR;
+    let slash: PathByte = PATH_SEPARATOR_UNIX;
+    let backslash: std::path::PathByte = PATH_SEPARATOR_WINDOWS;
     let quote: PathByte = std::path::PATH_WINDOWS_RESERVED_DOUBLE_QUOTE;
     let pipe: std::path::PathByte = std::path::PATH_WINDOWS_RESERVED_PIPE;
     let control: PathByte = 31;

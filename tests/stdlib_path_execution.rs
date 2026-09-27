@@ -32,24 +32,7 @@ fn path_lexical_helpers_execute_on_x86() {
 }
 
 #[test]
-fn executable_path_predicates_have_runtime_cases() {
-    let unverified = [
-        "path_contract_metadata_is_available",
-        "path_lexical_byte_helpers_are_available",
-        "path_allocation_api_is_executable",
-        "path_allocation_api_is_blocked",
-        "path_allocation_api_is_known_but_unbound",
-        "path_allocation_api_requires_allocator",
-        "path_host_normalization_is_executable",
-        "path_host_normalization_is_blocked",
-        "path_host_normalization_is_known_but_unbound",
-        "path_host_normalization_requires_runtime_binding",
-        "path_unix_separator_byte",
-        "path_windows_separator_byte",
-        "path_extension_separator_byte",
-        "path_drive_separator_byte",
-        "path_nul_byte",
-    ];
+fn public_path_functions_have_runtime_cases() {
     let cases = format!(
         "{}{}{}",
         include_str!("fixtures/stdlib_host/path_bytes.lani"),
@@ -65,9 +48,6 @@ fn executable_path_predicates_have_runtime_cases() {
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
             .next()
             .expect("path function has a name");
-        if unverified.contains(&name) {
-            continue;
-        }
         let call = format!("std::path::{name}(");
         assert!(cases.contains(&call), "{call} lacks a runtime case");
         covered += 1;

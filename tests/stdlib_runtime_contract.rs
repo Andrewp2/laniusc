@@ -5430,34 +5430,15 @@ import std::path;
 fn main() {
     let slash: PathByte = PATH_SEPARATOR_UNIX;
     let backslash: PathByte = PATH_SEPARATOR_WINDOWS;
-    let dot: PathByte = path_extension_separator_byte();
-    let colon: PathByte = std::path::path_drive_separator_byte();
-    let nul: PathByte = std::path::path_nul_byte();
+    let dot: PathByte = PATH_EXTENSION_SEPARATOR;
+    let colon: PathByte = std::path::PATH_DRIVE_SEPARATOR;
+    let nul: PathByte = std::path::PATH_NUL;
     let drive_letter: PathByte = 67;
     let letter: PathByte = 97;
     let digit: PathByte = 55;
     let one_byte_component: std::path::PathComponentLength = 1;
     let two_byte_component: PathComponentLength = 2;
     let three_byte_component: std::path::PathComponentLength = 3;
-    let metadata_available: PathCapability =
-        path_contract_metadata_is_available();
-    let lexical_available: PathCapability =
-        path_lexical_byte_helpers_are_available();
-    let allocation_executable: PathCapability =
-        path_allocation_api_is_executable();
-    let allocation_blocked: PathCapability = path_allocation_api_is_blocked();
-    let allocation_known_unbound: PathCapability =
-        path_allocation_api_is_known_but_unbound();
-    let allocation_needs_allocator: PathCapability =
-        path_allocation_api_requires_allocator();
-    let host_normalization_executable: PathCapability =
-        path_host_normalization_is_executable();
-    let host_normalization_blocked: PathCapability =
-        path_host_normalization_is_blocked();
-    let host_normalization_known_unbound: PathCapability =
-        path_host_normalization_is_known_but_unbound();
-    let host_normalization_needs_runtime: PathCapability =
-        path_host_normalization_requires_runtime_binding();
     let slash_is_separator: PathCapability =
         path_byte_is_separator(slash);
     let backslash_is_separator: PathCapability =
@@ -5533,13 +5514,7 @@ fn main() {
     let backslash_kind: PathSeparatorKind = path_separator_kind(backslash);
     let dot_kind: PathSeparatorKind =
         path_separator_kind(dot);
-    if (!metadata_available || !lexical_available) {
-        return 1;
-    }
-    if (allocation_executable || !allocation_blocked || !allocation_known_unbound || !allocation_needs_allocator) {
-        return 1;
-    }
-    if (host_normalization_executable || !host_normalization_blocked || !host_normalization_known_unbound || !host_normalization_needs_runtime) {
+    if (PATH_HAS_ALLOCATION_API || PATH_HAS_HOST_NORMALIZATION) {
         return 1;
     }
     if (!slash_is_separator || !backslash_is_separator || dot_is_separator) {
