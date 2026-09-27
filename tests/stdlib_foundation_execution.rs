@@ -133,6 +133,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_u32_ranges",
+            "tests/fixtures/stdlib_foundation/core_u32_ranges.lani",
+            0,
+            b"",
+        ),
+        (
             "core_array_i32_4_scalar",
             "tests/fixtures/stdlib_foundation/core_array_i32_4_scalar.lani",
             0,
@@ -348,9 +354,10 @@ fn executable_core_function_surface_has_runtime_cases() {
     }
 
     let range_cases = format!(
-        "{}{}",
+        "{}{}{}",
         include_str!("fixtures/stdlib_foundation/range_slice.lani"),
-        include_str!("fixtures/stdlib_foundation/core_unbounded_ranges.lani")
+        include_str!("fixtures/stdlib_foundation/core_unbounded_ranges.lani"),
+        include_str!("fixtures/stdlib_foundation/core_u32_ranges.lani")
     );
     let mut range_count = 0;
     for line in include_str!("../stdlib/core/range.lani").lines() {

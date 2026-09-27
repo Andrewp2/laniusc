@@ -87,6 +87,75 @@ pub fn range_full() -> RangeFull {
 pub fn contains_full_i32(range: RangeFull, value: i32) -> bool {
     return true;
 }
+// Unsigned range operations use free functions. Specialized Range<u32>
+// methods are withheld until native generic method dispatch is correct.
+pub fn range_u32(start: u32, end: u32) -> Range<u32> {
+    return Range {
+        start: start,
+        end: end,
+    };
+}
+pub fn start_u32(range: Range<u32>) -> u32 {
+    return range.start;
+}
+pub fn end_u32(range: Range<u32>) -> u32 {
+    return range.end;
+}
+pub fn is_empty_u32(range: Range<u32>) -> bool {
+    return range.start >= range.end;
+}
+pub fn contains_u32(range: Range<u32>, value: u32) -> bool {
+    return value >= range.start && value<range.end;
+}
+pub fn overlaps_u32(left: Range<u32>, right: Range<u32>) -> bool {
+    return left.start<left.end && right.start<right.end && left.start<right.end && right.start<left.end;
+}
+pub fn range_inclusive_u32(start: u32, end: u32) -> RangeInclusive<u32> {
+    return RangeInclusive {
+        start: start,
+        end: end,
+    };
+}
+pub fn start_inclusive_u32(range: RangeInclusive<u32>) -> u32 {
+    return range.start;
+}
+pub fn end_inclusive_u32(range: RangeInclusive<u32>) -> u32 {
+    return range.end;
+}
+pub fn is_empty_inclusive_u32(range: RangeInclusive<u32>) -> bool {
+    return range.start>range.end;
+}
+pub fn contains_inclusive_u32(range: RangeInclusive<u32>, value: u32) -> bool {
+    return value >= range.start && value <= range.end;
+}
+pub fn overlaps_inclusive_u32(left: RangeInclusive<u32>, right: RangeInclusive<u32>) -> bool {
+    return left.start <= left.end && right.start <= right.end && left.start <= right.end && right.start <= left.end;
+}
+pub fn range_from_u32(start: u32) -> RangeFrom<u32> {
+    return RangeFrom {
+        start: start,
+    };
+}
+pub fn start_from_u32(range: RangeFrom<u32>) -> u32 {
+    return range.start;
+}
+pub fn contains_from_u32(range: RangeFrom<u32>, value: u32) -> bool {
+    return value >= range.start;
+}
+pub fn range_to_u32(end: u32) -> RangeTo<u32> {
+    return RangeTo {
+        end: end,
+    };
+}
+pub fn end_to_u32(range: RangeTo<u32>) -> u32 {
+    return range.end;
+}
+pub fn contains_to_u32(range: RangeTo<u32>, value: u32) -> bool {
+    return value<range.end;
+}
+pub fn contains_full_u32(range: RangeFull, value: u32) -> bool {
+    return true;
+}
 pub impl Range<i32> {
     pub fn start(self) -> i32 {
         return self.start;

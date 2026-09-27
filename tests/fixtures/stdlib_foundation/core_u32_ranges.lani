@@ -1,0 +1,46 @@
+module app::main;
+import core::range;
+
+fn main() -> i32 {
+    let high: u32 = 2147483648;
+    let maximum: u32 = 4294967295;
+    let open: core::range::Range<u32> = core::range::range_u32(high, maximum);
+    let touching: core::range::Range<u32> = core::range::range_u32(maximum, maximum);
+    let overlapping: core::range::Range<u32> = core::range::range_u32(high + 1, maximum);
+    let reversed: core::range::Range<u32> = core::range::range_u32(maximum, high);
+    if (core::range::start_u32(open) != high || core::range::end_u32(open) != maximum || core::range::is_empty_u32(open) || !core::range::is_empty_u32(touching) || !core::range::is_empty_u32(reversed)) {
+        return 1;
+    }
+    if (!core::range::contains_u32(open, high) || !core::range::contains_u32(open, maximum - 1) || core::range::contains_u32(open, maximum) || core::range::contains_u32(open, 1) || core::range::contains_u32(reversed, high)) {
+        return 2;
+    }
+    if (!core::range::overlaps_u32(open, overlapping) || core::range::overlaps_u32(open, touching) || core::range::overlaps_u32(open, reversed)) {
+        return 3;
+    }
+    let closed: core::range::RangeInclusive<u32> = core::range::range_inclusive_u32(high, maximum);
+    let singleton: core::range::RangeInclusive<u32> = core::range::range_inclusive_u32(maximum, maximum);
+    let closed_reversed: core::range::RangeInclusive<u32> = core::range::range_inclusive_u32(maximum, high);
+    if (core::range::start_inclusive_u32(closed) != high || core::range::end_inclusive_u32(closed) != maximum || core::range::is_empty_inclusive_u32(closed) || core::range::is_empty_inclusive_u32(singleton) || !core::range::is_empty_inclusive_u32(closed_reversed)) {
+        return 4;
+    }
+    if (!core::range::contains_inclusive_u32(closed, high) || !core::range::contains_inclusive_u32(closed, maximum) || core::range::contains_inclusive_u32(closed, 1) || !core::range::contains_inclusive_u32(singleton, maximum) || core::range::contains_inclusive_u32(closed_reversed, high)) {
+        return 5;
+    }
+    if (!core::range::overlaps_inclusive_u32(closed, singleton) || core::range::overlaps_inclusive_u32(closed, closed_reversed)) {
+        return 6;
+    }
+    let from: core::range::RangeFrom<u32> = core::range::range_from_u32(high);
+    if (core::range::start_from_u32(from) != high || !core::range::contains_from_u32(from, high) || !core::range::contains_from_u32(from, maximum) || core::range::contains_from_u32(from, 1)) {
+        return 7;
+    }
+    let to: core::range::RangeTo<u32> = core::range::range_to_u32(high);
+    let empty_to: core::range::RangeTo<u32> = core::range::range_to_u32(0);
+    if (core::range::end_to_u32(to) != high || !core::range::contains_to_u32(to, high - 1) || core::range::contains_to_u32(to, high) || core::range::contains_to_u32(empty_to, 0)) {
+        return 8;
+    }
+    let full: core::range::RangeFull = core::range::range_full();
+    if (!core::range::contains_full_u32(full, 0) || !core::range::contains_full_u32(full, maximum)) {
+        return 9;
+    }
+    return 0;
+}

@@ -25,7 +25,7 @@ limited to native x86_64 output from this worktree.
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
 | Legacy `stdlib/i32.lani` power-of-two helpers | Executable on x86_64 | A focused source-level native test checks the highest signed power and the zero overflow sentinel. The legacy file as a whole is not included in this claim. |
-| `core::range` free functions for all five range forms and methods for `Range<i32>`, `RangeInclusive<i32>`, `RangeFrom<i32>`, and `RangeTo<i32>` | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership. There is no `RangeFull` method claim. |
+| `core::range` free functions for all five i32 and u32 range forms, and methods for `Range<i32>`, `RangeInclusive<i32>`, `RangeFrom<i32>`, and `RangeTo<i32>` | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership, including values across the u32 high bit. Specialized u32 methods remain blocked by dependency 27; there is no `RangeFull` method claim. |
 | `core::slice` all 33 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
@@ -176,7 +176,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
 - Half-open ranges exclude `end`; inclusive ranges include it. A reversed or
   empty range contains no values and overlaps no range. `RangeFrom<i32>` includes
   its start, `RangeTo<i32>` excludes its end, and `RangeFull` contains all i32
-  values. `RangeTo<i32>` ending at `MIN` contains no i32 value.
+  values. `RangeTo<i32>` ending at `MIN` contains no i32 value. The u32 free
+  functions apply the same endpoint rules over `0..=u32::MAX`. A `RangeTo<u32>`
+  ending at zero is empty; an inclusive range ending at `u32::MAX` includes
+  that value. The u32 range structs have no executable method claim.
 - Slice callers supply `len` because source code cannot read slice metadata
   yet. `len <= 0` is empty for the safe fallback and accumulation helpers.
   `first_i32` traps on an empty view. `get_or_i32` returns the fallback for an
@@ -677,7 +680,8 @@ the failure injection cases run when Linux `strace` is available.
     correctly excludes `1` from a range starting at `2147483648`, but the
     corresponding `RangeFrom<u32>::contains` method returns true. The minimal
     imported module defines both `RangeFrom<i32>` and `RangeFrom<u32>` impls.
-    Unsigned range extensions were removed until method dispatch is correct.
+    The unsigned free functions now execute in `core::range`; specialized
+    unsigned methods remain withheld until method dispatch is correct.
 28. **Unsigned remainder with a maximum-value literal.** Compile
     `tests/fixtures/stdlib_foundation/repro_u32_literal_mod.lani` with
     `--stdlib-root stdlib --emit x86_64`, then run the ELF. It exits 1 because
@@ -694,7 +698,9 @@ the failure injection cases run when Linux `strace` is available.
     without using the declared lengths for `open_*`, `remove_file`,
     `create_dir`, `remove_dir`, or `rename`. Callers cannot safely pass an
     arbitrary pointer-length path pair. Checked path mutation wrappers are
-    deferred until the raw runtime contract and behavior agree.
+    deferred until the raw runtime contract and behavior agree. There is also
+    no `open_append_path(str)` binding, so a checked append-to-path wrapper
+    cannot be built around the raw `open_append(ptr, len)` call yet.
 30. **High-bit unsigned 64-bit operations.** Compile
     `tests/fixtures/stdlib_foundation/repro_u64_bit_ops.lani` with
     `--stdlib-root stdlib --emit x86_64` and run the ELF. It exits 30, a
