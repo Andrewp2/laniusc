@@ -258,6 +258,53 @@ pub fn try_insert_scalar(
     return grown;
 }
 
+// Insert a complete UTF-8 byte-code view before scalar_index, including at
+// the end. Validate both full sequences, their bounds, and required capacity
+// before moving any bytes. Invalid input or allocation failure leaves value
+// unchanged. The source must physically back len cells and must not alias the
+// vector allocation; growth can move it, and an overclaimed view may trap.
+pub fn try_insert_codes(
+    value: std::vec_u8::VecU8, scalar_index: i32, codes: [i32], len: i32
+) -> std::vec_u8::VecU8 {
+    if (len < 0 || !core::utf8::codes_are_valid(codes, len)) {
+        return value;
+    }
+    let old_len: i32 = std::vec_u8::len(value);
+    let old_cells: [i32] = core::mem::i32_slice_from_raw_parts(
+        std::vec_u8::data_ptr(value), old_len);
+    let offset: i32 = core::utf8::byte_offset_of_scalar_or(
+        old_cells, old_len, scalar_index, -1);
+    if (offset < 0 || len == 0) {
+        return value;
+    }
+    if (old_len > std::vec_u8::MAX_CAPACITY - len) {
+        return value;
+    }
+    let needed: i32 = old_len + len;
+    let grown: std::vec_u8::VecU8 = std::vec_u8::try_reserve(value, needed);
+    if (std::vec_u8::capacity(grown) < needed) {
+        return value;
+    }
+    let index: i32 = 0;
+    while (index < len) {
+        grown = std::vec_u8::try_push(grown, 0);
+        index += 1;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(
+        std::vec_u8::data_ptr(grown), needed);
+    let cursor: i32 = old_len;
+    while (cursor > offset) {
+        cursor -= 1;
+        cells[cursor + len] = cells[cursor];
+    }
+    index = 0;
+    while (index < len) {
+        cells[offset + index] = codes[index];
+        index += 1;
+    }
+    return grown;
+}
+
 // Remove one scalar at scalar_index and close the byte gap. Invalid text or
 // an out-of-range index returns the original vector unchanged. Removal keeps
 // the allocation for reuse, and success decreases byte_len by one to four.
