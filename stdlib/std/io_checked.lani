@@ -1,0 +1,66 @@
+// Complete caller-buffer stream I/O using the bound x86 Linux host calls.
+// No allocation or implicit buffering occurs.
+module std::io_checked;
+import std::io;
+
+// Read exactly len bytes from stdin. Zero length succeeds without touching
+// buffer or stdin. Invalid storage or length, EOF, host errors, zero progress,
+// and impossible host counts return false. Failure may leave a read prefix.
+pub fn read_exact_stdin(buffer: ptr, len: usize) -> bool {
+    if (len>2147483647 || buffer == 0 && len>0) {
+        return false;
+    }
+    let received: usize = 0;
+    while (received<len) {
+        let cursor: ptr = buffer + received;
+        let remaining: usize = len - received;
+        let count: i32 = std::io::read_stdin(cursor, remaining);
+        if (count <= 0) {
+            return false;
+        }
+        let advanced: usize = count;
+        if (advanced>remaining) {
+            return false;
+        }
+        received += advanced;
+    }
+    return true;
+}
+
+fn write_all(buffer: ptr, len: usize, to_stderr: bool) -> bool {
+    if (len>2147483647 || buffer == 0 && len>0) {
+        return false;
+    }
+    let sent: usize = 0;
+    while (sent<len) {
+        let cursor: ptr = buffer + sent;
+        let remaining: usize = len - sent;
+        let count: i32 = 0;
+        if (to_stderr) {
+            count = std::io::write_stderr(cursor, remaining);
+        } else {
+            count = std::io::write_stdout(cursor, remaining);
+        }
+        if (count <= 0) {
+            return false;
+        }
+        let advanced: usize = count;
+        if (advanced>remaining) {
+            return false;
+        }
+        sent += advanced;
+    }
+    return true;
+}
+
+// Write all len bytes to stdout. Zero length succeeds without touching the
+// pointer. Invalid arguments, a host error, or zero progress return false;
+// failure may leave an already-written prefix on stdout.
+pub fn write_all_stdout(buffer: ptr, len: usize) -> bool {
+    return write_all(buffer, len, false);
+}
+
+// Write all len bytes to stderr, with the same failure behavior as stdout.
+pub fn write_all_stderr(buffer: ptr, len: usize) -> bool {
+    return write_all(buffer, len, true);
+}

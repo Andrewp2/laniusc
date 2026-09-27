@@ -1,0 +1,58 @@
+module app::main;
+import core::mem;
+import std::io_checked;
+fn main() -> i32 {
+    let words:[i32; 3] =[0, 0, 0];
+    let buffer: ptr = core::mem::i32_array_data_ptr(words);
+    if (!std::io_checked::read_exact_stdin(0, 0)) {
+        return 1;
+    }
+    if (!std::io_checked::write_all_stdout(0, 0)) {
+        return 2;
+    }
+    if (!std::io_checked::write_all_stderr(0, 0)) {
+        return 3;
+    }
+    if (std::io_checked::read_exact_stdin(0, 1)) {
+        return 4;
+    }
+    if (std::io_checked::write_all_stdout(0, 1)) {
+        return 5;
+    }
+    if (std::io_checked::write_all_stderr(0, 1)) {
+        return 6;
+    }
+    let too_large: usize = 2147483648;
+    if (std::io_checked::read_exact_stdin(buffer, too_large)) {
+        return 7;
+    }
+    if (std::io_checked::write_all_stdout(buffer, too_large)) {
+        return 8;
+    }
+    if (std::io_checked::write_all_stderr(buffer, too_large)) {
+        return 9;
+    }
+    if (words[0] != 0 || words[2] != 0) {
+        return 10;
+    }
+    if (!std::io_checked::read_exact_stdin(buffer, 8)) {
+        return 11;
+    }
+    if (!std::io_checked::write_all_stdout(buffer, 8)) {
+        return 12;
+    }
+    let offset: usize = 8;
+    let tail: ptr = buffer + offset;
+    if (!std::io_checked::read_exact_stdin(tail, 1)) {
+        return 13;
+    }
+    if (!std::io_checked::write_all_stdout(tail, 1)) {
+        return 14;
+    }
+    let marker:[i32; 1] =[69];
+    let marker_ptr: ptr = core::mem::i32_array_data_ptr(marker);
+    if (!std::io_checked::write_all_stderr(marker_ptr, 1)) {
+        return 15;
+    }
+    return 0;
+}

@@ -1,0 +1,14 @@
+module app::main;
+import core::mem;
+import std::io_checked;
+fn main() -> i32 {
+    let words:[i32; 1] =[0];
+    let buffer: ptr = core::mem::i32_array_data_ptr(words);
+    if (std::io_checked::read_exact_stdin(buffer, 4)) {
+        return 1;
+    }
+    if (!std::io_checked::write_all_stdout(buffer, 2)) {
+        return 2;
+    }
+    return 0;
+}

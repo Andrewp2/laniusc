@@ -37,6 +37,7 @@ limited to native x86_64 output from this worktree.
 | `std::env_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_env_execution.rs` checks exact value and key bytes, missing and invalid indices, capacity and null-storage failures, current-directory bytes and its NUL terminator, and injected `getcwd` failure. Caller storage avoids allocation. |
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, and invalid handles. These are separate from the portable core. |
+| `std::io_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_checked_execution.rs` checks exact stdin, stdout, and stderr bytes; zero lengths and invalid storage; EOF after a read prefix; host errors and zero progress; and retries after injected short reads and writes. Caller storage avoids allocation. |
 | `std::io_decimal::{write_u32,write_i32}` | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned extrema, exact byte counts, invalid handles, and injected sign and digit write failures. |
 | `std::file` all 11 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, a multi-chunk binary copy, bounded signed and unsigned decimal reads and writes, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked` both public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, and retries after an injected short read. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
@@ -215,6 +216,16 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   The focused host fixture also confirms that `write_i32` writes its decimal
   text and returns status `0`, while `write_byte` and `write_newline` return
   byte counts for the tested writes.
+- `std::io_checked::read_exact_stdin` fills exactly the requested number of
+  caller-buffer bytes, retrying short reads. EOF, a negative host result,
+  zero progress, a null nonempty buffer, or a length above `i32::MAX` returns
+  false. A failed read can leave a prefix in caller storage. Zero length
+  succeeds without touching the pointer or stdin.
+- `std::io_checked::{write_all_stdout,write_all_stderr}` retry short writes
+  until all requested bytes are sent. They return false for invalid pointer
+  or length arguments, negative host results, zero progress, or impossible
+  host counts. A failed write can leave a visible output prefix. Zero length
+  succeeds without touching the pointer or destination stream.
 - `std::io_decimal::write_u32` writes the complete decimal representation without
   allocating or reading string storage. It returns a byte count from 1 to 10,
   the first negative host error, or `-1` if a byte write does not report
@@ -317,6 +328,8 @@ checks the slice bounds trap. Each source is also suitable for direct CLI
 compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.
 Run `cargo test --test stdlib_host_execution` for the separate native I/O
 wrappers; its partial-write fault cases run when Linux `strace` is available.
+Run `cargo test --test stdlib_io_checked_execution` for complete caller-buffer
+stream operations; fault injection cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_file_execution` for the file wrappers; its
 read/write/close fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
