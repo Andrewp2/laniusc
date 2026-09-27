@@ -1500,12 +1500,18 @@ also fixes the imported struct-return relocation path described below.
     function can return a slice yet.
 50. **Unsigned literals in fixed-array initializers.**
     `tests/fixtures/stdlib_foundation/repro_u32_array_literals.lani`
-    declares `[u32; 2] = [65, 162]`. GPU `check` reports `LNC0006` at the
+    declares `[u32; 2] = [65, 4294967295]`. GPU `check` reports `LNC0006` at the
     first integer literal because it infers `i32` despite the array's `u32`
     element annotation. Initializing typed `u32` locals before building the
-    array compiles and executes; the owned-text range-removal fixture uses
-    that workaround. Contextual array element typing remains a compiler
-    dependency.
+    array compiles and executes, including indexed access after the source
+    local changes; `u32_array_typed_elements.lani` tests this control case.
+    The owned-text range-removal fixture also uses typed locals.
+    An experimental checker relaxation accepted direct integer literals,
+    but the native ELF then exited 2: element 1 did not equal `u32::MAX`.
+    Disassembly showed packed 32-bit storage in an intermediate array and an
+    8-byte-stride load from its copied result. The relaxation was reverted.
+    Contextual element typing and the corresponding native literal materialization
+    must both work before this form can be exposed as executable.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

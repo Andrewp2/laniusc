@@ -1,7 +1,9 @@
 module app::main;
 
 fn main() -> i32 {
-    let values: [u32; 2] = [65, 162];
-    if (values[0] == 65) { return 0; }
-    return 1;
+    let values: [u32; 2] = [65, 4294967295];
+    let maximum: u32 = 4294967295;
+    if (values[0] != 65) { return 1; }
+    if (values[1] != maximum) { return 2; }
+    return 0;
 }

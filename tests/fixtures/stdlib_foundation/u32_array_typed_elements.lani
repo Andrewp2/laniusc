@@ -1,0 +1,12 @@
+module app::main;
+
+fn main() -> i32 {
+    let first: u32 = 65;
+    let second: u32 = 4294967295;
+    let values: [u32; 2] = [first, second];
+    second = 0;
+    let expected: u32 = 4294967295;
+    if (values[0] != first) { return 1; }
+    if (values[1] != expected) { return 2; }
+    return 0;
+}
