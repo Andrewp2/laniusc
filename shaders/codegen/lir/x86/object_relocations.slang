@@ -13,6 +13,7 @@ StructuredBuffer<uint> semantic_schedule_order;
 StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<uint> semantic_to_target_start;
+StructuredBuffer<X86LirOperands> target_lir_operands;
 StructuredBuffer<X86LirLocations> target_lir_locations;
 StructuredBuffer<uint> target_function_count;
 StructuredBuffer<TargetLirFunction> target_functions;
@@ -60,22 +61,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (function_index >= function_count) return;
     TargetLirFunction function = target_functions[function_index];
 
-    uint type_ref_tag = opt_ir_type_ref_tag(core);
-    bool aggregate_symbol = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL &&
-        (type_ref_tag == SEMANTIC_TYPE_REF_INSTANCE ||
-         (type_ref_tag == SEMANTIC_TYPE_REF_SCALAR && core.type_ref_payload >= 128u) ||
-         (type_ref_tag == SEMANTIC_TYPE_REF_INVALID && core.type_id >= 128u));
+    X86LirOperands target_operands = target_lir_operands[target_row];
+    X86LirLocations locations = target_lir_locations[target_row];
     uint aggregate_words = core.value_word_count;
     uint instruction_bytes = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
-        ? (aggregate_symbol
-            ? aggregate_words > 2u ? 19u : 19u + aggregate_words * 7u
-            : 11u)
+        ? x86_call_result_instruction_bytes(
+            target_operands.metadata, aggregate_words, locations.result)
         // STRING_ADDR is the first target row of a semantic string constant.
         // Its destination-dependent spill is not a fixed 17 bytes. Using the
         // exact row width keeps the ABS32 relocation after any prologue and at
         // the movabs immediate rather than overwriting saved-register stores.
-        : 10u + x86_move64_from_fixed_bytes(
-            0u, target_lir_locations[target_row].result);
+        : 10u + x86_move64_from_fixed_bytes(0u, locations.result);
     uint footer_bytes = target_row + 1u == function.instruction_start + function.instruction_count
         ? 4u : 0u;
     uint row_bytes = target_byte_length[target_row];
@@ -88,7 +84,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint wrapper_length = layout.body_offset - layout.text_offset;
     relocation.site_offset = wrapper_length + target_byte_offset[target_row] + prefix_bytes +
         (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL
-            ? aggregate_symbol && aggregate_words > 2u ? 8u : 1u
+            ? (target_operands.metadata & X86_LIR_METADATA_AGGREGATE) != 0u &&
+              aggregate_words > 2u
+                ? x86_stack64_operand_bytes(
+                    x86_location_payload(locations.result) + 1u) + 1u
+                : 1u
             : 2u);
     relocation.addend_lo = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? 0xfffffffcu : 0u;
     relocation.addend_hi = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_SYMBOL ? 0xffffffffu : 0u;

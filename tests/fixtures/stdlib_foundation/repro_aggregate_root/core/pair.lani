@@ -12,3 +12,15 @@ pub fn zero() -> Pair {
 pub fn has_zero(pair: Pair) -> bool {
     return pair.present && pair.value == 0;
 }
+
+pub struct Single { value: i32 }
+pub fn single(value: i32) -> Single { return Single { value: value }; }
+pub fn is_forty_one(value: Single) -> bool { return value.value == 41; }
+
+pub struct Triple { first: i32, second: i32, third: i32 }
+pub fn triple(first: i32, second: i32, third: i32) -> Triple {
+    return Triple { first: first, second: second, third: third };
+}
+pub fn is_sequence(value: Triple) -> bool {
+    return value.first == 1 && value.second == 2 && value.third == 3;
+}

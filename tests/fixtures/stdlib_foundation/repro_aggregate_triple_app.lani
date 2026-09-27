@@ -1,0 +1,7 @@
+module app::main;
+import core::pair;
+fn main() -> i32 {
+    let value: core::pair::Triple = core::pair::triple(1, 2, 3);
+    if (core::pair::is_sequence(value)) { return 0; }
+    return 1;
+}

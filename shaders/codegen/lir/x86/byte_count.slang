@@ -410,21 +410,8 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
     {
         uint result_words = core.op == X86_LIR_OP_CALL
             ? operands.c : core.local_ordinal;
-        if ((operands.metadata & X86_LIR_METADATA_AGGREGATE) == 0u)
-            return 5u + ((operands.metadata & 0xffu) == X86_LIR_TY_FLOAT
-                ? x86_move_f32_from_gpr_bytes(0u, locations.result)
-                : (operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER
-                ? x86_move64_from_fixed_bytes(0u, locations.result)
-                : x86_move32_from_fixed_bytes(0u, locations.result));
-        if (result_words == 0u) return 0u;
-        uint storage_slot = x86_location_payload(locations.result) + 1u;
-        uint result_store = x86_move64_from_fixed_bytes(0u, locations.result);
-        if (result_words > 2u)
-            return x86_stack64_operand_bytes(storage_slot) + 5u + result_store;
-        uint bytes = 5u + x86_stack64_operand_bytes(storage_slot);
-        if (result_words > 1u)
-            bytes += x86_stack64_operand_bytes(storage_slot + 1u);
-        return bytes + x86_stack64_operand_bytes(storage_slot) + result_store;
+        return x86_call_result_instruction_bytes(
+            operands.metadata, result_words, locations.result);
     }
     if (core.op == X86_LIR_OP_CALL_HOST && operands.a == HOST_SERVICE_I32_TO_F32)
         return 4u + x86_move_f32_from_xmm_bytes(0u, locations.result);

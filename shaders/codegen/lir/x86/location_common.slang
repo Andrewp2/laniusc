@@ -1,4 +1,5 @@
 import codegen.lowering_ir;
+import codegen.lir.x86.common;
 
 bool x86_location_is_register(uint location)
 {
@@ -687,4 +688,27 @@ uint x86_saved_gpr_count(uint mask)
     // native host-runtime ABI. It must never become a user value location.
     return countbits(mask & ((1u << 3u) | (1u << 12u) |
         (1u << 13u) | (1u << 14u)));
+}
+
+// CALL and CALL_SYMBOL emit the same result moves after their five-byte call.
+// Object relocations must use this exact width to find the call's rel32 field;
+// a guessed width can patch the preceding prologue instead.
+uint x86_call_result_instruction_bytes(uint metadata, uint result_words,
+                                       uint result_location)
+{
+    if ((metadata & X86_LIR_METADATA_AGGREGATE) == 0u)
+        return 5u + ((metadata & 0xffu) == X86_LIR_TY_FLOAT
+            ? x86_move_f32_from_gpr_bytes(0u, result_location)
+            : (metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER
+            ? x86_move64_from_fixed_bytes(0u, result_location)
+            : x86_move32_from_fixed_bytes(0u, result_location));
+    if (result_words == 0u) return 0u;
+    uint storage_slot = x86_location_payload(result_location) + 1u;
+    uint result_store = x86_move64_from_fixed_bytes(0u, result_location);
+    if (result_words > 2u)
+        return x86_stack64_operand_bytes(storage_slot) + 5u + result_store;
+    uint bytes = 5u + x86_stack64_operand_bytes(storage_slot);
+    if (result_words > 1u)
+        bytes += x86_stack64_operand_bytes(storage_slot + 1u);
+    return bytes + x86_stack64_operand_bytes(storage_slot) + result_store;
 }

@@ -1,0 +1,7 @@
+module app::main;
+import core::pair;
+fn main() -> i32 {
+    let value: core::pair::Single = core::pair::single(41);
+    if (core::pair::is_forty_one(value)) { return 0; }
+    return 1;
+}

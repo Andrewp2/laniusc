@@ -659,8 +659,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
         args.a != INTRINSIC_STRING_DATA_PTR &&
         !intrinsic_slice_from_raw_parts(args.a))
         flags = TARGET_LIR_FLAG_UNSUPPORTED;
+    // Imported calls can carry a canonical aggregate width after their
+    // nominal type reference has been compacted away. Scalar call rows may
+    // also carry an enclosing aggregate's width, so retain the scalar type
+    // classification before using that width as a result-shape fallback.
+    bool imported_aggregate_result = op == X86_LIR_OP_CALL_SYMBOL &&
+        source.value_word_count != 0u &&
+        (source.type_id == 0u || source.type_id > SEMANTIC_LIR_TY_POINTER);
     uint metadata = (source.type_id & 0xffu) | (source.flags << 8u) |
-        (x86_semantic_type_is_aggregate(source) || copy_words != 0u
+        (x86_semantic_type_is_aggregate(source) || copy_words != 0u ||
+         imported_aggregate_result
             ? X86_LIR_METADATA_AGGREGATE : 0u);
     // Alias width follows the checked type/pair metadata. Narrow local stores
     // initialize four bytes even though their stack homes occupy eight bytes.
