@@ -1099,6 +1099,8 @@ also fixes the imported struct-return relocation path described below.
     reports `LNC0016` at the third `get` method, claiming that the function
     name is unexpected. The first two `Small<i32>` and `Small<u32>` methods
     parse, and renaming the `Small<i8>` method makes the file compile and run.
+    Three same-name methods on unrelated concrete structs also parse, and
+    removing `pub` does not change the generic failure.
     This prevents adding the same method names for all small-width generic
     `Range<T>` specializations in `core::range`. The executable modules use
     concrete range types and distinctly named free functions instead.
