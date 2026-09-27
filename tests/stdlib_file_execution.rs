@@ -131,6 +131,98 @@ fn std_file_read_once_into_buffer_executes_on_x86() {
 }
 
 #[test]
+fn std_file_read_to_end_into_buffer_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_file_read_to_end.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_file_read_to_end", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile read-to-end helper");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_file_read_to_end", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create read-to-end directory");
+        let input: Vec<u8> = (0..37).map(|index| (index * 37 % 256) as u8).collect();
+        std::fs::write(run_dir.path().join("input.bin"), &input).expect("write input file");
+        std::fs::write(run_dir.path().join("empty.bin"), b"").expect("write empty file");
+
+        let output = run_in_directory(&bytes, run_dir.path(), "std_file_read_to_end");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(
+            std::fs::read(run_dir.path().join("copy.bin")).expect("read copied file"),
+            input
+        );
+        std::fs::remove_dir_all(run_dir.path()).expect("remove read-to-end directory");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn std_file_read_to_end_into_buffer_handles_host_failures_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_file_read_to_end_failure.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_file_read_to_end_failure", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile read-to-end failure fixture");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let run_dir =
+            common::TempArtifact::new("laniusc_std_file_read_to_end_fault", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create read fault directory");
+        std::fs::write(run_dir.path().join("input.bin"), [b'x'; 37])
+            .expect("write read fault input");
+        let executable = run_dir.path().join("std_file_read_to_end_failure");
+        std::fs::write(&executable, &bytes).expect("write read fault ELF");
+        let mut permissions = std::fs::metadata(&executable)
+            .expect("stat read fault ELF")
+            .permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(&executable, permissions).expect("chmod read fault ELF");
+
+        for injection in [
+            "read:error=EIO:when=1",
+            "read:error=EIO:when=2",
+            "close:error=EIO:when=1",
+        ] {
+            let output = common::short_process_output_with_timeout(
+                format!("read-to-end {injection}"),
+                std::process::Command::new("strace")
+                    .arg("-qq")
+                    .arg("-e")
+                    .arg("trace=read,close")
+                    .arg("-e")
+                    .arg(format!("inject={injection}"))
+                    .arg(&executable)
+                    .current_dir(run_dir.path()),
+            );
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("INJECTED"),
+                "fault was not injected: {output:?}"
+            );
+        }
+        std::fs::remove_dir_all(run_dir.path()).expect("remove read fault directory");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn std_file_read_i32_decimal_or_executes_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_host/std_file_decimal.lani");
@@ -330,10 +422,11 @@ fn std_file_read_i32_decimal_or_handles_host_failures_on_x86() {
 fn std_file_public_functions_have_runtime_cases() {
     let source = include_str!("../stdlib/std/file.lani");
     let fixtures = format!(
-        "{}{}{}{}{}",
+        "{}{}{}{}{}{}",
         include_str!("fixtures/stdlib_host/std_file_write.lani"),
         include_str!("fixtures/stdlib_host/std_file_copy.lani"),
         include_str!("fixtures/stdlib_host/std_file_read.lani"),
+        include_str!("fixtures/stdlib_host/std_file_read_to_end.lani"),
         include_str!("fixtures/stdlib_host/std_file_decimal.lani"),
         include_str!("fixtures/stdlib_host/std_file_write_decimal.lani")
     );
@@ -352,5 +445,5 @@ fn std_file_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 7);
+    assert_eq!(count, 8);
 }

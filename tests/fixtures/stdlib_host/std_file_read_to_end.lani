@@ -1,0 +1,49 @@
+module app::main;
+import core::mem;
+import std::file;
+import std::fs;
+fn main() -> i32 {
+    let words:[i32; 16] =[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let buffer: ptr = core::mem::i32_array_data_ptr(words);
+    if (std::file::read_to_end_into_buffer("input.bin", 0, 1) != -1) {
+        return 1;
+    }
+    let too_large: usize = 2147483648;
+    if (std::file::read_to_end_into_buffer("input.bin", buffer, too_large) != -1) {
+        return 2;
+    }
+    if (words[0] != 0 || words[15] != 0) {
+        return 3;
+    }
+    if (std::file::read_to_end_into_buffer("empty.bin", 0, 0) != 0) {
+        return 4;
+    }
+    if (std::file::read_to_end_into_buffer("input.bin", 0, 0) != -1) {
+        return 5;
+    }
+    if (std::file::read_to_end_into_buffer("missing.bin", buffer, 64) != -1) {
+        return 6;
+    }
+    if (std::file::read_to_end_into_buffer("input.bin", buffer, 36) != -1) {
+        return 7;
+    }
+    if (std::file::read_to_end_into_buffer("input.bin", buffer, 64) != 37) {
+        return 8;
+    }
+    if (std::file::read_to_end_into_buffer("input.bin", buffer, 37) != 37) {
+        return 9;
+    }
+    let output: i32 = std::fs::open_write_path("copy.bin");
+    if (output<0) {
+        return 10;
+    }
+    let written: bool = std::file::write_all_bytes(output, buffer, 37);
+    let closed: i32 = std::fs::close_file(output);
+    if (!written || closed<0) {
+        return 11;
+    }
+    if (std::file::read_to_end_into_buffer("empty.bin", buffer, 64) != 0) {
+        return 12;
+    }
+    return 0;
+}

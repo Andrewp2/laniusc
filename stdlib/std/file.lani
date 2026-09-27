@@ -78,6 +78,54 @@ pub fn read_exact_into_buffer(path: str, buffer: ptr, len: usize) -> bool {
     let closed: i32 = std::fs::close_file(handle);
     return complete && closed >= 0;
 }
+// Reads until EOF into caller storage. Returns the complete byte count,
+// including zero for an empty file. A missing file, invalid buffer/capacity,
+// read or close error, or input longer than capacity returns -1. A failure
+// after reading may leave a prefix in buffer. Capacity zero with a null buffer
+// accepts only an empty file. At a full buffer, a one-byte stack read checks
+// for EOF without writing past caller storage. No allocation occurs.
+pub fn read_to_end_into_buffer(path: str, buffer: ptr, capacity: usize) -> i32 {
+    if (capacity>2147483647 || buffer == 0 && capacity>0) {
+        return -1;
+    }
+    let handle: i32 = std::fs::open_read_path(path);
+    if (handle<0) {
+        return -1;
+    }
+    let received: usize = 0;
+    let complete: bool = false;
+    let valid: bool = true;
+    while (received<capacity) {
+        let cursor: ptr = buffer + received;
+        let remaining: usize = capacity - received;
+        let count: i32 = std::fs::read(handle, cursor, remaining);
+        if (count<0) {
+            valid = false;
+            break;
+        }
+        if (count == 0) {
+            complete = true;
+            break;
+        }
+        let advanced: usize = count;
+        if (advanced>remaining) {
+            valid = false;
+            break;
+        }
+        received += advanced;
+    }
+    if (valid && !complete) {
+        let probe: [i32; 1] = [0];
+        let probe_ptr: ptr = core::mem::i32_array_data_ptr(probe);
+        complete = std::fs::read(handle, probe_ptr, 1) == 0;
+    }
+    let closed: i32 = std::fs::close_file(handle);
+    if (!valid || !complete || closed<0) {
+        return -1;
+    }
+    let count: i32 = received;
+    return count;
+}
 // Write all len bytes to an open file handle, retrying short writes. A valid
 // handle with len zero succeeds without accessing buffer. Invalid handles,
 // null nonempty buffers, lengths above i32::MAX, host errors, and zero-progress
