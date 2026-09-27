@@ -43,7 +43,7 @@ limited to native x86_64 output from this worktree.
 | `std::io_decimal` all 12 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned output extrema across 8-, 16-, and 32-bit integers, exact byte counts, invalid handles, and injected sign and digit write failures for the underlying 32-bit writers. `tests/stdlib_io_decimal_input_execution.rs` checks bounded stdin parsing across all six widths, EOF, whitespace and signs, malformed and overlong input, overflow, and injected read failures in the underlying 32-bit readers. |
 | `std::io_hex` all 9 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_hex_execution.rs` checks exact lowercase and uppercase writes across `u8`, `u16`, and `u32`, counts, invalid handles, injected write failures, bounded stdin parsing with optional prefix and whitespace, malformed and overflowing input, and injected read failures. |
 | `std::file` all 21 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, multi-chunk binary copies between files and standard streams, bounded decimal reads and writes across 8-, 16-, and 32-bit integers, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
-| `std::random_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded outputs, and a forced rejection-and-retry path. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
+| `std::random_checked` all 4 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded outputs, a forced rejection-and-retry path, and secure i32 slice shuffling with preserved contents, a forced swap, and injected failure. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
 | `test::assert` | Contract-only | Passing assertions hit unsupported target LIR opcode 38 during x86 emission. Reproduction programs are included. |
@@ -399,6 +399,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   failure returns the caller's fallback, which may also be a valid result.
   Bound one returns zero without host access. Larger bounds use the checked
   four-byte fill and may retry rejected words.
+- `std::random_checked::shuffle_i32` applies Fisher–Yates to a caller-backed
+  i32 view using unbiased secure draws. It returns false without writing for
+  a negative length; lengths zero and one succeed without host access. Host
+  failure returns false and may leave a partially shuffled permutation. A
+  caller-supplied length beyond the actual backing view can trap on indexing.
 
 The small runnable example is `sample_programs/portable_window_checksum.lani`.
 It validates an ASCII marker, copies readings into a separate backed view,

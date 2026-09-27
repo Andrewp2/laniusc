@@ -1,0 +1,15 @@
+module app::main;
+import core::mem;
+import std::random_checked;
+
+fn main() -> i32 {
+    let values: [i32; 2] = [1, 2];
+    let view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(values), 2);
+    if (std::random_checked::shuffle_i32(view, 2)) {
+        return 1;
+    }
+    if (values[0] != 1 || values[1] != 2) {
+        return 2;
+    }
+    return 0;
+}

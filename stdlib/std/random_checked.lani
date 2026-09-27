@@ -69,3 +69,31 @@ pub fn secure_u32_below_or(bound: u32, fallback: u32) -> u32 {
     }
     return fallback;
 }
+
+// Shuffle the first len elements of a backed i32 view with Fisher-Yates and
+// unbiased secure draws. A negative len returns false without touching data;
+// zero and one succeed without reading the host. A random-host failure returns
+// false and may leave a partially shuffled permutation. The caller must not
+// claim more elements than the backing view actually contains: native indexing
+// traps if an overclaimed length is reached.
+pub fn shuffle_i32(values: [i32], len: i32) -> bool {
+    if (len < 0) {
+        return false;
+    }
+    let remaining: i32 = len;
+    let failure: u32 = 4294967295;
+    while (remaining > 1) {
+        let bound: u32 = remaining;
+        let selected: u32 = secure_u32_below_or(bound, failure);
+        if (selected == failure) {
+            return false;
+        }
+        let slot: i32 = selected;
+        let last: i32 = remaining - 1;
+        let previous: i32 = values[last];
+        values[last] = values[slot];
+        values[slot] = previous;
+        remaining -= 1;
+    }
+    return true;
+}

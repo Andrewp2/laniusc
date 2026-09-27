@@ -241,12 +241,75 @@ fn std_random_secure_u32_below_handles_failure_and_rejection_on_x86() {
 }
 
 #[test]
+fn std_random_shuffle_i32_executes_on_x86() {
+    let bytes = compile_fixture("std_random_shuffle");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let output =
+            common::run_x86_64_elf_output("std_random_shuffle", "std_random_shuffle", &bytes);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn std_random_shuffle_i32_swaps_and_reports_host_failure_on_x86() {
+    let swap_bytes = compile_fixture("std_random_shuffle_swap");
+    let failure_bytes = compile_fixture("std_random_shuffle_failure");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let swap = write_executable(&swap_bytes, "std_random_shuffle_swap");
+        let output = common::short_process_output_with_timeout(
+            "forced random shuffle swap",
+            std::process::Command::new("strace")
+                .arg("-qq")
+                .arg("-e")
+                .arg("trace=getrandom")
+                .arg("-e")
+                .arg("inject=getrandom:retval=4:when=1")
+                .arg(swap.path()),
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("INJECTED"));
+
+        let failure = write_executable(&failure_bytes, "std_random_shuffle_failure");
+        for injection in ["getrandom:error=EIO:when=1", "getrandom:retval=0:when=1"] {
+            let output = common::short_process_output_with_timeout(
+                format!("random shuffle {injection}"),
+                std::process::Command::new("strace")
+                    .arg("-qq")
+                    .arg("-e")
+                    .arg("trace=getrandom")
+                    .arg("-e")
+                    .arg(format!("inject={injection}"))
+                    .arg(failure.path()),
+            );
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert!(String::from_utf8_lossy(&output.stderr).contains("INJECTED"));
+        }
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = (swap_bytes, failure_bytes);
+}
+
+#[test]
 fn std_random_checked_public_functions_have_runtime_cases() {
     let source = include_str!("../stdlib/std/random_checked.lani");
     let fixtures = [
         include_str!("fixtures/stdlib_host/std_random_fill_exact.lani"),
         include_str!("fixtures/stdlib_host/std_random_checked.lani"),
         include_str!("fixtures/stdlib_host/std_random_below.lani"),
+        include_str!("fixtures/stdlib_host/std_random_shuffle.lani"),
     ]
     .concat();
     let mut count = 0;
@@ -264,5 +327,5 @@ fn std_random_checked_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 3);
+    assert_eq!(count, 4);
 }
