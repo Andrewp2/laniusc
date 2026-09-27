@@ -1,0 +1,24 @@
+module app::main;
+import std::io;
+import std::io_decimal;
+
+fn main() -> i32 {
+    let max_u8: u8 = 255;
+    let max_u16: u16 = 65535;
+    let min_i8: i8 = -128;
+    let max_i8: i8 = 127;
+    let min_i16: i16 = -32768;
+    let max_i16: i16 = 32767;
+    if (std::io_decimal::write_u8(1, 0) != 1 || std::io::write_newline(1) != 1) { return 1; }
+    if (std::io_decimal::write_u8(1, max_u8) != 3 || std::io::write_newline(1) != 1) { return 2; }
+    if (std::io_decimal::write_u16(1, max_u16) != 5 || std::io::write_newline(1) != 1) { return 3; }
+    if (std::io_decimal::write_i8(1, min_i8) != 4 || std::io::write_newline(1) != 1) { return 4; }
+    if (std::io_decimal::write_i8(1, max_i8) != 3 || std::io::write_newline(1) != 1) { return 5; }
+    if (std::io_decimal::write_i16(1, min_i16) != 6 || std::io::write_newline(1) != 1) { return 6; }
+    if (std::io_decimal::write_i16(1, max_i16) != 5 || std::io::write_newline(1) != 1) { return 7; }
+    if (std::io_decimal::write_u8(-1, max_u8) >= 0 || std::io_decimal::write_u16(-1, max_u16) >= 0 ||
+        std::io_decimal::write_i8(-1, min_i8) >= 0 || std::io_decimal::write_i16(-1, min_i16) >= 0) {
+        return 8;
+    }
+    return 0;
+}

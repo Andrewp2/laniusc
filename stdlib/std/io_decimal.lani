@@ -45,6 +45,28 @@ pub fn write_i32(handle: i32, value: i32) -> i32 {
     return length;
 }
 
+// Narrow integer writers widen without changing the value, then inherit the
+// 32-bit writers' complete byte count and first-error behavior.
+pub fn write_u8(handle: i32, value: u8) -> i32 {
+    let widened: u32 = value as u32;
+    return write_u32(handle, widened);
+}
+
+pub fn write_u16(handle: i32, value: u16) -> i32 {
+    let widened: u32 = value as u32;
+    return write_u32(handle, widened);
+}
+
+pub fn write_i8(handle: i32, value: i8) -> i32 {
+    let widened: i32 = value as i32;
+    return write_i32(handle, widened);
+}
+
+pub fn write_i16(handle: i32, value: i16) -> i32 {
+    let widened: i32 = value as i32;
+    return write_i32(handle, widened);
+}
+
 // Read all of stdin as a bounded unsigned ASCII decimal. Leading and trailing
 // SP, HT, LF, and CR and one leading plus are accepted. Invalid syntax,
 // overflow, early host failure, or input longer than max_bytes returns
