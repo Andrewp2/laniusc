@@ -1,0 +1,21 @@
+module app::main;
+import core::mem;
+import std::file;
+
+fn main() -> i32 {
+    let words: [i32; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let buffer: ptr = core::mem::i32_array_data_ptr(words);
+    if (std::file::copy_file_to_stdout_with_buffer("input.bin", 0, 64) ||
+        std::file::copy_file_to_stdout_with_buffer("input.bin", buffer, 0) ||
+        std::file::copy_file_to_stdout_with_buffer("missing.bin", buffer, 64)) {
+        return 1;
+    }
+    let too_large: usize = 2147483648;
+    if (std::file::copy_file_to_stdout_with_buffer("input.bin", buffer, too_large)) {
+        return 2;
+    }
+    if (!std::file::copy_file_to_stdout_with_buffer("input.bin", buffer, 64)) {
+        return 3;
+    }
+    return 0;
+}

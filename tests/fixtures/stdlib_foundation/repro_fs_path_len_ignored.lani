@@ -1,0 +1,11 @@
+module app::main;
+import core::mem;
+import std::fs;
+
+fn main() -> i32 {
+    let path: ptr = core::mem::string_data_ptr("lanius_path_length_probe");
+    let short_length: usize = 6;
+    // The supplied length denotes "lanius", but the x86 runtime creates the
+    // full NUL-terminated name. Run in an empty temporary directory.
+    return std::fs::create_dir(path, short_length);
+}

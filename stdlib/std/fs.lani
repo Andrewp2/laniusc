@@ -1,7 +1,7 @@
 // Source-level filesystem host ABI declarations.
-// The service contract below is intentionally conservative: the current
-// backends can type-check these declarations, but they do not bind filesystem
-// APIs.
+// A subset is bound on x86_64 Linux. Raw path calls currently read a
+// NUL-terminated pointer and ignore the declared path length; see the stdlib
+// execution audit before using them with caller-provided path storage.
 
 module std::fs;
 

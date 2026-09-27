@@ -33,14 +33,14 @@ limited to native x86_64 output from this worktree.
 | `core::{cmp,hash,ordering,array_i32}` and legacy root `stdlib/{i32,bool,array_i32_4}.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs and traits also depend on backend support. |
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
 | `alloc::allocator` | Native host ABI with an unsafe allocation-failure path | Normal allocation, reallocation, and release have x86 tests. An injected `mmap` failure returns a nonzero error-shaped pointer from `alloc`; see dependency 22. Callers cannot currently rely on a null-pointer failure check. |
-| `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. `std::env::current_dir_len` still has an unsafe allocator failure path; see dependency 25. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
+| `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs` path calls ignore their declared length and require NUL-terminated storage; see dependency 29. `std::env::current_dir_len` still has an unsafe allocator failure path; see dependency 25. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::args_checked::read_exact_into` | Executable x86_64 Linux host wrapper | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks exact bytes, sufficient and insufficient capacity, null storage, missing/negative indices, and capacity above `i32::MAX`. Caller storage avoids allocation. |
 | `std::env_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_env_execution.rs` checks exact value and key bytes, missing and invalid indices, capacity and null-storage failures, current-directory bytes and its NUL terminator, and injected `getcwd` failure. Caller storage avoids allocation. |
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, and invalid handles. These are separate from the portable core. |
 | `std::io_checked` all 5 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_checked_execution.rs` checks exact stdin, bounded read-to-EOF, stdout, and stderr bytes; empty, exact-fit, and overlong input; invalid storage; EOF after a read prefix; host errors and zero progress; retries after short transfers; and a multi-chunk binary stdin-to-stdout copy. Caller storage avoids allocation. |
 | `std::io_decimal` all 12 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned output extrema across 8-, 16-, and 32-bit integers, exact byte counts, invalid handles, and injected sign and digit write failures for the underlying 32-bit writers. `tests/stdlib_io_decimal_input_execution.rs` checks bounded stdin parsing across all six widths, EOF, whitespace and signs, malformed and overlong input, overflow, and injected read failures in the underlying 32-bit readers. |
-| `std::file` all 19 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, a multi-chunk binary copy, bounded decimal reads and writes across 8-, 16-, and 32-bit integers, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
+| `std::file` all 21 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, multi-chunk binary copies between files and standard streams, bounded decimal reads and writes across 8-, 16-, and 32-bit integers, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded outputs, and a forced rejection-and-retry path. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
@@ -324,6 +324,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   any host failure. The destination can contain a copied prefix on failure.
   Source and destination must refer to different files, even through aliases;
   the current file ABI cannot check that precondition before truncation.
+- `std::file::copy_file_to_stdout_with_buffer` opens an existing file, reads
+  through EOF using a caller buffer, and sends each chunk completely to stdout.
+  `copy_stdin_to_file_with_buffer` creates or truncates its destination and
+  copies stdin through the same kind of buffer. Both require a non-null buffer
+  and capacity from 1 through `i32::MAX`, attempt to close the file on later
+  failure, and return false for invalid arguments or host errors. A failed
+  copy may leave a visible output prefix or a truncated destination.
 - `std::file::read_i32_decimal_or` reads a complete file of at most
   `max_bytes` bytes. It accepts ASCII digits with an optional leading sign and
   surrounding SP, HT, LF, or CR. Empty input, malformed input, overflow,
@@ -618,6 +625,16 @@ the failure injection cases run when Linux `strace` is available.
     stored in a typed `u32` variable produces 5. `std::random_checked` uses a
     typed maximum for its rejection threshold. The literal expression still
     needs a compiler fix so general user code has correct unsigned remainder.
+29. **Raw filesystem path lengths are ignored.** Compile
+    `tests/fixtures/stdlib_foundation/repro_fs_path_len_ignored.lani` with
+    `--stdlib-root stdlib --emit x86_64`. Run the ELF in an empty temporary
+    directory. It calls `std::fs::create_dir` with a pointer to
+    `"lanius_path_length_probe"` and length 6, but creates the full name rather
+    than `"lanius"`. The x86 runtime issues NUL-terminated Linux path syscalls
+    without using the declared lengths for `open_*`, `remove_file`,
+    `create_dir`, `remove_dir`, or `rename`. Callers cannot safely pass an
+    arbitrary pointer-length path pair. Checked path mutation wrappers are
+    deferred until the raw runtime contract and behavior agree.
 
 These are compiler/runtime dependencies, not stdlib implementations in Rust or
 Python. They should be handled in the parallel compiler task before extending

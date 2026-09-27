@@ -1,6 +1,6 @@
 // Source-level time host ABI declarations.
-// The service contract below is intentionally conservative: the current
-// backends can type-check these declarations, but they do not bind clocks.
+// The x86_64 Linux runtime binds 16-byte clock reads, i32-millisecond sleep,
+// and Unix seconds. The i64 clock/sleep declarations remain unbound.
 
 module std::time;
 

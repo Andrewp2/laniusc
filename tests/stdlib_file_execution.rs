@@ -18,6 +18,33 @@ fn run_in_directory(bytes: &[u8], directory: &std::path::Path, name: &str) -> st
     common::short_process_output_with_timeout(format!("run {name}"), &mut command)
 }
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn run_in_directory_with_stdin(
+    bytes: &[u8],
+    directory: &std::path::Path,
+    name: &str,
+    input: &[u8],
+) -> std::process::Output {
+    use std::os::unix::fs::PermissionsExt;
+
+    let exe_path = directory.join(name);
+    std::fs::write(&exe_path, bytes).expect("write native ELF");
+    let mut permissions = std::fs::metadata(&exe_path)
+        .expect("stat native ELF")
+        .permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&exe_path, permissions).expect("chmod native ELF");
+    let source = common::TempArtifact::new("laniusc_std_file_copy", "stdin", None);
+    source.write_bytes(input);
+    let mut command = std::process::Command::new(&exe_path);
+    command
+        .current_dir(directory)
+        .stdin(std::process::Stdio::from(
+            std::fs::File::open(source.path()).expect("open copy input"),
+        ));
+    common::short_process_output_with_timeout(format!("run {name}"), &mut command)
+}
+
 #[test]
 fn std_file_write_text_once_executes_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -777,6 +804,102 @@ fn std_file_read_u32_decimal_or_handles_host_failures_on_x86() {
 }
 
 #[test]
+fn std_file_copies_between_files_and_standard_streams_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let stdlib_root = root.join("stdlib");
+    let file_entry = root.join("tests/fixtures/stdlib_host/std_file_copy_stdout.lani");
+    let file_root = stdlib_root.clone();
+    let file_bytes = common::run_gpu_codegen_with_timeout("std_file_copy_stdout", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&file_entry, &file_root))
+    })
+    .expect("compile file-to-stdout copy");
+    let stdin_entry = root.join("tests/fixtures/stdlib_host/std_file_copy_stdin.lani");
+    let stdin_bytes = common::run_gpu_codegen_with_timeout("std_file_copy_stdin", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(
+            &stdin_entry,
+            &stdlib_root,
+        ))
+    })
+    .expect("compile stdin-to-file copy");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_file_copy", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create copy directory");
+        std::fs::write(run_dir.path().join("seed.bin"), b"keep")
+            .expect("write unchanged seed file");
+        for input in [b"".as_slice(), b"ABC".as_slice()] {
+            std::fs::write(run_dir.path().join("input.bin"), input).expect("write file copy input");
+            let output = run_in_directory(&file_bytes, run_dir.path(), "std_file_copy_stdout");
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert_eq!(output.stdout, input);
+            let output = run_in_directory_with_stdin(
+                &stdin_bytes,
+                run_dir.path(),
+                "std_file_copy_stdin",
+                input,
+            );
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert_eq!(
+                std::fs::read(run_dir.path().join("output.bin")).unwrap(),
+                input
+            );
+        }
+        let binary: Vec<u8> = (0..517).map(|index| ((index * 37) % 256) as u8).collect();
+        std::fs::write(run_dir.path().join("input.bin"), &binary).expect("write binary copy input");
+        let output = run_in_directory(&file_bytes, run_dir.path(), "std_file_copy_stdout");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, binary);
+        let output = run_in_directory_with_stdin(
+            &stdin_bytes,
+            run_dir.path(),
+            "std_file_copy_stdin",
+            &binary,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(
+            std::fs::read(run_dir.path().join("output.bin")).unwrap(),
+            binary
+        );
+        assert_eq!(
+            std::fs::read(run_dir.path().join("seed.bin")).unwrap(),
+            b"keep"
+        );
+        assert!(!run_dir.path().join("missing/output.bin").exists());
+        std::fs::remove_dir_all(run_dir.path()).expect("remove copy directory");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = (file_bytes, stdin_bytes);
+}
+
+#[test]
+fn std_file_copy_stdin_to_file_reports_write_failure_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_file_copy_stdin_failure.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_file_copy_stdin_failure", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile stdin-to-file failure fixture");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_file_copy", "fault_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create copy fault directory");
+        let output = run_in_directory_with_stdin(
+            &bytes,
+            run_dir.path(),
+            "std_file_copy_stdin_failure",
+            b"ABCDEFGH",
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        std::fs::remove_dir_all(run_dir.path()).expect("remove copy fault directory");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn std_file_public_functions_have_runtime_cases() {
     let source = include_str!("../stdlib/std/file.lani");
     let fixtures = [
@@ -790,6 +913,8 @@ fn std_file_public_functions_have_runtime_cases() {
         include_str!("fixtures/stdlib_host/std_file_u32_decimal.lani"),
         include_str!("fixtures/stdlib_host/std_file_write_u32_decimal.lani"),
         include_str!("fixtures/stdlib_host/std_file_narrow_decimal.lani"),
+        include_str!("fixtures/stdlib_host/std_file_copy_stdout.lani"),
+        include_str!("fixtures/stdlib_host/std_file_copy_stdin.lani"),
     ]
     .concat();
     let mut count = 0;
@@ -807,5 +932,5 @@ fn std_file_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 19);
+    assert_eq!(count, 21);
 }

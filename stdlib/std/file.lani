@@ -9,6 +9,7 @@ import core::decimal;
 import core::mem;
 import std::fs;
 import std::io;
+import std::io_checked;
 import std::io_decimal;
 pub fn write_text_once(path: str, text: str) -> i32 {
     let handle: std::fs::FileHandle = std::fs::open_write_path(path);
@@ -207,6 +208,70 @@ pub fn copy_distinct_with_buffer(input_path: str, output_path: str, buffer: ptr,
     let output_closed: i32 = std::fs::close_file(output);
     let input_closed: i32 = std::fs::close_file(input);
     return copied && output_closed >= 0 && input_closed >= 0;
+}
+
+// Copy an entire file to stdout through caller storage. Invalid buffer or
+// capacity returns false before opening the source. Open, read, write, and
+// close failures return false; stdout may contain a copied prefix. Capacity
+// must be 1..=i32::MAX and buffer must cover that many writable bytes.
+pub fn copy_file_to_stdout_with_buffer(path: str, buffer: ptr, capacity: usize) -> bool {
+    if (buffer == 0 || capacity == 0 || capacity>2147483647) {
+        return false;
+    }
+    let input: i32 = std::fs::open_read_path(path);
+    if (input<0) {
+        return false;
+    }
+    let copied: bool = true;
+    while (true) {
+        let received: i32 = std::fs::read(input, buffer, capacity);
+        if (received<0) {
+            copied = false;
+            break;
+        }
+        if (received == 0) {
+            break;
+        }
+        let count: usize = received;
+        if (count>capacity || !std::io_checked::write_all_stdout(buffer, count)) {
+            copied = false;
+            break;
+        }
+    }
+    let closed: i32 = std::fs::close_file(input);
+    return copied && closed >= 0;
+}
+
+// Create or truncate a file, copy stdin through caller storage, and close
+// the file. Invalid storage or capacity returns false before opening, so an
+// existing destination is left alone. Read, write, or close failure returns
+// false and may leave a truncated file or copied prefix. Stdin stays open.
+pub fn copy_stdin_to_file_with_buffer(path: str, buffer: ptr, capacity: usize) -> bool {
+    if (buffer == 0 || capacity == 0 || capacity>2147483647) {
+        return false;
+    }
+    let output: i32 = std::fs::open_write_path(path);
+    if (output<0) {
+        return false;
+    }
+    let copied: bool = true;
+    while (true) {
+        let received: i32 = std::io::read_stdin(buffer, capacity);
+        if (received<0) {
+            copied = false;
+            break;
+        }
+        if (received == 0) {
+            break;
+        }
+        let count: usize = received;
+        if (count>capacity || !write_all_bytes(output, buffer, count)) {
+            copied = false;
+            break;
+        }
+    }
+    let closed: i32 = std::fs::close_file(output);
+    return copied && closed >= 0;
 }
 
 // Reads an entire ASCII decimal file containing optional leading and trailing
