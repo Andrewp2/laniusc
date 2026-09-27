@@ -588,6 +588,12 @@ malformed UTF-8, overlong input, and EOF failure cases. It returns a distinct
 nonzero status for line input, UTF-8, decimal output, and newline output
 failures.
 
+`tests/fixtures/stdlib_host/std_utf8_line_append.lani` exercises text
+construction across modules. It reads one LF line, validates UTF-8, appends a
+four-byte scalar within reserved caller storage, and prints the resulting text
+and scalar count. `tests/stdlib_io_utf8_execution.rs` runs it on x86_64 Linux
+with multibyte, empty, exact-capacity, malformed, overlong, and EOF input.
+
 ## Target support and focused verification
 
 | Target / path | Status |

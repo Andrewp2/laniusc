@@ -54,7 +54,50 @@ fn utf8_scalar_and_view_io_execute_on_x86() {
             b"A\xf0\x9f\x99\x82\xf4\x8f\xbf\xbfA\xc2\xa2\xe2\x82\xac\xf0\x9f\x99\x82",
             "{output:?}"
         );
-        assert_eq!(output.stderr, b"\xc2\xa2\xe2\x82\xacA\xc2\xa2", "{output:?}");
+        assert_eq!(
+            output.stderr, b"\xc2\xa2\xe2\x82\xacA\xc2\xa2",
+            "{output:?}"
+        );
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn utf8_line_append_program_executes_on_x86() {
+    let bytes = compile_fixture("std_utf8_line_append");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let executable = write_executable(&bytes, "std_utf8_line_append");
+        let cases: &[(&str, &[u8], i32, &[u8])] = &[
+            (
+                "multibyte",
+                b"A\xc2\xa2\xe2\x82\xac\n",
+                0,
+                b"A\xc2\xa2\xe2\x82\xac\xf0\x9f\x99\x82 4\n",
+            ),
+            ("empty line", b"\n", 0, b"\xf0\x9f\x99\x82 1\n"),
+            (
+                "exact capacity",
+                b"abcdefghijkl",
+                0,
+                b"abcdefghijkl\xf0\x9f\x99\x82 13\n",
+            ),
+            ("invalid UTF-8", b"\xc0\n", 3, b""),
+            ("truncated UTF-8", b"\xe2\x82", 3, b""),
+            ("overlong line", b"abcdefghijklm\n", 2, b""),
+            ("EOF", b"", 2, b""),
+        ];
+        for &(name, input, expected_code, expected_stdout) in cases {
+            let output = run_with_input(&executable, input);
+            assert_eq!(
+                output.status.code(),
+                Some(expected_code),
+                "{name}: {output:?}"
+            );
+            assert_eq!(output.stdout, expected_stdout, "{name}: {output:?}");
+            assert!(output.stderr.is_empty(), "{name}: {output:?}");
+        }
     }
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     let _ = bytes;
