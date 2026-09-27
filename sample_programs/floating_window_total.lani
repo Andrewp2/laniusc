@@ -1,6 +1,7 @@
 module app::main;
 import core::f32;
 import core::option_f32;
+import core::range_f32;
 import core::slice_f32;
 
 fn main() -> i32 {
@@ -10,7 +11,10 @@ fn main() -> i32 {
         return 1;
     }
     let raw_total: f32 = core::slice_f32::sum_or(readings, 3, -1.0);
-    if (!core::f32::is_finite(raw_total)) { return 3; }
+    let acceptable: core::range_f32::RangeInclusiveF32 =
+        core::range_f32::range_inclusive(0.0, 100.0);
+    if (!core::f32::is_finite(raw_total) ||
+        !core::range_f32::contains_inclusive(acceptable, raw_total)) { return 3; }
     let bounded: f32 = core::f32::clamp_or(raw_total, 0.0, 100.0, -1.0);
     let result: core::option_f32::OptionF32 = core::option_f32::some(bounded);
     let total: f32 = core::option_f32::unwrap_or(result, -1.0);
