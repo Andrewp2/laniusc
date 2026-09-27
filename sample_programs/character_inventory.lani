@@ -1,0 +1,30 @@
+module app::main;
+import core::char;
+import core::number_i32;
+import core::range;
+import core::slice_char;
+
+fn main() -> i32 {
+    let a: char = 'a';
+    let z: char = 'z';
+    let e: char = 'é';
+    let omega: char = 'Ω';
+    let letters: [char; 6] = [omega, z, a, e, z, z];
+    if (!core::slice_char::sort(letters, 6)) { return 1; }
+    let first: i32 = core::slice_char::lower_bound_or(letters, 6, z, -1);
+    let after: i32 = core::slice_char::upper_bound_or(letters, 6, z, -1);
+    if (first < 0 || after < first) { return 2; }
+    let matches: core::range::Range<i32> = core::range::range_i32(first, after);
+    let count: i32 = 0;
+    let index: i32 = 0;
+    while (index < 6) {
+        let letter: char = core::slice_char::get_or(letters, 6, index, a);
+        if (core::range::contains_i32(matches, index) &&
+            core::char::is_ascii_alphabetic(letter)) {
+            count = core::number_i32::saturating_add(count, 1);
+        }
+        index += 1;
+    }
+    print(count);
+    return 0;
+}

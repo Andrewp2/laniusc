@@ -1,0 +1,9 @@
+module app::main;
+import core::slice_char;
+fn main() -> i32 {
+    let a: char = 'a';
+    let values: [char; 1] = [a];
+    let beyond: char = core::slice_char::get_or(values, 2, 1, a);
+    if (beyond == a) { return 1; }
+    return 0;
+}

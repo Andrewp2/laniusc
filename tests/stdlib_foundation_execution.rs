@@ -420,6 +420,18 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_slice_char",
+            "tests/fixtures/stdlib_foundation/core_slice_char.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_slice_char_bounds",
+            "tests/fixtures/stdlib_foundation/core_slice_char_bounds.lani",
+            101,
+            b"",
+        ),
+        (
             "core_slice_f32",
             "tests/fixtures/stdlib_foundation/core_slice_f32.lani",
             0,
@@ -616,6 +628,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             "sample_programs/portable_window_checksum.lani",
             0,
             b"96\n",
+        ),
+        (
+            "character_inventory",
+            "sample_programs/character_inventory.lani",
+            0,
+            b"3\n",
         ),
         (
             "option_result_helpers",
@@ -992,6 +1010,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             "slice_bool",
             include_str!("../stdlib/core/slice_bool.lani"),
             include_str!("fixtures/stdlib_foundation/core_slice_bool.lani"),
+        ),
+        (
+            "slice_char",
+            include_str!("../stdlib/core/slice_char.lani"),
+            include_str!("fixtures/stdlib_foundation/core_slice_char.lani"),
         ),
         (
             "slice_f32",

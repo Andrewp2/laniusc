@@ -39,6 +39,7 @@ limited to native x86_64 output from this worktree.
 | `core::slice_u16` all 36 public unsigned-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every public function and check access, mutation, copy and rotation, compaction, insertion, sequence search, unsigned ordering across `32768`, sort and binary search, partitioning, and sums saturating at `65535`. They cover empty and invalid logical lengths, rejected mutation, and all 243 five-element sequences over `{0,1,2}` for sorting. A separate fixture confirms exit 101 when the claimed length exceeds the physical backing and is indexed. |
 | `core::slice_u32` all 36 public unsigned-word-view functions | Executable on x86_64 for fixed-array-backed views | Matching runtime fixtures cover the same operations and failure cases, including unsigned ordering across `2^31` and saturation at `u32::MAX`, plus the exhaustive small-sort fixture. The caller supplies a logical length within the physical backing. A source scan requires a runtime call for every public function. |
 | `core::slice_bool` all 14 public boolean-view functions | Executable on x86_64 for fixed-array-backed views | The runtime fixture calls every function and checks reads, writes, fill, swap, overlapping copy, reversal, prefix copy, true counts, `any` and `all`, first and last matching indices, equality, sorting, invalid lengths, and an overclaimed physical length that traps. Sorting checks every five-element Boolean sequence. The boolean checksum sample uses it with numeric and Option helpers. Generic `[T]` operations are withheld because signed element instantiations misexecute; see dependency 41. |
+| `core::slice_char` all 23 public character-view functions | Executable on x86_64 for fixed-array-backed views | The runtime fixture calls every function and checks access, mutation, overlap-safe copying, prefix and subsequence matching, equality, Unicode scalar ordering, sorting, bounds, binary search, empty and invalid lengths, and non-ASCII values. Sorting checks all 243 five-element sequences over `{'a', 'z', 'é'}`. An overclaimed physical length traps. The character inventory sample combines it with `core::char`, `core::range`, and `core::number_i32`. |
 | `core::slice_f32` all 18 public floating-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every function and check finite and NaN values, IEEE equality and signed zero, left-to-right sums, overlapping copy, invalid bounds, and native trapping on an overclaimed physical length. Finite-only heapsort checks all 243 five-element sequences over `{-1, 0, 1}`; binary bounds and searches cover duplicates, missing values, signed zero, and invalid input. The floating window sample combines it with `core::f32` and `OptionF32`. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
@@ -422,6 +423,16 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   before true, returning false without writing for a negative length. A fallback can
   equal a stored value; callers that need a distinct success indication use
   `set` for mutation or validate the index separately for reading.
+  `core::slice_char` operates on caller-backed character views and compares
+  Unicode scalar values. It checks logical bounds for access and mutation,
+  supports overlap within one view, and requires disjoint or same-start backing
+  for prefix copying. Empty subsequence searches return the first or final
+  boundary; invalid lengths return false, -1, or the caller's fallback as
+  documented by each function. Sort uses in-place heapsort, and binary bounds
+  and searches validate that the input is sorted. An overclaimed physical
+  length can trap when indexed. A direct fixed-array literal of character
+  literals currently fails type checking; typed character variables work
+  (dependency 48).
   `core::slice_f32` offers bounded access and mutation, fill, swap, overlap-safe
   in-place copy, reverse, prefix copy, search, equality, and left-to-right sum
   over caller-backed float views. Invalid indices return a fallback or false;
@@ -787,6 +798,10 @@ readings, selects an inclusive value range, checks its first match through
 an Option returned by its local search helper and concrete Result helpers,
 then accumulates the selected values with
 saturation. It combines five portable modules and prints `32786`.
+
+`sample_programs/character_inventory.lani` sorts six Unicode scalar values,
+finds an ASCII letter range, and counts its members. It combines four portable
+modules and prints `3`.
 
 `sample_programs/floating_window_total.lani` sorts finite readings and searches
 them through `core::slice_f32`, sums and clamps them, and carries the result through
@@ -1357,6 +1372,13 @@ also fixes the imported struct-return relocation path described below.
     an extra argument to `Some`, with `LNC0027`; GPU `check` reports the same
     arity error for the constructor calls. A Boolean payload reports `LNC0006`,
     and a bare payload variant remains rejected.
+48. **Direct character literals in fixed-array initializers.**
+    `repro_char_array_literals.lani` declares `[char; 2] = ['A', 'é']`.
+    GPU `check` reports `LNC0006` at the first character literal even though
+    each literal can initialize a scalar `char`. Initializing two typed `char`
+    locals first and then using `[a, e]` compiles and executes, including
+    imported `core::slice_char` access. The character-slice fixtures and sample
+    use that workaround; direct literal arrays need a type-checker fix.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those
