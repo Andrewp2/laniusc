@@ -300,6 +300,14 @@ pub(in crate::type_checker) const DEPENDENCY_CALL_ARGS_VALIDATE: ReflectedComput
     )
     .with_indirect_dispatch("hir_active_dispatch_args");
 
+pub(in crate::type_checker) const DEPENDENCY_CALL_ARITY_VALIDATE: ReflectedComputeSpec =
+    typecheck_pass!(
+        "type_check.dependencies.validate_call_arity",
+        HirNodes,
+        "type_checker/dependencies/08c_validate_call_arity"
+    )
+    .with_indirect_dispatch("hir_active_dispatch_args");
+
 pub(in crate::type_checker) const DEPENDENCY_CALL_RESULTS_SUBSTITUTE: ReflectedComputeSpec =
     typecheck_pass!(
         "type_check.dependencies.validate_call_results.substitute",

@@ -1,0 +1,8 @@
+module app::main;
+import helpers::maybe;
+
+fn main() -> i32 {
+    let loaded: helpers::maybe::Maybe = helpers::maybe::Some();
+    if (helpers::maybe::score(loaded) != 5) { return 1; }
+    return 0;
+}

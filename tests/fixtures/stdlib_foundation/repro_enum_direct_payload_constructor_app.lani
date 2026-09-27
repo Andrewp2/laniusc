@@ -4,5 +4,7 @@ import helpers::maybe;
 fn main() -> i32 {
     let loaded: helpers::maybe::Maybe = helpers::maybe::Some(3);
     if (helpers::maybe::score(loaded) != 5) { return 1; }
+    let pair: helpers::maybe::Maybe = helpers::maybe::Pair(2, 3);
+    if (helpers::maybe::score(pair) != 5) { return 2; }
     return 0;
 }

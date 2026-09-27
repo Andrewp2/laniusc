@@ -42,6 +42,7 @@ static const uint INTERFACE_TYPE_FUNCTION = 7u;
 static const uint HIR_ITEM_KIND_CONST = 3u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
+static const uint IMPORTED_PAYLOAD_VARIANT = 10u;
 static const uint MEMBER_GENERIC_TYPE = 2u;
 static const uint MEMBER_GENERIC_CONST = 3u;
 static const uint MEMBER_ENUM_VARIANT = 5u;
@@ -78,19 +79,24 @@ bool same_variant_name(uint declaration_base, uint member_base)
     return true;
 }
 
-bool unit_variant_metadata(uint declaration_base, uint signature_root,
-                           out uint enum_root, out uint ordinal)
+bool variant_metadata(uint declaration_base, uint signature_root,
+                      out uint enum_root, out uint ordinal,
+                      out uint payload_count)
 {
     enum_root = 0xffffffffu;
     ordinal = 0xffffffffu;
+    payload_count = 0xffffffffu;
     if (dependency_type_word(signature_root * TYPE_WORDS) != INTERFACE_TYPE_FUNCTION)
         return false;
     uint signature_base = signature_root * TYPE_WORDS;
     uint edge_start = dependency_type_word(signature_base + 3u);
     uint edge_count = dependency_type_word(signature_base + 4u);
-    if (edge_count != 1u || edge_start >= dependency_count(5u))
+    if (edge_count == 0u || edge_count > 5u ||
+        edge_start > dependency_count(5u) ||
+        edge_count > dependency_count(5u) - edge_start)
         return false;
-    uint return_type = dependency_type_edge_word(edge_start);
+    payload_count = edge_count - 1u;
+    uint return_type = dependency_type_edge_word(edge_start + payload_count);
     if (return_type >= dependency_type_count())
         return false;
     enum_root = canonical_type_roots[return_type];
@@ -166,10 +172,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             uint enum_root;
             uint ordinal;
-            if (unit_variant_metadata(declaration_base, root, enum_root, ordinal))
+            uint payload_count;
+            if (variant_metadata(declaration_base, root, enum_root, ordinal,
+                                 payload_count))
             {
                 resolved_dependency_value_metadata[value_base] =
-                    HIR_ITEM_KIND_ENUM_VARIANT;
+                    payload_count == 0u ? HIR_ITEM_KIND_ENUM_VARIANT
+                                        : IMPORTED_PAYLOAD_VARIANT;
                 resolved_dependency_value_metadata[value_base + 1u] = enum_root;
                 resolved_dependency_value_metadata[value_base + 2u] = ordinal;
                 uint enum_base = enum_root * TYPE_WORDS;

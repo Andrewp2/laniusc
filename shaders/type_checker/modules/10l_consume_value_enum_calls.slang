@@ -1,4 +1,5 @@
 import hir_records;
+import status;
 
 // GPU HIR enum constructor call consumer.
 //
@@ -43,6 +44,7 @@ StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> module_value_path_call_head;
 
 RWStructuredBuffer<uint> module_value_path_status;
+RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -61,6 +63,8 @@ static const uint STMT_RECORD_KIND_LET = 1u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint HIR_CALL_CONTEXT_ID_MASK = 0x7fffffffu;
+static const uint ERR_CALL_MISMATCH = 10u;
+static const uint CALL_MISMATCH_ARITY = 0xffffff05u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -240,6 +244,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     uint dense_call = dense_call_for_path(path_i);
+    if (valid_node(dense_call) &&
+        call_arg_count_for_call(dense_call) != compact_variant_payload_count[variant])
+    {
+        record_min_token_error(
+            status, owner_token, ERR_CALL_MISMATCH, CALL_MISMATCH_ARITY);
+        module_value_path_status[owner_token] = INVALID;
+        return;
+    }
     if (!prepare_enum_constructor_call(owner_token, dense_call, enum_token, variant))
     {
         module_value_path_status[owner_token] = PATH_RESOLVE_STATUS_UNRESOLVED_DECL;

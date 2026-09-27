@@ -5375,6 +5375,7 @@ fn build_graph(
             dependency_call_compare_scan_input,
         )],
     })?;
+    DEPENDENCY_CALL_ARITY_VALIDATE.register_kernel(&mut graph, kernels)?;
     graph.add_kernel_pass_by_name(
         DEPENDENCY_CALL_ARGS_VALIDATE_PASS,
         CompilerPhase::TypeCheck,

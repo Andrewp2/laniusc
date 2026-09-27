@@ -240,6 +240,7 @@ pub(in crate::type_checker) fn record_dependency_call_validation(
         )?;
     }
     visibility.call_compare_scan_input.clear(encoder, 0, None);
+    visibility.validate_call_arity_group.record(encoder)?;
     visibility.validate_call_args_group.record(encoder)?;
     visibility.validate_call_results_group.record(encoder)?;
     visibility

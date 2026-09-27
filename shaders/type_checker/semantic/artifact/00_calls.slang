@@ -29,6 +29,7 @@ StructuredBuffer<uint> compact_path_count;
 StructuredBuffer<uint> compact_variant_count;
 StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> path_id_by_owner_hir;
+StructuredBuffer<uint> resolved_dependency_value_metadata;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> decl_kind;
@@ -58,6 +59,7 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
+static const uint IMPORTED_PAYLOAD_VARIANT = 10u;
 static const uint CALLABLE_NONE = 0u;
 static const uint CALLABLE_FUNCTION = 1u;
 static const uint CALLABLE_INTRINSIC = 2u;
@@ -129,6 +131,17 @@ bool local_enum_variant_for_call(
     return true;
 }
 
+uint imported_payload_variant_ordinal(uint call)
+{
+    uint callee = compact_hir_payload[call].a;
+    uint path = path_for_callee(callee);
+    if (path == INVALID) return INVALID;
+    uint base = path * 3u;
+    return resolved_dependency_value_metadata[base] == IMPORTED_PAYLOAD_VARIANT
+        ? resolved_dependency_value_metadata[base + 2u]
+        : INVALID;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -165,6 +178,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             uint local_variant_ordinal;
             bool local_variant = local_enum_variant_for_call(
                 row, local_variant_hir, local_variant_ordinal);
+            uint imported_variant_ordinal = imported_payload_variant_ordinal(row);
             call.target_token = backend_call_fn_index[callee_token];
             if (call_dependency_library_id[callee_token] != INVALID)
             {
@@ -181,6 +195,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 call.callable_kind = CALLABLE_ENUM_VARIANT;
                 call.callable_hir = local_variant_hir;
                 call.callable_ordinal = local_variant_ordinal;
+                call.target_token = INVALID;
+            }
+            else if (imported_variant_ordinal != INVALID &&
+                     call.dependency_library_id != INVALID)
+            {
+                call.callable_kind = CALLABLE_ENUM_VARIANT;
+                call.callable_ordinal = imported_variant_ordinal;
                 call.target_token = INVALID;
             }
             else if (call.dependency_library_id != INVALID)

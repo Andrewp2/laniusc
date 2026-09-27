@@ -1314,14 +1314,18 @@ also fixes the imported struct-return relocation path described below.
     executes through an inferred local. The checker copies the stable nominal
     identity onto the local; a negative fixture verifies that an unrelated
     enum parameter still reports `LNC0006`.
-47. **Direct imported payload enum constructor linking.**
+47. **Resolved: direct imported payload enum constructors and call arity.**
     `repro_enum_direct_payload_constructor_app.lani` calls the imported
-    `helpers::maybe::Some(3)` constructor with an explicit `Maybe` annotation.
-    `laniusc check` succeeds, but native compilation reports `LNC0059` from
-    the x86 GPU symbol partition (`[0, 4, 0, 2]`). An imported function that
-    constructs and returns `Some` executes, and an imported unit variant
-    executes directly. This is a distinct compiler/linker dependency from
-    local type inference; the direct payload constructor is not claimed.
+    `helpers::maybe::Some(3)` and `Pair(2, 3)` constructors and executes their
+    tagged payloads on x86_64. The GPU semantic projection now lowers a
+    concrete imported payload variant as an enum constructor instead of
+    emitting an unresolved external function symbol (`LNC0059`). Inferred
+    local storage for the same constructor also executes. A call-level
+    dependency validator rejects
+    missing arguments for both `Some()` and an ordinary imported function, and
+    an extra argument to `Some`, with `LNC0027`; GPU `check` reports the same
+    arity error for the constructor calls. A Boolean payload reports `LNC0006`,
+    and a bare payload variant remains rejected.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

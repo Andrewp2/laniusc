@@ -116,6 +116,7 @@ pub(in crate::type_checker) struct DependencyVisibilityState {
     pub(in crate::type_checker) project_calls_group: ComputeOperation,
     pub(in crate::type_checker) project_call_params_group: ComputeOperation,
     pub(in crate::type_checker) scatter_call_params_group: ComputeOperation,
+    pub(in crate::type_checker) validate_call_arity_group: ComputeOperation,
     pub(in crate::type_checker) validate_call_args_group: ComputeOperation,
     pub(in crate::type_checker) validate_call_results_group: ComputeOperation,
     pub(in crate::type_checker) validate_call_results_validate: ComputeInvocation,
@@ -503,6 +504,14 @@ pub(in crate::type_checker) fn create(
         DEPENDENCY_CALL_ARGS_VALIDATE,
         inputs.hir_active_dispatch_args,
     )?;
+    let validate_call_arity_group = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        &value_path_resources,
+        passes,
+        DEPENDENCY_CALL_ARITY_VALIDATE,
+        inputs.hir_active_dispatch_args,
+    )?;
     let validate_call_results_group = ComputeOperation::indirect_spec(
         device,
         graph,
@@ -625,6 +634,7 @@ pub(in crate::type_checker) fn create(
         project_calls_group,
         project_call_params_group,
         scatter_call_params_group,
+        validate_call_arity_group,
         validate_call_args_group,
         validate_call_results_group,
         validate_call_results_validate,
