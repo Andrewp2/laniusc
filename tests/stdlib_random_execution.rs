@@ -12,6 +12,26 @@ fn compile_fixture(name: &str) -> Vec<u8> {
     .expect("compile checked secure random fixture")
 }
 
+#[test]
+fn raw_secure_fill_ignores_prior_host_call_registers_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_random_fill_flags.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("random_fill_flags", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile random fill after directory read");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let output =
+            common::run_x86_64_elf_output("random_fill_flags", "random_fill_flags", &bytes);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
 #[cfg(target_os = "linux")]
 fn write_executable(bytes: &[u8], name: &str) -> common::TempArtifact {
     use std::os::unix::fs::PermissionsExt;

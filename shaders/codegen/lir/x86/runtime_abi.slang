@@ -39,17 +39,17 @@ static const uint X86_RUNTIME_CURRENT_DIR_READ_OFFSET = 1432u;
 static const uint X86_RUNTIME_UNIX_SECONDS_OFFSET = 1459u;
 static const uint X86_RUNTIME_SECURE_U32_OFFSET = 1469u;
 static const uint X86_RUNTIME_FILL_SECURE_BYTES_OFFSET = 1513u;
-static const uint X86_RUNTIME_ARG_LEN_OFFSET = 1521u;
-static const uint X86_RUNTIME_PATH_COPY_OFFSET = 1561u;
-static const uint X86_RUNTIME_PATH_OPEN_READ_OFFSET = 1628u;
-static const uint X86_RUNTIME_PATH_OPEN_WRITE_OFFSET = 1669u;
-static const uint X86_RUNTIME_PATH_OPEN_APPEND_OFFSET = 1716u;
-static const uint X86_RUNTIME_PATH_REMOVE_FILE_OFFSET = 1763u;
-static const uint X86_RUNTIME_PATH_CREATE_DIR_OFFSET = 1800u;
-static const uint X86_RUNTIME_PATH_REMOVE_DIR_OFFSET = 1842u;
-static const uint X86_RUNTIME_PATH_RENAME_OFFSET = 1879u;
-static const uint X86_RUNTIME_ASSERT_OFFSET = 1973u;
-static const uint X86_RUNTIME_LENGTH = 1980u;
+static const uint X86_RUNTIME_ARG_LEN_OFFSET = 1522u;
+static const uint X86_RUNTIME_PATH_COPY_OFFSET = 1562u;
+static const uint X86_RUNTIME_PATH_OPEN_READ_OFFSET = 1629u;
+static const uint X86_RUNTIME_PATH_OPEN_WRITE_OFFSET = 1670u;
+static const uint X86_RUNTIME_PATH_OPEN_APPEND_OFFSET = 1717u;
+static const uint X86_RUNTIME_PATH_REMOVE_FILE_OFFSET = 1764u;
+static const uint X86_RUNTIME_PATH_CREATE_DIR_OFFSET = 1801u;
+static const uint X86_RUNTIME_PATH_REMOVE_DIR_OFFSET = 1843u;
+static const uint X86_RUNTIME_PATH_RENAME_OFFSET = 1880u;
+static const uint X86_RUNTIME_ASSERT_OFFSET = 1974u;
+static const uint X86_RUNTIME_LENGTH = 1981u;
 
 uint x86_runtime_service_offset(uint service)
 {
@@ -541,10 +541,12 @@ uint x86_runtime_byte(uint pos)
         };
         return secure_u32_bytes[pos - X86_RUNTIME_SECURE_U32_OFFSET];
     }
-    if (pos >= X86_RUNTIME_FILL_SECURE_BYTES_OFFSET && pos < X86_RUNTIME_FILL_SECURE_BYTES_OFFSET + 8u)
+    if (pos >= X86_RUNTIME_FILL_SECURE_BYTES_OFFSET && pos < X86_RUNTIME_FILL_SECURE_BYTES_OFFSET + 9u)
     {
-        static const uint fill_secure_bytes[8] = {
-            0xb8u, 0x3eu, 0x01u, 0x00u, 0x00u, 0x0fu, 0x05u,
+        // CDQ clears EDX because syscall 318 is positive; getrandom's third
+        // argument must not inherit flags from an earlier host call.
+        static const uint fill_secure_bytes[9] = {
+            0xb8u, 0x3eu, 0x01u, 0x00u, 0x00u, 0x99u, 0x0fu, 0x05u,
             0xc3u
         };
         return fill_secure_bytes[pos - X86_RUNTIME_FILL_SECURE_BYTES_OFFSET];

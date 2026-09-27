@@ -138,6 +138,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "std_random_metadata",
+            "tests/fixtures/stdlib_foundation/std_random_metadata.lani",
+            0,
+            b"",
+        ),
+        (
             "process_exit",
             "sample_programs/process_exit.lani",
             7,
@@ -1247,6 +1253,13 @@ fn executable_core_function_surface_has_runtime_cases() {
             include_str!("fixtures/stdlib_foundation/std_fs_metadata.lani"),
             67,
             18,
+        ),
+        (
+            "std::random",
+            include_str!("../stdlib/std/random.lani"),
+            include_str!("fixtures/stdlib_foundation/std_random_metadata.lani"),
+            28,
+            8,
         ),
     ] {
         let mut function_count = 0;

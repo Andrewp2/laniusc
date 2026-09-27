@@ -65,7 +65,8 @@ limited to native x86_64 output from this worktree.
 | `std::env` all 54 public functions, 13 constants, and 6 host calls | Executable on x86_64 Linux | The foundation runtime fixture checks every metadata function and constant and calls `current_dir_len`. Native source-pack tests exercise environment lookup, enumeration, key reads, and current-directory reads with real host state. The focused environment suite checks missing keys, bounded storage, host failure, and allocation failure in `current_dir_len`. GPU device execution is not claimed. |
 | `std::io` all 54 public Lanius functions, 12 constants, and 7 host calls | Executable on x86_64 Linux | The foundation runtime fixture checks every metadata function and constant. Existing I/O fixtures execute all six higher-level public functions, including line output, `print_i32`, and synchronous flush semantics. Native tests exercise the seven bound calls with real stdin, stdout, stderr, and file handles, including short writes and host errors. GPU device execution is not claimed. |
 | `std::fs` all 67 public Lanius functions, 18 constants, and 14 host calls | Executable on x86_64 Linux | The foundation fixture checks every metadata function and constant. Native tests exercise raw open, append, read, write, close, path mutation, string paths, and decimal reads. Pointer path calls consume their supplied lengths and reject invalid bounds or embedded NUL bytes; decimal reads reject overflow. The file suite covers normal paths, missing paths, and host failures. GPU device execution is not claimed. |
-| `std::{random,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86. `std::random::secure_u32` has an ambiguous failure result, and the i64 clock and sleep declarations remain unbound. Use the tested checked wrappers for secure randomness and bounded clock operations. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
+| `std::random` all 28 metadata functions, 8 constants, and 2 host calls | Partially executable on x86_64 Linux | The foundation fixture executes every metadata function and reads every constant. `fill_secure_bytes` returns a byte count or negative error, including after unrelated host calls (resolved dependency 44). The scalar `secure_u32` draws normally, but its failure result is ambiguous with a valid value (dependency 18), so the complete module is not claimed. |
+| `std::time` | Mixed: bound calls executable; i64 declarations contract-only | The x86 binding supports 16-byte clock reads, i32 millisecond sleep, and Unix seconds. The i64 clock and sleep declarations remain unbound. `std::time_checked` exercises the bounded operations. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::args_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks argument count including the executable, exact byte lengths and bytes, absent/negative indices, sufficient and insufficient capacity, null storage, and capacity above `i32::MAX`. Caller storage avoids allocation. |
 | `std::env_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_env_execution.rs` checks exact value and key bytes, missing and invalid indices, capacity and null-storage failures, current-directory bytes and its NUL terminator, and injected `getcwd` failure. Caller storage avoids allocation. |
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
@@ -80,7 +81,7 @@ limited to native x86_64 output from this worktree.
 | `std::file_hex` all 9 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_hex_execution.rs` checks lowercase and uppercase writes, bounded hexadecimal file reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed and overflowing input, missing and overlong files, and injected read/write/close errors. |
 | `std::file_binary` all 6 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_binary_execution.rs` checks shortest binary file writes and bounded reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed, missing, overlong, and overflowing input, plus injected read/write/close errors. |
 | `std::file` all 21 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, multi-chunk binary copies between files and standard streams, bounded decimal reads and writes across 8-, 16-, and 32-bit integers, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
-| `std::random_checked` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded and inclusive unsigned and signed outputs, forced draws and rejection, full-range failure fallbacks, and secure i32 slice shuffling with preserved contents, a forced swap, and injected failure. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
+| `std::random_checked` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded and inclusive unsigned and signed outputs, forced draws and rejection, full-range failure fallbacks, and secure i32 slice shuffling with preserved contents, a forced swap, and injected failure. The suite also runs a raw fill after a directory read to guard the runtime flags fix. The raw `secure_u32` failure result remains ambiguous (dependency 18). |
 | `std::path` all 17 constants and all 31 public functions | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. Redundant no-argument functions that failed natively were removed in favor of the tested constants. Allocation and host normalization are unavailable. |
 | `std::vec_i32` all 12 public functions and its capacity constant | Executable on x86_64 Linux | `tests/fixtures/stdlib_foundation/vec_i32.lani` checks construction, growth, element access and mutation, bounds, reserve, pop, clear, and destruction. `tests/stdlib_vec_i32_execution.rs` injects allocation and reallocation failures and checks the vector and prior data stay unchanged. This is a linear-ownership API by convention; source-level moves are not enforced. |
 | `std::vec_u32` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, `2^31`, and `u32::MAX`. The allocation-failure suite injects failed initial allocation and reallocation; the real checksum sample combines it with `core::number_u32` and `OptionU32`. Storage uses 32-bit cells and preserves every unsigned bit pattern. Ownership is linear by convention. |
@@ -737,6 +738,9 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   failure returns false and may leave a partially shuffled permutation. A
   caller-supplied length beyond the actual backing view can trap on indexing.
 
+The checked random helpers report failure if the host call fails. The raw
+`secure_u32` result cannot distinguish failure from a valid all-ones draw.
+
 The small runnable example is `sample_programs/portable_window_checksum.lani`.
 It validates an ASCII marker, copies readings into a separate backed view,
 sorts the copy, selects a half-open window from sorted-value boundaries, reads
@@ -1269,6 +1273,20 @@ also fixes the imported struct-return relocation path described below.
     and prints a separately computed integer index. The language needs a
     defined checked or saturating conversion rule and compiler support before
     an f32-to-i32 helper can be claimed.
+44. **Resolved: raw secure byte fill inherited stale syscall flags.**
+    Compile `tests/fixtures/stdlib_foundation/repro_random_fill_flags.lani`
+    with `--stdlib-root stdlib --emit x86_64` and run it on Linux. Before the
+    fix it exited 1, with `strace` showing
+    `getrandom(ptr, 4, 0x100) = -1 EINVAL` after
+    `std::env::current_dir_read(ptr, 256)`. The compiler task confirmed no
+    file conflict, then the x86 runtime binding in
+    `shaders/codegen/lir/x86/runtime_abi.slang` gained a `cdq` after loading
+    positive syscall 318. That clears EDX before `syscall`. The reproducer
+    now exits 0 and `strace` shows `getrandom(ptr, 4, 0) = 4`. A focused
+    native test and the host smoke sample exercise the sequence; the sample
+    checks the returned byte count instead of a tautological `secure_u32`
+    self-comparison. The raw scalar's separate ambiguous failure result is
+    still dependency 18.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

@@ -74,11 +74,12 @@ fn main() -> i32 {
         return 8;
     }
 
-    let random_value: u32 = std::random::secure_u32();
-    alloc::allocator::dealloc(ptr, capacity, align);
-    if (random_value != random_value) {
+    let random_bytes: i32 = std::random::fill_secure_bytes(ptr, 4);
+    if (random_bytes != 4) {
+        alloc::allocator::dealloc(ptr, capacity, align);
         return 9;
     }
+    alloc::allocator::dealloc(ptr, capacity, align);
 
     print(99);
     return 0;

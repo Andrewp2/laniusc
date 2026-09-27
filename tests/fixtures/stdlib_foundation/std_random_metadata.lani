@@ -1,0 +1,54 @@
+module app::main;
+import std::random;
+
+fn main() -> i32 {
+    if (std::random::RANDOM_RUNTIME_ABI_VERSION != 1 ||
+        std::random::RANDOM_SERVICE_ID != 9 ||
+        std::random::RANDOM_SERVICE_STATUS_AVAILABLE != 2 ||
+        std::random::RANDOM_SERVICE_STATUS_UNAVAILABLE != 1 ||
+        !std::random::RANDOM_HAS_RUNTIME_BINDING ||
+        !std::random::RANDOM_SECURE_U32_HAS_RUNTIME_BINDING ||
+        std::random::RANDOM_OPERATION_OK != 0 ||
+        std::random::RANDOM_OPERATION_UNAVAILABLE != -1) {
+        return 1;
+    }
+    if (std::random::random_runtime_abi_version() != 1 ||
+        std::random::random_service_id() != 9 ||
+        !std::random::random_service_is_known() ||
+        !std::random::random_contract_metadata_is_available() ||
+        std::random::random_service_status() != 2 ||
+        !std::random::random_is_available() ||
+        std::random::random_is_blocked() ||
+        std::random::random_is_known_but_unbound() ||
+        std::random::random_requires_runtime_binding() ||
+        std::random::random_host_abi_is_contract_only()) {
+        return 2;
+    }
+    if (!std::random::secure_rng_api_is_executable() ||
+        std::random::secure_rng_api_is_blocked() ||
+        std::random::secure_rng_api_is_known_but_unbound() ||
+        std::random::secure_rng_api_requires_runtime_binding() ||
+        std::random::random_operation_ok() != 0 ||
+        std::random::random_operation_unavailable() != -1 ||
+        !std::random::random_operation_succeeded(0) ||
+        !std::random::random_operation_succeeded(4) ||
+        std::random::random_operation_succeeded(-1) ||
+        !std::random::random_operation_failed(-1) ||
+        std::random::random_operation_failed(0) ||
+        !std::random::random_operation_is_unavailable(-1) ||
+        std::random::random_operation_is_unavailable(-2) ||
+        std::random::random_operation_is_fail_closed(-1)) {
+        return 3;
+    }
+    if (!std::random::fill_secure_bytes_is_executable() ||
+        std::random::fill_secure_bytes_is_blocked() ||
+        std::random::fill_secure_bytes_is_known_but_unbound() ||
+        std::random::fill_secure_bytes_requires_runtime_binding() ||
+        !std::random::secure_u32_is_executable() ||
+        std::random::secure_u32_is_blocked() ||
+        std::random::secure_u32_is_known_but_unbound() ||
+        std::random::secure_u32_requires_runtime_binding()) {
+        return 4;
+    }
+    return 0;
+}

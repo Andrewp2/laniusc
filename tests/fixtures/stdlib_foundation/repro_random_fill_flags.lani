@@ -1,0 +1,23 @@
+module app::main;
+import alloc::allocator;
+import std::env;
+import std::random;
+
+fn main() -> i32 {
+    let capacity: usize = 256;
+    let storage: ptr = alloc::allocator::alloc(capacity, 4);
+    if (storage == 0) {
+        return 2;
+    }
+    let directory_length: i32 = std::env::current_dir_read(storage, capacity);
+    if (directory_length <= 0) {
+        alloc::allocator::dealloc(storage, capacity, 4);
+        return 3;
+    }
+    let received: i32 = std::random::fill_secure_bytes(storage, 4);
+    alloc::allocator::dealloc(storage, capacity, 4);
+    if (received == 4) {
+        return 0;
+    }
+    return 1;
+}
