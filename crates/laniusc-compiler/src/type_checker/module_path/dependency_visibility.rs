@@ -225,6 +225,7 @@ pub(in crate::type_checker) fn create(
     let call_compare_expected_type = graph.u32_buffer("dependency_call_compare_expected_type")?;
     let call_compare_actual_instance =
         graph.u32_buffer("dependency_call_compare_actual_instance")?;
+    let call_compare_callee = graph.u32_buffer("dependency_call_compare_callee")?;
     let call_compare_error_token = graph.u32_buffer("dependency_call_compare_error_token")?;
     let mut scan_resources = resources.clone();
     scan_resources.buffers([
@@ -594,6 +595,7 @@ pub(in crate::type_checker) fn create(
             call_compare_total,
             call_compare_expected_type,
             call_compare_actual_instance,
+            call_compare_callee,
             call_compare_error_token,
             canonical_type_roots_a,
             canonical_type_roots_b,

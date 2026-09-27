@@ -5,3 +5,9 @@ pub fn get_or<T>(values: [T], len: i32, index: i32, fallback: T) -> T {
     }
     return values[index];
 }
+
+pub fn swap<T>(values: [T], left: i32, right: i32) {
+    let previous: T = values[left];
+    values[left] = values[right];
+    values[right] = previous;
+}

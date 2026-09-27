@@ -31,6 +31,7 @@ StructuredBuffer<uint> dependency_call_compare_prefix;
 StructuredBuffer<uint> dependency_call_compare_total;
 StructuredBuffer<uint> dependency_call_compare_expected_type;
 StructuredBuffer<uint> dependency_call_compare_actual_instance;
+StructuredBuffer<uint> dependency_call_compare_callee;
 StructuredBuffer<uint> dependency_call_compare_error_token;
 StructuredBuffer<uint> canonical_type_roots;
 StructuredBuffer<uint> canonical_type_subtree_start;
@@ -315,7 +316,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         : INVALID;
     uint local_row = local_semantic_row(
         dependency_call_compare_actual_instance[request], relative);
-    uint callee = dependency_call_compare_error_token[request];
+    uint callee = dependency_call_compare_callee[request];
     if (!node_matches(expected, local_row, callee, relative == 0u))
         record_min_token_error(
             status,

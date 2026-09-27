@@ -3343,6 +3343,11 @@ fn build_graph(
             hir_rows * 4,
         ),
         (
+            "dependency_call_compare_callee",
+            ResourceDomain::HirNodes,
+            hir_rows * 4,
+        ),
+        (
             "dependency_call_compare_error_token",
             ResourceDomain::HirNodes,
             hir_rows * 4,

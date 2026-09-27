@@ -5,6 +5,32 @@ use laniusc_compiler::compiler::{
     compile_source_to_x86_64_with_gpu_codegen,
 };
 
+#[test]
+fn imported_generic_slice_claims_execute_and_reject_inconsistent_types() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_root");
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice.lani");
+    let bytes = common::run_gpu_codegen_with_timeout("generic_slice", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile imported generic slices at two element widths");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output("generic_slice", "generic_slice", &bytes);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_root");
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_mismatch.lani");
+    common::run_gpu_codegen_with_timeout("generic_slice_mismatch", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect_err("a bool fallback must not match an imported [u8] element type");
+}
+
 // Each fixture returns its first failing assertion number. The bounds fixture
 // instead confirms that a caller overclaiming the slice length traps.
 #[test]
@@ -238,6 +264,18 @@ fn portable_stdlib_helpers_execute_on_x86() {
             "core_slice_u32",
             "tests/fixtures/stdlib_foundation/core_slice_u32.lani",
             0,
+            b"",
+        ),
+        (
+            "core_slice_generic",
+            "tests/fixtures/stdlib_foundation/core_slice_generic.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_slice_generic_bounds",
+            "tests/fixtures/stdlib_foundation/core_slice_generic_bounds.lani",
+            101,
             b"",
         ),
         (
@@ -697,6 +735,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             "slice_u32",
             include_str!("../stdlib/core/slice_u32.lani"),
             include_str!("fixtures/stdlib_foundation/core_slice_u32.lani"),
+        ),
+        (
+            "slice_generic",
+            include_str!("../stdlib/core/slice_generic.lani"),
+            include_str!("fixtures/stdlib_foundation/core_slice_generic.lani"),
         ),
     ];
 

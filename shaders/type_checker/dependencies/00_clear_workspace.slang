@@ -34,6 +34,7 @@ RWStructuredBuffer<uint> dependency_call_compare_prefix;
 RWStructuredBuffer<uint> dependency_call_compare_total;
 RWStructuredBuffer<uint> dependency_call_compare_expected_type;
 RWStructuredBuffer<uint> dependency_call_compare_actual_instance;
+RWStructuredBuffer<uint> dependency_call_compare_callee;
 RWStructuredBuffer<uint> dependency_call_compare_error_token;
 
 static const uint INVALID = 0xffffffffu;
@@ -75,6 +76,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         dependency_call_compare_prefix[i] = 0u;
         dependency_call_compare_expected_type[i] = INVALID;
         dependency_call_compare_actual_instance[i] = INVALID;
+        dependency_call_compare_callee[i] = INVALID;
         dependency_call_compare_error_token[i] = INVALID;
     }
     if (i == 0u)

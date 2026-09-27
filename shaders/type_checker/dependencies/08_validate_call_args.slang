@@ -52,6 +52,7 @@ StructuredBuffer<uint> type_semantic_count_out;
 RWStructuredBuffer<uint> dependency_call_compare_scan_input;
 RWStructuredBuffer<uint> dependency_call_compare_expected_type;
 RWStructuredBuffer<uint> dependency_call_compare_actual_instance;
+RWStructuredBuffer<uint> dependency_call_compare_callee;
 RWStructuredBuffer<uint> dependency_call_compare_error_token;
 RWStructuredBuffer<uint> status;
 
@@ -291,6 +292,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                     : 0u;
                 dependency_call_compare_expected_type[arg_node] = expected_type_i;
                 dependency_call_compare_actual_instance[arg_node] = actual_payload;
+                dependency_call_compare_callee[arg_node] = callee;
                 dependency_call_compare_error_token[arg_node] =
                     arg_token < gParams.visible_capacity ? arg_token : callee;
             }
@@ -330,6 +332,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                     : 0u;
                 dependency_call_compare_expected_type[arg_node] = expected_type_i;
                 dependency_call_compare_actual_instance[arg_node] = actual_payload;
+                dependency_call_compare_callee[arg_node] = callee;
                 dependency_call_compare_error_token[arg_node] =
                     arg_token < gParams.visible_capacity ? arg_token : callee;
             }

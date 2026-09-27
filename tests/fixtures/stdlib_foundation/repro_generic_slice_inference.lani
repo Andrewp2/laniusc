@@ -1,0 +1,11 @@
+module app::main;
+import core::slice_any;
+
+fn main() -> i32 {
+    let first: u8 = 10;
+    let second: u8 = 20;
+    let bytes: [u8; 2] = [first, second];
+    core::slice_any::swap(bytes, 0, 1);
+    if (bytes[0] == second && bytes[1] == first) { return 0; }
+    return 1;
+}
