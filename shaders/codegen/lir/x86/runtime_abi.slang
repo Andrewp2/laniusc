@@ -24,23 +24,23 @@ static const uint X86_RUNTIME_REMOVE_DIR_OFFSET = 475u;
 static const uint X86_RUNTIME_RENAME_OFFSET = 483u;
 static const uint X86_RUNTIME_WRITE_TEXT_OFFSET = 493u;
 static const uint X86_RUNTIME_WRITE_I32_OFFSET = 501u;
-static const uint X86_RUNTIME_WRITE_BYTE_OFFSET = 593u;
-static const uint X86_RUNTIME_WRITE_NEWLINE_OFFSET = 621u;
-static const uint X86_RUNTIME_READ_I32_OFFSET = 649u;
-static const uint X86_RUNTIME_OPEN_READ_NUL_OFFSET = 824u;
-static const uint X86_RUNTIME_OPEN_WRITE_NUL_OFFSET = 900u;
-static const uint X86_RUNTIME_OPEN_APPEND_NUL_OFFSET = 976u;
-static const uint X86_RUNTIME_VAR_KEY_LEN_OFFSET = 1052u;
-static const uint X86_RUNTIME_VAR_COUNT_OFFSET = 1120u;
-static const uint X86_RUNTIME_VAR_KEY_READ_OFFSET = 1142u;
-static const uint X86_RUNTIME_VAR_LEN_OFFSET = 1229u;
-static const uint X86_RUNTIME_VAR_READ_OFFSET = 1310u;
-static const uint X86_RUNTIME_CURRENT_DIR_READ_OFFSET = 1412u;
-static const uint X86_RUNTIME_UNIX_SECONDS_OFFSET = 1439u;
-static const uint X86_RUNTIME_SECURE_U32_OFFSET = 1449u;
-static const uint X86_RUNTIME_FILL_SECURE_BYTES_OFFSET = 1493u;
-static const uint X86_RUNTIME_ARG_LEN_OFFSET = 1501u;
-static const uint X86_RUNTIME_LENGTH = 1541u;
+static const uint X86_RUNTIME_WRITE_BYTE_OFFSET = 613u;
+static const uint X86_RUNTIME_WRITE_NEWLINE_OFFSET = 641u;
+static const uint X86_RUNTIME_READ_I32_OFFSET = 669u;
+static const uint X86_RUNTIME_OPEN_READ_NUL_OFFSET = 844u;
+static const uint X86_RUNTIME_OPEN_WRITE_NUL_OFFSET = 920u;
+static const uint X86_RUNTIME_OPEN_APPEND_NUL_OFFSET = 996u;
+static const uint X86_RUNTIME_VAR_KEY_LEN_OFFSET = 1072u;
+static const uint X86_RUNTIME_VAR_COUNT_OFFSET = 1140u;
+static const uint X86_RUNTIME_VAR_KEY_READ_OFFSET = 1162u;
+static const uint X86_RUNTIME_VAR_LEN_OFFSET = 1249u;
+static const uint X86_RUNTIME_VAR_READ_OFFSET = 1330u;
+static const uint X86_RUNTIME_CURRENT_DIR_READ_OFFSET = 1432u;
+static const uint X86_RUNTIME_UNIX_SECONDS_OFFSET = 1459u;
+static const uint X86_RUNTIME_SECURE_U32_OFFSET = 1469u;
+static const uint X86_RUNTIME_FILL_SECURE_BYTES_OFFSET = 1513u;
+static const uint X86_RUNTIME_ARG_LEN_OFFSET = 1521u;
+static const uint X86_RUNTIME_LENGTH = 1561u;
 
 uint x86_runtime_service_offset(uint service)
 {
@@ -307,26 +307,23 @@ uint x86_runtime_byte(uint pos)
             {0xb8u, 1u, 0u, 0u, 0u, 0x0fu, 0x05u, 0xc3u};
         return write_text_bytes[pos - X86_RUNTIME_WRITE_TEXT_OFFSET];
     }
-    if (pos >= X86_RUNTIME_WRITE_I32_OFFSET && pos < X86_RUNTIME_WRITE_I32_OFFSET + 92u)
+    if (pos >= X86_RUNTIME_WRITE_I32_OFFSET && pos < X86_RUNTIME_WRITE_I32_OFFSET + 112u)
     {
-        static const uint write_i32_bytes[92] = {
-            0x41u, 0x89u, 0xfau, 0x89u, 0xf7u,
-            0x48u, 0x83u, 0xecu, 0x18u, 0x48u, 0x8du, 0x74u, 0x24u, 0x17u,
-            // The second SysV argument arrives in ESI and is preserved in EDI
-            // before RSI becomes the output cursor. Copy that value into EAX
-            // instead of depending on accidental caller register residue.
-            0x89u, 0xf8u, 0x90u, 0x41u, 0x89u, 0xc0u, 0x41u,
-            0xc1u, 0xf8u, 0x1fu, 0x44u, 0x31u, 0xc0u, 0x44u, 0x29u, 0xc0u,
-            0xb9u, 0x0au, 0u, 0u, 0u, 0x31u, 0xd2u, 0xf7u, 0xf1u,
-            0x80u, 0xc2u, 0x30u, 0x48u, 0xffu, 0xceu, 0x88u, 0x16u,
-            0x85u, 0xc0u, 0x75u, 0xf0u, 0x45u, 0x85u, 0xc0u, 0x74u, 0x06u,
-            0x48u, 0xffu, 0xceu, 0xc6u, 0x06u, 0x2du, 0x48u, 0x8du,
-            0x54u, 0x24u, 0x17u, 0x48u, 0x29u, 0xf2u, 0x44u, 0x89u, 0xd7u,
-            0xb8u, 1u, 0u, 0u, 0u, 0x0fu, 0x05u,
-            // The language service reports status, not the Linux byte count:
-            // preserve negative errno values and canonicalize success to zero.
-            0x85u, 0xc0u, 0x78u, 0x02u, 0x31u, 0xc0u,
-            0x48u, 0x83u, 0xc4u, 0x18u, 0xc3u, 0u
+        // Format a signed i32, then retry short writes until every byte
+        // reaches the host. Return zero only after the complete decimal text.
+        static const uint write_i32_bytes[112] = {
+            0x41u, 0x89u, 0xfau, 0x89u, 0xf7u, 0x48u, 0x83u, 0xecu, 0x18u, 0x48u,
+            0x8du, 0x74u, 0x24u, 0x17u, 0x89u, 0xf8u, 0x41u, 0x89u, 0xc0u, 0x41u,
+            0xc1u, 0xf8u, 0x1fu, 0x44u, 0x31u, 0xc0u, 0x44u, 0x29u, 0xc0u, 0xb9u,
+            0x0au, 0x00u, 0x00u, 0x00u, 0x31u, 0xd2u, 0xf7u, 0xf1u, 0x80u, 0xc2u,
+            0x30u, 0x48u, 0xffu, 0xceu, 0x88u, 0x16u, 0x85u, 0xc0u, 0x75u, 0xf0u,
+            0x45u, 0x85u, 0xc0u, 0x74u, 0x06u, 0x48u, 0xffu, 0xceu, 0xc6u, 0x06u,
+            0x2du, 0x48u, 0x8du, 0x54u, 0x24u, 0x17u, 0x48u, 0x29u, 0xf2u, 0x44u,
+            0x89u, 0xd7u, 0xb8u, 0x01u, 0x00u, 0x00u, 0x00u, 0x0fu, 0x05u, 0x48u,
+            0x85u, 0xc0u, 0x78u, 0x13u, 0x74u, 0x0cu, 0x48u, 0x01u, 0xc6u, 0x48u,
+            0x29u, 0xc2u, 0x75u, 0xe7u, 0x31u, 0xc0u, 0xebu, 0x05u, 0xb8u, 0xffu,
+            0xffu, 0xffu, 0xffu, 0x48u, 0x83u, 0xc4u, 0x18u, 0xc3u, 0u, 0u,
+            0u, 0u
         };
         return write_i32_bytes[pos - X86_RUNTIME_WRITE_I32_OFFSET];
     }

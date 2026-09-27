@@ -41,7 +41,7 @@ limited to native x86_64 output from this worktree.
 | `core::{cmp,hash,ordering,array_i32}` and complete legacy `stdlib/array_i32_4.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs, traits, and array-returning legacy helpers depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
 | `alloc::allocator` | Executable x86_64 Linux host ABI for valid allocation arguments | Normal allocation, reallocation, and release have x86 tests. `tests/stdlib_allocator_failure_execution.rs` injects `ENOMEM` into `mmap` and `mremap`: both return null, and failed reallocation leaves the old storage readable and releasable. The API is low-level; callers must pass a valid pointer and matching sizes to `realloc` and `dealloc`. |
-| `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs::read_i32` now rejects out-of-range decimal input, with native boundary tests. Raw `std::fs` path calls ignore their declared length and require NUL-terminated storage; see dependency 29. `std::env::current_dir_len` checks allocation failure but has no direct fault-injection test yet; see dependency 25. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
+| `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs::read_i32` rejects out-of-range decimal input, and raw `std::io::write_i32` retries short writes, with focused native tests. Raw `std::fs` path calls ignore their declared length and require NUL-terminated storage; see dependency 29. `std::env::current_dir_len` checks allocation failure but has no direct fault-injection test yet; see dependency 25. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::args_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks argument count including the executable, exact byte lengths and bytes, absent/negative indices, sufficient and insufficient capacity, null storage, and capacity above `i32::MAX`. Caller storage avoids allocation. |
 | `std::env_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_env_execution.rs` checks exact value and key bytes, missing and invalid indices, capacity and null-storage failures, current-directory bytes and its NUL terminator, and injected `getcwd` failure. Caller storage avoids allocation. |
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
@@ -638,6 +638,9 @@ fault injection runs when Linux `strace` is available.
 Run `cargo test --test stdlib_fs_read_i32_execution` for the raw signed
 integer reader's normal values, signed limits, overflow, line boundaries,
 empty lines, EOF, and an injected host read error when `strace` is available.
+Run `cargo test --test stdlib_io_write_i32_execution` for the raw signed
+integer writer's zero and signed-endpoint output, short-write retry,
+zero-progress failure, and host error behavior.
 Run `cargo test --test stdlib_host_execution` for the separate native I/O
 wrappers; its partial-write fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_decimal_input_execution` for bounded decimal
@@ -845,16 +848,16 @@ also fixes the imported struct-return relocation path described below.
     byte and unsigned-word slice utility modules from having executable claims.
     The raw-view behavior in dependency 16 is a
     separate obstacle.
-21. **Raw signed integer short writes.** Compile
-    `tests/fixtures/stdlib_host/repro_io_write_i32_short.lani` with the stdlib
-    root, then run it through
-    `strace -qq -e trace=write -e inject=write:retval=1:when=1`. The injected
-    syscall reports one byte written for the two-byte text `42`, but the ELF
-    exits 1 because `std::io::write_i32` returns success status 0. The host
-    binding canonicalizes every nonnegative syscall result to success, losing
-    short-write information. `std::file::write_i32_decimal` instead uses
-    single-byte writes and checks each result. The raw binding needs a runtime
-    fix before it can promise a complete decimal write.
+21. **Resolved: raw signed integer short writes.** The native
+    `std::io::write_i32` routine now advances its output pointer by the host
+    byte count and retries until the whole decimal representation is written.
+    It returns zero only on completion; zero progress returns failure and a
+    negative host error remains negative. `tests/stdlib_io_write_i32_execution.rs`
+    checks zero, ordinary values, both signed endpoints, and injects a
+    one-byte write, zero progress, and `EIO`. The short-write trace contains
+    two write syscalls and a successful
+    return. `strace` simulates the first byte count without copying that byte,
+    so its injected run displays only the remaining `2` of `42`.
 22. **Resolved: allocator syscall failures return null.** The native `mmap`
     and `mremap` thunks now convert negative Linux syscall results to a null
     pointer. `tests/stdlib_allocator_failure_execution.rs` compiles both

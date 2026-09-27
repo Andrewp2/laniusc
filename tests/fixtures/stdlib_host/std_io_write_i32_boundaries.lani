@@ -1,0 +1,10 @@
+module app::main;
+import std::io;
+
+fn main() -> i32 {
+    if (std::io::write_i32(1, 0) != 0) { return 1; }
+    if (std::io::write_i32(1, -42) != 0) { return 2; }
+    if (std::io::write_i32(1, -2147483648) != 0) { return 3; }
+    if (std::io::write_i32(1, 2147483647) != 0) { return 4; }
+    return 0;
+}
