@@ -1,0 +1,17 @@
+// IEEE-754 unordered comparisons should produce mask 2. Native x86 currently
+// exits 85: ==self, <0, <=0, and ==0 are true for 0.0 / 0.0.
+module app::main;
+
+fn main() -> i32 {
+    let zero: f32 = 0.0;
+    let nan: f32 = zero / zero;
+    let mask: i32 = 0;
+    if (nan == nan) { mask += 1; }
+    if (nan != nan) { mask += 2; }
+    if (nan < 0.0) { mask += 4; }
+    if (nan > 0.0) { mask += 8; }
+    if (nan <= 0.0) { mask += 16; }
+    if (nan >= 0.0) { mask += 32; }
+    if (nan == 0.0) { mask += 64; }
+    return mask;
+}
