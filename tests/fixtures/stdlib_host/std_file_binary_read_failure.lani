@@ -1,0 +1,9 @@
+module app::main;
+import std::file_binary;
+
+fn main() -> i32 {
+    if (std::file_binary::read_u32_or("valid.txt", 16, 77) != 77) {
+        return 1;
+    }
+    return 0;
+}

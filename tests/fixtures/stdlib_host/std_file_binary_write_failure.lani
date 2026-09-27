@@ -1,0 +1,9 @@
+module app::main;
+import std::file_binary;
+
+fn main() -> i32 {
+    if (std::file_binary::write_u32("output.txt", 10)) {
+        return 1;
+    }
+    return 0;
+}

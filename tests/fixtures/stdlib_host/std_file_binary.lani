@@ -1,0 +1,43 @@
+module app::main;
+import std::file_binary;
+
+fn main() -> i32 {
+    let max_u8: u8 = 255;
+    let high_u16: u16 = 32769;
+    let max_u32: u32 = 4294967295;
+    if (!std::file_binary::write_u8("byte_out.txt", max_u8) ||
+        !std::file_binary::write_u16("half_out.txt", high_u16) ||
+        !std::file_binary::write_u32("zero_out.txt", 0) ||
+        !std::file_binary::write_u32("max_out.txt", max_u32)) {
+        return 1;
+    }
+    if (std::file_binary::write_u32("missing/child.txt", 42) ||
+        std::file_binary::write_u32("/dev/full", 42)) {
+        return 2;
+    }
+    if (std::file_binary::read_u32_or("space.txt", 40, 77) != 165 ||
+        std::file_binary::read_u32_or("max.txt", 40, 77) != max_u32 ||
+        std::file_binary::read_u32_or("zero.txt", 1, 77) != 0) {
+        return 3;
+    }
+    if (std::file_binary::read_u32_or("space.txt", 13, 77) != 77 ||
+        std::file_binary::read_u32_or("overflow.txt", 40, 77) != 77 ||
+        std::file_binary::read_u32_or("prefix.txt", 40, 77) != 77 ||
+        std::file_binary::read_u32_or("bad.txt", 40, 77) != 77 ||
+        std::file_binary::read_u32_or("empty.txt", 40, 77) != 77 ||
+        std::file_binary::read_u32_or("missing.txt", 40, 77) != 77 ||
+        std::file_binary::read_u32_or("zero.txt", 0, 77) != 77) {
+        return 4;
+    }
+    if (std::file_binary::read_u8_or("byte.txt", 40, 7) != 255 ||
+        std::file_binary::read_u8_or("wide.txt", 40, 7) != 7 ||
+        std::file_binary::read_u8_or("bad.txt", 40, 7) != 7) {
+        return 5;
+    }
+    if (std::file_binary::read_u16_or("half.txt", 40, 9) != high_u16 ||
+        std::file_binary::read_u16_or("too_wide.txt", 40, 9) != 9 ||
+        std::file_binary::read_u16_or("empty.txt", 40, 9) != 9) {
+        return 6;
+    }
+    return 0;
+}

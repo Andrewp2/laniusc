@@ -53,6 +53,7 @@ limited to native x86_64 output from this worktree.
 | `std::io_hex` all 9 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_hex_execution.rs` checks exact lowercase and uppercase writes across `u8`, `u16`, and `u32`, counts, invalid handles, injected write failures, bounded stdin parsing with optional prefix and whitespace, malformed and overflowing input, and injected read failures. |
 | `std::io_binary` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_binary_execution.rs` checks shortest binary writes across `u8`, `u16`, and `u32`, exact byte counts, invalid handles, injected write failures, bounded stdin parsing with optional prefix and whitespace, malformed and overflowing input, and injected read failures. |
 | `std::file_hex` all 9 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_hex_execution.rs` checks lowercase and uppercase writes, bounded hexadecimal file reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed and overflowing input, missing and overlong files, and injected read/write/close errors. Raw filesystem path lengths remain broken; see dependency 29. |
+| `std::file_binary` all 6 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_binary_execution.rs` checks shortest binary file writes and bounded reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed, missing, overlong, and overflowing input, plus injected read/write/close errors. Raw filesystem path lengths remain broken; see dependency 29. |
 | `std::file` all 21 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, multi-chunk binary copies between files and standard streams, bounded decimal reads and writes across 8-, 16-, and 32-bit integers, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded and inclusive unsigned and signed outputs, forced draws and rejection, full-range failure fallbacks, and secure i32 slice shuffling with preserved contents, a forced swap, and injected failure. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and all 31 public functions | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. Redundant no-argument functions that failed natively were removed in favor of the tested constants. Allocation and host normalization are unavailable. |
@@ -521,6 +522,15 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   read or close errors return the caller's fallback, which may also be a
   valid value. Narrow readers reject values above their type maximum.
   Literal NUL-terminated paths are required until dependency 29 is repaired.
+- `std::file_binary` writers create or truncate a file, write the shortest
+  binary representation through checked byte writes, and close it. They
+  return false on open, write, or close failure; failure after opening can
+  leave a truncated file or digit prefix. Its bounded readers accept
+  surrounding SP, HT, LF, or CR, one optional `0b` or `0B` prefix, and at
+  least one digit. Missing, malformed, overlong, or overflowing input and
+  read or close errors return the caller's fallback, which can also be a
+  valid value. Narrow readers reject values above their type maximum.
+  Literal NUL-terminated paths are required until dependency 29 is repaired.
 - `std::random_checked::fill_secure_exact` fills the requested caller-buffer
   length, retrying short reads. Zero length succeeds without touching the
   pointer. Null storage for a nonzero length, a length above `i32::MAX`, a
@@ -595,6 +605,8 @@ fault injection cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_file_execution` for the file wrappers; its
 read/write/close fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_file_hex_execution` for hexadecimal file input
+and output; fault cases run when Linux `strace` is available.
+Run `cargo test --test stdlib_file_binary_execution` for binary file input
 and output; fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
 Run `cargo test --test stdlib_random_execution` for the checked random scalar;
