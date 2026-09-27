@@ -34,5 +34,24 @@ fn main() -> i32 {
     if (core::array_i32_4::index_of_or(values, 3, 99) != 0 || core::array_i32_4::index_of_or(values, 7, 99) != 99) {
         return 8;
     }
+    let destination:[i32; 4] =[0, 0, 0, 0];
+    if (core::array_i32_4::copy_into(values, destination, 3) ||
+        destination[0] != 0 ||
+        !core::array_i32_4::copy_into(values, destination, 4) ||
+        destination[0] != 3 || destination[1] != -2 ||
+        destination[2] != 3 || destination[3] != 8) { return 11; }
+    if (core::array_i32_4::fill(9, destination, -1) ||
+        destination[0] != 3 ||
+        !core::array_i32_4::fill(9, destination, 4) ||
+        destination[0] != 9 || destination[1] != 9 ||
+        destination[2] != 9 || destination[3] != 9) { return 12; }
+    if (core::array_i32_4::reverse_into(values, destination, 0) ||
+        destination[0] != 9 ||
+        !core::array_i32_4::reverse_into(values, destination, 4) ||
+        destination[0] != 8 || destination[1] != 3 ||
+        destination[2] != -2 || destination[3] != 3) { return 13; }
+    if (!core::array_i32_4::reverse_into(values, values, 4) ||
+        values[0] != 8 || values[1] != 3 ||
+        values[2] != -2 || values[3] != 3) { return 14; }
     return 0;
 }

@@ -13,14 +13,48 @@ pub fn first(values:[i32; 4]) -> i32 {
 pub fn last(values:[i32; 4]) -> i32 {
     return values[3];
 }
-pub fn copy(values:[i32; 4]) ->[i32; 4] {
-    return values;
+// Destination must contain at least four writable elements. A supplied
+// length below four returns false without writing; overstating the physical
+// view can trap on native indexing.
+pub fn copy_into(values:[i32; 4], destination:[i32], destination_len: i32) -> bool {
+    if (destination_len<4) {
+        return false;
+    }
+    let first: i32 = values[0];
+    let second: i32 = values[1];
+    let third: i32 = values[2];
+    let fourth: i32 = values[3];
+    destination[0] = first;
+    destination[1] = second;
+    destination[2] = third;
+    destination[3] = fourth;
+    return true;
 }
-pub fn filled(value: i32) ->[i32; 4] {
-    return[value, value, value, value];
+pub fn fill(value: i32, destination:[i32], destination_len: i32) -> bool {
+    if (destination_len<4) {
+        return false;
+    }
+    destination[0] = value;
+    destination[1] = value;
+    destination[2] = value;
+    destination[3] = value;
+    return true;
 }
-pub fn reversed(values:[i32; 4]) ->[i32; 4] {
-    return[values[3], values[2], values[1], values[0]];
+// Captures all source values before writing, so source and destination may
+// refer to the same backing array.
+pub fn reverse_into(values:[i32; 4], destination:[i32], destination_len: i32) -> bool {
+    if (destination_len<4) {
+        return false;
+    }
+    let first: i32 = values[3];
+    let second: i32 = values[2];
+    let third: i32 = values[1];
+    let fourth: i32 = values[0];
+    destination[0] = first;
+    destination[1] = second;
+    destination[2] = third;
+    destination[3] = fourth;
+    return true;
 }
 pub fn sum(values:[i32; 4]) -> i32 {
     let index: i32 = 0;

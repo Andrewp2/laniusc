@@ -8,5 +8,24 @@ fn main() -> i32 {
     if (!lstd_i32x4_contains(values, -1) || lstd_i32x4_contains(values, 7)) { return 5; }
     if (lstd_i32x4_count(values, 3) != 2 || lstd_i32x4_count(values, 7) != 0) { return 6; }
     if (lstd_i32x4_index_of_or(values, 3, 99) != 0 || lstd_i32x4_index_of_or(values, 8, 99) != 3 || lstd_i32x4_index_of_or(values, 7, 99) != 99) { return 7; }
+    let destination:[i32; 4] = [0, 0, 0, 0];
+    if (lstd_i32x4_copy_into(values, destination, 3) ||
+        destination[0] != 0 ||
+        !lstd_i32x4_copy_into(values, destination, 4) ||
+        destination[0] != 3 || destination[1] != -1 ||
+        destination[2] != 3 || destination[3] != 8) { return 8; }
+    if (lstd_i32x4_fill(7, destination, -1) ||
+        destination[0] != 3 ||
+        !lstd_i32x4_fill(7, destination, 4) ||
+        destination[0] != 7 || destination[1] != 7 ||
+        destination[2] != 7 || destination[3] != 7) { return 9; }
+    if (lstd_i32x4_reverse_into(values, destination, 0) ||
+        destination[0] != 7 ||
+        !lstd_i32x4_reverse_into(values, destination, 4) ||
+        destination[0] != 8 || destination[1] != 3 ||
+        destination[2] != -1 || destination[3] != 3) { return 10; }
+    if (!lstd_i32x4_reverse_into(values, values, 4) ||
+        values[0] != 8 || values[1] != 3 ||
+        values[2] != -1 || values[3] != 3) { return 11; }
     return 0;
 }

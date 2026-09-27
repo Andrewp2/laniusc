@@ -259,9 +259,15 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
-            "core_array_i32_4_scalar",
-            "tests/fixtures/stdlib_foundation/core_array_i32_4_scalar.lani",
+            "core_array_i32_4_complete",
+            "tests/fixtures/stdlib_foundation/core_array_i32_4_complete.lani",
             0,
+            b"",
+        ),
+        (
+            "core_array_i32_4_bounds",
+            "tests/fixtures/stdlib_foundation/core_array_i32_4_bounds.lani",
+            101,
             b"",
         ),
         (
@@ -403,7 +409,7 @@ fn legacy_scalar_functions_execute_on_x86() {
 }
 
 #[test]
-fn legacy_i32x4_scalar_functions_execute_on_x86() {
+fn legacy_i32x4_functions_execute_on_x86() {
     let library = include_str!("../stdlib/array_i32_4.lani");
     let main_source = include_str!("fixtures/stdlib_foundation/legacy_i32x4_main.lani");
     for line in library.lines() {
@@ -414,15 +420,6 @@ fn legacy_i32x4_scalar_functions_execute_on_x86() {
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
             .next()
             .expect("public function has a name");
-        if [
-            "lstd_i32x4_copy",
-            "lstd_i32x4_filled",
-            "lstd_i32x4_reversed",
-        ]
-        .contains(&name)
-        {
-            continue;
-        }
         assert!(
             main_source.contains(&format!("{name}(")),
             "{name} lacks a runtime case"
@@ -462,6 +459,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             "u32",
             include_str!("../stdlib/core/u32.lani"),
             include_str!("fixtures/stdlib_foundation/core_u32_complete.lani"),
+        ),
+        (
+            "array_i32_4",
+            include_str!("../stdlib/core/array_i32_4.lani"),
+            include_str!("fixtures/stdlib_foundation/core_array_i32_4_complete.lani"),
         ),
         (
             "array_u8_4",

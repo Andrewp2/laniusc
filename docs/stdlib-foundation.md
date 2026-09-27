@@ -23,10 +23,10 @@ limited to native x86_64 output from this worktree.
 | `core::hex` all 14 public functions | Executable on x86_64 | Runtime fixture checks shortest lowercase and uppercase hexadecimal representations of `u8`, `u16`, and `u32`, zero and maximum values, invalid-index fallbacks, mixed-case digit accumulation, complete prefixed and unprefixed parsing, and overflow against each width's limit. The helpers allocate no storage and use no host calls. |
 | `core::binary` all 11 public functions | Executable on x86_64 | Runtime fixture checks shortest unsigned binary representations across `u8`, `u16`, and `u32`, zero and high-bit values, invalid-index fallbacks, bounded digit accumulation, optional prefixes, malformed and overflowing input, and format/parse round trips for all 256 byte values. The helpers allocate no storage and use no host calls. |
 | `core::f32` both public constants and all 13 public functions | Executable on x86_64 for tested finite and NaN inputs | Runtime fixtures check `ZERO` and imported `ONE`, sign, comparison, valid and reversed clamp bounds, fallback behavior, and square root for zero, negative, small, ordinary, large, and NaN inputs. Direct and materialized NaN comparisons follow unordered semantics. |
-| `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
+| `core::array_i32_4` all 14 public functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, saturating sum, and caller-backed copy, fill, and reverse. Invalid destination lengths return false without writing; reverse supports shared source/destination backing. Fixed-array-returning predecessors were removed because they misexecute; see dependency 7. |
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
 | Legacy `stdlib/bool.lani` all 9 public functions and `stdlib/i32.lani` all 16 public functions | Executable on x86_64 when included as source | A source-level native fixture checks both boolean values, both selection branches, ordinary and boundary signed arithmetic, wrapping overflow, comparisons, clamp bounds, and power-of-two overflow. The test calls every public function in both files. `abs` requires input above `i32::MIN`; `clamp` requires ordered bounds. |
-| Legacy `stdlib/array_i32_4.lani` 11 scalar-returning functions | Executable on x86_64 when included as source | A source-level native fixture checks length, access, search, fallback indices, extrema, and a representable sum. Its three array-returning functions fail natively; see dependency 7. |
+| Legacy `stdlib/array_i32_4.lani` all 14 public functions | Executable on x86_64 when included as source | A source-level native fixture checks length, access, search, fallback indices, extrema, a representable sum, and caller-backed copy, fill, and reverse. Fixed-array-returning predecessors were removed; see dependency 7. |
 | `core::range` free functions for all five i32 and u32 range forms, and methods for `Range`, `RangeInclusive`, `RangeFrom`, and `RangeTo` specialized to i32 or u32 | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership, including values across the u32 high bit. The imported u32 method reproducer also checks that same-name i32 and u32 methods select the correct body. There is no `RangeFull` method claim. |
 | `core::range_u8` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks half-open, inclusive, from, to, and full byte ranges, including reversed and equal bounds, touching intervals, and the byte maximum. The scalar interface does not depend on imported `Range<u8>` aggregates, which need a new execution check after the struct-return repair in dependency 2. |
 | `core::range_i8` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-128`, `127`, touching intervals, and empty or reversed bounds. |
@@ -46,7 +46,7 @@ limited to native x86_64 output from this worktree.
 | `core::u32` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, unsigned high-bit and maximum values, checked and wrapping arithmetic, alignment failures, and power-of-two overflow. Checked results use concrete `OptionU32`. |
 | `core::ordering` 13 public functions and `Ordering` variants | Partially executable on x86_64 | `tests/stdlib_ordering.rs` executes every function through the real stdlib root, including the imported fieldless enum return, predicates, reverse, then, all three outcomes, and unsigned high-bit comparison. `compare_i64` only works for tested 32-bit-range values; native i64 comparison still truncates high bits (dependency 11). Direct imported variant paths such as `core::ordering::Less` fail during native compilation (dependency 34), so the complete module is not yet claimed. |
 | Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Generic enum values fail GPU lowering and native 64-bit comparison/arithmetic are incomplete. The former by-value `Option::replace` ignored its input and was removed. The 8- and 32-bit numeric modules now use executable concrete option results. |
-| `core::{cmp,hash,array_i32}` and complete legacy `stdlib/array_i32_4.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs, traits, and array-returning legacy helpers depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
+| `core::{cmp,hash,array_i32}` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs and traits depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
 | `core::{target,runtime}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`). |
 | `core::panic` both trap functions, all 19 metadata functions, and 4 constants | Executable on x86_64 Linux for the trap functions and metadata | `tests/stdlib_panic_execution.rs` checks that `panic()` and `unreachable()` terminate with SIGILL, and a runtime fixture checks every metadata result. Panic hooks remain unbound; their availability flags stay false. |
 | `alloc::allocator` | Executable x86_64 Linux host ABI for valid allocation arguments | Normal allocation, reallocation, and release have x86 tests. `tests/stdlib_allocator_failure_execution.rs` injects `ENOMEM` into `mmap` and `mremap`: both return null, and failed reallocation leaves the old storage readable and releasable. The API is low-level; callers must pass a valid pointer and matching sizes to `realloc` and `dealloc`. |
@@ -243,6 +243,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
 - `core::array_i32_4::sum` folds with saturating addition; overflowing sums
   clamp to the corresponding i32 endpoint at each element. `get_or` and
   `index_of_or` return the caller's fallback for out-of-range or absent values.
+  `copy_into`, `fill`, and `reverse_into` write into caller-backed views.
+  They return false without writing if the claimed destination length is below
+  four. The caller must supply at least four physical elements; overstated
+  lengths can trap on indexing. `reverse_into` can use the same source and
+  destination backing. The legacy source form has the same destination rules.
 - `core::array_u8_4` accepts exactly four `u8` elements. `sum_u32` returns
   their exact sum in `0..=1020`; endian conversion interprets the first array
   element as the most or least significant byte as named. `get_or` and
@@ -806,15 +811,17 @@ also fixes the imported struct-return relocation path described below.
    failed condition; failure raises SIGILL instead of returning. The former
    unsupported target LIR opcode 38 is resolved for the assertion intrinsic.
 7. **Fixed-array results.** `repro_array_i32_4_return.lani` imports
-   `core::array_i32_4::copy` and accesses its returned array. Native emission
-   succeeds, but the ELF segfaults (exit 139 under `timeout`). The scalar
-   returning functions of the same module do execute. `copy`, `filled`, and
-   `reversed` cannot be claimed until fixed-array returns execute; the
-   imported struct-return repair in dependency 2 does not cover this shape.
+   `core::array_i32_4::copy` from the isolated
+   `repro_array_i32_4_return_root` and accesses its returned array. Native
+   emission succeeds, but the minimal ELF exits 1 instead of 0. The real
+   `core::array_i32_4` and legacy source library now offer executable
+   caller-backed `copy_into`, `fill`, and `reverse_into` in place of the three
+   array-returning functions. The imported struct-return repair in dependency
+   2 does not cover fixed arrays.
    `repro_local_array_return.lani` shows that a local source-level copy also
    returns wrong values: it passes type checking and emits an ELF, but that
-   ELF exits 1 instead of 0. Thus including the legacy array helpers directly
-   does not make their three array-returning functions executable. The x86
+   ELF exits 1 instead of 0. Source inclusion does not avoid the array-return
+   compiler bug; the legacy module also removed those functions. The x86
    disassembly shows a layout mismatch: fixed i32 arrays hold packed 32-bit
    elements at increasing addresses, while aggregate return rows copy 64-bit
    words toward decreasing addresses. The subsequent local copy also needs

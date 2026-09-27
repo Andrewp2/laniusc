@@ -18,16 +18,50 @@ pub fn lstd_i32x4_last(values: [i32; 4]) -> i32 {
     return values[3];
 }
 
-pub fn lstd_i32x4_copy(values: [i32; 4]) -> [i32; 4] {
-    return values;
+// The caller supplies a destination view of at least four writable elements.
+// A smaller claimed length returns false without writing; a length larger
+// than the physical backing can trap on native indexing.
+pub fn lstd_i32x4_copy_into(values: [i32; 4], destination: [i32], destination_len: i32) -> bool {
+    if (destination_len < 4) {
+        return false;
+    }
+    let first: i32 = values[0];
+    let second: i32 = values[1];
+    let third: i32 = values[2];
+    let fourth: i32 = values[3];
+    destination[0] = first;
+    destination[1] = second;
+    destination[2] = third;
+    destination[3] = fourth;
+    return true;
 }
 
-pub fn lstd_i32x4_filled(value: i32) -> [i32; 4] {
-    return [value, value, value, value];
+pub fn lstd_i32x4_fill(value: i32, destination: [i32], destination_len: i32) -> bool {
+    if (destination_len < 4) {
+        return false;
+    }
+    destination[0] = value;
+    destination[1] = value;
+    destination[2] = value;
+    destination[3] = value;
+    return true;
 }
 
-pub fn lstd_i32x4_reversed(values: [i32; 4]) -> [i32; 4] {
-    return [values[3], values[2], values[1], values[0]];
+// Source and destination may share backing because all values are captured
+// before the first write.
+pub fn lstd_i32x4_reverse_into(values: [i32; 4], destination: [i32], destination_len: i32) -> bool {
+    if (destination_len < 4) {
+        return false;
+    }
+    let first: i32 = values[3];
+    let second: i32 = values[2];
+    let third: i32 = values[1];
+    let fourth: i32 = values[0];
+    destination[0] = first;
+    destination[1] = second;
+    destination[2] = third;
+    destination[3] = fourth;
+    return true;
 }
 
 // Requires the mathematical sum to fit i32.

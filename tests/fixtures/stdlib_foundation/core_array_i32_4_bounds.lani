@@ -1,0 +1,8 @@
+module app::main;
+import core::array_i32_4;
+
+fn main() -> i32 {
+    let short: [i32; 3] = [0, 0, 0];
+    core::array_i32_4::fill(7, short, 4);
+    return 0;
+}
