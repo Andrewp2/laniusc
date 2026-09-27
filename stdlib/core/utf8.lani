@@ -1,5 +1,5 @@
-// Allocation-free UTF-8 scalar codec. No slice or string storage is read by
-// this module.
+// Allocation-free UTF-8 scalar codec and validation of caller-backed [i32]
+// byte-code views. Borrowed string storage is not accessed by this module.
 module core::utf8;
 fn to_byte(value: u32) -> u8 {
     return value as u8;
@@ -119,4 +119,80 @@ pub fn decode_or(first: u8, second: u8, third: u8, fourth: u8, length: u32, fall
         return fallback;
     }
     return((a&7) << 18)|((b&63) << 12)|((c&63) << 6)|(d&63);
+}
+
+fn is_byte_code(value: i32) -> bool {
+    return value>=0 && value<=255;
+}
+
+// A negative length, malformed sequence, or code outside 0..=255 returns -1.
+// The backed view must physically contain len elements; an overclaim may trap
+// when native indexing reaches it. The empty view has zero scalars.
+fn count_scalars_or_negative_one(values: [i32], len: i32) -> i32 {
+    if (len<0) {
+        return -1;
+    }
+    let index: i32 = 0;
+    let count: i32 = 0;
+    while (index<len) {
+        let first_code: i32 = values[index];
+        if (!is_byte_code(first_code)) {
+            return -1;
+        }
+        let first: u8 = first_code as u8;
+        let width: u32 = sequence_len_or(first, 0);
+        if (width == 0) {
+            return -1;
+        }
+        let needed: i32 = width as i32;
+        if (needed>len - index) {
+            return -1;
+        }
+        let second: u8 = 0;
+        let third: u8 = 0;
+        let fourth: u8 = 0;
+        if (needed>1) {
+            let code: i32 = values[index + 1];
+            if (!is_byte_code(code)) {
+                return -1;
+            }
+            second = code as u8;
+        }
+        if (needed>2) {
+            let code: i32 = values[index + 2];
+            if (!is_byte_code(code)) {
+                return -1;
+            }
+            third = code as u8;
+        }
+        if (needed>3) {
+            let code: i32 = values[index + 3];
+            if (!is_byte_code(code)) {
+                return -1;
+            }
+            fourth = code as u8;
+        }
+        if (decode_or(first, second, third, fourth, width, 4294967295) == 4294967295) {
+            return -1;
+        }
+        index += needed;
+        count += 1;
+    }
+    return count;
+}
+
+// Returns false for a negative length or any malformed byte-code sequence.
+pub fn codes_are_valid(values: [i32], len: i32) -> bool {
+    return count_scalars_or_negative_one(values, len) >= 0;
+}
+
+// Returns the number of Unicode scalars, or fallback for invalid input.
+// A valid count may equal fallback; call codes_are_valid when success must be
+// distinguishable. The view must have at least len physically backed slots.
+pub fn scalar_count_or(values: [i32], len: i32, fallback: i32) -> i32 {
+    let count: i32 = count_scalars_or_negative_one(values, len);
+    if (count<0) {
+        return fallback;
+    }
+    return count;
 }

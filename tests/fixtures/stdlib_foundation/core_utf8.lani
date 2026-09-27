@@ -1,5 +1,6 @@
 module app::main;
 import core::utf8;
+import core::mem;
 fn main() -> i32 {
     if (!core::utf8::is_scalar(0) || !core::utf8::is_scalar(1114111) || core::utf8::is_scalar(55296) || core::utf8::is_scalar(57343) || core::utf8::is_scalar(1114112)) {
         return 1;
@@ -30,6 +31,60 @@ fn main() -> i32 {
     }
     if (core::utf8::decode_or(224, 160, 128, 0, 3, 999) != 2048 || core::utf8::decode_or(237, 159, 191, 0, 3, 999) != 55295 || core::utf8::decode_or(238, 128, 128, 0, 3, 999) != 57344 || core::utf8::decode_or(240, 144, 128, 128, 4, 999) != 65536 || core::utf8::decode_or(65, 255, 255, 255, 1, 999) != 65 || core::utf8::decode_or(240, 144, 128, 65, 4, 999) != 999) {
         return 10;
+    }
+    let text:[i32; 10] = [65, 194, 162, 226, 130, 172, 240, 159, 153, 130];
+    let text_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(text), 10);
+    let empty:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(text), 0);
+    let maximum:[i32; 4] = [244, 143, 191, 191];
+    let maximum_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(maximum), 4);
+    if (!core::utf8::codes_are_valid(text_view, 10) ||
+        core::utf8::scalar_count_or(text_view, 10, -9) != 4 ||
+        !core::utf8::codes_are_valid(text_view, 1) ||
+        core::utf8::scalar_count_or(text_view, 1, -9) != 1 ||
+        !core::utf8::codes_are_valid(maximum_view, 4) ||
+        core::utf8::scalar_count_or(maximum_view, 4, -9) != 1 ||
+        !core::utf8::codes_are_valid(empty, 0) ||
+        core::utf8::scalar_count_or(empty, 0, -9) != 0) {
+        return 11;
+    }
+    let bad_lead:[i32; 1] = [128];
+    let bad_lead_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(bad_lead), 1);
+    let overlong:[i32; 2] = [192, 128];
+    let overlong_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(overlong), 2);
+    let truncated:[i32; 2] = [226, 130];
+    let truncated_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(truncated), 2);
+    let bad_continuation:[i32; 2] = [194, 65];
+    let bad_continuation_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(bad_continuation), 2);
+    let surrogate:[i32; 3] = [237, 160, 128];
+    let surrogate_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(surrogate), 3);
+    let too_high:[i32; 4] = [244, 144, 128, 128];
+    let too_high_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(too_high), 4);
+    if (core::utf8::codes_are_valid(bad_lead_view, 1) ||
+        core::utf8::scalar_count_or(bad_lead_view, 1, -9) != -9 ||
+        core::utf8::codes_are_valid(overlong_view, 2) ||
+        core::utf8::scalar_count_or(overlong_view, 2, -9) != -9 ||
+        core::utf8::codes_are_valid(truncated_view, 2) ||
+        core::utf8::scalar_count_or(truncated_view, 2, -9) != -9 ||
+        core::utf8::codes_are_valid(bad_continuation_view, 2) ||
+        core::utf8::codes_are_valid(surrogate_view, 3) ||
+        core::utf8::codes_are_valid(too_high_view, 4)) {
+        return 12;
+    }
+    let high_code:[i32; 2] = [65, 256];
+    let high_code_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(high_code), 2);
+    let negative_code:[i32; 2] = [-128, 128];
+    let negative_code_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(negative_code), 2);
+    let high_continuation:[i32; 2] = [194, 384];
+    let high_continuation_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(high_continuation), 2);
+    if (core::utf8::codes_are_valid(high_code_view, 2) ||
+        core::utf8::scalar_count_or(high_code_view, 2, -9) != -9 ||
+        core::utf8::codes_are_valid(negative_code_view, 2) ||
+        core::utf8::codes_are_valid(high_continuation_view, 2) ||
+        core::utf8::scalar_count_or(high_continuation_view, 2, -9) != -9 ||
+        core::utf8::codes_are_valid(text_view, -1) ||
+        core::utf8::scalar_count_or(text_view, -1, -9) != -9 ||
+        core::utf8::codes_are_valid(text_view, 2)) {
+        return 13;
     }
     return 0;
 }

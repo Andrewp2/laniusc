@@ -18,7 +18,7 @@ limited to native x86_64 output from this worktree.
 | `core::bits` all 42 public `i32`, `u32`, `u16`, and `u8` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across word widths, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. Byte operations run all 256 inputs; halfword operations run boundary values and 256 evenly spaced inputs; signed operations check negative patterns and all 32 one-hot bits. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
-| `core::utf8` all 6 public scalar-codec functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, length boundaries, malformed sequences, surrogate exclusion, and Unicode maximum. Byte parameters and results use `u8`; it does not access string storage. |
+| `core::utf8` all 8 public codec and backed-view functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, scalar counts, empty and truncated views, out-of-byte-range integer codes, malformed sequences, surrogate exclusion, and Unicode maximum. Scalar byte parameters and results use `u8`; the view functions use caller-backed `[i32]` byte codes and do not access string storage. |
 | `core::decimal` all 16 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of extrema across 8-, 16-, and 32-bit integers, ordinary values, sign placement, zero, out-of-range fallbacks, incremental and complete ASCII parsing, and overflow against caller limits. `std::io_decimal` and both bounded decimal file readers use the portable scalar helpers. |
 | `core::hex` all 14 public functions | Executable on x86_64 | Runtime fixture checks shortest lowercase and uppercase hexadecimal representations of `u8`, `u16`, and `u32`, zero and maximum values, invalid-index fallbacks, mixed-case digit accumulation, complete prefixed and unprefixed parsing, and overflow against each width's limit. The helpers allocate no storage and use no host calls. |
 | `core::f32` all 13 public functions | Executable on x86_64 for tested finite inputs | Runtime fixture checks sign, comparison, valid and reversed clamp bounds, fallback behavior, and square root for zero, negative, small, ordinary, and large inputs. The imported public constant `ONE` is broken; see dependency 5. |
@@ -149,8 +149,14 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   Encoding returns a caller fallback for an invalid scalar or byte index.
   Decoding accepts exactly one to four bytes, ignores unused arguments, and
   returns the caller fallback for malformed, overlong, surrogate, truncated,
-  or out-of-range sequences. It does not yet iterate a `str` or `[u8]` view;
-  those storage operations have separate compiler dependencies below.
+  or out-of-range sequences. `codes_are_valid` and `scalar_count_or` scan a
+  caller-backed `[i32]` view of byte codes in `0..=255`, reject malformed or
+  truncated sequences, and count Unicode scalars. Negative lengths are
+  invalid; an empty view is valid with count zero. The count helper returns
+  the caller fallback on failure, which can equal a valid count. An overstated
+  physical view length may trap on native indexing. It does not yet iterate a
+  `str` or `[u8]` view; those storage operations have separate compiler
+  dependencies below.
 - `core::decimal` returns decimal length and the ASCII byte at a zero-based
   index for `u8`, `u16`, `u32`, `i8`, `i16`, and `i32`. The maximum lengths are
   3, 5, 10, 4, 6, and 11 respectively. Signed output includes `-` at index
