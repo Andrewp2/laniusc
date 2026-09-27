@@ -1,4 +1,5 @@
 module app::main;
+import core::mem;
 import std::io_utf8;
 
 fn main() -> i32 {
@@ -31,6 +32,25 @@ fn main() -> i32 {
         !std::io_utf8::write_stderr_scalar(8364) ||
         std::io_utf8::write_stderr_scalar(55296)) {
         return 7;
+    }
+    let codes:[i32; 10] = [65, 194, 162, 226, 130, 172, 240, 159, 153, 130];
+    let view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(codes), 10);
+    let malformed:[i32; 3] = [65, 192, 128];
+    let malformed_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(malformed), 3);
+    let invalid_code:[i32; 2] = [65, 256];
+    let invalid_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(invalid_code), 2);
+    if (!std::io_utf8::write_stdout_codes(view, 10) ||
+        !std::io_utf8::write_stdout_codes(view, 0) ||
+        !std::io_utf8::write_stderr_codes(view, 3) ||
+        !std::io_utf8::write_stderr_codes(view, 0)) {
+        return 9;
+    }
+    if (std::io_utf8::write_stdout_codes(malformed_view, 3) ||
+        std::io_utf8::write_stderr_codes(malformed_view, 3) ||
+        std::io_utf8::write_stdout_codes(invalid_view, 2) ||
+        std::io_utf8::write_stderr_codes(invalid_view, 2) ||
+        std::io_utf8::write_stdout_codes(view, -1)) {
+        return 10;
     }
     return 0;
 }

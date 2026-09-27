@@ -1,4 +1,4 @@
-// Allocation-free UTF-8 scalar I/O for x86_64 Linux stdin and stdout/stderr.
+// Allocation-free UTF-8 scalar and backed-view I/O for x86_64 Linux streams.
 // A host call is made for each byte; no implicit buffering occurs.
 module std::io_utf8;
 import core::utf8;
@@ -95,4 +95,37 @@ pub fn write_stdout_scalar(value: u32) -> bool {
 
 pub fn write_stderr_scalar(value: u32) -> bool {
     return write_scalar(value, true);
+}
+
+// Validate the complete caller-backed byte-code view before any host write.
+// Invalid UTF-8, out-of-byte-range codes, or a negative length return false
+// without output. A host failure returns false and may leave a prefix.
+// The view must physically back len elements; overclaiming it may trap.
+fn write_codes(values: [i32], len: i32, to_stderr: bool) -> bool {
+    if (!core::utf8::codes_are_valid(values, len)) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index<len) {
+        let code: i32 = values[index];
+        if (to_stderr) {
+            if (!std::io_byte::write_stderr_byte(code)) {
+                return false;
+            }
+        } else {
+            if (!std::io_byte::write_stdout_byte(code)) {
+                return false;
+            }
+        }
+        index += 1;
+    }
+    return true;
+}
+
+pub fn write_stdout_codes(values: [i32], len: i32) -> bool {
+    return write_codes(values, len, false);
+}
+
+pub fn write_stderr_codes(values: [i32], len: i32) -> bool {
+    return write_codes(values, len, true);
 }

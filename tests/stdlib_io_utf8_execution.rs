@@ -39,7 +39,7 @@ fn run_with_input(executable: &common::TempArtifact, input_bytes: &[u8]) -> std:
 }
 
 #[test]
-fn utf8_scalar_io_executes_on_x86() {
+fn utf8_scalar_and_view_io_execute_on_x86() {
     let bytes = compile_fixture("std_io_utf8");
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
@@ -50,10 +50,11 @@ fn utf8_scalar_io_executes_on_x86() {
         );
         assert_eq!(output.status.code(), Some(0), "{output:?}");
         assert_eq!(
-            output.stdout, b"A\xf0\x9f\x99\x82\xf4\x8f\xbf\xbf",
+            output.stdout,
+            b"A\xf0\x9f\x99\x82\xf4\x8f\xbf\xbfA\xc2\xa2\xe2\x82\xac\xf0\x9f\x99\x82",
             "{output:?}"
         );
-        assert_eq!(output.stderr, b"\xc2\xa2\xe2\x82\xac", "{output:?}");
+        assert_eq!(output.stderr, b"\xc2\xa2\xe2\x82\xacA\xc2\xa2", "{output:?}");
     }
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     let _ = bytes;
@@ -103,6 +104,12 @@ fn utf8_scalar_io_reports_host_failures() {
                 "write",
                 "write:error=EIO:when=2",
                 b"\xc2".as_slice(),
+            ),
+            (
+                "std_io_utf8_codes_write_error",
+                "write",
+                "write:error=EIO:when=2",
+                b"A".as_slice(),
             ),
         ] {
             let bytes = compile_fixture(name);
@@ -156,5 +163,5 @@ fn utf8_scalar_io_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 3);
+    assert_eq!(count, 5);
 }
