@@ -1,0 +1,73 @@
+module app::main;
+import core::i16;
+import core::option_i16;
+
+fn main() -> i32 {
+    let minimum: i16 = -32768;
+    let maximum: i16 = 32767;
+    if (core::i16::MIN != minimum || core::i16::MAX != maximum ||
+        core::i16::BITS != 16 || core::i16::BYTES != 2 ||
+        core::i16::abs(-7) != 7 || core::i16::abs(minimum) != maximum ||
+        core::i16::saturating_abs(minimum) != maximum ||
+        !core::option_i16::contains(core::i16::checked_abs(-7), 7) ||
+        !core::option_i16::is_none(core::i16::checked_abs(minimum))) {
+        return 1;
+    }
+    if (core::i16::min(3, -5) != -5 || core::i16::max(3, -5) != 3 ||
+        core::i16::clamp(12, 2, 10) != 10 ||
+        core::i16::clamp(5, 10, 3) != 5 ||
+        core::i16::signum(-7) != -1 || core::i16::signum(0) != 0 ||
+        core::i16::signum(7) != 1 ||
+        core::i16::compare_as_i32(minimum, maximum) != -1 ||
+        core::i16::compare_as_i32(5, 5) != 0 ||
+        core::i16::compare_as_i32(maximum, minimum) != 1) {
+        return 2;
+    }
+    if (!core::i16::is_zero(0) || core::i16::is_zero(1) ||
+        !core::i16::is_nonzero(-1) || core::i16::is_nonzero(0) ||
+        !core::i16::is_even(-4) || core::i16::is_even(-3) ||
+        !core::i16::is_odd(-3) || core::i16::is_odd(-4) ||
+        !core::i16::is_negative(minimum) || core::i16::is_negative(0) ||
+        !core::i16::is_positive(maximum) || core::i16::is_positive(0)) {
+        return 3;
+    }
+    if (!core::i16::is_nonnegative(0) || core::i16::is_nonnegative(-1) ||
+        !core::i16::is_nonpositive(0) || core::i16::is_nonpositive(1) ||
+        !core::i16::between_inclusive(-3, -3, 2) ||
+        core::i16::between_inclusive(-4, -3, 2) ||
+        core::i16::between_inclusive(0, 2, -3) ||
+        !core::i16::between_exclusive(0, -3, 2) ||
+        core::i16::between_exclusive(-3, -3, 2)) {
+        return 4;
+    }
+    if (core::i16::wrapping_add(maximum, 1) != minimum ||
+        core::i16::wrapping_sub(minimum, 1) != maximum ||
+        core::i16::wrapping_mul(maximum, 2) != -2 ||
+        core::i16::saturating_add(maximum, 1) != maximum ||
+        core::i16::saturating_sub(minimum, 1) != minimum ||
+        core::i16::saturating_abs_diff(minimum, maximum) != maximum ||
+        core::i16::saturating_abs_diff(9, 3) != 6) {
+        return 5;
+    }
+    if (!core::option_i16::contains(core::i16::checked_add(3, 5), 8) ||
+        !core::option_i16::contains(core::i16::checked_add(minimum, 0), minimum) ||
+        !core::option_i16::is_none(core::i16::checked_add(maximum, 1)) ||
+        !core::option_i16::is_none(core::i16::checked_add(minimum, -1)) ||
+        !core::option_i16::contains(core::i16::checked_sub(5, 3), 2) ||
+        !core::option_i16::contains(core::i16::checked_sub(-3, 5), -8) ||
+        !core::option_i16::is_none(core::i16::checked_sub(minimum, 1)) ||
+        !core::option_i16::is_none(core::i16::checked_sub(maximum, -1))) {
+        return 6;
+    }
+    if (!core::i16::is_power_of_two(16384) ||
+        core::i16::is_power_of_two(maximum) ||
+        core::i16::is_power_of_two(0) ||
+        core::i16::is_power_of_two(-2) ||
+        core::i16::next_power_of_two(0) != 1 ||
+        core::i16::next_power_of_two(7) != 8 ||
+        core::i16::next_power_of_two(16384) != 16384 ||
+        core::i16::next_power_of_two(maximum) != 0) {
+        return 7;
+    }
+    return 0;
+}

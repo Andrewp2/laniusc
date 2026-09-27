@@ -52,6 +52,7 @@ limited to native x86_64 output from this worktree.
 | `core::option_i16` all 12 public functions and `core::result_i16` all 10 public functions | Executable on x86_64 for direct imported calls | The signed halfword fixture executes every function with both variants, zero, `-32768`, and `32767`, including conversions. A source scan requires every public function to have a runtime call. See dependency 39 for the local return limit. |
 | `core::option_u16` all 12 public functions and `core::result_u16` all 10 public functions | Executable on x86_64 for direct imported calls | The unsigned halfword fixture executes every function with both variants, zero, `32768`, and `65535`, including conversions. A source scan requires every public function to have a runtime call. See dependency 39 for the local return limit. |
 | `core::i32` all 28 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks each function's ordinary result and selected edge cases: `MIN` absolute value, checked and saturating overflow, wrapping arithmetic, signed predicates, range boundaries, and power-of-two overflow. Checked results use concrete `OptionI32`. |
+| `core::i16` all 28 public functions and 4 constants | Executable on x86_64 | The imported module fixture calls every function and reads every constant. It checks `MIN` and `MAX`, ordinary and overflowing arithmetic, checked results through `OptionI16`, signed predicates, reversed bounds, comparison, and power-of-two overflow. |
 | `core::u8` all 37 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, overflow and zero-divisor behavior, wrapping multiplication, ASCII classes and case conversion, and checked results through `OptionU8`. Its multiplication delegates to the tested `core::byte` implementation. |
 | `core::u16` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture calls every function and reads every constant. It checks ordinary and high-bit values, wrapping and saturating overflow, checked arithmetic through `OptionU16`, reversed bounds, zero divisors, power-of-two overflow, and invalid or overflowing alignment. |
 | `core::u32` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, unsigned high-bit and maximum values, checked and wrapping arithmetic, alignment failures, and power-of-two overflow. Checked results use concrete `OptionU32`. |
@@ -300,7 +301,7 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `core::option_i16` pair with their matching concrete Result modules. A
   success or presence flag distinguishes `Some(0)`, `Ok(0)`, `Err(0)`, and
   absence; inactive payloads are zero, and extraction on the inactive branch
-  returns the caller fallback. `core::i32`, `core::u8`, `core::u16`, and
+  returns the caller fallback. `core::i16`, `core::i32`, `core::u8`, `core::u16`, and
   `core::u32` use the corresponding concrete Option modules until
   generic enum lowering works. Their `clamp` functions leave the input
   unchanged when `low > high`. `core::i32::abs(MIN)` returns `MAX`, while
@@ -308,6 +309,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `align_up` and `align_down` return zero for zero alignment, and `align_up`
   returns zero if rounding would overflow. Callers that need an arbitrary
   failure value can use `core::number_u32::{align_up_or,align_down_or}`.
+  `core::i16::abs(MIN)` likewise returns `MAX`, while `checked_abs(MIN)`
+  returns `None`. Checked add and subtract widen to i32 before testing the
+  i16 bounds. Its wrapping arithmetic reduces modulo 65,536 and its next
+  power helper returns zero above 16,384.
   `core::u16` wraps arithmetic modulo 65,536, returns `None` for checked
   overflow or underflow, and returns zero for unrepresentable next powers of
   two or invalid and overflowing alignment. Its widening arithmetic avoids

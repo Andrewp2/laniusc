@@ -300,6 +300,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_i16_complete",
+            "tests/fixtures/stdlib_foundation/core_i16_complete.lani",
+            0,
+            b"",
+        ),
+        (
             "core_u8_complete",
             "tests/fixtures/stdlib_foundation/core_u8_complete.lani",
             0,
@@ -808,6 +814,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             "i32",
             include_str!("../stdlib/core/i32.lani"),
             include_str!("fixtures/stdlib_foundation/core_i32_complete.lani"),
+        ),
+        (
+            "i16",
+            include_str!("../stdlib/core/i16.lani"),
+            include_str!("fixtures/stdlib_foundation/core_i16_complete.lani"),
         ),
         (
             "u8",
