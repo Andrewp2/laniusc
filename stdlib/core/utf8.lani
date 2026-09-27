@@ -235,6 +235,70 @@ pub fn byte_scalar_count_or(values: [u8], len: i32, fallback: i32) -> i32 {
     return count;
 }
 
+// Return the byte offset of a scalar boundary in a complete [u8] view.
+// Scalar index equal to the scalar count returns len. Invalid UTF-8 or an
+// invalid index returns fallback; an overclaimed physical view may trap.
+pub fn byte_view_offset_of_scalar_or(values: [u8], len: i32, scalar_index: i32, fallback: i32) -> i32 {
+    let count: i32 = count_byte_scalars_or_negative_one(values, len);
+    if (count < 0 || scalar_index < 0 || scalar_index > count) {
+        return fallback;
+    }
+    let offset: i32 = 0;
+    let passed: i32 = 0;
+    while (passed < scalar_index) {
+        let width: u32 = sequence_len_or(values[offset], 0);
+        offset += width as i32;
+        passed += 1;
+    }
+    return offset;
+}
+
+// Return the scalar index at a byte boundary, including the end of the view.
+// A byte inside a multibyte encoding or invalid input returns fallback.
+pub fn byte_view_scalar_index_of_byte_or(values: [u8], len: i32, byte_index: i32, fallback: i32) -> i32 {
+    let count: i32 = count_byte_scalars_or_negative_one(values, len);
+    if (count < 0 || byte_index < 0 || byte_index > len) {
+        return fallback;
+    }
+    let offset: i32 = 0;
+    let scalar_index: i32 = 0;
+    while (offset < byte_index) {
+        let width: u32 = sequence_len_or(values[offset], 0);
+        let needed: i32 = width as i32;
+        if (needed > byte_index - offset) {
+            return fallback;
+        }
+        offset += needed;
+        scalar_index += 1;
+    }
+    return scalar_index;
+}
+
+// Decode a scalar by index after validating the entire [u8] view. Invalid
+// UTF-8 or an out-of-range index returns fallback, which may itself be a
+// valid scalar. The caller must back len bytes or native indexing may trap.
+pub fn byte_view_scalar_at_or(values: [u8], len: i32, scalar_index: i32, fallback: u32) -> u32 {
+    let offset: i32 = byte_view_offset_of_scalar_or(values, len, scalar_index, -1);
+    if (offset < 0 || offset >= len) {
+        return fallback;
+    }
+    let first: u8 = values[offset];
+    let width: u32 = sequence_len_or(first, 0);
+    let second: u8 = 0;
+    let third: u8 = 0;
+    let fourth: u8 = 0;
+    if (width > 1) {
+        second = values[offset + 1];
+    }
+    if (width > 2) {
+        third = values[offset + 2];
+    }
+    if (width > 3) {
+        fourth = values[offset + 3];
+    }
+    return decode_or(first, second, third, fourth, width, fallback);
+}
+
 // Returns false for a negative length or any malformed byte-code sequence.
 pub fn codes_are_valid(values: [i32], len: i32) -> bool {
     return count_scalars_or_negative_one(values, len) >= 0;

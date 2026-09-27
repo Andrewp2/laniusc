@@ -12,7 +12,9 @@ fn main() -> i32 {
     let b: u8 = 66;
     let bytes: [u8; 7] = [a, c2, a2, a, c2, a2, b];
     if (!core::utf8::bytes_are_valid(bytes, 7) ||
-        core::utf8::byte_scalar_count_or(bytes, 7, -1) != 5) {
+        core::utf8::byte_scalar_count_or(bytes, 7, -1) != 5 ||
+        core::utf8::byte_view_scalar_at_or(bytes, 7, 1, 4294967295) != 162 ||
+        core::utf8::byte_view_offset_of_scalar_or(bytes, 7, 4, -1) != 6) {
         return 1;
     }
     let text: std::vec_u8::VecU8 = std::utf8_vec::new();
