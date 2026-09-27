@@ -1,13 +1,14 @@
-// Source-level panic declarations for the runtime boundary.
-// The panic and panic-hook surface below is frontend/type-check contract
-// metadata only. It does not install or call a hook until a runtime/linker
-// binding exists.
+// Panics trap immediately. Panic hooks remain an unbound host service.
 
 module core::panic;
 
-pub extern "lanius_panic" fn panic();
+pub fn panic() {
+    assert(false);
+}
 
-pub extern "lanius_panic" fn unreachable();
+pub fn unreachable() {
+    assert(false);
+}
 
 pub type PanicCapability = bool;
 pub type PanicHookRuntimeAbiVersion = u32;
@@ -64,7 +65,7 @@ pub fn panic_hook_is_contract_only() -> PanicCapability {
 }
 
 pub fn panic_is_executable() -> PanicCapability {
-    return PANIC_HOOK_HAS_RUNTIME_BINDING;
+    return true;
 }
 
 pub fn panic_is_blocked() -> PanicCapability {
@@ -80,7 +81,7 @@ pub fn panic_requires_runtime_binding() -> PanicCapability {
 }
 
 pub fn unreachable_is_executable() -> PanicCapability {
-    return PANIC_HOOK_HAS_RUNTIME_BINDING;
+    return true;
 }
 
 pub fn unreachable_is_blocked() -> PanicCapability {

@@ -4109,14 +4109,14 @@ fn main() {
         && hook_needs_binding
         && hook_host_abi_contract_only
         && hook_contract_only
-        && !panic_executable
-        && panic_blocked
-        && panic_known_unbound
-        && panic_needs_binding
-        && !unreachable_executable
-        && unreachable_blocked
-        && unreachable_known_unbound
-        && unreachable_needs_binding
+        && panic_executable
+        && !panic_blocked
+        && !panic_known_unbound
+        && !panic_needs_binding
+        && unreachable_executable
+        && !unreachable_blocked
+        && !unreachable_known_unbound
+        && !unreachable_needs_binding
         && runtime_needs_binding
         && known_runtime_service;
     if (!contract_shape) {

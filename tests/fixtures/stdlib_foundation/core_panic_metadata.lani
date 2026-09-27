@@ -1,0 +1,29 @@
+module app::main;
+import core::panic;
+
+fn main() -> i32 {
+    if (core::panic::PANIC_HOOK_RUNTIME_ABI_VERSION != 1 ||
+        core::panic::PANIC_HOOK_SERVICE_ID != 6 ||
+        core::panic::PANIC_HOOK_SERVICE_STATUS_UNAVAILABLE != 1 ||
+        core::panic::PANIC_HOOK_HAS_RUNTIME_BINDING) { return 1; }
+    if (core::panic::panic_hook_runtime_abi_version() != 1 ||
+        core::panic::panic_hook_service_id() != 6 ||
+        !core::panic::panic_hook_service_is_known() ||
+        !core::panic::panic_hook_contract_metadata_is_available() ||
+        core::panic::panic_hook_service_status() != 1) { return 2; }
+    if (core::panic::panic_hook_is_available() ||
+        !core::panic::panic_hook_is_blocked() ||
+        !core::panic::panic_hook_is_known_but_unbound() ||
+        !core::panic::panic_hook_requires_runtime_binding() ||
+        !core::panic::panic_hook_host_abi_is_contract_only() ||
+        !core::panic::panic_hook_is_contract_only()) { return 3; }
+    if (!core::panic::panic_is_executable() ||
+        core::panic::panic_is_blocked() ||
+        core::panic::panic_is_known_but_unbound() ||
+        core::panic::panic_requires_runtime_binding()) { return 4; }
+    if (!core::panic::unreachable_is_executable() ||
+        core::panic::unreachable_is_blocked() ||
+        core::panic::unreachable_is_known_but_unbound() ||
+        core::panic::unreachable_requires_runtime_binding()) { return 5; }
+    return 0;
+}
