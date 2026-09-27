@@ -1,0 +1,9 @@
+module app::main;
+import core::utf8;
+
+fn main() -> i32 {
+    let a: u8 = 65;
+    let short: [u8; 2] = [a, a];
+    if (core::utf8::bytes_are_valid(short, 3)) { return 1; }
+    return 0;
+}

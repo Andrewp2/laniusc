@@ -222,6 +222,21 @@ pub fn try_append_codes(
     return grown;
 }
 
+// Append a complete UTF-8 sequence from ordinary caller-backed byte storage.
+// Invalid source or existing text, negative length, capacity overflow, and
+// allocation failure leave the vector unchanged. A successful nonempty append
+// increases byte_len by len. The source must back len elements and must not
+// alias this vector's allocation because growth can move that allocation.
+// Overclaimed input may trap while validating it.
+pub fn try_append_bytes(
+    value: std::vec_u8::VecU8, bytes: [u8], len: i32
+) -> std::vec_u8::VecU8 {
+    if (!is_valid(value) || !core::utf8::bytes_are_valid(bytes, len)) {
+        return value;
+    }
+    return std::vec_u8::try_extend_from_slice(value, bytes, len);
+}
+
 // Insert a scalar before scalar_index, including at the end. Validate the
 // complete old text and reserve the entire encoding before changing bytes.
 // Invalid text, index, scalar, capacity, or allocation returns the original

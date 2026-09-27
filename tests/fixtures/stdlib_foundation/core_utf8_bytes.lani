@@ -1,0 +1,54 @@
+module app::main;
+import core::utf8;
+
+fn main() -> i32 {
+    let a: u8 = 65;
+    let c2: u8 = 194;
+    let a2: u8 = 162;
+    let e2: u8 = 226;
+    let cont82: u8 = 130;
+    let ac: u8 = 172;
+    let f0: u8 = 240;
+    let cont9f: u8 = 159;
+    let cont99: u8 = 153;
+    let cont82b: u8 = 130;
+    let valid: [u8; 10] = [a, c2, a2, e2, cont82, ac, f0, cont9f, cont99, cont82b];
+    if (!core::utf8::bytes_are_valid(valid, 10) ||
+        core::utf8::byte_scalar_count_or(valid, 10, -9) != 4 ||
+        !core::utf8::bytes_are_valid(valid, 3) ||
+        core::utf8::byte_scalar_count_or(valid, 3, -9) != 2 ||
+        !core::utf8::bytes_are_valid(valid, 0) ||
+        core::utf8::byte_scalar_count_or(valid, 0, -9) != 0) { return 1; }
+    if (core::utf8::bytes_are_valid(valid, 4) ||
+        core::utf8::byte_scalar_count_or(valid, 4, -9) != -9 ||
+        core::utf8::bytes_are_valid(valid, -1) ||
+        core::utf8::byte_scalar_count_or(valid, -1, -9) != -9) { return 2; }
+
+    let invalid_lead: u8 = 255;
+    let overlong_lead: u8 = 192;
+    let low: u8 = 128;
+    let ed: u8 = 237;
+    let high_a0: u8 = 160;
+    let f4: u8 = 244;
+    let high_90: u8 = 144;
+    let invalid_one: [u8; 1] = [invalid_lead];
+    let invalid_tail: [u8; 2] = [a, low];
+    let overlong: [u8; 2] = [overlong_lead, low];
+    let surrogate: [u8; 3] = [ed, high_a0, low];
+    let too_large: [u8; 4] = [f4, high_90, low, low];
+    if (core::utf8::bytes_are_valid(invalid_one, 1) ||
+        core::utf8::bytes_are_valid(invalid_tail, 2) ||
+        core::utf8::bytes_are_valid(overlong, 2) ||
+        core::utf8::bytes_are_valid(surrogate, 3) ||
+        core::utf8::bytes_are_valid(too_large, 4) ||
+        core::utf8::byte_scalar_count_or(too_large, 4, -9) != -9) { return 3; }
+
+    let nul: u8 = 0;
+    let f4_max: u8 = 244;
+    let max_second: u8 = 143;
+    let max_tail: u8 = 191;
+    let boundary: [u8; 5] = [nul, f4_max, max_second, max_tail, max_tail];
+    if (!core::utf8::bytes_are_valid(boundary, 5) ||
+        core::utf8::byte_scalar_count_or(boundary, 5, -9) != 2) { return 4; }
+    return 0;
+}

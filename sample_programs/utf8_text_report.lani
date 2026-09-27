@@ -6,12 +6,17 @@ import core::utf8;
 import core::mem;
 
 fn main() -> i32 {
+    let a: u8 = 65;
+    let c2: u8 = 194;
+    let a2: u8 = 162;
+    let b: u8 = 66;
+    let bytes: [u8; 7] = [a, c2, a2, a, c2, a2, b];
+    if (!core::utf8::bytes_are_valid(bytes, 7) ||
+        core::utf8::byte_scalar_count_or(bytes, 7, -1) != 5) {
+        return 1;
+    }
     let text: std::vec_u8::VecU8 = std::utf8_vec::new();
-    let a: u32 = 65;
-    let cent: u32 = 162;
-    let b: u32 = 66;
-    let scalars: [u32; 5] = [a, cent, a, cent, b];
-    text = std::utf8_vec::try_append_scalars(text, scalars, 5);
+    text = std::utf8_vec::try_append_bytes(text, bytes, 7);
     if (std::utf8_vec::byte_len(text) != 7 ||
         std::utf8_vec::index_of_scalar_or(text, 162, -1) != 1 ||
         std::utf8_vec::last_index_of_scalar_or(text, 162, -1) != 3) {

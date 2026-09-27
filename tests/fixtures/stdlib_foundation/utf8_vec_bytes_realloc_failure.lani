@@ -1,0 +1,38 @@
+module app::main;
+import std::utf8_vec;
+import std::vec_u8;
+
+fn main() -> i32 {
+    let a: u8 = 65;
+    let c2: u8 = 194;
+    let a2: u8 = 162;
+    let b: u8 = 66;
+    let e2: u8 = 226;
+    let cont82: u8 = 130;
+    let ac: u8 = 172;
+    let euro: [u8; 3] = [e2, cont82, ac];
+    let value: std::vec_u8::VecU8 = std::vec_u8::try_with_capacity(4);
+    if (std::vec_u8::capacity(value) != 4) { return 2; }
+    value = std::utf8_vec::try_append_scalar(value, 65);
+    value = std::utf8_vec::try_append_scalar(value, 162);
+    value = std::utf8_vec::try_append_scalar(value, 66);
+    if (std::utf8_vec::byte_len(value) != 4 ||
+        std::vec_u8::get_or(value, 0, 0) != a ||
+        std::vec_u8::get_or(value, 1, 0) != c2 ||
+        std::vec_u8::get_or(value, 2, 0) != a2 ||
+        std::vec_u8::get_or(value, 3, 0) != b) { return 3; }
+    value = std::utf8_vec::try_append_bytes(value, euro, 3);
+    if (std::utf8_vec::byte_len(value) == 7) {
+        std::utf8_vec::destroy(value);
+        return 4;
+    }
+    if (std::utf8_vec::byte_len(value) != 4 ||
+        std::vec_u8::capacity(value) != 4 ||
+        std::utf8_vec::scalar_count_or(value, -9) != 3 ||
+        std::vec_u8::get_or(value, 0, 0) != a ||
+        std::vec_u8::get_or(value, 1, 0) != c2 ||
+        std::vec_u8::get_or(value, 2, 0) != a2 ||
+        std::vec_u8::get_or(value, 3, 0) != b) { return 5; }
+    std::utf8_vec::destroy(value);
+    return 0;
+}

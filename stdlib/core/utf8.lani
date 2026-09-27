@@ -181,6 +181,60 @@ fn count_scalars_or_negative_one(values: [i32], len: i32) -> i32 {
     return count;
 }
 
+// Validate a caller-backed [u8] view directly. The view must physically
+// contain len bytes; an overclaim may trap when indexing reaches it.
+fn count_byte_scalars_or_negative_one(values: [u8], len: i32) -> i32 {
+    if (len < 0) {
+        return -1;
+    }
+    let index: i32 = 0;
+    let count: i32 = 0;
+    while (index < len) {
+        let first: u8 = values[index];
+        let width: u32 = sequence_len_or(first, 0);
+        if (width == 0) {
+            return -1;
+        }
+        let needed: i32 = width as i32;
+        if (needed > len - index) {
+            return -1;
+        }
+        let second: u8 = 0;
+        let third: u8 = 0;
+        let fourth: u8 = 0;
+        if (needed > 1) {
+            second = values[index + 1];
+        }
+        if (needed > 2) {
+            third = values[index + 2];
+        }
+        if (needed > 3) {
+            fourth = values[index + 3];
+        }
+        if (decode_or(first, second, third, fourth, width, 4294967295) == 4294967295) {
+            return -1;
+        }
+        index += needed;
+        count += 1;
+    }
+    return count;
+}
+
+// A negative length or malformed UTF-8 returns false. Empty input is valid.
+pub fn bytes_are_valid(values: [u8], len: i32) -> bool {
+    return count_byte_scalars_or_negative_one(values, len) >= 0;
+}
+
+// Return the scalar count, or the caller's fallback for invalid UTF-8.
+// A valid count may equal fallback; use bytes_are_valid to distinguish it.
+pub fn byte_scalar_count_or(values: [u8], len: i32, fallback: i32) -> i32 {
+    let count: i32 = count_byte_scalars_or_negative_one(values, len);
+    if (count < 0) {
+        return fallback;
+    }
+    return count;
+}
+
 // Returns false for a negative length or any malformed byte-code sequence.
 pub fn codes_are_valid(values: [i32], len: i32) -> bool {
     return count_scalars_or_negative_one(values, len) >= 0;
