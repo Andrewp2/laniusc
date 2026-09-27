@@ -1,0 +1,10 @@
+module app::main;
+import core::slice_i8;
+
+fn main() -> i32 {
+    let one: i8 = 1;
+    let values: [i8; 1] = [one];
+    // Claiming two elements makes index 1 logically valid but physically out of bounds.
+    let value: i8 = core::slice_i8::get_or(values, 2, 1, 0);
+    return value;
+}

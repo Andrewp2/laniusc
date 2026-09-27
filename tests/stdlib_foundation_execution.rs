@@ -181,6 +181,42 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_slice_i8",
+            "tests/fixtures/stdlib_foundation/core_slice_i8.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_slice_i8_complete",
+            "tests/fixtures/stdlib_foundation/core_slice_i8_complete.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_slice_i8_bounds",
+            "tests/fixtures/stdlib_foundation/core_slice_i8_bounds.lani",
+            101,
+            b"",
+        ),
+        (
+            "core_slice_i16",
+            "tests/fixtures/stdlib_foundation/core_slice_i16.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_slice_i16_complete",
+            "tests/fixtures/stdlib_foundation/core_slice_i16_complete.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_slice_i16_bounds",
+            "tests/fixtures/stdlib_foundation/core_slice_i16_bounds.lani",
+            101,
+            b"",
+        ),
+        (
             "core_slice_u16",
             "tests/fixtures/stdlib_foundation/core_slice_u16.lani",
             0,
@@ -213,6 +249,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
         (
             "slice_unsigned_sort_exhaustive",
             "tests/fixtures/stdlib_foundation/slice_unsigned_sort_exhaustive.lani",
+            0,
+            b"",
+        ),
+        (
+            "slice_signed_sort_exhaustive",
+            "tests/fixtures/stdlib_foundation/slice_signed_sort_exhaustive.lani",
             0,
             b"",
         ),
@@ -637,6 +679,16 @@ fn executable_core_function_surface_has_runtime_cases() {
             include_str!("fixtures/stdlib_foundation/core_slice_u8.lani"),
         ),
         (
+            "slice_i8",
+            include_str!("../stdlib/core/slice_i8.lani"),
+            include_str!("fixtures/stdlib_foundation/core_slice_i8.lani"),
+        ),
+        (
+            "slice_i16",
+            include_str!("../stdlib/core/slice_i16.lani"),
+            include_str!("fixtures/stdlib_foundation/core_slice_i16.lani"),
+        ),
+        (
             "slice_u16",
             include_str!("../stdlib/core/slice_u16.lani"),
             include_str!("fixtures/stdlib_foundation/core_slice_u16.lani"),
@@ -674,6 +726,12 @@ fn executable_core_function_surface_has_runtime_cases() {
                         .contains(&call)
                 || module == "slice_u8"
                     && include_str!("fixtures/stdlib_foundation/core_slice_u8_complete.lani")
+                        .contains(&call)
+                || module == "slice_i8"
+                    && include_str!("fixtures/stdlib_foundation/core_slice_i8_complete.lani")
+                        .contains(&call)
+                || module == "slice_i16"
+                    && include_str!("fixtures/stdlib_foundation/core_slice_i16_complete.lani")
                         .contains(&call)
                 || module == "slice_u16"
                     && include_str!("fixtures/stdlib_foundation/core_slice_u16_complete.lani")

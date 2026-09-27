@@ -34,6 +34,8 @@ limited to native x86_64 output from this worktree.
 | `core::range_i16` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-32768`, `32767`, touching intervals, and empty or reversed bounds. |
 | `core::slice` all 36 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, first and last contiguous subsequence matches, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Sorting also runs all 243 five-element arrays over `{-1, 0, 1}` against independently counted expected groups. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
 | `core::slice_u8` all 36 public byte-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures exercise access, swaps, fill, rotation, overlap-safe and nonoverlapping copies, compaction, insertion, sequence comparison and search, unsigned ordering, heapsort, binary search, partitioning, and saturating sum. They cover empty and invalid logical lengths, rejected mutation, zero, and 255. Sorting also runs every five-element sequence over `{0,1,2}` against independently counted groups. A source scan requires a runtime call for every public function. Byte views over string or raw pointer storage remain outside this claim. |
+| `core::slice_i8` all 36 public signed-byte-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every public function and cover search, mutation, copy, rotation, compaction, insertion, signed ordering, sorting, binary search, partitioning, and left-to-right saturating sum. Cases include `-128`, `127`, empty and invalid logical lengths, every five-element sequence over `{-1,0,1}`, and a native trap on physical length overclaim. |
+| `core::slice_i16` all 36 public signed-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Matching fixtures cover every public function, `-32768`, `32767`, signed ordering and binary search, sums clamped after each addition, all 243 small sorting sequences, invalid logical lengths, and a native trap on physical length overclaim. |
 | `core::slice_u16` all 36 public unsigned-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every public function and check access, mutation, copy and rotation, compaction, insertion, sequence search, unsigned ordering across `32768`, sort and binary search, partitioning, and sums saturating at `65535`. They cover empty and invalid logical lengths, rejected mutation, and all 243 five-element sequences over `{0,1,2}` for sorting. A separate fixture confirms exit 101 when the claimed length exceeds the physical backing and is indexed. |
 | `core::slice_u32` all 36 public unsigned-word-view functions | Executable on x86_64 for fixed-array-backed views | Matching runtime fixtures cover the same operations and failure cases, including unsigned ordering across `2^31` and saturation at `u32::MAX`, plus the exhaustive small-sort fixture. The caller supplies a logical length within the physical backing. A source scan requires a runtime call for every public function. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
@@ -324,10 +326,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `first_i32` traps on an empty view. `get_or_i32` returns the fallback for an
   index outside the supplied length; if the supplied length exceeds the actual
   view and indexing reaches beyond it, native execution traps with exit 101.
-  `core::slice_u8`, `core::slice_u16`, and `core::slice_u32` use the same
-  caller-supplied logical length for fixed byte, halfword, or word arrays.
-  `first` traps on an empty physical
-  view; `first_or`, `get_or`, and first/last search helpers return their
+  `core::slice_u8`, `core::slice_i8`, `core::slice_i16`, `core::slice_u16`,
+  and `core::slice_u32` use the same caller-supplied logical length for fixed
+  byte, halfword, or word arrays. `first` traps on an empty physical view;
+  `first_or`, `get_or`, and first/last search helpers return their
   fallback for empty, invalid, or absent positions. `set`, `swap`, rotation,
   insertion, append, and copy helpers reject invalid logical bounds without
   mutation. `copy_within` supports overlap; `copy_nonoverlapping_prefix`
@@ -338,7 +340,9 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `compare_lexicographic` returns -2 for negative lengths; subsequence search
   returns -1 for invalid lengths or no match and treats an empty needle as a
   match at the first or final boundary. Binary search requires sorted input.
-  Unsigned `sum` saturates at the element type's maximum. The physical backing
+  Unsigned `sum` saturates at the element type's maximum. Signed narrow `sum`
+  folds from left to right and clamps after each addition, so later negative
+  values can lower an earlier saturated total. The physical backing
   must contain at least the claimed length, or native indexing can trap.
   String-backed and arbitrary raw byte views remain outside this claim.
   `sum_i32` folds from left to right with saturating i32 addition, so each
@@ -1097,10 +1101,11 @@ also fixes the imported struct-return relocation path described below.
     `repro_generic_slice.lani` calls `core::slice_any::get_or<T>` with fixed
     `[u8; 1]` and `[u32; 1]` arrays. It passes `laniusc check` with the adjacent
     test root, but native compilation reports `LNC0006` on the first `bytes`
-    argument. Concrete `[u8]` and `[u32]` imports execute through the same
-    array-to-slice conversion (dependency 20). Generic slice parameter
-    substitution remains a GPU source-pack type-check dependency. The concrete
-    `core::slice_u8` and `core::slice_u32` modules avoid that unsupported shape.
+    argument. Concrete `[u8]`, `[i8]`, `[i16]`, `[u16]`, and `[u32]` imports
+    execute through the array-to-slice conversion (dependency 20). Generic
+    slice parameter substitution remains a GPU source-pack type-check
+    dependency. The concrete `core::slice_u8`, `core::slice_i8`, `core::slice_i16`,
+    `core::slice_u16`, and `core::slice_u32` modules avoid that unsupported shape.
 37. **Third same-name concrete method specialization.**
     `laniusc check tests/fixtures/stdlib_foundation/repro_third_concrete_method.lani`
     reports `LNC0016` at the third `get` method, claiming that the function
