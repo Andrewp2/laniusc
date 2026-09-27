@@ -1,43 +1,35 @@
-// Source-level assertion helpers for tests.
+// Source-level assertion helpers for tests. A failed assertion traps on x86.
 
 module test::assert;
 
 pub fn is_true(value: bool) {
     assert(value);
-    return;
 }
 
 pub fn is_false(value: bool) {
     assert(!value);
-    return;
 }
 
 pub fn eq_i32(left: i32, right: i32) {
     assert(left == right);
-    return;
 }
 
 pub fn ne_i32(left: i32, right: i32) {
     assert(left != right);
-    return;
 }
 
 pub fn lt_i32(left: i32, right: i32) {
     assert(left < right);
-    return;
 }
 
 pub fn le_i32(left: i32, right: i32) {
     assert(left <= right);
-    return;
 }
 
 pub fn gt_i32(left: i32, right: i32) {
     assert(left > right);
-    return;
 }
 
 pub fn ge_i32(left: i32, right: i32) {
     assert(left >= right);
-    return;
 }

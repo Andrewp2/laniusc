@@ -420,7 +420,8 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
             ? 5u + ((operands.metadata & 0xffu) == SEMANTIC_LIR_TY_POINTER
                 ? x86_move64_from_fixed_bytes(0u, locations.result)
                 : x86_move32_from_fixed_bytes(0u, locations.result)) : 5u;
-    if (core.op == X86_LIR_OP_PRINT_I32 && operands.a == 1u) return 5u;
+    if (core.op == X86_LIR_OP_PRINT_I32 &&
+        (operands.a == 1u || operands.a == 2u)) return 5u;
     if (core.op == X86_LIR_OP_INTRINSIC_IDENTITY)
         return x86_move64_from_fixed_bytes(7u, locations.result);
     if (core.op == X86_LIR_OP_INTRINSIC_SLICE_FROM_RAW_PARTS)

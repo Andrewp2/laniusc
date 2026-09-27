@@ -42,8 +42,12 @@ void main()
     if (layout.entrypoint_count == 0u)
     {
         layout.status = 1u;
-        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_MISSING_ENTRYPOINT);
-        lowering_status[0u].diagnostic_reason = LOWERING_DIAGNOSTIC_MISSING_ENTRYPOINT;
+        uint prior_flags;
+        InterlockedOr(lowering_status[0u].flags,
+            LOWERING_STATUS_MISSING_ENTRYPOINT, prior_flags);
+        if (prior_flags == 0u)
+            lowering_status[0u].diagnostic_reason =
+                LOWERING_DIAGNOSTIC_MISSING_ENTRYPOINT;
     }
     else if (layout.entrypoint_count > 1u)
     {

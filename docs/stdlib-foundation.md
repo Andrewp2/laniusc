@@ -61,7 +61,7 @@ limited to native x86_64 output from this worktree.
 | `std::path` all 17 constants and all 31 public functions | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. Redundant no-argument functions that failed natively were removed in favor of the tested constants. Allocation and host normalization are unavailable. |
 | `std::vec_i32` all 12 public functions and its capacity constant | Executable on x86_64 Linux | `tests/fixtures/stdlib_foundation/vec_i32.lani` checks construction, growth, element access and mutation, bounds, reserve, pop, clear, and destruction. `tests/stdlib_vec_i32_execution.rs` injects allocation and reallocation failures and checks the vector and prior data stay unchanged. This is a linear-ownership API by convention; source-level moves are not enforced. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
-| `test::assert` | Contract-only | Passing assertions hit unsupported target LIR opcode 38 during x86 emission. Reproduction programs are included. |
+| `test::assert` all 8 public helpers | Executable on x86_64 Linux | `tests/stdlib_assert_execution.rs` runs all passing conditions and separately checks that every false condition terminates with SIGILL. The helpers use no allocation or host calls. See dependency 35 for a separate compiler issue with explicit void returns. |
 | `std::vec` | Contract-only after stub removal | The former `Vec<T>::push` returned without storing its argument and was removed. `Vec<T>::new`, `len`, and `is_empty` remain as an empty-value type-checking contract; no storage or mutation is provided. |
 
 The inventory classifies a module as contract-only when it lacks sufficient
@@ -746,13 +746,12 @@ also fixes the imported struct-return relocation path described below.
    `tests/stdlib_f32_imported_constants_execution.rs` also checks imported
    negative and computed constants and both signs of zero. The real
    `core::f32::ONE` is covered by `core_f32.lani`.
-6. **Native assertion lowering.** `repro_assert_pass.lani` imports
+6. **Resolved: native assertion lowering.** `repro_assert_pass.lani` imports
    `test::assert` and calls each of its eight public functions with passing
-   inputs. Native emission fails with `LNC0017`, unsupported target LIR opcode
-   38. `repro_assert_fail.lani` is the corresponding failure-path input; it
-   cannot run until assertions have a native lowering. Type checking alone
-   cannot establish that failed assertions terminate execution. A source-level
-   fallback using the bound process exit call hits dependency 19.
+   inputs. The x86 compiler now calls a shared runtime assertion routine.
+   `tests/stdlib_assert_execution.rs` executes every passing helper and every
+   failed condition; failure raises SIGILL instead of returning. The former
+   unsupported target LIR opcode 38 is resolved for the assertion intrinsic.
 7. **Fixed-array results.** `repro_array_i32_4_return.lani` imports
    `core::array_i32_4::copy` and accesses its returned array. Native emission
    succeeds, but the ELF segfaults (exit 139 under `timeout`). The scalar
@@ -996,6 +995,15 @@ also fixes the imported struct-return relocation path described below.
     constants and calls, but have no corresponding variant-value projection.
     Calling imported functions that construct and consume `Ordering` now
     executes; direct variant path resolution still needs a GPU compiler fix.
+35. **Explicit return in a void helper.**
+    `tests/fixtures/stdlib_foundation/repro_void_return.lani` defines an
+    unused void helper containing only `return;` alongside a valid `main`.
+    Type checking succeeds, but native compilation stops in the GPU SSA
+    operand rewrite pass (optimization structure flag 1024, row 0). The
+    diagnostic now preserves that failure instead of incorrectly claiming
+    that `main` is missing; it still needs a specific compiler diagnostic and
+    a lowering fix. `test::assert` omits redundant void returns, so this
+    compiler limitation does not affect its executable helpers.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

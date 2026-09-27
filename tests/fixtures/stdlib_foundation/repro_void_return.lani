@@ -1,0 +1,9 @@
+module app::main;
+
+fn helper() {
+    return;
+}
+
+fn main() -> i32 {
+    return 0;
+}

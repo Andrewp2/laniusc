@@ -954,9 +954,11 @@ void emit_instruction(inout uint cursor, X86LirCore core, X86LirOperands operand
             else store_value32(cursor, 0u, locations.result, function);
         }
     }
-    else if (core.op == X86_LIR_OP_PRINT_I32 && operands.a == 1u)
+    else if (core.op == X86_LIR_OP_PRINT_I32)
     {
-        uint target = layout.runtime_offset + X86_RUNTIME_PRINT_I32_OFFSET;
+        // Scatter accepts only print (1) and assert (2) for this opcode.
+        uint target = layout.runtime_offset + (operands.a == 2u
+            ? X86_RUNTIME_ASSERT_OFFSET : X86_RUNTIME_PRINT_I32_OFFSET);
         uint next = cursor + 5u;
         emit_u8(cursor, 0xe8u); emit_u32(cursor, target - next);
     }

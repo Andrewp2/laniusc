@@ -48,7 +48,8 @@ static const uint X86_RUNTIME_PATH_REMOVE_FILE_OFFSET = 1763u;
 static const uint X86_RUNTIME_PATH_CREATE_DIR_OFFSET = 1800u;
 static const uint X86_RUNTIME_PATH_REMOVE_DIR_OFFSET = 1842u;
 static const uint X86_RUNTIME_PATH_RENAME_OFFSET = 1879u;
-static const uint X86_RUNTIME_LENGTH = 1973u;
+static const uint X86_RUNTIME_ASSERT_OFFSET = 1973u;
+static const uint X86_RUNTIME_LENGTH = 1980u;
 
 uint x86_runtime_service_offset(uint service)
 {
@@ -564,7 +565,7 @@ uint x86_runtime_byte(uint pos)
     // Each path is limited to 4095 bytes; embedded NUL and null nonempty
     // input fail before the Linux syscall. The helper is internal to this
     // contiguous runtime block and uses relative calls from the operations.
-    if (pos >= X86_RUNTIME_PATH_COPY_OFFSET && pos < X86_RUNTIME_LENGTH)
+    if (pos >= X86_RUNTIME_PATH_COPY_OFFSET && pos < X86_RUNTIME_ASSERT_OFFSET)
     {
         static const uint path_ops_bytes[412] = {
             0x48u, 0x81u, 0xfeu, 0xffu, 0x0fu, 0x00u, 0x00u, 0x77u, 0x28u, 0x48u,
@@ -611,6 +612,15 @@ uint x86_runtime_byte(uint pos)
             0x00u, 0xc3u
         };
         return path_ops_bytes[pos - X86_RUNTIME_PATH_COPY_OFFSET];
+    }
+    // Called with the asserted bool in EDI. A false value raises SIGILL;
+    // a true value returns to the caller without changing its state.
+    if (pos >= X86_RUNTIME_ASSERT_OFFSET && pos < X86_RUNTIME_LENGTH)
+    {
+        static const uint assert_bytes[7] = {
+            0x85u, 0xffu, 0x75u, 0x02u, 0x0fu, 0x0bu, 0xc3u
+        };
+        return assert_bytes[pos - X86_RUNTIME_ASSERT_OFFSET];
     }
     return pos < X86_RUNTIME_LENGTH
         ? print_i32_bytes[pos - X86_RUNTIME_PRINT_I32_OFFSET] : 0u;
