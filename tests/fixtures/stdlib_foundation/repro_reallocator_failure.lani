@@ -1,0 +1,20 @@
+// With the first mremap forced to ENOMEM, the old mapping must remain usable.
+module app::main;
+import alloc::allocator;
+import core::mem;
+
+fn main() -> i32 {
+    let storage: ptr = alloc::allocator::alloc(12, 4);
+    if (storage == 0) { return 2; }
+    let values: [i32] = core::mem::i32_slice_from_raw_parts(storage, 3);
+    values[0] = 41;
+    let grown: ptr = alloc::allocator::realloc(storage, 12, 24, 4);
+    if (grown != 0) {
+        alloc::allocator::dealloc(grown, 24, 4);
+        return 1;
+    }
+    let preserved: bool = values[0] == 41;
+    alloc::allocator::dealloc(storage, 12, 4);
+    if (preserved) { return 0; }
+    return 3;
+}

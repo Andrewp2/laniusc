@@ -1,5 +1,5 @@
-// Under `strace -e inject=mmap:error=ENOMEM:when=1`, this should return 0.
-// The current x86 allocator returns the raw negative syscall result instead.
+// Returns 1 after a successful allocation, or 0 when mmap fails and alloc
+// correctly reports null. The fault-injection test checks both paths.
 module app::main;
 import alloc::allocator;
 

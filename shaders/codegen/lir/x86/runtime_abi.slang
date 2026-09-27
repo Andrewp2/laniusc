@@ -8,39 +8,39 @@ import codegen.lowering_ir;
 static const uint X86_RUNTIME_INVALID = 0xffffffffu;
 static const uint X86_RUNTIME_ARG_READ_OFFSET = 78u;
 static const uint X86_RUNTIME_ALLOC_OFFSET = 134u;
-static const uint X86_RUNTIME_DEALLOC_OFFSET = 166u;
-static const uint X86_RUNTIME_REALLOC_OFFSET = 174u;
-static const uint X86_RUNTIME_ALLOC_FAILED_OFFSET = 188u;
-static const uint X86_RUNTIME_PRINT_I32_OFFSET = 201u;
-static const uint X86_RUNTIME_MONOTONIC_READ_OFFSET = 285u;
-static const uint X86_RUNTIME_SYSTEM_READ_OFFSET = 311u;
-static const uint X86_RUNTIME_SLEEP_MS_I32_OFFSET = 337u;
-static const uint X86_RUNTIME_OPEN_READ_OFFSET = 392u;
-static const uint X86_RUNTIME_OPEN_WRITE_OFFSET = 404u;
-static const uint X86_RUNTIME_OPEN_APPEND_OFFSET = 422u;
-static const uint X86_RUNTIME_REMOVE_FILE_OFFSET = 440u;
-static const uint X86_RUNTIME_CREATE_DIR_OFFSET = 448u;
-static const uint X86_RUNTIME_REMOVE_DIR_OFFSET = 461u;
-static const uint X86_RUNTIME_RENAME_OFFSET = 469u;
-static const uint X86_RUNTIME_WRITE_TEXT_OFFSET = 479u;
-static const uint X86_RUNTIME_WRITE_I32_OFFSET = 487u;
-static const uint X86_RUNTIME_WRITE_BYTE_OFFSET = 579u;
-static const uint X86_RUNTIME_WRITE_NEWLINE_OFFSET = 607u;
-static const uint X86_RUNTIME_READ_I32_OFFSET = 635u;
-static const uint X86_RUNTIME_OPEN_READ_NUL_OFFSET = 810u;
-static const uint X86_RUNTIME_OPEN_WRITE_NUL_OFFSET = 886u;
-static const uint X86_RUNTIME_OPEN_APPEND_NUL_OFFSET = 962u;
-static const uint X86_RUNTIME_VAR_KEY_LEN_OFFSET = 1038u;
-static const uint X86_RUNTIME_VAR_COUNT_OFFSET = 1106u;
-static const uint X86_RUNTIME_VAR_KEY_READ_OFFSET = 1128u;
-static const uint X86_RUNTIME_VAR_LEN_OFFSET = 1215u;
-static const uint X86_RUNTIME_VAR_READ_OFFSET = 1296u;
-static const uint X86_RUNTIME_CURRENT_DIR_READ_OFFSET = 1398u;
-static const uint X86_RUNTIME_UNIX_SECONDS_OFFSET = 1425u;
-static const uint X86_RUNTIME_SECURE_U32_OFFSET = 1435u;
-static const uint X86_RUNTIME_FILL_SECURE_BYTES_OFFSET = 1479u;
-static const uint X86_RUNTIME_ARG_LEN_OFFSET = 1487u;
-static const uint X86_RUNTIME_LENGTH = 1527u;
+static const uint X86_RUNTIME_DEALLOC_OFFSET = 173u;
+static const uint X86_RUNTIME_REALLOC_OFFSET = 181u;
+static const uint X86_RUNTIME_ALLOC_FAILED_OFFSET = 202u;
+static const uint X86_RUNTIME_PRINT_I32_OFFSET = 215u;
+static const uint X86_RUNTIME_MONOTONIC_READ_OFFSET = 299u;
+static const uint X86_RUNTIME_SYSTEM_READ_OFFSET = 325u;
+static const uint X86_RUNTIME_SLEEP_MS_I32_OFFSET = 351u;
+static const uint X86_RUNTIME_OPEN_READ_OFFSET = 406u;
+static const uint X86_RUNTIME_OPEN_WRITE_OFFSET = 418u;
+static const uint X86_RUNTIME_OPEN_APPEND_OFFSET = 436u;
+static const uint X86_RUNTIME_REMOVE_FILE_OFFSET = 454u;
+static const uint X86_RUNTIME_CREATE_DIR_OFFSET = 462u;
+static const uint X86_RUNTIME_REMOVE_DIR_OFFSET = 475u;
+static const uint X86_RUNTIME_RENAME_OFFSET = 483u;
+static const uint X86_RUNTIME_WRITE_TEXT_OFFSET = 493u;
+static const uint X86_RUNTIME_WRITE_I32_OFFSET = 501u;
+static const uint X86_RUNTIME_WRITE_BYTE_OFFSET = 593u;
+static const uint X86_RUNTIME_WRITE_NEWLINE_OFFSET = 621u;
+static const uint X86_RUNTIME_READ_I32_OFFSET = 649u;
+static const uint X86_RUNTIME_OPEN_READ_NUL_OFFSET = 824u;
+static const uint X86_RUNTIME_OPEN_WRITE_NUL_OFFSET = 900u;
+static const uint X86_RUNTIME_OPEN_APPEND_NUL_OFFSET = 976u;
+static const uint X86_RUNTIME_VAR_KEY_LEN_OFFSET = 1052u;
+static const uint X86_RUNTIME_VAR_COUNT_OFFSET = 1120u;
+static const uint X86_RUNTIME_VAR_KEY_READ_OFFSET = 1142u;
+static const uint X86_RUNTIME_VAR_LEN_OFFSET = 1229u;
+static const uint X86_RUNTIME_VAR_READ_OFFSET = 1310u;
+static const uint X86_RUNTIME_CURRENT_DIR_READ_OFFSET = 1412u;
+static const uint X86_RUNTIME_UNIX_SECONDS_OFFSET = 1439u;
+static const uint X86_RUNTIME_SECURE_U32_OFFSET = 1449u;
+static const uint X86_RUNTIME_FILL_SECURE_BYTES_OFFSET = 1493u;
+static const uint X86_RUNTIME_ARG_LEN_OFFSET = 1501u;
+static const uint X86_RUNTIME_LENGTH = 1541u;
 
 uint x86_runtime_service_offset(uint service)
 {
@@ -155,12 +155,14 @@ uint x86_runtime_byte(uint pos)
 
     // mmap(..., MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT, -1, 0) returns
     // page-aligned storage for every supported alignment. MAP_32BIT is not an
-    // ABI requirement now that source pointers are target-sized.
-    static const uint alloc_bytes[32] = {
+    // ABI requirement now that source pointers are target-sized. A negative
+    // Linux syscall result is an error; return null so callers can test it.
+    static const uint alloc_bytes[39] = {
         0x89u, 0xfeu, 0x31u, 0xffu, 0xbau, 3u, 0u, 0u, 0u,
         0x41u, 0xbau, 0x62u, 0u, 0u, 0u, 0x41u, 0xb8u, 0xffu, 0xffu,
         0xffu, 0xffu, 0x45u, 0x31u, 0xc9u, 0xb8u, 9u, 0u, 0u, 0u,
-        0x0fu, 0x05u, 0xc3u
+        0x0fu, 0x05u, 0x48u, 0x85u, 0xc0u, 0x79u, 0x02u,
+        0x31u, 0xc0u, 0xc3u
     };
     if (pos < X86_RUNTIME_DEALLOC_OFFSET)
         return alloc_bytes[pos - X86_RUNTIME_ALLOC_OFFSET];
@@ -170,9 +172,12 @@ uint x86_runtime_byte(uint pos)
     if (pos < X86_RUNTIME_REALLOC_OFFSET)
         return dealloc_bytes[pos - X86_RUNTIME_DEALLOC_OFFSET];
 
-    static const uint realloc_bytes[14] = {
+    // mremap leaves the original mapping intact on failure and returns null
+    // to the caller instead of exposing the negative syscall result as ptr.
+    static const uint realloc_bytes[21] = {
         0x41u, 0xbau, 1u, 0u, 0u, 0u, 0xb8u, 25u, 0u, 0u, 0u,
-        0x0fu, 0x05u, 0xc3u
+        0x0fu, 0x05u, 0x48u, 0x85u, 0xc0u, 0x79u, 0x02u,
+        0x31u, 0xc0u, 0xc3u
     };
     if (pos < X86_RUNTIME_ALLOC_FAILED_OFFSET)
         return realloc_bytes[pos - X86_RUNTIME_REALLOC_OFFSET];

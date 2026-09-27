@@ -40,7 +40,7 @@ limited to native x86_64 output from this worktree.
 | Generic `core::option`, `core::result`, and `core::{i32,i64,u32,u8}` as complete imported modules | Contract-only for native execution | Their Lanius bodies type-check, but generic enum use or import prevents reliable x86 output. The numeric modules import generic `Option` for checked results. A minimal failing program is included below. The former by-value `Option::replace` ignored its input and was removed. |
 | `core::{cmp,hash,ordering,array_i32}` and complete legacy `stdlib/array_i32_4.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs, traits, and array-returning legacy helpers depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
-| `alloc::allocator` | Native host ABI with an unsafe allocation-failure path | Normal allocation, reallocation, and release have x86 tests. An injected `mmap` failure returns a nonzero error-shaped pointer from `alloc`; see dependency 22. Callers cannot currently rely on a null-pointer failure check. |
+| `alloc::allocator` | Executable x86_64 Linux host ABI for valid allocation arguments | Normal allocation, reallocation, and release have x86 tests. `tests/stdlib_allocator_failure_execution.rs` injects `ENOMEM` into `mmap` and `mremap`: both return null, and failed reallocation leaves the old storage readable and releasable. The API is low-level; callers must pass a valid pointer and matching sizes to `realloc` and `dealloc`. |
 | `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs` path calls ignore their declared length and require NUL-terminated storage; see dependency 29. `std::env::current_dir_len` still has an unsafe allocator failure path; see dependency 25. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::args_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks argument count including the executable, exact byte lengths and bytes, absent/negative indices, sufficient and insufficient capacity, null storage, and capacity above `i32::MAX`. Caller storage avoids allocation. |
 | `std::env_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_env_execution.rs` checks exact value and key bytes, missing and invalid indices, capacity and null-storage failures, current-directory bytes and its NUL terminator, and injected `getcwd` failure. Caller storage avoids allocation. |
@@ -686,9 +686,10 @@ also fixes the imported struct-return relocation path described below.
 4. **Allocation-backed vectors.** `std::vec` requires storage, mutation,
    allocation failure, and ownership semantics. Its silent `push` stub is
    removed until those runtime pieces exist; the empty `Vec<T>` contract is
-   still type-checkable but not an executable collection. A fixed-capacity i32
-   collection worked on the allocation success path, but dependency 22 made
-   its failure path unsafe, so it was not added as a public API.
+   still type-checkable but not an executable collection. The x86 allocator
+   now returns null on `mmap` and `mremap` failure (dependency 22), so a
+   concrete i32 collection can report these failures safely. Its public API
+   still needs ownership rules and executable tests before publication.
 5. **Imported f32 constant lowering.** With the minimal library in
    `tests/fixtures/stdlib_foundation/repro_f32_const_root`, native emission of
    `repro_f32_const.lani` succeeds, but the ELF exits 3 because imported
@@ -830,14 +831,13 @@ also fixes the imported struct-return relocation path described below.
     short-write information. `std::file::write_i32_decimal` instead uses
     single-byte writes and checks each result. The raw binding needs a runtime
     fix before it can promise a complete decimal write.
-22. **Allocator failure returns a nonzero pointer.** Compile
-    `tests/fixtures/stdlib_foundation/repro_allocator_failure.lani` with the
-    stdlib root, then run its ELF through
-    `strace -qq -e trace=mmap -e inject=mmap:error=ENOMEM:when=1`. The injected
-    syscall returns `-1 ENOMEM`, but `alloc::allocator::alloc(12, 4)` returns a
-    nonzero error-shaped `ptr`; the program exits 1 instead of 0. Dereferencing
-    that result segfaults. This prevents a collection from reporting allocation
-    failure safely even though heap-backed i32 reads and writes work normally.
+22. **Resolved: allocator syscall failures return null.** The native `mmap`
+    and `mremap` thunks now convert negative Linux syscall results to a null
+    pointer. `tests/stdlib_allocator_failure_execution.rs` compiles both
+    reproductions, verifies their normal allocation paths, and injects
+    `ENOMEM` into each syscall. Both fault-injected programs exit zero;
+    the `mremap` fixture also verifies that the original bytes remain readable
+    and the original allocation can be released after failure.
 23. **Imported struct literals in native code.** Compile
     `tests/fixtures/stdlib_foundation/repro_imported_struct_literal.lani` with
     `--stdlib-root tests/fixtures/stdlib_foundation/repro_aggregate_root`.
@@ -861,8 +861,9 @@ also fixes the imported struct-return relocation path described below.
     also fails parsing. A fully enumerated 4096-byte stack array emitted and
     ran in isolation, but repeated source-pack compilation failed parsing its
     closing bracket. Consequently `std::env::current_dir_len` cannot yet
-    replace its 4096-byte allocation safely and retains dependency 22's
-    allocation-failure hazard. Callers can use the tested
+    replace its 4096-byte allocation with stack storage. Its heap allocation
+    now checks for null and returns `ENV_READ_UNAVAILABLE` on failure, but
+    a separate fault-injection test of that path is still needed. Callers can use the tested
     `std::env_checked::current_dir_read_into` with their own buffer.
 26. **Unsigned 64-bit division above `i64::MAX`.** Compile
     `tests/fixtures/stdlib_foundation/repro_u64_division.lani` with
