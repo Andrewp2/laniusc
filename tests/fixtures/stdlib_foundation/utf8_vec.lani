@@ -138,6 +138,44 @@ fn main() -> i32 {
         return 11;
     }
 
+    let a: u32 = 65;
+    let cent: u32 = 162;
+    let euro: u32 = 8364;
+    let smile: u32 = 128578;
+    let surrogate: u32 = 55296;
+    let batch: [u32; 4] = [a, cent, euro, smile];
+    let bad_batch: [u32; 3] = [a, surrogate, cent];
+    let bulk: std::vec_u8::VecU8 = std::utf8_vec::new();
+    bulk = std::utf8_vec::try_append_scalars(bulk, batch, 4);
+    if (std::utf8_vec::byte_len(bulk) != 10 ||
+        std::utf8_vec::scalar_count_or(bulk, -9) != 4 ||
+        std::utf8_vec::scalar_at_or(bulk, 0, 4294967295) != a ||
+        std::utf8_vec::scalar_at_or(bulk, 1, 4294967295) != cent ||
+        std::utf8_vec::scalar_at_or(bulk, 2, 4294967295) != euro ||
+        std::utf8_vec::scalar_at_or(bulk, 3, 4294967295) != smile) {
+        return 13;
+    }
+    bulk = std::utf8_vec::try_append_scalars(bulk, batch, 0);
+    bulk = std::utf8_vec::try_append_scalars(bulk, batch, -1);
+    bulk = std::utf8_vec::try_append_scalars(bulk, bad_batch, 3);
+    if (std::utf8_vec::byte_len(bulk) != 10 ||
+        std::utf8_vec::scalar_count_or(bulk, -9) != 4 ||
+        std::vec_u8::get_or(bulk, 9, 0) != 130) {
+        return 14;
+    }
+    bulk = std::utf8_vec::try_append_scalars(bulk, batch, 1);
+    if (std::utf8_vec::byte_len(bulk) != 11 ||
+        std::utf8_vec::scalar_count_or(bulk, -9) != 5 ||
+        std::utf8_vec::scalar_at_or(bulk, 4, 4294967295) != a) {
+        return 15;
+    }
+    invalid = std::utf8_vec::try_append_scalars(invalid, batch, 4);
+    if (std::utf8_vec::byte_len(invalid) != 2 ||
+        std::vec_u8::get_or(invalid, 1, 0) != 128) {
+        return 16;
+    }
+
+    std::utf8_vec::destroy(bulk);
     std::utf8_vec::destroy(invalid);
     std::utf8_vec::destroy(text);
     std::utf8_vec::destroy(prefix);

@@ -1,0 +1,26 @@
+module app::main;
+import std::utf8_vec;
+import std::vec_u8;
+
+fn main() -> i32 {
+    let cent: u32 = 162;
+    let euro: u32 = 8364;
+    let batch: [u32; 2] = [cent, euro];
+    let value: std::vec_u8::VecU8 = std::vec_u8::try_with_capacity(1);
+    if (std::vec_u8::capacity(value) != 1) { return 2; }
+    value = std::utf8_vec::try_append_scalar(value, 65);
+    if (std::utf8_vec::byte_len(value) != 1) { return 3; }
+    value = std::utf8_vec::try_append_scalars(value, batch, 2);
+    if (std::utf8_vec::byte_len(value) == 6) {
+        std::utf8_vec::destroy(value);
+        return 4;
+    }
+    if (std::utf8_vec::byte_len(value) != 1 ||
+        std::vec_u8::capacity(value) != 1 ||
+        std::vec_u8::get_or(value, 0, 0) != 65 ||
+        !std::utf8_vec::is_valid(value)) {
+        return 5;
+    }
+    std::utf8_vec::destroy(value);
+    return 0;
+}

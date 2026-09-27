@@ -95,6 +95,72 @@ pub fn try_append_scalar(value: std::vec_u8::VecU8, scalar: u32) -> std::vec_u8:
     return grown;
 }
 
+// Append count Unicode scalars after validating the complete old text and
+// every requested scalar. Reserve all bytes before the first write. A negative
+// count, invalid scalar, capacity overflow, or allocation failure returns the
+// original value unchanged. The caller must back count input scalars; an
+// overclaim may trap. Input storage must not alias this vector's allocation,
+// since growth can move it.
+pub fn try_append_scalars(
+    value: std::vec_u8::VecU8, scalars: [u32], count: i32
+) -> std::vec_u8::VecU8 {
+    if (count < 0 || !is_valid(value)) {
+        return value;
+    }
+    let length: i32 = std::vec_u8::len(value);
+    let remaining: i32 = std::vec_u8::MAX_CAPACITY - length;
+    let extra: i32 = 0;
+    let index: i32 = 0;
+    while (index < count) {
+        let width_u32: u32 = core::utf8::encoded_len_or(scalars[index], 0);
+        if (width_u32 == 0) {
+            return value;
+        }
+        let width: i32 = width_u32 as i32;
+        if (width > remaining - extra) {
+            return value;
+        }
+        extra += width;
+        index += 1;
+    }
+    if (extra == 0) {
+        return value;
+    }
+    let needed: i32 = length + extra;
+    let grown: std::vec_u8::VecU8 = value;
+    let current_capacity: i32 = std::vec_u8::capacity(grown);
+    if (current_capacity < needed) {
+        let target: i32 = 4;
+        if (current_capacity > 0) {
+            if (current_capacity > std::vec_u8::MAX_CAPACITY / 2) {
+                target = std::vec_u8::MAX_CAPACITY;
+            } else {
+                target = current_capacity * 2;
+            }
+        }
+        if (target < needed) {
+            target = needed;
+        }
+        grown = std::vec_u8::try_reserve(grown, target);
+        if (std::vec_u8::capacity(grown) < needed) {
+            return value;
+        }
+    }
+    index = 0;
+    while (index < count) {
+        let scalar: u32 = scalars[index];
+        let width: u32 = core::utf8::encoded_len_or(scalar, 0);
+        let byte_index: u32 = 0;
+        while (byte_index < width) {
+            let byte: u8 = core::utf8::encoded_byte_or(scalar, byte_index, 0);
+            grown = std::vec_u8::try_push(grown, byte);
+            byte_index += 1;
+        }
+        index += 1;
+    }
+    return grown;
+}
+
 // Remove the final Unicode scalar without freeing capacity. Empty or invalid
 // UTF-8 leaves the value unchanged.
 pub fn try_pop_scalar(value: std::vec_u8::VecU8) -> std::vec_u8::VecU8 {

@@ -7,11 +7,11 @@ import core::mem;
 
 fn main() -> i32 {
     let text: std::vec_u8::VecU8 = std::utf8_vec::new();
-    text = std::utf8_vec::try_append_scalar(text, 65);
-    text = std::utf8_vec::try_append_scalar(text, 162);
-    text = std::utf8_vec::try_append_scalar(text, 65);
-    text = std::utf8_vec::try_append_scalar(text, 162);
-    text = std::utf8_vec::try_append_scalar(text, 66);
+    let a: u32 = 65;
+    let cent: u32 = 162;
+    let b: u32 = 66;
+    let scalars: [u32; 5] = [a, cent, a, cent, b];
+    text = std::utf8_vec::try_append_scalars(text, scalars, 5);
     if (std::utf8_vec::byte_len(text) != 7 ||
         std::utf8_vec::index_of_scalar_or(text, 162, -1) != 1 ||
         std::utf8_vec::last_index_of_scalar_or(text, 162, -1) != 3) {

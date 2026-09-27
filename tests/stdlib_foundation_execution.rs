@@ -1527,5 +1527,5 @@ fn executable_core_function_surface_has_runtime_cases() {
         assert!(text_fixture.contains(&call), "{call} lacks a runtime case");
         text_function_count += 1;
     }
-    assert_eq!(text_function_count, 18);
+    assert_eq!(text_function_count, 19);
 }
