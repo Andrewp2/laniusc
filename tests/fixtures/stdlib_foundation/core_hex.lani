@@ -1,5 +1,6 @@
 module app::main;
 import core::hex;
+import core::mem;
 
 fn main() -> i32 {
     if (core::hex::len_u32(0) != 1 || core::hex::len_u32(15) != 1 ||
@@ -79,6 +80,61 @@ fn main() -> i32 {
     }
     if (parsed != 431) {
         return 9;
+    }
+    let mixed_lower_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(mixed_lower), 8);
+    let mixed_upper_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(mixed_upper), 8);
+    let prefix:[i32; 4] = [48, 120, 102, 70];
+    let prefix_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(prefix), 4);
+    let upper_prefix:[i32; 6] = [48, 88, 70, 70, 70, 70];
+    let upper_prefix_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(upper_prefix), 6);
+    let prefix_only:[i32; 2] = [48, 120];
+    let prefix_only_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(prefix_only), 2);
+    let max_word:[i32; 8] = [102, 102, 102, 102, 102, 102, 102, 102];
+    let max_word_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(max_word), 8);
+    let overflow_word:[i32; 9] = [49, 48, 48, 48, 48, 48, 48, 48, 48];
+    let overflow_word_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(overflow_word), 9);
+    let overflow_u16:[i32; 5] = [49, 48, 48, 48, 48];
+    let overflow_u16_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(overflow_u16), 5);
+    let overflow_u8:[i32; 3] = [49, 48, 48];
+    let overflow_u8_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(overflow_u8), 3);
+    let malformed:[i32; 2] = [49, 71];
+    let malformed_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(malformed), 2);
+    let invalid_code:[i32; 2] = [49, 256];
+    let invalid_code_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(invalid_code), 2);
+    let spaced:[i32; 2] = [32, 65];
+    let spaced_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(spaced), 2);
+    let one:[i32; 1] = [48];
+    let one_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(one), 1);
+    if (core::hex::parse_ascii_u32_or(mixed_lower_view, 8, 99) != 439041101 ||
+        core::hex::parse_ascii_u32_or(mixed_upper_view, 8, 99) != 439041101 ||
+        core::hex::parse_ascii_u32_or(max_word_view, 8, 99) != 4294967295 ||
+        core::hex::parse_ascii_u32_or(prefix_view, 4, 99) != 255 ||
+        core::hex::parse_ascii_u32_or(one_view, 1, 99) != 0) {
+        return 10;
+    }
+    if (core::hex::parse_ascii_u32_or(overflow_word_view, 9, 99) != 99 ||
+        core::hex::parse_ascii_u32_or(prefix_only_view, 2, 99) != 99 ||
+        core::hex::parse_ascii_u32_or(malformed_view, 2, 99) != 99 ||
+        core::hex::parse_ascii_u32_or(invalid_code_view, 2, 99) != 99 ||
+        core::hex::parse_ascii_u32_or(spaced_view, 2, 99) != 99 ||
+        core::hex::parse_ascii_u32_or(one_view, 0, 99) != 99 ||
+        core::hex::parse_ascii_u32_or(one_view, -1, 99) != 99) {
+        return 11;
+    }
+    if (core::hex::parse_ascii_u16_or(upper_prefix_view, 6, 77) != 65535 ||
+        core::hex::parse_ascii_u16_or(prefix_view, 4, 77) != 255 ||
+        core::hex::parse_ascii_u16_or(one_view, 1, 77) != 0 ||
+        core::hex::parse_ascii_u16_or(overflow_u16_view, 5, 77) != 77 ||
+        core::hex::parse_ascii_u16_or(malformed_view, 2, 77) != 77) {
+        return 12;
+    }
+    if (core::hex::parse_ascii_u8_or(prefix_view, 4, 77) != 255 ||
+        core::hex::parse_ascii_u8_or(one_view, 1, 77) != 0 ||
+        core::hex::parse_ascii_u8_or(upper_prefix_view, 6, 77) != 77 ||
+        core::hex::parse_ascii_u8_or(overflow_u8_view, 3, 77) != 77 ||
+        core::hex::parse_ascii_u8_or(prefix_only_view, 2, 77) != 77 ||
+        core::hex::parse_ascii_u8_or(invalid_code_view, 2, 77) != 77) {
+        return 13;
     }
     return 0;
 }
