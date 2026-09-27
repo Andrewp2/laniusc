@@ -546,6 +546,10 @@ fn executable_core_function_surface_has_runtime_cases() {
         include_str!("fixtures/stdlib_foundation/core_f32.lani").contains("core::f32::ZERO"),
         "core::f32::ZERO lacks a runtime case"
     );
+    assert!(
+        include_str!("fixtures/stdlib_foundation/core_f32.lani").contains("core::f32::ONE"),
+        "core::f32::ONE lacks a runtime case"
+    );
 
     let hash_fixture = include_str!("fixtures/stdlib_foundation/core_hash_i32.lani");
     let mut hash_count = 0;

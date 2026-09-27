@@ -1,0 +1,7 @@
+module core::constants;
+pub const HALF: f32 = 0.5;
+pub const NEGATIVE: f32 = -2.5;
+pub const SUM: f32 = 1.25 + 0.5;
+pub const PRODUCT: f32 = 0.5 * 3.5;
+pub const POSITIVE_ZERO: f32 = 0.0;
+pub const NEGATIVE_ZERO: f32 = -0.0;

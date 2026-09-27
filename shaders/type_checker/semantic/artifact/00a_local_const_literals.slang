@@ -19,6 +19,7 @@ static const uint HIR_UNARY_EXPR = 17u;
 static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_INT = 3u;
+static const uint HIR_EXPR_FLOAT = 27u;
 static const uint HIR_EXPR_TRUE = 4u;
 static const uint HIR_EXPR_FALSE = 5u;
 static const uint HIR_EXPR_CHAR = 29u;
@@ -171,7 +172,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool present = false;
     if (core.kind == HIR_LITERAL_EXPR &&
         compact_hir_nearest_fn[row] == INVALID &&
-        (payload.a == HIR_EXPR_INT || payload.a == HIR_EXPR_CHAR ||
+        (payload.a == HIR_EXPR_INT || payload.a == HIR_EXPR_FLOAT ||
+         payload.a == HIR_EXPR_CHAR ||
          payload.a == HIR_EXPR_TRUE || payload.a == HIR_EXPR_FALSE))
     {
         semantic_value_const_by_hir[row] =

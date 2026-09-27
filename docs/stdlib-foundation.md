@@ -22,7 +22,7 @@ limited to native x86_64 output from this worktree.
 | `core::decimal` all 20 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of extrema across 8-, 16-, and 32-bit integers, ordinary values, sign placement, zero, out-of-range fallbacks, incremental and complete ASCII parsing for all six widths, and overflow against each width's limits. `std::io_decimal` and both bounded decimal file readers use the portable scalar helpers. |
 | `core::hex` all 14 public functions | Executable on x86_64 | Runtime fixture checks shortest lowercase and uppercase hexadecimal representations of `u8`, `u16`, and `u32`, zero and maximum values, invalid-index fallbacks, mixed-case digit accumulation, complete prefixed and unprefixed parsing, and overflow against each width's limit. The helpers allocate no storage and use no host calls. |
 | `core::binary` all 11 public functions | Executable on x86_64 | Runtime fixture checks shortest unsigned binary representations across `u8`, `u16`, and `u32`, zero and high-bit values, invalid-index fallbacks, bounded digit accumulation, optional prefixes, malformed and overflowing input, and format/parse round trips for all 256 byte values. The helpers allocate no storage and use no host calls. |
-| `core::f32` all 13 public functions | Executable on x86_64 for tested finite and NaN inputs | Runtime fixtures check sign, comparison, valid and reversed clamp bounds, fallback behavior, and square root for zero, negative, small, ordinary, large, and NaN inputs. Direct and materialized NaN comparisons now follow unordered semantics. The imported public constant `ONE` remains broken (dependency 5). |
+| `core::f32` both public constants and all 13 public functions | Executable on x86_64 for tested finite and NaN inputs | Runtime fixtures check `ZERO` and imported `ONE`, sign, comparison, valid and reversed clamp bounds, fallback behavior, and square root for zero, negative, small, ordinary, large, and NaN inputs. Direct and materialized NaN comparisons follow unordered semantics. |
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
 | Legacy `stdlib/bool.lani` all 9 public functions and `stdlib/i32.lani` all 16 public functions | Executable on x86_64 when included as source | A source-level native fixture checks both boolean values, both selection branches, ordinary and boundary signed arithmetic, wrapping overflow, comparisons, clamp bounds, and power-of-two overflow. The test calls every public function in both files. `abs` requires input above `i32::MIN`; `clamp` requires ordered bounds. |
@@ -228,8 +228,8 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   unordered: it is nonzero, neither positive nor negative, and outside every
   finite interval. `sqrt` returns zero for nonpositive inputs and scales finite
   positive inputs before Newton iteration, including values far above or below
-  one. Imported `core::f32::ONE` is not usable on x86_64 until the constant
-  lowering issue below is fixed.
+  one. Imported `core::f32::ONE` has a native runtime case; the constant
+  lowering repair is described in dependency 5.
 - `core::array_i32_4::sum` folds with saturating addition; overflowing sums
   clamp to the corresponding i32 endpoint at each element. `get_or` and
   `index_of_or` return the caller's fallback for out-of-range or absent values.
@@ -730,11 +730,12 @@ also fixes the imported struct-return relocation path described below.
    A generic collection still needs executable generic value layout and a
    language-level move/borrow rule to enforce ownership rather than relying
    on caller discipline.
-5. **Imported f32 constant lowering.** With the minimal library in
-   `tests/fixtures/stdlib_foundation/repro_f32_const_root`, native emission of
-   `repro_f32_const.lani` succeeds, but the ELF exits 3 because imported
-   `pub const ONE: f32 = 1.0` compares unequal to `1.0`; the same literal
-   compares equal to itself. This prevents a complete `core::f32` module claim.
+5. **Resolved: imported f32 constant lowering.** The GPU compiler now records
+   compact HIR float literal bits in its exported constant metadata. The
+   original `repro_f32_const.lani` exits 0 instead of 3. The executable
+   `tests/stdlib_f32_imported_constants_execution.rs` also checks imported
+   negative and computed constants and both signs of zero. The real
+   `core::f32::ONE` is covered by `core_f32.lani`.
 6. **Native assertion lowering.** `repro_assert_pass.lani` imports
    `test::assert` and calls each of its eight public functions with passing
    inputs. Native emission fails with `LNC0017`, unsupported target LIR opcode

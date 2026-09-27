@@ -4,6 +4,9 @@ fn main() -> i32 {
     if (core::f32::ZERO != 0.0) {
         return 1;
     }
+    if (core::f32::ONE != 1.0) {
+        return 23;
+    }
     if (1.0 != 1.0) {
         return 16;
     }

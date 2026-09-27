@@ -1,0 +1,14 @@
+module app::main;
+import core::constants;
+
+fn main() -> i32 {
+    if (core::constants::HALF != 0.5) { return 1; }
+    if (core::constants::NEGATIVE != -2.5) { return 2; }
+    if (core::constants::SUM != 1.75) { return 3; }
+    if (core::constants::PRODUCT != 1.75) { return 4; }
+    let positive_reciprocal: f32 = 1.0 / core::constants::POSITIVE_ZERO;
+    let negative_reciprocal: f32 = 1.0 / core::constants::NEGATIVE_ZERO;
+    if (positive_reciprocal < 0.0) { return 5; }
+    if (!(negative_reciprocal < 0.0)) { return 6; }
+    return 0;
+}
