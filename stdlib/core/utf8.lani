@@ -326,3 +326,29 @@ pub fn last_index_of_scalar_or(values: [i32], len: i32, needle: u32, fallback: i
     }
     return found;
 }
+
+// Append one Unicode scalar to a valid UTF-8 byte-code prefix in caller-owned
+// [i32] storage. Return the new byte length. Invalid UTF-8, an invalid scalar,
+// negative or inconsistent lengths, and insufficient capacity return fallback
+// without writing. The view must physically contain capacity writable slots;
+// overclaiming that backing storage may trap on native indexing. A successful
+// new length may equal fallback, so use distinct values when needed.
+pub fn append_scalar_or(values: [i32], len: i32, capacity: i32, value: u32, fallback: i32) -> i32 {
+    if (len<0 || capacity<len || !is_scalar(value)) {
+        return fallback;
+    }
+    let width_u32: u32 = encoded_len_or(value, 0);
+    let width: i32 = width_u32 as i32;
+    if (width>capacity - len || !codes_are_valid(values, len)) {
+        return fallback;
+    }
+    let index: i32 = 0;
+    while (index<width) {
+        let byte_index: u32 = index as u32;
+        let byte: u8 = encoded_byte_or(value, byte_index, 0);
+        let code: i32 = byte as i32;
+        values[len + index] = code;
+        index += 1;
+    }
+    return len + width;
+}

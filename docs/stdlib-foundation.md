@@ -18,7 +18,7 @@ limited to native x86_64 output from this worktree.
 | `core::bits` all 42 public `i32`, `u32`, `u16`, and `u8` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across word widths, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. Byte operations run all 256 inputs; halfword operations run boundary values and 256 evenly spaced inputs; signed operations check negative patterns and all 32 one-hot bits. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
-| `core::utf8` all 13 public codec and backed-view functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, scalar counts, scalar lookup, first and last scalar search, byte/scalar boundary mapping, empty and truncated views, out-of-byte-range integer codes, malformed sequences, surrogate exclusion, and Unicode maximum. Scalar byte parameters and results use `u8`; the view functions use caller-backed `[i32]` byte codes and do not access string storage. |
+| `core::utf8` all 14 public codec and backed-view functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, checked scalar append, scalar counts and lookup, first and last scalar search, byte/scalar boundary mapping, empty and truncated views, out-of-byte-range integer codes, malformed sequences, surrogate exclusion, and Unicode maximum. Scalar byte parameters and results use `u8`; the view functions use caller-backed `[i32]` byte codes and do not access string storage. |
 | `core::decimal` all 20 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of extrema across 8-, 16-, and 32-bit integers, ordinary values, sign placement, zero, out-of-range fallbacks, incremental and complete ASCII parsing for all six widths, and overflow against each width's limits. `std::io_decimal` and both bounded decimal file readers use the portable scalar helpers. |
 | `core::hex` all 14 public functions | Executable on x86_64 | Runtime fixture checks shortest lowercase and uppercase hexadecimal representations of `u8`, `u16`, and `u32`, zero and maximum values, invalid-index fallbacks, mixed-case digit accumulation, complete prefixed and unprefixed parsing, and overflow against each width's limit. The helpers allocate no storage and use no host calls. |
 | `core::binary` all 11 public functions | Executable on x86_64 | Runtime fixture checks shortest unsigned binary representations across `u8`, `u16`, and `u32`, zero and high-bit values, invalid-index fallbacks, bounded digit accumulation, optional prefixes, malformed and overflowing input, and format/parse round trips for all 256 byte values. The helpers allocate no storage and use no host calls. |
@@ -169,7 +169,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `last_index_of_scalar_or` return the first or last scalar index of a valid
   needle. Each checks the complete backed view first and returns its caller
   fallback for malformed UTF-8, invalid indices or needles, and missing
-  scalars. A fallback can equal a valid result. The module does not yet
+  scalars. `append_scalar_or` validates the existing byte-code prefix and
+  checks scalar validity and remaining capacity before writing any bytes.
+  It returns the new byte length, or its caller fallback without writing for
+  invalid input. The claimed capacity must fit the physically backed writable
+  view; an overclaim may trap. A fallback can equal a valid result. The module does not yet
   iterate a `str` or `[u8]` view; those
   storage operations have separate compiler dependencies below.
 - `core::decimal` returns decimal length and the ASCII byte at a zero-based

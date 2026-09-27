@@ -151,5 +151,35 @@ fn main() -> i32 {
         core::utf8::last_index_of_scalar_or(high_code_view, 2, 65, -9) != -9) {
         return 18;
     }
+    let built:[i32; 10] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let built_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(built), 10);
+    let length: i32 = core::utf8::append_scalar_or(built_view, 0, 10, 65, -9);
+    if (length != 1) {
+        return 19;
+    }
+    length = core::utf8::append_scalar_or(built_view, length, 10, 162, -9);
+    length = core::utf8::append_scalar_or(built_view, length, 10, 8364, -9);
+    length = core::utf8::append_scalar_or(built_view, length, 10, 128578, -9);
+    if (length != 10 ||
+        !core::utf8::codes_are_valid(built_view, length) ||
+        core::utf8::scalar_count_or(built_view, length, -9) != 4 ||
+        core::utf8::scalar_at_or(built_view, length, 3, 4294967295) != 128578 ||
+        built[0] != 65 || built[1] != 194 || built[2] != 162 ||
+        built[3] != 226 || built[4] != 130 || built[5] != 172 ||
+        built[6] != 240 || built[7] != 159 || built[8] != 153 || built[9] != 130) {
+        return 20;
+    }
+    let guarded:[i32; 5] = [65, 194, 162, 77, 88];
+    let guarded_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(guarded), 5);
+    if (core::utf8::append_scalar_or(guarded_view, 3, 5, 128578, -9) != -9 ||
+        core::utf8::append_scalar_or(guarded_view, 3, 5, 55296, -9) != -9 ||
+        core::utf8::append_scalar_or(guarded_view, 2, 5, 65, -9) != -9 ||
+        core::utf8::append_scalar_or(guarded_view, -1, 5, 65, -9) != -9 ||
+        core::utf8::append_scalar_or(guarded_view, 3, 2, 65, -9) != -9 ||
+        core::utf8::append_scalar_or(guarded_view, 3, -1, 65, -9) != -9 ||
+        guarded[0] != 65 || guarded[1] != 194 || guarded[2] != 162 ||
+        guarded[3] != 77 || guarded[4] != 88) {
+        return 21;
+    }
     return 0;
 }
