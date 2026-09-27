@@ -14,6 +14,7 @@ StructuredBuffer<HirVariant> compact_variants;
 StructuredBuffer<uint> compact_variant_payload_count;
 StructuredBuffer<uint> semantic_value_decl_by_hir;
 StructuredBuffer<uint> semantic_value_type_by_hir;
+StructuredBuffer<uint> semantic_value_const_by_hir;
 StructuredBuffer<uint> semantic_value_const_present_by_hir;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
 StructuredBuffer<uint> semantic_enclosing_fn_by_hir;
@@ -52,6 +53,7 @@ static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_CONST_ITEM = 25u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint IMPORTED_UNIT_VARIANT_PRESENT = 0x40000000u;
 
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
 
@@ -161,6 +163,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 ? 0u
                 : checked.arg_count +
                     (semantic_call_receiver[node] != INVALID ? 1u : 0u);
+    }
+    else if (core.kind == HIR_PATH_EXPR &&
+             semantic_value_const_present_by_hir[node] == IMPORTED_UNIT_VARIANT_PRESENT)
+    {
+        semantic_call_kind[node] = SEMANTIC_CALL_ENUM_CONSTRUCTOR;
+        semantic_call_target[node] = semantic_value_const_by_hir[node];
+        semantic_call_result_type[node] = semantic_value_type[node];
     }
     else if (semantic_value_const_present_by_hir[node] != 0x80000000u &&
              (core.kind == HIR_NAME_EXPR || core.kind == HIR_PATH_EXPR ||

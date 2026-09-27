@@ -1,0 +1,10 @@
+module app::main;
+import core::ordering;
+
+fn main() -> i32 {
+    let inferred = core::ordering::Greater;
+    if (core::ordering::is_greater(inferred)) {
+        return 0;
+    }
+    return 1;
+}

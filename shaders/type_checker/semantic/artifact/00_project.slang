@@ -85,7 +85,9 @@ static const uint LANGUAGE_SYMBOL_I32_SLICE_DATA_PTR = 69u;
 static const uint LANGUAGE_SYMBOL_STRING_DATA_PTR = 70u;
 static const uint LANGUAGE_SYMBOL_WILDCARD = 19u;
 static const uint HIR_ITEM_KIND_CONST = 3u;
+static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint CONST_PRESENT = 0x80000000u;
+static const uint IMPORTED_UNIT_VARIANT_PRESENT = 0x40000000u;
 
 bool valid_token(uint token)
 {
@@ -179,6 +181,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 type_id = resolved_dependency_value_metadata[value_base + 1u];
                 const_value = resolved_dependency_value_metadata[value_base + 2u];
                 const_present = CONST_PRESENT;
+            }
+            else if (resolved_dependency_value_metadata[value_base] ==
+                     HIR_ITEM_KIND_ENUM_VARIANT)
+            {
+                const_value = resolved_dependency_value_metadata[value_base + 2u];
+                // This lane carries the unit variant ordinal. It is a tagged
+                // aggregate constructor, not a scalar imported constant.
+                const_present = IMPORTED_UNIT_VARIANT_PRESENT;
             }
         }
     }

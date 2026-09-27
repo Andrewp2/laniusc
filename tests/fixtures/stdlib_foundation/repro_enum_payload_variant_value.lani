@@ -1,0 +1,7 @@
+module app::main;
+import helpers::maybe;
+
+fn main() -> i32 {
+    let invalid: helpers::maybe::Maybe = helpers::maybe::Some;
+    return 0;
+}

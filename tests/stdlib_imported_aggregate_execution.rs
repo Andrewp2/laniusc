@@ -100,6 +100,44 @@ fn imported_scalar_payload_enum_result_uses_aggregate_abi_on_x86() {
 }
 
 #[test]
+fn imported_unit_variant_of_payload_enum_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_enum_direct_unit_app.lani");
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_enum_root");
+    let bytes = common::run_gpu_codegen_with_timeout("imported mixed enum unit", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile direct imported unit variant from a mixed enum");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported mixed enum unit",
+            "repro_enum_direct_unit_app",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_payload_variant_without_call_is_rejected() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_enum_payload_variant_value.lani");
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_enum_root");
+    let error = common::run_gpu_codegen_with_timeout("bare imported payload variant", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect_err("a payload-bearing variant must be called with its payload");
+    assert!(
+        error.to_string().contains("unresolved identifier"),
+        "{error}"
+    );
+}
+
+#[test]
 fn imported_flat_struct_payload_enum_executes_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_foundation/repro_enum_nested_app.lani");

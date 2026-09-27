@@ -57,7 +57,7 @@ limited to native x86_64 output from this worktree.
 | `core::u8` all 37 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, overflow and zero-divisor behavior, wrapping multiplication, ASCII classes and case conversion, and checked results through `OptionU8`. Its multiplication delegates to the tested `core::byte` implementation. |
 | `core::u16` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture calls every function and reads every constant. It checks ordinary and high-bit values, wrapping and saturating overflow, checked arithmetic through `OptionU16`, reversed bounds, zero divisors, power-of-two overflow, and invalid or overflowing alignment. |
 | `core::u32` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, unsigned high-bit and maximum values, checked and wrapping arithmetic, alignment failures, and power-of-two overflow. Checked results use concrete `OptionU32`. |
-| `core::ordering` 13 public functions and `Ordering` variants | Partially executable on x86_64 | `tests/stdlib_ordering.rs` executes every function through the real stdlib root, including the imported fieldless enum return, predicates, reverse, then, all three outcomes, and unsigned high-bit comparison. `compare_i64` only works for tested 32-bit-range values; native i64 comparison still truncates high bits (dependency 11). Direct imported variant paths such as `core::ordering::Less` fail during native compilation (dependency 34), so the complete module is not yet claimed. |
+| `core::ordering` 13 public functions and `Ordering` variants | Partially executable on x86_64 | `tests/stdlib_ordering.rs` executes every function and direct qualified and unqualified `Less`, `Equal`, and `Greater` values through the real stdlib root, including predicates, reverse, then, and unsigned high-bit comparison. `compare_i64` only works for tested 32-bit-range values; native i64 comparison still truncates high bits (dependency 11). Inferred local variant bindings remain a compiler dependency (46), so the complete module is not yet claimed. |
 | Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Generic enum values fail GPU lowering and native 64-bit comparison/arithmetic are incomplete. The former by-value `Option::replace` ignored its input and was removed. Concrete 8-, 16-, and 32-bit Option/Result modules execute on x86_64. |
 | `core::{cmp,hash,array_i32}` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs and traits depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
 | `core::target` all 18 public functions and 16 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant. It checks the available allocator, filesystem, stdio, clock, secure RNG, process, and environment bindings against `core::runtime`; unbound network, threads, GPU, host services, panic hooks, and test harness remain false. This is a target snapshot, not a live host probe. |
@@ -1186,16 +1186,17 @@ also fixes the imported struct-return relocation path described below.
     instead of 0. The executable signed wrapping helpers reduce the widened
     result modulo the target width and bring it into the signed range before
     casting. Direct out-of-range signed narrowing still needs a compiler fix.
-34. **Imported fieldless enum variants by path.**
-    `laniusc check --stdlib-root stdlib
-    tests/fixtures/stdlib_foundation/repro_ordering_variant_import.lani`
-    succeeds, but native compilation of the same program reports `LNC0005`
-    at `core::ordering::Less`. Interface export contains `Less`, `Equal`, and
-    `Greater` as public variant declarations. A separate dependency-interface
-    type check reproduces the same error: imported value consumers project
-    constants and calls, but have no corresponding variant-value projection.
-    Calling imported functions that construct and consume `Ordering` now
-    executes; direct variant path resolution still needs a GPU compiler fix.
+34. **Resolved: qualified imported unit enum variants.**
+    The original `repro_ordering_variant_import.lani` passed `laniusc check`
+    but native compilation reported `LNC0005` at `core::ordering::Less`.
+    Dependency projection now matches a payload-free variant against its
+    exported parent enum member, retains its ordinal across dependency pages,
+    and lowers the path as a tagged enum aggregate. The native fixture checks
+    direct `Less`, `Equal`, and `Greater` values, a direct variant call argument,
+    ranks, and reversal. A second native fixture executes `None` from an enum
+    that also has payload variants;
+    a bare imported payload variant remains rejected. Unqualified variant
+    names also execute; see resolved dependency 45.
 35. **Explicit return in a void helper.**
     `tests/fixtures/stdlib_foundation/repro_void_return.lani` defines an
     unused void helper containing only `return;` alongside a valid `main`.
@@ -1298,6 +1299,20 @@ also fixes the imported struct-return relocation path described below.
     checks the returned byte count instead of a tautological `secure_u32`
     self-comparison. The raw scalar's separate failure channel is resolved in
     dependency 18.
+45. **Resolved: unqualified imported enum variant names.**
+    `repro_ordering_variant_unqualified.lani` imports `core::ordering` and
+    executes direct `Less`, `Equal`, and `Greater` values, including `Less` as
+    a direct call argument. The original native `LNC0005` at `Less` was
+    resolved by projecting the imported path's canonical enum type reference
+    onto its path head before argument validation and semantic projection.
+46. **Inferred local type from an imported enum variant.**
+    `repro_ordering_variant_inferred.lani` assigns
+    `core::ordering::Greater` to an unannotated local and then passes that
+    local to `core::ordering::is_greater`. Native compilation reports
+    `LNC0006` at the local use. Annotating the local as
+    `core::ordering::Ordering`, or passing the qualified variant path directly,
+    compiles and runs. The remaining issue is propagation of the imported
+    enum's canonical type reference through local inference.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

@@ -1,0 +1,15 @@
+module app::main;
+import core::ordering;
+
+fn main() -> i32 {
+    let less: Ordering = Less;
+    let equal: Ordering = Equal;
+    let greater: Ordering = Greater;
+    if (!is_less(less) || !is_equal(equal) || !is_greater(greater)) {
+        return 1;
+    }
+    if (!is_less(Less)) {
+        return 2;
+    }
+    return 0;
+}

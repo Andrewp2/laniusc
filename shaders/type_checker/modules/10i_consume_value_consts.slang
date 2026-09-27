@@ -40,6 +40,8 @@ RWStructuredBuffer<uint> module_value_path_const_head;
 RWStructuredBuffer<uint> module_value_path_const_end;
 RWStructuredBuffer<uint> visible_decl;
 RWStructuredBuffer<uint> visible_type;
+RWStructuredBuffer<uint> decl_type_ref_tag;
+RWStructuredBuffer<uint> decl_type_ref_payload;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -53,6 +55,7 @@ static const uint HIR_ITEM_KIND_CONST = 3u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 
 static const uint TY_UNKNOWN = 0u;
+static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -118,6 +121,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
         module_value_path_const_head[owner_token] = 1u;
         module_value_path_const_end[owner_token] =
             path_segment_token[path_segment_base[path_i] + segment_count - 1u];
+        module_value_path_status[owner_token] = INVALID;
+        return;
+    }
+    if (resolved_dependency_value_metadata[dependency_value_base] == HIR_ITEM_KIND_ENUM_VARIANT)
+    {
+        // The dependency projection checked that this is a payload-free
+        // variant of a concrete enum. Give the path head the enum's canonical
+        // type so a direct call argument can use it. The ordinal is
+        // materialized from the same stable metadata later.
+        visible_decl[owner_token] = owner_token;
+        decl_type_ref_tag[owner_token] = TYPE_REF_EXTERNAL_CANONICAL;
+        decl_type_ref_payload[owner_token] =
+            resolved_dependency_value_metadata[dependency_value_base + 1u];
         module_value_path_status[owner_token] = INVALID;
         return;
     }

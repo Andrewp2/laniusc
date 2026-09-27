@@ -2367,6 +2367,7 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_variant_payload_count", hir_variant_payload_count),
             PassAccess::read("semantic_value_decl_by_hir", checked_value_decls),
             PassAccess::read("semantic_value_type_by_hir", checked_value_types),
+            PassAccess::read("semantic_value_const_by_hir", checked_value_consts),
             PassAccess::read(
                 "semantic_value_const_present_by_hir",
                 checked_value_const_present,

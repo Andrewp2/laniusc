@@ -3,6 +3,24 @@ import core::ordering;
 
 fn main() -> i32 {
     let less: core::ordering::Ordering = core::ordering::Less;
-    if (core::ordering::is_less(less)) { return 0; }
-    return 1;
+    let equal: core::ordering::Ordering = core::ordering::Equal;
+    let greater: core::ordering::Ordering = core::ordering::Greater;
+    if (!core::ordering::is_less(less) ||
+        !core::ordering::is_equal(equal) ||
+        !core::ordering::is_greater(greater)) {
+        return 1;
+    }
+    if (core::ordering::to_i32(less) != -1 ||
+        core::ordering::to_i32(equal) != 0 ||
+        core::ordering::to_i32(greater) != 1) {
+        return 2;
+    }
+    if (!core::ordering::is_greater(core::ordering::reverse(less)) ||
+        !core::ordering::is_less(core::ordering::reverse(greater))) {
+        return 3;
+    }
+    if (!core::ordering::is_less(core::ordering::Less)) {
+        return 4;
+    }
+    return 0;
 }
