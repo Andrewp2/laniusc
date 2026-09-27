@@ -1,0 +1,28 @@
+module app::main;
+import std::random_checked;
+
+fn main() -> i32 {
+    if (std::random_checked::secure_u32_inclusive_or(8, 7, 99) != 99 || std::random_checked::secure_u32_inclusive_or(42, 42, 99) != 42) {
+        return 1;
+    }
+    if (std::random_checked::secure_i32_inclusive_or(7, -7, 99) != 99 || std::random_checked::secure_i32_inclusive_or(-2147483648, -2147483648, 99) != -2147483648) {
+        return 2;
+    }
+    let index: i32 = 0;
+    while (index < 128) {
+        let unsigned: u32 = std::random_checked::secure_u32_inclusive_or(10, 17, 99);
+        if (unsigned < 10 || unsigned > 17) {
+            return 3;
+        }
+        let signed: i32 = std::random_checked::secure_i32_inclusive_or(-3, 4, 99);
+        if (signed < -3 || signed > 4) {
+            return 4;
+        }
+        let high: u32 = std::random_checked::secure_u32_inclusive_or(1, 4294967295, 0);
+        if (high == 0) {
+            return 5;
+        }
+        index += 1;
+    }
+    return 0;
+}

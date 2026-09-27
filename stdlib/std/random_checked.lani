@@ -38,7 +38,8 @@ pub fn secure_u32_or(fallback: u32) -> u32 {
         return fallback;
     }
     let signed: i32 = word[0];
-    return signed as u32;
+    let bits: u32 = signed as u32;
+    return bits;
 }
 
 // Return a uniformly sampled value in [0, bound), or fallback if bound is zero
@@ -68,6 +69,50 @@ pub fn secure_u32_below_or(bound: u32, fallback: u32) -> u32 {
         }
     }
     return fallback;
+}
+
+// Draw uniformly from the inclusive interval [low, high]. Reversed bounds
+// return fallback without host access; a singleton returns its value without
+// host access. The full u32 interval uses a direct checked four-byte draw.
+// Host failure returns fallback, which may also be a legitimate sample.
+pub fn secure_u32_inclusive_or(low: u32, high: u32, fallback: u32) -> u32 {
+    if (low > high) {
+        return fallback;
+    }
+    if (low == high) {
+        return low;
+    }
+    let maximum: u32 = 4294967295;
+    if (low == 0 && high == maximum) {
+        return secure_u32_or(fallback);
+    }
+    let span: u32 = high - low + 1;
+    let offset: u32 = secure_u32_below_or(span, maximum);
+    if (offset == maximum) {
+        return fallback;
+    }
+    return low + offset;
+}
+
+// Draw uniformly from the inclusive signed interval. XOR with the sign bit
+// maps signed order into unsigned order, including the full i32 interval.
+// Reversed bounds and host failure return fallback; a singleton needs no
+// host call. A successful sample may equal fallback.
+pub fn secure_i32_inclusive_or(low: i32, high: i32, fallback: i32) -> i32 {
+    if (low > high) {
+        return fallback;
+    }
+    let bias: u32 = 2147483648;
+    let low_bits: u32 = low as u32;
+    let high_bits: u32 = high as u32;
+    let fallback_bits: u32 = fallback as u32;
+    let first: u32 = low_bits ^ bias;
+    let last: u32 = high_bits ^ bias;
+    let failure: u32 = fallback_bits ^ bias;
+    let selected: u32 = secure_u32_inclusive_or(first, last, failure);
+    let selected_bits: u32 = selected ^ bias;
+    let signed: i32 = selected_bits as i32;
+    return signed;
 }
 
 // Shuffle the first len elements of a backed i32 view with Fisher-Yates and

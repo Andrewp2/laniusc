@@ -241,6 +241,72 @@ fn std_random_secure_u32_below_handles_failure_and_rejection_on_x86() {
 }
 
 #[test]
+fn std_random_inclusive_ranges_execute_on_x86() {
+    let bytes = compile_fixture("std_random_inclusive");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let output =
+            common::run_x86_64_elf_output("std_random_inclusive", "std_random_inclusive", &bytes);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn std_random_inclusive_ranges_handle_forced_draws_and_failures_on_x86() {
+    let programs = [
+        ("std_random_inclusive_u32_zero", "getrandom:retval=4:when=1"),
+        ("std_random_inclusive_i32_zero", "getrandom:retval=4:when=1"),
+        (
+            "std_random_inclusive_u32_full_zero",
+            "getrandom:retval=4:when=1",
+        ),
+        (
+            "std_random_inclusive_i32_full_zero",
+            "getrandom:retval=4:when=1",
+        ),
+        (
+            "std_random_inclusive_u32_failure",
+            "getrandom:error=EIO:when=1",
+        ),
+        (
+            "std_random_inclusive_i32_failure",
+            "getrandom:error=EIO:when=1",
+        ),
+    ];
+    for (name, injection) in programs {
+        let bytes = compile_fixture(name);
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        {
+            if std::process::Command::new("strace")
+                .arg("-V")
+                .output()
+                .is_err()
+            {
+                return;
+            }
+            let executable = write_executable(&bytes, name);
+            let output = common::short_process_output_with_timeout(
+                format!("inclusive random {name}"),
+                std::process::Command::new("strace")
+                    .arg("-qq")
+                    .arg("-e")
+                    .arg("trace=getrandom")
+                    .arg("-e")
+                    .arg(format!("inject={injection}"))
+                    .arg(executable.path()),
+            );
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert!(String::from_utf8_lossy(&output.stderr).contains("INJECTED"));
+        }
+        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        let _ = (bytes, injection);
+    }
+}
+
+#[test]
 fn std_random_shuffle_i32_executes_on_x86() {
     let bytes = compile_fixture("std_random_shuffle");
 
@@ -309,6 +375,7 @@ fn std_random_checked_public_functions_have_runtime_cases() {
         include_str!("fixtures/stdlib_host/std_random_fill_exact.lani"),
         include_str!("fixtures/stdlib_host/std_random_checked.lani"),
         include_str!("fixtures/stdlib_host/std_random_below.lani"),
+        include_str!("fixtures/stdlib_host/std_random_inclusive.lani"),
         include_str!("fixtures/stdlib_host/std_random_shuffle.lani"),
     ]
     .concat();
@@ -327,5 +394,5 @@ fn std_random_checked_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 4);
+    assert_eq!(count, 6);
 }
