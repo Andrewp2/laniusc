@@ -176,3 +176,75 @@ fn bounded_stdin_decimal_reports_host_failures_on_x86() {
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     let _ = (unsigned_bytes, signed_bytes);
 }
+
+#[test]
+fn bounded_narrow_stdin_decimal_executes_on_x86() {
+    let fixtures = [
+        ("std_io_decimal_read_u8", b"7".as_slice()),
+        ("std_io_decimal_read_u16", b"777".as_slice()),
+        ("std_io_decimal_read_i8", b"-7".as_slice()),
+        ("std_io_decimal_read_i16", b"-777".as_slice()),
+    ];
+    for (name, fallback) in fixtures {
+        let bytes = compile_fixture(name);
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        {
+            let executable = write_executable(&bytes, name);
+            let cases: &[(&[u8], &[u8])] = match name {
+                "std_io_decimal_read_u8" => &[
+                    (b"0", b"0"),
+                    (b"255", b"255"),
+                    (b" +42\n", b"42"),
+                    (b"256", fallback),
+                    (b"-1", fallback),
+                    (b"", fallback),
+                    (b"12x", fallback),
+                    (b"         255", b"255"),
+                    (b"          255", fallback),
+                ],
+                "std_io_decimal_read_u16" => &[
+                    (b"0", b"0"),
+                    (b"65535", b"65535"),
+                    (b"+42", b"42"),
+                    (b"65536", fallback),
+                    (b"-1", fallback),
+                    (b"", fallback),
+                    (b"12x", fallback),
+                ],
+                "std_io_decimal_read_i8" => &[
+                    (b"0", b"0"),
+                    (b"-128", b"-128"),
+                    (b"127", b"127"),
+                    (b"+42", b"42"),
+                    (b"-129", fallback),
+                    (b"128", fallback),
+                    (b"", fallback),
+                    (b"12x", fallback),
+                ],
+                "std_io_decimal_read_i16" => &[
+                    (b"0", b"0"),
+                    (b"-32768", b"-32768"),
+                    (b"32767", b"32767"),
+                    (b"+42", b"42"),
+                    (b"-32769", fallback),
+                    (b"32768", fallback),
+                    (b"", fallback),
+                    (b"12x", fallback),
+                ],
+                _ => unreachable!(),
+            };
+            for &(input, expected) in cases {
+                let output = run_input(&executable, input);
+                assert_eq!(
+                    output.status.code(),
+                    Some(0),
+                    "{name} {input:?}: {output:?}"
+                );
+                assert_eq!(output.stdout, expected, "{name} {input:?}");
+                assert!(output.stderr.is_empty(), "{output:?}");
+            }
+        }
+        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        let _ = (bytes, fallback);
+    }
+}

@@ -1,0 +1,14 @@
+module app::main;
+import std::io_decimal;
+
+fn main() -> i32 {
+    let fallback: u16 = 777;
+    if (std::io_decimal::read_u16_stdin_or(0, fallback) != fallback) {
+        return 2;
+    }
+    let value: u16 = std::io_decimal::read_u16_stdin_or(12, fallback);
+    if (std::io_decimal::write_u16(1, value) < 0) {
+        return 1;
+    }
+    return 0;
+}

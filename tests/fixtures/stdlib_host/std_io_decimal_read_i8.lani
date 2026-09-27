@@ -1,0 +1,14 @@
+module app::main;
+import std::io_decimal;
+
+fn main() -> i32 {
+    let fallback: i8 = -7;
+    if (std::io_decimal::read_i8_stdin_or(0, fallback) != fallback) {
+        return 2;
+    }
+    let value: i8 = std::io_decimal::read_i8_stdin_or(12, fallback);
+    if (std::io_decimal::write_i8(1, value) < 0) {
+        return 1;
+    }
+    return 0;
+}

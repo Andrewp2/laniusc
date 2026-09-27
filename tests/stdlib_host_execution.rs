@@ -103,11 +103,8 @@ fn std_io_narrow_decimal_writers_execute_on_x86() {
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
-        let output = common::run_x86_64_elf_output(
-            "std_io_narrow_decimal",
-            "std_io_narrow_decimal",
-            &bytes,
-        );
+        let output =
+            common::run_x86_64_elf_output("std_io_narrow_decimal", "std_io_narrow_decimal", &bytes);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
         assert_eq!(output.stdout, b"0\n255\n65535\n-128\n127\n-32768\n32767\n");
     }
@@ -231,13 +228,18 @@ fn std_io_write_u32_reports_partial_write_failure_on_x86() {
 #[test]
 fn std_io_decimal_public_functions_have_runtime_cases() {
     let source = include_str!("../stdlib/std/io_decimal.lani");
-    let fixture = format!(
-        "{}{}{}{}",
+    let fixture = [
         include_str!("fixtures/stdlib_host/std_io_u32.lani"),
         include_str!("fixtures/stdlib_host/std_io_i32.lani"),
+        include_str!("fixtures/stdlib_host/std_io_narrow_decimal.lani"),
         include_str!("fixtures/stdlib_host/std_io_decimal_read_u32.lani"),
-        include_str!("fixtures/stdlib_host/std_io_decimal_read_i32.lani")
-    );
+        include_str!("fixtures/stdlib_host/std_io_decimal_read_i32.lani"),
+        include_str!("fixtures/stdlib_host/std_io_decimal_read_u8.lani"),
+        include_str!("fixtures/stdlib_host/std_io_decimal_read_u16.lani"),
+        include_str!("fixtures/stdlib_host/std_io_decimal_read_i8.lani"),
+        include_str!("fixtures/stdlib_host/std_io_decimal_read_i16.lani"),
+    ]
+    .concat();
     let mut count = 0;
     for line in source.lines() {
         let Some(tail) = line.strip_prefix("pub fn ") else {
@@ -253,5 +255,5 @@ fn std_io_decimal_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 4);
+    assert_eq!(count, 12);
 }

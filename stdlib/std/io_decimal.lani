@@ -205,3 +205,42 @@ pub fn read_i32_stdin_or(max_bytes: u32, fallback: i32) -> i32 {
     let positive: i32 = magnitude;
     return positive;
 }
+
+// Narrow readers inherit the full-stream syntax and max_bytes limit from the
+// 32-bit readers. A parsed value outside the destination type returns the
+// caller's fallback. Invalid input or a host error has the same result.
+pub fn read_u8_stdin_or(max_bytes: u32, fallback: u8) -> u8 {
+    let widened_fallback: u32 = fallback as u32;
+    let value: u32 = read_u32_stdin_or(max_bytes, widened_fallback);
+    if (value > 255) {
+        return fallback;
+    }
+    return value as u8;
+}
+
+pub fn read_u16_stdin_or(max_bytes: u32, fallback: u16) -> u16 {
+    let widened_fallback: u32 = fallback as u32;
+    let value: u32 = read_u32_stdin_or(max_bytes, widened_fallback);
+    if (value > 65535) {
+        return fallback;
+    }
+    return value as u16;
+}
+
+pub fn read_i8_stdin_or(max_bytes: u32, fallback: i8) -> i8 {
+    let widened_fallback: i32 = fallback as i32;
+    let value: i32 = read_i32_stdin_or(max_bytes, widened_fallback);
+    if (value < -128 || value > 127) {
+        return fallback;
+    }
+    return value as i8;
+}
+
+pub fn read_i16_stdin_or(max_bytes: u32, fallback: i16) -> i16 {
+    let widened_fallback: i32 = fallback as i32;
+    let value: i32 = read_i32_stdin_or(max_bytes, widened_fallback);
+    if (value < -32768 || value > 32767) {
+        return fallback;
+    }
+    return value as i16;
+}
