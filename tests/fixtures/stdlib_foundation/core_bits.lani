@@ -178,5 +178,67 @@ fn main() -> i32 {
         }
         half_raw += 257;
     }
+    let minimum: i32 = -2147483648;
+    if (core::bits::count_ones_i32(0) != 0 || core::bits::count_ones_i32(-1) != 32 || core::bits::count_ones_i32(minimum) != 1) {
+        return 40;
+    }
+    if (core::bits::count_zeros_i32(0) != 32 || core::bits::count_zeros_i32(-1) != 0 || core::bits::count_zeros_i32(minimum) != 31) {
+        return 41;
+    }
+    if (core::bits::leading_zeros_i32(0) != 32 || core::bits::leading_zeros_i32(1) != 31 || core::bits::leading_zeros_i32(minimum) != 0 || core::bits::leading_zeros_i32(-1) != 0) {
+        return 42;
+    }
+    if (core::bits::trailing_zeros_i32(0) != 32 || core::bits::trailing_zeros_i32(8) != 3 || core::bits::trailing_zeros_i32(minimum) != 31 || core::bits::trailing_zeros_i32(-1) != 0) {
+        return 43;
+    }
+    if (!core::bits::has_single_bit_i32(1) || !core::bits::has_single_bit_i32(minimum) || core::bits::has_single_bit_i32(0) || core::bits::has_single_bit_i32(-1)) {
+        return 44;
+    }
+    if (core::bits::rotate_left_i32(minimum, 1) != 1 || core::bits::rotate_left_i32(minimum, 0) != minimum || core::bits::rotate_left_i32(minimum, 32) != minimum || core::bits::rotate_left_i32(minimum, 33) != 1) {
+        return 45;
+    }
+    if (core::bits::rotate_right_i32(minimum, 1) != 1073741824 || core::bits::rotate_right_i32(1, 1) != minimum || core::bits::rotate_right_i32(minimum, 32) != minimum || core::bits::rotate_right_i32(1, 33) != minimum) {
+        return 46;
+    }
+    if (core::bits::reverse_bits_i32(0) != 0 || core::bits::reverse_bits_i32(1) != minimum || core::bits::reverse_bits_i32(minimum) != 1 || core::bits::reverse_bits_i32(-1) != -1) {
+        return 47;
+    }
+    if (core::bits::swap_bytes_i32(0) != 0 || core::bits::swap_bytes_i32(305419896) != 2018915346 || core::bits::swap_bytes_i32(-1) != -1) {
+        return 48;
+    }
+    if (!core::bits::bit_at_or_i32(minimum, 31, false) || core::bits::bit_at_or_i32(minimum, 0, false) || !core::bits::bit_at_or_i32(-1, 0, false) || !core::bits::bit_at_or_i32(0, 32, true) || core::bits::bit_at_or_i32(-1, 32, false)) {
+        return 49;
+    }
+    let position: u32 = 0;
+    let one_hot: u32 = 1;
+    let top_bit: u32 = 2147483648;
+    while (position<32) {
+        let signed: i32 = one_hot as i32;
+        let mirrored: u32 = top_bit >> position;
+        let expected_reverse: i32 = mirrored as i32;
+        let offset: i32 = position;
+        if (core::bits::count_ones_i32(signed) != 1) {
+            return 50 + offset;
+        }
+        if (!core::bits::has_single_bit_i32(signed)) {
+            return 80 + offset;
+        }
+        if (!core::bits::bit_at_or_i32(signed, position, false)) {
+            return 110 + offset;
+        }
+        if (core::bits::leading_zeros_i32(signed) != 31 - position) {
+            return 140 + offset;
+        }
+        if (core::bits::trailing_zeros_i32(signed) != position) {
+            return 170 + offset;
+        }
+        if (core::bits::reverse_bits_i32(signed) != expected_reverse) {
+            return 200 + offset;
+        }
+        position += 1;
+        if (position<32) {
+            one_hot *= 2;
+        }
+    }
     return 0;
 }

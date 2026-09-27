@@ -221,3 +221,39 @@ pub fn bit_at_or_u16(value: u16, index: u32, fallback: bool) -> bool {
     }
     return((widen_half(value) >> index)&1) != 0;
 }
+
+// Signed operations inspect the full 32-bit representation of the i32 value.
+pub fn count_ones_i32(value: i32) -> u32 {
+    return count_ones_u32(value as u32);
+}
+pub fn count_zeros_i32(value: i32) -> u32 {
+    return count_zeros_u32(value as u32);
+}
+pub fn leading_zeros_i32(value: i32) -> u32 {
+    return leading_zeros_u32(value as u32);
+}
+pub fn trailing_zeros_i32(value: i32) -> u32 {
+    return trailing_zeros_u32(value as u32);
+}
+pub fn has_single_bit_i32(value: i32) -> bool {
+    return has_single_bit_u32(value as u32);
+}
+pub fn rotate_left_i32(value: i32, amount: u32) -> i32 {
+    let rotated: u32 = rotate_left_u32(value as u32, amount);
+    return rotated as i32;
+}
+pub fn rotate_right_i32(value: i32, amount: u32) -> i32 {
+    let rotated: u32 = rotate_right_u32(value as u32, amount);
+    return rotated as i32;
+}
+pub fn reverse_bits_i32(value: i32) -> i32 {
+    let reversed: u32 = reverse_bits_u32(value as u32);
+    return reversed as i32;
+}
+pub fn swap_bytes_i32(value: i32) -> i32 {
+    let swapped: u32 = swap_bytes_u32(value as u32);
+    return swapped as i32;
+}
+pub fn bit_at_or_i32(value: i32, index: u32, fallback: bool) -> bool {
+    return bit_at_or_u32(value as u32, index, fallback);
+}
