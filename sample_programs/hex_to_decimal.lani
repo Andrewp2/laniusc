@@ -1,0 +1,40 @@
+// Read hexadecimal digits from stdin and print their u32 value in decimal.
+// ASCII whitespace is ignored; malformed or overflowing input exits nonzero.
+module app::main;
+import core::byte;
+import core::hex;
+import std::io_byte;
+import std::io_decimal;
+
+fn main() -> i32 {
+    let value: u32 = 0;
+    let digits: bool = false;
+    while (true) {
+        let next: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+        if (next == -1) {
+            break;
+        }
+        if (next == -2) {
+            return 2;
+        }
+        let ascii: u8 = next as u8;
+        if (core::byte::is_ascii_whitespace(ascii)) {
+            continue;
+        }
+        if (!core::hex::can_append_ascii_digit_u32(value, ascii, 4294967295)) {
+            return 3;
+        }
+        value = core::hex::append_ascii_digit_or_u32(value, ascii, 4294967295, 0);
+        digits = true;
+    }
+    if (!digits) {
+        return 4;
+    }
+    if (std::io_decimal::write_u32(1, value) <= 0) {
+        return 5;
+    }
+    if (!std::io_byte::write_stdout_byte(10)) {
+        return 6;
+    }
+    return 0;
+}

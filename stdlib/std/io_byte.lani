@@ -1,0 +1,38 @@
+// Scalar byte I/O for the bound x86_64 Linux stdio service. This module uses
+// one synchronous host call per byte and allocates no heap storage.
+module std::io_byte;
+import core::mem;
+import std::io;
+
+// Returns a byte in 0..=255. EOF and host failure return the caller's
+// separate fallbacks. Choose fallback values outside 0..=255 to distinguish
+// them from valid bytes. The x86_64 target stores a one-byte read in the low
+// byte of the zeroed i32 slot; user-program GPU targets are not claimed.
+pub fn read_stdin_byte_or(eof_fallback: i32, error_fallback: i32) -> i32 {
+    let slot: [i32; 1] = [0];
+    let address: ptr = core::mem::i32_array_data_ptr(slot);
+    let received: i32 = std::io::read_stdin(address, 1);
+    if (received == 0) {
+        return eof_fallback;
+    }
+    if (received != 1) {
+        return error_fallback;
+    }
+    return slot[0];
+}
+
+// Reject values outside the byte range without writing. A host error or a
+// short write returns false; a successful one-byte write returns true.
+pub fn write_stdout_byte(value: i32) -> bool {
+    if (value<0 || value>255) {
+        return false;
+    }
+    return std::io::write_byte(1, value) == 1;
+}
+
+pub fn write_stderr_byte(value: i32) -> bool {
+    if (value<0 || value>255) {
+        return false;
+    }
+    return std::io::write_byte(2, value) == 1;
+}

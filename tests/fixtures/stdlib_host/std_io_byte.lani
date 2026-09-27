@@ -1,0 +1,29 @@
+module app::main;
+import std::io_byte;
+
+fn main() -> i32 {
+    if (std::io_byte::read_stdin_byte_or(-1, -2) != 65) {
+        return 1;
+    }
+    if (std::io_byte::read_stdin_byte_or(-1, -2) != 0) {
+        return 2;
+    }
+    if (std::io_byte::read_stdin_byte_or(-1, -2) != 255) {
+        return 3;
+    }
+    if (std::io_byte::read_stdin_byte_or(-1, -2) != -1) {
+        return 4;
+    }
+    if (!std::io_byte::write_stdout_byte(0) ||
+        !std::io_byte::write_stdout_byte(255) ||
+        std::io_byte::write_stdout_byte(-1) ||
+        std::io_byte::write_stdout_byte(256)) {
+        return 5;
+    }
+    if (!std::io_byte::write_stderr_byte(65) ||
+        std::io_byte::write_stderr_byte(-1) ||
+        std::io_byte::write_stderr_byte(256)) {
+        return 6;
+    }
+    return 0;
+}

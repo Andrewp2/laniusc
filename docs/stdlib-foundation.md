@@ -44,6 +44,7 @@ limited to native x86_64 output from this worktree.
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
 | `std::io::{write_line,println,eprintln,flush_stdout,flush_stderr,print_i32}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, invalid handles, synchronous flushes, and signed printing through the real stdlib root. These are separate from the portable core. |
 | `std::io_checked` all 5 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_checked_execution.rs` checks exact stdin, bounded read-to-EOF, stdout, and stderr bytes; empty, exact-fit, and overlong input; invalid storage; EOF after a read prefix; host errors and zero progress; retries after short transfers; and a multi-chunk binary stdin-to-stdout copy. Caller storage avoids allocation. |
+| `std::io_byte` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_byte_execution.rs` checks scalar reads of ASCII, NUL, and 255, a distinct EOF fallback, checked stdout and stderr bytes, invalid values without writes, and injected read and write errors. `sample_programs/hex_to_decimal.lani` combines it with portable byte and hex helpers. The implementation uses one synchronous host call per byte. |
 | `std::io_decimal` all 12 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned output extrema across 8-, 16-, and 32-bit integers, exact byte counts, invalid handles, and injected sign and digit write failures for the underlying 32-bit writers. `tests/stdlib_io_decimal_input_execution.rs` checks bounded stdin parsing across all six widths, EOF, whitespace and signs, malformed and overlong input, overflow, and injected read failures in the underlying 32-bit readers. |
 | `std::io_hex` all 9 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_hex_execution.rs` checks exact lowercase and uppercase writes across `u8`, `u16`, and `u32`, counts, invalid handles, injected write failures, bounded stdin parsing with optional prefix and whitespace, malformed and overflowing input, and injected read failures. |
 | `std::file_hex` all 9 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_hex_execution.rs` checks lowercase and uppercase writes, bounded hexadecimal file reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed and overflowing input, missing and overlong files, and injected read/write/close errors. Raw filesystem path lengths remain broken; see dependency 29. |
@@ -284,6 +285,15 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   zero progress, a null nonempty buffer, or a length above `i32::MAX` returns
   false. A failed read can leave a prefix in caller storage. Zero length
   succeeds without touching the pointer or stdin.
+- `std::io_byte::read_stdin_byte_or` returns an integer in `0..=255` for a
+  received byte, or the caller's separate EOF and host-error fallbacks. The
+  caller should choose fallbacks outside the byte range. It uses a zeroed
+  one-word stack cell and the low byte of the x86_64 host read. A result
+  other than zero or one byte is treated as an error. `write_stdout_byte` and
+  `write_stderr_byte` reject values outside `0..=255` without writing, and
+  return false on host failure or a short write. No heap storage is used.
+  The hex-to-decimal sample ignores ASCII whitespace, rejects invalid or
+  overflowing input, and prints a decimal `u32` followed by a newline.
 - `std::io_checked::{write_all_stdout,write_all_stderr}` retry short writes
   until all requested bytes are sent. They return false for invalid pointer
   or length arguments, negative host results, zero progress, or impossible
@@ -477,6 +487,8 @@ Run `cargo test --test stdlib_io_hex_execution` for hexadecimal stream input
 and output; its host-failure cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_checked_execution` for complete caller-buffer
 stream operations; fault injection cases run when Linux `strace` is available.
+Run `cargo test --test stdlib_io_byte_execution` for scalar binary I/O and the
+hex-to-decimal sample; fault injection cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_file_execution` for the file wrappers; its
 read/write/close fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_file_hex_execution` for hexadecimal file input
