@@ -208,9 +208,11 @@ fn std_io_write_u32_reports_partial_write_failure_on_x86() {
 fn std_io_decimal_public_functions_have_runtime_cases() {
     let source = include_str!("../stdlib/std/io_decimal.lani");
     let fixture = format!(
-        "{}{}",
+        "{}{}{}{}",
         include_str!("fixtures/stdlib_host/std_io_u32.lani"),
-        include_str!("fixtures/stdlib_host/std_io_i32.lani")
+        include_str!("fixtures/stdlib_host/std_io_i32.lani"),
+        include_str!("fixtures/stdlib_host/std_io_decimal_read_u32.lani"),
+        include_str!("fixtures/stdlib_host/std_io_decimal_read_i32.lani")
     );
     let mut count = 0;
     for line in source.lines() {
@@ -227,5 +229,5 @@ fn std_io_decimal_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 2);
+    assert_eq!(count, 4);
 }

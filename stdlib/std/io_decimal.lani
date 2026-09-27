@@ -1,9 +1,10 @@
-// Decimal output built on the bound single-byte I/O operation.
+// Decimal stream input and output built on bound single-byte I/O operations.
 // write_u32 emits every digit without allocation. It returns the byte count
 // (1..10), the first negative host error, or -1 if a byte write does not
 // report exactly one byte. An error can leave a decimal prefix on the handle.
 module std::io_decimal;
 import core::decimal;
+import core::mem;
 import std::io;
 pub fn write_u32(handle: i32, value: u32) -> i32 {
     let length: u32 = core::decimal::len_u32(value);
@@ -42,4 +43,143 @@ pub fn write_i32(handle: i32, value: i32) -> i32 {
         position += 1;
     }
     return length;
+}
+
+// Read all of stdin as a bounded unsigned ASCII decimal. Leading and trailing
+// SP, HT, LF, and CR and one leading plus are accepted. Invalid syntax,
+// overflow, early host failure, or input longer than max_bytes returns
+// fallback. A failed call may already have consumed an input prefix.
+pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32 {
+    if (max_bytes == 0) {
+        return fallback;
+    }
+    let cell: [i32; 1] = [0];
+    let data: ptr = core::mem::i32_array_data_ptr(cell);
+    let consumed: u32 = 0;
+    let value: u32 = 0;
+    let started: bool = false;
+    let digits: bool = false;
+    let trailing: bool = false;
+    while (true) {
+        cell[0] = 0;
+        let received: i32 = std::io::read_stdin(data, 1);
+        if (received == 0) {
+            break;
+        }
+        if (received != 1 || consumed >= max_bytes) {
+            return fallback;
+        }
+        consumed += 1;
+        let byte: i32 = cell[0];
+        if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
+            if (started && !digits) {
+                return fallback;
+            }
+            if (digits) {
+                trailing = true;
+            }
+            continue;
+        }
+        if (byte == 43) {
+            if (started || trailing) {
+                return fallback;
+            }
+            started = true;
+            continue;
+        }
+        if (byte >= 48 && byte <= 57) {
+            if (trailing) {
+                return fallback;
+            }
+            started = true;
+            digits = true;
+            let ascii: u8 = byte;
+            let limit: u32 = 4294967295;
+            if (!core::decimal::can_append_ascii_digit_u32(value, ascii, limit)) {
+                return fallback;
+            }
+            value = core::decimal::append_ascii_digit_or_u32(value, ascii, limit, value);
+            continue;
+        }
+        return fallback;
+    }
+    if (!digits) {
+        return fallback;
+    }
+    return value;
+}
+
+// Signed variant accepts one leading plus or minus and checks each digit
+// against the appropriate i32 magnitude. MIN is returned without negation.
+pub fn read_i32_stdin_or(max_bytes: u32, fallback: i32) -> i32 {
+    if (max_bytes == 0) {
+        return fallback;
+    }
+    let cell: [i32; 1] = [0];
+    let data: ptr = core::mem::i32_array_data_ptr(cell);
+    let consumed: u32 = 0;
+    let magnitude: u32 = 0;
+    let started: bool = false;
+    let digits: bool = false;
+    let trailing: bool = false;
+    let negative: bool = false;
+    while (true) {
+        cell[0] = 0;
+        let received: i32 = std::io::read_stdin(data, 1);
+        if (received == 0) {
+            break;
+        }
+        if (received != 1 || consumed >= max_bytes) {
+            return fallback;
+        }
+        consumed += 1;
+        let byte: i32 = cell[0];
+        if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
+            if (started && !digits) {
+                return fallback;
+            }
+            if (digits) {
+                trailing = true;
+            }
+            continue;
+        }
+        if (byte == 43 || byte == 45) {
+            if (started || trailing) {
+                return fallback;
+            }
+            started = true;
+            negative = byte == 45;
+            continue;
+        }
+        if (byte >= 48 && byte <= 57) {
+            if (trailing) {
+                return fallback;
+            }
+            started = true;
+            digits = true;
+            let ascii: u8 = byte;
+            let limit: u32 = 2147483647;
+            if (negative) {
+                limit = 2147483648;
+            }
+            if (!core::decimal::can_append_ascii_digit_u32(magnitude, ascii, limit)) {
+                return fallback;
+            }
+            magnitude = core::decimal::append_ascii_digit_or_u32(magnitude, ascii, limit, magnitude);
+            continue;
+        }
+        return fallback;
+    }
+    if (!digits) {
+        return fallback;
+    }
+    if (negative) {
+        if (magnitude == 2147483648) {
+            return -2147483648;
+        }
+        let positive: i32 = magnitude;
+        return -positive;
+    }
+    let positive: i32 = magnitude;
+    return positive;
 }

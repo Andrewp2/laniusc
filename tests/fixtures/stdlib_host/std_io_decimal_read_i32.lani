@@ -1,0 +1,13 @@
+module app::main;
+import std::io_decimal;
+
+fn main() -> i32 {
+    if (std::io_decimal::read_i32_stdin_or(0, -999) != -999) {
+        return 1;
+    }
+    let value: i32 = std::io_decimal::read_i32_stdin_or(32, -777);
+    if (std::io_decimal::write_i32(1, value) <= 0) {
+        return 2;
+    }
+    return 0;
+}

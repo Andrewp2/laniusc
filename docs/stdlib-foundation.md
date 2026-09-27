@@ -39,7 +39,7 @@ limited to native x86_64 output from this worktree.
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, and invalid handles. These are separate from the portable core. |
 | `std::io_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_checked_execution.rs` checks exact stdin, stdout, and stderr bytes; zero lengths and invalid storage; EOF after a read prefix; host errors and zero progress; and retries after injected short reads and writes. Caller storage avoids allocation. |
-| `std::io_decimal::{write_u32,write_i32}` | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned extrema, exact byte counts, invalid handles, and injected sign and digit write failures. |
+| `std::io_decimal` all 4 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned output extrema, exact byte counts, invalid handles, and injected sign and digit write failures. `tests/stdlib_io_decimal_input_execution.rs` checks bounded stdin parsing, EOF, whitespace and signs, malformed and overlong input, overflow, and injected read failures. |
 | `std::file` all 11 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, a multi-chunk binary copy, bounded signed and unsigned decimal reads and writes, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked` both public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, and retries after an injected short read. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
@@ -257,6 +257,12 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   the first negative host error, or `-1` if a byte write does not report
   exactly one byte. A failure may leave a sign or decimal prefix. It handles
   `i32::MIN` without signed negation overflow.
+- `std::io_decimal::{read_u32_stdin_or,read_i32_stdin_or}` read through stdin
+  EOF into one stack word, accepting surrounding SP, HT, LF, or CR and one
+  leading sign (`+` for unsigned; `+` or `-` for signed). Zero `max_bytes`
+  returns fallback without reading stdin. Empty, malformed, overlong, or
+  overflowing input and host read errors return fallback; that value can
+  also be a valid parsed number. Failure may consume an input prefix.
 - `std::file::write_text_once` opens or creates a file, truncates it, attempts
   one text write, and attempts to close it even if writing fails. It returns the actual
   byte count on success, including zero for empty text; a negative open,
@@ -350,6 +356,8 @@ checks the slice bounds trap. Each source is also suitable for direct CLI
 compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.
 Run `cargo test --test stdlib_host_execution` for the separate native I/O
 wrappers; its partial-write fault cases run when Linux `strace` is available.
+Run `cargo test --test stdlib_io_decimal_input_execution` for bounded decimal
+stdin reads; fault injection cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_checked_execution` for complete caller-buffer
 stream operations; fault injection cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_file_execution` for the file wrappers; its
