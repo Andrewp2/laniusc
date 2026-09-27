@@ -15,7 +15,7 @@ limited to native x86_64 output from this worktree.
 | `core::number_i32` constants and all 23 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, multiplication and power overflow, signed GCD/LCM, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
 | `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
 | `core::byte` constants and all 44 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
-| `core::bits` all 23 public `u32` and `u8` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across word widths, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. The byte operations also run exhaustive byte values and rotation round trips. |
+| `core::bits` all 32 public `u32`, `u16`, and `u8` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across word widths, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. Byte operations run all 256 inputs; halfword operations run boundary values and 256 evenly spaced inputs, with rotation round trips. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 6 public scalar-codec functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, length boundaries, malformed sequences, surrogate exclusion, and Unicode maximum. Byte parameters and results use `u8`; it does not access string storage. |
@@ -122,6 +122,9 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   leading or trailing zeros for zero. Rotation counts reduce modulo eight.
   `bit_at_or_u8` accepts indices 0 through 7 and returns the caller's
   fallback for larger indices.
+- The `u16` operations use the same widened arithmetic. Zero has 16 leading
+  and trailing zeros, rotations reduce their counts modulo 16, and
+  `bit_at_or_u16` accepts indices 0 through 15 before using its fallback.
 - `core::bool` converts any nonzero i32 to true. Its selector functions return
   the chosen branch value. `core::char` tests ASCII classes; its case-insensitive
   equality and case conversion fold ASCII letters only. `is_ascii_control`

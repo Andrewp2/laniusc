@@ -6,6 +6,12 @@ fn widen_byte(value: u8) -> u32 {
 fn narrow_byte(value: u32) -> u8 {
     return value as u8;
 }
+fn widen_half(value: u16) -> u32 {
+    return value as u32;
+}
+fn narrow_half(value: u32) -> u16 {
+    return value as u16;
+}
 pub fn count_ones_u32(value: u32) -> u32 {
     let remaining: u32 = value;
     let count: u32 = 0;
@@ -159,4 +165,59 @@ pub fn bit_at_or_u8(value: u8, index: u32, fallback: bool) -> bool {
         return fallback;
     }
     return((widen_byte(value) >> index)&1) != 0;
+}
+
+// Halfword operations use 16 as the zero-value leading/trailing convention.
+pub fn count_ones_u16(value: u16) -> u32 {
+    return count_ones_u32(widen_half(value));
+}
+pub fn count_zeros_u16(value: u16) -> u32 {
+    return 16 - count_ones_u16(value);
+}
+pub fn leading_zeros_u16(value: u16) -> u32 {
+    return leading_zeros_u32(widen_half(value)) - 16;
+}
+pub fn trailing_zeros_u16(value: u16) -> u32 {
+    if (value == 0) {
+        return 16;
+    }
+    return trailing_zeros_u32(widen_half(value));
+}
+pub fn has_single_bit_u16(value: u16) -> bool {
+    return has_single_bit_u32(widen_half(value));
+}
+// Rotation counts are reduced modulo 16; the zero case avoids a shift by 16.
+pub fn rotate_left_u16(value: u16, amount: u32) -> u16 {
+    let shift: u32 = amount % 16;
+    if (shift == 0) {
+        return value;
+    }
+    let bits: u32 = widen_half(value);
+    return narrow_half(((bits << shift)|(bits >>(16 - shift)))&65535);
+}
+pub fn rotate_right_u16(value: u16, amount: u32) -> u16 {
+    let shift: u32 = amount % 16;
+    if (shift == 0) {
+        return value;
+    }
+    let bits: u32 = widen_half(value);
+    return narrow_half(((bits >> shift)|(bits <<(16 - shift)))&65535);
+}
+pub fn reverse_bits_u16(value: u16) -> u16 {
+    let remaining: u32 = widen_half(value);
+    let reversed: u32 = 0;
+    let count: u32 = 0;
+    while (count<16) {
+        reversed =(reversed << 1)|(remaining&1);
+        remaining >>= 1;
+        count += 1;
+    }
+    return narrow_half(reversed);
+}
+// Out-of-range indices return the caller's fallback unchanged.
+pub fn bit_at_or_u16(value: u16, index: u32, fallback: bool) -> bool {
+    if (index >= 16) {
+        return fallback;
+    }
+    return((widen_half(value) >> index)&1) != 0;
 }

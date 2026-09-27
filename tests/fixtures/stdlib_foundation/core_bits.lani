@@ -3,6 +3,9 @@ import core::bits;
 fn as_byte(value: u32) -> u8 {
     return value as u8;
 }
+fn as_half(value: u32) -> u16 {
+    return value as u16;
+}
 fn main() -> i32 {
     let high: u32 = 2147483648;
     let max: u32 = 4294967295;
@@ -116,6 +119,64 @@ fn main() -> i32 {
             position += 1;
         }
         value += 1;
+    }
+    if (core::bits::count_ones_u16(0) != 0 || core::bits::count_ones_u16(65535) != 16 || core::bits::count_ones_u16(32769) != 2) {
+        return 28;
+    }
+    if (core::bits::count_zeros_u16(0) != 16 || core::bits::count_zeros_u16(65535) != 0 || core::bits::count_zeros_u16(65280) != 8) {
+        return 29;
+    }
+    if (core::bits::leading_zeros_u16(0) != 16 || core::bits::leading_zeros_u16(1) != 15 || core::bits::leading_zeros_u16(32768) != 0 || core::bits::leading_zeros_u16(255) != 8) {
+        return 30;
+    }
+    if (core::bits::trailing_zeros_u16(0) != 16 || core::bits::trailing_zeros_u16(8) != 3 || core::bits::trailing_zeros_u16(32768) != 15 || core::bits::trailing_zeros_u16(65535) != 0) {
+        return 31;
+    }
+    if (!core::bits::has_single_bit_u16(1) || !core::bits::has_single_bit_u16(32768) || core::bits::has_single_bit_u16(0) || core::bits::has_single_bit_u16(3)) {
+        return 32;
+    }
+    if (core::bits::rotate_left_u16(32769, 1) != 3 || core::bits::rotate_left_u16(32769, 0) != 32769 || core::bits::rotate_left_u16(32769, 16) != 32769 || core::bits::rotate_left_u16(32769, 17) != 3) {
+        return 33;
+    }
+    if (core::bits::rotate_right_u16(32769, 1) != 49152 || core::bits::rotate_right_u16(32769, 0) != 32769 || core::bits::rotate_right_u16(32769, 16) != 32769 || core::bits::rotate_right_u16(32769, 17) != 49152) {
+        return 34;
+    }
+    if (core::bits::reverse_bits_u16(0) != 0 || core::bits::reverse_bits_u16(1) != 32768 || core::bits::reverse_bits_u16(32769) != 32769) {
+        return 35;
+    }
+    if (!core::bits::bit_at_or_u16(32769, 15, false) || !core::bits::bit_at_or_u16(32769, 0, false) || core::bits::bit_at_or_u16(32769, 1, false) || !core::bits::bit_at_or_u16(0, 16, true) || core::bits::bit_at_or_u16(65535, 16, false)) {
+        return 36;
+    }
+    let half_raw: u32 = 0;
+    while (half_raw<65536) {
+        let half: u16 = as_half(half_raw);
+        let remainder: u32 = half_raw;
+        let expected_ones: u32 = 0;
+        while (remainder>0) {
+            expected_ones += remainder % 2;
+            remainder /= 2;
+        }
+        if (core::bits::count_ones_u16(half) != expected_ones || core::bits::count_zeros_u16(half) != 16 - expected_ones || core::bits::reverse_bits_u16(core::bits::reverse_bits_u16(half)) != half) {
+            return 37;
+        }
+        let amount: u32 = 0;
+        while (amount<32) {
+            if (core::bits::rotate_right_u16(core::bits::rotate_left_u16(half, amount), amount) != half || core::bits::rotate_left_u16(core::bits::rotate_right_u16(half, amount), amount) != half) {
+                return 38;
+            }
+            amount += 1;
+        }
+        let position: u32 = 0;
+        let quotient: u32 = half_raw;
+        while (position<16) {
+            let expected_bit: bool = quotient % 2 != 0;
+            if (core::bits::bit_at_or_u16(half, position, false) != expected_bit) {
+                return 39;
+            }
+            quotient /= 2;
+            position += 1;
+        }
+        half_raw += 257;
     }
     return 0;
 }
