@@ -4124,8 +4124,8 @@ import core::option;
 
 fn main() {
     let none: core::option::Option<i32> = core::option::None;
-    let replaced: core::option::Option<i32> = core::option::replace(none, 11);
-    return core::option::unwrap_or(replaced, 0);
+    let chosen: core::option::Option<i32> = core::option::or(none, core::option::Some(11));
+    return core::option::unwrap_or(chosen, 0);
 }
 "#,
     ]);
@@ -4170,7 +4170,7 @@ import core::option;
 
 fn main() {
     let value: core::option::Option<i32> = core::option::None;
-    let wrong: core::option::Option<bool> = core::option::replace(value, 11);
+    let wrong: core::option::Option<bool> = core::option::or(value, core::option::Some(11));
     return 0;
 }
 "#,

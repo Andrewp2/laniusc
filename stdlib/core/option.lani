@@ -80,11 +80,6 @@ pub fn xor<T>(left: Option<T>, right: Option<T>) -> Option<T> {
     }
 }
 
-pub fn replace<T>(value: Option<T>, next: T) -> Option<T> {
-    let replacement: Option<T> = Some(next);
-    return replacement;
-}
-
 pub fn ok_or<T, E>(value: Option<T>, error: E) -> core::result::Result<T, E> {
     return match (value) {
         Some(inner) -> core::result::Ok(inner),
