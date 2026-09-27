@@ -1543,7 +1543,7 @@ fn executable_core_function_surface_has_runtime_cases() {
             assert!(vector_fixture.contains(&call), "{call} lacks a runtime case");
             vector_function_count += 1;
         }
-        let expected_functions = if module == "vec_u8" { 14 } else { 12 };
+        let expected_functions = if module == "vec_u8" { 14 } else { 13 };
         assert_eq!(vector_function_count, expected_functions);
         assert!(vector_fixture.contains(&format!("std::{module}::MAX_CAPACITY")));
     }

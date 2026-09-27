@@ -8,6 +8,9 @@ fn main() -> i32 {
     let maximum: i16 = 32767;
     let fallback: i16 = -177;
     let value: std::vec_i16::VecI16 = std::vec_i16::new();
+    let empty_copy: std::vec_i16::VecI16 = std::vec_i16::try_clone(value);
+    if (std::vec_i16::len(empty_copy) != 0 || std::vec_i16::capacity(empty_copy) != 0) { return 22; }
+    std::vec_i16::destroy(empty_copy);
     if (std::vec_i16::len(value) != 0 ||
         std::vec_i16::capacity(value) != 0 ||
         !std::vec_i16::is_empty(value) ||
@@ -31,6 +34,14 @@ fn main() -> i32 {
     if (std::vec_i16::len(value) != 5 ||
         std::vec_i16::capacity(value) != 8 ||
         std::vec_i16::get_or(value, 4, fallback) != minimum) { return 4; }
+    let copy: std::vec_i16::VecI16 = std::vec_i16::try_clone(value);
+    if (std::vec_i16::len(copy) != 5 || std::vec_i16::capacity(copy) != 5 ||
+        std::vec_i16::get_or(copy, 1, fallback) != minimum ||
+        std::vec_i16::get_or(copy, 2, fallback) != maximum) { return 23; }
+    if (!std::vec_i16::try_set(copy, 1, one) ||
+        std::vec_i16::get_or(copy, 1, fallback) != one ||
+        std::vec_i16::get_or(value, 1, fallback) != minimum) { return 24; }
+    std::vec_i16::destroy(copy);
     if (std::vec_i16::try_set(value, -1, maximum) ||
         std::vec_i16::try_set(value, 5, maximum) ||
         !std::vec_i16::try_set(value, 1, maximum) ||

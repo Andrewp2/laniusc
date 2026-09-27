@@ -8,6 +8,9 @@ fn main() -> i32 {
     let maximum: u32 = 4294967295;
     let fallback: u32 = 777;
     let value: std::vec_u32::VecU32 = std::vec_u32::new();
+    let empty_copy: std::vec_u32::VecU32 = std::vec_u32::try_clone(value);
+    if (std::vec_u32::len(empty_copy) != 0 || std::vec_u32::capacity(empty_copy) != 0) { return 22; }
+    std::vec_u32::destroy(empty_copy);
     if (std::vec_u32::len(value) != 0 ||
         std::vec_u32::capacity(value) != 0 ||
         !std::vec_u32::is_empty(value) ||
@@ -31,6 +34,14 @@ fn main() -> i32 {
     if (std::vec_u32::len(value) != 5 ||
         std::vec_u32::capacity(value) != 8 ||
         std::vec_u32::get_or(value, 4, fallback) != high_bit) { return 4; }
+    let copy: std::vec_u32::VecU32 = std::vec_u32::try_clone(value);
+    if (std::vec_u32::len(copy) != 5 || std::vec_u32::capacity(copy) != 5 ||
+        std::vec_u32::get_or(copy, 1, fallback) != high_bit ||
+        std::vec_u32::get_or(copy, 2, fallback) != maximum) { return 23; }
+    if (!std::vec_u32::try_set(copy, 1, one) ||
+        std::vec_u32::get_or(copy, 1, fallback) != one ||
+        std::vec_u32::get_or(value, 1, fallback) != high_bit) { return 24; }
+    std::vec_u32::destroy(copy);
     if (std::vec_u32::try_set(value, -1, maximum) ||
         std::vec_u32::try_set(value, 5, maximum) ||
         !std::vec_u32::try_set(value, 1, maximum) ||

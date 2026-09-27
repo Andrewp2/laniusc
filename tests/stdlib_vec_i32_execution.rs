@@ -61,7 +61,11 @@ fn vector_growth_failures_leave_storage_unchanged_on_x86() {
                 format!("{name} normal"),
                 &mut std::process::Command::new(executable.path()),
             );
-            assert_eq!(normal.status.code(), Some(normal_exit), "{name}: {normal:?}");
+            assert_eq!(
+                normal.status.code(),
+                Some(normal_exit),
+                "{name}: {normal:?}"
+            );
             if std::process::Command::new("strace")
                 .arg("-V")
                 .output()
@@ -94,43 +98,54 @@ fn vector_growth_failures_leave_storage_unchanged_on_x86() {
 }
 
 #[test]
-fn utf8_clone_allocation_failure_leaves_source_owned_and_unchanged() {
-    let name = "utf8_vec_clone_alloc_failure";
-    let bytes = compile_fixture(name);
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    {
-        let executable = write_executable(&bytes, name);
-        let normal = common::short_process_output_with_timeout(
-            "UTF-8 clone normal allocation",
-            &mut std::process::Command::new(executable.path()),
-        );
-        assert_eq!(normal.status.code(), Some(4), "{normal:?}");
-        if std::process::Command::new("strace")
-            .arg("-V")
-            .output()
-            .is_err()
+fn vector_clone_allocation_failures_leave_sources_owned_and_unchanged() {
+    for name in [
+        "vec_i32_clone_alloc_failure",
+        "vec_u32_clone_alloc_failure",
+        "vec_u8_clone_alloc_failure",
+        "vec_i8_clone_alloc_failure",
+        "vec_u16_clone_alloc_failure",
+        "vec_i16_clone_alloc_failure",
+        "vec_bool_clone_alloc_failure",
+        "utf8_vec_clone_alloc_failure",
+    ] {
+        let bytes = compile_fixture(name);
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
         {
-            return;
+            let executable = write_executable(&bytes, name);
+            let normal = common::short_process_output_with_timeout(
+                format!("{name} normal allocation"),
+                &mut std::process::Command::new(executable.path()),
+            );
+            assert_eq!(normal.status.code(), Some(4), "{name}: {normal:?}");
+            if std::process::Command::new("strace")
+                .arg("-V")
+                .output()
+                .is_err()
+            {
+                continue;
+            }
+            let trace = common::TempArtifact::new("laniusc_vec", "clone_trace", None);
+            let injected = common::short_process_output_with_timeout(
+                format!("{name} injected allocation failure"),
+                std::process::Command::new("strace")
+                    .arg("-qq")
+                    .arg("-o")
+                    .arg(trace.path())
+                    .arg("-e")
+                    .arg("trace=mmap")
+                    .arg("-e")
+                    .arg("inject=mmap:error=ENOMEM:when=2")
+                    .arg(executable.path()),
+            );
+            assert_eq!(injected.status.code(), Some(0), "{name}: {injected:?}");
+            assert!(injected.stdout.is_empty() && injected.stderr.is_empty());
+            let trace_text =
+                std::fs::read_to_string(trace.path()).expect("read clone syscall trace");
+            assert!(trace_text.contains("INJECTED"), "{name}: {trace_text}");
+            assert!(trace_text.contains("ENOMEM"), "{name}: {trace_text}");
         }
-        let trace = common::TempArtifact::new("laniusc_vec", "clone_trace", None);
-        let injected = common::short_process_output_with_timeout(
-            "UTF-8 clone injected allocation failure",
-            std::process::Command::new("strace")
-                .arg("-qq")
-                .arg("-o")
-                .arg(trace.path())
-                .arg("-e")
-                .arg("trace=mmap")
-                .arg("-e")
-                .arg("inject=mmap:error=ENOMEM:when=2")
-                .arg(executable.path()),
-        );
-        assert_eq!(injected.status.code(), Some(0), "{injected:?}");
-        assert!(injected.stdout.is_empty() && injected.stderr.is_empty());
-        let trace_text = std::fs::read_to_string(trace.path()).expect("read clone syscall trace");
-        assert!(trace_text.contains("INJECTED"), "{trace_text}");
-        assert!(trace_text.contains("ENOMEM"), "{trace_text}");
+        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        let _ = bytes;
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = bytes;
 }

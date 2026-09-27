@@ -67,6 +67,31 @@ pub fn try_with_capacity(initial_capacity: i32) -> VecU32 {
     return try_reserve(new(), initial_capacity);
 }
 
+// Create an independent allocation containing the initialized values.
+// The source remains live; destroy it and the successful clone separately.
+// An empty source clones without allocation. Allocation failure returns an
+// empty zero-capacity vector without changing the source. For a
+// nonempty source, len(result) == len(value) indicates success.
+pub fn try_clone(value: VecU32) -> VecU32 {
+    let length: i32 = value.length;
+    if (length == 0) {
+        return new();
+    }
+    let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, length);
+    let copy: VecU32 = try_with_capacity(length);
+    if (copy.reserved < length) {
+        return new();
+    }
+    let index: i32 = 0;
+    while (index < length) {
+        let raw: i32 = source[index];
+        let item: u32 = raw as u32;
+        copy = try_push(copy, item);
+        index += 1;
+    }
+    return copy;
+}
+
 // On failure, returns the original value unchanged. A successful push always
 // increments len by one, so callers can check len without a separate status.
 pub fn try_push(value: VecU32, item: u32) -> VecU32 {
