@@ -40,7 +40,7 @@ limited to native x86_64 output from this worktree.
 | `core::slice_i16` all 36 public signed-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Matching fixtures cover every public function, `-32768`, `32767`, signed ordering and binary search, sums clamped after each addition, all 243 small sorting sequences, invalid logical lengths, and a native trap on physical length overclaim. |
 | `core::slice_u16` all 36 public unsigned-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every public function and check access, mutation, copy and rotation, compaction, insertion, sequence search, unsigned ordering across `32768`, sort and binary search, partitioning, and sums saturating at `65535`. They cover empty and invalid logical lengths, rejected mutation, and all 243 five-element sequences over `{0,1,2}` for sorting. A separate fixture confirms exit 101 when the claimed length exceeds the physical backing and is indexed. |
 | `core::slice_u32` all 36 public unsigned-word-view functions | Executable on x86_64 for fixed-array-backed views | Matching runtime fixtures cover the same operations and failure cases, including unsigned ordering across `2^31` and saturation at `u32::MAX`, plus the exhaustive small-sort fixture. The caller supplies a logical length within the physical backing. A source scan requires a runtime call for every public function. |
-| `core::slice_bool` all 14 public boolean-view functions | Executable on x86_64 for fixed-array-backed views | The runtime fixture calls every function and checks reads, writes, fill, swap, overlapping copy, reversal, prefix copy, true counts, `any` and `all`, first and last matching indices, equality, sorting, invalid lengths, and an overclaimed physical length that traps. Sorting checks every five-element Boolean sequence. The boolean checksum sample uses it with numeric and Option helpers. Generic `[T]` operations are withheld because signed element instantiations misexecute; see dependency 41. |
+| `core::slice_bool` all 26 public boolean-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every function and check reads, writes, fill, swap, overlapping and disjoint-range copies, rotation, compaction, insertion and removal, prefix and suffix matching, true counts, `any` and `all`, first and last matching indices, equality, sorting, invalid lengths, and an overclaimed physical length that traps. Sorting checks every five-element Boolean sequence. The boolean checksum sample uses it with numeric and Option helpers. Generic `[T]` operations are withheld because signed element instantiations misexecute; see dependency 41. |
 | `core::slice_char` all 35 public character-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every function and check access, mutation, overlap-safe and disjoint-range copying, rotation, compaction, insertion, extrema, partitioning, prefix and subsequence matching, equality, Unicode scalar ordering, sorting, bounds, binary search, empty and invalid lengths, and non-ASCII values. They assert the scalar values of two-, three-, and four-byte UTF-8 character literals, including two literals with the same leading byte. Sorting checks all 243 five-element sequences over `{'a', 'z', 'é'}`. An overclaimed physical length traps. The character inventory sample combines it with `core::char`, `core::range`, `core::range_char`, and `core::number_i32`. |
 | `core::slice_f32` all 18 public floating-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every function and check finite and NaN values, IEEE equality and signed zero, left-to-right sums, overlapping copy, invalid bounds, and native trapping on an overclaimed physical length. Finite-only heapsort checks all 243 five-element sequences over `{-1, 0, 1}`; binary bounds and searches cover duplicates, missing values, signed zero, and invalid input. The floating window sample combines it with `core::f32` and `OptionF32`. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
@@ -415,8 +415,8 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   values can lower an earlier saturated total. The physical backing
   must contain at least the claimed length, or native indexing can trap.
   String-backed and arbitrary raw byte views remain outside this claim.
-  `core::slice_bool` provides `get_or`, `set`, `fill`, `swap`,
-  `copy_within`, `reverse`, and `copy_prefix` for the tested scalar element
+  `core::slice_bool` provides access, mutation, copying, rotation, compaction,
+  insertion, search, and sorting for the tested scalar element
   type `bool`. `get_or` returns its caller fallback for a negative
   length or out-of-range index. `set` returns false without writing for those
   invalid bounds. `fill` treats a nonpositive length as empty and returns the
@@ -426,7 +426,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   logical length otherwise. `copy_prefix` copies the shorter of the two
   supplied nonnegative logical lengths and returns that count; a negative
   length returns -1 without writing. Its backing views must be distinct or
-  start at the same element; other overlap is unsupported. Each operation can
+  start at the same element; other overlap is unsupported.
+  `copy_nonoverlapping_range` requires disjoint backing and treats its
+  destination length as writable capacity. Rotations accept amounts from zero
+  through the logical length. Compaction returns a new length and leaves the
+  tail unspecified; insertion and removal require the caller to update its
+  logical length after success. Negative compaction lengths return -1 without
+  writing. Empty prefixes and suffixes match valid views. Each operation can
   trap when a caller overstates the physical backing length and indexing
   reaches past it. `count_true` returns -1 for a negative length and zero for
   an empty view. `any` returns false for empty or invalid lengths; `all`

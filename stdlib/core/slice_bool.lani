@@ -11,6 +11,10 @@ pub fn get_or(values: [bool], len: i32, index: i32, fallback: bool) -> bool {
     return values[index];
 }
 
+pub fn first_or(values: [bool], len: i32, fallback: bool) -> bool {
+    return get_or(values, len, 0, fallback);
+}
+
 // Invalid logical bounds leave the view unchanged.
 pub fn set(values: [bool], len: i32, index: i32, value: bool) -> bool {
     if (len <= 0 || index < 0 || index >= len) {
@@ -83,6 +87,33 @@ pub fn reverse(values: [bool], len: i32) -> i32 {
     return len;
 }
 
+fn reverse_segment(values: [bool], start: i32, end: i32) {
+    let left: i32 = start;
+    let right: i32 = end - 1;
+    while (left < right) {
+        let previous: bool = values[left];
+        values[left] = values[right];
+        values[right] = previous;
+        left += 1;
+        right -= 1;
+    }
+}
+
+// Amount must be in [0, len]. Invalid bounds leave the view unchanged.
+pub fn rotate_left(values: [bool], len: i32, amount: i32) -> bool {
+    if (len < 0 || amount < 0 || amount > len) { return false; }
+    if (amount == 0 || amount == len) { return true; }
+    reverse_segment(values, 0, amount);
+    reverse_segment(values, amount, len);
+    reverse_segment(values, 0, len);
+    return true;
+}
+
+pub fn rotate_right(values: [bool], len: i32, amount: i32) -> bool {
+    if (len < 0 || amount < 0 || amount > len) { return false; }
+    return rotate_left(values, len, len - amount);
+}
+
 // Copies the shorter logical prefix between distinct backing views, or two
 // views with the same start. Negative lengths return -1 without writing.
 // Other overlap is unsupported.
@@ -105,6 +136,90 @@ pub fn copy_prefix(
     return count;
 }
 
+// Copies a checked range between disjoint source and destination backings.
+// destination_len is writable capacity. Invalid bounds write nothing.
+pub fn copy_nonoverlapping_range(
+    destination: [bool], destination_len: i32, destination_start: i32,
+    source: [bool], source_len: i32, source_start: i32, count: i32
+) -> bool {
+    if (destination_len < 0 || source_len < 0 || count < 0 ||
+        destination_start < 0 || source_start < 0 ||
+        count > destination_len || count > source_len ||
+        destination_start > destination_len - count ||
+        source_start > source_len - count) { return false; }
+    let index: i32 = 0;
+    while (index < count) {
+        destination[destination_start + index] = source[source_start + index];
+        index += 1;
+    }
+    return true;
+}
+
+// Compacts consecutive equal values. The tail is unspecified. A negative
+// length returns -1 without writing.
+pub fn dedup_adjacent(values: [bool], len: i32) -> i32 {
+    if (len < 0) { return -1; }
+    if (len == 0) { return 0; }
+    let write: i32 = 1;
+    let read: i32 = 1;
+    while (read < len) {
+        let current: bool = values[read];
+        if (current != values[write - 1]) {
+            values[write] = current;
+            write += 1;
+        }
+        read += 1;
+    }
+    return write;
+}
+
+// Retains order and returns the new length. The tail is unspecified. A
+// negative length returns -1 without writing.
+pub fn retain_not_equal(values: [bool], len: i32, target: bool) -> i32 {
+    if (len < 0) { return -1; }
+    let read: i32 = 0;
+    let write: i32 = 0;
+    while (read < len) {
+        let current: bool = values[read];
+        if (current != target) {
+            values[write] = current;
+            write += 1;
+        }
+        read += 1;
+    }
+    return write;
+}
+
+// On success the caller reduces its logical length by one.
+pub fn remove_at(values: [bool], len: i32, index: i32) -> bool {
+    if (len <= 0 || index < 0 || index >= len) { return false; }
+    let read: i32 = index + 1;
+    while (read < len) {
+        values[read - 1] = values[read];
+        read += 1;
+    }
+    return true;
+}
+
+// Capacity must fit the physical backing. Success grows the logical length
+// by one; invalid bounds leave all elements unchanged.
+pub fn insert(values: [bool], len: i32, capacity: i32, index: i32, value: bool) -> bool {
+    if (len < 0 || capacity <= 0 || len >= capacity || index < 0 || index > len) {
+        return false;
+    }
+    let cursor: i32 = len;
+    while (cursor > index) {
+        values[cursor] = values[cursor - 1];
+        cursor -= 1;
+    }
+    values[index] = value;
+    return true;
+}
+
+pub fn push(values: [bool], len: i32, capacity: i32, value: bool) -> bool {
+    return insert(values, len, capacity, len, value);
+}
+
 // Negative lengths return -1. Empty views contain no true values.
 pub fn count_true(values: [bool], len: i32) -> i32 {
     if (len < 0) {
@@ -119,6 +234,32 @@ pub fn count_true(values: [bool], len: i32) -> i32 {
         index += 1;
     }
     return count;
+}
+
+pub fn contains(values: [bool], len: i32, target: bool) -> bool {
+    return first_index_or(values, len, target, -1) >= 0;
+}
+
+// An empty prefix or suffix matches every valid logical view.
+pub fn starts_with(values: [bool], len: i32, prefix: [bool], prefix_len: i32) -> bool {
+    if (len < 0 || prefix_len < 0 || prefix_len > len) { return false; }
+    let index: i32 = 0;
+    while (index < prefix_len) {
+        if (values[index] != prefix[index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+pub fn ends_with(values: [bool], len: i32, suffix: [bool], suffix_len: i32) -> bool {
+    if (len < 0 || suffix_len < 0 || suffix_len > len) { return false; }
+    let start: i32 = len - suffix_len;
+    let index: i32 = 0;
+    while (index < suffix_len) {
+        if (values[start + index] != suffix[index]) { return false; }
+        index += 1;
+    }
+    return true;
 }
 
 // Negative and empty lengths return false.
