@@ -161,6 +161,87 @@ pub fn try_append_scalars(
     return grown;
 }
 
+// Insert a scalar before scalar_index, including at the end. Validate the
+// complete old text and reserve the entire encoding before changing bytes.
+// Invalid text, index, scalar, capacity, or allocation returns the original
+// value unchanged. Success increases byte_len by the scalar's encoded width.
+pub fn try_insert_scalar(
+    value: std::vec_u8::VecU8, scalar_index: i32, scalar: u32
+) -> std::vec_u8::VecU8 {
+    let width_u32: u32 = core::utf8::encoded_len_or(scalar, 0);
+    if (width_u32 == 0) {
+        return value;
+    }
+    let length: i32 = std::vec_u8::len(value);
+    let old_cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(value), length);
+    let offset: i32 = core::utf8::byte_offset_of_scalar_or(old_cells, length, scalar_index, -1);
+    if (offset < 0) {
+        return value;
+    }
+    let width: i32 = width_u32 as i32;
+    if (length > std::vec_u8::MAX_CAPACITY - width) {
+        return value;
+    }
+    let needed: i32 = length + width;
+    let grown: std::vec_u8::VecU8 = std::vec_u8::try_reserve(value, needed);
+    if (std::vec_u8::capacity(grown) < needed) {
+        return value;
+    }
+    let index: i32 = 0;
+    while (index < width) {
+        grown = std::vec_u8::try_push(grown, 0);
+        index += 1;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(grown), needed);
+    let cursor: i32 = length;
+    while (cursor > offset) {
+        cursor -= 1;
+        cells[cursor + width] = cells[cursor];
+    }
+    let byte_index: u32 = 0;
+    while (byte_index < width_u32) {
+        let encoded: u8 = core::utf8::encoded_byte_or(scalar, byte_index, 0);
+        let target: i32 = byte_index as i32;
+        let code: i32 = encoded as i32;
+        cells[offset + target] = code;
+        byte_index += 1;
+    }
+    return grown;
+}
+
+// Remove one scalar at scalar_index and close the byte gap. Invalid text or
+// an out-of-range index returns the original vector unchanged. Removal keeps
+// the allocation for reuse, and success decreases byte_len by one to four.
+pub fn try_remove_scalar(
+    value: std::vec_u8::VecU8, scalar_index: i32
+) -> std::vec_u8::VecU8 {
+    let length: i32 = std::vec_u8::len(value);
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(value), length);
+    let start: i32 = core::utf8::byte_offset_of_scalar_or(cells, length, scalar_index, -1);
+    if (start < 0 || start >= length) {
+        return value;
+    }
+    let end: i32 = core::utf8::byte_offset_of_scalar_or(cells, length, scalar_index + 1, -1);
+    if (end <= start || end > length) {
+        return value;
+    }
+    let read: i32 = end;
+    let write: i32 = start;
+    while (read < length) {
+        cells[write] = cells[read];
+        read += 1;
+        write += 1;
+    }
+    let shortened: std::vec_u8::VecU8 = value;
+    let width: i32 = end - start;
+    let index: i32 = 0;
+    while (index < width) {
+        shortened = std::vec_u8::try_pop(shortened);
+        index += 1;
+    }
+    return shortened;
+}
+
 // Remove the final Unicode scalar without freeing capacity. Empty or invalid
 // UTF-8 leaves the value unchanged.
 pub fn try_pop_scalar(value: std::vec_u8::VecU8) -> std::vec_u8::VecU8 {
