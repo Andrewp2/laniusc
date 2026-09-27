@@ -1,0 +1,9 @@
+module app::main;
+import std::io_utf8;
+
+fn main() -> i32 {
+    if (std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114) != 1114114) {
+        return 1;
+    }
+    return 0;
+}

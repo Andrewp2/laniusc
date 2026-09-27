@@ -1,0 +1,36 @@
+module app::main;
+import std::io_utf8;
+
+fn main() -> i32 {
+    if (std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114) != 65) {
+        return 1;
+    }
+    if (std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114) != 162) {
+        return 2;
+    }
+    if (std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114) != 8364) {
+        return 3;
+    }
+    if (std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114) != 128578) {
+        return 4;
+    }
+    if (std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114) != 1114111) {
+        return 5;
+    }
+    if (std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114) != 1114112) {
+        return 8;
+    }
+    if (!std::io_utf8::write_stdout_scalar(65) ||
+        !std::io_utf8::write_stdout_scalar(128578) ||
+        !std::io_utf8::write_stdout_scalar(1114111) ||
+        std::io_utf8::write_stdout_scalar(55296) ||
+        std::io_utf8::write_stdout_scalar(1114112)) {
+        return 6;
+    }
+    if (!std::io_utf8::write_stderr_scalar(162) ||
+        !std::io_utf8::write_stderr_scalar(8364) ||
+        std::io_utf8::write_stderr_scalar(55296)) {
+        return 7;
+    }
+    return 0;
+}

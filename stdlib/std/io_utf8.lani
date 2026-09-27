@@ -1,0 +1,98 @@
+// Allocation-free UTF-8 scalar I/O for x86_64 Linux stdin and stdout/stderr.
+// A host call is made for each byte; no implicit buffering occurs.
+module std::io_utf8;
+import core::utf8;
+import std::io_byte;
+
+// Returns one Unicode scalar. EOF before a leading byte, malformed or
+// truncated encoding, and host failure return the caller's distinct fallbacks.
+// Choose distinct fallbacks outside 0..=0x10FFFF to distinguish outcomes
+// from valid scalars. A malformed sequence consumes the bytes read for that
+// attempt, including a non-continuation byte; no unread buffer is kept.
+pub fn read_stdin_scalar_or(eof_fallback: u32, invalid_fallback: u32, error_fallback: u32) -> u32 {
+    let first_code: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+    if (first_code == -1) {
+        return eof_fallback;
+    }
+    if (first_code == -2) {
+        return error_fallback;
+    }
+    let first: u8 = first_code as u8;
+    let length: u32 = core::utf8::sequence_len_or(first, 0);
+    if (length == 0) {
+        return invalid_fallback;
+    }
+    let second: u8 = 0;
+    let third: u8 = 0;
+    let fourth: u8 = 0;
+    if (length>1) {
+        let code: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+        if (code == -2) {
+            return error_fallback;
+        }
+        if (code == -1) {
+            return invalid_fallback;
+        }
+        second = code as u8;
+        if (!core::utf8::is_continuation_byte(second)) {
+            return invalid_fallback;
+        }
+    }
+    if (length>2) {
+        let code: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+        if (code == -2) {
+            return error_fallback;
+        }
+        if (code == -1) {
+            return invalid_fallback;
+        }
+        third = code as u8;
+        if (!core::utf8::is_continuation_byte(third)) {
+            return invalid_fallback;
+        }
+    }
+    if (length>3) {
+        let code: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+        if (code == -2) {
+            return error_fallback;
+        }
+        if (code == -1) {
+            return invalid_fallback;
+        }
+        fourth = code as u8;
+    }
+    return core::utf8::decode_or(first, second, third, fourth, length, invalid_fallback);
+}
+
+fn write_scalar(value: u32, to_stderr: bool) -> bool {
+    let length: u32 = core::utf8::encoded_len_or(value, 0);
+    if (length == 0) {
+        return false;
+    }
+    let index: u32 = 0;
+    while (index<length) {
+        let byte: u8 = core::utf8::encoded_byte_or(value, index, 0);
+        let code: i32 = byte;
+        if (to_stderr) {
+            if (!std::io_byte::write_stderr_byte(code)) {
+                return false;
+            }
+        } else {
+            if (!std::io_byte::write_stdout_byte(code)) {
+                return false;
+            }
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Invalid scalars return false before writing. Host failure returns false and
+// can leave a prefix of an otherwise valid encoding on the selected stream.
+pub fn write_stdout_scalar(value: u32) -> bool {
+    return write_scalar(value, false);
+}
+
+pub fn write_stderr_scalar(value: u32) -> bool {
+    return write_scalar(value, true);
+}
