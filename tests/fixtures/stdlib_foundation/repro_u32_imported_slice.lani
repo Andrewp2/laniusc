@@ -1,0 +1,12 @@
+module app::main;
+import core::word_view;
+
+fn main() -> i32 {
+    let first_value: u32 = 42;
+    let second_value: u32 = 7;
+    let values: [u32; 2] = [first_value, second_value];
+    if (core::word_view::first(values) != first_value) {
+        return 1;
+    }
+    return 0;
+}

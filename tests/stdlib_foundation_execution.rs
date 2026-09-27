@@ -103,6 +103,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "slice_partition_search",
+            "tests/fixtures/stdlib_foundation/slice_partition_search.lani",
+            0,
+            b"",
+        ),
+        (
             "core_range_methods",
             "tests/fixtures/stdlib_foundation/core_range_methods.lani",
             0,
@@ -305,6 +311,9 @@ fn executable_core_function_surface_has_runtime_cases() {
                         .contains(&call)
                 || module == "slice"
                     && include_str!("fixtures/stdlib_foundation/slice_copy_nonoverlapping.lani")
+                        .contains(&call)
+                || module == "slice"
+                    && include_str!("fixtures/stdlib_foundation/slice_partition_search.lani")
                         .contains(&call);
             assert!(covered, "{module}::{name} lacks a runtime case");
             count += 1;

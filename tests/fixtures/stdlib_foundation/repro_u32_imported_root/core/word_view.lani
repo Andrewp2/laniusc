@@ -1,0 +1,5 @@
+module core::word_view;
+
+pub fn first(values: [u32]) -> u32 {
+    return values[0];
+}

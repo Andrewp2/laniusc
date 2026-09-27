@@ -425,6 +425,35 @@ pub fn binary_search_first_or_i32(values:[i32], len: i32, needle: i32, fallback:
     }
     return fallback;
 }
+// Requires nondecreasing input and returns the last matching index.
+pub fn binary_search_last_or_i32(values:[i32], len: i32, needle: i32, fallback: i32) -> i32 {
+    if (len <= 0) {
+        return fallback;
+    }
+    let after: i32 = upper_bound_i32(values, len, needle);
+    if (after>0 && values[after - 1] == needle) {
+        return after - 1;
+    }
+    return fallback;
+}
+// Partition the first len elements so every element below pivot precedes
+// every element at or above it. Returns the boundary between those groups.
+// Relative order is not preserved. A nonpositive len returns zero without
+// writing; a claimed len beyond the actual backing view can trap on indexing.
+pub fn partition_lt_i32(values:[i32], len: i32, pivot: i32) -> i32 {
+    let boundary: i32 = 0;
+    let index: i32 = 0;
+    while (index<len) {
+        if (values[index]<pivot) {
+            let previous: i32 = values[boundary];
+            values[boundary] = values[index];
+            values[index] = previous;
+            boundary += 1;
+        }
+        index += 1;
+    }
+    return boundary;
+}
 pub fn sum_i32(values:[i32], len: i32) -> i32 {
     let index: i32 = 0;
     let total: i32 = 0;

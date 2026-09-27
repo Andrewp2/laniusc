@@ -25,7 +25,7 @@ limited to native x86_64 output from this worktree.
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
 | Legacy `stdlib/i32.lani` power-of-two helpers | Executable on x86_64 | A focused source-level native test checks the highest signed power and the zero overflow sentinel. The legacy file as a whole is not included in this claim. |
 | `core::range` free functions for all five range forms and methods for `Range<i32>`, `RangeInclusive<i32>`, `RangeFrom<i32>`, and `RangeTo<i32>` | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership. There is no `RangeFull` method claim. |
-| `core::slice` all 29 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, rotations, compaction, search and insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. A separate fixture confirms native index trapping on an overclaimed length. |
+| `core::slice` all 31 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, rotations, compaction, partition boundaries and preserved contents, first and last binary matches, insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. A separate fixture confirms native index trapping on an overclaimed length. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
@@ -179,8 +179,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `lower_bound_i32` and `upper_bound_i32` require that order and return the
   insertion index before and after equal values respectively, including `len`
   when the insertion point is past the last element. A nonpositive length
-  returns zero. `binary_search_first_or_i32` uses lower bound and returns the
-  first match or its caller's fallback.
+  returns zero. `binary_search_first_or_i32` and `binary_search_last_or_i32`
+  use the lower and upper bounds respectively, returning the first or last
+  match or the caller's fallback. `partition_lt_i32` moves all values below a
+  pivot ahead of values at or above it and returns their boundary. It does not
+  preserve relative order; a nonpositive length returns zero without mutation.
   `set_i32` and `swap_i32` reject invalid indices without mutation.
   `fill_i32` returns the number of elements written, and `reverse_in_place_i32`
   returns the number of swaps. `copy_within_i32` handles overlap in either
@@ -549,14 +552,18 @@ the failure injection cases run when Linux `strace` is available.
     transitive `std::process` source. It calls the same bound exit operation
     through `test::probe`; these four small source files reproduce the issue.
     This blocks a source-level `test::assert` using process exit.
-20. **Imported u8 slice arguments.** With
+20. **Imported non-i32 slice arguments.** With
     `--stdlib-root tests/fixtures/stdlib_foundation/repro_u8_imported_root`,
     `repro_u8_local_slice.lani` compiles and exits zero when a fixed `[u8; 1]`
     array is passed to a local `[u8]` helper. The corresponding imported
     `core::byte_view::first` call in `repro_u8_imported_slice.lani` passes
     `laniusc check`, but x86 emission stops with `LNC0006` at that argument.
-    This prevents an imported, array-backed byte-slice utility module from
-    having an executable claim. The raw-view behavior in dependency 16 is a
+    The same result occurs for `u32`: `repro_u32_local_slice.lani` executes,
+    while `repro_u32_imported_slice.lani` with
+    `--stdlib-root tests/fixtures/stdlib_foundation/repro_u32_imported_root`
+    fails at the imported `[u32]` call. This prevents imported, array-backed
+    byte and unsigned-word slice utility modules from having executable claims.
+    The raw-view behavior in dependency 16 is a
     separate obstacle.
 21. **Raw signed integer short writes.** Compile
     `tests/fixtures/stdlib_host/repro_io_write_i32_short.lani` with the stdlib
