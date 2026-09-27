@@ -3,6 +3,47 @@ mod common;
 use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 
 #[test]
+fn selected_std_io_and_args_functions_have_runtime_cases() {
+    let io_cases = format!(
+        "{}{}",
+        include_str!("fixtures/stdlib_host/std_io_lines.lani"),
+        include_str!("fixtures/stdlib_host/std_io_flush_print.lani")
+    );
+    for name in [
+        "write_line",
+        "println",
+        "eprintln",
+        "flush_stdout",
+        "flush_stderr",
+        "print_i32",
+    ] {
+        assert!(
+            io_cases.contains(&format!("std::io::{name}(")),
+            "std::io::{name} lacks a runtime case"
+        );
+    }
+
+    let args_source = include_str!("../stdlib/std/args_checked.lani");
+    let args_cases = include_str!("fixtures/stdlib_host/std_args_checked.lani");
+    let mut count = 0;
+    for line in args_source.lines() {
+        let Some(tail) = line.strip_prefix("pub fn ") else {
+            continue;
+        };
+        let name = tail
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .next()
+            .expect("public function has a name");
+        assert!(
+            args_cases.contains(&format!("std::args_checked::{name}(")),
+            "std::args_checked::{name} lacks a runtime case"
+        );
+        count += 1;
+    }
+    assert_eq!(count, 1);
+}
+
+#[test]
 fn std_io_lines_execute_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_host/std_io_lines.lani");

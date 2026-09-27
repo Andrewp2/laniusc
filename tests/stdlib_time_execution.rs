@@ -2,6 +2,28 @@ mod common;
 
 use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 
+#[test]
+fn checked_time_functions_have_runtime_cases() {
+    let source = include_str!("../stdlib/std/time_checked.lani");
+    let cases = include_str!("fixtures/stdlib_host/std_time_checked.lani");
+    let mut count = 0;
+    for line in source.lines() {
+        let Some(tail) = line.strip_prefix("pub fn ") else {
+            continue;
+        };
+        let name = tail
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .next()
+            .expect("public function has a name");
+        assert!(
+            cases.contains(&format!("std::time_checked::{name}(")),
+            "std::time_checked::{name} lacks a runtime case"
+        );
+        count += 1;
+    }
+    assert_eq!(count, 3);
+}
+
 fn compile_fixture(name: &str) -> Vec<u8> {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join(format!("tests/fixtures/stdlib_host/{name}.lani"));
