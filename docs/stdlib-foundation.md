@@ -943,13 +943,15 @@ also fixes the imported struct-return relocation path described below.
     imported module defines both `RangeFrom<i32>` and `RangeFrom<u32>` impls.
     The unsigned free functions now execute in `core::range`; specialized
     unsigned methods remain withheld until method dispatch is correct.
-28. **Unsigned remainder with a maximum-value literal.** Compile
-    `tests/fixtures/stdlib_foundation/repro_u32_literal_mod.lani` with
-    `--stdlib-root stdlib --emit x86_64`, then run the ELF. It exits 1 because
-    `4294967295 % divisor` is not 5 for `divisor: u32 = 10`; the same maximum
-    stored in a typed `u32` variable produces 5. `std::random_checked` uses a
-    typed maximum for its rejection threshold. The literal expression still
-    needs a compiler fix so general user code has correct unsigned remainder.
+28. **Resolved: unsigned arithmetic with a left integer literal.** The GPU
+    expression-type pass now inherits a checked u32 type from the right operand
+    when the left operand is an unsuffixed integer literal. The original
+    `repro_u32_literal_mod.lani` exits 0 instead of 1. The executable
+    `tests/stdlib_literal_arithmetic_execution.rs` checks division and
+    remainder at `u32::MAX`, a nested right expression, a high-bit bitwise
+    result followed by a right shift, wrapped subtraction, and signed
+    division/remainder cases. This does not claim general implicit numeric
+    coercion for other type combinations.
 29. **Resolved: raw filesystem path lengths.** The x86_64 Linux runtime now
     copies exactly each supplied path length, rejects overlong, null, and
     embedded-NUL paths, and then calls the corresponding Linux syscall.

@@ -35,8 +35,9 @@ static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
-static const uint HIR_MATCH_EXPR = 34u;
+static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_PATH_EXPR = 33u;
+static const uint HIR_MATCH_EXPR = 34u;
 static const uint HIR_EXPR_NAME = 2u;
 static const uint HIR_EXPR_INT = 3u;
 static const uint HIR_EXPR_TRUE = 4u;
@@ -66,6 +67,7 @@ static const uint HIR_EXPR_STRING = 28u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
+static const uint TY_UINT = 4u;
 static const uint TY_FLOAT = 5u;
 static const uint TY_STRING = 7u;
 static const uint TY_GENERIC_BASE = 8192u;
@@ -200,6 +202,27 @@ uint direct_result_type(uint node)
     return TY_UNKNOWN;
 }
 
+uint inherited_operand_type(uint node)
+{
+    uint current = node;
+    for (uint visited = 0u; visited < active_hir_count(); visited += 1u)
+    {
+        if (!valid_hir(current)) break;
+        uint ty = direct_result_type(current);
+        if (ty != TY_UNKNOWN) return ty;
+        uint kind = compact_hir_core[current].kind;
+        uint next = INVALID;
+        if (kind == HIR_CALL_EXPR)
+            next = call_generic_return_arg_node[current];
+        else if (kind == HIR_EXPR || kind == HIR_BINARY_EXPR ||
+                 kind == HIR_UNARY_EXPR)
+            next = compact_hir_payload[current].b;
+        if (!valid_hir(next) || next == current) break;
+        current = next;
+    }
+    return TY_UNKNOWN;
+}
+
 uint inherited_result_link(uint node)
 {
     if (!valid_hir(node)) return INVALID;
@@ -212,6 +235,21 @@ uint inherited_result_link(uint node)
     if (kind != HIR_EXPR && kind != HIR_BINARY_EXPR && kind != HIR_UNARY_EXPR)
         return INVALID;
     HirPayload payload = compact_hir_payload[node];
+    if ((kind == HIR_EXPR || kind == HIR_BINARY_EXPR) &&
+        (payload.a == HIR_EXPR_ADD || payload.a == HIR_EXPR_SUB ||
+         payload.a == HIR_EXPR_MUL || payload.a == HIR_EXPR_MOD ||
+         payload.a == HIR_EXPR_DIV || payload.a == HIR_EXPR_BIT_OR ||
+         payload.a == HIR_EXPR_BIT_XOR || payload.a == HIR_EXPR_BIT_AND) &&
+        valid_hir(payload.b) && valid_hir(payload.c) &&
+        compact_hir_core[payload.b].kind == HIR_LITERAL_EXPR &&
+        compact_hir_payload[payload.b].a == HIR_EXPR_INT &&
+        inherited_operand_type(payload.c) == TY_UINT)
+    {
+        // An unsuffixed integer literal takes a checked u32 operand's type.
+        // Inheriting i32 from the literal makes a u32 remainder use signed
+        // division even when its right operand is u32.
+        return payload.c;
+    }
     return inherited_scalar_form(payload.a) &&
                    valid_hir(payload.b) && payload.b != node
                ? payload.b
