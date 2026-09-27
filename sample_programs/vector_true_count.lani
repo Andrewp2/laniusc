@@ -1,0 +1,29 @@
+module app::main;
+import core::bool;
+import core::option_bool;
+import std::vec_bool;
+
+fn main() -> i32 {
+    let values: std::vec_bool::VecBool = std::vec_bool::new();
+    values = std::vec_bool::try_push(values, true);
+    values = std::vec_bool::try_push(values, false);
+    values = std::vec_bool::try_push(values, true);
+    if (std::vec_bool::len(values) != 3) {
+        std::vec_bool::destroy(values);
+        return 1;
+    }
+
+    let count: i32 = 0;
+    let index: i32 = 0;
+    while (index < std::vec_bool::len(values)) {
+        let value: bool = std::vec_bool::get_or(values, index, false);
+        count += core::bool::to_i32(value);
+        index += 1;
+    }
+    std::vec_bool::destroy(values);
+    let exactly_two: bool = count == 2;
+    let result: core::option_bool::OptionBool = core::option_bool::some(exactly_two);
+    if (!core::option_bool::unwrap_or(result, false)) { return 2; }
+    print(count);
+    return 0;
+}

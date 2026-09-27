@@ -1,0 +1,68 @@
+module app::main;
+import std::vec_bool;
+
+fn main() -> i32 {
+    let zero: bool = false;
+    let one: bool = true;
+    let stored_true: bool = true;
+    let replacement: bool = false;
+    let fallback: bool = true;
+    let value: std::vec_bool::VecBool = std::vec_bool::new();
+    if (std::vec_bool::len(value) != 0 ||
+        std::vec_bool::capacity(value) != 0 ||
+        !std::vec_bool::is_empty(value) ||
+        std::vec_bool::get_or(value, 0, fallback) != fallback ||
+        std::vec_bool::try_set(value, 0, replacement)) { return 1; }
+    value = std::vec_bool::try_pop(value);
+    if (std::vec_bool::len(value) != 0) { return 2; }
+
+    value = std::vec_bool::try_push(value, zero);
+    value = std::vec_bool::try_push(value, stored_true);
+    value = std::vec_bool::try_push(value, replacement);
+    value = std::vec_bool::try_push(value, one);
+    if (std::vec_bool::len(value) != 4 ||
+        std::vec_bool::capacity(value) != 4 ||
+        std::vec_bool::get_or(value, 0, fallback) != zero ||
+        std::vec_bool::get_or(value, 1, fallback) != stored_true ||
+        std::vec_bool::get_or(value, 2, fallback) != replacement ||
+        std::vec_bool::get_or(value, -1, fallback) != fallback ||
+        std::vec_bool::get_or(value, 4, fallback) != fallback) { return 3; }
+    value = std::vec_bool::try_push(value, stored_true);
+    if (std::vec_bool::len(value) != 5 ||
+        std::vec_bool::capacity(value) != 8 ||
+        std::vec_bool::get_or(value, 4, fallback) != stored_true) { return 4; }
+    if (std::vec_bool::try_set(value, -1, replacement) ||
+        std::vec_bool::try_set(value, 5, replacement) ||
+        !std::vec_bool::try_set(value, 1, replacement) ||
+        std::vec_bool::get_or(value, 1, fallback) != replacement) { return 5; }
+
+    value = std::vec_bool::try_reserve(value, -1);
+    value = std::vec_bool::try_reserve(value, 536870912);
+    value = std::vec_bool::try_reserve(value, 2);
+    if (std::vec_bool::capacity(value) != 8) { return 6; }
+    value = std::vec_bool::try_reserve(value, 11);
+    if (std::vec_bool::capacity(value) != 11 ||
+        std::vec_bool::get_or(value, 1, fallback) != replacement ||
+        std::vec_bool::get_or(value, 4, fallback) != stored_true) { return 7; }
+    value = std::vec_bool::try_pop(value);
+    if (std::vec_bool::len(value) != 4 ||
+        std::vec_bool::get_or(value, 4, fallback) != fallback) { return 8; }
+    value = std::vec_bool::clear(value);
+    if (std::vec_bool::len(value) != 0 ||
+        std::vec_bool::capacity(value) != 11 ||
+        !std::vec_bool::is_empty(value)) { return 9; }
+    value = std::vec_bool::try_push(value, replacement);
+    if (std::vec_bool::get_or(value, 0, fallback) != replacement) { return 10; }
+    std::vec_bool::destroy(value);
+
+    let preallocated: std::vec_bool::VecBool = std::vec_bool::try_with_capacity(2);
+    if (std::vec_bool::capacity(preallocated) != 2) { return 11; }
+    preallocated = std::vec_bool::try_push(preallocated, stored_true);
+    if (std::vec_bool::get_or(preallocated, 0, fallback) != stored_true) { return 12; }
+    std::vec_bool::destroy(preallocated);
+    let invalid: std::vec_bool::VecBool = std::vec_bool::try_with_capacity(-1);
+    if (std::vec_bool::capacity(invalid) != 0) { return 13; }
+    std::vec_bool::destroy(invalid);
+    if (std::vec_bool::MAX_CAPACITY != 536870911) { return 14; }
+    return 0;
+}

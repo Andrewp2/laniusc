@@ -570,6 +570,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "vec_bool",
+            "tests/fixtures/stdlib_foundation/vec_bool.lani",
+            0,
+            b"",
+        ),
+        (
             "vector_unsigned_checksum",
             "sample_programs/vector_unsigned_checksum.lani",
             0,
@@ -598,6 +604,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             "sample_programs/vector_signed_halfword_sum.lani",
             0,
             b"1\n",
+        ),
+        (
+            "vector_true_count",
+            "sample_programs/vector_true_count.lani",
+            0,
+            b"2\n",
         ),
         (
             "vector_square_sum",
@@ -1134,6 +1146,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             "vec_i16",
             include_str!("../stdlib/std/vec_i16.lani"),
             include_str!("fixtures/stdlib_foundation/vec_i16.lani"),
+        ),
+        (
+            "vec_bool",
+            include_str!("../stdlib/std/vec_bool.lani"),
+            include_str!("fixtures/stdlib_foundation/vec_bool.lani"),
         ),
     ] {
         let mut vector_function_count = 0;

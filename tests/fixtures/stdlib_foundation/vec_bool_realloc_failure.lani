@@ -1,0 +1,14 @@
+module app::main;
+import std::vec_bool;
+
+fn main() -> i32 {
+    let value: std::vec_bool::VecBool = std::vec_bool::try_with_capacity(1);
+    if (std::vec_bool::capacity(value) != 1) { return 2; }
+    value = std::vec_bool::try_push(value, false);
+    if (std::vec_bool::len(value) != 1) { return 3; }
+    value = std::vec_bool::try_push(value, true);
+    if (std::vec_bool::len(value) != 1 || std::vec_bool::capacity(value) != 1) { return 4; }
+    if (std::vec_bool::get_or(value, 0, true) != false) { return 5; }
+    std::vec_bool::destroy(value);
+    return 0;
+}

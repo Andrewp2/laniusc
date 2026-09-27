@@ -82,6 +82,7 @@ limited to native x86_64 output from this worktree.
 | `std::vec_i8` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The signed byte vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, `-128`, and 127. The allocation-failure suite injects failed initial allocation and reallocation; the signed byte sum sample combines it with `core::number_i8` and `OptionI8`. Each signed byte occupies one 32-bit cell, preserving its sign. Ownership is linear by convention. |
 | `std::vec_u16` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, 32768, and 65535. The allocation-failure suite injects failed initial allocation and reallocation; the halfword checksum sample combines it with `core::number_u16` and `OptionU16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
 | `std::vec_i16` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The signed halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, `-32768`, and 32767. The allocation-failure suite injects failed initial allocation and reallocation; the signed halfword sum sample combines it with `core::number_i16` and `OptionI16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
+| `std::vec_bool` all 12 public functions and its capacity constant | Executable on x86_64 Linux | The boolean fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, destruction, and stored `false` distinct from a `true` fallback. The allocation-failure suite injects failed initial allocation and reallocation; the true-count sample combines it with `core::bool` and `OptionBool`. Each boolean occupies one 32-bit cell containing 0 or 1. Ownership is linear by convention. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
 | `test::assert` all 8 public helpers | Executable on x86_64 Linux | `tests/stdlib_assert_execution.rs` runs all passing conditions and separately checks that every false condition terminates with SIGILL. The helpers use no allocation or host calls. See dependency 35 for a separate compiler issue with explicit void returns. |
 | `std::vec` | Contract-only after stub removal | The former `Vec<T>::push` returned without storing its argument and was removed. `Vec<T>::new`, `len`, and `is_empty` remain as an empty-value type-checking contract; no storage or mutation is provided. |
@@ -306,10 +307,12 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   active variant, and unwrap helpers preserve a stored NaN. Both modules are
   allocation-free.
 - `std::vec_i32`, `std::vec_u32`, `std::vec_u8`, `std::vec_i8`,
-  `std::vec_u16`, and `std::vec_i16` own allocated 32-bit cells. The non-i32
-  modules access those cells through the currently available i32 raw-slice
-  intrinsic and cast on read and write. `vec_u32` preserves every bit pattern;
-  the narrow modules preserve their full 8-bit or 16-bit range. Narrow values
+  `std::vec_u16`, `std::vec_i16`, and `std::vec_bool` own allocated 32-bit
+  cells. The non-i32 modules access those cells through the currently available
+  i32 raw-slice intrinsic and encode or decode values on read and write.
+  `vec_u32` preserves every bit pattern;
+  the narrow numeric modules preserve their full 8-bit or 16-bit range. The
+  boolean module stores `false` as zero and `true` as one. All these values
   use four bytes of storage per element. `try_push` doubles capacity when full,
   starting at four elements. On allocation failure it returns the prior vector
   unchanged. Compare the returned length with the prior length to
@@ -741,6 +744,10 @@ result. It prints `1` and releases its storage.
 signed 16-bit vectors with wrapping arithmetic and the corresponding concrete
 Option modules. They print `4` and `1`, respectively, and release storage.
 
+`sample_programs/vector_true_count.lani` stores true and false values in
+`std::vec_bool`, counts them through `core::bool`, and checks the result through
+`OptionBool`. It prints `2` and releases storage.
+
 `tests/fixtures/stdlib_host/std_utf8_line_count.lani` is a second runnable
 program. It reads one LF line into a 16-byte caller-backed view, validates and
 counts its Unicode scalars, and prints the count in decimal. The focused x86
@@ -870,7 +877,7 @@ also fixes the imported struct-return relocation path described below.
    silently dropped values in `push`, so that stub was removed. The empty
    generic `Vec<T>` remains a type-checking contract. `std::vec_i32`,
    `std::vec_u32`, `std::vec_u8`, `std::vec_i8`, `std::vec_u16`, and
-   `std::vec_i16` have tested storage, growth, mutation, failure, and
+   `std::vec_i16`, and `std::vec_bool` have tested storage, growth, mutation, failure, and
    destruction on x86 Linux.
    A generic collection still needs executable generic value layout and a
    language-level move/borrow rule to enforce ownership rather than relying
@@ -1216,6 +1223,14 @@ also fixes the imported struct-return relocation path described below.
     accepted signed instantiation silently returned wrong data. Concrete
     signed slices and `core::slice_bool` remain executable. This needs a
     compiler or native-lowering fix before generic slices can be claimed.
+42. **A comparison passed directly to an imported Boolean constructor fails in native compilation.**
+    `repro_option_bool_comparison_arg.lani` passes `laniusc check --stdlib-root
+    stdlib`, but `--emit x86_64` reports `LNC0006` on the i32 operand of
+    `core::option_bool::some(count == 2)`, saying that the operand should be
+    bool. Assigning `count == 2` to a local bool and passing that local works;
+    `sample_programs/vector_true_count.lani` uses this form. This is a late
+    GPU compiler type-context dependency, not a failure of `OptionBool` or the
+    vector's runtime behavior.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those
