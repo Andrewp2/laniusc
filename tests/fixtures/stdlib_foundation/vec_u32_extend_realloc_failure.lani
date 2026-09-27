@@ -1,0 +1,27 @@
+module app::main;
+import std::vec_u32;
+
+fn main() -> i32 {
+    let first: u32 = 2147483648;
+    let second: u32 = 1;
+    let third: u32 = 4294967295;
+    let fallback: u32 = 0;
+    let additions: [u32; 2] = [second, third];
+    let value: std::vec_u32::VecU32 = std::vec_u32::try_with_capacity(1);
+    if (std::vec_u32::capacity(value) != 1) { return 2; }
+    value = std::vec_u32::try_push(value, first);
+    if (std::vec_u32::len(value) != 1) { return 3; }
+    value = std::vec_u32::try_extend_from_slice(value, additions, 2);
+    if (std::vec_u32::len(value) == 3) {
+        if (std::vec_u32::get_or(value, 0, fallback) != first ||
+            std::vec_u32::get_or(value, 1, fallback) != second ||
+            std::vec_u32::get_or(value, 2, fallback) != third) { return 6; }
+        std::vec_u32::destroy(value);
+        return 4;
+    }
+    if (std::vec_u32::len(value) != 1 ||
+        std::vec_u32::capacity(value) != 1 ||
+        std::vec_u32::get_or(value, 0, fallback) != first) { return 5; }
+    std::vec_u32::destroy(value);
+    return 0;
+}

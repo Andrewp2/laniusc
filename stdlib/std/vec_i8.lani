@@ -125,6 +125,45 @@ pub fn try_push(value: VecI8, item: i8) -> VecI8 {
     return VecI8 { storage: grown.storage, length: grown.length + 1, reserved: grown.reserved };
 }
 
+// Append count caller-backed values. Reserve all needed storage before writing
+// any item, so negative counts, capacity overflow, and allocation failure leave
+// the vector unchanged. A successful call increases len by count. The caller
+// must supply at least count readable elements; overclaiming can trap. Input
+// storage must not alias this vector because growth may move the allocation.
+pub fn try_extend_from_slice(value: VecI8, items: [i8], count: i32) -> VecI8 {
+    if (count < 0 || count > MAX_CAPACITY - value.length) {
+        return value;
+    }
+    if (count == 0) {
+        return value;
+    }
+    let needed: i32 = value.length + count;
+    let grown: VecI8 = value;
+    if (grown.reserved < needed) {
+        let target: i32 = 4;
+        if (grown.reserved > 0) {
+            if (grown.reserved > MAX_CAPACITY / 2) {
+                target = MAX_CAPACITY;
+            } else {
+                target = grown.reserved * 2;
+            }
+        }
+        if (target < needed) {
+            target = needed;
+        }
+        grown = try_reserve(grown, target);
+        if (grown.reserved < needed) {
+            return value;
+        }
+    }
+    let index: i32 = 0;
+    while (index < count) {
+        grown = try_push(grown, items[index]);
+        index += 1;
+    }
+    return grown;
+}
+
 // Insert at [0, len]. Invalid indices or allocation failure leave the value
 // unchanged. A successful insert increases len by one. This operation may
 // move the allocation, so only the returned vector remains owned.

@@ -17,6 +17,22 @@ fn main() -> i32 {
     empty_edited = std::vec_u8::try_remove(empty_edited, 0);
     if (std::vec_u8::len(empty_edited) != 0 || std::vec_u8::capacity(empty_edited) != 4) { return 36; }
     std::vec_u8::destroy(empty_edited);
+    let additions: [u8; 3] = [zero, high_bit, maximum];
+    let extended: std::vec_u8::VecU8 = std::vec_u8::new();
+    extended = std::vec_u8::try_extend_from_slice(extended, additions, 3);
+    if (std::vec_u8::len(extended) != 3 || std::vec_u8::capacity(extended) != 4 ||
+        std::vec_u8::get_or(extended, 0, fallback) != zero ||
+        std::vec_u8::get_or(extended, 1, fallback) != high_bit ||
+        std::vec_u8::get_or(extended, 2, fallback) != maximum) { return 37; }
+    extended = std::vec_u8::try_extend_from_slice(extended, additions, 0);
+    extended = std::vec_u8::try_extend_from_slice(extended, additions, -1);
+    if (std::vec_u8::len(extended) != 3 || std::vec_u8::capacity(extended) != 4) { return 38; }
+    extended = std::vec_u8::try_extend_from_slice(extended, additions, 3);
+    if (std::vec_u8::len(extended) != 6 || std::vec_u8::capacity(extended) != 8 ||
+        std::vec_u8::get_or(extended, 3, fallback) != zero ||
+        std::vec_u8::get_or(extended, 4, fallback) != high_bit ||
+        std::vec_u8::get_or(extended, 5, fallback) != maximum) { return 39; }
+    std::vec_u8::destroy(extended);
     if (std::vec_u8::len(value) != 0 ||
         std::vec_u8::capacity(value) != 0 ||
         !std::vec_u8::is_empty(value) ||

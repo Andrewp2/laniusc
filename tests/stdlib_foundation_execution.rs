@@ -720,6 +720,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "vec_i32_extend_bounds",
+            "tests/fixtures/stdlib_foundation/vec_i32_extend_bounds.lani",
+            101,
+            b"",
+        ),
+        (
             "vec_u32",
             "tests/fixtures/stdlib_foundation/vec_u32.lani",
             0,
@@ -1549,7 +1555,7 @@ fn executable_core_function_surface_has_runtime_cases() {
             assert!(vector_fixture.contains(&call), "{call} lacks a runtime case");
             vector_function_count += 1;
         }
-        let expected_functions = if module == "vec_u8" { 16 } else { 15 };
+        let expected_functions = if module == "vec_u8" { 17 } else { 16 };
         assert_eq!(vector_function_count, expected_functions);
         assert!(vector_fixture.contains(&format!("std::{module}::MAX_CAPACITY")));
     }

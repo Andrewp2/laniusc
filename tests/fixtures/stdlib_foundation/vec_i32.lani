@@ -10,6 +10,22 @@ fn main() -> i32 {
     empty_edited = std::vec_i32::try_remove(empty_edited, 0);
     if (std::vec_i32::len(empty_edited) != 0 || std::vec_i32::capacity(empty_edited) != 4) { return 36; }
     std::vec_i32::destroy(empty_edited);
+    let additions: [i32; 3] = [11, -2147483648, 2147483647];
+    let extended: std::vec_i32::VecI32 = std::vec_i32::new();
+    extended = std::vec_i32::try_extend_from_slice(extended, additions, 3);
+    if (std::vec_i32::len(extended) != 3 || std::vec_i32::capacity(extended) != 4 ||
+        std::vec_i32::get_or(extended, 0, -1) != 11 ||
+        std::vec_i32::get_or(extended, 1, -1) != -2147483648 ||
+        std::vec_i32::get_or(extended, 2, -1) != 2147483647) { return 37; }
+    extended = std::vec_i32::try_extend_from_slice(extended, additions, 0);
+    extended = std::vec_i32::try_extend_from_slice(extended, additions, -1);
+    if (std::vec_i32::len(extended) != 3 || std::vec_i32::capacity(extended) != 4) { return 38; }
+    extended = std::vec_i32::try_extend_from_slice(extended, additions, 3);
+    if (std::vec_i32::len(extended) != 6 || std::vec_i32::capacity(extended) != 8 ||
+        std::vec_i32::get_or(extended, 3, -1) != 11 ||
+        std::vec_i32::get_or(extended, 4, -1) != -2147483648 ||
+        std::vec_i32::get_or(extended, 5, -1) != 2147483647) { return 39; }
+    std::vec_i32::destroy(extended);
     let empty_copy: std::vec_i32::VecI32 = std::vec_i32::try_clone(value);
     if (std::vec_i32::len(empty_copy) != 0 || std::vec_i32::capacity(empty_copy) != 0) { return 22; }
     std::vec_i32::destroy(empty_copy);

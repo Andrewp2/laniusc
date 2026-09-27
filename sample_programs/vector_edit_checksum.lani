@@ -7,9 +7,8 @@ import std::vec_i32;
 
 fn main() -> i32 {
     let readings: std::vec_i32::VecI32 = std::vec_i32::new();
-    readings = std::vec_i32::try_push(readings, 3);
-    readings = std::vec_i32::try_push(readings, 7);
-    readings = std::vec_i32::try_push(readings, 11);
+    let initial: [i32; 3] = [3, 7, 11];
+    readings = std::vec_i32::try_extend_from_slice(readings, initial, 3);
     if (std::vec_i32::len(readings) != 3) {
         std::vec_i32::destroy(readings);
         return 1;

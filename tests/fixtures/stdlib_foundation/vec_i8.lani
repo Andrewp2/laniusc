@@ -15,6 +15,22 @@ fn main() -> i32 {
     empty_edited = std::vec_i8::try_remove(empty_edited, 0);
     if (std::vec_i8::len(empty_edited) != 0 || std::vec_i8::capacity(empty_edited) != 4) { return 36; }
     std::vec_i8::destroy(empty_edited);
+    let additions: [i8; 3] = [zero, minimum, maximum];
+    let extended: std::vec_i8::VecI8 = std::vec_i8::new();
+    extended = std::vec_i8::try_extend_from_slice(extended, additions, 3);
+    if (std::vec_i8::len(extended) != 3 || std::vec_i8::capacity(extended) != 4 ||
+        std::vec_i8::get_or(extended, 0, fallback) != zero ||
+        std::vec_i8::get_or(extended, 1, fallback) != minimum ||
+        std::vec_i8::get_or(extended, 2, fallback) != maximum) { return 37; }
+    extended = std::vec_i8::try_extend_from_slice(extended, additions, 0);
+    extended = std::vec_i8::try_extend_from_slice(extended, additions, -1);
+    if (std::vec_i8::len(extended) != 3 || std::vec_i8::capacity(extended) != 4) { return 38; }
+    extended = std::vec_i8::try_extend_from_slice(extended, additions, 3);
+    if (std::vec_i8::len(extended) != 6 || std::vec_i8::capacity(extended) != 8 ||
+        std::vec_i8::get_or(extended, 3, fallback) != zero ||
+        std::vec_i8::get_or(extended, 4, fallback) != minimum ||
+        std::vec_i8::get_or(extended, 5, fallback) != maximum) { return 39; }
+    std::vec_i8::destroy(extended);
     let empty_copy: std::vec_i8::VecI8 = std::vec_i8::try_clone(value);
     if (std::vec_i8::len(empty_copy) != 0 || std::vec_i8::capacity(empty_copy) != 0) { return 22; }
     std::vec_i8::destroy(empty_copy);
