@@ -374,6 +374,46 @@ fn std_file_read_i32_decimal_or_executes_on_x86() {
 }
 
 #[test]
+fn std_file_read_u32_decimal_or_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_file_u32_decimal.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_file_u32_decimal", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile unsigned decimal file reader");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_file_u32", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create unsigned decimal directory");
+        for (name, contents) in [
+            ("zero.txt", "0"),
+            ("plus.txt", " \t+17\r\n"),
+            ("max.txt", "4294967295"),
+            ("overflow.txt", "4294967296"),
+            ("minus.txt", "-1"),
+            ("bad.txt", "12x"),
+            ("embedded.txt", "1 2"),
+            ("sign.txt", "+"),
+            ("spaced_sign.txt", "+ 1"),
+            ("empty.txt", ""),
+            ("space.txt", " \t\r\n"),
+            ("long.txt", "123"),
+            ("leading.txt", "0000000000000000000000000000000000000000"),
+        ] {
+            std::fs::write(run_dir.path().join(name), contents)
+                .expect("write unsigned decimal fixture");
+        }
+        let output = run_in_directory(&bytes, run_dir.path(), "std_file_u32_decimal");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        std::fs::remove_dir_all(run_dir.path()).expect("remove unsigned decimal directory");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn std_file_write_i32_decimal_executes_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_host/std_file_write_decimal.lani");
@@ -403,6 +443,40 @@ fn std_file_write_i32_decimal_executes_on_x86() {
         }
         assert!(!run_dir.path().join("missing/child.txt").exists());
         std::fs::remove_dir_all(run_dir.path()).expect("remove write decimal directory");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn std_file_write_u32_decimal_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_file_write_u32_decimal.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_file_write_u32_decimal", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile unsigned decimal file writer");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_file_write_u32", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create unsigned write directory");
+        let output = run_in_directory(&bytes, run_dir.path(), "std_file_write_u32_decimal");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        for (name, expected) in [
+            ("zero.txt", "0"),
+            ("forty_two.txt", "42"),
+            ("max.txt", "4294967295"),
+        ] {
+            assert_eq!(
+                std::fs::read(run_dir.path().join(name)).expect("read unsigned output"),
+                expected.as_bytes(),
+                "{name}"
+            );
+        }
+        assert!(!run_dir.path().join("missing/child.txt").exists());
+        std::fs::remove_dir_all(run_dir.path()).expect("remove unsigned write directory");
     }
     #[cfg(not(all(unix, target_arch = "x86_64")))]
     let _ = bytes;
@@ -473,6 +547,72 @@ fn std_file_write_i32_decimal_reports_host_failures_on_x86() {
 }
 
 #[test]
+fn std_file_write_u32_decimal_reports_host_failures_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_file_write_u32_decimal_failure.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes =
+        common::run_gpu_codegen_with_timeout("std_file_write_u32_decimal_failure", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+        })
+        .expect("compile unsigned decimal write failure fixture");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let run_dir =
+            common::TempArtifact::new("laniusc_std_file_write_u32_fault", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create unsigned write fault directory");
+        let executable = run_dir.path().join("std_file_write_u32_decimal_failure");
+        std::fs::write(&executable, &bytes).expect("write unsigned fault ELF");
+        let mut permissions = std::fs::metadata(&executable)
+            .expect("stat unsigned fault ELF")
+            .permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(&executable, permissions).expect("chmod unsigned fault ELF");
+
+        for (injection, expected_file) in [
+            ("write:retval=0:when=2", b"4".as_slice()),
+            ("write:error=EIO:when=2", b"4".as_slice()),
+            ("close:error=EIO:when=1", b"42".as_slice()),
+        ] {
+            let output = common::short_process_output_with_timeout(
+                format!("unsigned file write {injection}"),
+                std::process::Command::new("strace")
+                    .arg("-qq")
+                    .arg("-e")
+                    .arg("trace=write,close")
+                    .arg("-e")
+                    .arg(format!("inject={injection}"))
+                    .arg(&executable)
+                    .current_dir(run_dir.path()),
+            );
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("INJECTED"),
+                "fault was not injected: {output:?}"
+            );
+            assert_eq!(
+                std::fs::read(run_dir.path().join("fault.txt")).expect("read unsigned prefix"),
+                expected_file,
+                "{injection}"
+            );
+        }
+        std::fs::remove_dir_all(run_dir.path()).expect("remove unsigned write fault directory");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn std_file_read_i32_decimal_or_handles_host_failures_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_host/std_file_decimal_failure.lani");
@@ -529,17 +669,76 @@ fn std_file_read_i32_decimal_or_handles_host_failures_on_x86() {
 }
 
 #[test]
+fn std_file_read_u32_decimal_or_handles_host_failures_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_file_u32_decimal_failure.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_file_u32_decimal_failure", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile unsigned decimal read failure fixture");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let run_dir = common::TempArtifact::new("laniusc_std_file_u32_fault", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create unsigned read fault directory");
+        std::fs::write(run_dir.path().join("valid.txt"), "42")
+            .expect("write valid unsigned decimal");
+        let executable = run_dir.path().join("std_file_u32_decimal_failure");
+        std::fs::write(&executable, &bytes).expect("write unsigned read fault ELF");
+        let mut permissions = std::fs::metadata(&executable)
+            .expect("stat unsigned read fault ELF")
+            .permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(&executable, permissions).expect("chmod unsigned read fault ELF");
+
+        for injection in ["read:error=EIO:when=1", "close:error=EIO:when=1"] {
+            let output = common::short_process_output_with_timeout(
+                format!("unsigned file read {injection}"),
+                std::process::Command::new("strace")
+                    .arg("-qq")
+                    .arg("-e")
+                    .arg("trace=read,close")
+                    .arg("-e")
+                    .arg(format!("inject={injection}"))
+                    .arg(&executable)
+                    .current_dir(run_dir.path()),
+            );
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("INJECTED"),
+                "fault was not injected: {output:?}"
+            );
+        }
+        std::fs::remove_dir_all(run_dir.path()).expect("remove unsigned read fault directory");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn std_file_public_functions_have_runtime_cases() {
     let source = include_str!("../stdlib/std/file.lani");
     let fixtures = format!(
-        "{}{}{}{}{}{}{}",
+        "{}{}{}{}{}{}{}{}{}",
         include_str!("fixtures/stdlib_host/std_file_write.lani"),
         include_str!("fixtures/stdlib_host/std_file_write_all_path.lani"),
         include_str!("fixtures/stdlib_host/std_file_copy.lani"),
         include_str!("fixtures/stdlib_host/std_file_read.lani"),
         include_str!("fixtures/stdlib_host/std_file_read_to_end.lani"),
         include_str!("fixtures/stdlib_host/std_file_decimal.lani"),
-        include_str!("fixtures/stdlib_host/std_file_write_decimal.lani")
+        include_str!("fixtures/stdlib_host/std_file_write_decimal.lani"),
+        include_str!("fixtures/stdlib_host/std_file_u32_decimal.lani"),
+        include_str!("fixtures/stdlib_host/std_file_write_u32_decimal.lani")
     );
     let mut count = 0;
     for line in source.lines() {
@@ -556,5 +755,5 @@ fn std_file_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 9);
+    assert_eq!(count, 11);
 }

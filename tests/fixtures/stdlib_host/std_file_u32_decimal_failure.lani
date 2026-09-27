@@ -1,0 +1,9 @@
+module app::main;
+import std::file;
+fn main() -> i32 {
+    let fallback: u32 = 99;
+    if (std::file::read_u32_decimal_or("valid.txt", 16, fallback) != fallback) {
+        return 1;
+    }
+    return 0;
+}

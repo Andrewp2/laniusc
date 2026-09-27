@@ -300,6 +300,83 @@ pub fn read_i32_decimal_or(path: str, max_bytes: u32, fallback: i32) -> i32 {
     return positive;
 }
 
+// Reads a complete ASCII unsigned decimal file of at most max_bytes bytes.
+// Leading and trailing SP, HT, LF, and CR and one leading plus are accepted;
+// a minus, missing digit, embedded space, overflow, or overlong file is not.
+// Open, read, and close failures also return fallback, which may itself be a
+// valid parsed value. Uses one stack word for byte input and no allocation.
+pub fn read_u32_decimal_or(path: str, max_bytes: u32, fallback: u32) -> u32 {
+    if (max_bytes == 0) {
+        return fallback;
+    }
+    let handle: i32 = std::fs::open_read_path(path);
+    if (handle < 0) {
+        return fallback;
+    }
+    let cell: [i32; 1] = [0];
+    let data: ptr = core::mem::i32_array_data_ptr(cell);
+    let consumed: u32 = 0;
+    let value: u32 = 0;
+    let started: bool = false;
+    let digits: bool = false;
+    let trailing: bool = false;
+    let valid: bool = true;
+    while (true) {
+        cell[0] = 0;
+        let received: i32 = std::fs::read(handle, data, 1);
+        if (received == 0) {
+            break;
+        }
+        if (received != 1 || consumed >= max_bytes) {
+            valid = false;
+            break;
+        }
+        consumed += 1;
+        let byte: i32 = cell[0];
+        if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
+            if (started && !digits) {
+                valid = false;
+                break;
+            }
+            if (digits) {
+                trailing = true;
+            }
+            continue;
+        }
+        if (byte == 43) {
+            if (started || trailing) {
+                valid = false;
+                break;
+            }
+            started = true;
+            continue;
+        }
+        if (byte >= 48 && byte <= 57) {
+            if (trailing) {
+                valid = false;
+                break;
+            }
+            started = true;
+            digits = true;
+            let digit_i32: i32 = byte - 48;
+            let digit: u32 = digit_i32;
+            if (value > 429496729 || value == 429496729 && digit>5) {
+                valid = false;
+                break;
+            }
+            value = value * 10 + digit;
+            continue;
+        }
+        valid = false;
+        break;
+    }
+    let closed: i32 = std::fs::close_file(handle);
+    if (!valid || !digits || closed<0) {
+        return fallback;
+    }
+    return value;
+}
+
 // Creates or truncates path and writes the full signed decimal representation
 // through single-byte writes. False reports open, write, or close failure; the
 // file may already contain a decimal prefix. Closing is attempted after a
@@ -310,6 +387,19 @@ pub fn write_i32_decimal(path: str, value: i32) -> bool {
         return false;
     }
     let written: i32 = std::io_decimal::write_i32(handle, value);
+    let closed: i32 = std::fs::close_file(handle);
+    return written > 0 && closed >= 0;
+}
+
+// Creates or truncates path and writes the full unsigned decimal value with
+// checked single-byte writes. Open, write, or close failure returns false;
+// a failed write can leave a decimal prefix. No allocation occurs.
+pub fn write_u32_decimal(path: str, value: u32) -> bool {
+    let handle: i32 = std::fs::open_write_path(path);
+    if (handle<0) {
+        return false;
+    }
+    let written: i32 = std::io_decimal::write_u32(handle, value);
     let closed: i32 = std::fs::close_file(handle);
     return written > 0 && closed >= 0;
 }

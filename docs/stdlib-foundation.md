@@ -38,7 +38,7 @@ limited to native x86_64 output from this worktree.
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, and invalid handles. These are separate from the portable core. |
 | `std::io_decimal::{write_u32,write_i32}` | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned extrema, exact byte counts, invalid handles, and injected sign and digit write failures. |
-| `std::file` all 9 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, a multi-chunk binary copy, bounded signed decimal reads and writes, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
+| `std::file` all 11 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, a multi-chunk binary copy, bounded signed and unsigned decimal reads and writes, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked` both public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, and retries after an injected short read. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
@@ -263,11 +263,19 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   A successful parsed value can equal that fallback. The reader uses one-byte
   reads into a stack word and checks magnitude before multiplication; it does
   not depend on the raw host `read_i32` parser.
+- `std::file::read_u32_decimal_or` has the same byte limit and whitespace
+  rules, accepts an optional leading plus, and rejects a minus. It checks
+  overflow before each digit and returns the caller's fallback for malformed,
+  empty, overlong, or inaccessible input and read or close failures. The
+  fallback can also be a valid parsed value.
 - `std::file::write_i32_decimal` creates or truncates a file and writes the
   complete decimal representation of an i32 through `std::io_decimal::write_i32`.
   It returns false for open, write, or close failure and can leave a decimal
   prefix on failure. It handles `i32::MIN` without overflowing during
   negation and does not use the raw host `write_i32` formatter.
+- `std::file::write_u32_decimal` writes the full unsigned decimal value and
+  closes the file. Open, write, and close failures return false; a failed
+  write can leave a decimal prefix.
 - `std::random_checked::fill_secure_exact` fills the requested caller-buffer
   length, retrying short reads. Zero length succeeds without touching the
   pointer. Null storage for a nonzero length, a length above `i32::MAX`, a
