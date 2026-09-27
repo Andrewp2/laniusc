@@ -104,3 +104,113 @@ pub fn copy_prefix(
     }
     return count;
 }
+
+// Negative lengths return -1. Empty views contain no true values.
+pub fn count_true(values: [bool], len: i32) -> i32 {
+    if (len < 0) {
+        return -1;
+    }
+    let count: i32 = 0;
+    let index: i32 = 0;
+    while (index < len) {
+        if (values[index]) {
+            count += 1;
+        }
+        index += 1;
+    }
+    return count;
+}
+
+// Negative and empty lengths return false.
+pub fn any(values: [bool], len: i32) -> bool {
+    if (len <= 0) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index < len) {
+        if (values[index]) {
+            return true;
+        }
+        index += 1;
+    }
+    return false;
+}
+
+// An empty view satisfies all; a negative length is invalid and returns false.
+pub fn all(values: [bool], len: i32) -> bool {
+    if (len < 0) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index < len) {
+        if (!values[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Invalid or missing searches return the caller's fallback index.
+pub fn first_index_or(values: [bool], len: i32, target: bool, fallback: i32) -> i32 {
+    if (len <= 0) {
+        return fallback;
+    }
+    let index: i32 = 0;
+    while (index < len) {
+        if (values[index] == target) {
+            return index;
+        }
+        index += 1;
+    }
+    return fallback;
+}
+
+// Invalid or missing searches return the caller's fallback index.
+pub fn last_index_or(values: [bool], len: i32, target: bool, fallback: i32) -> i32 {
+    if (len <= 0) {
+        return fallback;
+    }
+    let remaining: i32 = len;
+    while (remaining > 0) {
+        remaining -= 1;
+        if (values[remaining] == target) {
+            return remaining;
+        }
+    }
+    return fallback;
+}
+
+// Negative or different logical lengths are unequal; two empty views are equal.
+pub fn equal(left: [bool], left_len: i32, right: [bool], right_len: i32) -> bool {
+    if (left_len < 0 || right_len < 0 || left_len != right_len) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index < left_len) {
+        if (left[index] != right[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Sorts false before true. A negative length writes nothing and returns false.
+pub fn sort(values: [bool], len: i32) -> bool {
+    if (len < 0) {
+        return false;
+    }
+    let true_count: i32 = count_true(values, len);
+    let false_count: i32 = len - true_count;
+    let index: i32 = 0;
+    while (index < false_count) {
+        values[index] = false;
+        index += 1;
+    }
+    while (index < len) {
+        values[index] = true;
+        index += 1;
+    }
+    return true;
+}

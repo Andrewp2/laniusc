@@ -38,7 +38,7 @@ limited to native x86_64 output from this worktree.
 | `core::slice_i16` all 36 public signed-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Matching fixtures cover every public function, `-32768`, `32767`, signed ordering and binary search, sums clamped after each addition, all 243 small sorting sequences, invalid logical lengths, and a native trap on physical length overclaim. |
 | `core::slice_u16` all 36 public unsigned-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every public function and check access, mutation, copy and rotation, compaction, insertion, sequence search, unsigned ordering across `32768`, sort and binary search, partitioning, and sums saturating at `65535`. They cover empty and invalid logical lengths, rejected mutation, and all 243 five-element sequences over `{0,1,2}` for sorting. A separate fixture confirms exit 101 when the claimed length exceeds the physical backing and is indexed. |
 | `core::slice_u32` all 36 public unsigned-word-view functions | Executable on x86_64 for fixed-array-backed views | Matching runtime fixtures cover the same operations and failure cases, including unsigned ordering across `2^31` and saturation at `u32::MAX`, plus the exhaustive small-sort fixture. The caller supplies a logical length within the physical backing. A source scan requires a runtime call for every public function. |
-| `core::slice_bool` all 7 public boolean-view functions | Executable on x86_64 for fixed-array-backed views | The runtime fixture calls every function and checks true and false reads, writes, fill, swap, overlapping in-place copy, reversal, copying between views, invalid bounds, and an overclaimed physical length that traps. The boolean checksum sample uses it with numeric and Option helpers. Generic `[T]` operations are withheld because signed element instantiations misexecute; see dependency 41. |
+| `core::slice_bool` all 14 public boolean-view functions | Executable on x86_64 for fixed-array-backed views | The runtime fixture calls every function and checks reads, writes, fill, swap, overlapping copy, reversal, prefix copy, true counts, `any` and `all`, first and last matching indices, equality, sorting, invalid lengths, and an overclaimed physical length that traps. Sorting checks every five-element Boolean sequence. The boolean checksum sample uses it with numeric and Option helpers. Generic `[T]` operations are withheld because signed element instantiations misexecute; see dependency 41. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
@@ -383,8 +383,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   supplied nonnegative logical lengths and returns that count; a negative
   length returns -1 without writing. Its backing views must be distinct or
   start at the same element; other overlap is unsupported. Each operation can
-  trap when a caller overstates
-  the physical backing length and indexing reaches past it. A fallback can
+  trap when a caller overstates the physical backing length and indexing
+  reaches past it. `count_true` returns -1 for a negative length and zero for
+  an empty view. `any` returns false for empty or invalid lengths; `all`
+  returns true for an empty view and false for an invalid length. Searches
+  return the caller's fallback index when absent or invalid. `equal` rejects
+  negative or unequal lengths and accepts two empty views. `sort` puts false
+  before true, returning false without writing for a negative length. A fallback can
   equal a stored value; callers that need a distinct success indication use
   `set` for mutation or validate the index separately for reading.
   `sum_i32` folds from left to right with saturating i32 addition, so each
