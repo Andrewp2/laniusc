@@ -1,0 +1,55 @@
+// A concrete f32 result with an f32 error value until generic enums execute.
+// The inactive payload is zero; inspect `success` before reading a payload.
+module core::result_f32;
+
+pub struct ResultF32 {
+    success: bool,
+    value: f32,
+    error: f32,
+}
+
+pub fn ok(value: f32) -> ResultF32 {
+    return ResultF32 { success: true, value: value, error: 0.0 };
+}
+
+pub fn err(error: f32) -> ResultF32 {
+    return ResultF32 { success: false, value: 0.0, error: error };
+}
+
+pub fn is_ok(value: ResultF32) -> bool {
+    return value.success;
+}
+
+pub fn is_err(value: ResultF32) -> bool {
+    return !value.success;
+}
+
+// IEEE equality makes contains(_, NaN) false even for Ok(NaN).
+pub fn contains(value: ResultF32, expected: f32) -> bool {
+    return value.success && value.value == expected;
+}
+
+// IEEE equality makes contains_err(_, NaN) false even for Err(NaN).
+pub fn contains_err(value: ResultF32, expected: f32) -> bool {
+    return !value.success && value.error == expected;
+}
+
+pub fn unwrap_or(value: ResultF32, fallback: f32) -> f32 {
+    if (value.success) { return value.value; }
+    return fallback;
+}
+
+pub fn unwrap_err_or(value: ResultF32, fallback: f32) -> f32 {
+    if (!value.success) { return value.error; }
+    return fallback;
+}
+
+pub fn or(value: ResultF32, fallback: ResultF32) -> ResultF32 {
+    if (value.success) { return value; }
+    return fallback;
+}
+
+pub fn and(value: ResultF32, next: ResultF32) -> ResultF32 {
+    if (value.success) { return next; }
+    return value;
+}
