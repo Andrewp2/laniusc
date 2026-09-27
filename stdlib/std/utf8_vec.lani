@@ -25,6 +25,18 @@ pub fn is_valid(value: std::vec_u8::VecU8) -> bool {
     return core::utf8::codes_are_valid(cells, len);
 }
 
+// Make an independent owned copy of valid UTF-8 text. The source remains
+// live and must be destroyed separately from a successful copy. Malformed
+// text or allocation failure returns a new empty vector without changing the
+// source. For nonempty text, compare byte_len(result) with byte_len(value) to
+// detect success. Empty text clones without allocating.
+pub fn try_clone(value: std::vec_u8::VecU8) -> std::vec_u8::VecU8 {
+    if (!is_valid(value)) {
+        return new();
+    }
+    return std::vec_u8::try_clone(value);
+}
+
 // Invalid UTF-8 returns fallback; the empty text has zero scalars. A caller
 // fallback may equal a valid count, so call is_valid when that matters.
 pub fn scalar_count_or(value: std::vec_u8::VecU8, fallback: i32) -> i32 {

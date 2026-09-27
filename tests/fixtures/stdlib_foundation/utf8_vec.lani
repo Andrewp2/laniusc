@@ -4,6 +4,10 @@ import std::vec_u8;
 
 fn main() -> i32 {
     let empty: std::vec_u8::VecU8 = std::utf8_vec::new();
+    let empty_copy: std::vec_u8::VecU8 = std::utf8_vec::try_clone(empty);
+    if (std::utf8_vec::byte_len(empty_copy) != 0 ||
+        std::vec_u8::capacity(empty_copy) != 0) { return 17; }
+    std::utf8_vec::destroy(empty_copy);
     if (std::utf8_vec::byte_len(empty) != 0 ||
         !std::utf8_vec::is_empty(empty) ||
         !std::utf8_vec::is_valid(empty) ||
@@ -47,6 +51,14 @@ fn main() -> i32 {
         std::vec_u8::get_or(text, 6, 0) != 66) {
         return 3;
     }
+    let copied: std::vec_u8::VecU8 = std::utf8_vec::try_clone(text);
+    if (std::utf8_vec::byte_len(copied) != 7 ||
+        !std::utf8_vec::equal(text, copied) ||
+        std::vec_u8::capacity(copied) != 7) { return 18; }
+    copied = std::utf8_vec::try_replace_scalar(copied, 1, 8364);
+    if (std::utf8_vec::scalar_at_or(copied, 1, 4294967295) != 8364 ||
+        std::utf8_vec::scalar_at_or(text, 1, 4294967295) != 162) { return 19; }
+    std::utf8_vec::destroy(copied);
     let before: i32 = std::utf8_vec::byte_len(text);
     text = std::utf8_vec::try_append_scalar(text, 55296);
     if (std::utf8_vec::byte_len(text) != before ||
@@ -174,6 +186,11 @@ fn main() -> i32 {
         std::vec_u8::get_or(invalid, 1, 0) != 128) {
         return 16;
     }
+    let rejected_copy: std::vec_u8::VecU8 = std::utf8_vec::try_clone(invalid);
+    if (std::utf8_vec::byte_len(rejected_copy) != 0 ||
+        std::vec_u8::capacity(rejected_copy) != 0 ||
+        std::vec_u8::get_or(invalid, 1, 0) != 128) { return 20; }
+    std::utf8_vec::destroy(rejected_copy);
 
     std::utf8_vec::destroy(bulk);
     std::utf8_vec::destroy(invalid);

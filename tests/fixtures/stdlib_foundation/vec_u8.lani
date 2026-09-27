@@ -17,6 +17,10 @@ fn main() -> i32 {
         std::vec_u8::try_set(value, 0, maximum)) { return 1; }
     let empty_cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(value), std::vec_u8::len(value));
     if (!core::utf8::codes_are_valid(empty_cells, 0)) { return 15; }
+    let empty_copy: std::vec_u8::VecU8 = std::vec_u8::try_clone(value);
+    if (std::vec_u8::len(empty_copy) != 0 ||
+        std::vec_u8::capacity(empty_copy) != 0) { return 17; }
+    std::vec_u8::destroy(empty_copy);
     value = std::vec_u8::try_pop(value);
     if (std::vec_u8::len(value) != 0) { return 2; }
 
@@ -39,6 +43,15 @@ fn main() -> i32 {
     if (std::vec_u8::len(value) != 5 ||
         std::vec_u8::capacity(value) != 8 ||
         std::vec_u8::get_or(value, 4, fallback) != high_bit) { return 4; }
+    let copy: std::vec_u8::VecU8 = std::vec_u8::try_clone(value);
+    if (std::vec_u8::len(copy) != 5 ||
+        std::vec_u8::capacity(copy) != 5 ||
+        std::vec_u8::get_or(copy, 1, fallback) != high_bit ||
+        std::vec_u8::get_or(copy, 2, fallback) != maximum ||
+        !std::vec_u8::try_set(copy, 1, one) ||
+        std::vec_u8::get_or(copy, 1, fallback) != one ||
+        std::vec_u8::get_or(value, 1, fallback) != high_bit) { return 18; }
+    std::vec_u8::destroy(copy);
     if (std::vec_u8::try_set(value, -1, maximum) ||
         std::vec_u8::try_set(value, 5, maximum) ||
         !std::vec_u8::try_set(value, 1, maximum) ||
@@ -72,5 +85,16 @@ fn main() -> i32 {
     if (std::vec_u8::capacity(invalid) != 0) { return 13; }
     std::vec_u8::destroy(invalid);
     if (std::vec_u8::MAX_CAPACITY != 536870911) { return 14; }
+    let invalid_bytes: std::vec_u8::VecU8 = std::vec_u8::new();
+    invalid_bytes = std::vec_u8::try_push(invalid_bytes, one);
+    let raw_cells: [i32] = core::mem::i32_slice_from_raw_parts(
+        std::vec_u8::data_ptr(invalid_bytes), std::vec_u8::len(invalid_bytes));
+    raw_cells[0] = 256;
+    let rejected_copy: std::vec_u8::VecU8 = std::vec_u8::try_clone(invalid_bytes);
+    if (std::vec_u8::len(rejected_copy) != 0 ||
+        std::vec_u8::capacity(rejected_copy) != 0 ||
+        raw_cells[0] != 256) { return 19; }
+    std::vec_u8::destroy(rejected_copy);
+    std::vec_u8::destroy(invalid_bytes);
     return 0;
 }
