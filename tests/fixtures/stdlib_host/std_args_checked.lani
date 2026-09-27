@@ -3,6 +3,17 @@ import core::mem;
 import std::args_checked;
 import std::io;
 fn main() -> i32 {
+    if (std::args_checked::argument_count_or(-9) != 3) {
+        return 12;
+    }
+    if (std::args_checked::argument_len_or(0, -9)<0 ||
+        std::args_checked::argument_len_or(1, -9) != 5 ||
+        std::args_checked::argument_len_or(2, -9) != 0 ||
+        std::args_checked::argument_len_or(3, -9) != -9 ||
+        std::args_checked::argument_len_or(-1, -9) != -9 ||
+        std::args_checked::argument_len_or(2147483647, -9) != -9) {
+        return 13;
+    }
     let cells:[i32; 2] =[0, 0];
     let buffer: ptr = core::mem::i32_array_data_ptr(cells);
     if (std::args_checked::read_exact_into(-1, buffer, 8)) {

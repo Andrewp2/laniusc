@@ -40,7 +40,7 @@ fn selected_std_io_and_args_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 1);
+    assert_eq!(count, 3);
 }
 
 #[test]

@@ -6,6 +6,31 @@
 // prefix in buffer. The caller must provide capacity writable bytes.
 module std::args_checked;
 import std::process;
+
+// Count process arguments, including the executable at index zero. A host
+// failure or an impossible count below one returns fallback unchanged.
+pub fn argument_count_or(fallback: i32) -> i32 {
+    let count: i32 = std::process::argc();
+    if (count<1) {
+        return fallback;
+    }
+    return count;
+}
+
+// Return the byte length of an argument without its terminating NUL. A
+// negative or absent index, or a host failure, returns fallback unchanged.
+// The caller can use this length to size storage for read_exact_into.
+pub fn argument_len_or(index: i32, fallback: i32) -> i32 {
+    if (index<0) {
+        return fallback;
+    }
+    let length: i32 = std::process::arg_len(index);
+    if (length<0) {
+        return fallback;
+    }
+    return length;
+}
+
 pub fn read_exact_into(index: i32, buffer: ptr, capacity: usize) -> bool {
     if (index<0 || capacity>2147483647) {
         return false;
