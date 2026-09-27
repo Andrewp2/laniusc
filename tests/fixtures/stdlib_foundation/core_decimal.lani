@@ -1,5 +1,6 @@
 module app::main;
 import core::decimal;
+import core::mem;
 
 fn main() -> i32 {
     if (core::decimal::len_u32(0) != 1 || core::decimal::len_u32(9) != 1 || core::decimal::len_u32(10) != 2 || core::decimal::len_u32(4294967295) != 10) {
@@ -116,6 +117,64 @@ fn main() -> i32 {
         let actual: i32 = core::decimal::byte_at_or_i16(min_i16, index_i16, 0);
         if (actual != expected_i16[slot]) { return 20; }
         index_i16 += 1;
+    }
+    let max_u32_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(unsigned_digits), 10);
+    let min_i32_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(signed_digits), 11);
+    let overflow_u32:[i32; 10] = [52, 50, 57, 52, 57, 54, 55, 50, 57, 54];
+    let overflow_u32_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(overflow_u32), 10);
+    let max_i32:[i32; 11] = [43, 50, 49, 52, 55, 52, 56, 51, 54, 52, 55];
+    let max_i32_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(max_i32), 11);
+    let overflow_i32:[i32; 11] = [45, 50, 49, 52, 55, 52, 56, 51, 54, 52, 57];
+    let overflow_i32_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(overflow_i32), 11);
+    let digits_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(digits), 3);
+    let malformed:[i32; 3] = [49, 50, 65];
+    let malformed_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(malformed), 3);
+    let invalid_code:[i32; 2] = [49, 256];
+    let invalid_code_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(invalid_code), 2);
+    let leading_zeroes:[i32; 3] = [48, 48, 49];
+    let leading_zeroes_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(leading_zeroes), 3);
+    let minus:[i32; 1] = [45];
+    let minus_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(minus), 1);
+    let plus:[i32; 1] = [43];
+    let plus_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(plus), 1);
+    let negative:[i32; 3] = [45, 52, 50];
+    let negative_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(negative), 3);
+    let negative_zero:[i32; 2] = [45, 48];
+    let negative_zero_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(negative_zero), 2);
+    let spaced:[i32; 2] = [32, 49];
+    let spaced_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(spaced), 2);
+    if (core::decimal::parse_ascii_u32_or(digits_view, 3, 99) != 123 ||
+        core::decimal::parse_ascii_u32_or(digits_view, 2, 99) != 12 ||
+        core::decimal::parse_ascii_u32_or(max_u32_view, 10, 99) != 4294967295 ||
+        core::decimal::parse_ascii_u32_or(leading_zeroes_view, 3, 99) != 1 ||
+        core::decimal::parse_ascii_u32_or(negative_zero_view, 2, 99) != 99) {
+        return 21;
+    }
+    if (core::decimal::parse_ascii_u32_or(overflow_u32_view, 10, 99) != 99 ||
+        core::decimal::parse_ascii_u32_or(malformed_view, 3, 99) != 99 ||
+        core::decimal::parse_ascii_u32_or(invalid_code_view, 2, 99) != 99 ||
+        core::decimal::parse_ascii_u32_or(spaced_view, 2, 99) != 99 ||
+        core::decimal::parse_ascii_u32_or(digits_view, 0, 99) != 99 ||
+        core::decimal::parse_ascii_u32_or(digits_view, -1, 99) != 99) {
+        return 22;
+    }
+    if (core::decimal::parse_ascii_i32_or(digits_view, 3, 99) != 123 ||
+        core::decimal::parse_ascii_i32_or(max_i32_view, 11, 99) != 2147483647 ||
+        core::decimal::parse_ascii_i32_or(min_i32_view, 11, 99) != -2147483648 ||
+        core::decimal::parse_ascii_i32_or(negative_view, 3, 99) != -42 ||
+        core::decimal::parse_ascii_i32_or(leading_zeroes_view, 3, 99) != 1 ||
+        core::decimal::parse_ascii_i32_or(negative_zero_view, 2, 99) != 0) {
+        return 23;
+    }
+    if (core::decimal::parse_ascii_i32_or(overflow_i32_view, 11, 99) != 99 ||
+        core::decimal::parse_ascii_i32_or(max_u32_view, 10, 99) != 99 ||
+        core::decimal::parse_ascii_i32_or(malformed_view, 3, 99) != 99 ||
+        core::decimal::parse_ascii_i32_or(invalid_code_view, 2, 99) != 99 ||
+        core::decimal::parse_ascii_i32_or(spaced_view, 2, 99) != 99 ||
+        core::decimal::parse_ascii_i32_or(minus_view, 1, 99) != 99 ||
+        core::decimal::parse_ascii_i32_or(plus_view, 1, 99) != 99 ||
+        core::decimal::parse_ascii_i32_or(digits_view, 0, 99) != 99) {
+        return 24;
     }
     return 0;
 }
