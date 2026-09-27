@@ -1,0 +1,9 @@
+module app::main;
+import std::file_hex;
+
+fn main() -> i32 {
+    if (std::file_hex::read_u32_or("valid.txt", 16, 77) != 77) {
+        return 1;
+    }
+    return 0;
+}

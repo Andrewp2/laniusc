@@ -1,0 +1,157 @@
+// Checked hexadecimal file input and output for NUL-terminated path storage.
+// Raw filesystem path calls currently ignore their declared length; callers
+// should use string literals until the host path ABI is repaired.
+module std::file_hex;
+import core::hex;
+import core::mem;
+import std::fs;
+import std::io_hex;
+
+fn write_u32(path: str, value: u32, uppercase: bool) -> bool {
+    let handle: i32 = std::fs::open_write_path(path);
+    if (handle < 0) {
+        return false;
+    }
+    let written: i32 = 0;
+    if (uppercase) {
+        written = std::io_hex::write_upper_u32(handle, value);
+    } else {
+        written = std::io_hex::write_lower_u32(handle, value);
+    }
+    let closed: i32 = std::fs::close_file(handle);
+    return written > 0 && closed >= 0;
+}
+
+// Creates or truncates path and writes the shortest hexadecimal form.
+// False reports an open, write, or close failure. Failure after opening may
+// leave a truncated file or a digit prefix. No allocation occurs.
+pub fn write_lower_u32(path: str, value: u32) -> bool {
+    return write_u32(path, value, false);
+}
+
+pub fn write_upper_u32(path: str, value: u32) -> bool {
+    return write_u32(path, value, true);
+}
+
+pub fn write_lower_u8(path: str, value: u8) -> bool {
+    let widened: u32 = value as u32;
+    return write_lower_u32(path, widened);
+}
+
+pub fn write_upper_u8(path: str, value: u8) -> bool {
+    let widened: u32 = value as u32;
+    return write_upper_u32(path, widened);
+}
+
+pub fn write_lower_u16(path: str, value: u16) -> bool {
+    let widened: u32 = value as u32;
+    return write_lower_u32(path, widened);
+}
+
+pub fn write_upper_u16(path: str, value: u16) -> bool {
+    let widened: u32 = value as u32;
+    return write_upper_u32(path, widened);
+}
+
+// Reads a complete ASCII hexadecimal file of at most max_bytes bytes.
+// Surrounding SP, HT, LF, and CR and one optional leading 0x/0X are accepted.
+// At least one digit is required. Missing files, malformed or overlong input,
+// overflow, read/close failure, and max_bytes == 0 return fallback. A valid
+// result may equal fallback. One stack word holds the one-byte input buffer.
+pub fn read_u32_or(path: str, max_bytes: u32, fallback: u32) -> u32 {
+    if (max_bytes == 0) {
+        return fallback;
+    }
+    let handle: i32 = std::fs::open_read_path(path);
+    if (handle < 0) {
+        return fallback;
+    }
+    let cell: [i32; 1] = [0];
+    let data: ptr = core::mem::i32_array_data_ptr(cell);
+    let consumed: u32 = 0;
+    let value: u32 = 0;
+    let started: bool = false;
+    let digits: bool = false;
+    let trailing: bool = false;
+    let leading_zero: bool = false;
+    let valid: bool = true;
+    while (true) {
+        cell[0] = 0;
+        let received: i32 = std::fs::read(handle, data, 1);
+        if (received == 0) {
+            break;
+        }
+        if (received != 1 || consumed >= max_bytes) {
+            valid = false;
+            break;
+        }
+        consumed += 1;
+        let byte: i32 = cell[0];
+        if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
+            if (started && !digits) {
+                valid = false;
+                break;
+            }
+            if (digits) {
+                trailing = true;
+            }
+            continue;
+        }
+        if (trailing) {
+            valid = false;
+            break;
+        }
+        if (!started) {
+            started = true;
+            if (byte == 48) {
+                digits = true;
+                leading_zero = true;
+                continue;
+            }
+        } else {
+            if (leading_zero && (byte == 120 || byte == 88)) {
+                digits = false;
+                leading_zero = false;
+                continue;
+            }
+        }
+        leading_zero = false;
+        if (byte < 0 || byte > 255) {
+            valid = false;
+            break;
+        }
+        let ascii: u8 = byte as u8;
+        let limit: u32 = 4294967295;
+        if (!core::hex::can_append_ascii_digit_u32(value, ascii, limit)) {
+            valid = false;
+            break;
+        }
+        value = core::hex::append_ascii_digit_or_u32(value, ascii, limit, value);
+        digits = true;
+    }
+    let closed: i32 = std::fs::close_file(handle);
+    if (!valid || !digits || closed < 0) {
+        return fallback;
+    }
+    return value;
+}
+
+// Narrow readers retain the complete-file syntax and byte limit. Values
+// outside the destination range return fallback instead of wrapping.
+pub fn read_u8_or(path: str, max_bytes: u32, fallback: u8) -> u8 {
+    let widened_fallback: u32 = fallback as u32;
+    let value: u32 = read_u32_or(path, max_bytes, widened_fallback);
+    if (value > 255) {
+        return fallback;
+    }
+    return value as u8;
+}
+
+pub fn read_u16_or(path: str, max_bytes: u32, fallback: u16) -> u16 {
+    let widened_fallback: u32 = fallback as u32;
+    let value: u32 = read_u32_or(path, max_bytes, widened_fallback);
+    if (value > 65535) {
+        return fallback;
+    }
+    return value as u16;
+}

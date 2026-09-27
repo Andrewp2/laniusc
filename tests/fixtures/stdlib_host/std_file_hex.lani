@@ -1,0 +1,36 @@
+module app::main;
+import std::file_hex;
+
+fn main() -> i32 {
+    if (!std::file_hex::write_lower_u8("lower8.txt", 255) || !std::file_hex::write_upper_u8("upper8.txt", 171)) {
+        return 1;
+    }
+    if (!std::file_hex::write_lower_u16("lower16.txt", 48879) || !std::file_hex::write_upper_u16("upper16.txt", 48879)) {
+        return 2;
+    }
+    if (!std::file_hex::write_lower_u32("lower32.txt", 0) || !std::file_hex::write_upper_u32("upper32.txt", 4294967295)) {
+        return 3;
+    }
+    if (std::file_hex::write_lower_u32("missing/child.txt", 42) || std::file_hex::write_upper_u32("/dev/full", 42)) {
+        return 4;
+    }
+    if (std::file_hex::read_u32_or("space.txt", 32, 77) != 6699 || std::file_hex::read_u32_or("max.txt", 32, 77) != 4294967295) {
+        return 5;
+    }
+    if (std::file_hex::read_u32_or("zero.txt", 1, 77) != 0 || std::file_hex::read_u32_or("space.txt", 4, 77) != 77) {
+        return 6;
+    }
+    if (std::file_hex::read_u32_or("overflow.txt", 32, 77) != 77 || std::file_hex::read_u32_or("prefix.txt", 32, 77) != 77 || std::file_hex::read_u32_or("bad.txt", 32, 77) != 77) {
+        return 7;
+    }
+    if (std::file_hex::read_u32_or("empty.txt", 32, 77) != 77 || std::file_hex::read_u32_or("missing.txt", 32, 77) != 77 || std::file_hex::read_u32_or("zero.txt", 0, 77) != 77) {
+        return 8;
+    }
+    if (std::file_hex::read_u8_or("byte.txt", 32, 7) != 255 || std::file_hex::read_u8_or("wide.txt", 32, 7) != 7 || std::file_hex::read_u8_or("bad.txt", 32, 7) != 7) {
+        return 9;
+    }
+    if (std::file_hex::read_u16_or("half.txt", 32, 9) != 48879 || std::file_hex::read_u16_or("too_wide.txt", 32, 9) != 9 || std::file_hex::read_u16_or("empty.txt", 32, 9) != 9) {
+        return 10;
+    }
+    return 0;
+}

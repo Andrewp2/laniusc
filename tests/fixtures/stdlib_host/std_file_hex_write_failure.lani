@@ -1,0 +1,9 @@
+module app::main;
+import std::file_hex;
+
+fn main() -> i32 {
+    if (std::file_hex::write_lower_u32("fault.txt", 43981)) {
+        return 1;
+    }
+    return 0;
+}
