@@ -1,0 +1,53 @@
+// A concrete i8 result with an i8 error code until generic enums execute.
+// The inactive payload is zero; inspect `success` before reading a payload.
+module core::result_i8;
+
+pub struct ResultI8 {
+    success: bool,
+    value: i8,
+    error: i8,
+}
+
+pub fn ok(value: i8) -> ResultI8 {
+    return ResultI8 { success: true, value: value, error: 0 };
+}
+
+pub fn err(error: i8) -> ResultI8 {
+    return ResultI8 { success: false, value: 0, error: error };
+}
+
+pub fn is_ok(value: ResultI8) -> bool {
+    return value.success;
+}
+
+pub fn is_err(value: ResultI8) -> bool {
+    return !value.success;
+}
+
+pub fn contains(value: ResultI8, expected: i8) -> bool {
+    return value.success && value.value == expected;
+}
+
+pub fn contains_err(value: ResultI8, expected: i8) -> bool {
+    return !value.success && value.error == expected;
+}
+
+pub fn unwrap_or(value: ResultI8, fallback: i8) -> i8 {
+    if (value.success) { return value.value; }
+    return fallback;
+}
+
+pub fn unwrap_err_or(value: ResultI8, fallback: i8) -> i8 {
+    if (!value.success) { return value.error; }
+    return fallback;
+}
+
+pub fn or(value: ResultI8, fallback: ResultI8) -> ResultI8 {
+    if (value.success) { return value; }
+    return fallback;
+}
+
+pub fn and(value: ResultI8, next: ResultI8) -> ResultI8 {
+    if (value.success) { return next; }
+    return value;
+}

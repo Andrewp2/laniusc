@@ -1,0 +1,64 @@
+module app::main;
+import core::option_i8;
+import core::result_i8;
+
+fn main() -> i32 {
+    let present: core::option_i8::OptionI8 = core::option_i8::some(127);
+    let absent: core::option_i8::OptionI8 = core::option_i8::none();
+    if (!core::option_i8::is_some(present) || core::option_i8::is_some(absent) ||
+        core::option_i8::is_none(present) || !core::option_i8::is_none(absent)) { return 1; }
+    if (!core::option_i8::contains(present, 127) ||
+        core::option_i8::contains(present, 7) ||
+        core::option_i8::contains(absent, 0)) { return 2; }
+    if (core::option_i8::unwrap_or(present, 99) != 127 ||
+        core::option_i8::unwrap_or(absent, 99) != 99) { return 3; }
+    if (core::option_i8::unwrap_or(core::option_i8::or(present, absent), 0) != 127 ||
+        core::option_i8::unwrap_or(core::option_i8::or(absent, present), 0) != 127 ||
+        !core::option_i8::is_none(core::option_i8::or(absent, absent))) { return 4; }
+    if (core::option_i8::unwrap_or(core::option_i8::and(present, core::option_i8::some(3)), 0) != 3 ||
+        !core::option_i8::is_none(core::option_i8::and(absent, present)) ||
+        !core::option_i8::is_none(core::option_i8::and(present, absent))) { return 5; }
+    if (!core::option_i8::is_none(core::option_i8::xor(present, present)) ||
+        !core::option_i8::is_none(core::option_i8::xor(absent, absent)) ||
+        core::option_i8::unwrap_or(core::option_i8::xor(present, absent), 0) != 127 ||
+        core::option_i8::unwrap_or(core::option_i8::xor(absent, present), 0) != 127) { return 6; }
+
+    let success: core::result_i8::ResultI8 = core::result_i8::ok(42);
+    let failure: core::result_i8::ResultI8 = core::result_i8::err(-128);
+    if (!core::result_i8::is_ok(success) || core::result_i8::is_ok(failure) ||
+        core::result_i8::is_err(success) || !core::result_i8::is_err(failure)) { return 7; }
+    if (!core::result_i8::contains(success, 42) ||
+        core::result_i8::contains(success, 0) ||
+        core::result_i8::contains(failure, 0) ||
+        !core::result_i8::contains_err(failure, -128) ||
+        core::result_i8::contains_err(failure, 0) ||
+        core::result_i8::contains_err(success, 0)) { return 8; }
+    if (core::result_i8::unwrap_or(success, 99) != 42 ||
+        core::result_i8::unwrap_or(failure, 99) != 99 ||
+        core::result_i8::unwrap_err_or(success, 99) != 99 ||
+        core::result_i8::unwrap_err_or(failure, 99) != -128) { return 9; }
+    if (core::result_i8::unwrap_or(core::result_i8::or(success, failure), 0) != 42 ||
+        core::result_i8::unwrap_or(core::result_i8::or(failure, success), 0) != 42 ||
+        !core::result_i8::is_err(core::result_i8::or(failure, failure))) { return 10; }
+    if (core::result_i8::unwrap_err_or(core::result_i8::and(success, failure), 0) != -128 ||
+        core::result_i8::unwrap_err_or(core::result_i8::and(failure, success), 0) != -128 ||
+        core::result_i8::unwrap_or(core::result_i8::and(success, success), 0) != 42) { return 11; }
+    if (core::option_i8::unwrap_or(core::option_i8::some(0), 9) != 0 ||
+        !core::result_i8::contains_err(core::result_i8::err(0), 0) ||
+        !core::result_i8::contains(core::result_i8::ok(127), 127)) { return 12; }
+    let converted_success: core::result_i8::ResultI8 = core::option_i8::ok_or(present, 99);
+    let converted_failure: core::result_i8::ResultI8 = core::option_i8::ok_or(absent, 99);
+    if (!core::result_i8::contains(converted_success, 127) ||
+        !core::result_i8::contains_err(converted_failure, 99) ||
+        !core::result_i8::contains_err(core::option_i8::ok_or(absent, 0), 0)) { return 13; }
+    if (!core::option_i8::contains(core::option_i8::ok(success), 42) ||
+        !core::option_i8::is_none(core::option_i8::ok(failure)) ||
+        !core::option_i8::contains(core::option_i8::ok(core::result_i8::ok(0)), 0)) { return 14; }
+    if (!core::option_i8::is_none(core::option_i8::err(success)) ||
+        !core::option_i8::contains(core::option_i8::err(failure), -128) ||
+        !core::option_i8::contains(core::option_i8::err(core::result_i8::err(0)), 0)) { return 15; }
+    if (!core::option_i8::contains(core::option_i8::some(-128), -128) ||
+        !core::result_i8::contains(core::result_i8::ok(127), 127) ||
+        !core::result_i8::contains_err(core::result_i8::err(127), 127)) { return 16; }
+    return 0;
+}

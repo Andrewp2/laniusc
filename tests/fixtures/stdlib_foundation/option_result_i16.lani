@@ -1,0 +1,64 @@
+module app::main;
+import core::option_i16;
+import core::result_i16;
+
+fn main() -> i32 {
+    let present: core::option_i16::OptionI16 = core::option_i16::some(32767);
+    let absent: core::option_i16::OptionI16 = core::option_i16::none();
+    if (!core::option_i16::is_some(present) || core::option_i16::is_some(absent) ||
+        core::option_i16::is_none(present) || !core::option_i16::is_none(absent)) { return 1; }
+    if (!core::option_i16::contains(present, 32767) ||
+        core::option_i16::contains(present, 7) ||
+        core::option_i16::contains(absent, 0)) { return 2; }
+    if (core::option_i16::unwrap_or(present, 99) != 32767 ||
+        core::option_i16::unwrap_or(absent, 99) != 99) { return 3; }
+    if (core::option_i16::unwrap_or(core::option_i16::or(present, absent), 0) != 32767 ||
+        core::option_i16::unwrap_or(core::option_i16::or(absent, present), 0) != 32767 ||
+        !core::option_i16::is_none(core::option_i16::or(absent, absent))) { return 4; }
+    if (core::option_i16::unwrap_or(core::option_i16::and(present, core::option_i16::some(3)), 0) != 3 ||
+        !core::option_i16::is_none(core::option_i16::and(absent, present)) ||
+        !core::option_i16::is_none(core::option_i16::and(present, absent))) { return 5; }
+    if (!core::option_i16::is_none(core::option_i16::xor(present, present)) ||
+        !core::option_i16::is_none(core::option_i16::xor(absent, absent)) ||
+        core::option_i16::unwrap_or(core::option_i16::xor(present, absent), 0) != 32767 ||
+        core::option_i16::unwrap_or(core::option_i16::xor(absent, present), 0) != 32767) { return 6; }
+
+    let success: core::result_i16::ResultI16 = core::result_i16::ok(42);
+    let failure: core::result_i16::ResultI16 = core::result_i16::err(-32768);
+    if (!core::result_i16::is_ok(success) || core::result_i16::is_ok(failure) ||
+        core::result_i16::is_err(success) || !core::result_i16::is_err(failure)) { return 7; }
+    if (!core::result_i16::contains(success, 42) ||
+        core::result_i16::contains(success, 0) ||
+        core::result_i16::contains(failure, 0) ||
+        !core::result_i16::contains_err(failure, -32768) ||
+        core::result_i16::contains_err(failure, 0) ||
+        core::result_i16::contains_err(success, 0)) { return 8; }
+    if (core::result_i16::unwrap_or(success, 99) != 42 ||
+        core::result_i16::unwrap_or(failure, 99) != 99 ||
+        core::result_i16::unwrap_err_or(success, 99) != 99 ||
+        core::result_i16::unwrap_err_or(failure, 99) != -32768) { return 9; }
+    if (core::result_i16::unwrap_or(core::result_i16::or(success, failure), 0) != 42 ||
+        core::result_i16::unwrap_or(core::result_i16::or(failure, success), 0) != 42 ||
+        !core::result_i16::is_err(core::result_i16::or(failure, failure))) { return 10; }
+    if (core::result_i16::unwrap_err_or(core::result_i16::and(success, failure), 0) != -32768 ||
+        core::result_i16::unwrap_err_or(core::result_i16::and(failure, success), 0) != -32768 ||
+        core::result_i16::unwrap_or(core::result_i16::and(success, success), 0) != 42) { return 11; }
+    if (core::option_i16::unwrap_or(core::option_i16::some(0), 9) != 0 ||
+        !core::result_i16::contains_err(core::result_i16::err(0), 0) ||
+        !core::result_i16::contains(core::result_i16::ok(32767), 32767)) { return 12; }
+    let converted_success: core::result_i16::ResultI16 = core::option_i16::ok_or(present, 99);
+    let converted_failure: core::result_i16::ResultI16 = core::option_i16::ok_or(absent, 99);
+    if (!core::result_i16::contains(converted_success, 32767) ||
+        !core::result_i16::contains_err(converted_failure, 99) ||
+        !core::result_i16::contains_err(core::option_i16::ok_or(absent, 0), 0)) { return 13; }
+    if (!core::option_i16::contains(core::option_i16::ok(success), 42) ||
+        !core::option_i16::is_none(core::option_i16::ok(failure)) ||
+        !core::option_i16::contains(core::option_i16::ok(core::result_i16::ok(0)), 0)) { return 14; }
+    if (!core::option_i16::is_none(core::option_i16::err(success)) ||
+        !core::option_i16::contains(core::option_i16::err(failure), -32768) ||
+        !core::option_i16::contains(core::option_i16::err(core::result_i16::err(0)), 0)) { return 15; }
+    if (!core::option_i16::contains(core::option_i16::some(-32768), -32768) ||
+        !core::result_i16::contains(core::result_i16::ok(32767), 32767) ||
+        !core::result_i16::contains_err(core::result_i16::err(32767), 32767)) { return 16; }
+    return 0;
+}
