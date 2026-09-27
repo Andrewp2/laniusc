@@ -1,0 +1,137 @@
+module app::main;
+import core::runtime;
+
+fn main() -> i32 {
+    if (core::runtime::RUNTIME_ABI_METADATA_VERSION != 1 ||
+        core::runtime::UNKNOWN_RUNTIME_ABI_VERSION != 0 ||
+        core::runtime::RUNTIME_ABI_VERSION != 1 ||
+        core::runtime::RUNTIME_SERVICE_COUNT != 13 ||
+        core::runtime::FIRST_RUNTIME_SERVICE_ID != 1 ||
+        core::runtime::LAST_RUNTIME_SERVICE_ID != 13 ||
+        core::runtime::RUNTIME_SERVICE_REQUIREMENT_FIELD_COUNT != 3 ||
+        core::runtime::RUNTIME_SERVICE_REQUIREMENT_SERVICE_ID_FIELD != 0 ||
+        core::runtime::RUNTIME_SERVICE_REQUIREMENT_ABI_VERSION_FIELD != 1 ||
+        core::runtime::RUNTIME_SERVICE_REQUIREMENT_STATUS_FIELD != 2 ||
+        core::runtime::SERVICE_STATUS_UNKNOWN != 0 ||
+        core::runtime::SERVICE_STATUS_UNAVAILABLE != 1 ||
+        core::runtime::SERVICE_STATUS_AVAILABLE != 2) {
+        return 8;
+    }
+    if (core::runtime::SERVICE_ALLOCATOR_ID != 1 ||
+        core::runtime::SERVICE_FILESYSTEM_ID != 2 ||
+        core::runtime::SERVICE_STDIO_ID != 3 ||
+        core::runtime::SERVICE_CLOCK_ID != 4 ||
+        core::runtime::SERVICE_NETWORK_ID != 5 ||
+        core::runtime::SERVICE_PANIC_HOOK_ID != 6 ||
+        core::runtime::SERVICE_HOST_SERVICES_ID != 7 ||
+        core::runtime::SERVICE_THREADS_ID != 8 ||
+        core::runtime::SERVICE_SECURE_RNG_ID != 9 ||
+        core::runtime::SERVICE_GPU_ID != 10 ||
+        core::runtime::SERVICE_PROCESS_ID != 11 ||
+        core::runtime::SERVICE_ENV_ID != 12 ||
+        core::runtime::SERVICE_TEST_HARNESS_ID != 13) {
+        return 9;
+    }
+    if (!core::runtime::HAS_ALLOCATOR || !core::runtime::HAS_FILESYSTEM ||
+        !core::runtime::HAS_STDIO || !core::runtime::HAS_CLOCK ||
+        !core::runtime::HAS_SECURE_RNG || !core::runtime::HAS_PROCESS ||
+        !core::runtime::HAS_ENV || core::runtime::HAS_NETWORK ||
+        core::runtime::HAS_PANIC_HOOK || core::runtime::HAS_HOST_SERVICES ||
+        core::runtime::HAS_THREADS || core::runtime::HAS_GPU ||
+        core::runtime::HAS_TEST_HARNESS || core::runtime::HAS_RUNTIME_SERVICES) {
+        return 10;
+    }
+    if (!core::runtime::has_allocator() || !core::runtime::has_filesystem() ||
+        !core::runtime::has_stdio() || !core::runtime::has_clock() ||
+        !core::runtime::has_secure_rng() || !core::runtime::has_process() ||
+        !core::runtime::has_env() || core::runtime::has_network() ||
+        core::runtime::has_panic_hook() || core::runtime::has_host_services() ||
+        core::runtime::has_threads() || core::runtime::has_gpu() ||
+        core::runtime::has_test_harness() || core::runtime::has_runtime_services() ||
+        !core::runtime::runtime_services_are_contract_only() ||
+        !core::runtime::runtime_services_are_blocked()) {
+        return 1;
+    }
+    if (core::runtime::runtime_abi_metadata_version() != 1 ||
+        core::runtime::runtime_abi_version() != 1 ||
+        core::runtime::runtime_service_count() != 13 ||
+        core::runtime::first_runtime_service_id() != 1 ||
+        core::runtime::last_runtime_service_id() != 13 ||
+        core::runtime::runtime_service_requirement_field_count() != 3 ||
+        core::runtime::runtime_service_requirement_service_id_field() != 0 ||
+        core::runtime::runtime_service_requirement_abi_version_field() != 1 ||
+        core::runtime::runtime_service_requirement_status_field() != 2 ||
+        core::runtime::runtime_abi_version_for_service(1) != 1 ||
+        core::runtime::runtime_abi_version_for_service(99) != 0) {
+        return 2;
+    }
+    let allocator: u32 = core::runtime::SERVICE_ALLOCATOR_ID;
+    let network: u32 = core::runtime::SERVICE_NETWORK_ID;
+    let unknown: u32 = 99;
+    if (!core::runtime::service_id_in_descriptor_range(allocator) ||
+        !core::runtime::service_id_in_descriptor_range(13) ||
+        core::runtime::service_id_in_descriptor_range(0) ||
+        core::runtime::service_id_in_descriptor_range(unknown) ||
+        !core::runtime::is_known_service(allocator) ||
+        !core::runtime::service_descriptor_is_known(network) ||
+        !core::runtime::runtime_service_requirement_service_is_known(network) ||
+        core::runtime::is_known_service(unknown) ||
+        !core::runtime::runtime_service_requirement_abi_is_supported(1) ||
+        core::runtime::runtime_service_requirement_abi_is_supported(2)) {
+        return 3;
+    }
+    let status_unknown: u32 = core::runtime::SERVICE_STATUS_UNKNOWN;
+    let status_unavailable: u32 = core::runtime::SERVICE_STATUS_UNAVAILABLE;
+    let status_available: u32 = core::runtime::SERVICE_STATUS_AVAILABLE;
+    if (!core::runtime::runtime_service_status_is_unknown(status_unknown) ||
+        !core::runtime::runtime_service_status_is_unavailable(status_unavailable) ||
+        !core::runtime::runtime_service_status_is_available(status_available) ||
+        !core::runtime::runtime_service_status_is_contract_only(status_unavailable) ||
+        core::runtime::runtime_service_status_is_contract_only(status_available) ||
+        !core::runtime::runtime_service_status_is_declared(status_unknown) ||
+        !core::runtime::runtime_service_status_is_declared(status_available) ||
+        core::runtime::runtime_service_status_is_declared(7) ||
+        !core::runtime::runtime_service_status_is_fail_closed(status_unknown) ||
+        core::runtime::runtime_service_status_is_fail_closed(status_available)) {
+        return 4;
+    }
+    if (!core::runtime::runtime_service_requirement_status_is_contract_only(status_unavailable) ||
+        !core::runtime::runtime_service_requirement_status_is_declared(status_available) ||
+        !core::runtime::runtime_service_requirement_status_is_fail_closed(status_unknown) ||
+        !core::runtime::runtime_service_requirement_row_is_known_unbound(network, 1, status_unavailable) ||
+        !core::runtime::runtime_service_requirement_row_is_contract_only(network, 1, status_unavailable) ||
+        !core::runtime::runtime_service_requirement_row_is_valid(network, 1, status_unavailable) ||
+        core::runtime::runtime_service_requirement_row_is_valid(network, 2, status_unavailable) ||
+        !core::runtime::runtime_service_requirement_row_is_fail_closed(network, 2, status_unavailable)) {
+        return 5;
+    }
+    if (!core::runtime::has_service(allocator) ||
+        !core::runtime::service_has_runtime_binding(allocator) ||
+        core::runtime::has_service(network) ||
+        core::runtime::has_service(unknown) ||
+        core::runtime::service_status(allocator) != status_available ||
+        core::runtime::service_status(network) != status_unavailable ||
+        core::runtime::service_status(unknown) != status_unknown ||
+        !core::runtime::service_is_unknown(unknown) ||
+        !core::runtime::service_is_unavailable(network) ||
+        !core::runtime::service_is_unbound(network) ||
+        !core::runtime::service_is_known_but_unbound(network) ||
+        !core::runtime::service_is_available(allocator) ||
+        !core::runtime::service_is_contract_only(network)) {
+        return 6;
+    }
+    if (!core::runtime::runtime_bound_api_is_executable(allocator) ||
+        core::runtime::runtime_bound_api_is_executable(network) ||
+        !core::runtime::runtime_bound_api_is_blocked(network) ||
+        !core::runtime::runtime_bound_api_is_known_but_unbound(network) ||
+        !core::runtime::service_is_fail_closed(network) ||
+        !core::runtime::service_is_blocked(unknown) ||
+        core::runtime::service_requires_runtime_binding(allocator) ||
+        !core::runtime::service_requires_runtime_binding(network) ||
+        !core::runtime::service_binding_diagnostic_is_lnc0038(network) ||
+        !core::runtime::runtime_bound_api_requires_binding(network) ||
+        !core::runtime::runtime_bound_api_requires_runtime_binding(network)) {
+        return 7;
+    }
+    return 0;
+}

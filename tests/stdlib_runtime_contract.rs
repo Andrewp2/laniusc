@@ -2322,10 +2322,10 @@ fn main() {
     let gpu: core::target::Capability = core::target::has_gpu();
     let test_harness: core::target::Capability =
         core::target::has_test_harness();
-    if (runtime_services || declared_runtime_services || !runtime_services_blocked || !freestanding) {
+    if (runtime_services || declared_runtime_services || !runtime_services_blocked || freestanding) {
         return 1;
     }
-    if (filesystem || stdio || network || gpu || test_harness) {
+    if (!filesystem || !stdio || network || gpu || test_harness) {
         return 1;
     }
     return 0;

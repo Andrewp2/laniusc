@@ -57,7 +57,8 @@ limited to native x86_64 output from this worktree.
 | `core::ordering` 13 public functions and `Ordering` variants | Partially executable on x86_64 | `tests/stdlib_ordering.rs` executes every function through the real stdlib root, including the imported fieldless enum return, predicates, reverse, then, all three outcomes, and unsigned high-bit comparison. `compare_i64` only works for tested 32-bit-range values; native i64 comparison still truncates high bits (dependency 11). Direct imported variant paths such as `core::ordering::Less` fail during native compilation (dependency 34), so the complete module is not yet claimed. |
 | Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Generic enum values fail GPU lowering and native 64-bit comparison/arithmetic are incomplete. The former by-value `Option::replace` ignored its input and was removed. Concrete 8-, 16-, and 32-bit Option/Result modules execute on x86_64. |
 | `core::{cmp,hash,array_i32}` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs and traits depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
-| `core::{target,runtime}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`). |
+| `core::target` all 18 public functions and 16 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant. It checks the available allocator, filesystem, stdio, clock, secure RNG, process, and environment bindings against `core::runtime`; unbound network, threads, GPU, host services, panic hooks, and test harness remain false. This is a target snapshot, not a live host probe. |
+| `core::runtime` all 62 public functions and 40 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant, checking service IDs, ABI fields, available and unavailable services, unknown IDs, status classifiers, and fail-closed requirement rows. These helpers report bindings; they do not implement an unbound service operation. |
 | `core::panic` both trap functions, all 19 metadata functions, and 4 constants | Executable on x86_64 Linux for the trap functions and metadata | `tests/stdlib_panic_execution.rs` checks that `panic()` and `unreachable()` terminate with SIGILL, and a runtime fixture checks every metadata result. Panic hooks remain unbound; their availability flags stay false. |
 | `alloc::allocator` | Executable x86_64 Linux host ABI for valid allocation arguments | Normal allocation, reallocation, and release have x86 tests. `tests/stdlib_allocator_failure_execution.rs` injects `ENOMEM` into `mmap` and `mremap`: both return null, and failed reallocation leaves the old storage readable and releasable. The API is low-level; callers must pass a valid pointer and matching sizes to `realloc` and `dealloc`. |
 | `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs::read_i32` rejects out-of-range decimal input, and raw `std::io::write_i32` retries short writes, with focused native tests. Raw `std::fs` path calls now use their declared lengths, including for rename's two paths; `tests/stdlib_file_execution.rs` exercises normal paths and failures. `tests/stdlib_env_execution.rs` covers normal and allocation-failure behavior of `std::env::current_dir_len`. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
@@ -94,6 +95,14 @@ Lanius logic. No declaration is promoted solely because it type-checks.
 
 ## Executable subset and behavior
 
+- `core::target` and `core::runtime` describe the currently supported native
+  service bindings. The target flags now agree with the runtime inventory for
+  the allocator, filesystem, stdio, clock, secure RNG, process, and environment.
+  `is_freestanding` is false because those bindings exist.
+  `HAS_RUNTIME_SERVICES` remains false because the complete service set is not
+  bound; individual availability flags do not claim that every function in a
+  host module works. These constants are a compiled target snapshot, not
+  probes of the live host.
 - `core::number_i8` widens arithmetic to i16 before checking the signed 8-bit
   bounds. Wrapping add, subtract, and multiply reduce modulo 256 and return
   the signed low-byte value. Saturating operations clamp to `MIN` or `MAX`;

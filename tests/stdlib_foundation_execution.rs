@@ -102,6 +102,18 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_target_metadata",
+            "tests/fixtures/stdlib_foundation/core_target_metadata.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_runtime_metadata",
+            "tests/fixtures/stdlib_foundation/core_runtime_metadata.lani",
+            0,
+            b"",
+        ),
+        (
             "imported_bool_comparison_arg",
             "tests/fixtures/stdlib_foundation/repro_option_bool_comparison_arg.lani",
             0,
@@ -1155,6 +1167,48 @@ fn executable_core_function_surface_has_runtime_cases() {
             count += 1;
         }
         assert_eq!(count, expected_count);
+    }
+
+    for (module, source, fixture, expected_functions, expected_constants) in [
+        (
+            "target",
+            include_str!("../stdlib/core/target.lani"),
+            include_str!("fixtures/stdlib_foundation/core_target_metadata.lani"),
+            18,
+            16,
+        ),
+        (
+            "runtime",
+            include_str!("../stdlib/core/runtime.lani"),
+            include_str!("fixtures/stdlib_foundation/core_runtime_metadata.lani"),
+            62,
+            40,
+        ),
+    ] {
+        let mut function_count = 0;
+        let mut constant_count = 0;
+        for line in source.lines() {
+            if let Some(tail) = line.strip_prefix("pub fn ") {
+                let name = tail
+                    .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                    .next()
+                    .expect("public function has a name");
+                let call = format!("core::{module}::{name}(");
+                assert!(fixture.contains(&call), "{call} lacks a runtime case");
+                function_count += 1;
+            }
+            if let Some(tail) = line.strip_prefix("pub const ") {
+                let name = tail
+                    .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                    .next()
+                    .expect("public constant has a name");
+                let path = format!("core::{module}::{name}");
+                assert!(fixture.contains(&path), "{path} lacks a runtime case");
+                constant_count += 1;
+            }
+        }
+        assert_eq!(function_count, expected_functions, "{module} function count");
+        assert_eq!(constant_count, expected_constants, "{module} constant count");
     }
 
     for (module, vector_source, vector_fixture) in [
