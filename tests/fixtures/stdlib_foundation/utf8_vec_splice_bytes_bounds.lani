@@ -1,0 +1,12 @@
+module app::main;
+import std::utf8_vec;
+import std::vec_u8;
+
+fn main() -> i32 {
+    let a: u8 = 65;
+    let short: [u8; 2] = [a, a];
+    let text: std::vec_u8::VecU8 = std::utf8_vec::new();
+    text = std::utf8_vec::try_splice_bytes(text, 0, 0, short, 3);
+    std::utf8_vec::destroy(text);
+    return 0;
+}

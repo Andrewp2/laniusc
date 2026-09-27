@@ -497,6 +497,102 @@ pub fn try_splice_codes(
     return changed;
 }
 
+// Replace remove_count complete scalars with a complete caller-backed [u8]
+// view. A zero count inserts; a zero byte length removes. Malformed text or
+// input, invalid indices, capacity overflow, and allocation failure leave
+// the vector unchanged. The source must back bytes_len elements and must not
+// alias this vector's allocation, even when no growth is needed. An overclaim
+// may trap while validating the source. Same-width replacements keep byte_len,
+// so inspect the selected text when the caller needs a success distinction.
+pub fn try_splice_bytes(
+    value: std::vec_u8::VecU8, scalar_index: i32, remove_count: i32,
+    bytes: [u8], bytes_len: i32
+) -> std::vec_u8::VecU8 {
+    if (bytes_len < 0 || bytes_len > std::vec_u8::MAX_CAPACITY ||
+        !core::utf8::bytes_are_valid(bytes, bytes_len)) {
+        return value;
+    }
+    let old_len: i32 = std::vec_u8::len(value);
+    let old_cells: [i32] = core::mem::i32_slice_from_raw_parts(
+        std::vec_u8::data_ptr(value), old_len);
+    let scalar_count: i32 = core::utf8::scalar_count_or(old_cells, old_len, -1);
+    if (scalar_count < 0 || scalar_index < 0 || scalar_index > scalar_count ||
+        remove_count < 0 || remove_count > scalar_count - scalar_index) {
+        return value;
+    }
+    if (remove_count == 0 && bytes_len == 0) {
+        return value;
+    }
+    let start: i32 = core::utf8::byte_offset_of_scalar_or(
+        old_cells, old_len, scalar_index, -1);
+    let end: i32 = core::utf8::byte_offset_of_scalar_or(
+        old_cells, old_len, scalar_index + remove_count, -1);
+    if (start < 0 || end < start || end > old_len) {
+        return value;
+    }
+    let removed_bytes: i32 = end - start;
+    let kept_bytes: i32 = old_len - removed_bytes;
+    if (kept_bytes > std::vec_u8::MAX_CAPACITY - bytes_len) {
+        return value;
+    }
+    let needed: i32 = kept_bytes + bytes_len;
+    let changed: std::vec_u8::VecU8 = value;
+    if (bytes_len > removed_bytes) {
+        let extra: i32 = bytes_len - removed_bytes;
+        changed = std::vec_u8::try_reserve(changed, needed);
+        if (std::vec_u8::capacity(changed) < needed) {
+            return value;
+        }
+        let index: i32 = 0;
+        while (index < extra) {
+            changed = std::vec_u8::try_push(changed, 0);
+            index += 1;
+        }
+        let cells: [i32] = core::mem::i32_slice_from_raw_parts(
+            std::vec_u8::data_ptr(changed), needed);
+        let cursor: i32 = old_len;
+        while (cursor > end) {
+            cursor -= 1;
+            cells[cursor + extra] = cells[cursor];
+        }
+    } else {
+        if (bytes_len < removed_bytes) {
+            let cells: [i32] = core::mem::i32_slice_from_raw_parts(
+                std::vec_u8::data_ptr(changed), old_len);
+            let read: i32 = end;
+            let write: i32 = start + bytes_len;
+            while (read < old_len) {
+                cells[write] = cells[read];
+                read += 1;
+                write += 1;
+            }
+            let excess: i32 = removed_bytes - bytes_len;
+            let index: i32 = 0;
+            while (index < excess) {
+                changed = std::vec_u8::try_pop(changed);
+                index += 1;
+            }
+        }
+    }
+    let current_cells: [i32] = core::mem::i32_slice_from_raw_parts(
+        std::vec_u8::data_ptr(changed), needed);
+    let index: i32 = 0;
+    while (index < bytes_len) {
+        let byte: u8 = bytes[index];
+        current_cells[start + index] = byte as i32;
+        index += 1;
+    }
+    return changed;
+}
+
+// Insert complete UTF-8 bytes before scalar_index, including at the end.
+// This has the same validation, failure, and source-alias rules as splice.
+pub fn try_insert_bytes(
+    value: std::vec_u8::VecU8, scalar_index: i32, bytes: [u8], bytes_len: i32
+) -> std::vec_u8::VecU8 {
+    return try_splice_bytes(value, scalar_index, 0, bytes, bytes_len);
+}
+
 // Replace one existing scalar with another, shifting bytes when their UTF-8
 // widths differ. Validate the complete old text and the new scalar first.
 // Invalid text, index, scalar, capacity, or allocation returns the original
