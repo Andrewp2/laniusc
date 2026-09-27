@@ -1,0 +1,10 @@
+module app::main;
+import core::mem;
+fn main() -> i32 {
+    let words:[i32; 4];
+    let data: ptr = core::mem::i32_array_data_ptr(words);
+    if (data == 0) {
+        return 1;
+    }
+    return 0;
+}

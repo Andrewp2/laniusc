@@ -32,7 +32,7 @@ limited to native x86_64 output from this worktree.
 | `core::{cmp,hash,ordering,array_i32}` and legacy root `stdlib/{i32,bool,array_i32_4}.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs and traits also depend on backend support. |
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
 | `alloc::allocator` | Native host ABI with an unsafe allocation-failure path | Normal allocation, reallocation, and release have x86 tests. An injected `mmap` failure returns a nonzero error-shaped pointer from `alloc`; see dependency 22. Callers cannot currently rely on a null-pointer failure check. |
-| `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
+| `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. `std::env::current_dir_len` still has an unsafe allocator failure path; see dependency 25. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::args_checked::read_exact_into` | Executable x86_64 Linux host wrapper | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks exact bytes, sufficient and insufficient capacity, null storage, missing/negative indices, and capacity above `i32::MAX`. Caller storage avoids allocation. |
 | `std::env_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_env_execution.rs` checks exact value and key bytes, missing and invalid indices, capacity and null-storage failures, current-directory bytes and its NUL terminator, and injected `getcwd` failure. Caller storage avoids allocation. |
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
@@ -508,6 +508,17 @@ the failure injection cases run when Linux `strace` is available.
     prevented a general range-copy helper with two views and five scalar
     arguments; `core::slice::copy_nonoverlapping_prefix_i32` uses four arguments
     and has a native runtime test.
+25. **Uninitialized array backing for stack buffers.**
+    `tests/fixtures/stdlib_foundation/repro_uninitialized_array_data_ptr.lani`
+    passes `laniusc check --stdlib-root stdlib`, but `--emit x86_64` stops with
+    `LNC0057` when an uninitialized fixed array is passed to
+    `core::mem::i32_array_data_ptr`. Array repeat syntax such as `[0; 1024]`
+    also fails parsing. A fully enumerated 4096-byte stack array emitted and
+    ran in isolation, but repeated source-pack compilation failed parsing its
+    closing bracket. Consequently `std::env::current_dir_len` cannot yet
+    replace its 4096-byte allocation safely and retains dependency 22's
+    allocation-failure hazard. Callers can use the tested
+    `std::env_checked::current_dir_read_into` with their own buffer.
 
 These are compiler/runtime dependencies, not stdlib implementations in Rust or
 Python. They should be handled in the parallel compiler task before extending
