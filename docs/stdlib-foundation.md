@@ -636,6 +636,12 @@ the failure injection cases run when Linux `strace` is available.
 
 ## Compiler/runtime dependencies and minimal reproductions
 
+These reproductions concern the GPU-based `laniusc` compiler and its target
+runtime, chiefly under `crates/laniusc-compiler` and `shaders`. The separate
+`verified_compiler` and Lean workstream verifies a Lanius compiler; it is not
+the owner of these GPU compiler or x86 runtime fixes. This stdlib worktree
+records the dependency without changing either compiler.
+
 1. **Generic Option/Result native lowering.** `laniusc check --stdlib-root
    stdlib tests/fixtures/stdlib_foundation/repro_generic_option.lani` succeeds,
    while native emission stops with `LNC0057` before a useful backend
@@ -762,15 +768,15 @@ the failure injection cases run when Linux `strace` is available.
    view combination. A second reproduction,
    `repro_u8_array_raw_slice.lani`, constructs a raw byte view over an i32
    stack array containing known little-endian bytes; native execution exits 1
-   because `bytes[2]` is not the expected value 65. The compiler task has the
-   string-storage reproduction; the stack-array case is recorded here.
+   because `bytes[2]` is not the expected value 65. Both minimal reproductions
+   are recorded here for the GPU compiler work.
 17. **Integer-to-character cast.**
     `tests/fixtures/stdlib_foundation/repro_u32_to_char.lani` returns a
     `u32` value as `char`. Native compilation reports `LNC0006`: the return
     context expects `char` but still sees `u32`. `core::char` uses explicit
     ASCII mappings for executable case conversion, while general conversion
-    from a Unicode scalar to `char` remains a compiler dependency. This
-    reproduction has been sent to the parallel compiler task.
+    from a Unicode scalar to `char` remains a GPU compiler dependency. The
+    reproduction is recorded here.
 18. **Raw secure random scalar failure channel.** The x86 runtime bytes for
    `std::random::secure_u32` in
    `shaders/codegen/lir/x86/runtime_abi.slang` return `0xFFFFFFFF` when the
@@ -923,6 +929,6 @@ the failure injection cases run when Linux `strace` is available.
     result modulo the target width and bring it into the signed range before
     casting. Direct out-of-range signed narrowing still needs a compiler fix.
 
-These are compiler/runtime dependencies, not stdlib implementations in Rust or
-Python. They should be handled in the parallel compiler task before extending
-the executable claim.
+These are GPU compiler and target runtime dependencies, not stdlib
+implementations in Rust or Python. Their executable claims require those
+components to change and the reproductions above to pass.
