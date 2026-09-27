@@ -242,6 +242,83 @@ pub fn try_remove_scalar(
     return shortened;
 }
 
+// Replace one existing scalar with another, shifting bytes when their UTF-8
+// widths differ. Validate the complete old text and the new scalar first.
+// Invalid text, index, scalar, capacity, or allocation returns the original
+// vector unchanged. Successful equal-width replacement keeps byte_len, so
+// read the selected scalar when the caller must distinguish it from failure.
+pub fn try_replace_scalar(
+    value: std::vec_u8::VecU8, scalar_index: i32, scalar: u32
+) -> std::vec_u8::VecU8 {
+    let new_width_u32: u32 = core::utf8::encoded_len_or(scalar, 0);
+    if (new_width_u32 == 0) {
+        return value;
+    }
+    let length: i32 = std::vec_u8::len(value);
+    let old_cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(value), length);
+    let start: i32 = core::utf8::byte_offset_of_scalar_or(old_cells, length, scalar_index, -1);
+    if (start < 0 || start >= length) {
+        return value;
+    }
+    let end: i32 = core::utf8::byte_offset_of_scalar_or(old_cells, length, scalar_index + 1, -1);
+    if (end <= start || end > length) {
+        return value;
+    }
+    let new_width: i32 = new_width_u32 as i32;
+    let old_width: i32 = end - start;
+    let changed: std::vec_u8::VecU8 = value;
+    if (new_width > old_width) {
+        let extra: i32 = new_width - old_width;
+        if (length > std::vec_u8::MAX_CAPACITY - extra) {
+            return value;
+        }
+        let needed: i32 = length + extra;
+        changed = std::vec_u8::try_reserve(changed, needed);
+        if (std::vec_u8::capacity(changed) < needed) {
+            return value;
+        }
+        let index: i32 = 0;
+        while (index < extra) {
+            changed = std::vec_u8::try_push(changed, 0);
+            index += 1;
+        }
+        let cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(changed), needed);
+        let cursor: i32 = length;
+        while (cursor > end) {
+            cursor -= 1;
+            cells[cursor + extra] = cells[cursor];
+        }
+    } else {
+        if (new_width < old_width) {
+            let cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(changed), length);
+            let read: i32 = end;
+            let write: i32 = start + new_width;
+            while (read < length) {
+                cells[write] = cells[read];
+                read += 1;
+                write += 1;
+            }
+            let excess: i32 = old_width - new_width;
+            let index: i32 = 0;
+            while (index < excess) {
+                changed = std::vec_u8::try_pop(changed);
+                index += 1;
+            }
+        }
+    }
+    let current_len: i32 = std::vec_u8::len(changed);
+    let current_cells: [i32] = core::mem::i32_slice_from_raw_parts(std::vec_u8::data_ptr(changed), current_len);
+    let byte_index: u32 = 0;
+    while (byte_index < new_width_u32) {
+        let encoded: u8 = core::utf8::encoded_byte_or(scalar, byte_index, 0);
+        let target: i32 = byte_index as i32;
+        let code: i32 = encoded as i32;
+        current_cells[start + target] = code;
+        byte_index += 1;
+    }
+    return changed;
+}
+
 // Remove the final Unicode scalar without freeing capacity. Empty or invalid
 // UTF-8 leaves the value unchanged.
 pub fn try_pop_scalar(value: std::vec_u8::VecU8) -> std::vec_u8::VecU8 {

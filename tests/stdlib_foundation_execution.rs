@@ -750,6 +750,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "utf8_vec_replace",
+            "tests/fixtures/stdlib_foundation/utf8_vec_replace.lani",
+            0,
+            b"",
+        ),
+        (
             "vec_i8",
             "tests/fixtures/stdlib_foundation/vec_i8.lani",
             0,
@@ -1531,9 +1537,10 @@ fn executable_core_function_surface_has_runtime_cases() {
             .expect("public UTF-8 vector function has a name");
         let call = format!("std::utf8_vec::{name}(");
         let covered = text_fixture.contains(&call)
-            || include_str!("fixtures/stdlib_foundation/utf8_vec_edit.lani").contains(&call);
+            || include_str!("fixtures/stdlib_foundation/utf8_vec_edit.lani").contains(&call)
+            || include_str!("fixtures/stdlib_foundation/utf8_vec_replace.lani").contains(&call);
         assert!(covered, "{call} lacks a runtime case");
         text_function_count += 1;
     }
-    assert_eq!(text_function_count, 21);
+    assert_eq!(text_function_count, 22);
 }
