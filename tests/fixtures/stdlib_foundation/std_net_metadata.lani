@@ -1,0 +1,84 @@
+module app::main;
+import core::runtime;
+import std::net;
+
+fn main() -> i32 {
+    if (std::net::NETWORK_RUNTIME_ABI_VERSION != 1 ||
+        std::net::NETWORK_SERVICE_ID != 5 ||
+        std::net::NETWORK_SERVICE_STATUS_UNAVAILABLE != 1 ||
+        std::net::NETWORK_HAS_RUNTIME_BINDING ||
+        std::net::NETWORK_OPERATION_OK != 0 ||
+        std::net::NETWORK_OPERATION_UNAVAILABLE != -1) { return 1; }
+    if (std::net::network_runtime_abi_version() != std::net::NETWORK_RUNTIME_ABI_VERSION ||
+        std::net::network_service_id() != core::runtime::SERVICE_NETWORK_ID ||
+        std::net::network_service_status() !=
+            core::runtime::service_status(core::runtime::SERVICE_NETWORK_ID)) { return 2; }
+    if (!std::net::network_service_is_known() ||
+        !std::net::network_contract_metadata_is_available() ||
+        std::net::network_is_available() ||
+        !std::net::network_is_blocked() ||
+        !std::net::network_is_known_but_unbound() ||
+        !std::net::network_requires_runtime_binding() ||
+        !std::net::network_host_abi_is_contract_only() ||
+        core::runtime::has_network()) { return 3; }
+    if (std::net::network_operation_ok() != 0 ||
+        std::net::network_operation_unavailable() != -1 ||
+        !std::net::network_operation_succeeded(0) ||
+        !std::net::network_operation_succeeded(7) ||
+        std::net::network_operation_succeeded(-1) ||
+        std::net::network_operation_failed(0) ||
+        !std::net::network_operation_failed(-2) ||
+        !std::net::network_operation_is_unavailable(-1) ||
+        std::net::network_operation_is_unavailable(-2) ||
+        !std::net::network_operation_is_fail_closed(-1) ||
+        std::net::network_operation_is_fail_closed(0)) { return 4; }
+    if (std::net::tcp_api_is_executable() ||
+        !std::net::tcp_api_is_blocked() ||
+        !std::net::tcp_api_is_known_but_unbound() ||
+        !std::net::tcp_api_requires_runtime_binding()) { return 5; }
+    if (std::net::tcp_connect_is_executable() ||
+        !std::net::tcp_connect_is_blocked() ||
+        !std::net::tcp_connect_is_known_but_unbound() ||
+        !std::net::tcp_connect_requires_runtime_binding()) { return 6; }
+    if (std::net::tcp_bind_is_executable() ||
+        !std::net::tcp_bind_is_blocked() ||
+        !std::net::tcp_bind_is_known_but_unbound() ||
+        !std::net::tcp_bind_requires_runtime_binding()) { return 7; }
+    if (std::net::tcp_listen_is_executable() ||
+        !std::net::tcp_listen_is_blocked() ||
+        !std::net::tcp_listen_is_known_but_unbound() ||
+        !std::net::tcp_listen_requires_runtime_binding()) { return 8; }
+    if (std::net::tcp_accept_is_executable() ||
+        !std::net::tcp_accept_is_blocked() ||
+        !std::net::tcp_accept_is_known_but_unbound() ||
+        !std::net::tcp_accept_requires_runtime_binding()) { return 9; }
+    if (std::net::tcp_close_is_executable() ||
+        !std::net::tcp_close_is_blocked() ||
+        !std::net::tcp_close_is_known_but_unbound() ||
+        !std::net::tcp_close_requires_runtime_binding()) { return 10; }
+    if (std::net::tcp_send_is_executable() ||
+        !std::net::tcp_send_is_blocked() ||
+        !std::net::tcp_send_is_known_but_unbound() ||
+        !std::net::tcp_send_requires_runtime_binding()) { return 11; }
+    if (std::net::tcp_recv_is_executable() ||
+        !std::net::tcp_recv_is_blocked() ||
+        !std::net::tcp_recv_is_known_but_unbound() ||
+        !std::net::tcp_recv_requires_runtime_binding()) { return 12; }
+    if (std::net::udp_api_is_executable() ||
+        !std::net::udp_api_is_blocked() ||
+        !std::net::udp_api_is_known_but_unbound() ||
+        !std::net::udp_api_requires_runtime_binding()) { return 13; }
+    if (std::net::udp_bind_is_executable() ||
+        !std::net::udp_bind_is_blocked() ||
+        !std::net::udp_bind_is_known_but_unbound() ||
+        !std::net::udp_bind_requires_runtime_binding()) { return 14; }
+    if (std::net::udp_send_to_is_executable() ||
+        !std::net::udp_send_to_is_blocked() ||
+        !std::net::udp_send_to_is_known_but_unbound() ||
+        !std::net::udp_send_to_requires_runtime_binding()) { return 15; }
+    if (std::net::udp_recv_from_is_executable() ||
+        !std::net::udp_recv_from_is_blocked() ||
+        !std::net::udp_recv_from_is_known_but_unbound() ||
+        !std::net::udp_recv_from_requires_runtime_binding()) { return 16; }
+    return 0;
+}

@@ -1,0 +1,52 @@
+module app::main;
+import core::runtime;
+import std::thread;
+
+fn main() -> i32 {
+    if (std::thread::THREAD_RUNTIME_ABI_VERSION != 1 ||
+        std::thread::THREAD_SERVICE_ID != 8 ||
+        std::thread::THREAD_SERVICE_STATUS_UNAVAILABLE != 1 ||
+        std::thread::THREAD_HAS_RUNTIME_BINDING ||
+        std::thread::THREAD_OPERATION_OK != 0 ||
+        std::thread::THREAD_OPERATION_UNAVAILABLE != -1) { return 1; }
+    if (std::thread::thread_runtime_abi_version() != std::thread::THREAD_RUNTIME_ABI_VERSION ||
+        std::thread::thread_service_id() != core::runtime::SERVICE_THREADS_ID ||
+        std::thread::thread_service_status() !=
+            core::runtime::service_status(core::runtime::SERVICE_THREADS_ID)) { return 2; }
+    if (!std::thread::thread_service_is_known() ||
+        !std::thread::thread_contract_metadata_is_available() ||
+        std::thread::thread_is_available() ||
+        !std::thread::thread_is_blocked() ||
+        !std::thread::thread_is_known_but_unbound() ||
+        !std::thread::thread_requires_runtime_binding() ||
+        !std::thread::thread_host_abi_is_contract_only() ||
+        core::runtime::has_threads()) { return 3; }
+    if (std::thread::thread_operation_ok() != 0 ||
+        std::thread::thread_operation_unavailable() != -1 ||
+        !std::thread::thread_operation_succeeded(0) ||
+        !std::thread::thread_operation_succeeded(7) ||
+        std::thread::thread_operation_succeeded(-1) ||
+        std::thread::thread_operation_failed(0) ||
+        !std::thread::thread_operation_failed(-2) ||
+        !std::thread::thread_operation_is_unavailable(-1) ||
+        std::thread::thread_operation_is_unavailable(-2) ||
+        !std::thread::thread_operation_is_fail_closed(-1) ||
+        std::thread::thread_operation_is_fail_closed(0)) { return 4; }
+    if (std::thread::thread_spawn_is_executable() ||
+        !std::thread::thread_spawn_is_blocked() ||
+        !std::thread::thread_spawn_is_known_but_unbound() ||
+        !std::thread::thread_spawn_requires_runtime_binding()) { return 5; }
+    if (std::thread::thread_join_is_executable() ||
+        !std::thread::thread_join_is_blocked() ||
+        !std::thread::thread_join_is_known_but_unbound() ||
+        !std::thread::thread_join_requires_runtime_binding()) { return 6; }
+    if (std::thread::thread_yield_is_executable() ||
+        !std::thread::thread_yield_is_blocked() ||
+        !std::thread::thread_yield_is_known_but_unbound() ||
+        !std::thread::thread_yield_requires_runtime_binding()) { return 7; }
+    if (std::thread::thread_current_id_is_executable() ||
+        !std::thread::thread_current_id_is_blocked() ||
+        !std::thread::thread_current_id_is_known_but_unbound() ||
+        !std::thread::thread_current_id_requires_runtime_binding()) { return 8; }
+    return 0;
+}

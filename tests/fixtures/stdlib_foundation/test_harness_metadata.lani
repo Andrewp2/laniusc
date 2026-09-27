@@ -1,0 +1,61 @@
+module app::main;
+import core::runtime;
+import test::harness;
+
+fn main() -> i32 {
+    if (test::harness::TEST_HARNESS_RUNTIME_ABI_VERSION != 1 ||
+        test::harness::TEST_HARNESS_SERVICE_ID != 13 ||
+        test::harness::TEST_HARNESS_SERVICE_STATUS_UNAVAILABLE != 1 ||
+        test::harness::TEST_HARNESS_HAS_RUNTIME_BINDING ||
+        test::harness::TEST_STATUS_PASSED != 0 ||
+        test::harness::TEST_STATUS_FAILED != 1 ||
+        test::harness::TEST_STATUS_SKIPPED != 2) { return 1; }
+    if (test::harness::test_harness_runtime_abi_version() !=
+            test::harness::TEST_HARNESS_RUNTIME_ABI_VERSION ||
+        test::harness::test_harness_service_id() !=
+            core::runtime::SERVICE_TEST_HARNESS_ID ||
+        test::harness::test_harness_service_status() !=
+            core::runtime::service_status(core::runtime::SERVICE_TEST_HARNESS_ID)) { return 2; }
+    if (!test::harness::test_harness_service_is_known() ||
+        !test::harness::test_harness_contract_metadata_is_available() ||
+        test::harness::test_harness_is_available() ||
+        !test::harness::test_harness_is_blocked() ||
+        !test::harness::test_harness_is_known_but_unbound() ||
+        !test::harness::test_harness_requires_runtime_binding() ||
+        !test::harness::test_harness_abi_is_contract_only() ||
+        core::runtime::has_test_harness()) { return 3; }
+    if (test::harness::test_registration_is_executable() ||
+        !test::harness::test_registration_is_blocked() ||
+        !test::harness::test_registration_is_known_but_unbound() ||
+        !test::harness::test_registration_requires_runtime_binding() ||
+        test::harness::test_discovery_is_executable() ||
+        !test::harness::test_discovery_is_blocked() ||
+        !test::harness::test_discovery_is_known_but_unbound() ||
+        !test::harness::test_discovery_requires_runtime_binding()) { return 4; }
+    if (test::harness::test_execution_is_executable() ||
+        !test::harness::test_execution_is_blocked() ||
+        !test::harness::test_execution_is_known_but_unbound() ||
+        !test::harness::test_execution_requires_runtime_binding()) { return 5; }
+    if (test::harness::test_status_passed() != 0 ||
+        test::harness::test_status_failed() != 1 ||
+        test::harness::test_status_skipped() != 2) { return 6; }
+    let passed: i32 = test::harness::TEST_STATUS_PASSED;
+    let failed: i32 = test::harness::TEST_STATUS_FAILED;
+    let skipped: i32 = test::harness::TEST_STATUS_SKIPPED;
+    let unknown: i32 = 99;
+    if (!test::harness::test_status_is_passed(passed) ||
+        test::harness::test_status_is_passed(failed) ||
+        !test::harness::test_status_is_failed(failed) ||
+        test::harness::test_status_is_failed(skipped) ||
+        !test::harness::test_status_is_skipped(skipped) ||
+        test::harness::test_status_is_skipped(passed)) { return 7; }
+    if (!test::harness::test_status_is_known(passed) ||
+        !test::harness::test_status_is_known(failed) ||
+        !test::harness::test_status_is_known(skipped) ||
+        test::harness::test_status_is_known(unknown) ||
+        !test::harness::test_status_is_success(passed) ||
+        test::harness::test_status_is_success(failed) ||
+        !test::harness::test_status_is_failure(failed) ||
+        test::harness::test_status_is_failure(skipped)) { return 8; }
+    return 0;
+}

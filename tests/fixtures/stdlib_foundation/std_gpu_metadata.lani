@@ -1,0 +1,64 @@
+module app::main;
+import core::runtime;
+import std::gpu;
+
+fn main() -> i32 {
+    if (std::gpu::GPU_RUNTIME_ABI_VERSION != 1 ||
+        std::gpu::GPU_SERVICE_ID != 10 ||
+        std::gpu::GPU_SERVICE_STATUS_UNAVAILABLE != 1 ||
+        std::gpu::GPU_HAS_RUNTIME_BINDING ||
+        std::gpu::GPU_OPERATION_OK != 0 ||
+        std::gpu::GPU_OPERATION_UNAVAILABLE != -1) { return 1; }
+    if (std::gpu::gpu_runtime_abi_version() != std::gpu::GPU_RUNTIME_ABI_VERSION ||
+        std::gpu::gpu_service_id() != core::runtime::SERVICE_GPU_ID ||
+        std::gpu::gpu_service_status() !=
+            core::runtime::service_status(core::runtime::SERVICE_GPU_ID)) { return 2; }
+    if (!std::gpu::gpu_service_is_known() ||
+        !std::gpu::gpu_contract_metadata_is_available() ||
+        std::gpu::gpu_is_available() ||
+        !std::gpu::gpu_is_blocked() ||
+        !std::gpu::gpu_is_known_but_unbound() ||
+        !std::gpu::gpu_requires_runtime_binding() ||
+        !std::gpu::gpu_host_abi_is_contract_only() ||
+        core::runtime::has_gpu()) { return 3; }
+    if (std::gpu::gpu_operation_ok() != 0 ||
+        std::gpu::gpu_operation_unavailable() != -1 ||
+        !std::gpu::gpu_operation_succeeded(0) ||
+        !std::gpu::gpu_operation_succeeded(7) ||
+        std::gpu::gpu_operation_succeeded(-1) ||
+        std::gpu::gpu_operation_failed(0) ||
+        !std::gpu::gpu_operation_failed(-2) ||
+        !std::gpu::gpu_operation_is_unavailable(-1) ||
+        std::gpu::gpu_operation_is_unavailable(-2) ||
+        !std::gpu::gpu_operation_is_fail_closed(-1) ||
+        std::gpu::gpu_operation_is_fail_closed(0)) { return 4; }
+    if (std::gpu::gpu_buffer_api_is_executable() ||
+        !std::gpu::gpu_buffer_api_is_blocked() ||
+        !std::gpu::gpu_buffer_api_is_known_but_unbound() ||
+        !std::gpu::gpu_buffer_api_requires_runtime_binding()) { return 5; }
+    if (std::gpu::buffer_alloc_is_executable() ||
+        !std::gpu::buffer_alloc_is_blocked() ||
+        !std::gpu::buffer_alloc_is_known_but_unbound() ||
+        !std::gpu::buffer_alloc_requires_runtime_binding()) { return 6; }
+    if (std::gpu::buffer_free_is_executable() ||
+        !std::gpu::buffer_free_is_blocked() ||
+        !std::gpu::buffer_free_is_known_but_unbound() ||
+        !std::gpu::buffer_free_requires_runtime_binding()) { return 7; }
+    if (std::gpu::buffer_write_is_executable() ||
+        !std::gpu::buffer_write_is_blocked() ||
+        !std::gpu::buffer_write_is_known_but_unbound() ||
+        !std::gpu::buffer_write_requires_runtime_binding()) { return 8; }
+    if (std::gpu::buffer_read_is_executable() ||
+        !std::gpu::buffer_read_is_blocked() ||
+        !std::gpu::buffer_read_is_known_but_unbound() ||
+        !std::gpu::buffer_read_requires_runtime_binding()) { return 9; }
+    if (std::gpu::gpu_dispatch_api_is_executable() ||
+        !std::gpu::gpu_dispatch_api_is_blocked() ||
+        !std::gpu::gpu_dispatch_api_is_known_but_unbound() ||
+        !std::gpu::gpu_dispatch_api_requires_runtime_binding()) { return 10; }
+    if (std::gpu::dispatch_1d_is_executable() ||
+        !std::gpu::dispatch_1d_is_blocked() ||
+        !std::gpu::dispatch_1d_is_known_but_unbound() ||
+        !std::gpu::dispatch_1d_requires_runtime_binding()) { return 11; }
+    return 0;
+}

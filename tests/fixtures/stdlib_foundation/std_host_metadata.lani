@@ -1,0 +1,30 @@
+module app::main;
+import core::runtime;
+import std::host;
+
+fn main() -> i32 {
+    if (std::host::HOST_SERVICES_RUNTIME_ABI_VERSION != 1 ||
+        std::host::HOST_SERVICES_SERVICE_ID != 7 ||
+        std::host::HOST_SERVICES_SERVICE_STATUS_UNAVAILABLE != 1 ||
+        std::host::HOST_SERVICES_HAS_RUNTIME_BINDING) { return 1; }
+    if (std::host::host_services_runtime_abi_version() !=
+            std::host::HOST_SERVICES_RUNTIME_ABI_VERSION ||
+        std::host::host_services_service_id() !=
+            core::runtime::SERVICE_HOST_SERVICES_ID ||
+        std::host::host_services_service_status() !=
+            core::runtime::service_status(core::runtime::SERVICE_HOST_SERVICES_ID)) { return 2; }
+    if (!std::host::host_services_service_is_known() ||
+        !std::host::host_services_contract_metadata_is_available() ||
+        std::host::host_services_are_available() ||
+        !std::host::host_services_are_blocked() ||
+        !std::host::host_services_are_known_but_unbound() ||
+        !std::host::host_services_require_runtime_binding() ||
+        !std::host::host_services_requires_runtime_binding() ||
+        !std::host::host_services_abi_is_contract_only() ||
+        core::runtime::has_host_services()) { return 3; }
+    if (std::host::host_services_api_is_executable() ||
+        !std::host::host_services_api_is_blocked() ||
+        !std::host::host_services_api_is_known_but_unbound() ||
+        !std::host::host_services_api_requires_runtime_binding()) { return 4; }
+    return 0;
+}
