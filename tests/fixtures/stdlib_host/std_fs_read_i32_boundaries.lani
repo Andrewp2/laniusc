@@ -1,0 +1,20 @@
+module app::main;
+import std::fs;
+
+fn main() -> i32 {
+    let handle: std::fs::FileHandle = std::fs::open_read_path("tests/fixtures/stdlib_host/read_i32_boundaries.txt");
+    if (handle < 0) { return 1; }
+    if (std::fs::read_i32(handle, 91) != 23) { return 2; }
+    if (std::fs::read_i32(handle, 91) != -42) { return 3; }
+    if (std::fs::read_i32(handle, 91) != 2147483647) { return 4; }
+    if (std::fs::read_i32(handle, 91) != -2147483648) { return 5; }
+    if (std::fs::read_i32(handle, 92) != 92) { return 6; }
+    if (std::fs::read_i32(handle, 93) != 93) { return 7; }
+    if (std::fs::read_i32(handle, 94) != 94) { return 8; }
+    if (std::fs::read_i32(handle, 91) != 0) { return 9; }
+    if (std::fs::read_i32(handle, 95) != 95) { return 10; }
+    if (std::fs::read_i32(handle, 96) != 96) { return 11; }
+    if (std::fs::read_i32(handle, 97) != 97) { return 12; }
+    if (std::fs::close_file(handle) < 0) { return 13; }
+    return 0;
+}

@@ -41,7 +41,7 @@ limited to native x86_64 output from this worktree.
 | `core::{cmp,hash,ordering,array_i32}` and complete legacy `stdlib/array_i32_4.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs, traits, and array-returning legacy helpers depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
 | `alloc::allocator` | Executable x86_64 Linux host ABI for valid allocation arguments | Normal allocation, reallocation, and release have x86 tests. `tests/stdlib_allocator_failure_execution.rs` injects `ENOMEM` into `mmap` and `mremap`: both return null, and failed reallocation leaves the old storage readable and releasable. The API is low-level; callers must pass a valid pointer and matching sizes to `realloc` and `dealloc`. |
-| `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs` path calls ignore their declared length and require NUL-terminated storage; see dependency 29. `std::env::current_dir_len` checks allocation failure but has no direct fault-injection test yet; see dependency 25. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
+| `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs::read_i32` now rejects out-of-range decimal input, with native boundary tests. Raw `std::fs` path calls ignore their declared length and require NUL-terminated storage; see dependency 29. `std::env::current_dir_len` checks allocation failure but has no direct fault-injection test yet; see dependency 25. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::args_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks argument count including the executable, exact byte lengths and bytes, absent/negative indices, sufficient and insufficient capacity, null storage, and capacity above `i32::MAX`. Caller storage avoids allocation. |
 | `std::env_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_env_execution.rs` checks exact value and key bytes, missing and invalid indices, capacity and null-storage failures, current-directory bytes and its NUL terminator, and injected `getcwd` failure. Caller storage avoids allocation. |
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
@@ -635,6 +635,9 @@ compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.
 Run `cargo test --test stdlib_allocator_failure_execution` and
 `cargo test --test stdlib_vec_i32_execution` for native allocation failures;
 fault injection runs when Linux `strace` is available.
+Run `cargo test --test stdlib_fs_read_i32_execution` for the raw signed
+integer reader's normal values, signed limits, overflow, line boundaries,
+empty lines, EOF, and an injected host read error when `strace` is available.
 Run `cargo test --test stdlib_host_execution` for the separate native I/O
 wrappers; its partial-write fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_decimal_input_execution` for bounded decimal
@@ -770,15 +773,14 @@ also fixes the imported struct-return relocation path described below.
     with `LNC0017` at `values[0]` in the const-generic helper, so the generic
     array module remains contract-only; the concrete `core::array_i32_4`
     scalar functions have separate executable tests.
-13. **Raw host integer read overflow.** The native host binding for
-    `std::fs::read_i32(handle, fallback)` returns a wrapped value for input
-    `2147483648` instead of the fallback. Compile
-    `tests/fixtures/stdlib_host/repro_fs_read_i32_overflow.lani` with the
-    stdlib root, then run the ELF from the repository root with the adjacent
-    `overflow_i32.txt` fixture present. It exits 3 instead of 0. The
-    `std::file::read_i32_decimal_or` helper now parses bounded files in Lanius
-    with checked arithmetic, but the raw `std::fs::read_i32` binding still
-    requires a runtime fix before it can claim overflow fallback.
+13. **Resolved: raw host integer read overflow.** The native
+    `std::fs::read_i32(handle, fallback)` parser now accumulates magnitude in
+    64 bits and returns the fallback above `i32::MAX` or below `i32::MIN`.
+    `tests/stdlib_fs_read_i32_execution.rs` runs the original overflow
+    reproduction and checks ordinary positive and negative values, both
+    signed endpoints, positive and negative overflow, a long digit sequence,
+    a following valid line, empty lines, a sign without digits, EOF, and an
+    injected host read error.
 14. **Direct slice literals.**
     `tests/fixtures/stdlib_foundation/repro_i32_slice_literal.lani` creates
     `[i32] = [3, 5]` and reads both elements. Native emission succeeds, but

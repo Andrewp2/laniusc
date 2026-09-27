@@ -1,0 +1,11 @@
+module app::main;
+import std::fs;
+
+fn main() -> i32 {
+    let handle: std::fs::FileHandle = std::fs::open_read_path("tests/fixtures/stdlib_host/read_i32_boundaries.txt");
+    if (handle < 0) { return 2; }
+    let value: i32 = std::fs::read_i32(handle, 73);
+    if (std::fs::close_file(handle) < 0) { return 3; }
+    if (value == 73) { return 0; }
+    return 1;
+}
