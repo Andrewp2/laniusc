@@ -9,10 +9,10 @@ limited to native x86_64 output from this worktree.
 
 | Public surface | Classification | Evidence and limit |
 | --- | --- | --- |
-| `core::number_i8` constants and all 23 public functions | Executable on x86_64 | Focused runtime fixture checks signed 8-bit limits, widened arithmetic, saturation, multiplication and power overflow, GCD/LCM, division and Euclidean remainder, zero-divisor and `MIN/-1` fallbacks, parity, signs, and power-of-two boundaries. |
-| `core::number_i16` constants and all 23 public functions | Executable on x86_64 | Focused runtime fixture checks signed 16-bit limits, widened arithmetic, saturation, multiplication and power overflow, GCD/LCM, division and Euclidean remainder, zero-divisor and `MIN/-1` fallbacks, parity, signs, and power-of-two boundaries. |
+| `core::number_i8` constants and all 26 public functions | Executable on x86_64 | Focused runtime fixture checks signed 8-bit limits, widened arithmetic, wrapping and saturation, multiplication and power overflow, GCD/LCM, division and Euclidean remainder, zero-divisor and `MIN/-1` fallbacks, parity, signs, and power-of-two boundaries. |
+| `core::number_i16` constants and all 26 public functions | Executable on x86_64 | Focused runtime fixture checks signed 16-bit limits, widened arithmetic, wrapping and saturation, multiplication and power overflow, GCD/LCM, division and Euclidean remainder, zero-divisor and `MIN/-1` fallbacks, parity, signs, and power-of-two boundaries. |
 | `core::number_u16` constants and all 25 public functions | Executable on x86_64 | Focused runtime fixture checks unsigned 16-bit limits, widened saturation and wrapping, multiplication and power overflow, GCD/LCM, zero-divisor fallbacks, parity, and power-of-two and alignment boundaries. |
-| `core::number_i32` constants and all 23 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, multiplication and power overflow, signed GCD/LCM, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
+| `core::number_i32` constants and all 26 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, wrapping arithmetic, multiplication and power overflow, signed GCD/LCM, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
 | `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
 | `core::byte` constants and all 44 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
 | `core::bits` all 42 public `i32`, `u32`, `u16`, and `u8` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across word widths, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. Byte operations run all 256 inputs; halfword operations run boundary values and 256 evenly spaced inputs; signed operations check negative patterns and all 32 one-hot bits. |
@@ -64,13 +64,15 @@ Lanius logic. No declaration is promoted solely because it type-checks.
 ## Executable subset and behavior
 
 - `core::number_i8` widens arithmetic to i16 before checking the signed 8-bit
-  bounds. Saturating operations clamp to `MIN` or `MAX`; unrepresentable
-  multiplication, powers, GCD, and LCM return the caller's fallback. Division
+  bounds. Wrapping add, subtract, and multiply reduce modulo 256 and return
+  the signed low-byte value. Saturating operations clamp to `MIN` or `MAX`;
+  unrepresentable multiplication, powers, GCD, and LCM return the caller's fallback. Division
   and remainder return the fallback for zero or `MIN/-1`. The next positive
   power of two returns zero above 64.
 - `core::number_i16` widens arithmetic to i32 before checking the signed
-  16-bit bounds. Saturating operations clamp to `MIN` or `MAX`; `mul_or`,
-  `pow_or`, and unrepresentable GCD/LCM results return the caller's fallback.
+  16-bit bounds. Wrapping add, subtract, and multiply reduce modulo 65,536 and
+  return the signed low-half value. Saturating operations clamp to `MIN` or
+  `MAX`; `mul_or`, `pow_or`, and unrepresentable GCD/LCM results return the caller's fallback.
   `gcd_or(0, 0, _)` is zero. Division and remainder return the fallback for a
   zero divisor or `MIN/-1`. Euclidean remainder is nonnegative. The next
   positive power of two returns zero above 16,384.
@@ -81,8 +83,9 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   alignment returns the fallback or false as named. The next positive power
   of two returns zero above 32,768, and `align_up_or` returns its fallback
   when rounding would exceed 65,535.
-- `core::number_i32` saturates instead of overflowing. `clamp_or` returns its
-  caller-supplied fallback when `low > high`; valid inclusive bounds clamp.
+- `core::number_i32` provides saturating arithmetic and wrapping add,
+  subtract, and multiply modulo 2^32. `clamp_or` returns its caller-supplied
+  fallback when `low > high`; valid inclusive bounds clamp.
   `saturating_mul` clamps an unrepresentable mathematical product to `MIN` or
   `MAX`; `mul_or` returns the caller's fallback for that case. Both check
   overflow before multiplying, including `MIN * -1`. `pow_or` defines `0^0`
@@ -843,6 +846,14 @@ the failure injection cases run when Linux `strace` is available.
     evaluate true. This is evidence of incorrect native f32 comparison
     behavior; its exact lowering cause still needs compiler investigation.
     `core::f32` cannot claim NaN behavior while comparisons have this result.
+33. **Out-of-range signed narrowing casts.**
+    `tests/fixtures/stdlib_foundation/repro_signed_narrow_cast.lani` passes
+    `laniusc check --stdlib-root stdlib` and emits x86_64 output. It casts
+    128 from `i16` to `i8` and 32,768 from `i32` to `i16`, then compares the
+    results with -128 and -32,768. Both comparisons fail: the ELF exits 3
+    instead of 0. The executable signed wrapping helpers reduce the widened
+    result modulo the target width and bring it into the signed range before
+    casting. Direct out-of-range signed narrowing still needs a compiler fix.
 
 These are compiler/runtime dependencies, not stdlib implementations in Rust or
 Python. They should be handled in the parallel compiler task before extending

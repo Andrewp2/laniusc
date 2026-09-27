@@ -31,6 +31,15 @@ fn main() -> i32 {
     if (core::number_i8::saturating_mul(-7, 9) != -63 || core::number_i8::saturating_mul(high, 2) != high || core::number_i8::saturating_mul(low, 2) != low) {
         return 8;
     }
+    if (core::number_i8::wrapping_add(2, 3) != 5 || core::number_i8::wrapping_add(high, 1) != low || core::number_i8::wrapping_add(low, -1) != high) {
+        return 22;
+    }
+    if (core::number_i8::wrapping_sub(5, 2) != 3 || core::number_i8::wrapping_sub(low, 1) != high || core::number_i8::wrapping_sub(high, -1) != low) {
+        return 23;
+    }
+    if (core::number_i8::wrapping_mul(-7, 9) != -63 || core::number_i8::wrapping_mul(high, 2) != -2 || core::number_i8::wrapping_mul(low, -1) != low || core::number_i8::wrapping_mul(16, 16) != 0) {
+        return 24;
+    }
     if (core::number_i8::mul_or(-7, 9, fallback) != -63 || core::number_i8::mul_or(high, 2, fallback) != fallback || core::number_i8::mul_or(low, -1, fallback) != fallback) {
         return 9;
     }

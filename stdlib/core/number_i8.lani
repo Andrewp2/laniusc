@@ -114,6 +114,36 @@ pub fn saturating_mul(left: i8, right: i8) -> i8 {
     let b: i16 = right;
     return saturate(a * b);
 }
+// Normalize before narrowing: an out-of-range signed cast does not currently
+// sign-extend reliably on native targets. Every i8 product fits in i16.
+fn wrap(value: i16) -> i8 {
+    let reduced: i16 = value % 256;
+    if (reduced > 127) {
+        reduced -= 256;
+    }
+    if (reduced < -128) {
+        reduced += 256;
+    }
+    return reduced as i8;
+}
+pub fn wrapping_add(left: i8, right: i8) -> i8 {
+    let a: i16 = left;
+    let b: i16 = right;
+    let result: i16 = a + b;
+    return wrap(result);
+}
+pub fn wrapping_sub(left: i8, right: i8) -> i8 {
+    let a: i16 = left;
+    let b: i16 = right;
+    let result: i16 = a - b;
+    return wrap(result);
+}
+pub fn wrapping_mul(left: i8, right: i8) -> i8 {
+    let a: i16 = left;
+    let b: i16 = right;
+    let result: i16 = a * b;
+    return wrap(result);
+}
 // Returns fallback when the product is outside the signed 8-bit range.
 pub fn mul_or(left: i8, right: i8, fallback: i8) -> i8 {
     let a: i16 = left;

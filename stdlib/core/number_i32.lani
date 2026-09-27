@@ -130,6 +130,26 @@ pub fn saturating_mul(left: i32, right: i32) -> i32 {
     }
     return left * right;
 }
+// Use the unsigned bit pattern so native arithmetic discards overflowing high
+// bits without evaluating a signed overflow. Cast back to the signed pattern.
+pub fn wrapping_add(left: i32, right: i32) -> i32 {
+    let a: u32 = left as u32;
+    let b: u32 = right as u32;
+    let result: u32 = a + b;
+    return result as i32;
+}
+pub fn wrapping_sub(left: i32, right: i32) -> i32 {
+    let a: u32 = left as u32;
+    let b: u32 = right as u32;
+    let result: u32 = a - b;
+    return result as i32;
+}
+pub fn wrapping_mul(left: i32, right: i32) -> i32 {
+    let a: u32 = left as u32;
+    let b: u32 = right as u32;
+    let result: u32 = a * b;
+    return result as i32;
+}
 // Return fallback when the mathematical product does not fit in i32.
 pub fn mul_or(left: i32, right: i32, fallback: i32) -> i32 {
     if (mul_overflows(left, right)) {

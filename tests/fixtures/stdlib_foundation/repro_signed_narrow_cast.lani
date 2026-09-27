@@ -1,0 +1,17 @@
+// Native signed narrowing should interpret the low bits as a signed value.
+// Expected exit: 0. Current x86_64 exit: 3 (both comparisons fail).
+module app::main;
+fn main() -> i32 {
+    let wide_eight: i16 = 128;
+    let narrow_eight: i8 = wide_eight as i8;
+    let wide_sixteen: i32 = 32768;
+    let narrow_sixteen: i16 = wide_sixteen as i16;
+    let failures: i32 = 0;
+    if (narrow_eight != -128) {
+        failures += 1;
+    }
+    if (narrow_sixteen != -32768) {
+        failures += 2;
+    }
+    return failures;
+}
