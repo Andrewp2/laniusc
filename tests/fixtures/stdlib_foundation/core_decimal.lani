@@ -67,5 +67,55 @@ fn main() -> i32 {
     if (parsed != 123) {
         return 14;
     }
+    let max_u8: u8 = 255;
+    let max_u16: u16 = 65535;
+    let min_i8: i8 = -128;
+    let max_i8: i8 = 127;
+    let min_i16: i16 = -32768;
+    let max_i16: i16 = 32767;
+    if (core::decimal::len_u8(0) != 1 || core::decimal::len_u8(max_u8) != 3 ||
+        core::decimal::len_u16(0) != 1 || core::decimal::len_u16(max_u16) != 5 ||
+        core::decimal::len_i8(0) != 1 || core::decimal::len_i8(min_i8) != 4 || core::decimal::len_i8(max_i8) != 3 ||
+        core::decimal::len_i16(0) != 1 || core::decimal::len_i16(min_i16) != 6 || core::decimal::len_i16(max_i16) != 5) {
+        return 15;
+    }
+    if (core::decimal::byte_at_or_u8(0, 0, 88) != 48 || core::decimal::byte_at_or_u8(max_u8, 3, 88) != 88 ||
+        core::decimal::byte_at_or_u16(0, 0, 88) != 48 || core::decimal::byte_at_or_u16(max_u16, 5, 88) != 88 ||
+        core::decimal::byte_at_or_i8(0, 0, 88) != 48 || core::decimal::byte_at_or_i8(min_i8, 4, 88) != 88 ||
+        core::decimal::byte_at_or_i16(0, 0, 88) != 48 || core::decimal::byte_at_or_i16(min_i16, 6, 88) != 88) {
+        return 16;
+    }
+    let expected_u8: [i32; 3] = [50, 53, 53];
+    let index_u8: u32 = 0;
+    while (index_u8 < 3) {
+        let slot: i32 = index_u8;
+        let actual: i32 = core::decimal::byte_at_or_u8(max_u8, index_u8, 0);
+        if (actual != expected_u8[slot]) { return 17; }
+        index_u8 += 1;
+    }
+    let expected_u16: [i32; 5] = [54, 53, 53, 51, 53];
+    let index_u16: u32 = 0;
+    while (index_u16 < 5) {
+        let slot: i32 = index_u16;
+        let actual: i32 = core::decimal::byte_at_or_u16(max_u16, index_u16, 0);
+        if (actual != expected_u16[slot]) { return 18; }
+        index_u16 += 1;
+    }
+    let expected_i8: [i32; 4] = [45, 49, 50, 56];
+    let index_i8: u32 = 0;
+    while (index_i8 < 4) {
+        let slot: i32 = index_i8;
+        let actual: i32 = core::decimal::byte_at_or_i8(min_i8, index_i8, 0);
+        if (actual != expected_i8[slot]) { return 19; }
+        index_i8 += 1;
+    }
+    let expected_i16: [i32; 6] = [45, 51, 50, 55, 54, 56];
+    let index_i16: u32 = 0;
+    while (index_i16 < 6) {
+        let slot: i32 = index_i16;
+        let actual: i32 = core::decimal::byte_at_or_i16(min_i16, index_i16, 0);
+        if (actual != expected_i16[slot]) { return 20; }
+        index_i16 += 1;
+    }
     return 0;
 }

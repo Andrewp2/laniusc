@@ -1,4 +1,4 @@
-// Allocation-free decimal byte access for 32-bit integers.
+// Allocation-free decimal byte access for integers up to 32 bits.
 module core::decimal;
 
 pub fn len_u32(value: u32) -> u32 {
@@ -58,6 +58,46 @@ pub fn byte_at_or_i32(value: i32, index: u32, fallback: u8) -> u8 {
         return byte_at_or_u32(magnitude_i32(value), index - 1, fallback);
     }
     return byte_at_or_u32(magnitude_i32(value), index, fallback);
+}
+
+pub fn len_u8(value: u8) -> u32 {
+    let widened: u32 = value as u32;
+    return len_u32(widened);
+}
+
+pub fn byte_at_or_u8(value: u8, index: u32, fallback: u8) -> u8 {
+    let widened: u32 = value as u32;
+    return byte_at_or_u32(widened, index, fallback);
+}
+
+pub fn len_u16(value: u16) -> u32 {
+    let widened: u32 = value as u32;
+    return len_u32(widened);
+}
+
+pub fn byte_at_or_u16(value: u16, index: u32, fallback: u8) -> u8 {
+    let widened: u32 = value as u32;
+    return byte_at_or_u32(widened, index, fallback);
+}
+
+pub fn len_i8(value: i8) -> u32 {
+    let widened: i32 = value as i32;
+    return len_i32(widened);
+}
+
+pub fn byte_at_or_i8(value: i8, index: u32, fallback: u8) -> u8 {
+    let widened: i32 = value as i32;
+    return byte_at_or_i32(widened, index, fallback);
+}
+
+pub fn len_i16(value: i16) -> u32 {
+    let widened: i32 = value as i32;
+    return len_i32(widened);
+}
+
+pub fn byte_at_or_i16(value: i16, index: u32, fallback: u8) -> u8 {
+    let widened: i32 = value as i32;
+    return byte_at_or_i32(widened, index, fallback);
 }
 
 // A decimal ASCII byte can extend current without exceeding limit only when

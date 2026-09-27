@@ -19,7 +19,7 @@ limited to native x86_64 output from this worktree.
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 6 public scalar-codec functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, length boundaries, malformed sequences, surrogate exclusion, and Unicode maximum. Byte parameters and results use `u8`; it does not access string storage. |
-| `core::decimal` all 6 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of `u32::MAX` and `i32::MIN`, ordinary values, sign placement, zero, out-of-range fallbacks, incremental ASCII parsing, and overflow against caller limits. `std::io_decimal` and both bounded decimal file readers use the portable helpers. |
+| `core::decimal` all 14 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of extrema across 8-, 16-, and 32-bit integers, ordinary values, sign placement, zero, out-of-range fallbacks, incremental ASCII parsing, and overflow against caller limits. `std::io_decimal` and both bounded decimal file readers use the portable helpers. |
 | `core::f32` all 12 public functions | Executable on x86_64 for tested finite inputs | Runtime fixture checks sign, comparison, bounds, and square root for zero, negative, small, ordinary, and large inputs. The imported public constant `ONE` is broken; see dependency 5. |
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
@@ -141,10 +141,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   returns the caller fallback for malformed, overlong, surrogate, truncated,
   or out-of-range sequences. It does not yet iterate a `str` or `[u8]` view;
   those storage operations have separate compiler dependencies below.
-- `core::decimal` returns decimal length (1 through 10 for `u32`, 1 through
-  11 for `i32`) and the ASCII byte at a zero-based index. Signed output
-  includes `-` at index zero when negative, including `i32::MIN` without
-  negating it. An index outside the representation returns the caller's
+- `core::decimal` returns decimal length and the ASCII byte at a zero-based
+  index for `u8`, `u16`, `u32`, `i8`, `i16`, and `i32`. The maximum lengths are
+  3, 5, 10, 4, 6, and 11 respectively. Signed output includes `-` at index
+  zero when negative, including each minimum value without negating it. An
+  index outside the representation returns the caller's
   fallback unchanged. It performs no allocation or host I/O.
   `can_append_ascii_digit_u32` rejects non-digits and decimal appends above
   the supplied limit before multiplication. `append_ascii_digit_or_u32` returns
