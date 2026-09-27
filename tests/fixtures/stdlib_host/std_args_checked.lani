@@ -1,0 +1,43 @@
+module app::main;
+import core::mem;
+import std::args_checked;
+import std::io;
+fn main() -> i32 {
+    let cells:[i32; 2] =[0, 0];
+    let buffer: ptr = core::mem::i32_array_data_ptr(cells);
+    if (std::args_checked::read_exact_into(-1, buffer, 8)) {
+        return 1;
+    }
+    if (std::args_checked::read_exact_into(3, buffer, 8)) {
+        return 2;
+    }
+    if (std::args_checked::read_exact_into(1, buffer, 4)) {
+        return 3;
+    }
+    if (std::args_checked::read_exact_into(1, 0, 5)) {
+        return 4;
+    }
+    if (std::args_checked::read_exact_into(1, buffer, 0)) {
+        return 5;
+    }
+    let too_large: usize = 2147483648;
+    if (std::args_checked::read_exact_into(1, buffer, too_large)) {
+        return 10;
+    }
+    if (cells[0] != 0 || cells[1] != 0) {
+        return 6;
+    }
+    if (!std::args_checked::read_exact_into(2, 0, 0)) {
+        return 7;
+    }
+    if (!std::args_checked::read_exact_into(1, buffer, 5)) {
+        return 8;
+    }
+    if (!std::args_checked::read_exact_into(1, buffer, 8)) {
+        return 11;
+    }
+    if (std::io::write_stdout(buffer, 5) != 5) {
+        return 9;
+    }
+    return 0;
+}

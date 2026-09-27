@@ -33,6 +33,7 @@ limited to native x86_64 output from this worktree.
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
 | `alloc::allocator` | Native host ABI with an unsafe allocation-failure path | Normal allocation, reallocation, and release have x86 tests. An injected `mmap` failure returns a nonzero error-shaped pointer from `alloc`; see dependency 22. Callers cannot currently rely on a null-pointer failure check. |
 | `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
+| `std::args_checked::read_exact_into` | Executable x86_64 Linux host wrapper | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks exact bytes, sufficient and insufficient capacity, null storage, missing/negative indices, and capacity above `i32::MAX`. Caller storage avoids allocation. |
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, and invalid handles. These are separate from the portable core. |
 | `std::io_decimal::write_u32` | Executable x86_64 Linux host wrapper | `tests/stdlib_host_execution.rs` checks unsigned decimal zero and maximum, exact byte counts, invalid handles, and injected failure after a written prefix. |
 | `std::file` all 7 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot and exact caller-buffer reads, complete buffer writes, a multi-chunk binary copy, bounded signed decimal reads and writes, empty files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
@@ -179,6 +180,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
 - `core::mem` raw-view construction borrows the backing array. The array must
   remain alive for every use of the view. The selected tests use stack-backed
   arrays and no allocator.
+- `std::args_checked::read_exact_into` copies the selected process argument's
+  bytes into caller storage without a terminator. It checks the reported
+  length before writing. An empty argument succeeds with a null buffer;
+  rejected indices, capacity, and storage leave the buffer untouched. A host
+  short read returns false and may leave a copied prefix.
 - `std::io::write_line` writes text followed by a newline and returns the
   combined byte count. A negative result from either host write is returned
   immediately. A partial text write is reported by its count, and the newline

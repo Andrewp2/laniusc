@@ -1,0 +1,28 @@
+// Bounded process-argument copy into caller-owned storage. This host helper
+// depends on the native process argument binding and allocates no memory.
+// Copies bytes without a trailing NUL. Missing/negative indices, insufficient
+// capacity, and null storage for a nonempty argument fail before writing. An
+// empty argument succeeds with a null buffer. A host short read may leave a
+// prefix in buffer. The caller must provide capacity writable bytes.
+module std::args_checked;
+import std::process;
+pub fn read_exact_into(index: i32, buffer: ptr, capacity: usize) -> bool {
+    if (index<0 || capacity>2147483647) {
+        return false;
+    }
+    let expected: i32 = std::process::arg_len(index);
+    if (expected<0) {
+        return false;
+    }
+    let needed: usize = expected;
+    if (needed>capacity) {
+        return false;
+    }
+    if (needed == 0) {
+        return true;
+    }
+    if (buffer == 0) {
+        return false;
+    }
+    return std::process::arg_read(index, buffer, needed) == expected;
+}
