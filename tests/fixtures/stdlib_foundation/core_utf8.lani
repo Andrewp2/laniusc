@@ -181,5 +181,78 @@ fn main() -> i32 {
         guarded[3] != 77 || guarded[4] != 88) {
         return 21;
     }
+    let pair:[i32; 3] = [65, 194, 162];
+    let pair_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(pair), 3);
+    let cent_b:[i32; 3] = [194, 162, 66];
+    let cent_b_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(cent_b), 3);
+    let cent:[i32; 2] = [194, 162];
+    let cent_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(cent), 2);
+    let euro:[i32; 3] = [226, 130, 172];
+    let euro_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(euro), 3);
+    let bad_tail:[i32; 4] = [65, 194, 162, 128];
+    let bad_tail_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(bad_tail), 4);
+    if (!core::utf8::equal_codes(pair_view, 3, repeated_view, 3) ||
+        !core::utf8::equal_codes(empty, 0, empty, 0) ||
+        core::utf8::equal_codes(pair_view, 3, repeated_view, 7) ||
+        core::utf8::equal_codes(pair_view, 3, cent_b_view, 3) ||
+        core::utf8::equal_codes(bad_tail_view, 4, bad_tail_view, 4) ||
+        core::utf8::equal_codes(pair_view, -1, pair_view, -1)) {
+        return 22;
+    }
+    if (!core::utf8::starts_with_codes(repeated_view, 7, pair_view, 3) ||
+        !core::utf8::starts_with_codes(repeated_view, 7, empty, 0) ||
+        !core::utf8::starts_with_codes(empty, 0, empty, 0) ||
+        core::utf8::starts_with_codes(repeated_view, 7, euro_view, 3) ||
+        core::utf8::starts_with_codes(pair_view, 3, repeated_view, 7) ||
+        core::utf8::starts_with_codes(bad_tail_view, 4, pair_view, 3) ||
+        core::utf8::starts_with_codes(repeated_view, 7, bad_lead_view, 1) ||
+        core::utf8::starts_with_codes(repeated_view, -1, empty, 0)) {
+        return 23;
+    }
+    if (!core::utf8::ends_with_codes(repeated_view, 7, cent_b_view, 3) ||
+        !core::utf8::ends_with_codes(repeated_view, 7, empty, 0) ||
+        !core::utf8::ends_with_codes(empty, 0, empty, 0) ||
+        core::utf8::ends_with_codes(repeated_view, 7, pair_view, 3) ||
+        core::utf8::ends_with_codes(pair_view, 3, repeated_view, 7) ||
+        core::utf8::ends_with_codes(bad_tail_view, 4, empty, 0) ||
+        core::utf8::ends_with_codes(repeated_view, 7, truncated_view, 2) ||
+        core::utf8::ends_with_codes(repeated_view, 7, empty, -1)) {
+        return 24;
+    }
+    if (core::utf8::compare_codes_or(pair_view, 3, repeated_view, 3, -9) != 0 ||
+        core::utf8::compare_codes_or(empty, 0, empty, 0, -9) != 0 ||
+        core::utf8::compare_codes_or(empty, 0, pair_view, 3, -9) != -1 ||
+        core::utf8::compare_codes_or(pair_view, 3, empty, 0, -9) != 1 ||
+        core::utf8::compare_codes_or(pair_view, 3, repeated_view, 7, -9) != -1 ||
+        core::utf8::compare_codes_or(repeated_view, 7, pair_view, 3, -9) != 1 ||
+        core::utf8::compare_codes_or(cent_view, 2, euro_view, 3, -9) != -1 ||
+        core::utf8::compare_codes_or(euro_view, 3, cent_view, 2, -9) != 1 ||
+        core::utf8::compare_codes_or(pair_view, 3, cent_b_view, 3, -9) != -1 ||
+        core::utf8::compare_codes_or(bad_tail_view, 4, pair_view, 3, -9) != -9 ||
+        core::utf8::compare_codes_or(pair_view, 3, high_code_view, 2, -9) != -9) {
+        return 25;
+    }
+    if (core::utf8::index_of_codes_byte_or(repeated_view, 7, pair_view, 3, -9) != 0 ||
+        core::utf8::last_index_of_codes_byte_or(repeated_view, 7, pair_view, 3, -9) != 3 ||
+        core::utf8::index_of_codes_byte_or(repeated_view, 7, cent_b_view, 3, -9) != 4 ||
+        core::utf8::last_index_of_codes_byte_or(repeated_view, 7, cent_b_view, 3, -9) != 4 ||
+        core::utf8::index_of_codes_byte_or(repeated_view, 7, empty, 0, -9) != 0 ||
+        core::utf8::last_index_of_codes_byte_or(repeated_view, 7, empty, 0, -9) != 7 ||
+        core::utf8::index_of_codes_byte_or(empty, 0, empty, 0, -9) != 0 ||
+        core::utf8::last_index_of_codes_byte_or(empty, 0, empty, 0, -9) != 0) {
+        return 26;
+    }
+    if (core::utf8::index_of_codes_byte_or(repeated_view, 7, euro_view, 3, -9) != -9 ||
+        core::utf8::last_index_of_codes_byte_or(repeated_view, 7, euro_view, 3, -9) != -9 ||
+        core::utf8::index_of_codes_byte_or(pair_view, 3, repeated_view, 7, -9) != -9 ||
+        core::utf8::last_index_of_codes_byte_or(pair_view, 3, repeated_view, 7, -9) != -9 ||
+        core::utf8::index_of_codes_byte_or(repeated_view, 7, bad_lead_view, 1, -9) != -9 ||
+        core::utf8::last_index_of_codes_byte_or(repeated_view, 7, bad_lead_view, 1, -9) != -9 ||
+        core::utf8::index_of_codes_byte_or(bad_tail_view, 4, pair_view, 3, -9) != -9 ||
+        core::utf8::last_index_of_codes_byte_or(bad_tail_view, 4, pair_view, 3, -9) != -9 ||
+        core::utf8::index_of_codes_byte_or(repeated_view, -1, empty, 0, -9) != -9 ||
+        core::utf8::last_index_of_codes_byte_or(repeated_view, 7, empty, -1, -9) != -9) {
+        return 27;
+    }
     return 0;
 }

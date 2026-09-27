@@ -352,3 +352,101 @@ pub fn append_scalar_or(values: [i32], len: i32, capacity: i32, value: u32, fall
     }
     return len + width;
 }
+
+// Compare two complete, valid UTF-8 byte-code views. Invalid views are not
+// equal, including when their byte lengths differ. Two empty views are equal.
+pub fn equal_codes(left: [i32], left_len: i32, right: [i32], right_len: i32) -> bool {
+    if (!codes_are_valid(left, left_len) || !codes_are_valid(right, right_len)) {
+        return false;
+    }
+    if (left_len != right_len) { return false; }
+    let index: i32 = 0;
+    while (index < left_len) {
+        if (left[index] != right[index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+// A valid empty prefix or suffix matches every valid view. Both complete
+// views are validated, so a malformed tail cannot be hidden by a match.
+pub fn starts_with_codes(values: [i32], len: i32, prefix: [i32], prefix_len: i32) -> bool {
+    if (!codes_are_valid(values, len) || !codes_are_valid(prefix, prefix_len) ||
+        prefix_len > len) { return false; }
+    let index: i32 = 0;
+    while (index < prefix_len) {
+        if (values[index] != prefix[index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+pub fn ends_with_codes(values: [i32], len: i32, suffix: [i32], suffix_len: i32) -> bool {
+    if (!codes_are_valid(values, len) || !codes_are_valid(suffix, suffix_len) ||
+        suffix_len > len) { return false; }
+    let start: i32 = len - suffix_len;
+    let index: i32 = 0;
+    while (index < suffix_len) {
+        if (values[start + index] != suffix[index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+// Compare the canonical UTF-8 byte encodings lexicographically, returning
+// -1, 0, or 1. Invalid complete views return the caller's fallback.
+pub fn compare_codes_or(
+    left: [i32], left_len: i32, right: [i32], right_len: i32, fallback: i32
+) -> i32 {
+    if (!codes_are_valid(left, left_len) || !codes_are_valid(right, right_len)) {
+        return fallback;
+    }
+    let common: i32 = left_len;
+    if (right_len < common) { common = right_len; }
+    let index: i32 = 0;
+    while (index < common) {
+        if (left[index] < right[index]) { return -1; }
+        if (left[index] > right[index]) { return 1; }
+        index += 1;
+    }
+    if (left_len < right_len) { return -1; }
+    if (left_len > right_len) { return 1; }
+    return 0;
+}
+
+// Search valid complete views and return a byte offset. A valid empty needle
+// matches at zero; malformed input or a missing sequence returns fallback.
+pub fn index_of_codes_byte_or(
+    values: [i32], len: i32, needle: [i32], needle_len: i32, fallback: i32
+) -> i32 {
+    if (!codes_are_valid(values, len) || !codes_are_valid(needle, needle_len) ||
+        needle_len > len) { return fallback; }
+    let start: i32 = 0;
+    while (start <= len - needle_len) {
+        let offset: i32 = 0;
+        while (offset < needle_len && values[start + offset] == needle[offset]) {
+            offset += 1;
+        }
+        if (offset == needle_len) { return start; }
+        start += 1;
+    }
+    return fallback;
+}
+
+// The last match of a valid empty needle is at byte offset len.
+pub fn last_index_of_codes_byte_or(
+    values: [i32], len: i32, needle: [i32], needle_len: i32, fallback: i32
+) -> i32 {
+    if (!codes_are_valid(values, len) || !codes_are_valid(needle, needle_len) ||
+        needle_len > len) { return fallback; }
+    let start: i32 = len - needle_len;
+    while (start >= 0) {
+        let offset: i32 = 0;
+        while (offset < needle_len && values[start + offset] == needle[offset]) {
+            offset += 1;
+        }
+        if (offset == needle_len) { return start; }
+        start -= 1;
+    }
+    return fallback;
+}
