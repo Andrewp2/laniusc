@@ -72,7 +72,7 @@ fn executable_path_predicates_have_runtime_cases() {
         assert!(cases.contains(&call), "{call} lacks a runtime case");
         covered += 1;
     }
-    assert_eq!(covered, 32);
+    assert_eq!(covered, 31);
 
     let constants = include_str!("fixtures/stdlib_host/path_constants.lani");
     let mut constant_count = 0;

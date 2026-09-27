@@ -81,7 +81,7 @@ fn main() {
 }
 
 #[test]
-fn std_path_normal_relative_component_type_checks_through_stdlib_root() {
+fn std_path_normal_relative_component_header_type_checks_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_stdlib_path", "normal_relative", Some("lani"));
     entry.write_str(
@@ -103,23 +103,23 @@ fn main() {
     let empty: std::path::PathComponentLength = 0;
 
     let name_component: std::path::PathCapability =
-        std::path::path_component_is_normal_relative(letter, dot, three);
+        std::path::path_component_header_is_normal_relative(letter, dot, three);
     let hidden_component: PathCapability =
-        path_component_is_normal_relative(dot, letter, three);
+        path_component_header_is_normal_relative(dot, letter, three);
     let empty_component: std::path::PathCapability =
-        path_component_is_normal_relative(letter, dot, empty);
+        path_component_header_is_normal_relative(letter, dot, empty);
     let root_separator: PathCapability =
-        std::path::path_component_is_normal_relative(slash, dot, one);
+        std::path::path_component_header_is_normal_relative(slash, dot, one);
     let current_dir: std::path::PathCapability =
-        path_component_is_normal_relative(dot, letter, one);
+        path_component_header_is_normal_relative(dot, letter, one);
     let parent_dir: PathCapability =
-        std::path::path_component_is_normal_relative(dot, dot, two);
+        std::path::path_component_header_is_normal_relative(dot, dot, two);
     let windows_drive_prefix: std::path::PathCapability =
-        path_component_is_normal_relative(drive_letter, colon, two);
+        path_component_header_is_normal_relative(drive_letter, colon, two);
     let second_byte_boundary: PathCapability =
-        std::path::path_component_is_normal_relative(letter, slash, two);
+        std::path::path_component_header_is_normal_relative(letter, slash, two);
     let nul_start: std::path::PathCapability =
-        path_component_is_normal_relative(nul, letter, two);
+        path_component_header_is_normal_relative(nul, letter, two);
 
     if (!name_component || !hidden_component) {
         return 2;
@@ -146,8 +146,8 @@ fn main() {
     );
     assert_eq!(manifest.files.len(), 2);
     assert!(
-        runtime_bound_api_diagnostic_info("std::path::path_component_is_normal_relative").is_none(),
-        "std::path::path_component_is_normal_relative is a source-level helper and must not claim a runtime binding"
+        runtime_bound_api_diagnostic_info("std::path::path_component_header_is_normal_relative").is_none(),
+        "std::path::path_component_header_is_normal_relative is a source-level helper and must not claim a runtime binding"
     );
 
     common::block_on_gpu_with_timeout(

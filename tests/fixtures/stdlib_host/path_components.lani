@@ -28,14 +28,11 @@ fn main() -> i32 {
     if (!std::path::path_header_is_windows_drive_relative(67, 58, 65, 3) || std::path::path_header_is_windows_drive_relative(67, 58, 92, 3)) {
         return 9;
     }
-    if (!std::path::path_component_is_normal_relative(65, 66, 2) || std::path::path_component_is_normal_relative(46, 0, 1) || std::path::path_component_is_normal_relative(46, 46, 2) || std::path::path_component_is_normal_relative(67, 58, 2)) {
+    if (!std::path::path_component_header_is_normal_relative(65, 66, 2) || !std::path::path_component_header_is_normal_relative(65, 66, 3) || std::path::path_component_header_is_normal_relative(46, 0, 1) || std::path::path_component_header_is_normal_relative(46, 46, 2) || std::path::path_component_header_is_normal_relative(67, 58, 2) || std::path::path_component_header_is_normal_relative(47, 65, 2)) {
         return 10;
     }
-    if (!std::path::path_component_header_is_normal_relative(65, 66, 2) || std::path::path_component_header_is_normal_relative(47, 65, 2)) {
-        return 11;
-    }
     if (!std::path::path_component_header_is_normal_windows_relative(65, 66, 2) || std::path::path_component_header_is_normal_windows_relative(42, 65, 2) || std::path::path_component_header_is_normal_windows_relative(65, 58, 2)) {
-        return 12;
+        return 11;
     }
     return 0;
 }

@@ -313,7 +313,7 @@ pub fn path_byte_can_continue_windows_component(value: PathByte) -> PathCapabili
 
 // Only first and second are supplied. For length > 2 this checks the header,
 // not every byte of the component; callers must validate the remaining bytes.
-pub fn path_component_is_normal_relative(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+pub fn path_component_header_is_normal_relative(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
     if (length == 0) {
         return false;
     } else {
@@ -340,10 +340,6 @@ pub fn path_component_is_normal_relative(first: PathByte, second: PathByte, leng
         }
     }
     return false;
-}
-
-pub fn path_component_header_is_normal_relative(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
-    return path_component_is_normal_relative(first, second, length);
 }
 
 pub fn path_component_header_is_normal_windows_relative(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {

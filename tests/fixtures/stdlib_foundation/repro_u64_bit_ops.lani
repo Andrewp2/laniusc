@@ -1,0 +1,23 @@
+module app::main;
+
+fn main() -> i32 {
+    let high: u64 = 9223372036854775808;
+    let maximum: u64 = 18446744073709551615;
+    let failures: i32 = 0;
+    if (!(maximum > high) || !(high > 1) || !(high >= high)) {
+        failures += 1;
+    }
+    if ((maximum >> 1) != 9223372036854775807 || (high >> 63) != 1) {
+        failures += 2;
+    }
+    if (maximum as u32 != 4294967295 || high as u32 != 0) {
+        failures += 4;
+    }
+    if (high + 1 != 9223372036854775809 || maximum - high != 9223372036854775807) {
+        failures += 8;
+    }
+    if ((high | 1) != 9223372036854775809 || (maximum & 4294967295) != 4294967295) {
+        failures += 16;
+    }
+    return failures;
+}
