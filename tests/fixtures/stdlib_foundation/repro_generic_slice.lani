@@ -1,0 +1,15 @@
+module app::main;
+import core::slice_any;
+fn main() -> i32 {
+    let byte: u8 = 255;
+    let zero: u8 = 0;
+    let bytes: [u8; 1] = [byte];
+    let word: u32 = 4294967295;
+    let words: [u32; 1] = [word];
+    if (core::slice_any::get_or(bytes, 1, 0, byte) != byte ||
+        core::slice_any::get_or(words, 1, 0, word) != word ||
+        core::slice_any::get_or(bytes, 1, 1, zero) != zero) {
+        return 1;
+    }
+    return 0;
+}

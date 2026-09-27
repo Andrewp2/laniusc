@@ -1,0 +1,7 @@
+module core::slice_any;
+pub fn get_or<T>(values: [T], len: i32, index: i32, fallback: T) -> T {
+    if (index < 0 || index >= len) {
+        return fallback;
+    }
+    return values[index];
+}

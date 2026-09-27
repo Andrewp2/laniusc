@@ -34,6 +34,7 @@ limited to native x86_64 output from this worktree.
 | `core::range_i16` all 9 scalar-bound predicates | Executable on x86_64 | A runtime fixture checks signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-32768`, `32767`, touching intervals, and empty or reversed bounds. |
 | `core::slice` all 36 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, first and last contiguous subsequence matches, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Sorting also runs all 243 five-element arrays over `{-1, 0, 1}` against independently counted expected groups. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
 | `core::slice_u8` all 10 public byte-view functions | Executable on x86_64 for fixed-array-backed views | A runtime fixture exercises indexed reads and writes, fill, overlap-safe copying in both directions, first and last search, equality, prefix and suffix checks, and reversal with ordinary bytes, zero, and 255. It checks empty and negative logical lengths, invalid indices, rejected copy bounds, and unchanged storage after rejected mutation. This does not establish byte views over string or raw pointer storage. |
+| `core::slice_u32` all 10 public unsigned-word-view functions | Executable on x86_64 for fixed-array-backed views | The same runtime behaviors and failure cases are exercised with unsigned words, including `0`, `2^31 - 1`, `2^31`, and `u32::MAX`. The caller supplies a logical length within the physical backing. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
@@ -285,8 +286,8 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `first_i32` traps on an empty view. `get_or_i32` returns the fallback for an
   index outside the supplied length; if the supplied length exceeds the actual
   view and indexing reaches beyond it, native execution traps with exit 101.
-  `core::slice_u8` uses the same caller-supplied logical length for fixed
-  byte arrays. `get_or` and both search helpers return a caller fallback on
+  `core::slice_u8` and `core::slice_u32` use the same caller-supplied logical
+  length for fixed byte or word arrays. `get_or` and both search helpers return a caller fallback on
   invalid or absent positions. `set` and `copy_within` return false without
   mutation for invalid logical bounds; overlapping copies are supported.
   `fill` and `reverse_in_place` return the number of writes and swaps. Search,
@@ -1034,6 +1035,14 @@ also fixes the imported struct-return relocation path described below.
     that `main` is missing; it still needs a specific compiler diagnostic and
     a lowering fix. `test::assert` omits redundant void returns, so this
     compiler limitation does not affect its executable helpers.
+36. **Imported generic slice parameter from a fixed array.** The minimal
+    `repro_generic_slice.lani` calls `core::slice_any::get_or<T>` with fixed
+    `[u8; 1]` and `[u32; 1]` arrays. It passes `laniusc check` with the adjacent
+    test root, but native compilation reports `LNC0006` on the first `bytes`
+    argument. Concrete `[u8]` and `[u32]` imports execute through the same
+    array-to-slice conversion (dependency 20). Generic slice parameter
+    substitution remains a GPU source-pack type-check dependency. The concrete
+    `core::slice_u8` and `core::slice_u32` modules avoid that unsupported shape.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

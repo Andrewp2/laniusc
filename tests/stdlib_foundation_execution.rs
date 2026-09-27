@@ -127,6 +127,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_slice_u32",
+            "tests/fixtures/stdlib_foundation/core_slice_u32.lani",
+            0,
+            b"",
+        ),
+        (
             "slice_subsequence",
             "tests/fixtures/stdlib_foundation/slice_subsequence.lani",
             0,
@@ -480,6 +486,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             "slice_u8",
             include_str!("../stdlib/core/slice_u8.lani"),
             include_str!("fixtures/stdlib_foundation/core_slice_u8.lani"),
+        ),
+        (
+            "slice_u32",
+            include_str!("../stdlib/core/slice_u32.lani"),
+            include_str!("fixtures/stdlib_foundation/core_slice_u32.lani"),
         ),
     ];
 
