@@ -20,18 +20,6 @@ pub fn compare_i32(left: i32, right: i32) -> Ordering {
     }
 }
 
-pub fn compare_i64(left: i64, right: i64) -> Ordering {
-    if (left < right) {
-        return Less;
-    } else {
-        if (left > right) {
-            return Greater;
-        } else {
-            return Equal;
-        }
-    }
-}
-
 pub fn compare_u32(left: u32, right: u32) -> Ordering {
     if (left < right) {
         return Less;

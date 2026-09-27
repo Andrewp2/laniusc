@@ -198,10 +198,6 @@ module app::main;
 import core::ordering;
 
 fn main() {
-    let i64_less: core::ordering::Ordering = core::ordering::compare_i64(-4, 3);
-    let i64_equal: Ordering = compare_i64(9, 9);
-    let i64_greater: core::ordering::Ordering = compare_i64(12, -8);
-
     let u32_less: Ordering = core::ordering::compare_u32(2, 5);
     let u32_equal: core::ordering::Ordering = compare_u32(7, 7);
     let u32_greater: Ordering = core::ordering::compare_u32(11, 4);
@@ -213,10 +209,6 @@ fn main() {
     let u32_low: u32 = 2147483647;
     let u32_high_greater: bool = is_greater(compare_u32(u32_high, u32_low));
 
-    let i64_less_ok: bool = core::ordering::is_less(i64_less);
-    let i64_equal_ok: bool = core::ordering::is_equal(i64_equal);
-    let i64_greater_ok: bool = core::ordering::is_greater(i64_greater);
-
     let u32_less_ok: bool = is_less(u32_less);
     let u32_equal_ok: bool = is_equal(u32_equal);
     let u32_greater_ok: bool = is_greater(u32_greater);
@@ -225,9 +217,6 @@ fn main() {
     let u8_equal_ok: bool = core::ordering::is_equal(u8_equal);
     let u8_greater_ok: bool = core::ordering::is_greater(u8_greater);
 
-    if (!i64_less_ok || !i64_equal_ok || !i64_greater_ok) {
-        return 1;
-    }
     if (!u32_less_ok || !u32_equal_ok || !u32_greater_ok) {
         return 1;
     }
@@ -249,7 +238,6 @@ fn main() {
         "path manifest should include core::ordering from the stdlib root"
     );
     for helper_name in [
-        "core::ordering::compare_i64",
         "core::ordering::compare_u32",
         "core::ordering::compare_u8",
     ] {
