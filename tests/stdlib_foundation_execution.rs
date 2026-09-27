@@ -37,6 +37,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_decimal",
+            "tests/fixtures/stdlib_foundation/core_decimal.lani",
+            0,
+            b"",
+        ),
+        (
             "core_f32",
             "tests/fixtures/stdlib_foundation/core_f32.lani",
             0,
@@ -266,6 +272,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             "number_u32",
             include_str!("../stdlib/core/number_u32.lani"),
             include_str!("fixtures/stdlib_foundation/number_u32.lani"),
+        ),
+        (
+            "decimal",
+            include_str!("../stdlib/core/decimal.lani"),
+            include_str!("fixtures/stdlib_foundation/core_decimal.lani"),
         ),
         (
             "slice",

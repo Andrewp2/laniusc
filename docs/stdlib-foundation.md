@@ -19,6 +19,7 @@ limited to native x86_64 output from this worktree.
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 6 public scalar-codec functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, length boundaries, malformed sequences, surrogate exclusion, and Unicode maximum. Byte parameters and results use `u8`; it does not access string storage. |
+| `core::decimal` all 4 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of `u32::MAX` and `i32::MIN`, ordinary values, sign placement, zero, and out-of-range fallbacks. `std::io_decimal` uses the same portable formatter and has separate output tests. |
 | `core::f32` all 12 public functions | Executable on x86_64 for tested finite inputs | Runtime fixture checks sign, comparison, bounds, and square root for zero, negative, small, ordinary, and large inputs. The imported public constant `ONE` is broken; see dependency 5. |
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
@@ -136,6 +137,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   returns the caller fallback for malformed, overlong, surrogate, truncated,
   or out-of-range sequences. It does not yet iterate a `str` or `[u8]` view;
   those storage operations have separate compiler dependencies below.
+- `core::decimal` returns decimal length (1 through 10 for `u32`, 1 through
+  11 for `i32`) and the ASCII byte at a zero-based index. Signed output
+  includes `-` at index zero when negative, including `i32::MIN` without
+  negating it. An index outside the representation returns the caller's
+  fallback unchanged. It performs no allocation or host I/O.
 - `core::f32::sqrt` returns zero for nonpositive inputs and scales finite
   positive inputs before Newton iteration, including values far above or below
   one. The other `f32` functions follow their source definitions; no NaN
@@ -234,14 +240,15 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   host counts. A failed write can leave a visible output prefix. Zero length
   succeeds without touching the pointer or destination stream.
 - `std::io_decimal::write_u32` writes the complete decimal representation without
-  allocating or reading string storage. It returns a byte count from 1 to 10,
+  allocating or reading string storage. It uses `core::decimal` for each ASCII
+  byte and returns a byte count from 1 to 10,
   the first negative host error, or `-1` if a byte write does not report
   exactly one byte. Failure may leave a decimal prefix on the handle.
 - `std::io_decimal::write_i32` writes an optional minus sign followed by the
-  full decimal magnitude. It returns 1 to 11 bytes, the first negative host
-  error, or `-1` if a byte write does not report exactly one byte. A failure
-  may leave a sign or decimal prefix. It handles `i32::MIN` without signed
-  negation overflow.
+  full decimal magnitude through `core::decimal`. It returns 1 to 11 bytes,
+  the first negative host error, or `-1` if a byte write does not report
+  exactly one byte. A failure may leave a sign or decimal prefix. It handles
+  `i32::MIN` without signed negation overflow.
 - `std::file::write_text_once` opens or creates a file, truncates it, attempts
   one text write, and attempts to close it even if writing fails. It returns the actual
   byte count on success, including zero for empty text; a negative open,
@@ -329,7 +336,7 @@ the view, and accumulates with saturating arithmetic. It prints `96`.
 | Wasm | Not claimed or required for this foundation. |
 
 Run the focused gate with `cargo test --test stdlib_foundation_execution`.
-The test compiles twenty-two small Lanius programs through `--stdlib-root`, executes
+The test compiles small Lanius programs through `--stdlib-root`, executes
 the native ELFs, checks their exit status, checks the example's stdout, and
 checks the slice bounds trap. Each source is also suitable for direct CLI
 compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.

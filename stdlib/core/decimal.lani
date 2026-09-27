@@ -1,0 +1,61 @@
+// Allocation-free decimal byte access for 32-bit integers.
+module core::decimal;
+
+pub fn len_u32(value: u32) -> u32 {
+    let remaining: u32 = value;
+    let length: u32 = 1;
+    while (remaining >= 10) {
+        remaining /= 10;
+        length += 1;
+    }
+    return length;
+}
+
+// Index zero is the most significant ASCII digit. Invalid indices return the
+// caller's fallback; the function never writes through a pointer.
+pub fn byte_at_or_u32(value: u32, index: u32, fallback: u8) -> u8 {
+    let length: u32 = len_u32(value);
+    if (index >= length) {
+        return fallback;
+    }
+    let place: u32 = 1;
+    let remaining: u32 = length - index - 1;
+    while (remaining > 0) {
+        place *= 10;
+        remaining -= 1;
+    }
+    let digit: u32 = (value / place) % 10;
+    let ascii: u32 = 48 + digit;
+    return ascii as u8;
+}
+
+fn magnitude_i32(value: i32) -> u32 {
+    if (value == -2147483648) {
+        return 2147483648;
+    }
+    if (value < 0) {
+        let positive: i32 = -value;
+        return positive;
+    }
+    return value;
+}
+
+pub fn len_i32(value: i32) -> u32 {
+    let digits: u32 = len_u32(magnitude_i32(value));
+    if (value < 0) {
+        return digits + 1;
+    }
+    return digits;
+}
+
+// Negative values include an ASCII minus at index zero. MIN is handled
+// without negating it. Invalid indices return fallback unchanged.
+pub fn byte_at_or_i32(value: i32, index: u32, fallback: u8) -> u8 {
+    if (value < 0) {
+        if (index == 0) {
+            return 45;
+        }
+        return byte_at_or_u32(magnitude_i32(value), index - 1, fallback);
+    }
+    return byte_at_or_u32(magnitude_i32(value), index, fallback);
+}
