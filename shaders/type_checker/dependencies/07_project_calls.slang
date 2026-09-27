@@ -47,9 +47,12 @@ RWStructuredBuffer<uint> decl_type_ref_payload;
 static const uint INVALID = 0xffffffffu;
 static const uint DECL_WORDS = 14u;
 static const uint TYPE_WORDS = 9u;
+static const uint MEMBER_WORDS = 10u;
 static const uint INTERFACE_TYPE_SCALAR = 1u;
 static const uint INTERFACE_TYPE_FUNCTION = 7u;
 static const uint INTERFACE_TYPE_DECLARATION = 3u;
+static const uint HIR_ITEM_KIND_ENUM = 7u;
+static const uint MEMBER_ENUM_VARIANT = 5u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint WG_SIZE = 256u;
@@ -89,6 +92,35 @@ uint aggregate_word_count(uint type_i)
         library_id, unit_id, local_index);
     if (declaration_i >= dependency_declaration_count())
         return 0u;
+    uint declaration_base = declaration_i * DECL_WORDS;
+    if (dependency_declaration_word(declaration_base + 6u) == HIR_ITEM_KIND_ENUM)
+    {
+        // Enum storage always includes its discriminant. A fieldless imported
+        // enum has no MEMBER_FIELD rows, so the struct-field count is zero
+        // even though the callee returns one aggregate word. Check every
+        // variant signature before using that layout; payload-bearing enums
+        // need their payload widths projected separately.
+        uint start = dependency_declaration_word(declaration_base + 8u);
+        uint count = dependency_declaration_word(declaration_base + 9u);
+        if (start > dependency_member_count() ||
+            count > dependency_member_count() - start)
+            return 0u;
+        for (uint offset = 0u; offset < count; offset += 1u)
+        {
+            uint member_base = (start + offset) * MEMBER_WORDS;
+            if (dependency_member_word(member_base + 1u) != MEMBER_ENUM_VARIANT)
+                continue;
+            uint signature = dependency_member_word(member_base + 7u);
+            if (signature >= dependency_type_count()) return 0u;
+            uint signature_root = canonical_type_roots[signature];
+            if (signature_root >= dependency_type_count()) return 0u;
+            uint signature_base = signature_root * TYPE_WORDS;
+            if (dependency_type_word(signature_base) != INTERFACE_TYPE_FUNCTION ||
+                dependency_type_word(signature_base + 4u) != 1u)
+                return 0u;
+        }
+        return 1u;
+    }
     return declaration_field_count[declaration_i];
 }
 

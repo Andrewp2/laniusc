@@ -37,8 +37,9 @@ limited to native x86_64 output from this worktree.
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
 | `core::option_i32` all 12 public functions and `core::result_i32` all 10 public functions | Executable on x86_64 | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, both branches of `or`, `and`, and `xor`, and conversions between the two concrete types. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function to have a runtime call. These concrete structs do not make generic `Option<T>` or `Result<T,E>` executable. |
+| `core::ordering` 13 public functions and `Ordering` variants | Partially executable on x86_64 | `tests/stdlib_ordering.rs` executes every function through the real stdlib root, including the imported fieldless enum return, predicates, reverse, then, all three outcomes, and unsigned high-bit comparison. `compare_i64` only works for tested 32-bit-range values; native i64 comparison still truncates high bits (dependency 11). Direct imported variant paths such as `core::ordering::Less` fail during native compilation (dependency 34), so the complete module is not yet claimed. |
 | Generic `core::option`, `core::result`, and `core::{i32,i64,u32,u8}` as complete imported modules | Contract-only for native execution | Their Lanius bodies type-check, but generic enum use or import prevents reliable x86 output. The numeric modules import generic `Option` for checked results. A minimal failing program is included below. The former by-value `Option::replace` ignored its input and was removed. |
-| `core::{cmp,hash,ordering,array_i32}` and complete legacy `stdlib/array_i32_4.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs, traits, and array-returning legacy helpers depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
+| `core::{cmp,hash,array_i32}` and complete legacy `stdlib/array_i32_4.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs, traits, and array-returning legacy helpers depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
 | `alloc::allocator` | Executable x86_64 Linux host ABI for valid allocation arguments | Normal allocation, reallocation, and release have x86 tests. `tests/stdlib_allocator_failure_execution.rs` injects `ENOMEM` into `mmap` and `mremap`: both return null, and failed reallocation leaves the old storage readable and releasable. The API is low-level; callers must pass a valid pointer and matching sizes to `realloc` and `dealloc`. |
 | `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs::read_i32` rejects out-of-range decimal input, and raw `std::io::write_i32` retries short writes, with focused native tests. Raw `std::fs` path calls now use their declared lengths, including for rename's two paths; `tests/stdlib_file_execution.rs` exercises normal paths and failures. `tests/stdlib_env_execution.rs` covers normal and allocation-failure behavior of `std::env::current_dir_len`. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
@@ -697,7 +698,7 @@ also fixes the imported struct-return relocation path described below.
    changing `value`; it was removed rather than retained as a misleading
    mutation API. A real replacement operation needs a mutable Option receiver
    and executable generic enum behavior.
-2. **Imported aggregate results: struct returns fixed, enum returns blocked.**
+2. **Imported aggregate results: struct and fieldless enum returns fixed.**
    `tests/stdlib_imported_aggregate_execution.rs` now compiles and executes
    imported one-, two-, and three-word struct constructors and consumers on
    x86_64. The object relocation pass previously guessed the call instruction
@@ -708,10 +709,14 @@ also fixes the imported struct-return relocation path described below.
    scalar calls inheriting an enclosing struct's word count and shifting all
    their arguments by one ABI register; x86 call counting, scattering, and
    stack allocation now use the checked result type to exclude that width.
-   Both fixes support the concrete Option/Result and vector modules. The separate minimal program
-   `tests/fixtures/stdlib_foundation/repro_ordering_return.lani` still exits
-   139 when the non-generic `Ordering` returned by `compare_i32` is passed to
-   `to_i32`. Enum-valued comparison APIs remain outside the executable claim.
+   Both fixes support the concrete Option/Result and vector modules. The
+   fieldless enum case is now handled by checking the imported variant
+   signatures and retaining the discriminant word as aggregate storage;
+   `tests/fixtures/stdlib_foundation/repro_ordering_return.lani` exits 0 and
+   `tests/stdlib_imported_aggregate_execution.rs` guards the calling
+   convention. Payload-bearing imported enums still need an exact projected
+   payload width before they can be claimed. The complete `core::ordering`
+   module remains blocked by dependencies 11 and 34.
    An earlier byte-range experiment also encountered an imported `RangeFull`
    lowering failure and a crash after several imported `Range<u8>` values
    were used together. Those shapes need a new executable check after this
@@ -782,7 +787,9 @@ also fixes the imported struct-return relocation path described below.
     succeeds, but the ELF exits 1 because it evaluates the large positive
     value as smaller. A proposed portable `number_i64` module was removed
     after this executable check; signed 64-bit numeric APIs cannot be claimed
-    working from current native test results.
+    working from current native test results. Executing
+    `core::ordering::compare_i64(2147483648, 2147483647)` also produces the
+    wrong order, while its 32-bit-range cases execute normally.
 12. **Const-generic array indexing.**
     `tests/fixtures/stdlib_foundation/repro_array_i32_generic.lani` calls
     `core::array_i32::first` on a four-element array. Native emission stops
@@ -974,6 +981,13 @@ also fixes the imported struct-return relocation path described below.
     instead of 0. The executable signed wrapping helpers reduce the widened
     result modulo the target width and bring it into the signed range before
     casting. Direct out-of-range signed narrowing still needs a compiler fix.
+34. **Imported fieldless enum variants by path.**
+    `laniusc check --stdlib-root stdlib
+    tests/fixtures/stdlib_foundation/repro_ordering_variant_import.lani`
+    succeeds, but native compilation of the same program reports `LNC0005`
+    at `core::ordering::Less`. Calling imported functions that construct and
+    consume `Ordering` now executes; direct variant path resolution still
+    needs a GPU compiler fix.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

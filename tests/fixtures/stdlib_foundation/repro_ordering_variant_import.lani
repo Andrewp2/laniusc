@@ -1,0 +1,8 @@
+module app::main;
+import core::ordering;
+
+fn main() -> i32 {
+    let less: core::ordering::Ordering = core::ordering::Less;
+    if (core::ordering::is_less(less)) { return 0; }
+    return 1;
+}

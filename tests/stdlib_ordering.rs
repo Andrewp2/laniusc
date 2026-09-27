@@ -1,13 +1,13 @@
 mod common;
 
 use laniusc_compiler::compiler::{
+    compile_entry_to_x86_64_with_stdlib,
     load_entry_path_manifest_with_stdlib,
     runtime_bound_api_diagnostic_info,
-    type_check_entry_with_stdlib,
 };
 
 #[test]
-fn core_ordering_predicates_check_through_stdlib_root() {
+fn core_ordering_predicates_execute_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_stdlib_ordering", "predicates", Some("lani"));
     entry.write_str(
@@ -97,15 +97,24 @@ fn main() {
         "path manifest should include core::ordering from the stdlib root"
     );
 
-    common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root core::ordering predicates",
-        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
+    let entry_path = entry.path().to_path_buf();
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "GPU compile stdlib-root core::ordering predicates",
+        move || pollster::block_on(compile_entry_to_x86_64_with_stdlib(entry_path, stdlib_root)),
     )
-    .expect("core::ordering predicates should type check through --stdlib-root");
+    .expect("core::ordering predicates should compile through --stdlib-root");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output =
+            common::run_x86_64_elf_output("ordering predicates", "ordering_predicates", &bytes);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
 }
 
 #[test]
-fn core_ordering_integer_comparators_type_check_through_stdlib_root() {
+fn core_ordering_integer_comparators_execute_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new(
         "laniusc_stdlib_ordering",
@@ -130,6 +139,9 @@ fn main() {
     let u8_less: core::ordering::Ordering = core::ordering::compare_u8(1, 2);
     let u8_equal: Ordering = compare_u8(8, 8);
     let u8_greater: core::ordering::Ordering = core::ordering::compare_u8(250, 3);
+    let u32_high: u32 = 2147483648;
+    let u32_low: u32 = 2147483647;
+    let u32_high_greater: bool = is_greater(compare_u32(u32_high, u32_low));
 
     let i64_less_ok: bool = core::ordering::is_less(i64_less);
     let i64_equal_ok: bool = core::ordering::is_equal(i64_equal);
@@ -152,6 +164,7 @@ fn main() {
     if (!u8_less_ok || !u8_equal_ok || !u8_greater_ok) {
         return 1;
     }
+    if (!u32_high_greater) { return 3; }
     return 0;
 }
 "#,
@@ -176,9 +189,18 @@ fn main() {
         );
     }
 
-    common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root core::ordering integer comparators",
-        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
+    let entry_path = entry.path().to_path_buf();
+    let bytes = common::run_gpu_codegen_with_timeout(
+        "GPU compile stdlib-root core::ordering integer comparators",
+        move || pollster::block_on(compile_entry_to_x86_64_with_stdlib(entry_path, stdlib_root)),
     )
-    .expect("core::ordering integer comparators should type check through --stdlib-root");
+    .expect("core::ordering integer comparators should compile through --stdlib-root");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output =
+            common::run_x86_64_elf_output("ordering integers", "ordering_integers", &bytes);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
 }

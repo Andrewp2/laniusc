@@ -52,3 +52,26 @@ fn imported_scalar_result_after_aggregate_argument_uses_correct_abi_on_x86() {
     #[cfg(not(all(unix, target_arch = "x86_64")))]
     let _ = bytes;
 }
+
+#[test]
+fn imported_fieldless_enum_result_uses_aggregate_abi_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_ordering_return.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("imported ordering result", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile imported fieldless enum result");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported ordering result",
+            "repro_ordering_return",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
