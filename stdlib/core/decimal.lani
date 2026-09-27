@@ -197,3 +197,39 @@ pub fn parse_ascii_i32_or(values: [i32], len: i32, fallback: i32) -> i32 {
     }
     return magnitude as i32;
 }
+
+// Narrow parsers inherit the exact ASCII grammar of the 32-bit parsers and
+// reject values outside their target width before narrowing. The internal
+// sentinel is outside each target width, so parse failure cannot be mistaken
+// for a valid narrow result. A valid narrow result may equal caller fallback.
+pub fn parse_ascii_u8_or(values: [i32], len: i32, fallback: u8) -> u8 {
+    let parsed: u32 = parse_ascii_u32_or(values, len, 4294967295);
+    if (parsed>255) {
+        return fallback;
+    }
+    return parsed as u8;
+}
+
+pub fn parse_ascii_u16_or(values: [i32], len: i32, fallback: u16) -> u16 {
+    let parsed: u32 = parse_ascii_u32_or(values, len, 4294967295);
+    if (parsed>65535) {
+        return fallback;
+    }
+    return parsed as u16;
+}
+
+pub fn parse_ascii_i8_or(values: [i32], len: i32, fallback: i8) -> i8 {
+    let parsed: i32 = parse_ascii_i32_or(values, len, 2147483647);
+    if (parsed< -128 || parsed>127) {
+        return fallback;
+    }
+    return parsed as i8;
+}
+
+pub fn parse_ascii_i16_or(values: [i32], len: i32, fallback: i16) -> i16 {
+    let parsed: i32 = parse_ascii_i32_or(values, len, 2147483647);
+    if (parsed< -32768 || parsed>32767) {
+        return fallback;
+    }
+    return parsed as i16;
+}

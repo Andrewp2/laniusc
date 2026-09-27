@@ -176,5 +176,60 @@ fn main() -> i32 {
         core::decimal::parse_ascii_i32_or(digits_view, 0, 99) != 99) {
         return 24;
     }
+    let max_u8_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(expected_u8), 3);
+    let max_u16_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(expected_u16), 5);
+    let min_i8_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(expected_i8), 4);
+    let min_i16_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(expected_i16), 6);
+    let over_u8:[i32; 3] = [50, 53, 54];
+    let over_u8_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(over_u8), 3);
+    let over_u16:[i32; 5] = [54, 53, 53, 51, 54];
+    let over_u16_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(over_u16), 5);
+    let max_i8_ascii:[i32; 3] = [49, 50, 55];
+    let max_i8_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(max_i8_ascii), 3);
+    let max_i16_ascii:[i32; 5] = [51, 50, 55, 54, 55];
+    let max_i16_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(max_i16_ascii), 5);
+    let over_i8:[i32; 3] = [49, 50, 56];
+    let over_i8_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(over_i8), 3);
+    let under_i8:[i32; 4] = [45, 49, 50, 57];
+    let under_i8_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(under_i8), 4);
+    let over_i16:[i32; 5] = [51, 50, 55, 54, 56];
+    let over_i16_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(over_i16), 5);
+    let under_i16:[i32; 6] = [45, 51, 50, 55, 54, 57];
+    let under_i16_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(under_i16), 6);
+    if (core::decimal::parse_ascii_u8_or(max_u8_view, 3, 99) != 255 ||
+        core::decimal::parse_ascii_u8_or(leading_zeroes_view, 3, 99) != 1 ||
+        core::decimal::parse_ascii_u8_or(digits_view, 2, 99) != 12 ||
+        core::decimal::parse_ascii_u8_or(over_u8_view, 3, 99) != 99 ||
+        core::decimal::parse_ascii_u8_or(malformed_view, 3, 99) != 99 ||
+        core::decimal::parse_ascii_u8_or(negative_zero_view, 2, 99) != 99 ||
+        core::decimal::parse_ascii_u8_or(digits_view, 0, 99) != 99) {
+        return 25;
+    }
+    if (core::decimal::parse_ascii_u16_or(max_u16_view, 5, 99) != 65535 ||
+        core::decimal::parse_ascii_u16_or(leading_zeroes_view, 3, 99) != 1 ||
+        core::decimal::parse_ascii_u16_or(over_u16_view, 5, 99) != 99 ||
+        core::decimal::parse_ascii_u16_or(max_u32_view, 10, 99) != 99 ||
+        core::decimal::parse_ascii_u16_or(invalid_code_view, 2, 99) != 99 ||
+        core::decimal::parse_ascii_u16_or(digits_view, -1, 99) != 99) {
+        return 26;
+    }
+    if (core::decimal::parse_ascii_i8_or(min_i8_view, 4, 99) != -128 ||
+        core::decimal::parse_ascii_i8_or(max_i8_view, 3, 99) != 127 ||
+        core::decimal::parse_ascii_i8_or(negative_view, 3, 99) != -42 ||
+        core::decimal::parse_ascii_i8_or(over_i8_view, 3, 99) != 99 ||
+        core::decimal::parse_ascii_i8_or(under_i8_view, 4, 99) != 99 ||
+        core::decimal::parse_ascii_i8_or(minus_view, 1, 99) != 99 ||
+        core::decimal::parse_ascii_i8_or(spaced_view, 2, 99) != 99) {
+        return 27;
+    }
+    if (core::decimal::parse_ascii_i16_or(min_i16_view, 6, 99) != -32768 ||
+        core::decimal::parse_ascii_i16_or(max_i16_view, 5, 99) != 32767 ||
+        core::decimal::parse_ascii_i16_or(negative_view, 3, 99) != -42 ||
+        core::decimal::parse_ascii_i16_or(over_i16_view, 5, 99) != 99 ||
+        core::decimal::parse_ascii_i16_or(under_i16_view, 6, 99) != 99 ||
+        core::decimal::parse_ascii_i16_or(min_i32_view, 11, 99) != 99 ||
+        core::decimal::parse_ascii_i16_or(plus_view, 1, 99) != 99) {
+        return 28;
+    }
     return 0;
 }

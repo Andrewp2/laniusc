@@ -19,7 +19,7 @@ limited to native x86_64 output from this worktree.
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 8 public codec and backed-view functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, scalar counts, empty and truncated views, out-of-byte-range integer codes, malformed sequences, surrogate exclusion, and Unicode maximum. Scalar byte parameters and results use `u8`; the view functions use caller-backed `[i32]` byte codes and do not access string storage. |
-| `core::decimal` all 16 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of extrema across 8-, 16-, and 32-bit integers, ordinary values, sign placement, zero, out-of-range fallbacks, incremental and complete ASCII parsing, and overflow against caller limits. `std::io_decimal` and both bounded decimal file readers use the portable scalar helpers. |
+| `core::decimal` all 20 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of extrema across 8-, 16-, and 32-bit integers, ordinary values, sign placement, zero, out-of-range fallbacks, incremental and complete ASCII parsing for all six widths, and overflow against each width's limits. `std::io_decimal` and both bounded decimal file readers use the portable scalar helpers. |
 | `core::hex` all 14 public functions | Executable on x86_64 | Runtime fixture checks shortest lowercase and uppercase hexadecimal representations of `u8`, `u16`, and `u32`, zero and maximum values, invalid-index fallbacks, mixed-case digit accumulation, complete prefixed and unprefixed parsing, and overflow against each width's limit. The helpers allocate no storage and use no host calls. |
 | `core::f32` all 13 public functions | Executable on x86_64 for tested finite inputs | Runtime fixture checks sign, comparison, valid and reversed clamp bounds, fallback behavior, and square root for zero, negative, small, ordinary, and large inputs. The imported public constant `ONE` is broken (dependency 5), and unordered NaN comparisons produce wrong results (dependency 32). |
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
@@ -167,13 +167,15 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   the supplied limit before multiplication. `append_ascii_digit_or_u32` returns
   the caller's fallback on either failure; that fallback can equal a valid
   parsed value, so callers needing a separate success check use the predicate.
-  `parse_ascii_u32_or` and `parse_ascii_i32_or` read exactly the given number
-  of ASCII codes from a caller-backed `[i32]` view. Unsigned input accepts one
-  or more digits; signed input also accepts one optional leading sign. Neither
-  accepts whitespace or trailing characters. Empty, sign-only, malformed, and
-  overflowing input returns the caller fallback, which can equal a valid
-  value. The signed parser accepts `i32::MIN` and `i32::MAX` without overflow.
-  An overstated physical view length can trap on native indexing.
+  The `parse_ascii_*_or` functions read exactly the given number of ASCII
+  codes from a caller-backed `[i32]` view for all six 8-, 16-, and 32-bit
+  integer types. Unsigned input accepts one or more digits; signed input also
+  accepts one optional leading sign. Neither accepts whitespace or trailing
+  characters. Empty, sign-only, malformed, and overflowing input returns the
+  caller fallback, which can equal a valid value. Signed minimums and maximums
+  parse without overflow; narrow parsers reject values outside their own
+  width before casting. An overstated physical view length can trap on native
+  indexing.
 - `core::hex` returns the shortest unsigned hexadecimal length and lowercase
   or uppercase ASCII byte at a zero-based index for `u8`, `u16`, and `u32`.
   Zero is one digit; out-of-range indices return the caller's fallback. Its
