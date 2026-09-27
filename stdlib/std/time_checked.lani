@@ -1,0 +1,28 @@
+// Checked x86 host clock operations. The caller supplies writable storage;
+// no allocation or i64 scalar clock result is required. A timespec is the
+// native 16-byte pair of seconds and nanoseconds. A false result means invalid
+// arguments or a host failure; after host failure, buffer contents are not
+// guaranteed. Sleep may return false if interrupted or rejected by the host.
+module std::time_checked;
+import std::time;
+fn valid_timespec_buffer(buffer: ptr, capacity: usize) -> bool {
+    return buffer != 0 && capacity >= 16 && capacity <= 2147483647;
+}
+pub fn monotonic_timespec_into(buffer: ptr, capacity: usize) -> bool {
+    if (!valid_timespec_buffer(buffer, capacity)) {
+        return false;
+    }
+    return std::time::monotonic_read(buffer, 16) == 0;
+}
+pub fn system_timespec_into(buffer: ptr, capacity: usize) -> bool {
+    if (!valid_timespec_buffer(buffer, capacity)) {
+        return false;
+    }
+    return std::time::system_read(buffer, 16) == 0;
+}
+pub fn sleep_nonnegative_ms(milliseconds: i32) -> bool {
+    if (milliseconds<0) {
+        return false;
+    }
+    return std::time::sleep_ms_i32(milliseconds) == 0;
+}

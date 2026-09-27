@@ -1,0 +1,62 @@
+module app::main;
+import core::mem;
+import std::time_checked;
+fn main() -> i32 {
+    let monotonic:[i32; 4] =[0, 0, 0, 0];
+    let system:[i32; 4] =[0, 0, 0, 0];
+    let mono_ptr: ptr = core::mem::i32_array_data_ptr(monotonic);
+    let system_ptr: ptr = core::mem::i32_array_data_ptr(system);
+    if (std::time_checked::monotonic_timespec_into(0, 16)) {
+        return 1;
+    }
+    if (std::time_checked::system_timespec_into(0, 16)) {
+        return 2;
+    }
+    if (std::time_checked::monotonic_timespec_into(mono_ptr, 15)) {
+        return 3;
+    }
+    if (std::time_checked::system_timespec_into(system_ptr, 15)) {
+        return 4;
+    }
+    let too_large: usize = 2147483648;
+    if (std::time_checked::monotonic_timespec_into(mono_ptr, too_large)) {
+        return 5;
+    }
+    if (std::time_checked::system_timespec_into(system_ptr, too_large)) {
+        return 6;
+    }
+    if (monotonic[0] != 0 || monotonic[1] != 0 || monotonic[2] != 0 || monotonic[3] != 0) {
+        return 7;
+    }
+    if (system[0] != 0 || system[1] != 0 || system[2] != 0 || system[3] != 0) {
+        return 8;
+    }
+    if (!std::time_checked::monotonic_timespec_into(mono_ptr, 16)) {
+        return 9;
+    }
+    if (!std::time_checked::system_timespec_into(system_ptr, 32)) {
+        return 10;
+    }
+    if (monotonic[2]<0 || monotonic[2] >= 1000000000 || monotonic[3] != 0) {
+        return 11;
+    }
+    if (system[2]<0 || system[2] >= 1000000000 || system[3] != 0) {
+        return 12;
+    }
+    if (monotonic[0] == 0 && monotonic[1] == 0 && monotonic[2] == 0) {
+        return 16;
+    }
+    if (system[0] == 0 && system[1] == 0 && system[2] == 0) {
+        return 17;
+    }
+    if (std::time_checked::sleep_nonnegative_ms(-1)) {
+        return 13;
+    }
+    if (!std::time_checked::sleep_nonnegative_ms(0)) {
+        return 14;
+    }
+    if (!std::time_checked::sleep_nonnegative_ms(50)) {
+        return 15;
+    }
+    return 0;
+}

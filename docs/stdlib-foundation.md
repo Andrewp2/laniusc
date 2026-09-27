@@ -35,6 +35,7 @@ limited to native x86_64 output from this worktree.
 | `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::args_checked::read_exact_into` | Executable x86_64 Linux host wrapper | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks exact bytes, sufficient and insufficient capacity, null storage, missing/negative indices, and capacity above `i32::MAX`. Caller storage avoids allocation. |
 | `std::env_checked::var_read_exact_into` | Executable x86_64 Linux host wrapper | `tests/stdlib_env_execution.rs` runs a Lanius program with present, empty, and missing environment values. It checks exact bytes, capacity, null storage, invalid keys, and untouched storage on preflight rejection. Caller storage avoids allocation. |
+| `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, and invalid handles. These are separate from the portable core. |
 | `std::io_decimal::write_u32` | Executable x86_64 Linux host wrapper | `tests/stdlib_host_execution.rs` checks unsigned decimal zero and maximum, exact byte counts, invalid handles, and injected failure after a written prefix. |
 | `std::file` all 7 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot and exact caller-buffer reads, complete buffer writes, a multi-chunk binary copy, bounded signed decimal reads and writes, empty files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
@@ -191,6 +192,12 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   terminator. A missing key, insufficient capacity, or invalid pointer/length
   returns false before writing. An empty value succeeds with a null buffer.
   A host short read returns false and may leave a copied prefix.
+- `std::time_checked` writes the native 16-byte seconds/nanoseconds timespec
+  into caller storage for monotonic or system time. Null or short buffers and
+  capacities above `i32::MAX` return false before a host call. Clock errors
+  return false; storage contents after such an error are unspecified.
+  `sleep_nonnegative_ms` rejects negative durations and returns false if the
+  host sleep fails or is interrupted.
 - `std::io::write_line` writes text followed by a newline and returns the
   combined byte count. A negative result from either host write is returned
   immediately. A partial text write is reported by its count, and the newline
