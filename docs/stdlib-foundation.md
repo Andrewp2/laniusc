@@ -998,11 +998,14 @@ also fixes the imported struct-return relocation path described below.
     of runtime-tested constants, leaving all 31 public lexical functions
     executable. The minimal root keeps this compiler defect reproducible for
     other imported no-argument APIs.
-11. **Native i64 comparison.**
+11. **Native i64 literal and comparison lowering.**
     `tests/fixtures/stdlib_foundation/repro_i64_compare.lani` compares
     an i64 value of `4,611,686,018,427,387,904` with `1,073,741,824`. Native emission
     succeeds, but the ELF exits 1 because it evaluates the large positive
-    value as smaller. A proposed portable `number_i64` module was removed
+    value as smaller. Disassembly of this ELF shows a 32-bit immediate
+    (`0x12e0be82`) for the large literal and a 32-bit `cmp`, so widening only
+    the comparison instruction would leave the input value wrong. A proposed
+    portable `number_i64` module was removed
     after this executable check; signed 64-bit numeric APIs cannot be claimed
     working from current native test results. Executing
     `core::ordering::compare_i64(2147483648, 2147483647)` also produces the
