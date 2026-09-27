@@ -1,0 +1,69 @@
+module app::main;
+import core::u16;
+import core::option_u16;
+fn main() -> i32 {
+    let zero: u16 = 0;
+    let maximum: u16 = 65535;
+    let high: u16 = 32768;
+    if (core::u16::MIN != zero || core::u16::MAX != maximum ||
+        core::u16::BITS != 16 || core::u16::BYTES != 2 ||
+        core::u16::min(high, 7) != 7 || core::u16::max(high, 7) != high ||
+        core::u16::clamp(12, 2, 10) != 10 ||
+        core::u16::clamp(5, 10, 3) != 5) {
+        return 1;
+    }
+    if (core::u16::wrapping_add(maximum, 1) != zero ||
+        core::u16::wrapping_sub(zero, 1) != maximum ||
+        core::u16::wrapping_mul(maximum, 2) != 65534 ||
+        core::u16::saturating_add(maximum, 1) != maximum ||
+        core::u16::saturating_sub(zero, 1) != zero ||
+        core::u16::saturating_mul(high, 2) != maximum ||
+        core::u16::abs_diff(maximum, zero) != maximum ||
+        core::u16::abs_diff(3, 9) != 6) {
+        return 2;
+    }
+    if (!core::option_u16::contains(core::u16::checked_add(7, 5), 12) ||
+        !core::option_u16::is_none(core::u16::checked_add(maximum, 1)) ||
+        !core::option_u16::contains(core::u16::checked_sub(7, 5), 2) ||
+        !core::option_u16::is_none(core::u16::checked_sub(zero, 1))) {
+        return 3;
+    }
+    if (!core::u16::is_zero(zero) || core::u16::is_zero(1) ||
+        !core::u16::is_nonzero(high) || core::u16::is_nonzero(zero) ||
+        !core::u16::is_even(4) || core::u16::is_even(3) ||
+        !core::u16::is_odd(3) || core::u16::is_odd(4) ||
+        !core::u16::is_multiple_of(12, 3) ||
+        core::u16::is_multiple_of(12, zero)) {
+        return 4;
+    }
+    if (!core::u16::between_inclusive(high, high, maximum) ||
+        core::u16::between_inclusive(7, high, maximum) ||
+        core::u16::between_inclusive(5, 10, 3) ||
+        !core::u16::between_exclusive(7, 3, 9) ||
+        core::u16::between_exclusive(3, 3, 9) ||
+        !core::u16::is_power_of_two(high) ||
+        core::u16::is_power_of_two(maximum) ||
+        core::u16::is_power_of_two(zero) ||
+        core::u16::next_power_of_two(zero) != 1 ||
+        core::u16::next_power_of_two(7) != 8 ||
+        core::u16::next_power_of_two(maximum) != zero) {
+        return 5;
+    }
+    if (!core::option_u16::contains(core::u16::checked_next_power_of_two(7), 8) ||
+        !core::option_u16::contains(core::u16::checked_next_power_of_two(zero), 1) ||
+        !core::option_u16::contains(core::u16::checked_next_power_of_two(high), high) ||
+        !core::option_u16::is_none(core::u16::checked_next_power_of_two(maximum))) {
+        return 6;
+    }
+    if (!core::u16::is_aligned(16, 8) ||
+        core::u16::is_aligned(17, 8) ||
+        core::u16::is_aligned(17, zero) ||
+        core::u16::align_up(17, 8) != 24 ||
+        core::u16::align_up(maximum, 8) != zero ||
+        core::u16::align_up(17, zero) != zero ||
+        core::u16::align_down(26, 8) != 24 ||
+        core::u16::align_down(17, zero) != zero) {
+        return 7;
+    }
+    return 0;
+}

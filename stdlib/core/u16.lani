@@ -1,0 +1,102 @@
+// Module-form unsigned halfword helpers. Checked operations use OptionU16;
+// convenience power and alignment helpers return zero on failure.
+module core::u16;
+import core::number_u16;
+import core::option_u16;
+pub const MIN: u16 = 0;
+pub const MAX: u16 = 65535;
+pub const BITS: u32 = 16;
+pub const BYTES: u32 = 2;
+pub fn min(left: u16, right: u16) -> u16 {
+    return core::number_u16::min(left, right);
+}
+pub fn max(left: u16, right: u16) -> u16 {
+    return core::number_u16::max(left, right);
+}
+// Reversed bounds leave the input unchanged.
+pub fn clamp(value: u16, low: u16, high: u16) -> u16 {
+    return core::number_u16::clamp_or(value, low, high, value);
+}
+pub fn wrapping_add(left: u16, right: u16) -> u16 {
+    return core::number_u16::wrapping_add(left, right);
+}
+pub fn wrapping_sub(left: u16, right: u16) -> u16 {
+    return core::number_u16::wrapping_sub(left, right);
+}
+pub fn wrapping_mul(left: u16, right: u16) -> u16 {
+    return core::number_u16::wrapping_mul(left, right);
+}
+pub fn checked_add(left: u16, right: u16) -> core::option_u16::OptionU16 {
+    let wide_left: u32 = left;
+    let wide_right: u32 = right;
+    let sum: u32 = wide_left + wide_right;
+    if (sum > 65535) {
+        return core::option_u16::none();
+    }
+    let narrowed: u16 = sum;
+    return core::option_u16::some(narrowed);
+}
+pub fn checked_sub(left: u16, right: u16) -> core::option_u16::OptionU16 {
+    if (left < right) {
+        return core::option_u16::none();
+    }
+    return core::option_u16::some(left - right);
+}
+pub fn saturating_add(left: u16, right: u16) -> u16 {
+    return core::number_u16::saturating_add(left, right);
+}
+pub fn saturating_sub(left: u16, right: u16) -> u16 {
+    return core::number_u16::saturating_sub(left, right);
+}
+pub fn saturating_mul(left: u16, right: u16) -> u16 {
+    return core::number_u16::saturating_mul(left, right);
+}
+pub fn abs_diff(left: u16, right: u16) -> u16 {
+    return core::number_u16::abs_diff(left, right);
+}
+pub fn is_zero(value: u16) -> bool {
+    return core::number_u16::is_zero(value);
+}
+pub fn is_nonzero(value: u16) -> bool {
+    return core::number_u16::is_nonzero(value);
+}
+pub fn is_even(value: u16) -> bool {
+    return core::number_u16::is_even(value);
+}
+pub fn is_odd(value: u16) -> bool {
+    return core::number_u16::is_odd(value);
+}
+pub fn is_multiple_of(value: u16, divisor: u16) -> bool {
+    return core::number_u16::is_multiple_of(value, divisor);
+}
+pub fn between_inclusive(value: u16, low: u16, high: u16) -> bool {
+    return value >= low && value <= high;
+}
+pub fn between_exclusive(value: u16, low: u16, high: u16) -> bool {
+    return value > low && value < high;
+}
+pub fn is_power_of_two(value: u16) -> bool {
+    return core::number_u16::is_power_of_two(value);
+}
+// Zero signals that the next positive power does not fit in u16.
+pub fn next_power_of_two(value: u16) -> u16 {
+    return core::number_u16::next_power_of_two(value);
+}
+pub fn checked_next_power_of_two(value: u16) -> core::option_u16::OptionU16 {
+    let next: u16 = core::number_u16::next_power_of_two(value);
+    if (next == 0) {
+        return core::option_u16::none();
+    }
+    return core::option_u16::some(next);
+}
+pub fn is_aligned(value: u16, alignment: u16) -> bool {
+    return core::number_u16::is_aligned(value, alignment);
+}
+// Zero alignment or overflow returns zero.
+pub fn align_up(value: u16, alignment: u16) -> u16 {
+    return core::number_u16::align_up_or(value, alignment, 0);
+}
+// Zero alignment returns zero.
+pub fn align_down(value: u16, alignment: u16) -> u16 {
+    return core::number_u16::align_down_or(value, alignment, 0);
+}
