@@ -80,5 +80,24 @@ fn main() -> i32 {
         core::f32::is_zero(nan) || !core::f32::is_nonzero(nan) ||
         core::f32::between_exclusive(nan, 0.0, 1.0) ||
         core::f32::between_inclusive(nan, 0.0, 1.0)) { return 22; }
+    let positive_infinity: f32 = 1.0 / zero;
+    let negative_infinity: f32 = -1.0 / zero;
+    if (!core::f32::is_nan(nan) || core::f32::is_nan(1.0) ||
+        core::f32::is_nan(positive_infinity) ||
+        !core::f32::is_infinite(positive_infinity) ||
+        !core::f32::is_infinite(negative_infinity) ||
+        core::f32::is_infinite(nan) || core::f32::is_infinite(0.0) ||
+        core::f32::is_infinite(-0.0) ||
+        core::f32::is_infinite(3.0) ||
+        core::f32::is_finite(nan) || core::f32::is_finite(positive_infinity) ||
+        core::f32::is_finite(negative_infinity) ||
+        !core::f32::is_finite(0.0) || !core::f32::is_finite(-0.0) ||
+        !core::f32::is_finite(-3.5)) { return 24; }
+    if (core::f32::sqrt_or(9.0, -7.0) != 3.0 ||
+        core::f32::sqrt_or(0.0, -7.0) != 0.0 ||
+        core::f32::sqrt_or(-1.0, -7.0) != -7.0 ||
+        core::f32::sqrt_or(negative_infinity, -7.0) != -7.0 ||
+        core::f32::sqrt_or(nan, -7.0) != -7.0 ||
+        !core::f32::is_infinite(core::f32::sqrt_or(positive_infinity, -7.0))) { return 25; }
     return 0;
 }
