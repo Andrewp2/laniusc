@@ -3733,8 +3733,8 @@ fn main() {
         (
             "core::i32",
             &[
-                include_str!("../stdlib/core/result.lani"),
-                include_str!("../stdlib/core/option.lani"),
+                include_str!("../stdlib/core/result_i32.lani"),
+                include_str!("../stdlib/core/option_i32.lani"),
                 include_str!("../stdlib/core/i32.lani"),
             ][..],
             r#"
@@ -3757,8 +3757,9 @@ fn main() {
         (
             "core::char+u32",
             &[
-                include_str!("../stdlib/core/result.lani"),
-                include_str!("../stdlib/core/option.lani"),
+                include_str!("../stdlib/core/number_u32.lani"),
+                include_str!("../stdlib/core/result_u32.lani"),
+                include_str!("../stdlib/core/option_u32.lani"),
                 include_str!("../stdlib/core/char.lani"),
                 include_str!("../stdlib/core/u32.lani"),
             ][..],
@@ -3785,6 +3786,9 @@ fn main() {
             &[
                 include_str!("../stdlib/core/result.lani"),
                 include_str!("../stdlib/core/option.lani"),
+                include_str!("../stdlib/core/result_u8.lani"),
+                include_str!("../stdlib/core/option_u8.lani"),
+                include_str!("../stdlib/core/byte.lani"),
                 include_str!("../stdlib/core/u8.lani"),
                 include_str!("../stdlib/core/i64.lani"),
             ][..],

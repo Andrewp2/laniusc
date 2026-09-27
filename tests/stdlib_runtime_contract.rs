@@ -2678,7 +2678,7 @@ fn main() {
     let rounded_up: u32 = align_up(seventeen, eight);
     let zero_alignment: u32 = core::u32::align_up(seventeen, zero);
     let one_alignment: u32 = align_up(seventeen, one);
-    let saturated: u32 = core::u32::align_up(almost_max, eight);
+    let overflowed: u32 = core::u32::align_up(almost_max, eight);
     let already_aligned_down: u32 = core::u32::align_down(sixteen, eight);
     let rounded_down: u32 = align_down(twenty_six, eight);
     let down_to_zero: u32 = core::u32::align_down(three, eight);
@@ -2688,21 +2688,21 @@ fn main() {
     let one_alignment_is_aligned: bool = is_aligned(seventeen, one);
     let exact_alignment: bool = core::u32::is_aligned(twenty_four, eight);
     let missed_alignment: bool = is_aligned(twenty_six, eight);
-    if (already_aligned != 16 || rounded_up != 24 || zero_alignment != 17 || one_alignment != 17) {
+    if (already_aligned != 16 || rounded_up != 24 || zero_alignment != 0 || one_alignment != 17 || overflowed != 0) {
         return 1;
     }
     if (already_aligned_down != 16
         || rounded_down != 24
         || down_to_zero != 0
-        || down_zero_alignment != 17
+        || down_zero_alignment != 0
         || down_one_alignment != 17)
     {
         return 1;
     }
-    if (!zero_alignment_is_aligned || !one_alignment_is_aligned || !exact_alignment || missed_alignment) {
+    if (zero_alignment_is_aligned || !one_alignment_is_aligned || !exact_alignment || missed_alignment) {
         return 1;
     }
-    return saturated - saturated;
+    return 0;
 }
 "#,
     );

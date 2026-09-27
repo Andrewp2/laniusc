@@ -2,7 +2,8 @@
 
 module core::u8;
 
-import core::option;
+import core::option_u8;
+import core::byte;
 
 pub const MIN: u8 = 0;
 pub const MAX: u8 = 255;
@@ -26,6 +27,10 @@ pub fn max(left: u8, right: u8) -> u8 {
 }
 
 pub fn clamp(value: u8, low: u8, high: u8) -> u8 {
+    // An invalid interval leaves the input unchanged.
+    if (low > high) {
+        return value;
+    }
     if (value < low) {
         return low;
     } else {
@@ -47,8 +52,8 @@ pub fn wrapping_add(left: u8, right: u8) -> u8 {
 }
 
 pub fn wrapping_sub(left: u8, right: u8) -> u8 {
-    let needed: u8 = right - left;
     if (left < right) {
+        let needed: u8 = right - left;
         return MAX - needed + 1;
     } else {
         return left - right;
@@ -56,22 +61,22 @@ pub fn wrapping_sub(left: u8, right: u8) -> u8 {
 }
 
 pub fn wrapping_mul(left: u8, right: u8) -> u8 {
-    return left * right % 256;
+    return core::byte::wrapping_mul(left, right);
 }
 
-pub fn checked_add(left: u8, right: u8) -> core::option::Option<u8> {
+pub fn checked_add(left: u8, right: u8) -> core::option_u8::OptionU8 {
     if (left > MAX - right) {
-        return core::option::None;
+        return core::option_u8::none();
     } else {
-        return core::option::Some(left + right);
+        return core::option_u8::some(left + right);
     }
 }
 
-pub fn checked_sub(left: u8, right: u8) -> core::option::Option<u8> {
+pub fn checked_sub(left: u8, right: u8) -> core::option_u8::OptionU8 {
     if (left < right) {
-        return core::option::None;
+        return core::option_u8::none();
     } else {
-        return core::option::Some(left - right);
+        return core::option_u8::some(left - right);
     }
 }
 
@@ -100,11 +105,7 @@ pub fn abs_diff(left: u8, right: u8) -> u8 {
 }
 
 pub fn saturating_mul(left: u8, right: u8) -> u8 {
-    if (left * right > MAX) {
-        return MAX;
-    } else {
-        return left * right;
-    }
+    return core::byte::saturating_mul(left, right);
 }
 
 pub fn is_zero(value: u8) -> bool {

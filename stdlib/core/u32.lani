@@ -2,7 +2,8 @@
 
 module core::u32;
 
-import core::option;
+import core::option_u32;
+import core::number_u32;
 
 pub const MIN: u32 = 0;
 pub const MAX: u32 = 4294967295;
@@ -26,6 +27,10 @@ pub fn max(left: u32, right: u32) -> u32 {
 }
 
 pub fn clamp(value: u32, low: u32, high: u32) -> u32 {
+    // An invalid interval leaves the input unchanged.
+    if (low > high) {
+        return value;
+    }
     if (value < low) {
         return low;
     } else {
@@ -49,19 +54,19 @@ pub fn wrapping_mul(left: u32, right: u32) -> u32 {
     return left * right;
 }
 
-pub fn checked_add(left: u32, right: u32) -> core::option::Option<u32> {
+pub fn checked_add(left: u32, right: u32) -> core::option_u32::OptionU32 {
     if (left > MAX - right) {
-        return core::option::None;
+        return core::option_u32::none();
     } else {
-        return core::option::Some(left + right);
+        return core::option_u32::some(left + right);
     }
 }
 
-pub fn checked_sub(left: u32, right: u32) -> core::option::Option<u32> {
+pub fn checked_sub(left: u32, right: u32) -> core::option_u32::OptionU32 {
     if (left < right) {
-        return core::option::None;
+        return core::option_u32::none();
     } else {
-        return core::option::Some(left - right);
+        return core::option_u32::some(left - right);
     }
 }
 
@@ -162,50 +167,33 @@ pub fn next_power_of_two(value: u32) -> u32 {
     }
 }
 
-pub fn checked_next_power_of_two(value: u32) -> core::option::Option<u32> {
+pub fn checked_next_power_of_two(value: u32) -> core::option_u32::OptionU32 {
     let highest_power_of_two: u32 = 2147483648;
     if (value <= 1) {
-        return core::option::Some(1);
+        return core::option_u32::some(1);
     } else {
         if (value > highest_power_of_two) {
-            return core::option::None;
+            return core::option_u32::none();
         } else {
             let power: u32 = 1;
             while (power < value) {
                 power *= 2;
             }
-            return core::option::Some(power);
+            return core::option_u32::some(power);
         }
     }
 }
 
 pub fn is_aligned(value: u32, alignment: u32) -> bool {
-    if (alignment <= 1) {
-        return true;
-    } else {
-        return value % alignment == 0;
-    }
+    return core::number_u32::is_aligned(value, alignment);
 }
 
+// Zero alignment or overflow returns zero, the unrepresentable-result sentinel.
 pub fn align_up(value: u32, alignment: u32) -> u32 {
-    if (alignment <= 1) {
-        return value;
-    } else {
-        let remainder: u32 = value % alignment;
-        if (remainder == 0) {
-            return value;
-        } else {
-            let bump: u32 = alignment - remainder;
-            return saturating_add(value, bump);
-        }
-    }
+    return core::number_u32::align_up_or(value, alignment, 0);
 }
 
+// Zero alignment returns zero. A valid nonzero result is aligned.
 pub fn align_down(value: u32, alignment: u32) -> u32 {
-    if (alignment <= 1) {
-        return value;
-    } else {
-        let remainder: u32 = value % alignment;
-        return value - remainder;
-    }
+    return core::number_u32::align_down_or(value, alignment, 0);
 }

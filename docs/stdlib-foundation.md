@@ -40,8 +40,12 @@ limited to native x86_64 output from this worktree.
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
 | `core::option_i32` all 12 public functions and `core::result_i32` all 10 public functions | Executable on x86_64 | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, both branches of `or`, `and`, and `xor`, and conversions between the two concrete types. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function to have a runtime call. These concrete structs do not make generic `Option<T>` or `Result<T,E>` executable. |
 | `core::option_u32` all 12 public functions and `core::result_u32` all 10 public functions | Executable on x86_64 | The matching runtime fixture covers every function and both variants with zero, ordinary values, the high bit, and `u32::MAX`. Both the success payload and error code are `u32`; inactive fields are zero. A source scan requires every public function to have a runtime call. |
+| `core::option_u8` all 12 public functions and `core::result_u8` all 10 public functions | Executable on x86_64 | The byte fixture executes every function with `None`, `Some`, `Ok`, and `Err`, including zero, 128, and 255 payloads. A source scan requires every public function to have a runtime call. |
+| `core::i32` all 28 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks each function's ordinary result and selected edge cases: `MIN` absolute value, checked and saturating overflow, wrapping arithmetic, signed predicates, range boundaries, and power-of-two overflow. Checked results use concrete `OptionI32`. |
+| `core::u8` all 37 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, overflow and zero-divisor behavior, wrapping multiplication, ASCII classes and case conversion, and checked results through `OptionU8`. Its multiplication delegates to the tested `core::byte` implementation. |
+| `core::u32` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, unsigned high-bit and maximum values, checked and wrapping arithmetic, alignment failures, and power-of-two overflow. Checked results use concrete `OptionU32`. |
 | `core::ordering` 13 public functions and `Ordering` variants | Partially executable on x86_64 | `tests/stdlib_ordering.rs` executes every function through the real stdlib root, including the imported fieldless enum return, predicates, reverse, then, all three outcomes, and unsigned high-bit comparison. `compare_i64` only works for tested 32-bit-range values; native i64 comparison still truncates high bits (dependency 11). Direct imported variant paths such as `core::ordering::Less` fail during native compilation (dependency 34), so the complete module is not yet claimed. |
-| Generic `core::option`, `core::result`, and `core::{i32,i64,u32,u8}` as complete imported modules | Contract-only for native execution | Their Lanius bodies type-check, but generic enum use or import prevents reliable x86 output. The numeric modules import generic `Option` for checked results. A minimal failing program is included below. The former by-value `Option::replace` ignored its input and was removed. |
+| Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Generic enum values fail GPU lowering and native 64-bit comparison/arithmetic are incomplete. The former by-value `Option::replace` ignored its input and was removed. The 8- and 32-bit numeric modules now use executable concrete option results. |
 | `core::{cmp,hash,array_i32}` and complete legacy `stdlib/array_i32_4.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs, traits, and array-returning legacy helpers depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
 | `alloc::allocator` | Executable x86_64 Linux host ABI for valid allocation arguments | Normal allocation, reallocation, and release have x86 tests. `tests/stdlib_allocator_failure_execution.rs` injects `ENOMEM` into `mmap` and `mremap`: both return null, and failed reallocation leaves the old storage readable and releasable. The API is low-level; callers must pass a valid pointer and matching sizes to `realloc` and `dealloc`. |
@@ -255,6 +259,15 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   success flags for unsigned payloads and error codes. `Some(0)`, `Ok(0)`,
   and `Err(0)` remain distinct. All extraction operations either inspect the
   active variant or return a caller fallback. Neither module allocates.
+- `core::option_u8` and `core::result_u8` provide the same contracts for byte
+  payloads and byte error codes. `core::i32`, `core::u8`, and `core::u32` use
+  the corresponding concrete Option modules for checked operations until
+  generic enum lowering works. Their `clamp` functions leave the input
+  unchanged when `low > high`. `core::i32::abs(MIN)` returns `MAX`, while
+  `checked_abs(MIN)` returns `None`. `core::u32::is_aligned(_, 0)` is false;
+  `align_up` and `align_down` return zero for zero alignment, and `align_up`
+  returns zero if rounding would overflow. Callers that need an arbitrary
+  failure value can use `core::number_u32::{align_up_or,align_down_or}`.
 - `std::vec_i32` owns an allocated i32 array. `try_push` doubles capacity when
   full, starting at four elements, and returns the prior vector unchanged on
   allocation failure. Compare the returned length with the prior length to
@@ -717,8 +730,11 @@ also fixes the imported struct-return relocation path described below.
    but stops with `LNC0017`, unsupported target opcode 8 (alias). The enum
    layout pass requires concrete payload types, while these definitions still
    contain generic `T` and `E`; a fixed one-word assumption would miscompile
-   wider instantiations. This blocks executable generic Option/Result modules
-   and checked numeric helpers that return them. The former by-value
+   wider instantiations. This blocks executable generic Option/Result modules.
+   The 8- and 32-bit checked numeric helpers now return concrete Option structs.
+   `repro_generic_enum_only.lani` with its three-line `Maybe<T>` dependency
+   narrows the failure to generic enum construction: native emission stops in
+   GPU lowering before x86 output. The former by-value
    `core::option::replace(value, next)` always returned `Some(next)` without
    changing `value`; it was removed rather than retained as a misleading
    mutation API. A real replacement operation needs a mutable Option receiver
@@ -792,14 +808,14 @@ also fixes the imported struct-return relocation path described below.
    words toward decreasing addresses. The subsequent local copy also needs
    the checked array shape to select the right destination layout; a width-only
    special case changes the wrong copy when a literal precedes the call.
-8. **Native numeric module imports.** The `core::{i32,u8,u32}` power-of-two
-   helpers had overflow loops for values above their highest representable
-   power of two. Source guards now return false for `is_power_of_two` and zero
-   for `next_power_of_two` in that case. `repro_numeric_powers.lani` exercises
-   their boundaries, but importing the complete numeric modules with
-   `core::option` still stops native emission at unsupported target LIR opcode
-   8. These fixes remain outside the executable claim until the compiler can
-   run that fixture through the real stdlib root.
+8. **Resolved: native numeric module imports.** The `core::{i32,u8,u32}`
+   modules now return concrete `OptionI32`, `OptionU8`, and `OptionU32` from
+   checked operations, avoiding unsupported generic enum lowering.
+   `repro_numeric_powers.lani` and the three full-module fixtures compile
+   through the real stdlib root and execute on x86_64. Power-of-two guards
+   return zero or false when the next positive power is unrepresentable.
+   The byte multiplication helpers now use `core::byte` so overflow cannot
+   silently corrupt a saturating or wrapping result.
 9. **Imported stdio metadata return.**
    `tests/fixtures/stdlib_host/repro_std_io_abi.lani` calls only
    `std::io::stdio_runtime_abi_version()`. Native emission succeeds, but the

@@ -1,0 +1,6 @@
+module app::main;
+import core::maybe;
+fn main() -> i32 {
+    let value: core::maybe::Maybe<i32> = core::maybe::Some(7);
+    return 0;
+}

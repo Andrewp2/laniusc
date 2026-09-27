@@ -10939,7 +10939,9 @@ fn main() {
 #[test]
 fn x86_executes_stdlib_helper_from_source_pack() {
     let sources = [
-        "module core::option;\npub enum Option<T> { Some(T), None }\n",
+        include_str!("../stdlib/core/result_u8.lani"),
+        include_str!("../stdlib/core/option_u8.lani"),
+        include_str!("../stdlib/core/byte.lani"),
         include_str!("../stdlib/core/u8.lani"),
         "module app::main;\nimport core::u8;\nfn main() -> bool {\n    return core::u8::is_ascii_digit(53);\n}\n",
     ];

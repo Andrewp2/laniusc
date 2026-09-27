@@ -121,6 +121,30 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "option_result_u8",
+            "tests/fixtures/stdlib_foundation/option_result_u8.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_i32_complete",
+            "tests/fixtures/stdlib_foundation/core_i32_complete.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_u8_complete",
+            "tests/fixtures/stdlib_foundation/core_u8_complete.lani",
+            0,
+            b"",
+        ),
+        (
+            "core_u32_complete",
+            "tests/fixtures/stdlib_foundation/core_u32_complete.lani",
+            0,
+            b"",
+        ),
+        (
             "slice_sequence",
             "tests/fixtures/stdlib_foundation/slice_sequence.lani",
             0,
@@ -265,6 +289,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"96\n",
         ),
         (
+            "option_result_helpers",
+            "sample_programs/option_result_helpers.lani",
+            0,
+            b"38\n",
+        ),
+        (
             "hex_packet_checksum",
             "sample_programs/hex_packet_checksum.lani",
             0,
@@ -388,6 +418,21 @@ fn legacy_i32x4_scalar_functions_execute_on_x86() {
 #[test]
 fn executable_core_function_surface_has_runtime_cases() {
     let modules = [
+        (
+            "i32",
+            include_str!("../stdlib/core/i32.lani"),
+            include_str!("fixtures/stdlib_foundation/core_i32_complete.lani"),
+        ),
+        (
+            "u8",
+            include_str!("../stdlib/core/u8.lani"),
+            include_str!("fixtures/stdlib_foundation/core_u8_complete.lani"),
+        ),
+        (
+            "u32",
+            include_str!("../stdlib/core/u32.lani"),
+            include_str!("fixtures/stdlib_foundation/core_u32_complete.lani"),
+        ),
         (
             "array_u8_4",
             include_str!("../stdlib/core/array_u8_4.lani"),
@@ -602,6 +647,7 @@ fn executable_core_function_surface_has_runtime_cases() {
     assert_eq!(hash_count, 1);
 
     let i32_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i32.lani");
+    let u8_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_u8.lani");
     let u32_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_u32.lani");
     for (module, source, fixture, expected_count) in [
         (
@@ -614,6 +660,18 @@ fn executable_core_function_surface_has_runtime_cases() {
             "result_i32",
             include_str!("../stdlib/core/result_i32.lani"),
             i32_result_fixture,
+            10,
+        ),
+        (
+            "option_u8",
+            include_str!("../stdlib/core/option_u8.lani"),
+            u8_result_fixture,
+            12,
+        ),
+        (
+            "result_u8",
+            include_str!("../stdlib/core/result_u8.lani"),
+            u8_result_fixture,
             10,
         ),
         (

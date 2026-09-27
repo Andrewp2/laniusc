@@ -16,16 +16,16 @@ fn core_i32_checked_add_option_type_checks_through_stdlib_root() {
 module app::main;
 
 import core::i32;
-import core::option;
+import core::option_i32;
 
 fn main() {
-    let sum: core::option::Option<i32> = core::i32::checked_add(40, 2);
-    let high_overflow: core::option::Option<i32> =
+    let sum: core::option_i32::OptionI32 = core::i32::checked_add(40, 2);
+    let high_overflow: core::option_i32::OptionI32 =
         checked_add(core::i32::MAX, 1);
-    let low_overflow: core::option::Option<i32> =
+    let low_overflow: core::option_i32::OptionI32 =
         core::i32::checked_add(core::i32::MIN, -1);
-    let sum_is_42: bool = core::option::contains_i32(sum, 42);
-    let high_is_none: bool = core::option::is_none(high_overflow);
+    let sum_is_42: bool = core::option_i32::contains(sum, 42);
+    let high_is_none: bool = core::option_i32::is_none(high_overflow);
     let low_is_none: bool = is_none(low_overflow);
     if (!sum_is_42 || !high_is_none || !low_is_none) {
         return 1;
@@ -48,22 +48,22 @@ fn main() {
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option.lani")),
-        "path manifest should include core::option from the stdlib root"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option_i32.lani")),
+        "path manifest should include core::option_i32 from the stdlib root"
     );
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result.lani")),
-        "path manifest should include core::result through the option import chain"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result_i32.lani")),
+        "path manifest should include core::result through the option_i32 import chain"
     );
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root core::i32 checked_add Option helper",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("core::i32::checked_add should type check through --stdlib-root as Option<i32>");
+    .expect("core::i32::checked_add should type check through --stdlib-root as OptionI32");
 }
 
 #[test]
@@ -79,16 +79,16 @@ fn core_i32_checked_sub_option_type_checks_through_stdlib_root() {
 module app::main;
 
 import core::i32;
-import core::option;
+import core::option_i32;
 
 fn main() {
-    let diff: core::option::Option<i32> = core::i32::checked_sub(42, 4);
-    let high_overflow: core::option::Option<i32> =
+    let diff: core::option_i32::OptionI32 = core::i32::checked_sub(42, 4);
+    let high_overflow: core::option_i32::OptionI32 =
         checked_sub(core::i32::MAX, -1);
-    let low_overflow: core::option::Option<i32> =
+    let low_overflow: core::option_i32::OptionI32 =
         core::i32::checked_sub(core::i32::MIN, 1);
-    let diff_is_38: bool = core::option::contains_i32(diff, 38);
-    let high_is_none: bool = core::option::is_none(high_overflow);
+    let diff_is_38: bool = core::option_i32::contains(diff, 38);
+    let high_is_none: bool = core::option_i32::is_none(high_overflow);
     let low_is_none: bool = is_none(low_overflow);
     if (!diff_is_38 || !high_is_none || !low_is_none) {
         return 1;
@@ -111,22 +111,22 @@ fn main() {
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option.lani")),
-        "path manifest should include core::option from the stdlib root"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option_i32.lani")),
+        "path manifest should include core::option_i32 from the stdlib root"
     );
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result.lani")),
-        "path manifest should include core::result through the option import chain"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result_i32.lani")),
+        "path manifest should include core::result through the option_i32 import chain"
     );
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root core::i32 checked_sub Option helper",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("core::i32::checked_sub should type check through --stdlib-root as Option<i32>");
+    .expect("core::i32::checked_sub should type check through --stdlib-root as OptionI32");
 }
 
 #[test]
@@ -141,15 +141,15 @@ fn core_u32_checked_add_option_type_checks_through_stdlib_root() {
         r#"
 module app::main;
 
-import core::option;
+import core::option_u32;
 import core::u32;
 
 fn main() {
-    let sum: core::option::Option<u32> = core::u32::checked_add(40, 2);
-    let overflow: core::option::Option<u32> = checked_add(core::u32::MAX, 1);
-    let sum_is_42: bool = core::option::contains_u32(sum, 42);
-    let overflow_is_42: bool = contains_u32(overflow, 42);
-    let overflow_is_none: bool = core::option::is_none(overflow);
+    let sum: core::option_u32::OptionU32 = core::u32::checked_add(40, 2);
+    let overflow: core::option_u32::OptionU32 = checked_add(core::u32::MAX, 1);
+    let sum_is_42: bool = core::option_u32::contains(sum, 42);
+    let overflow_is_42: bool = contains(overflow, 42);
+    let overflow_is_none: bool = core::option_u32::is_none(overflow);
     if (!sum_is_42 || overflow_is_42 || !overflow_is_none) {
         return 1;
     }
@@ -171,22 +171,22 @@ fn main() {
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option.lani")),
-        "path manifest should include core::option from the stdlib root"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option_u32.lani")),
+        "path manifest should include core::option_u32 from the stdlib root"
     );
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result.lani")),
-        "path manifest should include core::result through the option import chain"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result_u32.lani")),
+        "path manifest should include core::result through the option_u32 import chain"
     );
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root core::u32 checked_add Option helper",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("core::u32::checked_add should type check through --stdlib-root as Option<u32>");
+    .expect("core::u32::checked_add should type check through --stdlib-root as OptionU32");
 }
 
 #[test]
@@ -201,15 +201,15 @@ fn core_u32_checked_sub_option_type_checks_through_stdlib_root() {
         r#"
 module app::main;
 
-import core::option;
+import core::option_u32;
 import core::u32;
 
 fn main() {
-    let diff: core::option::Option<u32> = core::u32::checked_sub(42, 4);
-    let underflow: core::option::Option<u32> = checked_sub(3, 4);
-    let diff_is_38: bool = core::option::contains_u32(diff, 38);
-    let underflow_is_38: bool = contains_u32(underflow, 38);
-    let underflow_is_none: bool = core::option::is_none(underflow);
+    let diff: core::option_u32::OptionU32 = core::u32::checked_sub(42, 4);
+    let underflow: core::option_u32::OptionU32 = checked_sub(3, 4);
+    let diff_is_38: bool = core::option_u32::contains(diff, 38);
+    let underflow_is_38: bool = contains(underflow, 38);
+    let underflow_is_none: bool = core::option_u32::is_none(underflow);
     if (!diff_is_38 || underflow_is_38 || !underflow_is_none) {
         return 1;
     }
@@ -231,22 +231,22 @@ fn main() {
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option.lani")),
-        "path manifest should include core::option from the stdlib root"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option_u32.lani")),
+        "path manifest should include core::option_u32 from the stdlib root"
     );
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result.lani")),
-        "path manifest should include core::result through the option import chain"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result_u32.lani")),
+        "path manifest should include core::result through the option_u32 import chain"
     );
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root core::u32 checked_sub Option helper",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("core::u32::checked_sub should type check through --stdlib-root as Option<u32>");
+    .expect("core::u32::checked_sub should type check through --stdlib-root as OptionU32");
 }
 
 #[test]
@@ -261,26 +261,26 @@ fn core_u32_checked_next_power_of_two_option_type_checks_through_stdlib_root() {
         r#"
 module app::main;
 
-import core::option;
+import core::option_u32;
 import core::u32;
 
 fn main() {
-    let zero: core::option::Option<u32> = core::u32::checked_next_power_of_two(0);
-    let one: core::option::Option<u32> = checked_next_power_of_two(1);
-    let already_power: core::option::Option<u32> =
+    let zero: core::option_u32::OptionU32 = core::u32::checked_next_power_of_two(0);
+    let one: core::option_u32::OptionU32 = checked_next_power_of_two(1);
+    let already_power: core::option_u32::OptionU32 =
         core::u32::checked_next_power_of_two(1024);
-    let rounded: core::option::Option<u32> = checked_next_power_of_two(1025);
-    let highest: core::option::Option<u32> =
+    let rounded: core::option_u32::OptionU32 = checked_next_power_of_two(1025);
+    let highest: core::option_u32::OptionU32 =
         core::u32::checked_next_power_of_two(2147483648);
-    let overflow: core::option::Option<u32> =
+    let overflow: core::option_u32::OptionU32 =
         checked_next_power_of_two(core::u32::MAX);
 
-    let zero_is_one: bool = core::option::contains_u32(zero, 1);
-    let one_is_one: bool = contains_u32(one, 1);
-    let already_is_same: bool = core::option::contains_u32(already_power, 1024);
-    let rounded_is_next: bool = contains_u32(rounded, 2048);
-    let highest_is_some: bool = core::option::contains_u32(highest, 2147483648);
-    let overflow_is_none: bool = core::option::is_none(overflow);
+    let zero_is_one: bool = core::option_u32::contains(zero, 1);
+    let one_is_one: bool = contains(one, 1);
+    let already_is_same: bool = core::option_u32::contains(already_power, 1024);
+    let rounded_is_next: bool = contains(rounded, 2048);
+    let highest_is_some: bool = core::option_u32::contains(highest, 2147483648);
+    let overflow_is_none: bool = core::option_u32::is_none(overflow);
 
     if (!zero_is_one || !one_is_one || !already_is_same || !rounded_is_next) {
         return 1;
@@ -306,15 +306,15 @@ fn main() {
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option.lani")),
-        "path manifest should include core::option from the stdlib root"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option_u32.lani")),
+        "path manifest should include core::option_u32 from the stdlib root"
     );
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result.lani")),
-        "path manifest should include core::result through the option import chain"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result_u32.lani")),
+        "path manifest should include core::result through the option_u32 import chain"
     );
     assert!(
         runtime_bound_api_diagnostic_info("core::u32::checked_next_power_of_two").is_none(),
@@ -326,7 +326,7 @@ fn main() {
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
     .expect(
-        "core::u32::checked_next_power_of_two should type check through --stdlib-root as Option<u32>",
+        "core::u32::checked_next_power_of_two should type check through --stdlib-root as OptionU32",
     );
 }
 
@@ -342,15 +342,15 @@ fn core_u8_checked_add_option_type_checks_through_stdlib_root() {
         r#"
 module app::main;
 
-import core::option;
+import core::option_u8;
 import core::u8;
 
 fn main() {
-    let sum: core::option::Option<u8> = core::u8::checked_add(40, 2);
-    let overflow: core::option::Option<u8> = checked_add(core::u8::MAX, 1);
-    let sum_is_42: bool = core::option::contains_u8(sum, 42);
-    let overflow_is_42: bool = contains_u8(overflow, 42);
-    let overflow_is_none: bool = core::option::is_none(overflow);
+    let sum: core::option_u8::OptionU8 = core::u8::checked_add(40, 2);
+    let overflow: core::option_u8::OptionU8 = checked_add(core::u8::MAX, 1);
+    let sum_is_42: bool = core::option_u8::contains(sum, 42);
+    let overflow_is_42: bool = contains(overflow, 42);
+    let overflow_is_none: bool = core::option_u8::is_none(overflow);
     if (!sum_is_42 || overflow_is_42 || !overflow_is_none) {
         return 1;
     }
@@ -372,22 +372,22 @@ fn main() {
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option.lani")),
-        "path manifest should include core::option from the stdlib root"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option_u8.lani")),
+        "path manifest should include core::option_u8 from the stdlib root"
     );
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result.lani")),
-        "path manifest should include core::result through the option import chain"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result_u8.lani")),
+        "path manifest should include core::result through the option_u8 import chain"
     );
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root core::u8 checked_add Option helper",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("core::u8::checked_add should type check through --stdlib-root as Option<u8>");
+    .expect("core::u8::checked_add should type check through --stdlib-root as OptionU8");
 }
 
 #[test]
@@ -402,15 +402,15 @@ fn core_u8_checked_sub_option_type_checks_through_stdlib_root() {
         r#"
 module app::main;
 
-import core::option;
+import core::option_u8;
 import core::u8;
 
 fn main() {
-    let diff: core::option::Option<u8> = core::u8::checked_sub(42, 4);
-    let underflow: core::option::Option<u8> = checked_sub(3, 4);
-    let diff_is_38: bool = core::option::contains_u8(diff, 38);
-    let underflow_is_38: bool = contains_u8(underflow, 38);
-    let underflow_is_none: bool = core::option::is_none(underflow);
+    let diff: core::option_u8::OptionU8 = core::u8::checked_sub(42, 4);
+    let underflow: core::option_u8::OptionU8 = checked_sub(3, 4);
+    let diff_is_38: bool = core::option_u8::contains(diff, 38);
+    let underflow_is_38: bool = contains(underflow, 38);
+    let underflow_is_none: bool = core::option_u8::is_none(underflow);
     if (!diff_is_38 || underflow_is_38 || !underflow_is_none) {
         return 1;
     }
@@ -432,22 +432,22 @@ fn main() {
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option.lani")),
-        "path manifest should include core::option from the stdlib root"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/option_u8.lani")),
+        "path manifest should include core::option_u8 from the stdlib root"
     );
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result.lani")),
-        "path manifest should include core::result through the option import chain"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/result_u8.lani")),
+        "path manifest should include core::result through the option_u8 import chain"
     );
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root core::u8 checked_sub Option helper",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("core::u8::checked_sub should type check through --stdlib-root as Option<u8>");
+    .expect("core::u8::checked_sub should type check through --stdlib-root as OptionU8");
 }
 
 #[test]

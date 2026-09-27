@@ -1,0 +1,65 @@
+module app::main;
+import core::u32;
+import core::option_u32;
+
+fn main() -> i32 {
+    let zero: u32 = 0;
+    let maximum: u32 = 4294967295;
+    let high: u32 = 2147483648;
+    if (core::u32::MIN != zero || core::u32::MAX != maximum ||
+        core::u32::BITS != 32 || core::u32::BYTES != 4 ||
+        core::u32::min(high, 7) != 7 || core::u32::max(high, 7) != high ||
+        core::u32::clamp(12, 2, 10) != 10 ||
+        core::u32::clamp(5, 10, 3) != 5) {
+        return 1;
+    }
+    if (core::u32::wrapping_add(maximum, 1) != zero ||
+        core::u32::wrapping_sub(zero, 1) != maximum ||
+        core::u32::wrapping_mul(maximum, 2) != maximum - 1 ||
+        core::u32::saturating_add(maximum, 1) != maximum ||
+        core::u32::saturating_sub(zero, 1) != zero ||
+        core::u32::saturating_mul(maximum, 2) != maximum ||
+        core::u32::abs_diff(maximum, zero) != maximum) {
+        return 2;
+    }
+    if (!core::option_u32::contains(core::u32::checked_add(7, 5), 12) ||
+        !core::option_u32::is_none(core::u32::checked_add(maximum, 1)) ||
+        !core::option_u32::contains(core::u32::checked_sub(7, 5), 2) ||
+        !core::option_u32::is_none(core::u32::checked_sub(zero, 1))) {
+        return 3;
+    }
+    if (!core::u32::is_zero(zero) || core::u32::is_zero(1) ||
+        !core::u32::is_nonzero(high) || core::u32::is_nonzero(zero) ||
+        !core::u32::is_even(4) || core::u32::is_even(3) ||
+        !core::u32::is_odd(3) || core::u32::is_odd(4) ||
+        !core::u32::is_multiple_of(12, 3) ||
+        core::u32::is_multiple_of(12, zero)) {
+        return 4;
+    }
+    if (!core::u32::between_inclusive(high, high, maximum) ||
+        core::u32::between_inclusive(7, high, maximum) ||
+        !core::u32::between_exclusive(7, 3, 9) ||
+        core::u32::between_exclusive(3, 3, 9) ||
+        !core::u32::is_power_of_two(high) ||
+        core::u32::is_power_of_two(maximum) ||
+        core::u32::next_power_of_two(7) != 8 ||
+        core::u32::next_power_of_two(maximum) != zero) {
+        return 5;
+    }
+    if (!core::option_u32::contains(core::u32::checked_next_power_of_two(7), 8) ||
+        !core::option_u32::contains(core::u32::checked_next_power_of_two(zero), 1) ||
+        !core::option_u32::is_none(core::u32::checked_next_power_of_two(maximum))) {
+        return 6;
+    }
+    if (!core::u32::is_aligned(16, 8) ||
+        core::u32::is_aligned(17, 8) ||
+        core::u32::is_aligned(17, zero) ||
+        core::u32::align_up(17, 8) != 24 ||
+        core::u32::align_up(maximum, 8) != zero ||
+        core::u32::align_up(17, zero) != zero ||
+        core::u32::align_down(26, 8) != 24 ||
+        core::u32::align_down(17, zero) != zero) {
+        return 7;
+    }
+    return 0;
+}
