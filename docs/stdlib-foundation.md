@@ -63,7 +63,8 @@ limited to native x86_64 output from this worktree.
 | `alloc::allocator` | Executable x86_64 Linux host ABI for valid allocation arguments | Normal allocation, reallocation, and release have x86 tests. `tests/stdlib_allocator_failure_execution.rs` injects `ENOMEM` into `mmap` and `mremap`: both return null, and failed reallocation leaves the old storage readable and releasable. The API is low-level; callers must pass a valid pointer and matching sizes to `realloc` and `dealloc`. |
 | `std::process` all 44 metadata functions, 12 constants, and 4 host calls | Executable on x86_64 Linux | The foundation runtime fixture checks every metadata function and constant, including successful and failed argument results, service availability, and exit status helpers. Native source-pack tests execute `argc`, `arg_len`, and `arg_read` with real process arguments; the process exit sample confirms that `exit(7)` terminates with status 7. This module reports the Linux host binding; GPU device execution is not claimed. |
 | `std::env` all 54 public functions, 13 constants, and 6 host calls | Executable on x86_64 Linux | The foundation runtime fixture checks every metadata function and constant and calls `current_dir_len`. Native source-pack tests exercise environment lookup, enumeration, key reads, and current-directory reads with real host state. The focused environment suite checks missing keys, bounded storage, host failure, and allocation failure in `current_dir_len`. GPU device execution is not claimed. |
-| `std::{io,fs,random,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs::read_i32` rejects out-of-range decimal input, and raw `std::io::write_i32` retries short writes, with focused native tests. Raw `std::fs` path calls now use their declared lengths, including for rename's two paths; `tests/stdlib_file_execution.rs` exercises normal paths and failures. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
+| `std::io` all 54 public Lanius functions, 12 constants, and 7 host calls | Executable on x86_64 Linux | The foundation runtime fixture checks every metadata function and constant. Existing I/O fixtures execute all six higher-level public functions, including line output, `print_i32`, and synchronous flush semantics. Native tests exercise the seven bound calls with real stdin, stdout, stderr, and file handles, including short writes and host errors. GPU device execution is not claimed. |
+| `std::{fs,random,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs::read_i32` rejects out-of-range decimal input, and raw `std::fs` path calls use their declared lengths, including for rename's two paths; `tests/stdlib_file_execution.rs` exercises normal paths and failures. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::args_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks argument count including the executable, exact byte lengths and bytes, absent/negative indices, sufficient and insufficient capacity, null storage, and capacity above `i32::MAX`. Caller storage avoids allocation. |
 | `std::env_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_env_execution.rs` checks exact value and key bytes, missing and invalid indices, capacity and null-storage failures, current-directory bytes and its NUL terminator, and injected `getcwd` failure. Caller storage avoids allocation. |
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
@@ -949,12 +950,11 @@ also fixes the imported struct-return relocation path described below.
    return zero or false when the next positive power is unrepresentable.
    The byte multiplication helpers now use `core::byte` so overflow cannot
    silently corrupt a saturating or wrapping result.
-9. **Imported stdio metadata return.**
-   `tests/fixtures/stdlib_host/repro_std_io_abi.lani` calls only
-   `std::io::stdio_runtime_abi_version()`. Native emission succeeds, but the
-   ELF terminates with SIGILL (exit 132 under `timeout`). The working I/O line
-   wrappers are tested separately; the stdio metadata functions are not
-   claimed executable as a whole.
+9. **Resolved: imported stdio metadata return.**
+   `tests/fixtures/stdlib_host/repro_std_io_abi.lani` now compiles and exits
+   zero through the native path. The foundation runtime fixture executes every
+   `std::io` metadata function, and the public wrapper and raw host tests
+   exercise the I/O operations.
 10. **Imported no-argument returns.** With
     `--stdlib-root tests/fixtures/stdlib_host/repro_path_no_arg_root`, compile
     `repro_path_byte_return.lani` and `repro_path_capability_return.lani` to

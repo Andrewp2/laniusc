@@ -126,6 +126,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "std_io_metadata",
+            "tests/fixtures/stdlib_foundation/std_io_metadata.lani",
+            0,
+            b"",
+        ),
+        (
             "process_exit",
             "sample_programs/process_exit.lani",
             7,
@@ -1187,6 +1193,12 @@ fn executable_core_function_surface_has_runtime_cases() {
         assert_eq!(count, expected_count);
     }
 
+    let io_fixtures = format!(
+        "{}\n{}\n{}",
+        include_str!("fixtures/stdlib_foundation/std_io_metadata.lani"),
+        include_str!("fixtures/stdlib_host/std_io_lines.lani"),
+        include_str!("fixtures/stdlib_host/std_io_flush_print.lani"),
+    );
     for (module, source, fixture, expected_functions, expected_constants) in [
         (
             "core::target",
@@ -1215,6 +1227,13 @@ fn executable_core_function_surface_has_runtime_cases() {
             include_str!("fixtures/stdlib_foundation/std_env_metadata.lani"),
             54,
             13,
+        ),
+        (
+            "std::io",
+            include_str!("../stdlib/std/io.lani"),
+            io_fixtures.as_str(),
+            54,
+            12,
         ),
     ] {
         let mut function_count = 0;

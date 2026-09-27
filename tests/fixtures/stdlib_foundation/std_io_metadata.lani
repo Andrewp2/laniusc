@@ -1,0 +1,82 @@
+module app::main;
+import std::io;
+
+fn main() -> i32 {
+    if (std::io::STDIO_RUNTIME_ABI_VERSION != 1 ||
+        std::io::STDIO_SERVICE_ID != 3 ||
+        std::io::STDIO_SERVICE_STATUS_AVAILABLE != 2 ||
+        std::io::STDIO_SERVICE_STATUS_UNAVAILABLE != 1 ||
+        !std::io::STDIO_HAS_RUNTIME_BINDING ||
+        !std::io::STDIO_WRITE_STDOUT_HAS_RUNTIME_BINDING ||
+        !std::io::STDIO_WRITE_STDERR_HAS_RUNTIME_BINDING ||
+        !std::io::STDIO_READ_STDIN_HAS_RUNTIME_BINDING ||
+        !std::io::STDIO_FLUSH_STDOUT_HAS_RUNTIME_BINDING ||
+        !std::io::STDIO_FLUSH_STDERR_HAS_RUNTIME_BINDING ||
+        std::io::STDIO_OPERATION_OK != 0 ||
+        std::io::STDIO_OPERATION_UNAVAILABLE != -1) {
+        return 1;
+    }
+    if (std::io::stdio_runtime_abi_version() != 1 ||
+        std::io::stdio_service_id() != 3 ||
+        !std::io::stdio_service_is_known() ||
+        !std::io::stdio_contract_metadata_is_available() ||
+        std::io::stdio_service_status() != 2 ||
+        !std::io::stdio_is_available() ||
+        std::io::stdio_is_blocked() ||
+        std::io::stdio_is_known_but_unbound() ||
+        std::io::stdio_requires_runtime_binding() ||
+        std::io::stdio_host_abi_is_contract_only()) {
+        return 2;
+    }
+    if (std::io::stdio_operation_ok() != 0 ||
+        std::io::stdio_operation_unavailable() != -1 ||
+        !std::io::stdio_operation_succeeded(0) ||
+        !std::io::stdio_operation_succeeded(4) ||
+        std::io::stdio_operation_succeeded(-1) ||
+        !std::io::stdio_operation_failed(-1) ||
+        std::io::stdio_operation_failed(0) ||
+        !std::io::stdio_operation_is_unavailable(-1) ||
+        std::io::stdio_operation_is_unavailable(-2) ||
+        std::io::stdio_operation_is_fail_closed(-1)) {
+        return 3;
+    }
+    if (!std::io::stdio_output_api_is_executable() ||
+        std::io::stdio_output_api_is_blocked() ||
+        std::io::stdio_output_api_is_known_but_unbound() ||
+        std::io::stdio_output_api_requires_runtime_binding() ||
+        !std::io::stdio_input_api_is_executable() ||
+        std::io::stdio_input_api_is_blocked() ||
+        std::io::stdio_input_api_is_known_but_unbound() ||
+        std::io::stdio_input_api_requires_runtime_binding()) {
+        return 4;
+    }
+    if (!std::io::write_stdout_is_executable() ||
+        std::io::write_stdout_is_blocked() ||
+        std::io::write_stdout_is_known_but_unbound() ||
+        std::io::write_stdout_requires_runtime_binding() ||
+        !std::io::write_stderr_is_executable() ||
+        std::io::write_stderr_is_blocked() ||
+        std::io::write_stderr_is_known_but_unbound() ||
+        std::io::write_stderr_requires_runtime_binding() ||
+        !std::io::read_stdin_is_executable() ||
+        std::io::read_stdin_is_blocked() ||
+        std::io::read_stdin_is_known_but_unbound() ||
+        std::io::read_stdin_requires_runtime_binding()) {
+        return 5;
+    }
+    if (!std::io::flush_stdout_is_executable() ||
+        std::io::flush_stdout_is_blocked() ||
+        std::io::flush_stdout_is_known_but_unbound() ||
+        std::io::flush_stdout_requires_runtime_binding() ||
+        !std::io::flush_stderr_is_executable() ||
+        std::io::flush_stderr_is_blocked() ||
+        std::io::flush_stderr_is_known_but_unbound() ||
+        std::io::flush_stderr_requires_runtime_binding() ||
+        !std::io::print_i32_is_executable() ||
+        std::io::print_i32_is_blocked() ||
+        std::io::print_i32_is_known_but_unbound() ||
+        std::io::print_i32_requires_runtime_binding()) {
+        return 6;
+    }
+    return 0;
+}
