@@ -1,0 +1,86 @@
+module app::main;
+import core::option_char;
+import core::result_char;
+
+fn main() -> i32 {
+    let nul: char = '\0';
+    let e: char = 'é';
+    let enye: char = 'ñ';
+    let omega: char = 'Ω';
+    let smile: char = '😀';
+
+    let present: core::option_char::OptionChar = core::option_char::some(e);
+    let also_present: core::option_char::OptionChar = core::option_char::some(enye);
+    let zero_present: core::option_char::OptionChar = core::option_char::some(nul);
+    let absent: core::option_char::OptionChar = core::option_char::none();
+    if (!core::option_char::is_some(present) ||
+        !core::option_char::is_some(zero_present) ||
+        core::option_char::is_some(absent) ||
+        core::option_char::is_none(present) ||
+        !core::option_char::is_none(absent)) { return 1; }
+    if (!core::option_char::contains(present, e) ||
+        core::option_char::contains(present, enye) ||
+        !core::option_char::contains(zero_present, nul) ||
+        core::option_char::contains(absent, nul)) { return 2; }
+    if (core::option_char::unwrap_or(present, omega) != e ||
+        core::option_char::unwrap_or(zero_present, omega) != nul ||
+        core::option_char::unwrap_or(absent, omega) != omega) { return 3; }
+    if (!core::option_char::contains(core::option_char::or(present, also_present), e) ||
+        !core::option_char::contains(core::option_char::or(absent, also_present), enye) ||
+        !core::option_char::is_none(core::option_char::or(absent, absent))) { return 4; }
+    if (!core::option_char::contains(core::option_char::and(present, also_present), enye) ||
+        !core::option_char::is_none(core::option_char::and(absent, present)) ||
+        !core::option_char::is_none(core::option_char::and(present, absent))) { return 5; }
+    if (!core::option_char::is_none(core::option_char::xor(present, also_present)) ||
+        !core::option_char::is_none(core::option_char::xor(absent, absent)) ||
+        !core::option_char::contains(core::option_char::xor(present, absent), e) ||
+        !core::option_char::contains(core::option_char::xor(absent, also_present), enye)) {
+        return 6;
+    }
+
+    let good: core::result_char::ResultChar = core::result_char::ok(smile);
+    let zero_good: core::result_char::ResultChar = core::result_char::ok(nul);
+    let bad: core::result_char::ResultChar = core::result_char::err(omega);
+    let zero_bad: core::result_char::ResultChar = core::result_char::err(nul);
+    if (!core::result_char::is_ok(good) ||
+        !core::result_char::is_ok(zero_good) ||
+        core::result_char::is_ok(bad) ||
+        core::result_char::is_err(good) ||
+        !core::result_char::is_err(zero_bad)) { return 7; }
+    if (!core::result_char::contains(good, smile) ||
+        !core::result_char::contains(zero_good, nul) ||
+        core::result_char::contains(bad, nul) ||
+        !core::result_char::contains_err(bad, omega) ||
+        !core::result_char::contains_err(zero_bad, nul) ||
+        core::result_char::contains_err(good, nul)) { return 8; }
+    if (core::result_char::unwrap_or(good, e) != smile ||
+        core::result_char::unwrap_or(zero_good, e) != nul ||
+        core::result_char::unwrap_or(bad, e) != e ||
+        core::result_char::unwrap_err_or(good, e) != e ||
+        core::result_char::unwrap_err_or(bad, e) != omega ||
+        core::result_char::unwrap_err_or(zero_bad, e) != nul) { return 9; }
+    if (!core::result_char::contains(core::result_char::or(good, bad), smile) ||
+        !core::result_char::contains(core::result_char::or(bad, zero_good), nul) ||
+        !core::result_char::contains_err(core::result_char::or(zero_bad, bad), omega)) {
+        return 10;
+    }
+    if (!core::result_char::contains_err(core::result_char::and(good, bad), omega) ||
+        !core::result_char::contains_err(core::result_char::and(zero_bad, good), nul) ||
+        !core::result_char::contains(core::result_char::and(good, zero_good), nul)) {
+        return 11;
+    }
+
+    if (!core::result_char::contains(core::option_char::ok_or(present, omega), e) ||
+        !core::result_char::contains(core::option_char::ok_or(zero_present, omega), nul) ||
+        !core::result_char::contains_err(core::option_char::ok_or(absent, omega), omega) ||
+        !core::result_char::contains_err(core::option_char::ok_or(absent, nul), nul)) {
+        return 12;
+    }
+    if (!core::option_char::contains(core::option_char::ok(good), smile) ||
+        !core::option_char::contains(core::option_char::ok(zero_good), nul) ||
+        !core::option_char::is_none(core::option_char::ok(bad)) ||
+        !core::option_char::is_none(core::option_char::err(good)) ||
+        !core::option_char::contains(core::option_char::err(bad), omega) ||
+        !core::option_char::contains(core::option_char::err(zero_bad), nul)) { return 13; }
+    return 0;
+}

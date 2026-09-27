@@ -270,6 +270,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "option_result_char",
+            "tests/fixtures/stdlib_foundation/option_result_char.lani",
+            0,
+            b"",
+        ),
+        (
             "option_result_f32",
             "tests/fixtures/stdlib_foundation/option_result_f32.lani",
             0,
@@ -1157,6 +1163,7 @@ fn executable_core_function_surface_has_runtime_cases() {
     let i32_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i32.lani");
     let u8_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_u8.lani");
     let bool_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_bool.lani");
+    let char_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_char.lani");
     let f32_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_f32.lani");
     let i8_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i8.lani");
     let i16_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i16.lani");
@@ -1197,6 +1204,18 @@ fn executable_core_function_surface_has_runtime_cases() {
             "result_bool",
             include_str!("../stdlib/core/result_bool.lani"),
             bool_result_fixture,
+            10,
+        ),
+        (
+            "option_char",
+            include_str!("../stdlib/core/option_char.lani"),
+            char_result_fixture,
+            12,
+        ),
+        (
+            "result_char",
+            include_str!("../stdlib/core/result_char.lani"),
+            char_result_fixture,
             10,
         ),
         (
