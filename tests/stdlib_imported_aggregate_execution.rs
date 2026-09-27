@@ -123,6 +123,64 @@ fn imported_unit_variant_of_payload_enum_executes_on_x86() {
 }
 
 #[test]
+fn inferred_imported_enum_values_cross_module_calls_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_enum_inferred_app.lani");
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_enum_root");
+    let bytes = common::run_gpu_codegen_with_timeout("inferred imported enum", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile inferred imported unit and function-result values");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "inferred imported enum",
+            "repro_enum_inferred_app",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn inferred_imported_enum_rejects_other_nominal_type() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_enum_inferred_mismatch.lani");
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_enum_root");
+    let error = common::run_gpu_codegen_with_timeout("inferred enum mismatch", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect_err("an inferred Maybe must not match an unrelated enum");
+    assert!(error.to_string().contains("type mismatch"), "{error}");
+}
+
+#[test]
+fn inferred_imported_struct_result_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_aggregate_inferred_app.lani");
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_aggregate_root");
+    let bytes = common::run_gpu_codegen_with_timeout("inferred imported struct", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile inferred imported struct result");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "inferred imported struct",
+            "repro_aggregate_inferred_app",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn imported_payload_variant_without_call_is_rejected() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_foundation/repro_enum_payload_variant_value.lani");

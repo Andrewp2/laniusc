@@ -1,0 +1,11 @@
+module helpers::other;
+
+pub enum Other {
+    Absent,
+}
+
+pub fn accepts(value: Other) -> bool {
+    return match (value) {
+        Absent -> true,
+    };
+}

@@ -86,6 +86,7 @@ pub(in crate::type_checker) struct TypeInstanceBindGroups {
     pub(in crate::type_checker) semantic_type_rows: Box<CompactionOperation>,
     pub(in crate::type_checker) decl_refs: ComputeOperation,
     pub(in crate::type_checker) decl_refs_for_bindings: ComputeInvocation,
+    pub(in crate::type_checker) infer_imported_decl_refs: ComputeOperation,
     pub(in crate::type_checker) member_receivers: ComputeOperation,
     pub(in crate::type_checker) member_receivers_after_match: ComputeInvocation,
     pub(in crate::type_checker) member_receivers_after_array: ComputeInvocation,

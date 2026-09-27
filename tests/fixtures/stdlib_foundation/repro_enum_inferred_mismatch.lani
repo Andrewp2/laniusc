@@ -1,0 +1,9 @@
+module app::main;
+import helpers::maybe;
+import helpers::other;
+
+fn main() -> i32 {
+    let absent = helpers::maybe::None;
+    if (helpers::other::accepts(absent)) { return 1; }
+    return 0;
+}

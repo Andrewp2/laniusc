@@ -1085,6 +1085,10 @@ impl GpuTypeChecker {
                 .bind_groups
                 .consume_value_consts
                 .record(encoder)?;
+            bind_groups
+                .type_instances
+                .infer_imported_decl_refs
+                .record(encoder)?;
             if methods_required {
                 bind_groups.methods.resolve.record(encoder)?;
             }

@@ -43,6 +43,9 @@ RWStructuredBuffer<uint> call_return_type_token;
 RWStructuredBuffer<uint> call_return_aggregate_word_count;
 RWStructuredBuffer<uint> decl_type_ref_tag;
 RWStructuredBuffer<uint> decl_type_ref_payload;
+RWStructuredBuffer<uint> external_type_library_id;
+RWStructuredBuffer<uint> external_type_unit_id;
+RWStructuredBuffer<uint> external_type_local_index;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DECL_WORDS = 14u;
@@ -213,6 +216,13 @@ void publish_call(
     {
         decl_type_ref_tag[token] = TYPE_REF_EXTERNAL_CANONICAL;
         decl_type_ref_payload[token] = return_root;
+        uint return_base = return_root * TYPE_WORDS;
+        if (dependency_type_word(return_base) == INTERFACE_TYPE_DECLARATION)
+        {
+            external_type_library_id[token] = dependency_type_word(return_base + 1u);
+            external_type_unit_id[token] = dependency_type_word(return_base + 8u);
+            external_type_local_index[token] = dependency_type_word(return_base + 2u);
+        }
         call_return_type_token[token] = token;
     }
     else

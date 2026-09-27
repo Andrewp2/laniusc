@@ -1,0 +1,11 @@
+module app::main;
+import helpers::maybe;
+import helpers::gate;
+
+fn main() -> i32 {
+    let absent = helpers::maybe::None;
+    if (!helpers::gate::accepts_absent(absent)) { return 1; }
+    let chosen = helpers::maybe::choose(false, 42);
+    if (!helpers::gate::accepts_absent(chosen)) { return 2; }
+    return 0;
+}

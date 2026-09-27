@@ -37,6 +37,7 @@ static const uint PATH_RECORD_KIND_HIR_TYPE_EXPR = 4u;
 static const uint PATH_RECORD_KIND_HIR_PATH_EXPR = 3u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint INTERFACE_TYPE_SCALAR = 1u;
+static const uint INTERFACE_TYPE_DECLARATION = 3u;
 static const uint INTERFACE_TYPE_FUNCTION = 7u;
 static const uint HIR_ITEM_KIND_CONST = 3u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
@@ -93,7 +94,8 @@ bool unit_variant_metadata(uint declaration_base, uint signature_root,
     if (return_type >= dependency_type_count())
         return false;
     enum_root = canonical_type_roots[return_type];
-    if (enum_root >= dependency_type_count())
+    if (enum_root >= dependency_type_count() ||
+        dependency_type_word(enum_root * TYPE_WORDS) != INTERFACE_TYPE_DECLARATION)
         return false;
 
     uint parent = dependency_declaration_word(declaration_base + 10u);
@@ -170,6 +172,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
                     HIR_ITEM_KIND_ENUM_VARIANT;
                 resolved_dependency_value_metadata[value_base + 1u] = enum_root;
                 resolved_dependency_value_metadata[value_base + 2u] = ordinal;
+                uint enum_base = enum_root * TYPE_WORDS;
+                external_type_library_id[owner_token] =
+                    dependency_type_word(enum_base + 1u);
+                external_type_unit_id[owner_token] =
+                    dependency_type_word(enum_base + 8u);
+                external_type_local_index[owner_token] =
+                    dependency_type_word(enum_base + 2u);
             }
             return;
         }

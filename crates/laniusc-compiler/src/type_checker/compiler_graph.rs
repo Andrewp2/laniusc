@@ -4875,6 +4875,7 @@ fn build_graph(
     VISIBLE_NAMES.register_kernel(&mut graph, kernels)?;
     TYPE_INSTANCES_DECL_REFS.register_kernel(&mut graph, kernels)?;
     TYPE_INSTANCES_DECL_REFS_FOR_BINDINGS.register_kernel(&mut graph, kernels)?;
+    TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS.register_kernel(&mut graph, kernels)?;
     add_method_and_field_passes(&mut graph)?;
     MATCH_PATTERNS_BIND.register_kernel(&mut graph, kernels)?;
     MATCH_PAYLOADS_TYPE.register_kernel(&mut graph, kernels)?;

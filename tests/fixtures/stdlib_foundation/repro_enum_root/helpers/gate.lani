@@ -1,0 +1,6 @@
+module helpers::gate;
+import helpers::maybe;
+
+pub fn accepts_absent(value: helpers::maybe::Maybe) -> bool {
+    return helpers::maybe::score(value) == 5;
+}

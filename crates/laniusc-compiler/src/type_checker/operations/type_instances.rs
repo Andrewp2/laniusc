@@ -72,6 +72,13 @@ pub(in crate::type_checker) const TYPE_INSTANCES_DECL_REFS: ReflectedComputeSpec
     declaration_refs("type_check.type_instances.decl_refs");
 pub(in crate::type_checker) const TYPE_INSTANCES_DECL_REFS_FOR_BINDINGS: ReflectedComputeSpec =
     declaration_refs("type_check.type_instances.decl_refs.for_bindings");
+pub(in crate::type_checker) const TYPE_INSTANCES_INFER_IMPORTED_DECL_REFS: ReflectedComputeSpec =
+    typecheck_pass!(
+        "type_check.type_instances.infer_imported_decl_refs",
+        HirNodes,
+        "type_checker/type/instances/01f2_infer_imported_decl_refs"
+    )
+    .with_indirect_dispatch("hir_active_dispatch_args");
 
 pub(in crate::type_checker) const CALLS_INFER_ARRAY_GENERICS: ReflectedComputeSpec = typecheck_pass!(
     "type_check.calls.infer_array_generics",
