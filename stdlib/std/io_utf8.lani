@@ -129,3 +129,37 @@ pub fn write_stdout_codes(values: [i32], len: i32) -> bool {
 pub fn write_stderr_codes(values: [i32], len: i32) -> bool {
     return write_codes(values, len, true);
 }
+
+// Validate the complete caller-backed [u8] view before any host write.
+// Malformed UTF-8 or a negative length returns false without output. A host
+// failure returns false and may leave a prefix. The caller must back len
+// bytes; an overclaim may trap during validation.
+fn write_bytes(values: [u8], len: i32, to_stderr: bool) -> bool {
+    if (!core::utf8::bytes_are_valid(values, len)) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index < len) {
+        let byte: u8 = values[index];
+        let code: i32 = byte as i32;
+        if (to_stderr) {
+            if (!std::io_byte::write_stderr_byte(code)) {
+                return false;
+            }
+        } else {
+            if (!std::io_byte::write_stdout_byte(code)) {
+                return false;
+            }
+        }
+        index += 1;
+    }
+    return true;
+}
+
+pub fn write_stdout_bytes(values: [u8], len: i32) -> bool {
+    return write_bytes(values, len, false);
+}
+
+pub fn write_stderr_bytes(values: [u8], len: i32) -> bool {
+    return write_bytes(values, len, true);
+}

@@ -1,0 +1,29 @@
+module app::main;
+import std::io_utf8;
+
+fn main() -> i32 {
+    let a: u8 = 65;
+    let c2: u8 = 194;
+    let a2: u8 = 162;
+    let e2: u8 = 226;
+    let cont82: u8 = 130;
+    let ac: u8 = 172;
+    let f0: u8 = 240;
+    let cont9f: u8 = 159;
+    let cont99: u8 = 153;
+    let valid: [u8; 10] = [a, c2, a2, e2, cont82, ac, f0, cont9f, cont99, cont82];
+    let low: u8 = 128;
+    let malformed: [u8; 2] = [a, low];
+    let truncated: [u8; 2] = [e2, cont82];
+    if (!std::io_utf8::write_stdout_bytes(valid, 10) ||
+        !std::io_utf8::write_stdout_bytes(valid, 0) ||
+        !std::io_utf8::write_stderr_bytes(valid, 3) ||
+        !std::io_utf8::write_stderr_bytes(valid, 0)) { return 1; }
+    if (std::io_utf8::write_stdout_bytes(malformed, 2) ||
+        std::io_utf8::write_stderr_bytes(malformed, 2) ||
+        std::io_utf8::write_stdout_bytes(truncated, 2) ||
+        std::io_utf8::write_stderr_bytes(truncated, 2) ||
+        std::io_utf8::write_stdout_bytes(valid, -1) ||
+        std::io_utf8::write_stderr_bytes(valid, -1)) { return 2; }
+    return 0;
+}

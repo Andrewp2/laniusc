@@ -64,6 +64,39 @@ fn utf8_scalar_and_view_io_execute_on_x86() {
 }
 
 #[test]
+fn utf8_byte_view_io_executes_on_x86() {
+    let bytes = compile_fixture("std_io_utf8_bytes");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let executable = write_executable(&bytes, "std_io_utf8_bytes");
+        let output = run_with_input(&executable, b"");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(
+            output.stdout, b"A\xc2\xa2\xe2\x82\xac\xf0\x9f\x99\x82",
+            "{output:?}"
+        );
+        assert_eq!(output.stderr, b"A\xc2\xa2", "{output:?}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn utf8_byte_view_length_overclaim_traps_before_output() {
+    let bytes = compile_fixture("std_io_utf8_bytes_bounds");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let executable = write_executable(&bytes, "std_io_utf8_bytes_bounds");
+        let output = run_with_input(&executable, b"");
+        assert_eq!(output.status.code(), Some(101), "{output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn utf8_line_append_program_executes_on_x86() {
     let bytes = compile_fixture("std_utf8_line_append");
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
@@ -154,6 +187,12 @@ fn utf8_scalar_io_reports_host_failures() {
                 "write:error=EIO:when=2",
                 b"A".as_slice(),
             ),
+            (
+                "std_io_utf8_bytes_write_error",
+                "write",
+                "write:error=EIO:when=2",
+                b"A".as_slice(),
+            ),
         ] {
             let bytes = compile_fixture(name);
             let executable = write_executable(&bytes, name);
@@ -190,7 +229,11 @@ fn utf8_scalar_io_reports_host_failures() {
 #[test]
 fn utf8_scalar_io_public_functions_have_runtime_cases() {
     let source = include_str!("../stdlib/std/io_utf8.lani");
-    let fixture = include_str!("fixtures/stdlib_host/std_io_utf8.lani");
+    let fixtures = format!(
+        "{}{}",
+        include_str!("fixtures/stdlib_host/std_io_utf8.lani"),
+        include_str!("fixtures/stdlib_host/std_io_utf8_bytes.lani")
+    );
     let mut count = 0;
     for line in source.lines() {
         let Some(tail) = line.strip_prefix("pub fn ") else {
@@ -201,10 +244,10 @@ fn utf8_scalar_io_public_functions_have_runtime_cases() {
             .next()
             .expect("public function has a name");
         assert!(
-            fixture.contains(&format!("std::io_utf8::{name}(")),
+            fixtures.contains(&format!("std::io_utf8::{name}(")),
             "std::io_utf8::{name} lacks a runtime case"
         );
         count += 1;
     }
-    assert_eq!(count, 5);
+    assert_eq!(count, 7);
 }
