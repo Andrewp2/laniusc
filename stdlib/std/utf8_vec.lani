@@ -381,6 +381,95 @@ pub fn try_remove_scalar_range(
     return shortened;
 }
 
+// Replace remove_count complete scalars at scalar_index with a complete
+// caller-backed UTF-8 byte-code view. A zero count inserts at the boundary;
+// zero source length removes the selected range. Validate both sequences,
+// bounds, and final capacity before changing bytes. Invalid input or failed
+// growth leaves the original vector unchanged. The source must physically
+// back codes_len cells and be disjoint from this vector's allocation even
+// when no growth is needed; shifting can overwrite aliased source cells.
+// A successful same-width replacement keeps byte_len, so callers needing a
+// success distinction must inspect the selected text after the call.
+pub fn try_splice_codes(
+    value: std::vec_u8::VecU8, scalar_index: i32, remove_count: i32,
+    codes: [i32], codes_len: i32
+) -> std::vec_u8::VecU8 {
+    if (codes_len < 0 || codes_len > std::vec_u8::MAX_CAPACITY ||
+        !core::utf8::codes_are_valid(codes, codes_len)) {
+        return value;
+    }
+    let old_len: i32 = std::vec_u8::len(value);
+    let old_cells: [i32] = core::mem::i32_slice_from_raw_parts(
+        std::vec_u8::data_ptr(value), old_len);
+    let scalar_count: i32 = core::utf8::scalar_count_or(old_cells, old_len, -1);
+    if (scalar_count < 0 || scalar_index < 0 || scalar_index > scalar_count ||
+        remove_count < 0 || remove_count > scalar_count - scalar_index) {
+        return value;
+    }
+    if (remove_count == 0 && codes_len == 0) {
+        return value;
+    }
+    let start: i32 = core::utf8::byte_offset_of_scalar_or(
+        old_cells, old_len, scalar_index, -1);
+    let end: i32 = core::utf8::byte_offset_of_scalar_or(
+        old_cells, old_len, scalar_index + remove_count, -1);
+    if (start < 0 || end < start || end > old_len) {
+        return value;
+    }
+    let removed_bytes: i32 = end - start;
+    let kept_bytes: i32 = old_len - removed_bytes;
+    if (kept_bytes > std::vec_u8::MAX_CAPACITY - codes_len) {
+        return value;
+    }
+    let needed: i32 = kept_bytes + codes_len;
+    let changed: std::vec_u8::VecU8 = value;
+    if (codes_len > removed_bytes) {
+        let extra: i32 = codes_len - removed_bytes;
+        changed = std::vec_u8::try_reserve(changed, needed);
+        if (std::vec_u8::capacity(changed) < needed) {
+            return value;
+        }
+        let index: i32 = 0;
+        while (index < extra) {
+            changed = std::vec_u8::try_push(changed, 0);
+            index += 1;
+        }
+        let cells: [i32] = core::mem::i32_slice_from_raw_parts(
+            std::vec_u8::data_ptr(changed), needed);
+        let cursor: i32 = old_len;
+        while (cursor > end) {
+            cursor -= 1;
+            cells[cursor + extra] = cells[cursor];
+        }
+    } else {
+        if (codes_len < removed_bytes) {
+            let cells: [i32] = core::mem::i32_slice_from_raw_parts(
+                std::vec_u8::data_ptr(changed), old_len);
+            let read: i32 = end;
+            let write: i32 = start + codes_len;
+            while (read < old_len) {
+                cells[write] = cells[read];
+                read += 1;
+                write += 1;
+            }
+            let excess: i32 = removed_bytes - codes_len;
+            let index: i32 = 0;
+            while (index < excess) {
+                changed = std::vec_u8::try_pop(changed);
+                index += 1;
+            }
+        }
+    }
+    let current_cells: [i32] = core::mem::i32_slice_from_raw_parts(
+        std::vec_u8::data_ptr(changed), needed);
+    let index: i32 = 0;
+    while (index < codes_len) {
+        current_cells[start + index] = codes[index];
+        index += 1;
+    }
+    return changed;
+}
+
 // Replace one existing scalar with another, shifting bytes when their UTF-8
 // widths differ. Validate the complete old text and the new scalar first.
 // Invalid text, index, scalar, capacity, or allocation returns the original

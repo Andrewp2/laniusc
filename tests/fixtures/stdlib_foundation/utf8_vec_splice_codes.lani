@@ -1,0 +1,90 @@
+module app::main;
+import std::utf8_vec;
+import std::vec_u8;
+
+fn main() -> i32 {
+    let source: [i32; 4] = [65, 194, 162, 66];
+    let euro: [i32; 3] = [226, 130, 172];
+    let smile: [i32; 4] = [240, 159, 153, 130];
+    let cent: [i32; 2] = [194, 162];
+    let q: [i32; 1] = [81];
+    let z: [i32; 1] = [90];
+    let empty_codes: [i32; 1] = [0];
+    let truncated: [i32; 2] = [226, 130];
+    let malformed: [i32; 2] = [65, 128];
+    let high_code: [i32; 2] = [65, 256];
+
+    let empty: std::vec_u8::VecU8 = std::utf8_vec::new();
+    empty = std::utf8_vec::try_splice_codes(empty, 0, 0, z, 1);
+    if (std::utf8_vec::byte_len(empty) != 1 ||
+        std::utf8_vec::scalar_at_or(empty, 0, 4294967295) != 90) { return 1; }
+    empty = std::utf8_vec::try_splice_codes(empty, 0, 1, empty_codes, 0);
+    if (std::utf8_vec::byte_len(empty) != 0 ||
+        !std::utf8_vec::is_valid(empty)) { return 2; }
+
+    let text: std::vec_u8::VecU8 = std::utf8_vec::new();
+    text = std::utf8_vec::try_append_codes(text, source, 4);
+    if (std::utf8_vec::byte_len(text) != 4) { return 3; }
+    text = std::utf8_vec::try_splice_codes(text, 1, 1, euro, 3);
+    if (std::utf8_vec::byte_len(text) != 5 ||
+        std::utf8_vec::scalar_at_or(text, 1, 4294967295) != 8364 ||
+        std::utf8_vec::scalar_at_or(text, 2, 4294967295) != 66) { return 4; }
+    text = std::utf8_vec::try_splice_codes(text, 1, 1, smile, 4);
+    if (std::utf8_vec::byte_len(text) != 6 ||
+        std::utf8_vec::scalar_at_or(text, 1, 4294967295) != 128578 ||
+        std::vec_u8::get_or(text, 5, 0) != 66) { return 5; }
+    let capacity_before_shrink: i32 = std::vec_u8::capacity(text);
+    text = std::utf8_vec::try_splice_codes(text, 1, 1, cent, 2);
+    if (std::utf8_vec::byte_len(text) != 4 ||
+        std::vec_u8::capacity(text) != capacity_before_shrink ||
+        std::utf8_vec::scalar_at_or(text, 1, 4294967295) != 162 ||
+        std::vec_u8::get_or(text, 3, 0) != 66) { return 6; }
+    text = std::utf8_vec::try_splice_codes(text, 1, 1, z, 1);
+    text = std::utf8_vec::try_splice_codes(text, 1, 1, q, 1);
+    if (std::utf8_vec::byte_len(text) != 3 ||
+        std::utf8_vec::scalar_at_or(text, 1, 4294967295) != 81 ||
+        std::vec_u8::get_or(text, 2, 0) != 66) { return 7; }
+    text = std::utf8_vec::try_splice_codes(text, 1, 0, euro, 3);
+    if (std::utf8_vec::byte_len(text) != 6 ||
+        std::utf8_vec::scalar_count_or(text, -9) != 4 ||
+        std::utf8_vec::scalar_at_or(text, 1, 4294967295) != 8364 ||
+        std::utf8_vec::scalar_at_or(text, 2, 4294967295) != 81) { return 8; }
+    text = std::utf8_vec::try_splice_codes(text, 1, 2, empty_codes, 0);
+    if (std::utf8_vec::byte_len(text) != 2 ||
+        std::vec_u8::get_or(text, 0, 0) != 65 ||
+        std::vec_u8::get_or(text, 1, 0) != 66) { return 9; }
+    text = std::utf8_vec::try_splice_codes(text, 0, 2, source, 4);
+    if (std::utf8_vec::byte_len(text) != 4 ||
+        std::utf8_vec::scalar_count_or(text, -9) != 3 ||
+        std::utf8_vec::scalar_at_or(text, 1, 4294967295) != 162) { return 10; }
+
+    text = std::utf8_vec::try_splice_codes(text, -1, 1, q, 1);
+    text = std::utf8_vec::try_splice_codes(text, 4, 0, q, 1);
+    text = std::utf8_vec::try_splice_codes(text, 1, -1, q, 1);
+    text = std::utf8_vec::try_splice_codes(text, 2, 2, q, 1);
+    text = std::utf8_vec::try_splice_codes(text, 1, 2147483647, q, 1);
+    text = std::utf8_vec::try_splice_codes(text, 1, 1, q, -1);
+    text = std::utf8_vec::try_splice_codes(text, 1, 1, truncated, 2);
+    text = std::utf8_vec::try_splice_codes(text, 1, 1, malformed, 2);
+    text = std::utf8_vec::try_splice_codes(text, 1, 1, high_code, 2);
+    text = std::utf8_vec::try_splice_codes(text, 3, 0, empty_codes, 0);
+    if (std::utf8_vec::byte_len(text) != 4 ||
+        std::utf8_vec::scalar_count_or(text, -9) != 3 ||
+        std::vec_u8::get_or(text, 0, 0) != 65 ||
+        std::vec_u8::get_or(text, 1, 0) != 194 ||
+        std::vec_u8::get_or(text, 2, 0) != 162 ||
+        std::vec_u8::get_or(text, 3, 0) != 66) { return 11; }
+
+    let invalid: std::vec_u8::VecU8 = std::vec_u8::new();
+    invalid = std::vec_u8::try_push(invalid, 65);
+    invalid = std::vec_u8::try_push(invalid, 128);
+    invalid = std::utf8_vec::try_splice_codes(invalid, 0, 1, q, 1);
+    if (std::utf8_vec::byte_len(invalid) != 2 ||
+        std::vec_u8::get_or(invalid, 0, 0) != 65 ||
+        std::vec_u8::get_or(invalid, 1, 0) != 128) { return 12; }
+
+    std::utf8_vec::destroy(invalid);
+    std::utf8_vec::destroy(text);
+    std::utf8_vec::destroy(empty);
+    return 0;
+}
