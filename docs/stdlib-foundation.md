@@ -36,7 +36,7 @@ limited to native x86_64 output from this worktree.
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
-| `core::option_i32` all 9 public functions and `core::result_i32` all 10 public functions | Executable on x86_64 | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, and both branches of `or`, `and`, and `xor`. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function to have a runtime call. These concrete structs do not make generic `Option<T>` or `Result<T,E>` executable. |
+| `core::option_i32` all 12 public functions and `core::result_i32` all 10 public functions | Executable on x86_64 | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, both branches of `or`, `and`, and `xor`, and conversions between the two concrete types. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function to have a runtime call. These concrete structs do not make generic `Option<T>` or `Result<T,E>` executable. |
 | Generic `core::option`, `core::result`, and `core::{i32,i64,u32,u8}` as complete imported modules | Contract-only for native execution | Their Lanius bodies type-check, but generic enum use or import prevents reliable x86 output. The numeric modules import generic `Option` for checked results. A minimal failing program is included below. The former by-value `Option::replace` ignored its input and was removed. |
 | `core::{cmp,hash,ordering,array_i32}` and complete legacy `stdlib/array_i32_4.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs, traits, and array-returning legacy helpers depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
@@ -242,7 +242,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   value truth table and return complete values. `core::result_i32` similarly
   distinguishes `Ok(0)` from `Err(0)` with a success flag. Its `contains` and
   `contains_err` inspect only the active payload, and both unwrap helpers
-  return the caller fallback on the opposite variant. Neither module allocates.
+  return the caller fallback on the opposite variant. `option_i32::ok_or`
+  turns `Some` into `Ok` and `None` into the supplied `Err`; its `ok` and
+  `err` extract the matching result payload into an option and return `None`
+  for the other result variant. Neither module allocates.
 - `std::vec_i32` owns an allocated i32 array. `try_push` doubles capacity when
   full, starting at four elements, and returns the prior vector unchanged on
   allocation failure. Compare the returned length with the prior length to

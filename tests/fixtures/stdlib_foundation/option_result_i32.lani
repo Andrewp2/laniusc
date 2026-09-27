@@ -46,5 +46,16 @@ fn main() -> i32 {
     if (core::option_i32::unwrap_or(core::option_i32::some(0), 9) != 0 ||
         !core::result_i32::contains_err(core::result_i32::err(0), 0) ||
         !core::result_i32::contains(core::result_i32::ok(-2147483648), -2147483648)) { return 12; }
+    let converted_success: core::result_i32::ResultI32 = core::option_i32::ok_or(present, 99);
+    let converted_failure: core::result_i32::ResultI32 = core::option_i32::ok_or(absent, 99);
+    if (!core::result_i32::contains(converted_success, -7) ||
+        !core::result_i32::contains_err(converted_failure, 99) ||
+        !core::result_i32::contains_err(core::option_i32::ok_or(absent, 0), 0)) { return 13; }
+    if (!core::option_i32::contains(core::option_i32::ok(success), 42) ||
+        !core::option_i32::is_none(core::option_i32::ok(failure)) ||
+        !core::option_i32::contains(core::option_i32::ok(core::result_i32::ok(0)), 0)) { return 14; }
+    if (!core::option_i32::is_none(core::option_i32::err(success)) ||
+        !core::option_i32::contains(core::option_i32::err(failure), -5) ||
+        !core::option_i32::contains(core::option_i32::err(core::result_i32::err(0)), 0)) { return 15; }
     return 0;
 }

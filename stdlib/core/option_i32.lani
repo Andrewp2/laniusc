@@ -1,6 +1,7 @@
 // A concrete optional i32 until generic enum values execute natively.
 // `value` is zero for None and must be read only when `present` is true.
 module core::option_i32;
+import core::result_i32;
 
 pub struct OptionI32 {
     present: bool,
@@ -48,4 +49,23 @@ pub fn xor(left: OptionI32, right: OptionI32) -> OptionI32 {
         return left;
     }
     return right;
+}
+
+pub fn ok_or(value: OptionI32, error: i32) -> core::result_i32::ResultI32 {
+    if (value.present) { return core::result_i32::ok(value.value); }
+    return core::result_i32::err(error);
+}
+
+pub fn ok(value: core::result_i32::ResultI32) -> OptionI32 {
+    if (core::result_i32::is_ok(value)) {
+        return some(core::result_i32::unwrap_or(value, 0));
+    }
+    return none();
+}
+
+pub fn err(value: core::result_i32::ResultI32) -> OptionI32 {
+    if (core::result_i32::is_err(value)) {
+        return some(core::result_i32::unwrap_err_or(value, 0));
+    }
+    return none();
 }

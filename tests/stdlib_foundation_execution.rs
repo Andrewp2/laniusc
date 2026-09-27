@@ -556,7 +556,7 @@ fn executable_core_function_surface_has_runtime_cases() {
         (
             "option_i32",
             include_str!("../stdlib/core/option_i32.lani"),
-            9,
+            12,
         ),
         (
             "result_i32",
