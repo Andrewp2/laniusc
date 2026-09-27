@@ -1,0 +1,17 @@
+module app::main;
+import core::mem;
+import std::io_checked;
+
+fn main() -> i32 {
+    let words: [i32; 3] = [0, 0, 0];
+    let buffer: ptr = core::mem::i32_array_data_ptr(words);
+    let count: i32 = std::io_checked::read_to_end_stdin_into_buffer(buffer, 12);
+    if (count < 0) {
+        return 1;
+    }
+    let byte_count: usize = count;
+    if (!std::io_checked::write_all_stdout(buffer, byte_count)) {
+        return 2;
+    }
+    return 0;
+}

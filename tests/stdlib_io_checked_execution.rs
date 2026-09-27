@@ -366,13 +366,90 @@ fn checked_stdin_to_stdout_copy_handles_short_transfers_on_x86() {
 }
 
 #[test]
+fn checked_stdin_read_to_end_handles_bounds_and_binary_input_on_x86() {
+    let bytes = compile_fixture("std_io_checked_read_to_end");
+    let zero_bytes = compile_fixture("std_io_checked_read_to_end_zero");
+    let invalid_bytes = compile_fixture("std_io_checked_read_to_end_invalid");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let executable = write_executable(&bytes, "read_to_end");
+        for input in [b"".as_slice(), b"ABC".as_slice(), b"A\0BCDEFGHIJK".as_slice()] {
+            let output = run_with_input(&executable, input);
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert_eq!(output.stdout, input);
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+        let output = run_with_input(&executable, b"ABCDEFGHIJKLM");
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+
+        let zero = write_executable(&zero_bytes, "read_to_end_zero");
+        assert_eq!(run_with_input(&zero, b"").status.code(), Some(0));
+        assert_eq!(run_with_input(&zero, b"A").status.code(), Some(1));
+
+        let invalid = write_executable(&invalid_bytes, "read_to_end_invalid");
+        let output = run_with_input(&invalid, b"ABCDEFGH");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, b"ABCDEFGH");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = (bytes, zero_bytes, invalid_bytes);
+}
+
+#[test]
+fn checked_stdin_read_to_end_reports_faults_and_retries_short_reads_on_x86() {
+    let bytes = compile_fixture("std_io_checked_read_to_end");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        if std::process::Command::new("strace").arg("-V").output().is_err() {
+            return;
+        }
+        let executable = write_executable(&bytes, "read_to_end_faults");
+        for (injection, input, expected_status, expected_stdout) in [
+            ("read:error=EIO:when=1", b"ABCDEFGHIJKL".as_slice(), 1, b"".as_slice()),
+            ("read:error=EIO:when=2", b"ABCDEFGHIJKL".as_slice(), 1, b"".as_slice()),
+            ("read:retval=13:when=1", b"ABCDEFGHIJKL".as_slice(), 1, b"".as_slice()),
+            ("read:retval=2:when=1", b"ABCDEFGHIJ".as_slice(), 0, b"\0\0ABCDEFGHIJ".as_slice()),
+        ] {
+            let source = common::TempArtifact::new("laniusc_std_io_checked", "end_input", None);
+            source.write_bytes(input);
+            let trace = common::TempArtifact::new("laniusc_std_io_checked", "end_trace", None);
+            let output = common::short_process_output_with_timeout(
+                format!("checked read to end {injection}"),
+                std::process::Command::new("strace")
+                    .arg("-qq")
+                    .arg("-o")
+                    .arg(trace.path())
+                    .arg("-e")
+                    .arg("trace=read")
+                    .arg("-e")
+                    .arg(format!("inject={injection}"))
+                    .arg(executable.path())
+                    .stdin(std::process::Stdio::from(
+                        std::fs::File::open(source.path()).expect("open read-to-end input"),
+                    )),
+            );
+            assert_eq!(output.status.code(), Some(expected_status), "{output:?}");
+            assert_eq!(output.stdout, expected_stdout, "{output:?}");
+            let trace_text = std::fs::read_to_string(trace.path()).expect("read fault trace");
+            assert!(trace_text.contains("INJECTED"), "{trace_text}");
+        }
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn checked_stream_public_functions_have_runtime_cases() {
     let source = include_str!("../stdlib/std/io_checked.lani");
-    let fixture = format!(
-        "{}{}",
+    let fixture = [
         include_str!("fixtures/stdlib_host/std_io_checked.lani"),
-        include_str!("fixtures/stdlib_host/std_io_checked_copy.lani")
-    );
+        include_str!("fixtures/stdlib_host/std_io_checked_copy.lani"),
+        include_str!("fixtures/stdlib_host/std_io_checked_read_to_end.lani"),
+    ]
+    .concat();
     let mut count = 0;
     for line in source.lines() {
         let Some(tail) = line.strip_prefix("pub fn ") else {
@@ -388,5 +465,5 @@ fn checked_stream_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 4);
+    assert_eq!(count, 5);
 }

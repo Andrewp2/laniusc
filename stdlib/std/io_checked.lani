@@ -1,6 +1,7 @@
 // Complete caller-buffer stream I/O using the bound x86 Linux host calls.
 // No allocation or implicit buffering occurs.
 module std::io_checked;
+import core::mem;
 import std::io;
 
 // Read exactly len bytes from stdin. Zero length succeeds without touching
@@ -25,6 +26,43 @@ pub fn read_exact_stdin(buffer: ptr, len: usize) -> bool {
         received += advanced;
     }
     return true;
+}
+
+// Read stdin through EOF into caller storage and return the complete byte
+// count, including zero for empty input. Capacity may be zero with a null
+// pointer; a one-byte stack probe then distinguishes empty from overfull.
+// Invalid arguments, host errors, impossible counts, or input exceeding
+// capacity return -1. Failure may leave a prefix in the caller's buffer and
+// may consume one byte beyond capacity while checking for EOF.
+pub fn read_to_end_stdin_into_buffer(buffer: ptr, capacity: usize) -> i32 {
+    if (capacity>2147483647 || buffer == 0 && capacity>0) {
+        return -1;
+    }
+    let received: usize = 0;
+    while (received<capacity) {
+        let cursor: ptr = buffer + received;
+        let remaining: usize = capacity - received;
+        let count: i32 = std::io::read_stdin(cursor, remaining);
+        if (count<0) {
+            return -1;
+        }
+        if (count == 0) {
+            let complete: i32 = received;
+            return complete;
+        }
+        let advanced: usize = count;
+        if (advanced>remaining) {
+            return -1;
+        }
+        received += advanced;
+    }
+    let probe: [i32; 1] = [0];
+    let probe_ptr: ptr = core::mem::i32_array_data_ptr(probe);
+    if (std::io::read_stdin(probe_ptr, 1) != 0) {
+        return -1;
+    }
+    let complete: i32 = received;
+    return complete;
 }
 
 fn write_all(buffer: ptr, len: usize, to_stderr: bool) -> bool {

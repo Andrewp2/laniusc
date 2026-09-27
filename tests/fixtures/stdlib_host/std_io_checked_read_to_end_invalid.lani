@@ -1,0 +1,22 @@
+module app::main;
+import core::mem;
+import std::io_checked;
+
+fn main() -> i32 {
+    let words: [i32; 2] = [0, 0];
+    let buffer: ptr = core::mem::i32_array_data_ptr(words);
+    if (std::io_checked::read_to_end_stdin_into_buffer(0, 1) != -1) {
+        return 1;
+    }
+    let too_large: usize = 2147483648;
+    if (std::io_checked::read_to_end_stdin_into_buffer(buffer, too_large) != -1) {
+        return 2;
+    }
+    if (std::io_checked::read_to_end_stdin_into_buffer(buffer, 8) != 8) {
+        return 3;
+    }
+    if (!std::io_checked::write_all_stdout(buffer, 8)) {
+        return 4;
+    }
+    return 0;
+}
