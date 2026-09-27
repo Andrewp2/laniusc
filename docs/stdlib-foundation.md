@@ -21,7 +21,7 @@ limited to native x86_64 output from this worktree.
 | `core::utf8` all 6 public scalar-codec functions | Executable on x86_64 | Native fixture checks ASCII and multibyte encoding/decoding, length boundaries, malformed sequences, surrogate exclusion, and Unicode maximum. Byte parameters and results use `u8`; it does not access string storage. |
 | `core::decimal` all 14 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of extrema across 8-, 16-, and 32-bit integers, ordinary values, sign placement, zero, out-of-range fallbacks, incremental ASCII parsing, and overflow against caller limits. `std::io_decimal` and both bounded decimal file readers use the portable helpers. |
 | `core::hex` all 11 public functions | Executable on x86_64 | Runtime fixture checks shortest lowercase and uppercase hexadecimal representations of `u8`, `u16`, and `u32`, zero and maximum values, invalid-index fallbacks, mixed-case digit accumulation, and overflow against caller limits. The helpers allocate no storage and use no host calls. |
-| `core::f32` all 12 public functions | Executable on x86_64 for tested finite inputs | Runtime fixture checks sign, comparison, bounds, and square root for zero, negative, small, ordinary, and large inputs. The imported public constant `ONE` is broken; see dependency 5. |
+| `core::f32` all 13 public functions | Executable on x86_64 for tested finite inputs | Runtime fixture checks sign, comparison, valid and reversed clamp bounds, fallback behavior, and square root for zero, negative, small, ordinary, and large inputs. The imported public constant `ONE` is broken; see dependency 5. |
 | `core::array_i32_4` 11 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, and saturating sum. Its three array-returning functions fail natively; see dependency 7. |
 | `core::array_u8_4` all 14 scalar-returning functions | Executable on x86_64 | Runtime fixture checks access, search, extrema, full-range sum, equality, endian conversion, and invalid-index fallback for backed four-byte arrays. |
 | Legacy `stdlib/i32.lani` power-of-two helpers | Executable on x86_64 | A focused source-level native test checks the highest signed power and the zero overflow sentinel. The legacy file as a whole is not included in this claim. |
@@ -165,6 +165,9 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   append above a caller-supplied limit before multiplying by 16. The append
   helper returns fallback for malformed or overflowing input, which can equal
   a valid parsed value; call the predicate when success must be separate.
+- `core::f32::clamp_or` returns its caller fallback when `low > high`;
+  `clamp` returns its input unchanged for those invalid bounds. Valid bounds
+  clamp inclusively. The native fixture checks finite values.
 - `core::f32::sqrt` returns zero for nonpositive inputs and scales finite
   positive inputs before Newton iteration, including values far above or below
   one. The other `f32` functions follow their source definitions; no NaN

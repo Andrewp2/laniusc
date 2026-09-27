@@ -1,4 +1,4 @@
-// Module-form f32 helpers for source-level stdlib imports.
+// Allocation-free f32 helpers. Clamp failures have explicit fallback behavior.
 module core::f32;
 pub const ZERO: f32 = 0.0;
 pub const ONE: f32 = 1.0;
@@ -23,7 +23,12 @@ pub fn max(left: f32, right: f32) -> f32 {
         return right;
     }
 }
-pub fn clamp(value: f32, low: f32, high: f32) -> f32 {
+// Invalid bounds return fallback unchanged. NaN comparisons follow the target
+// f32 operators; the executable contract below covers finite inputs.
+pub fn clamp_or(value: f32, low: f32, high: f32, fallback: f32) -> f32 {
+    if (low>high) {
+        return fallback;
+    }
     if (value<low) {
         return low;
     } else {
@@ -33,6 +38,10 @@ pub fn clamp(value: f32, low: f32, high: f32) -> f32 {
             return value;
         }
     }
+}
+// Invalid bounds leave the input value unchanged.
+pub fn clamp(value: f32, low: f32, high: f32) -> f32 {
+    return clamp_or(value, low, high, value);
 }
 pub fn sqrt(value: f32) -> f32 {
     if (value <= 0.0) {
