@@ -1,0 +1,47 @@
+module app::main;
+import alloc::allocator;
+import core::mem;
+import std::fs;
+
+fn main() -> i32 {
+    let old_dir: ptr = core::mem::string_data_ptr("old_dir.trailing");
+    let new_dir: ptr = core::mem::string_data_ptr("new_dir.trailing");
+    if (std::fs::create_dir(old_dir, 7) != 0) { return 1; }
+    if (std::fs::rename(old_dir, 7, new_dir, 7) != 0) { return 2; }
+    if (std::fs::remove_dir(new_dir, 7) != 0) { return 3; }
+
+    let old_file: ptr = core::mem::string_data_ptr("old.txt.trailing");
+    let new_file: ptr = core::mem::string_data_ptr("new.txt.trailing");
+    let copied_file: ptr = core::mem::string_data_ptr("copy.txt.trailing");
+    let output: i32 = std::fs::open_write(old_file, 7);
+    if (output < 0) { return 4; }
+    if (std::fs::write(output, core::mem::string_data_ptr("A"), 1) != 1) { return 5; }
+    if (std::fs::close(output) != 0) { return 6; }
+
+    let append: i32 = std::fs::open_append(old_file, 7);
+    if (append < 0) { return 7; }
+    if (std::fs::write(append, core::mem::string_data_ptr("B"), 1) != 1) { return 8; }
+    if (std::fs::close(append) != 0) { return 9; }
+
+    let buffer: ptr = alloc::allocator::alloc(2, 1);
+    if (buffer == 0) { return 10; }
+    let input: i32 = std::fs::open_read(old_file, 7);
+    if (input < 0) { return 11; }
+    if (std::fs::read(input, buffer, 2) != 2) { return 12; }
+    if (std::fs::close(input) != 0) { return 13; }
+    let copy: i32 = std::fs::open_write(copied_file, 8);
+    if (copy < 0) { return 14; }
+    if (std::fs::write(copy, buffer, 2) != 2) { return 15; }
+    if (std::fs::close(copy) != 0) { return 16; }
+    alloc::allocator::dealloc(buffer, 2, 1);
+
+    if (std::fs::rename(old_file, 7, new_file, 7) != 0) { return 17; }
+    if (std::fs::remove_file(copied_file, 8) != 0) { return 18; }
+    let read_path: i32 = std::fs::open_read_path("new.txt");
+    if (read_path < 0) { return 19; }
+    if (std::fs::close_file(read_path) != 0) { return 20; }
+    let write_path: i32 = std::fs::open_write_path("path.txt");
+    if (write_path < 0) { return 21; }
+    if (std::fs::close_file(write_path) != 0) { return 22; }
+    return 0;
+}

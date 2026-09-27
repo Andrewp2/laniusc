@@ -46,6 +46,103 @@ fn run_in_directory_with_stdin(
 }
 
 #[test]
+fn std_fs_raw_paths_honor_supplied_lengths_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/fs_path_lengths.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_fs_path_lengths", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile bounded raw filesystem paths");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_fs_path_lengths", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create run directory");
+        let output = run_in_directory(&bytes, run_dir.path(), "std_fs_path_lengths");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(std::fs::read(run_dir.path().join("new.txt")).unwrap(), b"AB");
+        assert_eq!(std::fs::read(run_dir.path().join("path.txt")).unwrap(), b"");
+        assert!(!run_dir.path().join("old.txt").exists());
+        assert!(!run_dir.path().join("copy.txt").exists());
+        assert!(!run_dir.path().join("old_dir").exists());
+        assert!(!run_dir.path().join("new_dir").exists());
+        assert!(!run_dir.path().join("old.txt.trailing").exists());
+        assert!(!run_dir.path().join("new.txt.trailing").exists());
+        assert!(!run_dir.path().join("copy.txt.trailing").exists());
+        std::fs::remove_dir_all(run_dir.path()).expect("remove run directory");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn std_fs_raw_paths_reject_invalid_bounds_and_embedded_nul_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/fs_path_errors.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_fs_path_errors", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile raw filesystem path errors");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_fs_path_errors", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create run directory");
+        std::fs::write(run_dir.path().join("embedded.bin"), b"abcd\0tail")
+            .expect("seed embedded NUL path bytes");
+        let output = run_in_directory(&bytes, run_dir.path(), "std_fs_path_errors");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(std::fs::read_dir(run_dir.path()).unwrap().count(), 2);
+        std::fs::remove_dir_all(run_dir.path()).expect("remove run directory");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn std_fs_raw_paths_accept_more_than_255_total_bytes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/fs_long_path.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_fs_long_path", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile long raw filesystem path");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let run_dir = common::TempArtifact::new("laniusc_std_fs_long_path", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create run directory");
+        let first = "a".repeat(100);
+        let second = "b".repeat(100);
+        let file = "c".repeat(61);
+        let relative = format!("{first}/{second}/{file}");
+        assert_eq!(relative.len(), 263);
+        std::fs::create_dir_all(run_dir.path().join(&first).join(&second))
+            .expect("create long path parents");
+
+        let exe_path = run_dir.path().join("std_fs_long_path");
+        std::fs::write(&exe_path, &bytes).expect("write native ELF");
+        let mut permissions = std::fs::metadata(&exe_path).unwrap().permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(&exe_path, permissions).unwrap();
+        let mut command = std::process::Command::new(&exe_path);
+        command.current_dir(run_dir.path()).arg(format!("{relative}.ignored"));
+        let output = common::short_process_output_with_timeout("run std_fs_long_path", &mut command);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(std::fs::read(run_dir.path().join(&relative)).unwrap(), b"long");
+        assert!(!run_dir.path().join(format!("{relative}.ignored")).exists());
+        std::fs::remove_dir_all(run_dir.path()).expect("remove run directory");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn std_file_write_text_once_executes_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_host/std_file_write.lani");

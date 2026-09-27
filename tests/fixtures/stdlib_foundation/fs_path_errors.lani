@@ -1,0 +1,49 @@
+module app::main;
+import alloc::allocator;
+import core::mem;
+import std::fs;
+
+fn main() -> i32 {
+    let short_path: ptr = core::mem::string_data_ptr("nope.trailing");
+    let long_len: usize = 4096;
+    if (std::fs::open_read(short_path, long_len) != -36) { return 1; }
+    if (std::fs::open_write(short_path, long_len) != -36) { return 2; }
+    if (std::fs::open_append(short_path, long_len) != -36) { return 3; }
+    if (std::fs::remove_file(short_path, long_len) != -36) { return 4; }
+    if (std::fs::create_dir(short_path, long_len) != -36) { return 5; }
+    if (std::fs::remove_dir(short_path, long_len) != -36) { return 6; }
+    if (std::fs::rename(short_path, long_len, short_path, 4) != -36) { return 7; }
+    if (std::fs::rename(short_path, 4, short_path, long_len) != -36) { return 8; }
+
+    let null_path: ptr = 0;
+    if (std::fs::open_read(null_path, 1) != -14) { return 9; }
+    if (std::fs::open_write(null_path, 1) != -14) { return 10; }
+    if (std::fs::open_append(null_path, 1) != -14) { return 11; }
+    if (std::fs::remove_file(null_path, 1) != -14) { return 12; }
+    if (std::fs::create_dir(null_path, 1) != -14) { return 13; }
+    if (std::fs::remove_dir(null_path, 1) != -14) { return 14; }
+    if (std::fs::rename(null_path, 1, short_path, 4) != -14) { return 15; }
+    if (std::fs::rename(short_path, 4, null_path, 1) != -14) { return 16; }
+
+    let embedded: ptr = alloc::allocator::alloc(9, 1);
+    if (embedded == 0) { return 17; }
+    let embedded_file: i32 = std::fs::open_read_path("embedded.bin");
+    if (embedded_file < 0) { return 18; }
+    if (std::fs::read(embedded_file, embedded, 9) != 9) { return 19; }
+    if (std::fs::close_file(embedded_file) != 0) { return 20; }
+    if (std::fs::open_read(embedded, 9) != -22) { return 21; }
+    if (std::fs::open_write(embedded, 9) != -22) { return 22; }
+    if (std::fs::open_append(embedded, 9) != -22) { return 23; }
+    if (std::fs::remove_file(embedded, 9) != -22) { return 24; }
+    if (std::fs::create_dir(embedded, 9) != -22) { return 25; }
+    if (std::fs::remove_dir(embedded, 9) != -22) { return 26; }
+    if (std::fs::rename(embedded, 9, short_path, 4) != -22) { return 27; }
+    if (std::fs::rename(short_path, 4, embedded, 9) != -22) { return 28; }
+    alloc::allocator::dealloc(embedded, 9, 1);
+
+    if (std::fs::open_read(short_path, 0) != -2) { return 29; }
+    if (std::fs::open_write(short_path, 0) != -2) { return 30; }
+    if (std::fs::open_append(short_path, 0) != -2) { return 31; }
+    if (std::fs::create_dir(short_path, 0) != -2) { return 32; }
+    return 0;
+}

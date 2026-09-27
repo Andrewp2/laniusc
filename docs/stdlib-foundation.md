@@ -41,7 +41,7 @@ limited to native x86_64 output from this worktree.
 | `core::{cmp,hash,ordering,array_i32}` and complete legacy `stdlib/array_i32_4.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs, traits, and array-returning legacy helpers depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
 | `core::{target,runtime,panic}` | Contract-only service metadata | Capability constants are declarations, not live host probes. `core::target` is native-oriented (`IS_NATIVE=true`, `IS_WASM=false`); panic hooks remain unbound. |
 | `alloc::allocator` | Executable x86_64 Linux host ABI for valid allocation arguments | Normal allocation, reallocation, and release have x86 tests. `tests/stdlib_allocator_failure_execution.rs` injects `ENOMEM` into `mmap` and `mremap`: both return null, and failed reallocation leaves the old storage readable and releasable. The API is low-level; callers must pass a valid pointer and matching sizes to `realloc` and `dealloc`. |
-| `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs::read_i32` rejects out-of-range decimal input, and raw `std::io::write_i32` retries short writes, with focused native tests. Raw `std::fs` path calls ignore their declared length and require NUL-terminated storage; see dependency 29. `std::env::current_dir_len` checks allocation failure but has no direct fault-injection test yet; see dependency 25. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
+| `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Raw `std::fs::read_i32` rejects out-of-range decimal input, and raw `std::io::write_i32` retries short writes, with focused native tests. Raw `std::fs` path calls now use their declared lengths, including for rename's two paths; `tests/stdlib_file_execution.rs` exercises normal paths and failures. `std::env::current_dir_len` checks allocation failure but has no direct fault-injection test yet; see dependency 25. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::args_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks argument count including the executable, exact byte lengths and bytes, absent/negative indices, sufficient and insufficient capacity, null storage, and capacity above `i32::MAX`. Caller storage avoids allocation. |
 | `std::env_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_env_execution.rs` checks exact value and key bytes, missing and invalid indices, capacity and null-storage failures, current-directory bytes and its NUL terminator, and injected `getcwd` failure. Caller storage avoids allocation. |
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
@@ -53,8 +53,8 @@ limited to native x86_64 output from this worktree.
 | `std::io_decimal` all 12 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned output extrema across 8-, 16-, and 32-bit integers, exact byte counts, invalid handles, and injected sign and digit write failures for the underlying 32-bit writers. `tests/stdlib_io_decimal_input_execution.rs` checks bounded stdin parsing across all six widths, EOF, whitespace and signs, malformed and overlong input, overflow, and injected read failures in the underlying 32-bit readers. |
 | `std::io_hex` all 9 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_hex_execution.rs` checks exact lowercase and uppercase writes across `u8`, `u16`, and `u32`, counts, invalid handles, injected write failures, bounded stdin parsing with optional prefix and whitespace, malformed and overflowing input, and injected read failures. |
 | `std::io_binary` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_binary_execution.rs` checks shortest binary writes across `u8`, `u16`, and `u32`, exact byte counts, invalid handles, injected write failures, bounded stdin parsing with optional prefix and whitespace, malformed and overflowing input, and injected read failures. |
-| `std::file_hex` all 9 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_hex_execution.rs` checks lowercase and uppercase writes, bounded hexadecimal file reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed and overflowing input, missing and overlong files, and injected read/write/close errors. Raw filesystem path lengths remain broken; see dependency 29. |
-| `std::file_binary` all 6 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_binary_execution.rs` checks shortest binary file writes and bounded reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed, missing, overlong, and overflowing input, plus injected read/write/close errors. Raw filesystem path lengths remain broken; see dependency 29. |
+| `std::file_hex` all 9 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_hex_execution.rs` checks lowercase and uppercase writes, bounded hexadecimal file reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed and overflowing input, missing and overlong files, and injected read/write/close errors. |
+| `std::file_binary` all 6 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_binary_execution.rs` checks shortest binary file writes and bounded reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed, missing, overlong, and overflowing input, plus injected read/write/close errors. |
 | `std::file` all 21 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, multi-chunk binary copies between files and standard streams, bounded decimal reads and writes across 8-, 16-, and 32-bit integers, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded and inclusive unsigned and signed outputs, forced draws and rejection, full-range failure fallbacks, and secure i32 slice shuffling with preserved contents, a forced swap, and injected failure. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and all 31 public functions | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. Redundant no-argument functions that failed natively were removed in favor of the tested constants. Allocation and host normalization are unavailable. |
@@ -473,6 +473,16 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   readers reject values outside their width. Zero limit returns fallback
   without reading; other failures may consume an input prefix. The fallback
   can equal a valid parsed value.
+- Raw `std::fs::{open_read,open_write,open_append,remove_file,create_dir,remove_dir,rename}`
+  on x86_64 Linux copy exactly the supplied path bytes into temporary
+  NUL-terminated storage before making a syscall. Each path is limited to
+  4095 bytes; a longer length returns `-36` (`ENAMETOOLONG`) before reading
+  the pointer. A null pointer with nonzero length returns `-14` (`EFAULT`),
+  and an embedded NUL returns `-22` (`EINVAL`). Empty paths reach Linux and
+  return `-2` (`ENOENT`). Other syscall errors are returned as negative Linux
+  errno values. The caller must provide readable storage for the declared
+  length. `rename` checks each path independently. The string-based
+  `open_read_path` and `open_write_path` use the same bounded runtime calls.
 - `std::file::write_text_once` opens or creates a file, truncates it, attempts
   one text write, and attempts to close it even if writing fails. It returns the actual
   byte count on success, including zero for empty text; a negative open,
@@ -557,7 +567,6 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   least one digit. Missing, malformed, overlong, or overflowing input and
   read or close errors return the caller's fallback, which may also be a
   valid value. Narrow readers reject values above their type maximum.
-  Literal NUL-terminated paths are required until dependency 29 is repaired.
 - `std::file_binary` writers create or truncate a file, write the shortest
   binary representation through checked byte writes, and close it. They
   return false on open, write, or close failure; failure after opening can
@@ -566,7 +575,6 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   least one digit. Missing, malformed, overlong, or overflowing input and
   read or close errors return the caller's fallback, which can also be a
   valid value. Narrow readers reject values above their type maximum.
-  Literal NUL-terminated paths are required until dependency 29 is repaired.
 - `std::random_checked::fill_secure_exact` fills the requested caller-buffer
   length, retrying short reads. Zero length succeeds without touching the
   pointer. Null storage for a nonzero length, a length above `i32::MAX`, a
@@ -916,18 +924,15 @@ also fixes the imported struct-return relocation path described below.
     stored in a typed `u32` variable produces 5. `std::random_checked` uses a
     typed maximum for its rejection threshold. The literal expression still
     needs a compiler fix so general user code has correct unsigned remainder.
-29. **Raw filesystem path lengths are ignored.** Compile
-    `tests/fixtures/stdlib_foundation/repro_fs_path_len_ignored.lani` with
-    `--stdlib-root stdlib --emit x86_64`. Run the ELF in an empty temporary
-    directory. It calls `std::fs::create_dir` with a pointer to
-    `"lanius_path_length_probe"` and length 6, but creates the full name rather
-    than `"lanius"`. The x86 runtime issues NUL-terminated Linux path syscalls
-    without using the declared lengths for `open_*`, `remove_file`,
-    `create_dir`, `remove_dir`, or `rename`. Callers cannot safely pass an
-    arbitrary pointer-length path pair. Checked path mutation wrappers are
-    deferred until the raw runtime contract and behavior agree. There is also
-    no `open_append_path(str)` binding, so a checked append-to-path wrapper
-    cannot be built around the raw `open_append(ptr, len)` call yet.
+29. **Resolved: raw filesystem path lengths.** The x86_64 Linux runtime now
+    copies exactly each supplied path length, rejects overlong, null, and
+    embedded-NUL paths, and then calls the corresponding Linux syscall.
+    `tests/fixtures/stdlib_foundation/repro_fs_path_len_ignored.lani` now
+    creates `"lanius"`, rather than the full source literal. Three executable
+    tests in `tests/stdlib_file_execution.rs` cover every raw path operation,
+    string-based opens, paths longer than 255 bytes, and error cases. A
+    checked append-to-path wrapper still needs a compiler binding for
+    `open_append_path(str)`; only raw `open_append(ptr, len)` is bound.
 30. **High-bit unsigned 64-bit operations.** Compile
     `tests/fixtures/stdlib_foundation/repro_u64_bit_ops.lani` with
     `--stdlib-root stdlib --emit x86_64` and run the ELF. It exits 30, a

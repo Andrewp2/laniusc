@@ -5,7 +5,7 @@ import std::fs;
 fn main() -> i32 {
     let path: ptr = core::mem::string_data_ptr("lanius_path_length_probe");
     let short_length: usize = 6;
-    // The supplied length denotes "lanius", but the x86 runtime creates the
-    // full NUL-terminated name. Run in an empty temporary directory.
+    // The supplied length denotes "lanius". Run in an empty temporary
+    // directory and verify that the trailing bytes are ignored.
     return std::fs::create_dir(path, short_length);
 }
