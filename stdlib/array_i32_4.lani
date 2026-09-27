@@ -30,6 +30,7 @@ pub fn lstd_i32x4_reversed(values: [i32; 4]) -> [i32; 4] {
     return [values[3], values[2], values[1], values[0]];
 }
 
+// Requires the mathematical sum to fit i32.
 pub fn lstd_i32x4_sum(values: [i32; 4]) -> i32 {
     let index: i32 = 0;
     let total: i32 = 0;

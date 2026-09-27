@@ -242,26 +242,75 @@ fn portable_stdlib_helpers_execute_on_x86() {
 }
 
 #[test]
-fn legacy_i32_power_boundaries_execute_on_x86() {
-    let source = format!(
-        "{}\nfn main() -> i32 {{\n\
-         if (!lstd_i32_is_power_of_two(1073741824) || lstd_i32_is_power_of_two(2147483647)) {{ return 1; }}\n\
-         if (lstd_i32_next_power_of_two(7) != 8 || lstd_i32_next_power_of_two(2147483647) != 0) {{ return 2; }}\n\
-         return 0;\n}}",
-        include_str!("../stdlib/i32.lani")
-    );
-    let bytes = common::run_gpu_codegen_with_timeout("legacy_i32_power_boundaries", move || {
+fn legacy_scalar_functions_execute_on_x86() {
+    let bool_source = include_str!("../stdlib/bool.lani");
+    let i32_source = include_str!("../stdlib/i32.lani");
+    let main_source = include_str!("fixtures/stdlib_foundation/legacy_scalars_main.lani");
+    for library in [bool_source, i32_source] {
+        for line in library.lines() {
+            let Some(tail) = line.trim_start().strip_prefix("pub fn ") else {
+                continue;
+            };
+            let name = tail
+                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .next()
+                .expect("public function has a name");
+            assert!(
+                main_source.contains(&format!("{name}(")),
+                "{name} lacks a runtime case"
+            );
+        }
+    }
+    let source = format!("{bool_source}\n{i32_source}\n{main_source}");
+    let bytes = common::run_gpu_codegen_with_timeout("legacy_scalars", move || {
         pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
     })
-    .expect("compile legacy i32 power boundaries");
+    .expect("compile legacy scalar functions");
 
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
-        let output = common::run_x86_64_elf_output(
-            "legacy_i32_power_boundaries",
-            "legacy_i32_power_boundaries",
-            &bytes,
+        let output = common::run_x86_64_elf_output("legacy_scalars", "legacy_scalars", &bytes);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn legacy_i32x4_scalar_functions_execute_on_x86() {
+    let library = include_str!("../stdlib/array_i32_4.lani");
+    let main_source = include_str!("fixtures/stdlib_foundation/legacy_i32x4_main.lani");
+    for line in library.lines() {
+        let Some(tail) = line.trim_start().strip_prefix("pub fn ") else {
+            continue;
+        };
+        let name = tail
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .next()
+            .expect("public function has a name");
+        if [
+            "lstd_i32x4_copy",
+            "lstd_i32x4_filled",
+            "lstd_i32x4_reversed",
+        ]
+        .contains(&name)
+        {
+            continue;
+        }
+        assert!(
+            main_source.contains(&format!("{name}(")),
+            "{name} lacks a runtime case"
         );
+    }
+    let source = format!("{library}\n{main_source}");
+    let bytes = common::run_gpu_codegen_with_timeout("legacy_i32x4", move || {
+        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
+    })
+    .expect("compile legacy i32x4 functions");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output("legacy_i32x4", "legacy_i32x4", &bytes);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
     }
     #[cfg(not(all(unix, target_arch = "x86_64")))]

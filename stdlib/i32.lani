@@ -4,6 +4,7 @@
 const LSTD_I32_MIN: i32 = -2147483648;
 const LSTD_I32_MAX: i32 = 2147483647;
 
+// Requires value != LSTD_I32_MIN; use saturating_abs for that input.
 pub fn lstd_i32_abs(value: i32) -> i32 {
     if (value < 0) {
         return -value;
@@ -36,6 +37,8 @@ pub fn lstd_i32_max(left: i32, right: i32) -> i32 {
     }
 }
 
+// Requires low <= high. The module-form core::number_i32::clamp_or provides
+// an explicit fallback for reversed bounds.
 pub fn lstd_i32_clamp(value: i32, low: i32, high: i32) -> i32 {
     if (value < low) {
         return low;
