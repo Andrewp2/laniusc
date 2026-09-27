@@ -24,6 +24,28 @@ fn std_io_lines_execute_on_x86() {
 }
 
 #[test]
+fn std_io_flush_and_print_execute_with_real_stdlib_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_io_flush_print.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_io_flush_print", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile std::io flush and print helpers from the real stdlib");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output =
+            common::run_x86_64_elf_output("std_io_flush_print", "std_io_flush_print", &bytes);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, b"before -42\n", "{output:?}");
+        assert_eq!(output.stderr, b"error\n", "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn std_args_read_exact_into_executes_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_host/std_args_checked.lani");

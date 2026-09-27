@@ -1,0 +1,22 @@
+module app::main;
+import std::io;
+
+fn main() -> i32 {
+    if (std::io::write_text(1, "before ") != 7) {
+        return 1;
+    }
+    if (std::io::flush_stdout() != 0) {
+        return 2;
+    }
+    std::io::print_i32(-42);
+    if (std::io::write_text(2, "error") != 5) {
+        return 3;
+    }
+    if (std::io::flush_stderr() != 0) {
+        return 4;
+    }
+    if (std::io::write_newline(2) != 1) {
+        return 5;
+    }
+    return 0;
+}
