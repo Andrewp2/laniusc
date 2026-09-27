@@ -24,11 +24,56 @@ fn imported_generic_slice_claims_execute_and_reject_inconsistent_types() {
     let _ = bytes;
 
     let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_root");
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_two_valid.lani");
+    let bytes = common::run_gpu_codegen_with_timeout("generic_slice_two_views", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("infer one T from two matching imported [T] arguments");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "generic_slice_two_views",
+            "generic_slice_two_views",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_root");
     let entry = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_mismatch.lani");
     common::run_gpu_codegen_with_timeout("generic_slice_mismatch", move || {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
     })
     .expect_err("a bool fallback must not match an imported [u8] element type");
+
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_root");
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_inference.lani");
+    let bytes = common::run_gpu_codegen_with_timeout("generic_slice_inference", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("infer T from an imported [T] parameter");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "generic_slice_inference",
+            "generic_slice_inference",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_root");
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_generic_slice_two_mismatch.lani");
+    common::run_gpu_codegen_with_timeout("generic_slice_two_view_mismatch", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect_err("two imported [T] parameters must have matching element types");
 }
 
 // Each fixture returns its first failing assertion number. The bounds fixture
@@ -267,14 +312,14 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
-            "core_slice_generic",
-            "tests/fixtures/stdlib_foundation/core_slice_generic.lani",
+            "core_slice_bool",
+            "tests/fixtures/stdlib_foundation/core_slice_bool.lani",
             0,
             b"",
         ),
         (
-            "core_slice_generic_bounds",
-            "tests/fixtures/stdlib_foundation/core_slice_generic_bounds.lani",
+            "core_slice_bool_bounds",
+            "tests/fixtures/stdlib_foundation/core_slice_bool_bounds.lani",
             101,
             b"",
         ),
@@ -469,6 +514,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             "sample_programs/halfword_window_total.lani",
             0,
             b"32786\n",
+        ),
+        (
+            "boolean_window_checksum",
+            "sample_programs/boolean_window_checksum.lani",
+            0,
+            b"3\n",
         ),
         (
             "vec_i32",
@@ -737,9 +788,9 @@ fn executable_core_function_surface_has_runtime_cases() {
             include_str!("fixtures/stdlib_foundation/core_slice_u32.lani"),
         ),
         (
-            "slice_generic",
-            include_str!("../stdlib/core/slice_generic.lani"),
-            include_str!("fixtures/stdlib_foundation/core_slice_generic.lani"),
+            "slice_bool",
+            include_str!("../stdlib/core/slice_bool.lani"),
+            include_str!("fixtures/stdlib_foundation/core_slice_bool.lani"),
         ),
     ];
 

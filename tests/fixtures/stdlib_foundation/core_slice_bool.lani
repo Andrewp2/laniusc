@@ -1,0 +1,72 @@
+module app::main;
+import core::slice_bool;
+
+fn main() -> i32 {
+    let values: [bool; 4] = [true, false, true, false];
+    if (!core::slice_bool::get_or(values, 4, 0, false) ||
+        core::slice_bool::get_or(values, 4, 1, true) ||
+        !core::slice_bool::get_or(values, 4, -1, true) ||
+        core::slice_bool::get_or(values, 0, 0, false) ||
+        !core::slice_bool::get_or(values, 4, 4, true)) {
+        return 1;
+    }
+    if (core::slice_bool::set(values, -1, 0, false) ||
+        core::slice_bool::set(values, 4, -1, false) ||
+        core::slice_bool::set(values, 4, 4, true) ||
+        !values[0] || values[1] ||
+        !core::slice_bool::set(values, 4, 1, true) || !values[1]) {
+        return 2;
+    }
+    if (core::slice_bool::fill(values, -1, false) != 0 ||
+        core::slice_bool::fill(values, 0, false) != 0 ||
+        !values[0] || !values[1] ||
+        core::slice_bool::fill(values, 4, false) != 4 ||
+        values[0] || values[3]) {
+        return 3;
+    }
+    values[0] = true;
+    if (core::slice_bool::swap(values, 4, -1, 0) ||
+        core::slice_bool::swap(values, 4, 0, 4) ||
+        core::slice_bool::swap(values, 0, 0, 0) ||
+        !values[0] || values[1] ||
+        !core::slice_bool::swap(values, 4, 0, 1) ||
+        values[0] || !values[1]) {
+        return 4;
+    }
+    if (core::slice_bool::copy_within(values, 4, 0, 5, 0) ||
+        core::slice_bool::copy_within(values, 4, 2, 1, 0) ||
+        core::slice_bool::copy_within(values, 4, 0, 3, 2) ||
+        core::slice_bool::copy_within(values, -1, 0, 0, 0) ||
+        values[0] || !values[1]) {
+        return 5;
+    }
+    values[0] = true;
+    values[1] = false;
+    values[2] = true;
+    values[3] = false;
+    if (!core::slice_bool::copy_within(values, 4, 0, 3, 1) ||
+        !values[0] || !values[1] || values[2] || !values[3] ||
+        !core::slice_bool::copy_within(values, 4, 1, 4, 0) ||
+        !values[0] || values[1] || !values[2] || !values[3]) {
+        return 6;
+    }
+    if (core::slice_bool::reverse(values, -1) != 0 ||
+        core::slice_bool::reverse(values, 0) != 0 ||
+        !values[0] || values[1] ||
+        core::slice_bool::reverse(values, 4) != 4 ||
+        !values[0] || !values[1] || values[2] || !values[3]) {
+        return 7;
+    }
+    let copied: [bool; 4] = [false, false, false, false];
+    if (core::slice_bool::copy_prefix(values, -1, copied, 4) != -1 ||
+        core::slice_bool::copy_prefix(values, 4, copied, -1) != -1 ||
+        copied[0] || copied[3] ||
+        core::slice_bool::copy_prefix(values, 0, copied, 4) != 0 ||
+        core::slice_bool::copy_prefix(values, 4, copied, 3) != 3 ||
+        !copied[0] || !copied[1] || copied[2] || copied[3] ||
+        core::slice_bool::copy_prefix(values, 4, values, 4) != 4 ||
+        !values[0] || !values[3]) {
+        return 8;
+    }
+    return 0;
+}

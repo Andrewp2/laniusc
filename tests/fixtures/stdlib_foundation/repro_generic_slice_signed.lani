@@ -1,0 +1,14 @@
+module app::main;
+import core::slice_any;
+
+fn main() -> i32 {
+    let first: i32 = 3;
+    let second: i32 = 7;
+    let third: i32 = 11;
+    let fallback: i32 = -1;
+    let values: [i32; 3] = [first, second, third];
+    if (core::slice_any::get_or(values, 3, 0, fallback) != first) { return 1; }
+    if (core::slice_any::get_or(values, 3, 1, fallback) != second) { return 2; }
+    if (core::slice_any::get_or(values, 3, 2, fallback) != third) { return 3; }
+    return 0;
+}

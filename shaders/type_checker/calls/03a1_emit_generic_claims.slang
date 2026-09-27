@@ -8,6 +8,7 @@
 // type argument.
 
 import external_type_identity;
+import dependency_interface;
 import hir_records;
 import atomics;
 import hir_expr_semantics;
@@ -132,6 +133,10 @@ static const uint TYPE_REF_EXTERNAL_GENERIC = 6u;
 static const uint TYPE_INSTANCE_NAMED = 1u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
+static const uint INTERFACE_TYPE_GENERIC_PARAMETER = 2u;
+static const uint INTERFACE_TYPE_ARRAY = 4u;
+static const uint INTERFACE_TYPE_SLICE = 5u;
+static const uint INTERFACE_TYPE_WORDS = 9u;
 static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 
 static const uint ERR_ASSIGN_MISMATCH = 3u;
@@ -499,7 +504,32 @@ bool param_instance_ref_for_row(uint param_row, out uint instance_i)
 
 uint param_array_or_slice_generic_slot_for_row(uint param_row)
 {
-    if (param_row == INVALID || call_param_row_ref_tag[param_row] != TYPE_REF_INSTANCE)
+    if (param_row == INVALID)
+        return INVALID;
+
+    if (call_param_row_ref_tag[param_row] == TYPE_REF_EXTERNAL_CANONICAL)
+    {
+        uint type_i = call_param_row_ref_payload[param_row];
+        uint type_count = dependency_type_count();
+        if (type_i >= type_count)
+            return INVALID;
+        uint base = type_i * INTERFACE_TYPE_WORDS;
+        uint kind = dependency_type_word(base);
+        if ((kind != INTERFACE_TYPE_ARRAY && kind != INTERFACE_TYPE_SLICE) ||
+            dependency_type_word(base + 4u) != 1u)
+            return INVALID;
+        uint edge = dependency_type_word(base + 3u);
+        if (edge >= dependency_count(5u))
+            return INVALID;
+        uint child = dependency_type_edge_word(edge);
+        if (child >= type_count ||
+            dependency_type_word(child * INTERFACE_TYPE_WORDS) !=
+                INTERFACE_TYPE_GENERIC_PARAMETER)
+            return INVALID;
+        return dependency_type_word(child * INTERFACE_TYPE_WORDS + 1u);
+    }
+
+    if (call_param_row_ref_tag[param_row] != TYPE_REF_INSTANCE)
         return INVALID;
 
     uint instance_i = call_param_row_ref_payload[param_row];
@@ -616,6 +646,24 @@ uint array_or_slice_element_type_for_arg_node(uint arg_node)
     return leaf_type_code_for_ref(
         type_instance_elem_ref_tag[payload],
         type_instance_elem_ref_payload[payload]);
+}
+
+bool array_or_slice_element_ref_for_arg_node(
+    uint arg_node, out uint element_tag, out uint element_payload)
+{
+    element_tag = TYPE_REF_INVALID;
+    element_payload = INVALID;
+    uint tag;
+    uint payload;
+    if (!arg_decl_type_ref(arg_node, tag, payload) ||
+        tag != TYPE_REF_INSTANCE || !valid_token(payload))
+        return false;
+    uint kind = type_instance_kind[payload];
+    if (kind != TYPE_INSTANCE_ARRAY && kind != TYPE_INSTANCE_SLICE)
+        return false;
+    element_tag = type_instance_elem_ref_tag[payload];
+    element_payload = type_instance_elem_ref_payload[payload];
+    return element_tag != TYPE_REF_INVALID && element_payload != INVALID;
 }
 
 uint actual_instance_arg_type(uint arg_node, uint expected_instance, uint instance_arg_ordinal)
@@ -989,6 +1037,14 @@ void emit_claim_for_relation(uint claim_i, uint arg_row, uint relation_i)
             uint arg_ty = array_or_slice_element_type_for_arg_node(arg_node);
             publish_generic_return_type(callee_i, fn_i, array_ref_slot, arg_ty);
             emit_generic_claim(claim_i, arg_row, callee_i, array_ref_slot, arg_ty);
+            uint element_tag;
+            uint element_payload;
+            if (array_or_slice_element_ref_for_arg_node(
+                arg_node, element_tag, element_payload))
+            {
+                call_generic_claim_ref_tag[claim_i] = element_tag;
+                call_generic_claim_ref_payload[claim_i] = element_payload;
+            }
             return;
         }
         rel -= 1u;

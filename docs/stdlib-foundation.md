@@ -38,7 +38,7 @@ limited to native x86_64 output from this worktree.
 | `core::slice_i16` all 36 public signed-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Matching fixtures cover every public function, `-32768`, `32767`, signed ordering and binary search, sums clamped after each addition, all 243 small sorting sequences, invalid logical lengths, and a native trap on physical length overclaim. |
 | `core::slice_u16` all 36 public unsigned-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every public function and check access, mutation, copy and rotation, compaction, insertion, sequence search, unsigned ordering across `32768`, sort and binary search, partitioning, and sums saturating at `65535`. They cover empty and invalid logical lengths, rejected mutation, and all 243 five-element sequences over `{0,1,2}` for sorting. A separate fixture confirms exit 101 when the claimed length exceeds the physical backing and is indexed. |
 | `core::slice_u32` all 36 public unsigned-word-view functions | Executable on x86_64 for fixed-array-backed views | Matching runtime fixtures cover the same operations and failure cases, including unsigned ordering across `2^31` and saturation at `u32::MAX`, plus the exhaustive small-sort fixture. The caller supplies a logical length within the physical backing. A source scan requires a runtime call for every public function. |
-| `core::slice_generic` all 3 public generic access and mutation functions | Executable on x86_64 for tested fixed-array-backed `u8`, `u32`, and `bool` views | The runtime fixture checks successful reads and writes, invalid indices and lengths, zero and high-bit unsigned values, boolean elements, and an overclaimed physical length that traps. The functions receive a concrete `T` argument, which supplies generic inference. Slice-only generic operations remain blocked by dependency 40. |
+| `core::slice_bool` all 7 public boolean-view functions | Executable on x86_64 for fixed-array-backed views | The runtime fixture calls every function and checks true and false reads, writes, fill, swap, overlapping in-place copy, reversal, copying between views, invalid bounds, and an overclaimed physical length that traps. The boolean checksum sample uses it with numeric and Option helpers. Generic `[T]` operations are withheld because signed element instantiations misexecute; see dependency 41. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
@@ -346,11 +346,19 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   values can lower an earlier saturated total. The physical backing
   must contain at least the claimed length, or native indexing can trap.
   String-backed and arbitrary raw byte views remain outside this claim.
-  `core::slice_generic` provides `get_or`, `set`, and `fill` for the tested
-  scalar element types. `get_or` returns its caller fallback for a negative
+  `core::slice_bool` provides `get_or`, `set`, `fill`, `swap`,
+  `copy_within`, `reverse`, and `copy_prefix` for the tested scalar element
+  type `bool`. `get_or` returns its caller fallback for a negative
   length or out-of-range index. `set` returns false without writing for those
   invalid bounds. `fill` treats a nonpositive length as empty and returns the
-  number of elements written. Each operation can trap when a caller overstates
+  number of elements written. `swap` rejects invalid indices without writing.
+  `copy_within` supports overlap and rejects invalid logical bounds before
+  writing. `reverse` treats nonpositive lengths as empty and returns the
+  logical length otherwise. `copy_prefix` copies the shorter of the two
+  supplied nonnegative logical lengths and returns that count; a negative
+  length returns -1 without writing. Its backing views must be distinct or
+  start at the same element; other overlap is unsupported. Each operation can
+  trap when a caller overstates
   the physical backing length and indexing reaches past it. A fallback can
   equal a stored value; callers that need a distinct success indication use
   `set` for mutation or validate the index separately for reading.
@@ -1114,8 +1122,8 @@ also fixes the imported struct-return relocation path described below.
     with `[u8; 1]` and `[u32; 1]` arguments; the focused execution test also
     confirms that a `[u8]` argument with a `bool` fallback is rejected.
     This verifies generic slice substitution for those scalar cases. The
-    concrete `core::slice_u8`, `core::slice_i8`, `core::slice_i16`,
-    `core::slice_u16`, and `core::slice_u32` modules remain the complete
+    concrete `core::slice_bool`, `core::slice_u8`, `core::slice_i8`,
+    `core::slice_i16`, `core::slice_u16`, and `core::slice_u32` modules remain the complete
     executable slice APIs in this audit.
 37. **Third same-name concrete method specialization.**
     `laniusc check tests/fixtures/stdlib_foundation/repro_third_concrete_method.lani`
@@ -1150,14 +1158,26 @@ also fixes the imported struct-return relocation path described below.
     from its local search helper and constructs `OptionU16` in `main`.
     Local forwarding of imported aggregate results remains a native compiler
     dependency; the direct-call tests do not prove this composition works.
-40. **Inferring a generic element only from an imported slice parameter.**
+40. **Resolved: inferring a generic element only from an imported slice parameter.**
     `repro_generic_slice_inference.lani` calls `core::slice_any::swap<T>` with
-    a `[u8; 2]` array and no separate scalar `T` argument. `laniusc check`
-    succeeds, but `--emit x86_64` reports `LNC0006` at the array argument.
-    The generic claim pipeline supplies the element type for `get_or<T>`
-    when its fallback argument has type `T`, but does not infer it from this
-    imported `[T]` parameter alone. This blocks a genuinely generic `swap`,
-    `reverse`, or `copy_within` without an extraneous scalar argument.
+    a `[u8; 2]` array and no separate scalar `T` argument. The GPU claim
+    collector now reads the generic child of the imported canonical slice
+    type and records the actual array element reference. The reproducer
+    compiles and executes on x86. A separate `copy_first<T>` reproducer with
+    two imported `[T]` parameters accepts matching byte views and rejects
+    a `[u8]` source paired with a `[bool]` destination. This repairs generic
+    inference, while dependency 41 still prevents a public all-type slice API.
+41. **Signed generic slice element access misexecutes on x86.**
+    `repro_generic_slice_signed.lani` imports `get_or<T>` with an `[i32; 3]`
+    backing containing 3, 7, and 11. It compiles with the adjacent test root,
+    but the ELF exits 2 because index 1 does not return 7. A same-module
+    generic function also returns an incorrect value there; the concrete
+    `core::slice::get_or_i32` returns 7. A matching `[u32; 3]` generic probe
+    returned every element correctly, while `[i16; 3]` also failed at index 1.
+    `core::slice_generic<T>` was removed from the main library because an
+    accepted signed instantiation silently returned wrong data. Concrete
+    signed slices and `core::slice_bool` remain executable. This needs a
+    compiler or native-lowering fix before generic slices can be claimed.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

@@ -1,0 +1,12 @@
+module app::main;
+import core::slice_any;
+
+fn main() -> i32 {
+    let first: u8 = 7;
+    let second: u8 = 11;
+    let source: [u8; 1] = [first];
+    let destination: [u8; 1] = [second];
+    core::slice_any::copy_first(source, destination);
+    if (destination[0] == first) { return 0; }
+    return 1;
+}

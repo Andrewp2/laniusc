@@ -1,0 +1,10 @@
+module app::main;
+import core::slice_any;
+
+fn main() -> i32 {
+    let byte: u8 = 7;
+    let bytes: [u8; 1] = [byte];
+    let flags: [bool; 1] = [true];
+    core::slice_any::copy_first(bytes, flags);
+    return 0;
+}

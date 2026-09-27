@@ -4,7 +4,6 @@ import core::slice_any;
 fn main() -> i32 {
     let byte: u8 = 255;
     let bytes: [u8; 1] = [byte];
-    let wrong: bool = core::slice_any::get_or(bytes, 1, 0, true);
-    if (wrong) { return 1; }
+    core::slice_any::get_or(bytes, 1, 0, true);
     return 0;
 }

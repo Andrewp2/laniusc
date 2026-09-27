@@ -11,3 +11,7 @@ pub fn swap<T>(values: [T], left: i32, right: i32) {
     values[left] = values[right];
     values[right] = previous;
 }
+
+pub fn copy_first<T>(source: [T], destination: [T]) {
+    destination[0] = source[0];
+}

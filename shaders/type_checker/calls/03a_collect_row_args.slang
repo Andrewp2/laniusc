@@ -5,6 +5,7 @@
 // generic claim marking, and per-argument diagnostics.
 
 import external_type_identity;
+import dependency_interface;
 import hir_records;
 import atomics;
 import hir_expr_semantics;
@@ -141,6 +142,10 @@ static const uint TYPE_REF_EXTERNAL_GENERIC = 6u;
 static const uint TYPE_INSTANCE_NAMED = 1u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
+static const uint INTERFACE_TYPE_GENERIC_PARAMETER = 2u;
+static const uint INTERFACE_TYPE_ARRAY = 4u;
+static const uint INTERFACE_TYPE_SLICE = 5u;
+static const uint INTERFACE_TYPE_WORDS = 9u;
 static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 static const uint TYPE_LEN_LITERAL = 1u;
 static const uint TYPE_LEN_CONST_PARAM = 2u;
@@ -524,7 +529,32 @@ bool param_instance_ref_for_row(uint param_row, out uint instance_i)
 
 uint param_array_or_slice_generic_slot_for_row(uint param_row)
 {
-    if (param_row == INVALID || call_param_row_ref_tag[param_row] != TYPE_REF_INSTANCE)
+    if (param_row == INVALID)
+        return INVALID;
+
+    if (call_param_row_ref_tag[param_row] == TYPE_REF_EXTERNAL_CANONICAL)
+    {
+        uint type_i = call_param_row_ref_payload[param_row];
+        uint type_count = dependency_type_count();
+        if (type_i >= type_count)
+            return INVALID;
+        uint base = type_i * INTERFACE_TYPE_WORDS;
+        uint kind = dependency_type_word(base);
+        if ((kind != INTERFACE_TYPE_ARRAY && kind != INTERFACE_TYPE_SLICE) ||
+            dependency_type_word(base + 4u) != 1u)
+            return INVALID;
+        uint edge = dependency_type_word(base + 3u);
+        if (edge >= dependency_count(5u))
+            return INVALID;
+        uint child = dependency_type_edge_word(edge);
+        if (child >= type_count ||
+            dependency_type_word(child * INTERFACE_TYPE_WORDS) !=
+                INTERFACE_TYPE_GENERIC_PARAMETER)
+            return INVALID;
+        return dependency_type_word(child * INTERFACE_TYPE_WORDS + 1u);
+    }
+
+    if (call_param_row_ref_tag[param_row] != TYPE_REF_INSTANCE)
         return INVALID;
 
     uint instance_i = call_param_row_ref_payload[param_row];
