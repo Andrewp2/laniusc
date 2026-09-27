@@ -34,7 +34,7 @@ limited to native x86_64 output from this worktree.
 | `alloc::allocator` | Native host ABI with an unsafe allocation-failure path | Normal allocation, reallocation, and release have x86 tests. An injected `mmap` failure returns a nonzero error-shaped pointer from `alloc`; see dependency 22. Callers cannot currently rely on a null-pointer failure check. |
 | `std::{io,fs,random,env,process,time}` | Mixed: bound calls executable; remaining declarations contract-only | The compiler binds a specific subset of extern calls on x86; existing `tests/codegen_x86.rs` exercises those calls. An availability flag is not evidence that every declaration in a module works. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::args_checked::read_exact_into` | Executable x86_64 Linux host wrapper | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks exact bytes, sufficient and insufficient capacity, null storage, missing/negative indices, and capacity above `i32::MAX`. Caller storage avoids allocation. |
-| `std::env_checked::var_read_exact_into` | Executable x86_64 Linux host wrapper | `tests/stdlib_env_execution.rs` runs a Lanius program with present, empty, and missing environment values. It checks exact bytes, capacity, null storage, invalid keys, and untouched storage on preflight rejection. Caller storage avoids allocation. |
+| `std::env_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_env_execution.rs` checks exact value and key bytes, missing and invalid indices, capacity and null-storage failures, current-directory bytes and its NUL terminator, and injected `getcwd` failure. Caller storage avoids allocation. |
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, and invalid handles. These are separate from the portable core. |
 | `std::io_decimal::{write_u32,write_i32}` | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned extrema, exact byte counts, invalid handles, and injected sign and digit write failures. |
@@ -193,6 +193,14 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   terminator. A missing key, insufficient capacity, or invalid pointer/length
   returns false before writing. An empty value succeeds with a null buffer.
   A host short read returns false and may leave a copied prefix.
+- `std::env_checked::var_key_read_exact_into` copies a complete nonempty key
+  by index without a terminator. Missing or negative indices and invalid or
+  insufficient storage return false before writing. A host short read can
+  leave a prefix.
+- `std::env_checked::current_dir_read_into` returns the directory path's byte
+  count, excluding the trailing NUL written into caller storage on x86 Linux.
+  It returns `-1` for invalid storage or capacity and host failure. A failed
+  call may leave a prefix in storage.
 - `std::time_checked` writes the native 16-byte seconds/nanoseconds timespec
   into caller storage for monotonic or system time. Null or short buffers and
   capacities above `i32::MAX` return false before a host call. Clock errors

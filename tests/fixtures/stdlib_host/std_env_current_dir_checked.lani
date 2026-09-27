@@ -1,0 +1,30 @@
+module app::main;
+import core::mem;
+import std::env_checked;
+import std::io;
+fn main() -> i32 {
+    let words:[i32; 32] =[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let buffer: ptr = core::mem::i32_array_data_ptr(words);
+    if (std::env_checked::current_dir_read_into(0, 128) != -1 || std::env_checked::current_dir_read_into(buffer, 0) != -1) {
+        return 1;
+    }
+    let too_large: usize = 2147483648;
+    if (std::env_checked::current_dir_read_into(buffer, too_large) != -1) {
+        return 2;
+    }
+    if (words[0] != 0 || words[31] != 0) {
+        return 3;
+    }
+    if (std::env_checked::current_dir_read_into(buffer, 1) != -1) {
+        return 4;
+    }
+    let count: i32 = std::env_checked::current_dir_read_into(buffer, 128);
+    if (count <= 0 || count >= 128) {
+        return 5;
+    }
+    let length: usize = count;
+    if (std::io::write_stdout(buffer, length + 1) != count + 1) {
+        return 6;
+    }
+    return 0;
+}

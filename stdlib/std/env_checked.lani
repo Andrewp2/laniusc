@@ -1,11 +1,10 @@
-// Bounded environment-variable copy into caller-owned storage. This host
-// helper allocates no memory. Keys are nonempty byte sequences supplied by
-// pointer and length; values are copied without a trailing NUL. A missing
-// key, insufficient capacity, or invalid pointer/length returns false before
-// writing. An empty value succeeds with a null destination. A host short read
-// returns false and may leave a prefix in the destination.
+// Checked environment reads into caller-owned storage, without allocation.
 module std::env_checked;
 import std::env;
+// Keys are nonempty byte sequences supplied by pointer and length. Values
+// are copied without a trailing NUL. A missing key, insufficient capacity,
+// or invalid pointer/length returns false before writing. An empty value
+// succeeds with a null destination. A host short read may leave a prefix.
 pub fn var_read_exact_into(key: ptr, key_len: usize, value: ptr, capacity: usize) -> bool {
     if (key == 0 || key_len == 0 || key_len>2147483647 || capacity>2147483647) {
         return false;
@@ -25,4 +24,41 @@ pub fn var_read_exact_into(key: ptr, key_len: usize, value: ptr, capacity: usize
         return false;
     }
     return std::env::var_read(key, key_len, value, needed) == expected;
+}
+
+// Copy the complete nonempty key at index into caller storage without a
+// trailing NUL. Invalid indices, oversized capacities, insufficient storage,
+// and null output fail before writing. A host short read may leave a prefix.
+pub fn var_key_read_exact_into(index: i32, buffer: ptr, capacity: usize) -> bool {
+    if (index<0 || capacity>2147483647) {
+        return false;
+    }
+    let expected: i32 = std::env::var_key_len(index);
+    if (expected <= 0) {
+        return false;
+    }
+    let needed: usize = expected;
+    if (needed>capacity || buffer == 0) {
+        return false;
+    }
+    return std::env::var_key_read(index, buffer, needed) == expected;
+}
+
+// Read the current directory into caller storage. Capacity must include the
+// trailing NUL. Returns the path byte count (excluding that NUL on x86 Linux),
+// or -1 for invalid arguments, insufficient space, or a host error. Failure
+// may leave a buffer prefix. The caller must provide capacity writable bytes.
+pub fn current_dir_read_into(buffer: ptr, capacity: usize) -> i32 {
+    if (buffer == 0 || capacity == 0 || capacity>2147483647) {
+        return -1;
+    }
+    let received: i32 = std::env::current_dir_read(buffer, capacity);
+    if (received<0) {
+        return -1;
+    }
+    let count: usize = received;
+    if (count >= capacity) {
+        return -1;
+    }
+    return received;
 }

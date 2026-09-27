@@ -1,0 +1,11 @@
+module app::main;
+import core::mem;
+import std::env_checked;
+fn main() -> i32 {
+    let words:[i32; 4] =[0, 0, 0, 0];
+    let buffer: ptr = core::mem::i32_array_data_ptr(words);
+    if (std::env_checked::current_dir_read_into(buffer, 16) != -1) {
+        return 1;
+    }
+    return 0;
+}
