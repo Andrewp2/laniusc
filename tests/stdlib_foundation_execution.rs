@@ -115,6 +115,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "option_result_u32",
+            "tests/fixtures/stdlib_foundation/option_result_u32.lani",
+            0,
+            b"",
+        ),
+        (
             "slice_sequence",
             "tests/fixtures/stdlib_foundation/slice_sequence.lani",
             0,
@@ -595,16 +601,31 @@ fn executable_core_function_surface_has_runtime_cases() {
     }
     assert_eq!(hash_count, 1);
 
-    let concrete_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i32.lani");
-    for (module, source, expected_count) in [
+    let i32_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i32.lani");
+    let u32_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_u32.lani");
+    for (module, source, fixture, expected_count) in [
         (
             "option_i32",
             include_str!("../stdlib/core/option_i32.lani"),
+            i32_result_fixture,
             12,
         ),
         (
             "result_i32",
             include_str!("../stdlib/core/result_i32.lani"),
+            i32_result_fixture,
+            10,
+        ),
+        (
+            "option_u32",
+            include_str!("../stdlib/core/option_u32.lani"),
+            u32_result_fixture,
+            12,
+        ),
+        (
+            "result_u32",
+            include_str!("../stdlib/core/result_u32.lani"),
+            u32_result_fixture,
             10,
         ),
     ] {
@@ -618,10 +639,7 @@ fn executable_core_function_surface_has_runtime_cases() {
                 .next()
                 .expect("public function has a name");
             let call = format!("core::{module}::{name}(");
-            assert!(
-                concrete_result_fixture.contains(&call),
-                "{call} lacks a runtime case"
-            );
+            assert!(fixture.contains(&call), "{call} lacks a runtime case");
             count += 1;
         }
         assert_eq!(count, expected_count);

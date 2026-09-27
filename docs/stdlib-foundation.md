@@ -39,6 +39,7 @@ limited to native x86_64 output from this worktree.
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::hash::hash_i32` | Executable on x86_64 | Runtime fixture checks zero, positive, and negative bit-pattern values. The generic `Hash<T>` trait remains outside the claim. |
 | `core::option_i32` all 12 public functions and `core::result_i32` all 10 public functions | Executable on x86_64 | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, both branches of `or`, `and`, and `xor`, and conversions between the two concrete types. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function to have a runtime call. These concrete structs do not make generic `Option<T>` or `Result<T,E>` executable. |
+| `core::option_u32` all 12 public functions and `core::result_u32` all 10 public functions | Executable on x86_64 | The matching runtime fixture covers every function and both variants with zero, ordinary values, the high bit, and `u32::MAX`. Both the success payload and error code are `u32`; inactive fields are zero. A source scan requires every public function to have a runtime call. |
 | `core::ordering` 13 public functions and `Ordering` variants | Partially executable on x86_64 | `tests/stdlib_ordering.rs` executes every function through the real stdlib root, including the imported fieldless enum return, predicates, reverse, then, all three outcomes, and unsigned high-bit comparison. `compare_i64` only works for tested 32-bit-range values; native i64 comparison still truncates high bits (dependency 11). Direct imported variant paths such as `core::ordering::Less` fail during native compilation (dependency 34), so the complete module is not yet claimed. |
 | Generic `core::option`, `core::result`, and `core::{i32,i64,u32,u8}` as complete imported modules | Contract-only for native execution | Their Lanius bodies type-check, but generic enum use or import prevents reliable x86 output. The numeric modules import generic `Option` for checked results. A minimal failing program is included below. The former by-value `Option::replace` ignored its input and was removed. |
 | `core::{cmp,hash,array_i32}` and complete legacy `stdlib/array_i32_4.lani` | Contract-only as complete modules in this audit | Individual x86 tests exist for some helpers; no module-wide runtime claim is made here. Generic fixed-array APIs, traits, and array-returning legacy helpers depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
@@ -250,6 +251,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   turns `Some` into `Ok` and `None` into the supplied `Err`; its `ok` and
   `err` extract the matching result payload into an option and return `None`
   for the other result variant. Neither module allocates.
+- `core::option_u32` and `core::result_u32` use the same explicit presence and
+  success flags for unsigned payloads and error codes. `Some(0)`, `Ok(0)`,
+  and `Err(0)` remain distinct. All extraction operations either inspect the
+  active variant or return a caller fallback. Neither module allocates.
 - `std::vec_i32` owns an allocated i32 array. `try_push` doubles capacity when
   full, starting at four elements, and returns the prior vector unchanged on
   allocation failure. Compare the returned length with the prior length to

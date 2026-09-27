@@ -1,0 +1,61 @@
+module app::main;
+import core::option_u32;
+import core::result_u32;
+
+fn main() -> i32 {
+    let present: core::option_u32::OptionU32 = core::option_u32::some(4294967295);
+    let absent: core::option_u32::OptionU32 = core::option_u32::none();
+    if (!core::option_u32::is_some(present) || core::option_u32::is_some(absent) ||
+        core::option_u32::is_none(present) || !core::option_u32::is_none(absent)) { return 1; }
+    if (!core::option_u32::contains(present, 4294967295) ||
+        core::option_u32::contains(present, 7) ||
+        core::option_u32::contains(absent, 0)) { return 2; }
+    if (core::option_u32::unwrap_or(present, 99) != 4294967295 ||
+        core::option_u32::unwrap_or(absent, 99) != 99) { return 3; }
+    if (core::option_u32::unwrap_or(core::option_u32::or(present, absent), 0) != 4294967295 ||
+        core::option_u32::unwrap_or(core::option_u32::or(absent, present), 0) != 4294967295 ||
+        !core::option_u32::is_none(core::option_u32::or(absent, absent))) { return 4; }
+    if (core::option_u32::unwrap_or(core::option_u32::and(present, core::option_u32::some(3)), 0) != 3 ||
+        !core::option_u32::is_none(core::option_u32::and(absent, present)) ||
+        !core::option_u32::is_none(core::option_u32::and(present, absent))) { return 5; }
+    if (!core::option_u32::is_none(core::option_u32::xor(present, present)) ||
+        !core::option_u32::is_none(core::option_u32::xor(absent, absent)) ||
+        core::option_u32::unwrap_or(core::option_u32::xor(present, absent), 0) != 4294967295 ||
+        core::option_u32::unwrap_or(core::option_u32::xor(absent, present), 0) != 4294967295) { return 6; }
+
+    let success: core::result_u32::ResultU32 = core::result_u32::ok(42);
+    let failure: core::result_u32::ResultU32 = core::result_u32::err(2147483648);
+    if (!core::result_u32::is_ok(success) || core::result_u32::is_ok(failure) ||
+        core::result_u32::is_err(success) || !core::result_u32::is_err(failure)) { return 7; }
+    if (!core::result_u32::contains(success, 42) ||
+        core::result_u32::contains(success, 0) ||
+        core::result_u32::contains(failure, 0) ||
+        !core::result_u32::contains_err(failure, 2147483648) ||
+        core::result_u32::contains_err(failure, 0) ||
+        core::result_u32::contains_err(success, 0)) { return 8; }
+    if (core::result_u32::unwrap_or(success, 99) != 42 ||
+        core::result_u32::unwrap_or(failure, 99) != 99 ||
+        core::result_u32::unwrap_err_or(success, 99) != 99 ||
+        core::result_u32::unwrap_err_or(failure, 99) != 2147483648) { return 9; }
+    if (core::result_u32::unwrap_or(core::result_u32::or(success, failure), 0) != 42 ||
+        core::result_u32::unwrap_or(core::result_u32::or(failure, success), 0) != 42 ||
+        !core::result_u32::is_err(core::result_u32::or(failure, failure))) { return 10; }
+    if (core::result_u32::unwrap_err_or(core::result_u32::and(success, failure), 0) != 2147483648 ||
+        core::result_u32::unwrap_err_or(core::result_u32::and(failure, success), 0) != 2147483648 ||
+        core::result_u32::unwrap_or(core::result_u32::and(success, success), 0) != 42) { return 11; }
+    if (core::option_u32::unwrap_or(core::option_u32::some(0), 9) != 0 ||
+        !core::result_u32::contains_err(core::result_u32::err(0), 0) ||
+        !core::result_u32::contains(core::result_u32::ok(4294967295), 4294967295)) { return 12; }
+    let converted_success: core::result_u32::ResultU32 = core::option_u32::ok_or(present, 99);
+    let converted_failure: core::result_u32::ResultU32 = core::option_u32::ok_or(absent, 99);
+    if (!core::result_u32::contains(converted_success, 4294967295) ||
+        !core::result_u32::contains_err(converted_failure, 99) ||
+        !core::result_u32::contains_err(core::option_u32::ok_or(absent, 0), 0)) { return 13; }
+    if (!core::option_u32::contains(core::option_u32::ok(success), 42) ||
+        !core::option_u32::is_none(core::option_u32::ok(failure)) ||
+        !core::option_u32::contains(core::option_u32::ok(core::result_u32::ok(0)), 0)) { return 14; }
+    if (!core::option_u32::is_none(core::option_u32::err(success)) ||
+        !core::option_u32::contains(core::option_u32::err(failure), 2147483648) ||
+        !core::option_u32::contains(core::option_u32::err(core::result_u32::err(0)), 0)) { return 15; }
+    return 0;
+}
