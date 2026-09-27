@@ -1,0 +1,50 @@
+module app::main;
+import std::file;
+
+fn main() -> i32 {
+    let u8_fallback: u8 = 7;
+    let u16_fallback: u16 = 777;
+    let i8_fallback: i8 = -7;
+    let i16_fallback: i16 = -777;
+    if (std::file::read_u8_decimal_or("u8_max.txt", 12, u8_fallback) != 255 ||
+        std::file::read_u8_decimal_or("ordinary.txt", 12, u8_fallback) != 42 ||
+        std::file::read_u8_decimal_or("u8_over.txt", 12, u8_fallback) != u8_fallback) {
+        return 1;
+    }
+    if (std::file::read_u16_decimal_or("u16_max.txt", 12, u16_fallback) != 65535 ||
+        std::file::read_u16_decimal_or("ordinary.txt", 12, u16_fallback) != 42 ||
+        std::file::read_u16_decimal_or("u16_over.txt", 12, u16_fallback) != u16_fallback) {
+        return 2;
+    }
+    if (std::file::read_i8_decimal_or("i8_min.txt", 12, i8_fallback) != -128 ||
+        std::file::read_i8_decimal_or("ordinary.txt", 12, i8_fallback) != 42 ||
+        std::file::read_i8_decimal_or("i8_over.txt", 12, i8_fallback) != i8_fallback) {
+        return 3;
+    }
+    if (std::file::read_i16_decimal_or("i16_min.txt", 12, i16_fallback) != -32768 ||
+        std::file::read_i16_decimal_or("ordinary.txt", 12, i16_fallback) != 42 ||
+        std::file::read_i16_decimal_or("i16_over.txt", 12, i16_fallback) != i16_fallback) {
+        return 4;
+    }
+    if (std::file::read_u8_decimal_or("missing.txt", 12, u8_fallback) != u8_fallback ||
+        std::file::read_u16_decimal_or("bad.txt", 12, u16_fallback) != u16_fallback ||
+        std::file::read_i8_decimal_or("ordinary.txt", 0, i8_fallback) != i8_fallback ||
+        std::file::read_i16_decimal_or("i16_min.txt", 5, i16_fallback) != i16_fallback) {
+        return 5;
+    }
+    let max_u8: u8 = 255;
+    let max_u16: u16 = 65535;
+    let min_i8: i8 = -128;
+    let min_i16: i16 = -32768;
+    if (!std::file::write_u8_decimal("out_u8.txt", max_u8) ||
+        !std::file::write_u16_decimal("out_u16.txt", max_u16) ||
+        !std::file::write_i8_decimal("out_i8.txt", min_i8) ||
+        !std::file::write_i16_decimal("out_i16.txt", min_i16)) {
+        return 6;
+    }
+    if (std::file::write_u8_decimal("missing/out.txt", max_u8) ||
+        std::file::write_i16_decimal("/dev/full", min_i16)) {
+        return 7;
+    }
+    return 0;
+}

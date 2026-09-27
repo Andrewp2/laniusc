@@ -483,6 +483,57 @@ fn std_file_write_u32_decimal_executes_on_x86() {
 }
 
 #[test]
+fn std_file_narrow_decimal_reads_and_writes_execute_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_file_narrow_decimal.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_file_narrow_decimal", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile narrow decimal file operations");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_file_narrow_decimal", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create narrow decimal directory");
+        for (name, contents) in [
+            ("u8_max.txt", b"255".as_slice()),
+            ("u8_over.txt", b"256".as_slice()),
+            ("u16_max.txt", b"65535".as_slice()),
+            ("u16_over.txt", b"65536".as_slice()),
+            ("i8_min.txt", b"-128".as_slice()),
+            ("i8_over.txt", b"-129".as_slice()),
+            ("i16_min.txt", b"-32768".as_slice()),
+            ("i16_over.txt", b"-32769".as_slice()),
+            ("ordinary.txt", b" \t+42\r\n".as_slice()),
+            ("bad.txt", b"12x".as_slice()),
+            ("out_i8.txt", b"previous longer contents".as_slice()),
+        ] {
+            std::fs::write(run_dir.path().join(name), contents).expect("write narrow fixture");
+        }
+        let output = run_in_directory(&bytes, run_dir.path(), "std_file_narrow_decimal");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        for (name, expected) in [
+            ("out_u8.txt", b"255".as_slice()),
+            ("out_u16.txt", b"65535".as_slice()),
+            ("out_i8.txt", b"-128".as_slice()),
+            ("out_i16.txt", b"-32768".as_slice()),
+        ] {
+            assert_eq!(
+                std::fs::read(run_dir.path().join(name)).expect("read narrow decimal output"),
+                expected,
+                "{name}"
+            );
+        }
+        assert!(!run_dir.path().join("missing/out.txt").exists());
+        std::fs::remove_dir_all(run_dir.path()).expect("remove narrow decimal directory");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn std_file_write_i32_decimal_reports_host_failures_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_host/std_file_write_decimal_failure.lani");
@@ -728,8 +779,7 @@ fn std_file_read_u32_decimal_or_handles_host_failures_on_x86() {
 #[test]
 fn std_file_public_functions_have_runtime_cases() {
     let source = include_str!("../stdlib/std/file.lani");
-    let fixtures = format!(
-        "{}{}{}{}{}{}{}{}{}",
+    let fixtures = [
         include_str!("fixtures/stdlib_host/std_file_write.lani"),
         include_str!("fixtures/stdlib_host/std_file_write_all_path.lani"),
         include_str!("fixtures/stdlib_host/std_file_copy.lani"),
@@ -738,8 +788,10 @@ fn std_file_public_functions_have_runtime_cases() {
         include_str!("fixtures/stdlib_host/std_file_decimal.lani"),
         include_str!("fixtures/stdlib_host/std_file_write_decimal.lani"),
         include_str!("fixtures/stdlib_host/std_file_u32_decimal.lani"),
-        include_str!("fixtures/stdlib_host/std_file_write_u32_decimal.lani")
-    );
+        include_str!("fixtures/stdlib_host/std_file_write_u32_decimal.lani"),
+        include_str!("fixtures/stdlib_host/std_file_narrow_decimal.lani"),
+    ]
+    .concat();
     let mut count = 0;
     for line in source.lines() {
         let Some(tail) = line.strip_prefix("pub fn ") else {
@@ -755,5 +807,5 @@ fn std_file_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 11);
+    assert_eq!(count, 19);
 }

@@ -403,3 +403,65 @@ pub fn write_u32_decimal(path: str, value: u32) -> bool {
     let closed: i32 = std::fs::close_file(handle);
     return written > 0 && closed >= 0;
 }
+
+// Narrow decimal readers retain the 32-bit readers' complete-file syntax,
+// byte limit, and open/read/close failure behavior. A value outside the
+// destination range returns fallback instead of wrapping during conversion.
+pub fn read_u8_decimal_or(path: str, max_bytes: u32, fallback: u8) -> u8 {
+    let widened_fallback: u32 = fallback as u32;
+    let value: u32 = read_u32_decimal_or(path, max_bytes, widened_fallback);
+    if (value > 255) {
+        return fallback;
+    }
+    return value as u8;
+}
+
+pub fn read_u16_decimal_or(path: str, max_bytes: u32, fallback: u16) -> u16 {
+    let widened_fallback: u32 = fallback as u32;
+    let value: u32 = read_u32_decimal_or(path, max_bytes, widened_fallback);
+    if (value > 65535) {
+        return fallback;
+    }
+    return value as u16;
+}
+
+pub fn read_i8_decimal_or(path: str, max_bytes: u32, fallback: i8) -> i8 {
+    let widened_fallback: i32 = fallback as i32;
+    let value: i32 = read_i32_decimal_or(path, max_bytes, widened_fallback);
+    if (value < -128 || value > 127) {
+        return fallback;
+    }
+    return value as i8;
+}
+
+pub fn read_i16_decimal_or(path: str, max_bytes: u32, fallback: i16) -> i16 {
+    let widened_fallback: i32 = fallback as i32;
+    let value: i32 = read_i32_decimal_or(path, max_bytes, widened_fallback);
+    if (value < -32768 || value > 32767) {
+        return fallback;
+    }
+    return value as i16;
+}
+
+// Narrow writers preserve the full output and first-failure behavior of the
+// corresponding 32-bit file writer. Failure may leave a truncated file or
+// decimal prefix after opening the destination.
+pub fn write_u8_decimal(path: str, value: u8) -> bool {
+    let widened: u32 = value as u32;
+    return write_u32_decimal(path, widened);
+}
+
+pub fn write_u16_decimal(path: str, value: u16) -> bool {
+    let widened: u32 = value as u32;
+    return write_u32_decimal(path, widened);
+}
+
+pub fn write_i8_decimal(path: str, value: i8) -> bool {
+    let widened: i32 = value as i32;
+    return write_i32_decimal(path, widened);
+}
+
+pub fn write_i16_decimal(path: str, value: i16) -> bool {
+    let widened: i32 = value as i32;
+    return write_i32_decimal(path, widened);
+}
