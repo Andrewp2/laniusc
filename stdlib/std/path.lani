@@ -355,3 +355,98 @@ pub fn path_component_matches_windows_relative_byte_rules(bytes: [PathByte], len
     }
     return true;
 }
+
+// Locate the last nonempty component in a caller-backed byte path. Both slash
+// and backslash separate components; trailing separators are ignored. An
+// empty path, a path of separators only, a negative length, or any NUL byte
+// returns fallback. The caller must back length bytes; an overclaim may trap.
+pub fn path_last_component_start_or(bytes: [PathByte], length: i32, fallback: i32) -> i32 {
+    if (length <= 0) {
+        return fallback;
+    }
+    let start: i32 = -1;
+    let at_boundary: bool = true;
+    let index: i32 = 0;
+    while (index < length) {
+        let byte: PathByte = bytes[index];
+        if (path_byte_is_nul(byte)) {
+            return fallback;
+        }
+        if (path_byte_is_separator(byte)) {
+            at_boundary = true;
+        } else {
+            if (at_boundary) {
+                start = index;
+            }
+            at_boundary = false;
+        }
+        index += 1;
+    }
+    if (start < 0) {
+        return fallback;
+    }
+    return start;
+}
+
+// Return the exclusive end of the last nonempty component under the same
+// byte and failure rules as path_last_component_start_or.
+pub fn path_last_component_end_or(bytes: [PathByte], length: i32, fallback: i32) -> i32 {
+    if (length <= 0) {
+        return fallback;
+    }
+    let end: i32 = -1;
+    let index: i32 = 0;
+    while (index < length) {
+        let byte: PathByte = bytes[index];
+        if (path_byte_is_nul(byte)) {
+            return fallback;
+        }
+        if (!path_byte_is_separator(byte)) {
+            end = index + 1;
+        }
+        index += 1;
+    }
+    if (end < 0) {
+        return fallback;
+    }
+    return end;
+}
+
+// Return the byte after the last interior dot in the final component.
+// A leading dot alone does not create an extension, and a trailing dot has
+// no nonempty extension. All failures from the component helpers return the
+// caller fallback. Bytes need not be UTF-8 or valid host filenames.
+pub fn path_extension_start_or(bytes: [PathByte], length: i32, fallback: i32) -> i32 {
+    let start: i32 = path_last_component_start_or(bytes, length, -1);
+    if (start < 0) {
+        return fallback;
+    }
+    let end: i32 = path_last_component_end_or(bytes, length, -1);
+    let dot: i32 = -1;
+    let index: i32 = start + 1;
+    while (index < end - 1) {
+        if (path_byte_is_extension_separator(bytes[index])) {
+            dot = index;
+        }
+        index += 1;
+    }
+    if (dot < 0) {
+        return fallback;
+    }
+    return dot + 1;
+}
+
+// Return the exclusive stem end within the last component. With no nonempty
+// extension, the stem includes the whole component (including a trailing dot).
+pub fn path_stem_end_or(bytes: [PathByte], length: i32, fallback: i32) -> i32 {
+    let start: i32 = path_last_component_start_or(bytes, length, -1);
+    if (start < 0) {
+        return fallback;
+    }
+    let end: i32 = path_last_component_end_or(bytes, length, -1);
+    let extension: i32 = path_extension_start_or(bytes, length, -1);
+    if (extension < 0) {
+        return end;
+    }
+    return extension - 1;
+}

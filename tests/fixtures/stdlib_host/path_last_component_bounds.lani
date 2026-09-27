@@ -1,0 +1,10 @@
+module app::main;
+import std::path;
+
+fn main() -> i32 {
+    let a: u8 = 97;
+    let b: u8 = 98;
+    let short: [u8; 2] = [a, b];
+    if (std::path::path_last_component_start_or(short, 3, -9) >= 0) { return 1; }
+    return 0;
+}
