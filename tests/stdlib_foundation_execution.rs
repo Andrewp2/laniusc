@@ -114,6 +114,18 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "std_process_metadata",
+            "tests/fixtures/stdlib_foundation/std_process_metadata.lani",
+            0,
+            b"",
+        ),
+        (
+            "process_exit",
+            "sample_programs/process_exit.lani",
+            7,
+            b"0\n",
+        ),
+        (
             "imported_bool_comparison_arg",
             "tests/fixtures/stdlib_foundation/repro_option_bool_comparison_arg.lani",
             0,
@@ -1171,18 +1183,25 @@ fn executable_core_function_surface_has_runtime_cases() {
 
     for (module, source, fixture, expected_functions, expected_constants) in [
         (
-            "target",
+            "core::target",
             include_str!("../stdlib/core/target.lani"),
             include_str!("fixtures/stdlib_foundation/core_target_metadata.lani"),
             18,
             16,
         ),
         (
-            "runtime",
+            "core::runtime",
             include_str!("../stdlib/core/runtime.lani"),
             include_str!("fixtures/stdlib_foundation/core_runtime_metadata.lani"),
             62,
             40,
+        ),
+        (
+            "std::process",
+            include_str!("../stdlib/std/process.lani"),
+            include_str!("fixtures/stdlib_foundation/std_process_metadata.lani"),
+            44,
+            12,
         ),
     ] {
         let mut function_count = 0;
@@ -1193,7 +1212,7 @@ fn executable_core_function_surface_has_runtime_cases() {
                     .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
                     .next()
                     .expect("public function has a name");
-                let call = format!("core::{module}::{name}(");
+                let call = format!("{module}::{name}(");
                 assert!(fixture.contains(&call), "{call} lacks a runtime case");
                 function_count += 1;
             }
@@ -1202,7 +1221,7 @@ fn executable_core_function_surface_has_runtime_cases() {
                     .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
                     .next()
                     .expect("public constant has a name");
-                let path = format!("core::{module}::{name}");
+                let path = format!("{module}::{name}");
                 assert!(fixture.contains(&path), "{path} lacks a runtime case");
                 constant_count += 1;
             }

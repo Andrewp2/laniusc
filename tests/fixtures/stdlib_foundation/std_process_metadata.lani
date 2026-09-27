@@ -1,0 +1,82 @@
+module app::main;
+import std::process;
+
+fn main() -> i32 {
+    if (std::process::PROCESS_RUNTIME_ABI_VERSION != 1 ||
+        std::process::PROCESS_SERVICE_ID != 11 ||
+        std::process::PROCESS_SERVICE_STATUS_UNAVAILABLE != 1 ||
+        std::process::PROCESS_SERVICE_STATUS_AVAILABLE != 2 ||
+        !std::process::PROCESS_HAS_RUNTIME_BINDING ||
+        !std::process::PROCESS_ARGC_HAS_RUNTIME_BINDING ||
+        !std::process::PROCESS_ARG_LEN_HAS_RUNTIME_BINDING ||
+        !std::process::PROCESS_ARG_READ_HAS_RUNTIME_BINDING ||
+        !std::process::PROCESS_EXIT_HAS_RUNTIME_BINDING ||
+        std::process::EXIT_SUCCESS != 0 ||
+        std::process::EXIT_FAILURE != 1 ||
+        std::process::PROCESS_ARGUMENT_UNAVAILABLE != -1) {
+        return 1;
+    }
+    if (std::process::process_runtime_abi_version() != 1 ||
+        std::process::process_service_id() != 11 ||
+        !std::process::process_service_is_known() ||
+        !std::process::process_contract_metadata_is_available() ||
+        std::process::process_service_status() != 2 ||
+        !std::process::process_is_available() ||
+        std::process::process_is_blocked() ||
+        std::process::process_is_known_but_unbound() ||
+        std::process::process_requires_runtime_binding() ||
+        std::process::process_host_abi_is_contract_only()) {
+        return 2;
+    }
+    if (std::process::exit_success_code() != 0 ||
+        std::process::exit_failure_code() != 1 ||
+        std::process::exit_code_from_success(true) != 0 ||
+        std::process::exit_code_from_success(false) != 1 ||
+        !std::process::exit_code_is_success(0) ||
+        std::process::exit_code_is_success(1) ||
+        !std::process::exit_code_is_failure(1) ||
+        std::process::exit_code_is_failure(0) ||
+        !std::process::exit_code_is_failure(-1)) {
+        return 3;
+    }
+    if (!std::process::process_args_is_executable() ||
+        std::process::process_args_is_blocked() ||
+        std::process::process_args_is_known_but_unbound() ||
+        std::process::process_args_requires_runtime_binding() ||
+        std::process::process_argument_unavailable() != -1 ||
+        !std::process::process_argument_result_succeeded(0) ||
+        !std::process::process_argument_result_succeeded(5) ||
+        std::process::process_argument_result_succeeded(-1) ||
+        !std::process::process_argument_result_failed(-1) ||
+        std::process::process_argument_result_failed(0) ||
+        !std::process::process_argument_result_is_unavailable(-1) ||
+        std::process::process_argument_result_is_unavailable(-2) ||
+        std::process::process_argument_result_is_fail_closed(-1)) {
+        return 4;
+    }
+    if (!std::process::argc_is_executable() ||
+        std::process::argc_is_blocked() ||
+        std::process::argc_is_known_but_unbound() ||
+        std::process::argc_requires_runtime_binding() ||
+        !std::process::arg_len_is_executable() ||
+        std::process::arg_len_is_blocked() ||
+        std::process::arg_len_is_known_but_unbound() ||
+        std::process::arg_len_requires_runtime_binding() ||
+        !std::process::arg_read_is_executable() ||
+        std::process::arg_read_is_blocked() ||
+        std::process::arg_read_is_known_but_unbound() ||
+        std::process::arg_read_requires_runtime_binding()) {
+        return 5;
+    }
+    if (!std::process::process_exit_is_executable() ||
+        std::process::process_exit_is_blocked() ||
+        std::process::process_exit_is_known_but_unbound() ||
+        std::process::process_exit_requires_runtime_binding() ||
+        !std::process::exit_is_executable() ||
+        std::process::exit_is_blocked() ||
+        std::process::exit_is_known_but_unbound() ||
+        std::process::exit_requires_runtime_binding()) {
+        return 6;
+    }
+    return 0;
+}
