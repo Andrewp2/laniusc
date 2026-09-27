@@ -1,15 +1,40 @@
-// Checked scalar random helper built on the status-returning host operation.
-// It returns four secure bytes in native u32 order, or the caller's fallback
-// after a failed or short read. No valid u32 bit pattern is reserved as an
-// error value. Call fill_secure_bytes to distinguish failure from a legitimate
-// random result that equals the fallback.
+// Checked secure randomness built on the status-returning host operation.
+// No valid u32 bit pattern is reserved as an error value. Call
+// fill_secure_exact to distinguish failure from a legitimate random result
+// that equals the fallback supplied to secure_u32_or.
 module std::random_checked;
 import core::mem;
 import std::random;
+// Fill exactly len bytes of caller storage, retrying short host reads. Zero
+// length succeeds without accessing buffer. A null nonempty buffer, length
+// above i32::MAX, host error, zero-progress read, or impossible host count
+// returns false. A failure after partial progress may leave random bytes in a
+// prefix. The caller must keep len writable bytes alive for the full call.
+pub fn fill_secure_exact(buffer: ptr, len: usize) -> bool {
+    if (len>2147483647 || buffer == 0 && len>0) {
+        return false;
+    }
+    let filled: usize = 0;
+    while (filled<len) {
+        let cursor: ptr = buffer + filled;
+        let remaining: usize = len - filled;
+        let received: i32 = std::random::fill_secure_bytes(cursor, remaining);
+        if (received <= 0) {
+            return false;
+        }
+        let advanced: usize = received;
+        if (advanced>remaining) {
+            return false;
+        }
+        filled += advanced;
+    }
+    return true;
+}
+// Return four secure bytes in native u32 order, or fallback on failure.
 pub fn secure_u32_or(fallback: u32) -> u32 {
     let word:[i32; 1] =[0];
     let data: ptr = core::mem::i32_array_data_ptr(word);
-    if (std::random::fill_secure_bytes(data, 4) != 4) {
+    if (!fill_secure_exact(data, 4)) {
         return fallback;
     }
     let signed: i32 = word[0];

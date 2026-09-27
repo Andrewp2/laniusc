@@ -39,7 +39,7 @@ limited to native x86_64 output from this worktree.
 | `std::io::{write_line,println,eprintln}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, and invalid handles. These are separate from the portable core. |
 | `std::io_decimal::{write_u32,write_i32}` | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned extrema, exact byte counts, invalid handles, and injected sign and digit write failures. |
 | `std::file` all 9 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, a multi-chunk binary copy, bounded signed decimal reads and writes, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
-| `std::random_checked::secure_u32_or` | Executable x86_64 Linux host wrapper | `tests/stdlib_random_execution.rs` checks successful generation and injects both a host error and a short read, each of which returns the caller's fallback. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
+| `std::random_checked` both public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, and retries after an injected short read. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
 | `std::path` all 17 constants and 32 lexical helpers | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, and path headers. Component classifiers supplied only two bytes check the header when `length > 2`; they do not validate later bytes. No-argument value and capability helpers remain blocked by native return lowering; see dependency 10. Allocation and host normalization are unavailable. |
 | `std::{net,gpu,thread,host}` and `test::harness` | Contract-only | Their service metadata is available, but user-visible operations have no runtime binding. The compiler's use of a GPU to compile code does not bind `std::gpu`. |
 | `test::assert` | Contract-only | Passing assertions hit unsupported target LIR opcode 38 during x86 emission. Reproduction programs are included. |
@@ -268,13 +268,16 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   It returns false for open, write, or close failure and can leave a decimal
   prefix on failure. It handles `i32::MIN` without overflowing during
   negation and does not use the raw host `write_i32` formatter.
-- `std::random_checked::secure_u32_or` reads four bytes into stack storage through the
-  status-returning host operation, then returns their native-order `u32` bit
-  pattern. A negative or short result returns the caller's fallback. The
-  fallback can also be a legitimate random output. Callers that must
-  distinguish success from failure should use `fill_secure_bytes` directly.
-  This wrapper relies on the x86 `core::mem::i32_array_data_ptr` intrinsic for
-  stack storage.
+- `std::random_checked::fill_secure_exact` fills the requested caller-buffer
+  length, retrying short reads. Zero length succeeds without touching the
+  pointer. Null storage for a nonzero length, a length above `i32::MAX`, a
+  host error, or zero progress returns false. A failed call can leave a
+  random prefix in caller storage.
+- `std::random_checked::secure_u32_or` fills four stack bytes through that
+  helper and returns their native-order `u32` bit pattern. Failure returns
+  the caller's fallback, which can also be a legitimate random output. Use
+  `fill_secure_exact` when success must be distinguishable from that value.
+  This wrapper relies on the x86 `core::mem::i32_array_data_ptr` intrinsic.
 
 The small runnable example is `sample_programs/portable_window_checksum.lani`.
 It validates an ASCII marker, copies readings into a separate backed view,
@@ -432,11 +435,10 @@ the failure injection cases run when Linux `strace` is available.
    `getrandom` syscall does not return four bytes. That bit pattern is also a
    valid random `u32`, so callers cannot detect the failure. The bound
    `fill_secure_bytes` operation has a signed status result, and the Lanius
-   `std::random_checked::secure_u32_or` wrapper now uses it to return an
-   explicit caller fallback on failure. The raw function remains ambiguous
-   until its runtime contract changes or it is removed. The wrapper's focused
-   test injects host failure and short reads; the older raw-function test
-   covers normal execution only.
+   `std::random_checked` wrappers now use it to report failure or retry short
+   reads. The raw scalar function remains ambiguous until its runtime contract
+   changes or it is removed. Focused tests inject host failure, zero progress,
+   and a short read; the older raw-function test covers normal execution only.
 19. **Transitive host import loses the native entrypoint.** With
     `--stdlib-root tests/fixtures/stdlib_foundation/repro_transitive_host_root`,
     `repro_transitive_host_direct.lani` emits an x86_64 ELF that exits zero.

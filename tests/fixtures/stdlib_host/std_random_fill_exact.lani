@@ -1,0 +1,28 @@
+module app::main;
+import core::mem;
+import std::io;
+import std::random_checked;
+fn main() -> i32 {
+    let words:[i32; 4] =[1431655765, 1431655765, 1431655765, 1431655765];
+    let buffer: ptr = core::mem::i32_array_data_ptr(words);
+    if (!std::random_checked::fill_secure_exact(0, 0)) {
+        return 1;
+    }
+    if (std::random_checked::fill_secure_exact(0, 1)) {
+        return 2;
+    }
+    let too_large: usize = 2147483648;
+    if (std::random_checked::fill_secure_exact(buffer, too_large)) {
+        return 3;
+    }
+    if (words[0] != 1431655765 || words[3] != 1431655765) {
+        return 4;
+    }
+    if (!std::random_checked::fill_secure_exact(buffer, 16)) {
+        return 5;
+    }
+    if (std::io::write_stdout(buffer, 16) != 16) {
+        return 6;
+    }
+    return 0;
+}
