@@ -1223,14 +1223,14 @@ also fixes the imported struct-return relocation path described below.
     accepted signed instantiation silently returned wrong data. Concrete
     signed slices and `core::slice_bool` remain executable. This needs a
     compiler or native-lowering fix before generic slices can be claimed.
-42. **A comparison passed directly to an imported Boolean constructor fails in native compilation.**
-    `repro_option_bool_comparison_arg.lani` passes `laniusc check --stdlib-root
-    stdlib`, but `--emit x86_64` reports `LNC0006` on the i32 operand of
-    `core::option_bool::some(count == 2)`, saying that the operand should be
-    bool. Assigning `count == 2` to a local bool and passing that local works;
-    `sample_programs/vector_true_count.lani` uses this form. This is a late
-    GPU compiler type-context dependency, not a failure of `OptionBool` or the
-    vector's runtime behavior.
+42. **Resolved: imported Boolean calls accept comparison expressions.**
+    `repro_option_bool_comparison_arg.lani` formerly passed `laniusc check`
+    but failed native compilation with `LNC0006`: the imported-call validator
+    read the i32 type of the first token in `count == 2` rather than the bool
+    result. It now classifies comparison and Boolean expression results after
+    following expression wrappers. The reproducer and
+    `sample_programs/vector_true_count.lani` compile and execute on x86. A
+    separate negative fixture confirms that passing a bare i32 still fails.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

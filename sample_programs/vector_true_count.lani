@@ -21,8 +21,7 @@ fn main() -> i32 {
         index += 1;
     }
     std::vec_bool::destroy(values);
-    let exactly_two: bool = count == 2;
-    let result: core::option_bool::OptionBool = core::option_bool::some(exactly_two);
+    let result: core::option_bool::OptionBool = core::option_bool::some(count == 2);
     if (!core::option_bool::unwrap_or(result, false)) { return 2; }
     print(count);
     return 0;

@@ -79,6 +79,18 @@ static const uint TY_CHAR = 6u;
 static const uint TY_POINTER = 8u;
 static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_INT = 3u;
+static const uint HIR_EXPR_NOT = 6u;
+static const uint HIR_EXPR_EQ = 7u;
+static const uint HIR_EXPR_NE = 8u;
+static const uint HIR_EXPR_LT = 9u;
+static const uint HIR_EXPR_GT = 10u;
+static const uint HIR_EXPR_LE = 11u;
+static const uint HIR_EXPR_GE = 12u;
+static const uint HIR_EXPR_AND = 17u;
+static const uint HIR_EXPR_OR = 18u;
+static const uint HIR_EXPR = 14u;
+static const uint HIR_BINARY_EXPR = 16u;
+static const uint HIR_UNARY_EXPR = 17u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -107,6 +119,18 @@ uint scalar_type_for_argument(uint node, uint token)
 {
     if (!valid_hir(node))
         return HIR_SEM_TY_UNKNOWN;
+    for (uint step = 0u; step < 32u; step += 1u)
+    {
+        HirPayload forward = compact_hir_payload[node];
+        if (forward.a != HIR_EXPR_FORWARD ||
+            (compact_hir_core[node].kind != HIR_EXPR &&
+             compact_hir_core[node].kind != HIR_BINARY_EXPR &&
+             compact_hir_core[node].kind != HIR_UNARY_EXPR))
+            break;
+        if (!valid_hir(forward.b) || forward.b == node)
+            break;
+        node = forward.b;
+    }
     HirCore core = compact_hir_core[node];
     HirPayload payload = compact_hir_payload[node];
     uint scalar = hir_scalar_type_for_hir(core.kind, payload.a);
@@ -117,6 +141,17 @@ uint scalar_type_for_argument(uint node, uint token)
         uint callee = callee_token(node);
         if (callee != INVALID && callee < gParams.visible_capacity)
             return call_return_type[callee];
+    }
+    if (core.kind == HIR_EXPR || core.kind == HIR_BINARY_EXPR ||
+        core.kind == HIR_UNARY_EXPR)
+    {
+        uint form = payload.a;
+        if (form == HIR_EXPR_NOT || form == HIR_EXPR_EQ ||
+            form == HIR_EXPR_NE || form == HIR_EXPR_LT ||
+            form == HIR_EXPR_GT || form == HIR_EXPR_LE ||
+            form == HIR_EXPR_GE || form == HIR_EXPR_AND ||
+            form == HIR_EXPR_OR)
+            return HIR_SEM_TY_BOOL;
     }
     return token < gParams.visible_capacity ? visible_type[token] : HIR_SEM_TY_UNKNOWN;
 }

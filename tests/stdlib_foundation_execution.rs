@@ -76,6 +76,18 @@ fn imported_generic_slice_claims_execute_and_reject_inconsistent_types() {
     .expect_err("two imported [T] parameters must have matching element types");
 }
 
+#[test]
+fn imported_bool_constructor_rejects_integer_argument() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let stdlib_root = root.join("stdlib");
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_option_bool_wrong_arg.lani");
+    let error = common::run_gpu_codegen_with_timeout("option_bool_wrong_arg", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect_err("an i32 argument must not satisfy an imported bool parameter");
+    assert!(error.to_string().contains("type mismatch"), "{error}");
+}
+
 // Each fixture returns its first failing assertion number. The bounds fixture
 // instead confirms that a caller overclaiming the slice length traps.
 #[test]
@@ -86,6 +98,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
         (
             "core_bool",
             "tests/fixtures/stdlib_foundation/core_bool.lani",
+            0,
+            b"",
+        ),
+        (
+            "imported_bool_comparison_arg",
+            "tests/fixtures/stdlib_foundation/repro_option_bool_comparison_arg.lani",
             0,
             b"",
         ),
