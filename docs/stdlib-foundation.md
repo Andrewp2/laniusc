@@ -941,6 +941,10 @@ also fixes the imported struct-return relocation path described below.
     correctly excludes `1` from a range starting at `2147483648`, but the
     corresponding `RangeFrom<u32>::contains` method returns true. The minimal
     imported module defines both `RangeFrom<i32>` and `RangeFrom<u32>` impls.
+    Native disassembly shows that both method bodies are emitted, but the call
+    from `RangeFrom<u32>` targets the signed i32 body; the unsigned body is
+    unused. The remaining defect is method target selection for the annotated
+    generic receiver, rather than unsigned comparison lowering.
     The unsigned free functions now execute in `core::range`; specialized
     unsigned methods remain withheld until method dispatch is correct.
 28. **Resolved: unsigned arithmetic with a left integer literal.** The GPU
