@@ -128,8 +128,44 @@ uint parse_char_token(uint token_i)
     uint len = token_words[token_i].len;
     if (len < 3u) return 0u;
     uint first = source_at(start, 1u);
-    return first == 92u && len >= 4u
-        ? decoded_escape_byte(source_at(start, 2u)) : first;
+    if (first == 92u && len >= 4u)
+        return decoded_escape_byte(source_at(start, 2u));
+    if (first < 128u)
+        return first;
+
+    // Source text is UTF-8. A char literal holds one Unicode scalar, not the
+    // first byte of its encoding. The closing quote accounts for the last byte.
+    uint payload_len = len - 2u;
+    if (payload_len == 2u && first >= 194u && first <= 223u)
+    {
+        uint second = source_at(start, 2u);
+        if (second >= 128u && second <= 191u)
+            return ((first & 31u) << 6u) | (second & 63u);
+    }
+    if (payload_len == 3u && first >= 224u && first <= 239u)
+    {
+        uint second = source_at(start, 2u);
+        uint third = source_at(start, 3u);
+        if (second >= 128u && second <= 191u &&
+            third >= 128u && third <= 191u &&
+            !(first == 224u && second < 160u) &&
+            !(first == 237u && second > 159u))
+            return ((first & 15u) << 12u) | ((second & 63u) << 6u) | (third & 63u);
+    }
+    if (payload_len == 4u && first >= 240u && first <= 244u)
+    {
+        uint second = source_at(start, 2u);
+        uint third = source_at(start, 3u);
+        uint fourth = source_at(start, 4u);
+        if (second >= 128u && second <= 191u &&
+            third >= 128u && third <= 191u &&
+            fourth >= 128u && fourth <= 191u &&
+            !(first == 240u && second < 144u) &&
+            !(first == 244u && second > 143u))
+            return ((first & 7u) << 18u) | ((second & 63u) << 12u) |
+                   ((third & 63u) << 6u) | (fourth & 63u);
+    }
+    return 0u;
 }
 
 uint parse_float_token_bits(uint token_i)

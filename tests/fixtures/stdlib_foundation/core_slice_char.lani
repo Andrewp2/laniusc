@@ -5,8 +5,23 @@ fn main() -> i32 {
     let a: char = 'a';
     let z: char = 'z';
     let e: char = 'é';
+    let enye: char = 'ñ';
     let omega: char = 'Ω';
+    let smile: char = '😀';
+    let newline: char = '\n';
     let digit: char = '0';
+    if (e as i32 != 233 || enye as i32 != 241 ||
+        omega as i32 != 937 || smile as i32 != 128512 ||
+        newline as i32 != 10 ||
+        e == enye || !(e < enye) || !(enye < omega) ||
+        !(omega < smile)) { return 17; }
+    let unicode_order: [char; 4] = [smile, omega, enye, e];
+    if (!core::slice_char::sort(unicode_order, 4) ||
+        unicode_order[0] != e || unicode_order[1] != enye ||
+        unicode_order[2] != omega || unicode_order[3] != smile ||
+        core::slice_char::lower_bound_or(unicode_order, 4, omega, -1) != 2) {
+        return 18;
+    }
     let values: [char; 5] = [z, a, e, a, z];
     if (core::slice_char::get_or(values, 5, 0, digit) != z ||
         core::slice_char::get_or(values, 5, 2, digit) != e ||
