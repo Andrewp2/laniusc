@@ -666,6 +666,12 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
+            "core_array_u8_4_bounds",
+            "tests/fixtures/stdlib_foundation/core_array_u8_4_bounds.lani",
+            101,
+            b"",
+        ),
+        (
             "core_mem_values",
             "tests/fixtures/stdlib_foundation/core_mem_values.lani",
             0,

@@ -34,5 +34,34 @@ fn main() -> i32 {
     if (core::array_u8_4::from_be_u32(bytes) != 305419896 || core::array_u8_4::from_le_u32(bytes) != 2018915346 || core::array_u8_4::from_be_u32(repeated) != 4294967295 || core::array_u8_4::from_le_u32(repeated) != 4294967295) {
         return 7;
     }
+    let destination: [u8; 4] = [zero, zero, zero, zero];
+    if (!core::array_u8_4::copy_into(mixed, destination, 4) ||
+        destination[0] != three || destination[1] != high ||
+        destination[2] != three || destination[3] != zero) {
+        return 8;
+    }
+    if (!core::array_u8_4::fill(high, destination, 4) ||
+        destination[0] != high || destination[1] != high ||
+        destination[2] != high || destination[3] != high) {
+        return 9;
+    }
+    if (!core::array_u8_4::reverse_into(mixed, destination, 4) ||
+        destination[0] != zero || destination[1] != three ||
+        destination[2] != high || destination[3] != three) {
+        return 10;
+    }
+    let same: [u8; 4] = [zero, three, high, fallback];
+    if (!core::array_u8_4::reverse_into(same, same, 4) ||
+        same[0] != fallback || same[1] != high ||
+        same[2] != three || same[3] != zero) {
+        return 11;
+    }
+    let short: [u8; 3] = [high, three, zero];
+    if (core::array_u8_4::copy_into(mixed, short, 3) ||
+        core::array_u8_4::fill(fallback, short, -1) ||
+        core::array_u8_4::reverse_into(mixed, short, 0) ||
+        short[0] != high || short[1] != three || short[2] != zero) {
+        return 12;
+    }
     return 0;
 }

@@ -1,5 +1,6 @@
-// Allocation-free helpers for exactly four bytes. Every result is scalar;
-// array-valued returns still require a native aggregate ABI fix.
+// Allocation-free helpers for exactly four bytes. Array-valued returns
+// still require a native aggregate ABI fix, so transforms write to
+// caller-owned storage.
 module core::array_u8_4;
 import core::bits;
 pub fn len() -> i32 {
@@ -13,6 +14,48 @@ pub fn first(values:[u8; 4]) -> u8 {
 }
 pub fn last(values:[u8; 4]) -> u8 {
     return values[3];
+}
+// Return false before writing when destination_len is below four. The caller
+// must back the claimed length; an overclaim can trap on native indexing.
+pub fn copy_into(values:[u8; 4], destination:[u8], destination_len: i32) -> bool {
+    if (destination_len < 4) {
+        return false;
+    }
+    let first: u8 = values[0];
+    let second: u8 = values[1];
+    let third: u8 = values[2];
+    let fourth: u8 = values[3];
+    destination[0] = first;
+    destination[1] = second;
+    destination[2] = third;
+    destination[3] = fourth;
+    return true;
+}
+pub fn fill(value: u8, destination:[u8], destination_len: i32) -> bool {
+    if (destination_len < 4) {
+        return false;
+    }
+    destination[0] = value;
+    destination[1] = value;
+    destination[2] = value;
+    destination[3] = value;
+    return true;
+}
+// Capture all source bytes before writing, including when source and
+// destination refer to the same backing array.
+pub fn reverse_into(values:[u8; 4], destination:[u8], destination_len: i32) -> bool {
+    if (destination_len < 4) {
+        return false;
+    }
+    let first: u8 = values[3];
+    let second: u8 = values[2];
+    let third: u8 = values[1];
+    let fourth: u8 = values[0];
+    destination[0] = first;
+    destination[1] = second;
+    destination[2] = third;
+    destination[3] = fourth;
+    return true;
 }
 // An index outside 0..4 returns the caller's fallback.
 pub fn get_or(values:[u8; 4], index: i32, fallback: u8) -> u8 {

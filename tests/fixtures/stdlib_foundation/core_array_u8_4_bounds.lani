@@ -1,0 +1,9 @@
+module app::main;
+import core::array_u8_4;
+
+fn main() -> i32 {
+    let value: u8 = 7;
+    let short: [u8; 3] = [value, value, value];
+    core::array_u8_4::fill(value, short, 4);
+    return 0;
+}
