@@ -1,0 +1,23 @@
+module app::main;
+import std::io;
+import std::io_binary;
+
+fn main() -> i32 {
+    let max_u8: u8 = 255;
+    let max_u16: u16 = 65535;
+    let high_u16: u16 = 32769;
+    let max_u32: u32 = 4294967295;
+    if (std::io_binary::write_u32(1, 0) != 1 || std::io::write_newline(1) != 1) { return 1; }
+    if (std::io_binary::write_u32(1, 165) != 8 || std::io::write_newline(1) != 1) { return 2; }
+    if (std::io_binary::write_u32(1, max_u32) != 32 || std::io::write_newline(1) != 1) { return 3; }
+    if (std::io_binary::write_u8(1, 5) != 3 || std::io::write_newline(1) != 1) { return 4; }
+    if (std::io_binary::write_u8(1, max_u8) != 8 || std::io::write_newline(1) != 1) { return 5; }
+    if (std::io_binary::write_u16(1, high_u16) != 16 || std::io::write_newline(1) != 1) { return 6; }
+    if (std::io_binary::write_u16(1, max_u16) != 16 || std::io::write_newline(1) != 1) { return 7; }
+    if (std::io_binary::write_u8(-1, 5) >= 0 ||
+        std::io_binary::write_u16(-1, high_u16) >= 0 ||
+        std::io_binary::write_u32(-1, 165) >= 0) {
+        return 8;
+    }
+    return 0;
+}

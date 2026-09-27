@@ -51,6 +51,7 @@ limited to native x86_64 output from this worktree.
 | `std::io_utf8` all 5 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_utf8_execution.rs` checks one- through four-byte scalar reads and writes, checked output of caller-backed UTF-8 byte-code views, the Unicode maximum, distinct EOF and failure fallbacks, malformed and truncated input, invalid values without writes, and injected read and write errors. It does not access borrowed string storage. |
 | `std::io_decimal` all 12 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned output extrema across 8-, 16-, and 32-bit integers, exact byte counts, invalid handles, and injected sign and digit write failures for the underlying 32-bit writers. `tests/stdlib_io_decimal_input_execution.rs` checks bounded stdin parsing across all six widths, EOF, whitespace and signs, malformed and overlong input, overflow, and injected read failures in the underlying 32-bit readers. |
 | `std::io_hex` all 9 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_hex_execution.rs` checks exact lowercase and uppercase writes across `u8`, `u16`, and `u32`, counts, invalid handles, injected write failures, bounded stdin parsing with optional prefix and whitespace, malformed and overflowing input, and injected read failures. |
+| `std::io_binary` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_binary_execution.rs` checks shortest binary writes across `u8`, `u16`, and `u32`, exact byte counts, invalid handles, injected write failures, bounded stdin parsing with optional prefix and whitespace, malformed and overflowing input, and injected read failures. |
 | `std::file_hex` all 9 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_hex_execution.rs` checks lowercase and uppercase writes, bounded hexadecimal file reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed and overflowing input, missing and overlong files, and injected read/write/close errors. Raw filesystem path lengths remain broken; see dependency 29. |
 | `std::file` all 21 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, multi-chunk binary copies between files and standard streams, bounded decimal reads and writes across 8-, 16-, and 32-bit integers, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded and inclusive unsigned and signed outputs, forced draws and rejection, full-range failure fallbacks, and secure i32 slice shuffling with preserved contents, a forced swap, and injected failure. The raw `std::random::secure_u32` failure sentinel remains ambiguous; see dependency 18. |
@@ -423,6 +424,18 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   readers also reject values outside their type. Zero limit returns fallback
   without reading; other failures may consume an input prefix. The fallback
   can equal a valid parsed value.
+- `std::io_binary::{write_u32,write_u16,write_u8}` write the shortest ASCII
+  binary representation without allocation. Success returns the byte count.
+  A negative host error passes through; a write reporting anything other than
+  one byte returns `-1`. Failure may leave a digit prefix on the handle.
+- `std::io_binary::{read_u32_stdin_or,read_u16_stdin_or,read_u8_stdin_or}`
+  read all stdin with a caller-supplied byte limit. They accept only ASCII
+  `0` and `1`, an optional leading `0b` or `0B`, and surrounding SP, HT, LF,
+  or CR. A missing digit, sign, embedded whitespace, overflow, input beyond
+  the byte limit, or host read failure returns the caller's fallback. Narrow
+  readers reject values outside their width. Zero limit returns fallback
+  without reading; other failures may consume an input prefix. The fallback
+  can equal a valid parsed value.
 - `std::file::write_text_once` opens or creates a file, truncates it, attempts
   one text write, and attempts to close it even if writing fails. It returns the actual
   byte count on success, including zero for empty text; a negative open,
@@ -568,6 +581,8 @@ wrappers; its partial-write fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_decimal_input_execution` for bounded decimal
 stdin reads; fault injection cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_hex_execution` for hexadecimal stream input
+and output; its host-failure cases run when Linux `strace` is available.
+Run `cargo test --test stdlib_io_binary_execution` for binary stream input
 and output; its host-failure cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_checked_execution` for complete caller-buffer
 stream operations; fault injection cases run when Linux `strace` is available.

@@ -1,0 +1,11 @@
+module app::main;
+import std::io_binary;
+
+fn main() -> i32 {
+    let fallback: u8 = 7;
+    let value: u8 = std::io_binary::read_u8_stdin_or(40, fallback);
+    if (std::io_binary::write_u8(1, value) < 0) {
+        return 1;
+    }
+    return 0;
+}

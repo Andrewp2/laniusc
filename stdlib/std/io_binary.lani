@@ -1,0 +1,127 @@
+// Checked binary stream input and output built on bound one-byte I/O.
+module std::io_binary;
+import core::binary;
+import core::mem;
+import std::io;
+
+// Write the shortest binary representation. Success returns its byte count.
+// A negative host error is passed through; an impossible non-one-byte write
+// returns -1. Failure may leave a visible digit prefix on the handle.
+pub fn write_u32(handle: i32, value: u32) -> i32 {
+    let length: u32 = core::binary::len_u32(value);
+    let position: u32 = 0;
+    while (position < length) {
+        let digit: u8 = core::binary::byte_at_or_u32(value, position, 0);
+        let byte: i32 = digit;
+        let written: i32 = std::io::write_byte(handle, byte);
+        if (written < 0) {
+            return written;
+        }
+        if (written != 1) {
+            return -1;
+        }
+        position += 1;
+    }
+    return length;
+}
+
+pub fn write_u16(handle: i32, value: u16) -> i32 {
+    let widened: u32 = value as u32;
+    return write_u32(handle, widened);
+}
+
+pub fn write_u8(handle: i32, value: u8) -> i32 {
+    let widened: u32 = value as u32;
+    return write_u32(handle, widened);
+}
+
+// Read all stdin as bounded ASCII binary. Surrounding SP, HT, LF, and CR and
+// one optional leading 0b/0B are accepted. At least one digit is required.
+// Invalid syntax, overflow, excess input, or host failure returns fallback.
+// Failure may consume an input prefix. A valid value may equal fallback.
+pub fn read_u32_stdin_or(max_bytes: u32, fallback: u32) -> u32 {
+    if (max_bytes == 0) {
+        return fallback;
+    }
+    let cell: [i32; 1] = [0];
+    let data: ptr = core::mem::i32_array_data_ptr(cell);
+    let consumed: u32 = 0;
+    let value: u32 = 0;
+    let started: bool = false;
+    let digits: bool = false;
+    let trailing: bool = false;
+    let leading_zero: bool = false;
+    while (true) {
+        cell[0] = 0;
+        let received: i32 = std::io::read_stdin(data, 1);
+        if (received == 0) {
+            break;
+        }
+        if (received != 1 || consumed >= max_bytes) {
+            return fallback;
+        }
+        consumed += 1;
+        let byte: i32 = cell[0];
+        if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
+            if (started && !digits) {
+                return fallback;
+            }
+            if (digits) {
+                trailing = true;
+            }
+            continue;
+        }
+        if (trailing) {
+            return fallback;
+        }
+        if (!started) {
+            started = true;
+            if (byte == 48) {
+                digits = true;
+                leading_zero = true;
+                continue;
+            }
+        } else {
+            if (leading_zero && (byte == 98 || byte == 66)) {
+                digits = false;
+                leading_zero = false;
+                continue;
+            }
+        }
+        leading_zero = false;
+        if (byte < 0 || byte > 255) {
+            return fallback;
+        }
+        let ascii: u8 = byte as u8;
+        let limit: u32 = 4294967295;
+        if (!core::binary::can_append_ascii_digit_u32(value, ascii, limit)) {
+            return fallback;
+        }
+        value = core::binary::append_ascii_digit_or_u32(value, ascii, limit, value);
+        digits = true;
+    }
+    if (!digits) {
+        return fallback;
+    }
+    return value;
+}
+
+// Narrow readers share the u32 syntax and byte limit, then reject a value
+// outside the destination width with the caller's fallback.
+pub fn read_u16_stdin_or(max_bytes: u32, fallback: u16) -> u16 {
+    let widened_fallback: u32 = fallback as u32;
+    let value: u32 = read_u32_stdin_or(max_bytes, widened_fallback);
+    if (value > 65535) {
+        return fallback;
+    }
+    return value as u16;
+}
+
+pub fn read_u8_stdin_or(max_bytes: u32, fallback: u8) -> u8 {
+    let widened_fallback: u32 = fallback as u32;
+    let value: u32 = read_u32_stdin_or(max_bytes, widened_fallback);
+    if (value > 255) {
+        return fallback;
+    }
+    return value as u8;
+}
