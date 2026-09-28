@@ -1,0 +1,95 @@
+module app::main;
+import core::wide_u64;
+import std::map_wide_u64_wide_u64;
+
+fn same(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::eq(left, right);
+}
+
+fn main() -> i32 {
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let one: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
+    let boundary: core::wide_u64::WideU64 = core::wide_u64::from_words(1, 0);
+    let high: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483648, 0);
+    let maximum: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    let fallback: core::wide_u64::WideU64 = core::wide_u64::from_u32(777);
+    let value: std::map_wide_u64_wide_u64::MapWideU64WideU64 = std::map_wide_u64_wide_u64::new();
+    if (std::map_wide_u64_wide_u64::MAX_ENTRIES != 134217727 ||
+        !std::map_wide_u64_wide_u64::is_empty(value) ||
+        std::map_wide_u64_wide_u64::len(value) != 0 ||
+        std::map_wide_u64_wide_u64::capacity(value) != 0 ||
+        std::map_wide_u64_wide_u64::contains_key(value, zero) ||
+        !same(std::map_wide_u64_wide_u64::get_or(value, zero, fallback), fallback) ||
+        !same(std::map_wide_u64_wide_u64::key_at_or(value, 0, fallback), fallback) ||
+        !same(std::map_wide_u64_wide_u64::value_at_or(value, -1, fallback), fallback)) { return 1; }
+
+    value = std::map_wide_u64_wide_u64::try_reserve(value, 3);
+    if (std::map_wide_u64_wide_u64::capacity(value) != 3) { return 2; }
+    value = std::map_wide_u64_wide_u64::try_reserve(value, -1);
+    value = std::map_wide_u64_wide_u64::try_reserve(value, 134217728);
+    if (std::map_wide_u64_wide_u64::capacity(value) != 3) { return 3; }
+    value = std::map_wide_u64_wide_u64::try_insert(value, zero, one);
+    value = std::map_wide_u64_wide_u64::try_insert(value, boundary, maximum);
+    value = std::map_wide_u64_wide_u64::try_insert(value, high, zero);
+    value = std::map_wide_u64_wide_u64::try_insert(value, maximum, boundary);
+    if (std::map_wide_u64_wide_u64::len(value) != 4 ||
+        std::map_wide_u64_wide_u64::capacity(value) != 6 ||
+        std::map_wide_u64_wide_u64::is_empty(value) ||
+        !std::map_wide_u64_wide_u64::contains_key(value, zero) ||
+        !std::map_wide_u64_wide_u64::contains_key(value, boundary) ||
+        !std::map_wide_u64_wide_u64::contains_key(value, high) ||
+        !std::map_wide_u64_wide_u64::contains_key(value, maximum) ||
+        std::map_wide_u64_wide_u64::contains_key(value, one)) { return 4; }
+    if (!same(std::map_wide_u64_wide_u64::get_or(value, zero, fallback), one) ||
+        !same(std::map_wide_u64_wide_u64::get_or(value, boundary, fallback), maximum) ||
+        !same(std::map_wide_u64_wide_u64::get_or(value, high, fallback), zero) ||
+        !same(std::map_wide_u64_wide_u64::get_or(value, maximum, fallback), boundary) ||
+        !same(std::map_wide_u64_wide_u64::get_or(value, one, fallback), fallback)) { return 5; }
+    if (!same(std::map_wide_u64_wide_u64::key_at_or(value, 0, fallback), zero) ||
+        !same(std::map_wide_u64_wide_u64::key_at_or(value, 1, fallback), boundary) ||
+        !same(std::map_wide_u64_wide_u64::key_at_or(value, 2, fallback), high) ||
+        !same(std::map_wide_u64_wide_u64::key_at_or(value, 3, fallback), maximum) ||
+        !same(std::map_wide_u64_wide_u64::value_at_or(value, 0, fallback), one) ||
+        !same(std::map_wide_u64_wide_u64::value_at_or(value, 1, fallback), maximum) ||
+        !same(std::map_wide_u64_wide_u64::value_at_or(value, 2, fallback), zero) ||
+        !same(std::map_wide_u64_wide_u64::value_at_or(value, 3, fallback), boundary) ||
+        !same(std::map_wide_u64_wide_u64::key_at_or(value, -1, fallback), fallback) ||
+        !same(std::map_wide_u64_wide_u64::value_at_or(value, 4, fallback), fallback)) { return 6; }
+    value = std::map_wide_u64_wide_u64::try_insert(value, boundary, one);
+    if (std::map_wide_u64_wide_u64::len(value) != 4 ||
+        !same(std::map_wide_u64_wide_u64::get_or(value, boundary, fallback), maximum)) { return 7; }
+    if (std::map_wide_u64_wide_u64::try_set(value, one, high) ||
+        !std::map_wide_u64_wide_u64::try_set(value, zero, high) ||
+        !same(std::map_wide_u64_wide_u64::get_or(value, zero, fallback), high)) { return 8; }
+
+    let copy: std::map_wide_u64_wide_u64::MapWideU64WideU64 = std::map_wide_u64_wide_u64::try_clone(value);
+    if (std::map_wide_u64_wide_u64::len(copy) != 4 ||
+        !same(std::map_wide_u64_wide_u64::get_or(copy, zero, fallback), high)) { return 9; }
+    if (!std::map_wide_u64_wide_u64::try_set(copy, zero, maximum) ||
+        !same(std::map_wide_u64_wide_u64::get_or(copy, zero, fallback), maximum) ||
+        !same(std::map_wide_u64_wide_u64::get_or(value, zero, fallback), high)) { return 10; }
+    std::map_wide_u64_wide_u64::destroy(copy);
+    value = std::map_wide_u64_wide_u64::try_remove(value, boundary);
+    value = std::map_wide_u64_wide_u64::try_remove(value, one);
+    if (std::map_wide_u64_wide_u64::len(value) != 3 ||
+        std::map_wide_u64_wide_u64::contains_key(value, boundary) ||
+        !same(std::map_wide_u64_wide_u64::key_at_or(value, 1, fallback), high) ||
+        !same(std::map_wide_u64_wide_u64::value_at_or(value, 1, fallback), zero) ||
+        !same(std::map_wide_u64_wide_u64::key_at_or(value, 2, fallback), maximum) ||
+        !same(std::map_wide_u64_wide_u64::value_at_or(value, 2, fallback), boundary)) { return 11; }
+    value = std::map_wide_u64_wide_u64::try_shrink_to_fit(value);
+    if (std::map_wide_u64_wide_u64::capacity(value) != 3 ||
+        !same(std::map_wide_u64_wide_u64::get_or(value, maximum, fallback), boundary)) { return 12; }
+    value = std::map_wide_u64_wide_u64::clear(value);
+    if (!std::map_wide_u64_wide_u64::is_empty(value) ||
+        std::map_wide_u64_wide_u64::contains_key(value, zero) ||
+        std::map_wide_u64_wide_u64::capacity(value) != 3) { return 13; }
+    let empty_copy: std::map_wide_u64_wide_u64::MapWideU64WideU64 = std::map_wide_u64_wide_u64::try_clone(value);
+    if (std::map_wide_u64_wide_u64::len(empty_copy) != 0 ||
+        std::map_wide_u64_wide_u64::capacity(empty_copy) != 0) { return 14; }
+    std::map_wide_u64_wide_u64::destroy(empty_copy);
+    value = std::map_wide_u64_wide_u64::try_shrink_to_fit(value);
+    if (std::map_wide_u64_wide_u64::capacity(value) != 0) { return 15; }
+    std::map_wide_u64_wide_u64::destroy(value);
+    return 0;
+}

@@ -133,6 +133,7 @@ limited to native x86_64 output from this worktree.
 | `std::vec_bool` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The boolean fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, and stored `false` distinct from a `true` fallback. The allocation-failure suite injects failed initial allocation and reallocation; the true-count sample combines it with `core::bool` and `OptionBool`. Each boolean occupies one 32-bit cell containing 0 or 1. Ownership is linear by convention. |
 | `std::map_i32_i32` all 16 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed pair array provides linear lookup, insertion without partial pairs, in-place update, ordered removal, reservation, independent cloning, clearing, capacity release, and destruction. The native fixture calls every function and checks zero and negative keys and values, the signed maximum key, duplicates, missing keys, ordinal bounds, retained and reduced capacity, and clone independence. Injected initial, growth, shrink, and clone allocation failures preserve the original map or return an empty clone. The byte-histogram program combines it with numeric and byte I/O helpers on empty, text, and binary input. Ownership is linear by convention. |
 | `std::map_u32_u32` all 16 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed pair array preserves full unsigned key and value bit patterns, including `2^31` and `u32::MAX`. The native fixture calls every function and checks insertion, lookup, in-place update, duplicates, missing keys, insertion order, stable removal, invalid ordinals and capacities, cloning, clearing, growth, and shrinking. Injected initial, growth, shrink, and clone allocation failures preserve prior entries or return an empty clone. A frequency-report program combines the map with numeric and I/O helpers. Ownership is linear by convention. |
+| `std::map_wide_u64_wide_u64` all 16 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed array stores each key and value as two 32-bit words, preserving zero, `2^32`, the unsigned high bit, and `u64::MAX`. The native fixture calls every function and checks insertion, full-width lookup, in-place replacement, duplicates, missing keys, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, and shrinking. Injected initial, growth, shrink, and clone allocation failures preserve prior entries or return an empty clone. The line-oriented frequency program covers duplicate full-width inputs and malformed input. Ownership is linear by convention; no native `u64` behavior is claimed. |
 | `std::set_i32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks empty and populated sets, both signed extremes, duplicates, absent items, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and ordered union, intersection, difference, and symmetric difference. Injected initial allocation, growth, shrink, clone, and each set-algebra allocation failure preserve ownership and existing items. The set owns one allocation of 32-bit cells; ownership is linear by convention. |
 | `std::set_u32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks zero, the unsigned high bit, `u32::MAX`, duplicates, absent items, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and all four ordered set-algebra operations. Injected initial allocation, growth, shrink, clone, and set-algebra allocation failures preserve ownership and existing items. A small program deduplicates unsigned readings and prints their wrapping sum. Values use 32-bit cells and preserve every bit pattern; ownership is linear by convention. |
 | `std::set_wide_u64` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks zero, `2^32`, the unsigned high bit, and `u64::MAX`, duplicate and absent values, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and all four ordered set-algebra operations. Eight injected allocation failures preserve owned input sets or return empty independent results. The line-oriented distinct-sum program covers duplicates, full-width decimal input, wraparound, and invalid input. Each value occupies two 32-bit cells; ownership is linear by convention. |
@@ -697,6 +698,16 @@ Lanius logic. No declaration is promoted solely because it type-checks.
 - `std::map_u32_u32` has the same ownership, bounds, ordering, update, and
   failure contract for unsigned keys and values. Raw 32-bit storage preserves
   all unsigned bit patterns; reads convert the stored cells back to `u32`.
+  The supported target is x86_64 Linux with allocator bindings.
+- `std::map_wide_u64_wide_u64` stores unsigned two-word keys and values in
+  adjacent low/high 32-bit cells. A key match compares both words; updates
+  never change key order. Each entry occupies 16 bytes and the maximum is
+  134,217,727 entries, keeping byte counts within signed 32-bit arithmetic.
+  Invalid ordinals return a caller fallback, and `contains_key` distinguishes
+  a missing key when a stored value equals that fallback. Allocation failure
+  during insertion, reservation, or shrinking retains the existing map; a
+  failed nonempty clone returns an empty independent map. The caller keeps
+  only the latest returned owner and destroys each independent map once.
   The supported target is x86_64 Linux with allocator bindings.
 - `std::utf8_vec` stores canonical UTF-8 in `VecU8`. `try_append_scalar`
   validates the existing complete byte sequence, checks the scalar and
@@ -1579,6 +1590,8 @@ initial, growth, shrink, and clone allocation failures, and the stdin byte
 histogram.
 Run `cargo test --test stdlib_map_u32_u32_execution` for full-width unsigned
 keys and values, allocation failures, and the frequency-report program.
+Run `cargo test --test stdlib_map_wide_u64_wide_u64_execution` for two-word
+keys and values, allocation failures, and the line-oriented frequency report.
 Run `cargo test --test stdlib_set_i32_execution` for the owned integer set,
 set algebra, and its initial, growth, shrink, clone, and four set-algebra
 allocation failures.
