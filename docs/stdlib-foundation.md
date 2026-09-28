@@ -1647,6 +1647,9 @@ Run `cargo test --test stdlib_vec_wide_u64_execution` for the owned
 unsigned two-word vector, every public operation, backing bounds, and
 injected allocation failures. Run `cargo test --test stdlib_wide_unsigned_sum_program`
 for its full-width input and output program.
+Run `cargo test --test stdlib_deque_stateful_execution` for 48
+deterministic mixed operations per deque, checked against a reference deque
+after every step for all four owned deque types.
 Run `cargo test --test stdlib_deque_wide_i64_execution` for all
 two-word signed deque APIs, six injected allocation failures, and the
 signed recent-values program.
