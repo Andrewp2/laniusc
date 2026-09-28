@@ -109,7 +109,7 @@ limited to native x86_64 output from this worktree.
 | `std::host` all 15 metadata functions and 4 constants | Executable metadata on x86_64 Linux | The native fixture calls every public function and constant and checks its unavailable service report against `core::runtime`. No host operation ABI is declared here. |
 | `test::harness` all 31 metadata and status functions and 7 constants | Executable metadata on x86_64 Linux; test execution unbound | The native fixture calls every public function and constant, checks passed, failed, skipped, and unknown statuses, and confirms registration, discovery, and execution remain unavailable. |
 | `test::assert` all 8 public helpers | Executable on x86_64 Linux | `tests/stdlib_assert_execution.rs` runs all passing conditions and separately checks that every false condition terminates with SIGILL. The helpers use no allocation or host calls. See dependency 35 for a separate compiler issue with explicit void returns. |
-| `std::vec` | Contract-only after stub removal | The former `Vec<T>::push` returned without storing its argument and was removed. `Vec<T>::new`, `len`, and `is_empty` remain as an empty-value type-checking contract; no storage or mutation is provided. |
+| `std::vec` | Contract-only after stub removal | The former `Vec<T>::push` returned without storing its argument and was removed. `Vec<T>::new`, `len`, and `is_empty` remain as an empty-value type-checking contract; no storage or mutation is provided. Even empty generic construction currently fails native compilation; see dependency 4. |
 
 For all seven concrete vector types, the allocation-failure suite executes a
 successful clone and then injects failure into its allocation. It checks that
@@ -1227,6 +1227,13 @@ also fixes the imported struct-return relocation path described below.
    `std::vec_u32`, `std::vec_u8`, `std::vec_i8`, `std::vec_u16`, and
    `std::vec_i16`, and `std::vec_bool` have tested storage, growth, mutation, failure, and
    destruction on x86 Linux.
+   Two smaller reproductions show that even its empty constructor cannot yet
+   be claimed executable. Both
+   `tests/fixtures/stdlib_foundation/repro_vec_generic_free_new.lani` and
+   `repro_vec_generic_associated_new.lani` pass GPU `check`, but native
+   compilation reports `LNC0006` for the free constructor's contextual
+   generic result and `LNC0005` for qualified associated constructor
+   resolution, respectively. Neither reaches an executable runtime test.
    A generic collection still needs executable generic value layout and a
    language-level move/borrow rule to enforce ownership rather than relying
    on caller discipline.
