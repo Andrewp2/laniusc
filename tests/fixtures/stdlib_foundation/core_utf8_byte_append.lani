@@ -1,0 +1,42 @@
+module app::main;
+import core::utf8_view;
+
+fn main() -> i32 {
+    let fill: u8 = 120;
+    let a: u8 = 65;
+    let b: u8 = 66;
+    let c: u8 = 67;
+    let bad: u8 = 128;
+    let bytes: [u8; 12] = [fill, fill, fill, fill, fill, fill,
+                           fill, fill, fill, fill, fill, fill];
+    let length: i32 = 0;
+    length = core::utf8_view::byte_view_append_scalar_or(bytes, length, 12, 65, -9);
+    if (length != 1 || bytes[0] != a || bytes[1] != fill) { return 1; }
+    length = core::utf8_view::byte_view_append_scalar_or(bytes, length, 12, 162, -9);
+    if (length != 3 || bytes[1] != 194 || bytes[2] != 162 || bytes[3] != fill) { return 2; }
+    length = core::utf8_view::byte_view_append_scalar_or(bytes, length, 12, 8364, -9);
+    if (length != 6 || bytes[3] != 226 || bytes[4] != 130 || bytes[5] != 172 ||
+        bytes[6] != fill) { return 3; }
+    length = core::utf8_view::byte_view_append_scalar_or(bytes, length, 12, 128578, -9);
+    if (length != 10 || bytes[6] != 240 || bytes[7] != 159 ||
+        bytes[8] != 153 || bytes[9] != 130 || bytes[10] != fill) { return 4; }
+    if (core::utf8_view::byte_view_append_scalar_or(bytes, length, 12, 8364, -9) != -9 ||
+        core::utf8_view::byte_view_append_scalar_or(bytes, length, 12, 55296, -9) != -9 ||
+        core::utf8_view::byte_view_append_scalar_or(bytes, length, 9, 66, -9) != -9 ||
+        core::utf8_view::byte_view_append_scalar_or(bytes, -1, 12, 66, -9) != -9 ||
+        bytes[10] != fill || bytes[11] != fill) { return 5; }
+    length = core::utf8_view::byte_view_append_scalar_or(bytes, length, 12, 66, -9);
+    length = core::utf8_view::byte_view_append_scalar_or(bytes, length, 12, 67, -9);
+    if (length != 12 || bytes[10] != b || bytes[11] != c ||
+        core::utf8_view::byte_view_append_scalar_or(bytes, length, 12, 68, -9) != -9 ||
+        bytes[11] != c) { return 6; }
+
+    let invalid: [u8; 3] = [a, bad, fill];
+    if (core::utf8_view::byte_view_append_scalar_or(invalid, 2, 3, 66, -9) != -9 ||
+        invalid[2] != fill) { return 7; }
+    let empty: [u8; 1] = [fill];
+    if (core::utf8_view::byte_view_append_scalar_or(empty, 0, 0, 65, -9) != -9 ||
+        core::utf8_view::byte_view_append_scalar_or(empty, 0, -1, 65, -9) != -9 ||
+        empty[0] != fill) { return 8; }
+    return 0;
+}

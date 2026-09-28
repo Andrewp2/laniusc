@@ -201,3 +201,28 @@ pub fn byte_view_last_index_of_scalar_or(values: [u8], len: i32, needle: u32, fa
     }
     return found;
 }
+
+// Append one Unicode scalar to a complete valid UTF-8 prefix in caller-owned
+// byte storage. Return its new byte length. Invalid input or insufficient
+// logical capacity returns fallback without writing. The caller must back
+// capacity writable bytes; an overstated physical view may trap on indexing.
+pub fn byte_view_append_scalar_or(
+    values: [u8], len: i32, capacity: i32, scalar: u32, fallback: i32
+) -> i32 {
+    if (len < 0 || capacity < len || !core::utf8::is_scalar(scalar) ||
+        !core::utf8::bytes_are_valid(values, len)) {
+        return fallback;
+    }
+    let width_u32: u32 = core::utf8::encoded_len_or(scalar, 0);
+    let width: i32 = width_u32 as i32;
+    if (width > capacity - len) {
+        return fallback;
+    }
+    let index: i32 = 0;
+    while (index < width) {
+        let byte_index: u32 = index as u32;
+        values[len + index] = core::utf8::encoded_byte_or(scalar, byte_index, 0);
+        index += 1;
+    }
+    return len + width;
+}

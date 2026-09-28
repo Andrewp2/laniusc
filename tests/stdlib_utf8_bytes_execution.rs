@@ -47,6 +47,18 @@ fn byte_backed_utf8_operations_execute_on_x86() {
             b"".as_slice(),
         ),
         (
+            "core_utf8_byte_append",
+            "tests/fixtures/stdlib_foundation/core_utf8_byte_append.lani",
+            0,
+            b"".as_slice(),
+        ),
+        (
+            "core_utf8_byte_append_bounds",
+            "tests/fixtures/stdlib_foundation/core_utf8_byte_append_bounds.lani",
+            101,
+            b"".as_slice(),
+        ),
+        (
             "utf8_vec_bytes",
             "tests/fixtures/stdlib_foundation/utf8_vec_bytes.lani",
             0,
