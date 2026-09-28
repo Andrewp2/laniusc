@@ -109,6 +109,7 @@ limited to native x86_64 output from this worktree.
 | `std::io_hex_wide_i64` all 3 public signed two-word helpers | Executable x86_64 Linux host wrappers | The native suite calls every function and checks shortest lowercase and uppercase signed output, byte counts, invalid handles, both signed extrema, ordinary negative stdin values, optional signs and prefixes, surrounding whitespace, malformed and overflowing input, exact and exceeded byte limits, and zero-limit behavior. With Linux `strace`, it checks first and later short writes, write errors, and injected read failures. |
 | `std::io_binary` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_binary_execution.rs` checks shortest binary writes across `u8`, `u16`, and `u32`, exact byte counts, invalid handles, injected write failures, bounded stdin parsing with optional prefix and whitespace, malformed and overflowing input, and injected read failures. |
 | `std::io_binary_wide_u64` both public two-word helpers | Executable x86_64 Linux host wrappers | The native suite calls both functions and checks shortest zero and full-width binary writes, byte counts, invalid handles, full-width stdin values, optional prefixes, surrounding whitespace, malformed and overflowing input, exact and exceeded byte limits, and zero-limit behavior. With Linux `strace`, it checks first and later short writes, write errors, and injected read failures. |
+| `std::io_binary_wide_i64` both public signed two-word helpers | Executable x86_64 Linux host wrappers | The native suite calls both functions and checks shortest signed zero, ordinary negative, maximum, and minimum writes; exact byte counts and invalid handles; bounded stdin with optional signs and prefixes, whitespace, malformed and overflowing input, exact and exceeded byte limits, and zero-limit behavior. With Linux `strace`, it checks first and later short writes, write errors, and injected read failures. |
 | `std::file_hex` all 9 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_hex_execution.rs` checks lowercase and uppercase writes, bounded hexadecimal file reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed and overflowing input, missing and overlong files, and injected read/write/close errors. |
 | `std::file_hex_wide_u64` all 3 public two-word helpers | Executable x86_64 Linux host wrappers with literal paths | The native fixture calls every function and checks lowercase and uppercase output at zero, the word boundary, a mixed full-width pattern, and the maximum; bounded full-width reads, optional prefixes and whitespace, missing and malformed files, exact and exceeded byte limits, overflow, invalid output paths, and `/dev/full`. With Linux `strace`, it checks short and failing writes plus read and close failures. |
 | `std::file_hex_wide_i64` all 3 public signed two-word helpers | Executable x86_64 Linux host wrappers with literal paths | The native fixture calls every function and checks shortest lowercase and uppercase output at zero, an ordinary negative value, and both signed extrema; bounded signed reads with optional signs and prefixes, whitespace, malformed and overflowing input, exact and exceeded byte limits, missing files, invalid output paths, and `/dev/full`. With Linux `strace`, it checks short and failing writes plus read and close failures. |
@@ -1074,6 +1075,14 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   short write returns `-1` and may leave a prefix. The reader returns its
   caller fallback for malformed, overflowing, overlong, or failed input. A
   zero byte limit consumes nothing. A valid value may equal the fallback.
+- `std::io_binary_wide_i64` writes the shortest signed binary form of a
+  two-word `WideI64` in 1 through 65 bytes. It reads bounded stdin with
+  surrounding SP, HT, LF, and CR, one optional leading sign, and one
+  optional `0b` or `0B` prefix after the sign. Host errors pass through on
+  write; a short write returns `-1` and may leave a prefix. Missing digits,
+  malformed or overflowing input, excess bytes, and host read failures
+  return the caller fallback after possibly consuming a prefix. A zero
+  byte limit consumes nothing; a valid value may equal fallback.
 - `std::io_binary::{write_u32,write_u16,write_u8}` write the shortest ASCII
   binary representation without allocation. Success returns the byte count.
   A negative host error passes through; a write reporting anything other than
@@ -1482,6 +1491,8 @@ Run `cargo test --test stdlib_io_binary_execution` for binary stream input
 and output; its host-failure cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_binary_wide_u64_execution` for full-width
 binary stream input and output, limits, and injected host faults.
+Run `cargo test --test stdlib_io_binary_wide_i64_execution` for signed
+full-width binary streams, limits, and injected host faults.
 Run `cargo test --test stdlib_io_checked_execution` for complete caller-buffer
 stream operations; fault injection cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_byte_execution` for scalar binary I/O and the

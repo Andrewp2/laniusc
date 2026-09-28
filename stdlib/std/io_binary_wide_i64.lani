@@ -1,0 +1,114 @@
+// Signed full-width binary stream I/O over the bound one-byte host service.
+module std::io_binary_wide_i64;
+import core::binary_wide_i64;
+import core::binary_wide_u64;
+import core::mem;
+import core::wide_i64;
+import core::wide_u64;
+import std::io; // Success returns the character count. Negative host errors pass through; a
+// short write returns -1. Failure can leave a visible prefix.
+pub fn write(handle: i32, value: core::wide_i64::WideI64) -> i32 {
+    let length: u32 = core::binary_wide_i64::len(value);
+    let position: u32 = 0;
+    while (position<length) {
+        let digit: u8 = core::binary_wide_i64::byte_at_or(value, position, 0);
+        let byte: i32 = digit;
+        let written: i32 = std::io::write_byte(handle, byte);
+        if (written<0) {
+            return written;
+        }
+        if (written != 1) {
+            return -1;
+        }
+        position += 1;
+    }
+    return length;
+}
+// Read all stdin as bounded signed binary. Surrounding SP, HT, LF, and
+// CR, one leading plus or minus, and one optional 0b/0B prefix are accepted.
+// Missing digits, malformed input, signed overflow, excess bytes, and host
+// errors return fallback after possibly consuming an input prefix. A valid
+// value can equal fallback; max_bytes == 0 consumes nothing.
+pub fn read_stdin_or(max_bytes: u32, fallback: core::wide_i64::WideI64) -> core::wide_i64::WideI64 {
+    if (max_bytes == 0) {
+        return fallback;
+    }
+    let cell:[i32; 1] =[0];
+    let data: ptr = core::mem::i32_array_data_ptr(cell);
+    let consumed: u32 = 0;
+    let magnitude: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let limit: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483647, 4294967295);
+    let started: bool = false;
+    let digits: bool = false;
+    let trailing: bool = false;
+    let negative: bool = false;
+    let leading_zero: bool = false;
+    let prefix_seen: bool = false;
+    while (true) {
+        cell[0] = 0;
+        let received: i32 = std::io::read_stdin(data, 1);
+        if (received == 0) {
+            break;
+        }
+        if (received != 1 || consumed >= max_bytes) {
+            return fallback;
+        }
+        consumed += 1;
+        let byte: i32 = cell[0];
+        if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
+            if (started && !digits) {
+                return fallback;
+            }
+            if (digits) {
+                trailing = true;
+            }
+            continue;
+        }
+        if (trailing) {
+            return fallback;
+        }
+        if (byte == 43 || byte == 45) {
+            if (started) {
+                return fallback;
+            }
+            started = true;
+            negative = byte == 45;
+            if (negative) {
+                limit = core::wide_u64::from_words(2147483648, 0);
+            }
+            continue;
+        }
+        if (!started) {
+            started = true;
+        }
+        if (byte == 48 && !digits && !prefix_seen) {
+            digits = true;
+            leading_zero = true;
+            continue;
+        }
+        if (leading_zero && !prefix_seen &&(byte == 98 || byte == 66)) {
+            digits = false;
+            leading_zero = false;
+            prefix_seen = true;
+            continue;
+        }
+        leading_zero = false;
+        if (byte<0 || byte>255) {
+            return fallback;
+        }
+        let ascii: u8 = byte as u8;
+        if (!core::binary_wide_u64::can_append_ascii_digit(magnitude, ascii, limit)) {
+            return fallback;
+        }
+        magnitude = core::binary_wide_u64::append_ascii_digit_or(magnitude, ascii, limit, magnitude);
+        digits = true;
+    }
+    if (!digits) {
+        return fallback;
+    }
+    let value: core::wide_i64::WideI64 = core::wide_i64::from_words(core::wide_u64::high_word(magnitude), core::wide_u64::low_word(magnitude));
+    if (negative) {
+        return core::wide_i64::wrapping_neg(value);
+    }
+    return value;
+}
