@@ -4,6 +4,7 @@
 // member, while its value fields carry the call ABI and stable object symbol.
 
 import dependency_interface;
+import dependency_return_layout;
 import byte_packing;
 import hir_records;
 import gpu_index;
@@ -30,6 +31,7 @@ struct NameSpan
 
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> canonical_type_roots;
+StructuredBuffer<uint> declaration_field_count;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirLinks> compact_hir_links;
@@ -72,6 +74,7 @@ RWStructuredBuffer<uint> call_dependency_host_service;
 RWStructuredBuffer<uint> call_param_count;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
+RWStructuredBuffer<uint> call_return_aggregate_word_count;
 RWStructuredBuffer<uint> decl_type_ref_tag;
 RWStructuredBuffer<uint> decl_type_ref_payload;
 
@@ -386,6 +389,8 @@ void publish_method_result(uint method_token, uint member_i, uint owner_declarat
         return;
     uint return_base = return_root * TYPE_WORDS;
     uint return_kind = dependency_type_word(return_base + 0u);
+    call_return_aggregate_word_count[method_token] = dependency_aggregate_word_count(
+        return_root, canonical_type_roots, declaration_field_count);
 
     if (return_kind == TYPE_KIND_SCALAR)
     {
@@ -421,6 +426,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint method_token = INVALID;
     uint raw_receiver = INVALID;
     uint receiver_declaration = INVALID;
+    uint qualified_owner_token = INVALID;
     if (callee_core.kind == HIR_MEMBER_EXPR)
     {
         method_token = callee_payload.c;
@@ -432,6 +438,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint path = valid_hir(path_node) ? path_id_by_owner_hir[path_node] : INVALID;
         uint owner_token = path < gParams.path_capacity
             ? path_owner_token[path] : callee_core.token_start;
+        qualified_owner_token = owner_token;
         if (valid_token(owner_token))
             method_token = module_value_path_associated_method_token[owner_token];
         if (valid_token(method_token))
@@ -468,4 +475,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (member_i == INVALID)
         return;
     publish_method_result(method_token, member_i, owner_declaration);
+    // The checked call artifact reads a path call at its callee owner token,
+    // while method lookup uses the final segment token. Keep both views of
+    // the same resolved imported method in sync.
+    if (valid_token(qualified_owner_token) && qualified_owner_token != method_token)
+        publish_method_result(qualified_owner_token, member_i, owner_declaration);
 }

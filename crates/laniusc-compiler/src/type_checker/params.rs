@@ -373,10 +373,18 @@ pub(in crate::type_checker) fn generic_param_record_passes_required(
         != 0
 }
 
-/// Whether method declarations or member-call sites can exist in this source pack.
+/// Whether method declarations or calls can exist in this source pack. An
+/// imported type's associated function can be called with `Type::method()`
+/// without local `impl` or `.` member syntax, so imports keep method passes on.
 pub(in crate::type_checker) fn method_passes_required(parser_feature_flags: u32) -> bool {
-    use crate::lexer::features::{PARSER_FEATURE_MEMBERS, PARSER_FEATURE_PREDICATES};
-    parser_feature_flags & (PARSER_FEATURE_MEMBERS | PARSER_FEATURE_PREDICATES) != 0
+    use crate::lexer::features::{
+        PARSER_FEATURE_IMPORTS,
+        PARSER_FEATURE_MEMBERS,
+        PARSER_FEATURE_PREDICATES,
+    };
+    parser_feature_flags
+        & (PARSER_FEATURE_IMPORTS | PARSER_FEATURE_MEMBERS | PARSER_FEATURE_PREDICATES)
+        != 0
 }
 
 /// Whether call rows can emit generic or const-generic consistency claims.
@@ -661,10 +669,10 @@ mod tests {
     }
 
     #[test]
-    fn method_passes_follow_member_and_predicate_features() {
+    fn method_passes_follow_import_member_and_predicate_features() {
         assert!(!method_passes_required(0));
         assert!(!method_passes_required(PARSER_FEATURE_ARRAYS));
-        assert!(!method_passes_required(PARSER_FEATURE_IMPORTS));
+        assert!(method_passes_required(PARSER_FEATURE_IMPORTS));
         assert!(method_passes_required(PARSER_FEATURE_MEMBERS));
         assert!(method_passes_required(PARSER_FEATURE_PREDICATES));
         assert!(method_passes_required(u32::MAX));

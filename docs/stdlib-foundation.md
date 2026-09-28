@@ -109,7 +109,7 @@ limited to native x86_64 output from this worktree.
 | `std::host` all 15 metadata functions and 4 constants | Executable metadata on x86_64 Linux | The native fixture calls every public function and constant and checks its unavailable service report against `core::runtime`. No host operation ABI is declared here. |
 | `test::harness` all 31 metadata and status functions and 7 constants | Executable metadata on x86_64 Linux; test execution unbound | The native fixture calls every public function and constant, checks passed, failed, skipped, and unknown statuses, and confirms registration, discovery, and execution remain unavailable. |
 | `test::assert` all 8 public helpers | Executable on x86_64 Linux | `tests/stdlib_assert_execution.rs` runs all passing conditions and separately checks that every false condition terminates with SIGILL. The helpers use no allocation or host calls. See dependency 35 for a separate compiler issue with explicit void returns. |
-| Generic `std::vec::Vec<T>` | Executable empty values in a flat source pack; contract-only as an imported module | `tests/stdlib_generic_vec_flat_execution.rs` runs all three free and all three associated empty-value operations for `i32` and `bool` instantiations. A normal `--stdlib-root` build still rejects both constructor forms; there is no generic storage or mutation. The former `push` silently discarded its argument and was removed. This module has no runtime service ID: concrete vectors use the allocator service, and service ID 13 belongs to the test harness. See dependencies 4 and 54. |
+| Generic `std::vec::Vec<T>` | Executable empty values in a flat source pack; contract-only as an imported module | `tests/stdlib_generic_vec_flat_execution.rs` runs all three free and all three associated empty-value operations for `i32` and `bool` instantiations. A normal `--stdlib-root` build still rejects both generic constructor forms; there is no generic storage or mutation. The former `push` silently discarded its argument and was removed. This module has no runtime service ID: concrete vectors use the allocator service, and service ID 13 belongs to the test harness. See dependencies 4 and 54. |
 
 For all seven concrete vector types, the allocation-failure suite executes a
 successful clone and then injects failure into its allocation. It checks that
@@ -1703,14 +1703,17 @@ also fixes the imported struct-return relocation path described below.
     block's 55-byte size and every following runtime service offset.
     `tests/stdlib_time_execution.rs` now runs this fixture and the checked
     clock and sleep cases successfully.
-54. **Imported type-qualified associated constructors.**
+54. **Partially resolved: imported type-qualified associated constructors.**
     `tests/fixtures/stdlib_foundation/repro_imported_associated_new.lani`
-    calls `core::thing::Thing::new()` through a separate stdlib root. GPU
-    `check` accepts it, but native compilation reports `LNC0005` at the
-    qualified call. The sibling `repro_imported_plain_method.lani` calls the
+    calls `core::thing::Thing::new()` through a separate stdlib root and
+    checks both returned fields through an imported free function. The native
+    executable exits zero in `tests/stdlib_imported_aggregate_execution.rs`.
+    Method projection now runs for import-only entries, publishes the
+    qualified call at its owner token, and reports the imported aggregate
+    return width. The sibling `repro_imported_plain_method.lani` calls the
     imported `value.get()` after a free constructor and reports `LNC0027` in
     native compilation. The generic
-    `repro_vec_generic_associated_new.lani` reports the same error through
+    `repro_vec_generic_associated_new.lani` still reports `LNC0005` through
     `--stdlib-root`, while `repro_vec_generic_free_new.lani` reports
     `LNC0006` for its contextual generic result. Both Vec fixtures compile
     and execute on x86 when the real `std::vec` source and app source are
@@ -1720,9 +1723,9 @@ also fixes the imported struct-return relocation path described below.
     on plain `Thing` because it looked for a generic instance binding on the
     receiver. It now resolves plain receivers through the checked module type
     path. `tests/stdlib_generic_interface.rs` confirms that `Thing::new`,
-    `Thing::get`, and all three `Vec<T>` methods are exported. This fixes
-    interface publication only. Imported call projection and generic return
-    instantiation remain compiler dependencies.
+    `Thing::get`, and all three `Vec<T>` methods are exported. Imported
+    instance-call projection and generic return instantiation remain compiler
+    dependencies.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

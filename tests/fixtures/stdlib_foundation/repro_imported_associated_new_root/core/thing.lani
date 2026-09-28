@@ -1,10 +1,10 @@
 module core::thing;
 
-pub struct Thing { value: i32 }
+pub struct Thing { value: i32, other: i32 }
 
 impl Thing {
     pub fn new() -> Thing {
-        return Thing { value: 7 };
+        return Thing { value: 7, other: 11 };
     }
     pub fn get(&self) -> i32 {
         return self.value;
@@ -12,9 +12,9 @@ impl Thing {
 }
 
 pub fn make() -> Thing {
-    return Thing { value: 7 };
+    return Thing { value: 7, other: 11 };
 }
 
 pub fn read(value: Thing) -> i32 {
-    return value.value;
+    return value.value + value.other;
 }

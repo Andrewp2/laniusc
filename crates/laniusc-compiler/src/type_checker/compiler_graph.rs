@@ -4949,6 +4949,7 @@ fn build_graph(
         "type_checker/dependencies/15_project_methods",
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
+            "declaration_field_count" => dependency_declaration_field_count: Read,
         ],
     )?;
     graph.add_indirect_dispatch(DEPENDENCY_METHODS_PROJECT_PASS, "hir_active_dispatch_args")?;

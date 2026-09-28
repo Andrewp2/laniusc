@@ -6,6 +6,31 @@ use laniusc_compiler::compiler::{
 };
 
 #[test]
+fn imported_associated_constructor_returns_aggregate_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_imported_associated_new.lani");
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_imported_associated_new_root");
+    let bytes = common::run_gpu_codegen_with_timeout("imported Thing::new", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile imported associated constructor");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported Thing::new",
+            "repro_imported_associated_new",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "unexpected stdout: {output:?}");
+        assert!(output.stderr.is_empty(), "unexpected stderr: {output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn imported_calls_with_seven_to_nine_arguments_execute_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_foundation/repro_seven_arguments.lani");
