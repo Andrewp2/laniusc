@@ -243,6 +243,27 @@ pub fn truncate(value: VecU16, new_len: i32) -> VecU16 {
     return VecU16 { storage: value.storage, length: new_len, reserved: value.reserved };
 }
 
+// Set the length to new_len. Growing initializes every new element to fill;
+// shrinking keeps the prefix and allocation. A negative or oversized length,
+// or allocation failure during growth, leaves the original vector unchanged.
+// A successful growth has len(result) == new_len.
+pub fn try_resize(value: VecU16, new_len: i32, fill: u16) -> VecU16 {
+    if (new_len < 0 || new_len > MAX_CAPACITY) {
+        return value;
+    }
+    if (new_len <= value.length) {
+        return truncate(value, new_len);
+    }
+    let grown: VecU16 = try_reserve(value, new_len);
+    if (grown.reserved < new_len) {
+        return value;
+    }
+    while (grown.length < new_len) {
+        grown = try_push(grown, fill);
+    }
+    return grown;
+}
+
 // Keeps the allocation for reuse; old elements are no longer in the vector.
 pub fn clear(value: VecU16) -> VecU16 {
     return VecU16 { storage: value.storage, length: 0, reserved: value.reserved };
