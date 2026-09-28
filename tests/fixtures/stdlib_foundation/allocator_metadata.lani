@@ -1,0 +1,50 @@
+module app::main;
+import alloc::allocator;
+import core::runtime;
+
+fn main() -> i32 {
+    if (alloc::allocator::allocator_runtime_abi_version() != 1 ||
+        alloc::allocator::allocator_service_id() != core::runtime::SERVICE_ALLOCATOR_ID ||
+        !alloc::allocator::allocator_service_is_known() ||
+        !alloc::allocator::allocator_contract_metadata_is_available() ||
+        alloc::allocator::allocator_service_status() != core::runtime::SERVICE_STATUS_AVAILABLE) {
+        return 1;
+    }
+    if (!alloc::allocator::allocator_is_available() ||
+        alloc::allocator::allocator_is_blocked() ||
+        alloc::allocator::allocator_is_known_but_unbound() ||
+        alloc::allocator::allocator_requires_runtime_binding() ||
+        alloc::allocator::allocator_host_abi_is_contract_only()) { return 2; }
+    if (!alloc::allocator::alloc_is_executable() ||
+        alloc::allocator::alloc_is_blocked() ||
+        alloc::allocator::alloc_is_known_but_unbound() ||
+        alloc::allocator::alloc_requires_runtime_binding() ||
+        !alloc::allocator::realloc_is_executable() ||
+        alloc::allocator::realloc_is_blocked() ||
+        alloc::allocator::realloc_is_known_but_unbound() ||
+        alloc::allocator::realloc_requires_runtime_binding()) { return 3; }
+    if (!alloc::allocator::dealloc_is_executable() ||
+        alloc::allocator::dealloc_is_blocked() ||
+        alloc::allocator::dealloc_is_known_but_unbound() ||
+        alloc::allocator::dealloc_requires_runtime_binding() ||
+        !alloc::allocator::alloc_failed_is_executable() ||
+        alloc::allocator::alloc_failed_is_blocked() ||
+        alloc::allocator::alloc_failed_is_known_but_unbound() ||
+        alloc::allocator::alloc_failed_requires_runtime_binding()) { return 4; }
+
+    let missing: ptr = alloc::allocator::allocator_pointer_unavailable();
+    if (missing != 0 ||
+        !alloc::allocator::allocator_pointer_is_unavailable(missing) ||
+        alloc::allocator::allocator_pointer_is_available(missing) ||
+        alloc::allocator::allocation_result_is_fail_closed(missing) ||
+        alloc::allocator::alloc_result_is_fail_closed(missing) ||
+        alloc::allocator::realloc_result_is_fail_closed(missing)) { return 5; }
+    let storage: ptr = alloc::allocator::alloc(16, 8);
+    if (alloc::allocator::allocator_pointer_is_unavailable(storage) ||
+        !alloc::allocator::allocator_pointer_is_available(storage) ||
+        alloc::allocator::allocation_result_is_fail_closed(storage) ||
+        alloc::allocator::alloc_result_is_fail_closed(storage) ||
+        alloc::allocator::realloc_result_is_fail_closed(storage)) { return 6; }
+    alloc::allocator::dealloc(storage, 16, 8);
+    return 0;
+}

@@ -1,0 +1,21 @@
+module app::main;
+import core::mem;
+import core::runtime;
+
+fn main() -> i32 {
+    if (core::mem::value_helpers_require_runtime() ||
+        core::mem::value_helpers_require_allocator() ||
+        !core::mem::value_helpers_are_runtime_free()) { return 1; }
+    if (core::mem::raw_memory_api_is_available() ||
+        !core::mem::raw_memory_api_is_blocked() ||
+        core::mem::raw_memory_runtime_abi_version() != 1 ||
+        core::mem::raw_memory_service_id() != core::runtime::SERVICE_ALLOCATOR_ID ||
+        !core::mem::raw_memory_service_is_known() ||
+        !core::mem::raw_memory_contract_metadata_is_available()) { return 2; }
+    if (core::mem::raw_memory_service_status() != core::runtime::SERVICE_STATUS_UNAVAILABLE ||
+        core::mem::raw_memory_has_runtime_binding() ||
+        core::mem::raw_memory_api_is_executable() ||
+        !core::mem::raw_memory_api_requires_runtime_binding() ||
+        !core::mem::raw_memory_host_abi_is_contract_only()) { return 3; }
+    return 0;
+}
