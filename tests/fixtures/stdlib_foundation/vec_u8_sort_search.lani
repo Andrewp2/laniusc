@@ -1,0 +1,72 @@
+// Runtime ordering over an owned byte vector.
+module app::main;
+import std::vec_u8;
+
+fn main() -> i32 {
+    let zero: u8 = 0;
+    let seven: u8 = 7;
+    let high: u8 = 128;
+    let maximum: u8 = 255;
+    let empty: std::vec_u8::VecU8 = std::vec_u8::new();
+    if (std::vec_u8::sort_in_place(empty) != 0 ||
+        std::vec_u8::reverse_in_place(empty) != 0 ||
+        std::vec_u8::lower_bound(empty, high) != 0 ||
+        std::vec_u8::upper_bound(empty, high) != 0 ||
+        std::vec_u8::binary_search_first_or(empty, high, -9) != -9 ||
+        std::vec_u8::binary_search_last_or(empty, high, -7) != -7) { return 1; }
+    std::vec_u8::destroy(empty);
+
+    let single: std::vec_u8::VecU8 = std::vec_u8::try_with_capacity(2);
+    single = std::vec_u8::try_push(single, maximum);
+    if (std::vec_u8::len(single) != 1 ||
+        std::vec_u8::sort_in_place(single) != 1 ||
+        std::vec_u8::reverse_in_place(single) != 0 ||
+        std::vec_u8::lower_bound(single, maximum) != 0 ||
+        std::vec_u8::upper_bound(single, maximum) != 1 ||
+        std::vec_u8::binary_search_first_or(single, maximum, -1) != 0 ||
+        std::vec_u8::binary_search_last_or(single, high, -1) != -1 ||
+        std::vec_u8::capacity(single) != 2) { return 2; }
+    single = std::vec_u8::clear(single);
+    if (std::vec_u8::sort_in_place(single) != 0 ||
+        std::vec_u8::lower_bound(single, high) != 0 ||
+        std::vec_u8::capacity(single) != 2) { return 3; }
+    std::vec_u8::destroy(single);
+
+    let values: [u8; 8] = [maximum, seven, high, seven, zero, maximum, high, seven];
+    let owned: std::vec_u8::VecU8 = std::vec_u8::new();
+    owned = std::vec_u8::try_extend_from_slice(owned, values, 8);
+    if (std::vec_u8::len(owned) != 8 || std::vec_u8::capacity(owned) != 8) { return 4; }
+    let original_ptr: ptr = std::vec_u8::data_ptr(owned);
+    if (std::vec_u8::sort_in_place(owned) != 8 ||
+        std::vec_u8::data_ptr(owned) != original_ptr ||
+        std::vec_u8::get_or(owned, 0, maximum) != zero ||
+        std::vec_u8::get_or(owned, 1, zero) != seven ||
+        std::vec_u8::get_or(owned, 2, zero) != seven ||
+        std::vec_u8::get_or(owned, 3, zero) != seven ||
+        std::vec_u8::get_or(owned, 4, zero) != high ||
+        std::vec_u8::get_or(owned, 5, zero) != high ||
+        std::vec_u8::get_or(owned, 6, zero) != maximum ||
+        std::vec_u8::get_or(owned, 7, zero) != maximum) { return 5; }
+    if (std::vec_u8::lower_bound(owned, zero) != 0 ||
+        std::vec_u8::upper_bound(owned, zero) != 1 ||
+        std::vec_u8::lower_bound(owned, seven) != 1 ||
+        std::vec_u8::upper_bound(owned, seven) != 4 ||
+        std::vec_u8::lower_bound(owned, high) != 4 ||
+        std::vec_u8::upper_bound(owned, high) != 6 ||
+        std::vec_u8::upper_bound(owned, maximum) != 8) { return 6; }
+    if (std::vec_u8::binary_search_first_or(owned, high, -1) != 4 ||
+        std::vec_u8::binary_search_last_or(owned, high, -1) != 5 ||
+        std::vec_u8::binary_search_first_or(owned, maximum, -1) != 6 ||
+        std::vec_u8::binary_search_last_or(owned, maximum, -1) != 7 ||
+        std::vec_u8::binary_search_first_or(owned, 8, -12) != -12 ||
+        std::vec_u8::binary_search_last_or(owned, 127, -13) != -13) { return 7; }
+    if (std::vec_u8::reverse_in_place(owned) != 4 ||
+        std::vec_u8::get_or(owned, 0, zero) != maximum ||
+        std::vec_u8::get_or(owned, 3, zero) != high ||
+        std::vec_u8::get_or(owned, 7, maximum) != zero) { return 8; }
+    if (std::vec_u8::sort_in_place(owned) != 8 ||
+        std::vec_u8::binary_search_last_or(owned, seven, -1) != 3 ||
+        std::vec_u8::capacity(owned) != 8) { return 9; }
+    std::vec_u8::destroy(owned);
+    return 0;
+}

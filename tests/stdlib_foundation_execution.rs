@@ -1712,6 +1712,9 @@ fn executable_core_function_surface_has_runtime_cases() {
                     || (module == "vec_u16"
                         && include_str!("fixtures/stdlib_foundation/vec_u16_sort_search.lani")
                             .contains(&call))
+                    || (module == "vec_u8"
+                        && include_str!("fixtures/stdlib_foundation/vec_u8_sort_search.lani")
+                            .contains(&call))
                     || vector_additional_fixtures
                         .iter()
                         .any(|fixture| fixture.contains(&call)),
@@ -1730,7 +1733,7 @@ fn executable_core_function_surface_has_runtime_cases() {
         } else if module == "vec_u16" {
             25
         } else if module == "vec_u8" {
-            20
+            26
         } else {
             19
         };
