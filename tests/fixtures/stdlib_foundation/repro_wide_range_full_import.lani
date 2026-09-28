@@ -1,0 +1,7 @@
+module app::main;
+import core::range;
+import core::wide_u64_range;
+fn main() -> i32 {
+    let full: core::range::RangeFull = core::range::range_full();
+    return 0;
+}

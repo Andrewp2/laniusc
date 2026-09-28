@@ -1,0 +1,166 @@
+// Unsigned two-word ranges with flat storage for each 32-bit endpoint word.
+module core::wide_u64_range;
+import core::wide_u64;
+pub struct Range {
+    start_high: u32,
+    start_low: u32,
+    end_high: u32,
+    end_low: u32,
+}
+pub struct RangeInclusive {
+    start_high: u32,
+    start_low: u32,
+    end_high: u32,
+    end_low: u32,
+}
+pub struct RangeFrom {
+    start_high: u32,
+    start_low: u32,
+}
+pub struct RangeTo {
+    end_high: u32,
+    end_low: u32,
+}
+fn before(left_high: u32, left_low: u32, right_high: u32, right_low: u32) -> bool {
+    return left_high<right_high ||(left_high == right_high && left_low<right_low);
+}
+pub fn range(start_value: core::wide_u64::WideU64, end_value: core::wide_u64::WideU64) -> Range {
+    return Range {
+        start_high: core::wide_u64::high_word(start_value),
+        start_low: core::wide_u64::low_word(start_value),
+        end_high: core::wide_u64::high_word(end_value),
+        end_low: core::wide_u64::low_word(end_value),
+    };
+}
+pub fn start(value: Range) -> core::wide_u64::WideU64 {
+    return core::wide_u64::from_words(value.start_high, value.start_low);
+}
+pub fn end(value: Range) -> core::wide_u64::WideU64 {
+    return core::wide_u64::from_words(value.end_high, value.end_low);
+}
+pub fn is_empty(value: Range) -> bool {
+    return !before(value.start_high, value.start_low, value.end_high, value.end_low);
+}
+pub fn contains(value: Range, element: core::wide_u64::WideU64) -> bool {
+    let high: u32 = core::wide_u64::high_word(element);
+    let low: u32 = core::wide_u64::low_word(element);
+    return !before(high, low, value.start_high, value.start_low) && before(high, low, value.end_high, value.end_low);
+}
+pub fn overlaps(left: Range, right: Range) -> bool {
+    return !is_empty(left) && !is_empty(right) && before(left.start_high, left.start_low, right.end_high, right.end_low) && before(right.start_high, right.start_low, left.end_high, left.end_low);
+}
+pub fn range_inclusive(start_value: core::wide_u64::WideU64, end_value: core::wide_u64::WideU64) -> RangeInclusive {
+    return RangeInclusive {
+        start_high: core::wide_u64::high_word(start_value),
+        start_low: core::wide_u64::low_word(start_value),
+        end_high: core::wide_u64::high_word(end_value),
+        end_low: core::wide_u64::low_word(end_value),
+    };
+}
+pub fn start_inclusive(value: RangeInclusive) -> core::wide_u64::WideU64 {
+    return core::wide_u64::from_words(value.start_high, value.start_low);
+}
+pub fn end_inclusive(value: RangeInclusive) -> core::wide_u64::WideU64 {
+    return core::wide_u64::from_words(value.end_high, value.end_low);
+}
+pub fn is_empty_inclusive(value: RangeInclusive) -> bool {
+    return before(value.end_high, value.end_low, value.start_high, value.start_low);
+}
+pub fn contains_inclusive(value: RangeInclusive, element: core::wide_u64::WideU64) -> bool {
+    let high: u32 = core::wide_u64::high_word(element);
+    let low: u32 = core::wide_u64::low_word(element);
+    return !before(high, low, value.start_high, value.start_low) && !before(value.end_high, value.end_low, high, low);
+}
+pub fn overlaps_inclusive(left: RangeInclusive, right: RangeInclusive) -> bool {
+    return !is_empty_inclusive(left) && !is_empty_inclusive(right) && !before(right.end_high, right.end_low, left.start_high, left.start_low) && !before(left.end_high, left.end_low, right.start_high, right.start_low);
+}
+pub fn range_from(start_value: core::wide_u64::WideU64) -> RangeFrom {
+    return RangeFrom {
+        start_high: core::wide_u64::high_word(start_value),
+        start_low: core::wide_u64::low_word(start_value),
+    };
+}
+pub fn start_from(value: RangeFrom) -> core::wide_u64::WideU64 {
+    return core::wide_u64::from_words(value.start_high, value.start_low);
+}
+pub fn contains_from(value: RangeFrom, element: core::wide_u64::WideU64) -> bool {
+    let high: u32 = core::wide_u64::high_word(element);
+    let low: u32 = core::wide_u64::low_word(element);
+    return !before(high, low, value.start_high, value.start_low);
+}
+pub fn range_to(end_value: core::wide_u64::WideU64) -> RangeTo {
+    return RangeTo {
+        end_high: core::wide_u64::high_word(end_value),
+        end_low: core::wide_u64::low_word(end_value),
+    };
+}
+pub fn end_to(value: RangeTo) -> core::wide_u64::WideU64 {
+    return core::wide_u64::from_words(value.end_high, value.end_low);
+}
+pub fn contains_to(value: RangeTo, element: core::wide_u64::WideU64) -> bool {
+    let high: u32 = core::wide_u64::high_word(element);
+    let low: u32 = core::wide_u64::low_word(element);
+    return before(high, low, value.end_high, value.end_low);
+}
+// Every two-word unsigned value belongs to the unbounded full range.
+pub fn full_contains(element: core::wide_u64::WideU64) -> bool {
+    return true;
+}
+pub impl Range {
+    pub fn start(&self) -> core::wide_u64::WideU64 {
+        return core::wide_u64::from_words(self.start_high, self.start_low);
+    }
+    pub fn end(&self) -> core::wide_u64::WideU64 {
+        return core::wide_u64::from_words(self.end_high, self.end_low);
+    }
+    pub fn is_empty(&self) -> bool {
+        return !before(self.start_high, self.start_low, self.end_high, self.end_low);
+    }
+    pub fn contains(&self, element: core::wide_u64::WideU64) -> bool {
+        let high: u32 = core::wide_u64::high_word(element);
+        let low: u32 = core::wide_u64::low_word(element);
+        return !before(high, low, self.start_high, self.start_low) && before(high, low, self.end_high, self.end_low);
+    }
+    pub fn overlaps(&self, other: Range) -> bool {
+        return before(self.start_high, self.start_low, self.end_high, self.end_low) && !is_empty(other) && before(self.start_high, self.start_low, other.end_high, other.end_low) && before(other.start_high, other.start_low, self.end_high, self.end_low);
+    }
+}
+pub impl RangeInclusive {
+    pub fn start(&self) -> core::wide_u64::WideU64 {
+        return core::wide_u64::from_words(self.start_high, self.start_low);
+    }
+    pub fn end(&self) -> core::wide_u64::WideU64 {
+        return core::wide_u64::from_words(self.end_high, self.end_low);
+    }
+    pub fn is_empty(&self) -> bool {
+        return before(self.end_high, self.end_low, self.start_high, self.start_low);
+    }
+    pub fn contains(&self, element: core::wide_u64::WideU64) -> bool {
+        let high: u32 = core::wide_u64::high_word(element);
+        let low: u32 = core::wide_u64::low_word(element);
+        return !before(high, low, self.start_high, self.start_low) && !before(self.end_high, self.end_low, high, low);
+    }
+    pub fn overlaps(&self, other: RangeInclusive) -> bool {
+        return !before(self.end_high, self.end_low, self.start_high, self.start_low) && !is_empty_inclusive(other) && !before(other.end_high, other.end_low, self.start_high, self.start_low) && !before(self.end_high, self.end_low, other.start_high, other.start_low);
+    }
+}
+pub impl RangeFrom {
+    pub fn start(&self) -> core::wide_u64::WideU64 {
+        return core::wide_u64::from_words(self.start_high, self.start_low);
+    }
+    pub fn contains(&self, element: core::wide_u64::WideU64) -> bool {
+        let high: u32 = core::wide_u64::high_word(element);
+        let low: u32 = core::wide_u64::low_word(element);
+        return !before(high, low, self.start_high, self.start_low);
+    }
+}
+pub impl RangeTo {
+    pub fn end(&self) -> core::wide_u64::WideU64 {
+        return core::wide_u64::from_words(self.end_high, self.end_low);
+    }
+    pub fn contains(&self, element: core::wide_u64::WideU64) -> bool {
+        let high: u32 = core::wide_u64::high_word(element);
+        let low: u32 = core::wide_u64::low_word(element);
+        return before(high, low, self.end_high, self.end_low);
+    }
+}
