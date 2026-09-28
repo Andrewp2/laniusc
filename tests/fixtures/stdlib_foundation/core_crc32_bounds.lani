@@ -1,0 +1,13 @@
+module app::main;
+import core::crc32;
+
+fn main() -> i32 {
+    let first: u8 = 1;
+    let second: u8 = 2;
+    let short: [u8; 2] = [first, second];
+    let checksum: u32 = core::crc32::checksum_or(short, 3, 0);
+    if (checksum == 0) {
+        return 1;
+    }
+    return 2;
+}

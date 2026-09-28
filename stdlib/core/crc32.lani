@@ -1,0 +1,43 @@
+// Reflected CRC-32/ISO-HDLC for caller-backed byte views. The caller owns the
+// input storage and supplies its logical length. There is no allocation.
+module core::crc32;
+
+pub const INITIAL: u32 = 4294967295;
+pub const REVERSED_POLYNOMIAL: u32 = 3988292384;
+pub const XOR_OUT: u32 = 4294967295;
+
+// Update an unfinished CRC with one byte. Feed bytes in order, starting with
+// INITIAL, and call finish on the resulting state.
+pub fn update_byte(state: u32, value: u8) -> u32 {
+    let current: u32 = state ^ (value as u32);
+    let bit: i32 = 0;
+    while (bit < 8) {
+        if ((current & 1) != 0) {
+            current = (current >> 1) ^ REVERSED_POLYNOMIAL;
+        } else {
+            current = current >> 1;
+        }
+        bit += 1;
+    }
+    return current;
+}
+
+pub fn finish(state: u32) -> u32 {
+    return state ^ XOR_OUT;
+}
+
+// Return the CRC of the first len bytes. A negative length returns fallback
+// without reading storage. Claiming more than the physical view can trap on
+// native indexing; a zero length returns the CRC of empty input (zero).
+pub fn checksum_or(values: [u8], len: i32, fallback: u32) -> u32 {
+    if (len < 0) {
+        return fallback;
+    }
+    let state: u32 = INITIAL;
+    let index: i32 = 0;
+    while (index < len) {
+        state = update_byte(state, values[index]);
+        index += 1;
+    }
+    return finish(state);
+}

@@ -1,0 +1,61 @@
+module app::main;
+import core::crc32;
+
+fn main() -> i32 {
+    if (core::crc32::INITIAL != 4294967295 ||
+        core::crc32::REVERSED_POLYNOMIAL != 3988292384 ||
+        core::crc32::XOR_OUT != 4294967295) {
+        return 1;
+    }
+
+    let one: u8 = 49;
+    let two: u8 = 50;
+    let three: u8 = 51;
+    let four: u8 = 52;
+    let five: u8 = 53;
+    let six: u8 = 54;
+    let seven: u8 = 55;
+    let eight: u8 = 56;
+    let nine: u8 = 57;
+    let digits: [u8; 9] = [one, two, three, four, five, six, seven, eight, nine];
+    if (core::crc32::checksum_or(digits, 9, 17) != 3421780262) {
+        return 2;
+    }
+    if (core::crc32::checksum_or(digits, 0, 17) != 0 ||
+        core::crc32::checksum_or(digits, -1, 17) != 17) {
+        return 3;
+    }
+    if (core::crc32::update_byte(core::crc32::INITIAL, one) != 2082672712) {
+        return 4;
+    }
+    let state: u32 = core::crc32::INITIAL;
+    let index: i32 = 0;
+    while (index < 9) {
+        let next: u8 = digits[index];
+        state = core::crc32::update_byte(state, next);
+        index += 1;
+    }
+    if (core::crc32::finish(state) != 3421780262) {
+        return 5;
+    }
+
+    let zero: u8 = 0;
+    let high: u8 = 255;
+    let middle: u8 = 128;
+    let binary: [u8; 3] = [zero, high, middle];
+    if (core::crc32::checksum_or(binary, 3, 17) != 2178787136 ||
+        core::crc32::checksum_or(binary, 1, 17) != 3523407757) {
+        return 6;
+    }
+
+    let every_byte: u32 = core::crc32::INITIAL;
+    let code: i32 = 0;
+    while (code < 256) {
+        every_byte = core::crc32::update_byte(every_byte, code as u8);
+        code += 1;
+    }
+    if (core::crc32::finish(every_byte) != 688229491) {
+        return 7;
+    }
+    return 0;
+}
