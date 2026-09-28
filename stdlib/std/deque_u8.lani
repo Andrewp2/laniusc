@@ -109,7 +109,7 @@ pub fn try_push_back(value: DequeU8, item: u8) -> DequeU8 {
         if (grown.length == grown.reserved) { return value; }
     }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
-    let raw_item: i32 = item as i32;
+    let raw_item: i32 = item;
     cells[physical_index(grown, grown.length)] = raw_item;
     return DequeU8 {
         storage: grown.storage, length: grown.length + 1,
@@ -132,7 +132,7 @@ pub fn try_push_front(value: DequeU8, item: u8) -> DequeU8 {
     let next_head: i32 = grown.head - 1;
     if (grown.head == 0) { next_head = grown.reserved - 1; }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
-    let raw_item: i32 = item as i32;
+    let raw_item: i32 = item;
     cells[next_head] = raw_item;
     return DequeU8 {
         storage: grown.storage, length: grown.length + 1,
@@ -146,7 +146,8 @@ pub fn at_or(value: DequeU8, ordinal: i32, fallback: u8) -> u8 {
     if (ordinal < 0 || ordinal >= value.length) { return fallback; }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
     let raw_item: i32 = cells[physical_index(value, ordinal)];
-    return raw_item as u8;
+    let byte_item: u8 = raw_item;
+    return byte_item;
 }
 
 pub fn front_or(value: DequeU8, fallback: u8) -> u8 {
@@ -170,7 +171,7 @@ pub fn contains(value: DequeU8, item: u8) -> bool {
 pub fn try_set(value: DequeU8, ordinal: i32, item: u8) -> bool {
     if (ordinal < 0 || ordinal >= value.length) { return false; }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
-    let raw_item: i32 = item as i32;
+    let raw_item: i32 = item;
     cells[physical_index(value, ordinal)] = raw_item;
     return true;
 }

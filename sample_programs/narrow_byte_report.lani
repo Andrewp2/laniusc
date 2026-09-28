@@ -12,8 +12,11 @@ fn main() -> i32 {
     let saturated: u8 = core::narrow::u8_from_i32_saturating(value);
     let checked: u8 = core::narrow::u8_from_i32_or(value, 17);
     let total: u8 = core::byte::wrapping_add(wrapped, checked);
-    print(wrapped as i32);
-    print(saturated as i32);
-    print(total as i32);
+    let wrapped_i32: i32 = wrapped;
+    let saturated_i32: i32 = saturated;
+    let total_i32: i32 = total;
+    print(wrapped_i32);
+    print(saturated_i32);
+    print(total_i32);
     return 0;
 }

@@ -14,7 +14,7 @@ limited to native x86_64 output from this worktree.
 | `core::number_u16` constants and all 25 public functions | Executable on x86_64 | Focused runtime fixture checks unsigned 16-bit limits, widened saturation and wrapping, multiplication and power overflow, GCD/LCM, zero-divisor fallbacks, parity, and power-of-two and alignment boundaries. |
 | `core::number_i32` constants and all 26 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, wrapping arithmetic, multiplication and power overflow, signed GCD/LCM, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
 | `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
-| `core::narrow` all 24 public 32-bit-to-8/16-bit conversion functions | Executable on x86_64 | The imported fixture calls every signed and unsigned source/target combination in wrapping, checked-fallback, and saturating forms. It checks ordinary values, signed and unsigned boundaries, out-of-range values, negative values, and full-width i32/u32 extremes. The input-driven byte report combines narrowing, byte arithmetic, and decimal I/O. Direct out-of-range `as` casts remain a compiler dependency. |
+| `core::narrow` all 24 public 32-bit-to-8/16-bit conversion functions | Executable on x86_64 | The imported fixture calls every signed and unsigned source/target combination in wrapping, checked-fallback, and saturating forms. It checks ordinary values, signed and unsigned boundaries, out-of-range values, negative values, and full-width i32/u32 extremes. The input-driven byte report combines narrowing, byte arithmetic, and decimal I/O. General explicit cast syntax and out-of-range narrowing remain compiler dependencies. |
 | `core::wide_u64` all 24 public two-word and decimal functions | Executable on x86_64 | The imported runtime fixture calls every function and checks high-bit construction, ordering, wrapping add/subtract/multiply, bitwise operations, shifts across word boundaries, division and remainder, zero-divisor fallbacks, full-width decimal digits and parsing, malformed input, and overflow. A generated native fixture compares arithmetic and shifts against Rust `u64` across eight operand pairs and four values at eight shift counts. The decimal-double program reads and prints full-width values. The representation is two `u32` words; this does not claim native `u64` correctness. |
 | `core::wide_i64` all 29 public two-word and decimal functions | Executable on x86_64 | The imported runtime fixture calls every function and checks sign extension, signed bounds, ordering, wrapping and saturating arithmetic, bitwise operations, arithmetic right shifts, signed quotient and remainder, zero-divisor and `MIN/-1` fallbacks, and full-width signed decimal parsing and output. A generated native fixture compares arithmetic and shifts against Rust `i64` across eight operand pairs and four values at eight shift counts. A decimal-double program exercises real input and output, including signed extrema and failure cases. It uses `core::wide_u64` internally and does not claim native `i64` correctness. |
 | `core::wide_u64_checked` all 9 public functions and `core::wide_i64_checked` all 11 public functions | Executable on x86_64 | Imported fixtures call every checked and saturating operation with ordinary values, zero, high-bit values, signed extrema, overflow, zero divisors, and `MIN / -1`. Generated native fixtures compare checked arithmetic, powers, and saturation with Rust `u64` and `i64` across eight operand pairs and boundary exponents. The checked-factorial program prints `20!` and rejects `21!` overflow through `OptionWideU64`. These modules use explicit two-word arithmetic, not native 64-bit operators. |
@@ -250,8 +250,8 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   i16, and u16. `*_wrapping` retains the low target-width bits and interprets
   signed results as two's complement. `*_or` returns the caller's fallback
   for an out-of-range value; a valid converted value may equal that fallback.
-  `*_saturating` clamps to the target bounds. Every final cast receives an
-  in-range value, avoiding the current direct narrowing-cast miscompile.
+  `*_saturating` clamps to the target bounds. Every narrow typed assignment
+  receives an in-range value, avoiding the current narrowing miscompile.
 - `core::wide_u64` represents an unsigned 64-bit integer explicitly as high
   and low `u32` words. It performs unsigned comparisons, arithmetic modulo
   2^64, bitwise operations, logical shifts, and quotient/remainder without
@@ -2170,8 +2170,9 @@ also fixes the imported struct-return relocation path described below.
     byte extractor masks every shifted word to 0..255 before casting.
     The executable `core::narrow` module supplies explicit wrapping,
     checked-fallback, and saturating conversions for all i32/u32 to
-    i8/u8/i16/u16 combinations. Direct out-of-range `as` casts still need a
-    compiler fix.
+    i8/u8/i16/u16 combinations. They use typed assignments after validating
+    or normalizing values; general `as` syntax and out-of-range narrowing
+    still need compiler fixes.
 34. **Resolved: qualified imported unit enum variants.**
     The original `repro_ordering_variant_import.lani` passed `laniusc check`
     but native compilation reported `LNC0005` at `core::ordering::Less`.
@@ -2357,9 +2358,10 @@ also fixes the imported struct-return relocation path described below.
     `repro_cast_arithmetic_result.lani` put `as` after a call and a grouped
     arithmetic expression; GPU `check` instead reports `LNC0016` at `as`.
     An indexed read followed directly by `as u32` has the same parse error.
-    The deque modules use typed locals and assignments and verify actual
-    high-bit behavior at runtime. A real cast operator needs grammar, semantic
-    checking, and target execution before source spelling can be relied on.
+    The deque and `core::narrow` modules use typed locals and assignments
+    and verify actual high-bit behavior at runtime. A real cast operator needs
+    grammar, semantic checking, and target execution before source spelling
+    can be relied on.
 52. **Resolved: cast directly into a byte-array slot misexecuted on x86.**
     `tests/fixtures/stdlib_foundation/repro_u8_cast_store.lani` casts an
     `i32` value to `u8` on the right side of two indexed assignments. GPU
