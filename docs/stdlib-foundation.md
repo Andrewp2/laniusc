@@ -1994,7 +1994,8 @@ also fixes the imported struct-return relocation path described below.
     with ASCII and two- and four-byte Unicode literals, reads the values
     directly and through imported `core::slice_char`, and mutates the array.
     The emitted x86_64 ELF exits zero. A separate fixture with an `i32`
-    element still reports `LNC0006`. Both run in
+    element still reports `LNC0006`. The character inventory sample also
+    uses direct literals and prints its expected count. All three run in
     `tests/stdlib_char_array_literal_execution.rs`.
 49. **Returned slice values in native code.**
     `tests/fixtures/stdlib_foundation/repro_slice_return.lani` constructs a
