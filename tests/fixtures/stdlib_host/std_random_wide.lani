@@ -5,7 +5,7 @@ import core::wide_i64;
 import core::wide_u64;
 import std::random_wide;
 fn main() -> i32 {
-    let zero_value: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
     let one: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
     let maximum: core::wide_u64::WideU64 = core::wide_u64::max_value();
     let raw_unsigned: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64();
@@ -13,9 +13,9 @@ fn main() -> i32 {
     if (core::option_wide_u64::is_none(raw_unsigned) || core::option_wide_i64::is_none(raw_signed)) {
         return 1;
     }
-    let zero_bound: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_below(zero_value);
+    let zero_bound: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_below(zero);
     let one_bound: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_below(one);
-    if (!core::option_wide_u64::is_none(zero_bound) || !core::option_wide_u64::contains(one_bound, zero_value)) {
+    if (!core::option_wide_u64::is_none(zero_bound) || !core::option_wide_u64::contains(one_bound, zero)) {
         return 2;
     }
     let index: i32 = 0;
@@ -33,7 +33,7 @@ fn main() -> i32 {
             return 3;
         }
         let first: core::wide_u64::WideU64 = core::option_wide_u64::unwrap_or(under_ten, maximum);
-        let second: core::wide_u64::WideU64 = core::option_wide_u64::unwrap_or(high_range, zero_value);
+        let second: core::wide_u64::WideU64 = core::option_wide_u64::unwrap_or(high_range, zero);
         let third: core::wide_i64::WideI64 = core::option_wide_i64::unwrap_or(signed_range, signed_min);
         if (core::wide_u64::compare(first, ten) >= 0 || core::wide_u64::compare(second, high_start)<0 || core::wide_u64::compare(second, maximum)>0 || core::wide_i64::compare(third, signed_low)<0 || core::wide_i64::compare(third, signed_high)>0) {
             return 4;
@@ -41,8 +41,8 @@ fn main() -> i32 {
         index += 1;
     }
     let singleton_unsigned: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_inclusive(maximum, maximum);
-    let reversed_unsigned: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_inclusive(maximum, zero_value);
-    let full_unsigned: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_inclusive(zero_value, maximum);
+    let reversed_unsigned: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_inclusive(maximum, zero);
+    let full_unsigned: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_inclusive(zero, maximum);
     if (!core::option_wide_u64::contains(singleton_unsigned, maximum) || !core::option_wide_u64::is_none(reversed_unsigned) || core::option_wide_u64::is_none(full_unsigned)) {
         return 5;
     }

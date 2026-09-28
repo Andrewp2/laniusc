@@ -46,6 +46,7 @@ static const uint TY_UNKNOWN = 0u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint INTRINSIC_NONE = 0u;
 static const uint PATH_RESOLVE_STATUS_OK = 0u;
+static const uint PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT = 4u;
 static const uint PATH_RESOLVE_STATUS_INVALID = 0xffffffffu;
 static const uint ERR_UNRESOLVED_IDENT = 2u;
 static const uint LANGUAGE_SYMBOL_WILDCARD = 19u;
@@ -131,7 +132,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint token = name_token(node);
     if (!valid_token(token)) return;
     if (token_is_wildcard(token)) return;
-    if (enclosing_fn[token] == 0u || resolved(token)) return;
+    // Module-scope expressions have no lexical locals, but an ambiguous
+    // imported value must still be diagnosed after path projection.
+    if (resolved(token) ||
+        (enclosing_fn[token] == 0u &&
+         module_value_path_status[token] != PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT))
+        return;
     if (predicate_syntax_token[token] != 0u ||
         type_expr_ref_tag[token] != TYPE_REF_INVALID ||
         module_type_path_status[token] != PATH_RESOLVE_STATUS_INVALID ||

@@ -1,0 +1,11 @@
+module app::main;
+import core::wide_u64;
+import core::wide_i64;
+fn use_param(zero: i32) -> i32 {
+    return zero;
+}
+fn main() -> i32 {
+    let zero: i32 = 7;
+    if (use_param(zero) != 7) { return 1; }
+    return zero - 7;
+}

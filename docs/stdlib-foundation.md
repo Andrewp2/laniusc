@@ -2293,15 +2293,15 @@ also fixes the imported struct-return relocation path described below.
     functions remain executable, but nominal `Eq`, `Ord`, and `Hash` impls
     cannot be claimed across this import boundary.
 
-59. **An unrelated imported module hides a local named `zero`.**
-    `laniusc --stdlib-root stdlib --emit x86_64 -o /tmp/random_zero`
-    on `tests/fixtures/stdlib_foundation/repro_random_wide_local_zero.lani`
-    reports `LNC0005` at the `zero` argument even though the local is
-    declared immediately above it. `laniusc check --stdlib-root stdlib`
-    reports the same error. Removing the unused `core::wide_i64`
-    import or renaming the local to `zero_value` allows emission. The
-    executable random fixture uses `zero_value`; its runtime calls pass.
-    Name resolution in the GPU compiler still needs repair.
+59. **Resolved: lexical locals shadow ambiguous imported values.**
+    `tests/fixtures/stdlib_foundation/lexical_shadow_ambiguous_imports.lani`
+    imports two modules that each export `zero`, then uses a local and a
+    parameter named `zero`. Previously both `laniusc check` and x86 emission
+    reported `LNC0005` at the local use. The GPU value-path validator now
+    defers a one-segment import ambiguity until lexical name resolution, so
+    a local binder can win. Function-scope and module-scope ambiguous imports
+    without a local binder still produce `LNC0005`. The native regression
+    runs and exits zero.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

@@ -138,6 +138,15 @@ fn assert_gpu_type_check_pack_rejects(sources: &[&str]) {
     }
 }
 
+fn assert_gpu_type_check_pack_rejects_code(sources: &[&str], expected_code: &str) {
+    match common::type_check_source_pack_with_timeout(sources) {
+        Err(CompileError::Diagnostic(diagnostic)) => {
+            assert_eq!(diagnostic.code, expected_code, "{diagnostic:?}");
+        }
+        other => panic!("expected {expected_code} diagnostic, got {other:?}"),
+    }
+}
+
 fn assert_gpu_type_check_pack_accepts(sources: &[&str]) {
     common::type_check_source_pack_with_timeout(sources)
         .unwrap_or_else(|err| panic!("source pack should pass GPU type checking: {err:?}"));
@@ -5330,6 +5339,39 @@ fn main() {
 }
 "#,
     ]);
+    assert_gpu_type_check_pack_rejects_code(&[
+        r#"
+module core::left;
+pub const VALUE: i32 = 1;
+"#,
+        r#"
+module core::right;
+pub const VALUE: i32 = 2;
+"#,
+        r#"
+module app::main;
+import core::left;
+import core::right;
+const CHOICE: i32 = VALUE;
+fn main() -> i32 { return CHOICE; }
+"#,
+    ], "LNC0005");
+    assert_gpu_type_check_pack_rejects_code(&[
+        r#"
+module core::left;
+pub fn zero() -> i32 { return 1; }
+"#,
+        r#"
+module core::right;
+pub fn zero() -> i32 { return 2; }
+"#,
+        r#"
+module app::main;
+import core::left;
+import core::right;
+fn main() -> i32 { return zero(); }
+"#,
+    ], "LNC0005");
     assert_gpu_type_check_pack_rejects(&[
         r#"
 module core::left;
@@ -5480,6 +5522,29 @@ fn take(item: Item) -> i32 {
 fn main() {
     let item: Item = Item { value: VALUE };
     return take(item);
+}
+"#,
+    ]);
+}
+
+#[test]
+fn type_checker_prefers_lexical_local_over_ambiguous_imported_values() {
+    assert_gpu_type_check_pack_accepts(&[
+        r#"
+module core::left;
+pub fn zero() -> i32 { return 1; }
+"#,
+        r#"
+module core::right;
+pub fn zero() -> i32 { return 2; }
+"#,
+        r#"
+module app::main;
+import core::left;
+import core::right;
+fn main() -> i32 {
+    let zero: i32 = 7;
+    return zero - 7;
 }
 "#,
     ]);
