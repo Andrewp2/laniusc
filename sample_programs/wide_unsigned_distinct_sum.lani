@@ -1,0 +1,47 @@
+// Sum distinct unsigned decimal lines modulo 2^64 using an owned two-word set.
+// Each line must contain one unsigned integer without surrounding whitespace.
+module app::main;
+import core::wide_u64;
+import std::io_byte;
+import std::io_decimal;
+import std::io_line;
+import std::set_wide_u64;
+fn main() -> i32 {
+    let data:[i32; 20] =[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let values: std::set_wide_u64::SetWideU64 = std::set_wide_u64::new();
+    while (true) {
+        let length: i32 = std::io_line::read_stdin_lf_line_into_i32(data, 20);
+        if (length == -1) {
+            break;
+        }
+        if (length <= 0) {
+            std::set_wide_u64::destroy(values);
+            return 2;
+        }
+        if (!core::wide_u64::can_parse_ascii_decimal(data, length)) {
+            std::set_wide_u64::destroy(values);
+            return 3;
+        }
+        let value: core::wide_u64::WideU64 = core::wide_u64::parse_ascii_decimal_or(data, length, core::wide_u64::zero());
+        if (!std::set_wide_u64::contains(values, value)) {
+            let old_length: i32 = std::set_wide_u64::len(values);
+            values = std::set_wide_u64::try_insert(values, value);
+            if (std::set_wide_u64::len(values) != old_length + 1) {
+                std::set_wide_u64::destroy(values);
+                return 4;
+            }
+        }
+    }
+    let total: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let index: i32 = 0;
+    while (index<std::set_wide_u64::len(values)) {
+        let value: core::wide_u64::WideU64 = std::set_wide_u64::at_or(values, index, core::wide_u64::zero());
+        total = core::wide_u64::wrapping_add(total, value);
+        index += 1;
+    }
+    std::set_wide_u64::destroy(values);
+    if (std::io_decimal::write_wide_u64(1, total) <= 0 || !std::io_byte::write_stdout_byte(10)) {
+        return 5;
+    }
+    return 0;
+}

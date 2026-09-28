@@ -1,0 +1,125 @@
+module app::main;
+import core::wide_u64;
+import std::set_wide_u64;
+
+fn same(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::eq(left, right);
+}
+
+fn main() -> i32 {
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let one: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
+    let boundary: core::wide_u64::WideU64 = core::wide_u64::from_words(1, 0);
+    let high_bit: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483648, 0);
+    let maximum: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    let fallback: core::wide_u64::WideU64 = core::wide_u64::from_u32(777);
+    let value: std::set_wide_u64::SetWideU64 = std::set_wide_u64::new();
+    if (std::set_wide_u64::MAX_CAPACITY != 268435455 ||
+        !std::set_wide_u64::is_empty(value) || std::set_wide_u64::len(value) != 0 ||
+        std::set_wide_u64::capacity(value) != 0 || std::set_wide_u64::contains(value, zero) ||
+        !same(std::set_wide_u64::at_or(value, 0, fallback), fallback)) { return 1; }
+
+    value = std::set_wide_u64::try_reserve(value, 3);
+    if (std::set_wide_u64::capacity(value) != 3) { return 2; }
+    value = std::set_wide_u64::try_reserve(value, -1);
+    value = std::set_wide_u64::try_reserve(value, 268435456);
+    if (std::set_wide_u64::capacity(value) != 3) { return 3; }
+    value = std::set_wide_u64::try_insert(value, zero);
+    value = std::set_wide_u64::try_insert(value, boundary);
+    value = std::set_wide_u64::try_insert(value, high_bit);
+    value = std::set_wide_u64::try_insert(value, maximum);
+    if (std::set_wide_u64::len(value) != 4 || std::set_wide_u64::capacity(value) != 6 ||
+        std::set_wide_u64::is_empty(value) || !std::set_wide_u64::contains(value, zero) ||
+        !std::set_wide_u64::contains(value, boundary) ||
+        !std::set_wide_u64::contains(value, high_bit) ||
+        !std::set_wide_u64::contains(value, maximum) ||
+        std::set_wide_u64::contains(value, one) ||
+        !same(std::set_wide_u64::at_or(value, 0, fallback), zero) ||
+        !same(std::set_wide_u64::at_or(value, 1, fallback), boundary) ||
+        !same(std::set_wide_u64::at_or(value, 2, fallback), high_bit) ||
+        !same(std::set_wide_u64::at_or(value, 3, fallback), maximum) ||
+        !same(std::set_wide_u64::at_or(value, -1, fallback), fallback) ||
+        !same(std::set_wide_u64::at_or(value, 4, fallback), fallback)) { return 4; }
+    value = std::set_wide_u64::try_insert(value, boundary);
+    if (std::set_wide_u64::len(value) != 4) { return 5; }
+    let copy: std::set_wide_u64::SetWideU64 = std::set_wide_u64::try_clone(value);
+    if (std::set_wide_u64::len(copy) != 4 ||
+        !same(std::set_wide_u64::at_or(copy, 3, fallback), maximum)) { return 6; }
+    copy = std::set_wide_u64::try_remove(copy, zero);
+    if (std::set_wide_u64::len(copy) != 3 || std::set_wide_u64::contains(copy, zero) ||
+        !std::set_wide_u64::contains(value, zero) ||
+        !same(std::set_wide_u64::at_or(copy, 0, fallback), boundary)) { return 7; }
+    std::set_wide_u64::destroy(copy);
+    value = std::set_wide_u64::try_remove(value, boundary);
+    value = std::set_wide_u64::try_remove(value, one);
+    if (std::set_wide_u64::len(value) != 3 ||
+        !same(std::set_wide_u64::at_or(value, 1, fallback), high_bit)) { return 8; }
+    value = std::set_wide_u64::try_shrink_to_fit(value);
+    if (std::set_wide_u64::capacity(value) != 3 ||
+        !same(std::set_wide_u64::at_or(value, 2, fallback), maximum)) { return 9; }
+    value = std::set_wide_u64::try_insert(value, one);
+    if (std::set_wide_u64::len(value) != 4 ||
+        !same(std::set_wide_u64::at_or(value, 3, fallback), one)) { return 10; }
+    value = std::set_wide_u64::clear(value);
+    if (!std::set_wide_u64::is_empty(value) || std::set_wide_u64::contains(value, one)) { return 11; }
+    let empty_copy: std::set_wide_u64::SetWideU64 = std::set_wide_u64::try_clone(value);
+    if (std::set_wide_u64::len(empty_copy) != 0 ||
+        std::set_wide_u64::capacity(empty_copy) != 0) { return 12; }
+    std::set_wide_u64::destroy(empty_copy);
+    value = std::set_wide_u64::try_shrink_to_fit(value);
+    if (std::set_wide_u64::capacity(value) != 0) { return 13; }
+    std::set_wide_u64::destroy(value);
+
+    let left: std::set_wide_u64::SetWideU64 = std::set_wide_u64::new();
+    left = std::set_wide_u64::try_insert(left, zero);
+    left = std::set_wide_u64::try_insert(left, boundary);
+    left = std::set_wide_u64::try_insert(left, maximum);
+    let right: std::set_wide_u64::SetWideU64 = std::set_wide_u64::new();
+    right = std::set_wide_u64::try_insert(right, maximum);
+    right = std::set_wide_u64::try_insert(right, high_bit);
+    right = std::set_wide_u64::try_insert(right, zero);
+    if (std::set_wide_u64::is_subset(left, right) ||
+        std::set_wide_u64::is_disjoint(left, right) ||
+        !std::set_wide_u64::is_subset(std::set_wide_u64::new(), left) ||
+        !std::set_wide_u64::is_disjoint(std::set_wide_u64::new(), right)) { return 14; }
+    let joined: std::set_wide_u64::SetWideU64 = std::set_wide_u64::try_union(left, right);
+    let common: std::set_wide_u64::SetWideU64 = std::set_wide_u64::try_intersection(left, right);
+    let only_left: std::set_wide_u64::SetWideU64 = std::set_wide_u64::try_difference(left, right);
+    let exclusive: std::set_wide_u64::SetWideU64 = std::set_wide_u64::try_symmetric_difference(left, right);
+    if (std::set_wide_u64::len(joined) != 4 ||
+        !same(std::set_wide_u64::at_or(joined, 0, fallback), zero) ||
+        !same(std::set_wide_u64::at_or(joined, 1, fallback), boundary) ||
+        !same(std::set_wide_u64::at_or(joined, 2, fallback), maximum) ||
+        !same(std::set_wide_u64::at_or(joined, 3, fallback), high_bit) ||
+        !std::set_wide_u64::is_subset(left, joined) ||
+        !std::set_wide_u64::is_subset(right, joined)) { return 15; }
+    if (std::set_wide_u64::len(common) != 2 ||
+        !same(std::set_wide_u64::at_or(common, 0, fallback), zero) ||
+        !same(std::set_wide_u64::at_or(common, 1, fallback), maximum) ||
+        std::set_wide_u64::len(only_left) != 1 ||
+        !same(std::set_wide_u64::at_or(only_left, 0, fallback), boundary) ||
+        !std::set_wide_u64::is_disjoint(only_left, right) ||
+        std::set_wide_u64::len(exclusive) != 2 ||
+        !same(std::set_wide_u64::at_or(exclusive, 0, fallback), boundary) ||
+        !same(std::set_wide_u64::at_or(exclusive, 1, fallback), high_bit)) { return 16; }
+    left = std::set_wide_u64::try_remove(left, zero);
+    if (std::set_wide_u64::len(left) != 2 ||
+        !std::set_wide_u64::contains(joined, zero) ||
+        !std::set_wide_u64::contains(common, zero)) { return 17; }
+    let same_set: std::set_wide_u64::SetWideU64 = std::set_wide_u64::try_intersection(left, left);
+    let none: std::set_wide_u64::SetWideU64 = std::set_wide_u64::try_difference(left, left);
+    let no_exclusive: std::set_wide_u64::SetWideU64 = std::set_wide_u64::try_symmetric_difference(left, left);
+    if (std::set_wide_u64::len(same_set) != 2 ||
+        !std::set_wide_u64::is_empty(none) ||
+        !std::set_wide_u64::is_empty(no_exclusive)) { return 18; }
+    std::set_wide_u64::destroy(same_set);
+    std::set_wide_u64::destroy(none);
+    std::set_wide_u64::destroy(no_exclusive);
+    std::set_wide_u64::destroy(exclusive);
+    std::set_wide_u64::destroy(only_left);
+    std::set_wide_u64::destroy(common);
+    std::set_wide_u64::destroy(joined);
+    std::set_wide_u64::destroy(right);
+    std::set_wide_u64::destroy(left);
+    return 0;
+}
