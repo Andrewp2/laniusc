@@ -1,0 +1,105 @@
+// Full-width hexadecimal stream I/O over the bound one-byte host service.
+module std::io_hex_wide_u64;
+import core::hex_wide_u64;
+import core::mem;
+import core::wide_u64;
+import std::io;
+fn write_digits(handle: i32, value: core::wide_u64::WideU64, uppercase: bool) -> i32 {
+    let length: u32 = core::hex_wide_u64::len(value);
+    let position: u32 = 0;
+    while (position<length) {
+        let digit: u8 = 0;
+        if (uppercase) {
+            digit = core::hex_wide_u64::byte_at_upper_or(value, position, 0);
+        } else {
+            digit = core::hex_wide_u64::byte_at_lower_or(value, position, 0);
+        }
+        let byte: i32 = digit;
+        let written: i32 = std::io::write_byte(handle, byte);
+        if (written<0) {
+            return written;
+        }
+        if (written != 1) {
+            return -1;
+        }
+        position += 1;
+    }
+    return length;
+}
+// Success returns the digit count. Host errors pass through; a short write
+// returns -1. Failure can leave a visible prefix.
+pub fn write_lower(handle: i32, value: core::wide_u64::WideU64) -> i32 {
+    return write_digits(handle, value, false);
+}
+pub fn write_upper(handle: i32, value: core::wide_u64::WideU64) -> i32 {
+    return write_digits(handle, value, true);
+}
+// Read all stdin as bounded ASCII hexadecimal with optional 0x/0X prefix and
+// surrounding SP, HT, LF, or CR. Malformed or overlong input and host errors
+// return fallback after possibly consuming an input prefix.
+pub fn read_stdin_or(max_bytes: u32, fallback: core::wide_u64::WideU64) -> core::wide_u64::WideU64 {
+    if (max_bytes == 0) {
+        return fallback;
+    }
+    let cell:[i32; 1] =[0];
+    let data: ptr = core::mem::i32_array_data_ptr(cell);
+    let consumed: u32 = 0;
+    let value: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let maximum: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    let started: bool = false;
+    let digits: bool = false;
+    let trailing: bool = false;
+    let leading_zero: bool = false;
+    while (true) {
+        cell[0] = 0;
+        let received: i32 = std::io::read_stdin(data, 1);
+        if (received == 0) {
+            break;
+        }
+        if (received != 1 || consumed >= max_bytes) {
+            return fallback;
+        }
+        consumed += 1;
+        let byte: i32 = cell[0];
+        if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
+            if (started && !digits) {
+                return fallback;
+            }
+            if (digits) {
+                trailing = true;
+            }
+            continue;
+        }
+        if (trailing) {
+            return fallback;
+        }
+        if (!started) {
+            started = true;
+            if (byte == 48) {
+                digits = true;
+                leading_zero = true;
+                continue;
+            }
+        } else {
+            if (leading_zero &&(byte == 120 || byte == 88)) {
+                digits = false;
+                leading_zero = false;
+                continue;
+            }
+        }
+        leading_zero = false;
+        if (byte<0 || byte>255) {
+            return fallback;
+        }
+        let ascii: u8 = byte as u8;
+        if (!core::hex_wide_u64::can_append_ascii_digit(value, ascii, maximum)) {
+            return fallback;
+        }
+        value = core::hex_wide_u64::append_ascii_digit_or(value, ascii, maximum, value);
+        digits = true;
+    }
+    if (!digits) {
+        return fallback;
+    }
+    return value;
+}

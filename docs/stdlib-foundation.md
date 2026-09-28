@@ -102,6 +102,7 @@ limited to native x86_64 output from this worktree.
 | `std::io_utf8` all 7 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_utf8_execution.rs` checks one- through four-byte scalar reads and writes, checked output of caller-backed `[i32]` UTF-8 byte-code and ordinary `[u8]` views, the Unicode maximum, distinct EOF and failure fallbacks, malformed and truncated input, invalid values without writes, native bounds trapping before output, and injected read and write errors. It does not access borrowed string storage. |
 | `std::io_decimal` all 16 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned output extrema across 8-, 16-, 32-, and two-word 64-bit integers, exact byte counts, invalid handles, and injected sign and digit write failures for the underlying 32-bit writers. The two-word decimal-double programs also write full-width results through this module. `tests/stdlib_io_decimal_input_execution.rs` checks bounded stdin parsing across the six scalar and both two-word 64-bit types, EOF, whitespace and signs, malformed and overlong input, overflow, and injected read failures. |
 | `std::io_hex` all 9 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_hex_execution.rs` checks exact lowercase and uppercase writes across `u8`, `u16`, and `u32`, counts, invalid handles, injected write failures, bounded stdin parsing with optional prefix and whitespace, malformed and overflowing input, and injected read failures. |
+| `std::io_hex_wide_u64` all 3 public two-word helpers | Executable x86_64 Linux host wrappers | The native suite calls every function and checks shortest lowercase and uppercase output, byte counts, invalid handles, full-width stdin values, optional prefixes, surrounding whitespace, malformed and overflowing input, exact and exceeded byte limits, and zero-limit behavior. With Linux `strace`, it also checks first and later short writes, write errors, and injected read failures. |
 | `std::io_binary` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_binary_execution.rs` checks shortest binary writes across `u8`, `u16`, and `u32`, exact byte counts, invalid handles, injected write failures, bounded stdin parsing with optional prefix and whitespace, malformed and overflowing input, and injected read failures. |
 | `std::file_hex` all 9 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_hex_execution.rs` checks lowercase and uppercase writes, bounded hexadecimal file reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed and overflowing input, missing and overlong files, and injected read/write/close errors. |
 | `std::file_binary` all 6 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_binary_execution.rs` checks shortest binary file writes and bounded reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed, missing, overlong, and overflowing input, plus injected read/write/close errors. |
@@ -1024,6 +1025,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   readers also reject values outside their type. Zero limit returns fallback
   without reading; other failures may consume an input prefix. The fallback
   can equal a valid parsed value.
+- `std::io_hex_wide_u64` applies those write and bounded-read rules to
+  `WideU64` values through `core::hex_wide_u64`. Successful writes return 1
+  through 16 bytes. Host errors pass through; short writes return `-1` and
+  can leave a prefix. The reader returns its caller's two-word fallback for
+  malformed input, overflow, excess bytes, or host failure. Zero byte limit
+  returns fallback without consuming stdin; other failures may consume a
+  prefix. A valid input can equal the fallback.
 - `std::io_binary::{write_u32,write_u16,write_u8}` write the shortest ASCII
   binary representation without allocation. Success returns the byte count.
   A negative host error passes through; a write reporting anything other than
@@ -1394,6 +1402,8 @@ Run `cargo test --test stdlib_io_decimal_input_execution` for bounded decimal
 stdin reads; fault injection cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_hex_execution` for hexadecimal stream input
 and output; its host-failure cases run when Linux `strace` is available.
+Run `cargo test --test stdlib_io_hex_wide_u64_execution` for full-width
+hexadecimal stream input and output, limits, and injected host faults.
 Run `cargo test --test stdlib_io_binary_execution` for binary stream input
 and output; its host-failure cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_checked_execution` for complete caller-buffer
