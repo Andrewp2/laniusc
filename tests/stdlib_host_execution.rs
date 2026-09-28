@@ -155,6 +155,30 @@ fn std_io_write_i32_executes_on_x86() {
 }
 
 #[test]
+fn std_io_write_wide_decimal_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_io_wide_decimal.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_io_wide_decimal", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile two-word decimal writers");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output("std_io_wide_decimal", "complete", &bytes);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(
+            output.stdout,
+            b"0\n18446744073709551615\n-9223372036854775808\n9223372036854775807\n"
+        );
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn std_io_narrow_decimal_writers_execute_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_host/std_io_narrow_decimal.lani");
@@ -301,6 +325,9 @@ fn std_io_decimal_public_functions_have_runtime_cases() {
         include_str!("fixtures/stdlib_host/std_io_decimal_read_u16.lani"),
         include_str!("fixtures/stdlib_host/std_io_decimal_read_i8.lani"),
         include_str!("fixtures/stdlib_host/std_io_decimal_read_i16.lani"),
+        include_str!("fixtures/stdlib_host/std_io_wide_decimal.lani"),
+        include_str!("fixtures/stdlib_foundation/wide_u64_decimal_double.lani"),
+        include_str!("fixtures/stdlib_foundation/wide_i64_decimal_double.lani"),
     ]
     .concat();
     let mut count = 0;
@@ -318,5 +345,5 @@ fn std_io_decimal_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 12);
+    assert_eq!(count, 14);
 }

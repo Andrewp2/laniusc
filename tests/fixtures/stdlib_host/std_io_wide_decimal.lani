@@ -1,0 +1,23 @@
+module app::main;
+import core::wide_i64;
+import core::wide_u64;
+import std::io;
+import std::io_decimal;
+
+fn main() -> i32 {
+    if (std::io_decimal::write_wide_u64(1, core::wide_u64::zero()) != 1 ||
+        std::io::write_newline(1) != 1) { return 1; }
+    if (std::io_decimal::write_wide_u64(1, core::wide_u64::max_value()) != 20 ||
+        std::io::write_newline(1) != 1) { return 2; }
+    if (std::io_decimal::write_wide_i64(1, core::wide_i64::min_value()) != 20 ||
+        std::io::write_newline(1) != 1) { return 3; }
+    if (std::io_decimal::write_wide_i64(1, core::wide_i64::max_value()) != 19 ||
+        std::io::write_newline(1) != 1) { return 4; }
+    if (std::io_decimal::write_wide_u64(-1, core::wide_u64::max_value()) >= 0) {
+        return 5;
+    }
+    if (std::io_decimal::write_wide_i64(-1, core::wide_i64::min_value()) >= 0) {
+        return 6;
+    }
+    return 0;
+}

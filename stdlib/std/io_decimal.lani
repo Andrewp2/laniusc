@@ -5,6 +5,8 @@
 module std::io_decimal;
 import core::decimal;
 import core::mem;
+import core::wide_i64;
+import core::wide_u64;
 import std::io;
 pub fn write_u32(handle: i32, value: u32) -> i32 {
     let length: u32 = core::decimal::len_u32(value);
@@ -40,6 +42,39 @@ pub fn write_i32(handle: i32, value: i32) -> i32 {
         if (written != 1) {
             return -1;
         }
+        position += 1;
+    }
+    return length;
+}
+
+// Write a full-width two-word unsigned value. Return the byte count (1..20),
+// the first negative host error, or -1 for a short write. A failure may leave
+// a prefix on the handle.
+pub fn write_wide_u64(handle: i32, value: core::wide_u64::WideU64) -> i32 {
+    let length: u32 = core::wide_u64::decimal_len(value);
+    let position: u32 = 0;
+    while (position < length) {
+        let byte: u8 = core::wide_u64::decimal_byte_at_or(value, position, 0);
+        let code: i32 = byte;
+        let written: i32 = std::io::write_byte(handle, code);
+        if (written < 0) { return written; }
+        if (written != 1) { return -1; }
+        position += 1;
+    }
+    return length;
+}
+
+// Signed values include a leading minus byte when negative. Return the
+// complete byte count (1..20), a negative host error, or -1 for a short write.
+pub fn write_wide_i64(handle: i32, value: core::wide_i64::WideI64) -> i32 {
+    let length: u32 = core::wide_i64::decimal_len(value);
+    let position: u32 = 0;
+    while (position < length) {
+        let byte: u8 = core::wide_i64::decimal_byte_at_or(value, position, 0);
+        let code: i32 = byte;
+        let written: i32 = std::io::write_byte(handle, code);
+        if (written < 0) { return written; }
+        if (written != 1) { return -1; }
         position += 1;
     }
     return length;

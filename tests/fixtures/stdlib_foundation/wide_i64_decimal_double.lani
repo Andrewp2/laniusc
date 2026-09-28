@@ -2,6 +2,7 @@
 module app::main;
 import core::wide_i64;
 import std::io_byte;
+import std::io_decimal;
 import std::io_line;
 
 fn main() -> i32 {
@@ -13,14 +14,8 @@ fn main() -> i32 {
     let value: core::wide_i64::WideI64 =
         core::wide_i64::parse_ascii_decimal_or(input, length, core::wide_i64::zero());
     let doubled: core::wide_i64::WideI64 = core::wide_i64::wrapping_add(value, value);
-    let digits: u32 = core::wide_i64::decimal_len(doubled);
-    let index: u32 = 0;
-    while (index < digits) {
-        let byte: u8 = core::wide_i64::decimal_byte_at_or(doubled, index, 0);
-        let code: i32 = byte;
-        if (!std::io_byte::write_stdout_byte(code)) { return 4; }
-        index += 1;
-    }
+    let digits: i32 = core::wide_i64::decimal_len(doubled);
+    if (std::io_decimal::write_wide_i64(1, doubled) != digits) { return 4; }
     if (!std::io_byte::write_stdout_byte(10)) { return 4; }
     return 0;
 }
