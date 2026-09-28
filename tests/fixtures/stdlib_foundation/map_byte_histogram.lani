@@ -1,0 +1,53 @@
+// Count distinct stdin bytes and print "distinct weighted-sum". The weighted
+// sum is the saturating sum of each byte code times its occurrence count.
+module app::main;
+import core::number_i32;
+import std::io_byte;
+import std::io_decimal;
+import std::map_i32_i32;
+
+fn main() -> i32 {
+    let counts: std::map_i32_i32::MapI32I32 = std::map_i32_i32::new();
+    let next: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+    while (next >= 0) {
+        if (std::map_i32_i32::contains_key(counts, next)) {
+            let previous: i32 = std::map_i32_i32::get_or(counts, next, 0);
+            let updated: i32 = core::number_i32::saturating_add(previous, 1);
+            if (!std::map_i32_i32::try_set(counts, next, updated)) {
+                std::map_i32_i32::destroy(counts);
+                return 4;
+            }
+        } else {
+            let before: i32 = std::map_i32_i32::len(counts);
+            counts = std::map_i32_i32::try_insert(counts, next, 1);
+            if (std::map_i32_i32::len(counts) != before + 1) {
+                std::map_i32_i32::destroy(counts);
+                return 3;
+            }
+        }
+        next = std::io_byte::read_stdin_byte_or(-1, -2);
+    }
+    if (next == -2) {
+        std::map_i32_i32::destroy(counts);
+        return 2;
+    }
+
+    let weighted_sum: i32 = 0;
+    let index: i32 = 0;
+    let distinct: i32 = std::map_i32_i32::len(counts);
+    while (index < distinct) {
+        let code: i32 = std::map_i32_i32::key_at_or(counts, index, 0);
+        let occurrences: i32 = std::map_i32_i32::value_at_or(counts, index, 0);
+        let contribution: i32 = core::number_i32::saturating_mul(code, occurrences);
+        weighted_sum = core::number_i32::saturating_add(weighted_sum, contribution);
+        index += 1;
+    }
+    std::map_i32_i32::destroy(counts);
+    if (std::io_decimal::write_i32(1, distinct) < 0 ||
+        !std::io_byte::write_stdout_byte(32) ||
+        std::io_decimal::write_i32(1, weighted_sum) < 0 ||
+        !std::io_byte::write_stdout_byte(10)) {
+        return 5;
+    }
+    return 0;
+}

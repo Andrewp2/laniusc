@@ -1,0 +1,84 @@
+module app::main;
+import std::map_i32_i32;
+
+fn main() -> i32 {
+    let value: std::map_i32_i32::MapI32I32 = std::map_i32_i32::new();
+    if (std::map_i32_i32::MAX_ENTRIES != 268435455 ||
+        !std::map_i32_i32::is_empty(value) ||
+        std::map_i32_i32::len(value) != 0 ||
+        std::map_i32_i32::capacity(value) != 0) { return 1; }
+    if (std::map_i32_i32::contains_key(value, 0) ||
+        std::map_i32_i32::get_or(value, 0, 17) != 17 ||
+        std::map_i32_i32::key_at_or(value, 0, 18) != 18 ||
+        std::map_i32_i32::value_at_or(value, -1, 19) != 19) { return 2; }
+
+    value = std::map_i32_i32::try_reserve(value, 3);
+    if (std::map_i32_i32::capacity(value) != 3) { return 3; }
+    value = std::map_i32_i32::try_reserve(value, -1);
+    value = std::map_i32_i32::try_reserve(value, 268435456);
+    if (std::map_i32_i32::capacity(value) != 3 ||
+        std::map_i32_i32::len(value) != 0) { return 4; }
+
+    value = std::map_i32_i32::try_insert(value, 0, 0);
+    value = std::map_i32_i32::try_insert(value, -7, 42);
+    value = std::map_i32_i32::try_insert(value, 2147483647, -99);
+    if (std::map_i32_i32::len(value) != 3 ||
+        std::map_i32_i32::is_empty(value) ||
+        !std::map_i32_i32::contains_key(value, 0) ||
+        !std::map_i32_i32::contains_key(value, -7) ||
+        !std::map_i32_i32::contains_key(value, 2147483647) ||
+        std::map_i32_i32::contains_key(value, 7)) { return 5; }
+    if (std::map_i32_i32::get_or(value, 0, 17) != 0 ||
+        std::map_i32_i32::get_or(value, -7, 17) != 42 ||
+        std::map_i32_i32::get_or(value, 2147483647, 17) != -99 ||
+        std::map_i32_i32::get_or(value, 8, 17) != 17) { return 6; }
+    if (std::map_i32_i32::key_at_or(value, 0, 18) != 0 ||
+        std::map_i32_i32::key_at_or(value, 1, 18) != -7 ||
+        std::map_i32_i32::key_at_or(value, 2, 18) != 2147483647 ||
+        std::map_i32_i32::value_at_or(value, 0, 19) != 0 ||
+        std::map_i32_i32::value_at_or(value, 1, 19) != 42 ||
+        std::map_i32_i32::value_at_or(value, 2, 19) != -99 ||
+        std::map_i32_i32::key_at_or(value, 3, 18) != 18 ||
+        std::map_i32_i32::value_at_or(value, -1, 19) != 19) { return 7; }
+
+    value = std::map_i32_i32::try_insert(value, -7, 999);
+    if (std::map_i32_i32::len(value) != 3 ||
+        std::map_i32_i32::get_or(value, -7, 17) != 42) { return 8; }
+    if (std::map_i32_i32::try_set(value, 8, 1) ||
+        !std::map_i32_i32::try_set(value, 0, 99) ||
+        std::map_i32_i32::get_or(value, 0, 17) != 99) { return 9; }
+
+    let copy: std::map_i32_i32::MapI32I32 = std::map_i32_i32::try_clone(value);
+    if (std::map_i32_i32::len(copy) != 3 ||
+        std::map_i32_i32::get_or(copy, 0, 17) != 99) { return 10; }
+    if (!std::map_i32_i32::try_set(copy, 0, -4) ||
+        std::map_i32_i32::get_or(copy, 0, 17) != -4 ||
+        std::map_i32_i32::get_or(value, 0, 17) != 99) { return 11; }
+    std::map_i32_i32::destroy(copy);
+
+    let held_capacity: i32 = std::map_i32_i32::capacity(value);
+    value = std::map_i32_i32::try_remove(value, -7);
+    if (std::map_i32_i32::len(value) != 2 ||
+        std::map_i32_i32::capacity(value) != held_capacity ||
+        std::map_i32_i32::contains_key(value, -7) ||
+        std::map_i32_i32::key_at_or(value, 1, 18) != 2147483647 ||
+        std::map_i32_i32::value_at_or(value, 1, 19) != -99) { return 12; }
+    value = std::map_i32_i32::try_remove(value, 7);
+    if (std::map_i32_i32::len(value) != 2) { return 13; }
+    value = std::map_i32_i32::try_remove(value, 0);
+    value = std::map_i32_i32::try_remove(value, 2147483647);
+    if (!std::map_i32_i32::is_empty(value) ||
+        std::map_i32_i32::capacity(value) != held_capacity) { return 14; }
+
+    value = std::map_i32_i32::try_insert(value, -3, 8);
+    value = std::map_i32_i32::clear(value);
+    if (std::map_i32_i32::len(value) != 0 ||
+        std::map_i32_i32::capacity(value) != held_capacity ||
+        std::map_i32_i32::contains_key(value, -3)) { return 15; }
+    let empty_copy: std::map_i32_i32::MapI32I32 = std::map_i32_i32::try_clone(value);
+    if (std::map_i32_i32::len(empty_copy) != 0 ||
+        std::map_i32_i32::capacity(empty_copy) != 0) { return 16; }
+    std::map_i32_i32::destroy(empty_copy);
+    std::map_i32_i32::destroy(value);
+    return 0;
+}

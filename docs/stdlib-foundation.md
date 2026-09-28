@@ -104,6 +104,7 @@ limited to native x86_64 output from this worktree.
 | `std::vec_u16` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, 32768, and 65535. The allocation-failure suite injects failed initial allocation and reallocation; the halfword checksum sample combines it with `core::number_u16` and `OptionU16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
 | `std::vec_i16` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The signed halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, `-32768`, and 32767. The allocation-failure suite injects failed initial allocation and reallocation; the signed halfword sum sample combines it with `core::number_i16` and `OptionI16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
 | `std::vec_bool` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The boolean fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, and stored `false` distinct from a `true` fallback. The allocation-failure suite injects failed initial allocation and reallocation; the true-count sample combines it with `core::bool` and `OptionBool`. Each boolean occupies one 32-bit cell containing 0 or 1. Ownership is linear by convention. |
+| `std::map_i32_i32` all 15 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed pair array provides linear lookup, insertion without partial pairs, in-place update, ordered removal, reservation, independent cloning, clearing, and destruction. The native fixture calls every function and checks zero and negative keys and values, the signed maximum key, duplicates, missing keys, ordinal bounds, retained capacity, and clone independence. Injected `mremap` and `mmap` failures preserve the original map or return an empty clone. The byte-histogram program combines it with numeric and byte I/O helpers on empty, text, and binary input. Ownership is linear by convention. |
 | `std::net` all 64 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 10 host calls unbound | The native fixture calls every metadata function and constant, checks available and unavailable result classification, and confirms network capability flags against `core::runtime`. TCP and UDP calls have no runtime binding. |
 | `std::thread` all 32 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 4 host calls unbound | The native fixture calls every metadata function and constant, checks result classification, and confirms that spawn, join, yield, and current-id calls remain unavailable. |
 | `std::gpu` all 44 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 5 host calls unbound | The native fixture calls every metadata function and constant, checks result classification, and confirms unavailable buffer and dispatch services. Compiler execution on a GPU does not bind a user-program GPU API. |
@@ -1141,6 +1142,8 @@ Run `cargo test --test stdlib_vec_resize_execution` for growth, fill,
 shrinkage, invalid lengths, and an injected reallocation failure.
 Run `cargo test --test stdlib_vec_shrink_execution` for all seven concrete
 vectors' capacity release and an injected shrink reallocation failure.
+Run `cargo test --test stdlib_map_i32_i32_execution` for the owned map,
+initial, growth, and clone allocation failures, and the stdin byte histogram.
 Run `cargo test --test stdlib_fs_read_i32_execution` for the raw signed
 integer reader's normal values, signed limits, overflow, line boundaries,
 empty lines, EOF, and an injected host read error when `strace` is available.
@@ -1778,6 +1781,17 @@ also fixes the imported struct-return relocation path described below.
     path. `tests/stdlib_generic_interface.rs` confirms that `Thing::new`,
     `Thing::get`, and all three `Vec<T>` methods are exported. Generic vector
     storage and mutation remain compiler and runtime dependencies.
+55. **Imported aggregate nested in a returned struct.**
+    `tests/fixtures/stdlib_foundation/repro_nested_imported_vec_field.lani`
+    puts the imported three-word `VecI32` inside a local `Wrap`, returns the
+    wrapper, and reads the vector length. GPU checking and native emission
+    succeed, but the ELF exits 1 because the returned empty vector has an
+    incorrect length. Passing `wrapped.cells` directly to `len` also fails
+    type checking with `LNC0006`. The first `std::map_i32_i32` implementation
+    nested a `VecI32` and crashed even on construction and length lookup.
+    The executable map stores its pointer, length, and capacity directly and
+    uses the bound allocator; it does not rely on nested imported aggregate
+    returns. Nested aggregate layout and projection remain compiler work.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

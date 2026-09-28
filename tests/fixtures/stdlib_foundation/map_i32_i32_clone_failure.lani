@@ -1,0 +1,26 @@
+module app::main;
+import std::map_i32_i32;
+
+fn main() -> i32 {
+    let value: std::map_i32_i32::MapI32I32 = std::map_i32_i32::new();
+    value = std::map_i32_i32::try_insert(value, 3, 5);
+    if (std::map_i32_i32::len(value) != 1) { return 2; }
+    let copy: std::map_i32_i32::MapI32I32 = std::map_i32_i32::try_clone(value);
+    if (std::map_i32_i32::len(copy) == 0 &&
+        std::map_i32_i32::capacity(copy) == 0 &&
+        std::map_i32_i32::get_or(value, 3, -1) == 5) {
+        std::map_i32_i32::destroy(copy);
+        std::map_i32_i32::destroy(value);
+        return 0;
+    }
+    if (std::map_i32_i32::len(copy) == 1 &&
+        std::map_i32_i32::get_or(copy, 3, -1) == 5 &&
+        std::map_i32_i32::get_or(value, 3, -1) == 5) {
+        std::map_i32_i32::destroy(copy);
+        std::map_i32_i32::destroy(value);
+        return 4;
+    }
+    std::map_i32_i32::destroy(copy);
+    std::map_i32_i32::destroy(value);
+    return 5;
+}
