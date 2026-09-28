@@ -1,0 +1,9 @@
+module app::main;
+import core::binary_wide_i64;
+fn main() -> i32 {
+    let one_digit:[i32; 1] =[48];
+    if (core::binary_wide_i64::can_parse_ascii(one_digit, 2)) {
+        return 1;
+    }
+    return 0;
+}

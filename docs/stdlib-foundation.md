@@ -36,6 +36,7 @@ limited to native x86_64 output from this worktree.
 | `core::hex_wide_i64` all 5 public signed two-word functions | Executable on x86_64 | Runtime fixtures call every function and check sign-and-magnitude formatting at zero, ordinary positive and negative values, and both signed extrema; shortest lower- and uppercase digits, invalid-index fallbacks, optional signs and prefixes, leading zeros, negative zero, malformed input, and signed overflow in either direction. An overstated physical input view traps. The module uses `WideI64`, not native `i64`. |
 | `core::binary` all 11 public functions | Executable on x86_64 | Runtime fixture checks shortest unsigned binary representations across `u8`, `u16`, and `u32`, zero and high-bit values, invalid-index fallbacks, bounded digit accumulation, optional prefixes, malformed and overflowing input, and format/parse round trips for all 256 byte values. The helpers allocate no storage and use no host calls. |
 | `core::binary_wide_u64` all 6 public two-word functions | Executable on x86_64 | Runtime fixtures call every function and check zero, the 32-bit word boundary, a sparse high-bit pattern, and the maximum; every digit of a full-width pattern; invalid-index fallbacks; bounded appends and overflow; optional prefixes, leading zeros, malformed input, and full-width parse overflow. An overstated physical input view traps. The module uses `WideU64`, not native `u64`. |
+| `core::binary_wide_i64` all 4 public signed two-word functions | Executable on x86_64 | Runtime fixtures call every function and check shortest sign-and-magnitude formatting at zero, ordinary negative values, the word boundary, and both signed extrema; every digit of a negative boundary, invalid-index fallbacks, optional signs and prefixes, leading zeros, negative zero, malformed input, and signed overflow in either direction. An overstated physical input view traps. The module uses `WideI64`, not native `i64`. |
 | `core::f32` both public constants and all 17 public functions | Executable on x86_64 for tested finite, infinite, and NaN inputs | Runtime fixtures check `ZERO` and imported `ONE`, classification, sign, comparison, valid and reversed clamp bounds, fallback behavior, and square root for zero, negative, small, ordinary, large, infinite, and NaN inputs. Direct and materialized NaN comparisons follow unordered semantics. |
 | `core::array_i32_4` all 14 public functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, saturating sum, and caller-backed copy, fill, and reverse. Invalid destination lengths return false without writing; reverse supports shared source/destination backing. Fixed-array-returning predecessors were removed because they misexecute; see dependency 7. |
 | `core::array_u8_4` all 17 public functions | Executable on x86_64 | Runtime fixtures check access, search, extrema, full-range sum, equality, endian conversion, invalid-index fallback, and caller-backed copy, fill, and reverse of four-byte arrays. Reversal works with shared source and destination backing. Short destination lengths return false without writing; an overstated backing view traps on native indexing. |
@@ -474,6 +475,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   selected signed bound. Negative zero yields zero. `can_parse_ascii`
   distinguishes a valid result equal to the caller fallback; overstating the
   physical `[i32]` backing may trap on native indexing.
+- `core::binary_wide_i64` formats a signed two-word integer as an optional
+  minus sign and the shortest binary magnitude. The signed minimum is a
+  minus, one bit, and 63 zero bits. Parsing accepts one optional leading
+  `+` or `-`, then optional `0b` or `0B`, then at least one bit. It rejects
+  whitespace, malformed codes, and values beyond the selected signed bound.
+  Negative zero yields zero. `can_parse_ascii` separates success from a
+  value equal to fallback; overstated physical `[i32]` backing may trap.
 - `core::binary` returns the shortest unsigned binary length and ASCII byte
   at a zero-based index for `u8`, `u16`, and `u32`. Zero is one digit;
   out-of-range indices return fallback. Its digit predicate accepts only
@@ -1378,6 +1386,8 @@ Run `cargo test --test stdlib_hex_wide_i64_execution` for signed
 full-width hexadecimal formatting, bounded parsing, and native bounds trapping.
 Run `cargo test --test stdlib_binary_wide_u64_execution` for full-width
 binary formatting, bounded parsing, fallbacks, and native bounds trapping.
+Run `cargo test --test stdlib_binary_wide_i64_execution` for signed
+full-width binary formatting, bounded parsing, and native bounds trapping.
 Run `cargo test --test stdlib_wide_u64_range_execution` for the full-width
 unsigned range forms, their receiver methods, and endpoint boundaries.
 Run `cargo test --test stdlib_wide_i64_range_execution` for the signed

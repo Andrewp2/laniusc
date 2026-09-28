@@ -1,0 +1,61 @@
+module app::main;
+import core::binary_wide_i64;
+import core::wide_i64;
+fn matches(value: core::wide_i64::WideI64, high: u32, low: u32) -> bool {
+    return core::wide_i64::high_word(value) == high && core::wide_i64::low_word(value) == low;
+}
+fn main() -> i32 {
+    let zero: core::wide_i64::WideI64 = core::wide_i64::zero();
+    let one: core::wide_i64::WideI64 = core::wide_i64::from_i32(1);
+    let negative_one: core::wide_i64::WideI64 = core::wide_i64::from_i32(-1);
+    let negative_thirteen: core::wide_i64::WideI64 = core::wide_i64::from_i32(-13);
+    let negative_boundary: core::wide_i64::WideI64 = core::wide_i64::wrapping_neg(core::wide_i64::from_words(1, 0));
+    let minimum: core::wide_i64::WideI64 = core::wide_i64::min_value();
+    let maximum: core::wide_i64::WideI64 = core::wide_i64::max_value();
+    if (core::binary_wide_i64::len(zero) != 1 || core::binary_wide_i64::len(negative_one) != 2 || core::binary_wide_i64::len(negative_thirteen) != 5 || core::binary_wide_i64::len(negative_boundary) != 34 || core::binary_wide_i64::len(minimum) != 65 || core::binary_wide_i64::len(maximum) != 63) {
+        return 1;
+    }
+    if (core::binary_wide_i64::byte_at_or(zero, 0, 255) != 48 || core::binary_wide_i64::byte_at_or(negative_one, 0, 255) != 45 || core::binary_wide_i64::byte_at_or(negative_one, 1, 255) != 49 || core::binary_wide_i64::byte_at_or(minimum, 1, 255) != 49 || core::binary_wide_i64::byte_at_or(minimum, 64, 255) != 48 || core::binary_wide_i64::byte_at_or(minimum, 65, 255) != 255 || core::binary_wide_i64::byte_at_or(maximum, 63, 254) != 254 || core::binary_wide_i64::byte_at_or(negative_one, 4294967295, 253) != 253) {
+        return 2;
+    }
+    let expected:[i32; 34] =[45, 49, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48];
+    let position: u32 = 0;
+    while (position<34) {
+        let code: i32 = expected[position];
+        let byte: u8 = code as u8;
+        if (core::binary_wide_i64::byte_at_or(negative_boundary, position, 255) != byte) {
+            return 3;
+        }
+        position += 1;
+    }
+    let zero_code:[i32; 1] =[48];
+    let max_code:[i32; 63] =[49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49, 49];
+    let min_code:[i32; 67] =[45, 48, 66, 49, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48];
+    let negative_code:[i32; 5] =[45, 49, 49, 48, 49];
+    let plus_prefixed:[i32; 7] =[43, 48, 98, 49, 49, 48, 49];
+    let negative_zero:[i32; 2] =[45, 48];
+    let leading_zero:[i32; 4] =[48, 48, 48, 49];
+    let positive_overflow:[i32; 64] =[49, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48];
+    let negative_overflow:[i32; 65] =[45, 49, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 49];
+    let wide_overflow:[i32; 65] =[49, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48];
+    let sign_only:[i32; 1] =[45];
+    let prefix_only:[i32; 3] =[45, 48, 98];
+    let bad:[i32; 3] =[49, 48, 50];
+    let whitespace:[i32; 2] =[32, 49];
+    let out_of_range:[i32; 1] =[50];
+    let invalid_negative:[i32; 1] =[-1];
+    let invalid_large:[i32; 1] =[256];
+    if (!core::binary_wide_i64::can_parse_ascii(zero_code, 1) || !core::binary_wide_i64::can_parse_ascii(max_code, 63) || !core::binary_wide_i64::can_parse_ascii(min_code, 67) || !core::binary_wide_i64::can_parse_ascii(negative_code, 5) || !core::binary_wide_i64::can_parse_ascii(plus_prefixed, 7) || !core::binary_wide_i64::can_parse_ascii(negative_zero, 2) || !core::binary_wide_i64::can_parse_ascii(leading_zero, 4)) {
+        return 4;
+    }
+    if (core::binary_wide_i64::can_parse_ascii(zero_code, 0) || core::binary_wide_i64::can_parse_ascii(zero_code, -1) || core::binary_wide_i64::can_parse_ascii(positive_overflow, 64) || core::binary_wide_i64::can_parse_ascii(negative_overflow, 65) || core::binary_wide_i64::can_parse_ascii(wide_overflow, 65) || core::binary_wide_i64::can_parse_ascii(sign_only, 1) || core::binary_wide_i64::can_parse_ascii(prefix_only, 3) || core::binary_wide_i64::can_parse_ascii(bad, 3) || core::binary_wide_i64::can_parse_ascii(whitespace, 2) || core::binary_wide_i64::can_parse_ascii(out_of_range, 1) || core::binary_wide_i64::can_parse_ascii(invalid_negative, 1) || core::binary_wide_i64::can_parse_ascii(invalid_large, 1)) {
+        return 5;
+    }
+    if (!matches(core::binary_wide_i64::parse_ascii_or(zero_code, 1, one), 0, 0) || !matches(core::binary_wide_i64::parse_ascii_or(max_code, 63, zero), 2147483647, 4294967295) || !matches(core::binary_wide_i64::parse_ascii_or(min_code, 67, zero), 2147483648, 0) || !core::wide_i64::eq(core::binary_wide_i64::parse_ascii_or(negative_code, 5, zero), negative_thirteen) || !matches(core::binary_wide_i64::parse_ascii_or(plus_prefixed, 7, zero), 0, 13) || !matches(core::binary_wide_i64::parse_ascii_or(negative_zero, 2, one), 0, 0) || !matches(core::binary_wide_i64::parse_ascii_or(leading_zero, 4, zero), 0, 1)) {
+        return 6;
+    }
+    if (!matches(core::binary_wide_i64::parse_ascii_or(positive_overflow, 64, one), 0, 1) || !matches(core::binary_wide_i64::parse_ascii_or(negative_overflow, 65, one), 0, 1) || !matches(core::binary_wide_i64::parse_ascii_or(prefix_only, 3, one), 0, 1) || !matches(core::binary_wide_i64::parse_ascii_or(bad, 3, one), 0, 1)) {
+        return 7;
+    }
+    return 0;
+}
