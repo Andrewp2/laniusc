@@ -1066,6 +1066,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             include_str!("fixtures/stdlib_foundation/core_bits.lani"),
         ),
         (
+            "bitset",
+            include_str!("../stdlib/core/bitset.lani"),
+            include_str!("fixtures/stdlib_foundation/core_bitset.lani"),
+        ),
+        (
             "bool",
             include_str!("../stdlib/core/bool.lani"),
             include_str!("fixtures/stdlib_foundation/core_bool.lani"),

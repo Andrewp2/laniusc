@@ -1,0 +1,222 @@
+// Allocation-free bitsets in caller-backed [u32] storage. Bit zero is the
+// least-significant bit of word zero. The caller owns enough words for bit_len.
+// Invalid logical lengths and indices use the documented failure channel;
+// an overstated physical view may trap when an element is indexed.
+module core::bitset;
+import core::bits;
+
+fn words_for(bit_len: i32) -> i32 {
+    let count: i32 = bit_len / 32;
+    if (bit_len % 32 != 0) {
+        count += 1;
+    }
+    return count;
+}
+
+fn mask_for(bit_len: i32, word_index: i32) -> u32 {
+    let remainder: i32 = bit_len % 32;
+    if (word_index + 1 < words_for(bit_len) || remainder == 0) {
+        return 4294967295;
+    }
+    let one: u32 = 1;
+    let shift: u32 = remainder as u32;
+    return (one << shift) - 1;
+}
+
+fn bit_mask(index: i32) -> u32 {
+    let one: u32 = 1;
+    let remainder: i32 = index % 32;
+    let shift: u32 = remainder as u32;
+    return one << shift;
+}
+
+// Number of backing words needed, or fallback for a negative bit length.
+pub fn word_count_or(bit_len: i32, fallback: i32) -> i32 {
+    if (bit_len < 0) {
+        return fallback;
+    }
+    return words_for(bit_len);
+}
+
+// Invalid indices return fallback without touching storage.
+pub fn get_or(words: [u32], bit_len: i32, index: i32, fallback: bool) -> bool {
+    if (bit_len < 0 || index < 0 || index >= bit_len) {
+        return fallback;
+    }
+    return (words[index / 32] & bit_mask(index)) != 0;
+}
+
+// Return false without writing for an invalid index; true means one bit was
+// written. The unused high bits in the final word are untouched.
+pub fn set(words: [u32], bit_len: i32, index: i32) -> bool {
+    if (bit_len < 0 || index < 0 || index >= bit_len) {
+        return false;
+    }
+    let word: i32 = index / 32;
+    words[word] = words[word] | bit_mask(index);
+    return true;
+}
+
+pub fn clear(words: [u32], bit_len: i32, index: i32) -> bool {
+    if (bit_len < 0 || index < 0 || index >= bit_len) {
+        return false;
+    }
+    let word: i32 = index / 32;
+    let keep: u32 = bit_mask(index) ^ 4294967295;
+    words[word] = words[word] & keep;
+    return true;
+}
+
+pub fn toggle(words: [u32], bit_len: i32, index: i32) -> bool {
+    if (bit_len < 0 || index < 0 || index >= bit_len) {
+        return false;
+    }
+    let word: i32 = index / 32;
+    words[word] = words[word] ^ bit_mask(index);
+    return true;
+}
+
+// Set every logical bit to value. An empty bitset succeeds without touching
+// storage; a negative length returns false. Padding bits are preserved.
+pub fn fill(words: [u32], bit_len: i32, value: bool) -> bool {
+    if (bit_len < 0) {
+        return false;
+    }
+    let count: i32 = words_for(bit_len);
+    let index: i32 = 0;
+    while (index < count) {
+        let mask: u32 = mask_for(bit_len, index);
+        if (value) {
+            words[index] = words[index] | mask;
+        } else {
+            words[index] = words[index] & (mask ^ 4294967295);
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Count only logical bits, ignoring padding in the last word. A negative
+// length returns fallback; a valid count can equal the fallback.
+pub fn count_ones_or(words: [u32], bit_len: i32, fallback: i32) -> i32 {
+    if (bit_len < 0) {
+        return fallback;
+    }
+    let count: i32 = words_for(bit_len);
+    let total: i32 = 0;
+    let index: i32 = 0;
+    while (index < count) {
+        let set_bits: u32 = core::bits::count_ones_u32(words[index] & mask_for(bit_len, index));
+        let set_count: i32 = set_bits as i32;
+        total += set_count;
+        index += 1;
+    }
+    return total;
+}
+
+// Empty bitsets have no set bits and have all their bits set, respectively.
+// Invalid logical lengths return the caller's Boolean fallback.
+pub fn any_or(words: [u32], bit_len: i32, fallback: bool) -> bool {
+    let count: i32 = count_ones_or(words, bit_len, -1);
+    if (count < 0) {
+        return fallback;
+    }
+    return count != 0;
+}
+
+pub fn all_or(words: [u32], bit_len: i32, fallback: bool) -> bool {
+    let count: i32 = count_ones_or(words, bit_len, -1);
+    if (count < 0) {
+        return fallback;
+    }
+    return count == bit_len;
+}
+
+// Return the first or last set bit index. Empty, negative-length, and empty-
+// of-set-bits views return fallback. Padding bits never count as set.
+pub fn first_set_or(words: [u32], bit_len: i32, fallback: i32) -> i32 {
+    if (bit_len < 0) {
+        return fallback;
+    }
+    let count: i32 = words_for(bit_len);
+    let index: i32 = 0;
+    while (index < count) {
+        let value: u32 = words[index] & mask_for(bit_len, index);
+        if (value != 0) {
+            let offset: u32 = core::bits::trailing_zeros_u32(value);
+            let offset_i32: i32 = offset as i32;
+            return index * 32 + offset_i32;
+        }
+        index += 1;
+    }
+    return fallback;
+}
+
+pub fn last_set_or(words: [u32], bit_len: i32, fallback: i32) -> i32 {
+    if (bit_len < 0) {
+        return fallback;
+    }
+    let remaining: i32 = words_for(bit_len);
+    while (remaining > 0) {
+        remaining -= 1;
+        let value: u32 = words[remaining] & mask_for(bit_len, remaining);
+        if (value != 0) {
+            let leading: u32 = core::bits::leading_zeros_u32(value);
+            let leading_i32: i32 = leading as i32;
+            return remaining * 32 + 31 - leading_i32;
+        }
+    }
+    return fallback;
+}
+
+// Compare only logical bits. A negative length is invalid; two empty views
+// are equal. Padding may differ without affecting equality.
+pub fn equal(left: [u32], right: [u32], bit_len: i32) -> bool {
+    if (bit_len < 0) {
+        return false;
+    }
+    let count: i32 = words_for(bit_len);
+    let index: i32 = 0;
+    while (index < count) {
+        let mask: u32 = mask_for(bit_len, index);
+        if ((left[index] & mask) != (right[index] & mask)) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Write union or intersection into caller-backed destination storage. The
+// destination may alias either input; each input word is read before writing.
+// Invalid lengths return false without writes. Padding bits in destination
+// are preserved, and padding bits in inputs are ignored.
+pub fn union_into(destination: [u32], left: [u32], right: [u32], bit_len: i32) -> bool {
+    if (bit_len < 0) {
+        return false;
+    }
+    let count: i32 = words_for(bit_len);
+    let index: i32 = 0;
+    while (index < count) {
+        let mask: u32 = mask_for(bit_len, index);
+        let combined: u32 = left[index] | right[index];
+        destination[index] = (destination[index] & (mask ^ 4294967295)) | (combined & mask);
+        index += 1;
+    }
+    return true;
+}
+
+pub fn intersect_into(destination: [u32], left: [u32], right: [u32], bit_len: i32) -> bool {
+    if (bit_len < 0) {
+        return false;
+    }
+    let count: i32 = words_for(bit_len);
+    let index: i32 = 0;
+    while (index < count) {
+        let mask: u32 = mask_for(bit_len, index);
+        let combined: u32 = left[index] & right[index];
+        destination[index] = (destination[index] & (mask ^ 4294967295)) | (combined & mask);
+        index += 1;
+    }
+    return true;
+}

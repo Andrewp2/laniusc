@@ -1,0 +1,100 @@
+module app::main;
+import core::bitset;
+
+fn main() -> i32 {
+    let zero: u32 = 0;
+    let high_padding: u32 = 4294967294;
+    let sentinel: u32 = 123;
+    let words: [u32; 3] = [zero, high_padding, sentinel];
+    if (core::bitset::word_count_or(0, -9) != 0 ||
+        core::bitset::word_count_or(1, -9) != 1 ||
+        core::bitset::word_count_or(31, -9) != 1 ||
+        core::bitset::word_count_or(32, -9) != 1 ||
+        core::bitset::word_count_or(33, -9) != 2 ||
+        core::bitset::word_count_or(2147483647, -9) != 67108864 ||
+        core::bitset::word_count_or(-1, -9) != -9) { return 1; }
+    if (core::bitset::count_ones_or(words, 33, -9) != 0 ||
+        core::bitset::any_or(words, 33, true) ||
+        core::bitset::all_or(words, 33, true) ||
+        core::bitset::first_set_or(words, 33, -9) != -9 ||
+        core::bitset::last_set_or(words, 33, -9) != -9 ||
+        core::bitset::get_or(words, 33, 32, true)) { return 2; }
+    if (!core::bitset::set(words, 33, 32) ||
+        !core::bitset::get_or(words, 33, 32, false) ||
+        core::bitset::count_ones_or(words, 33, -9) != 1 ||
+        core::bitset::first_set_or(words, 33, -9) != 32 ||
+        core::bitset::last_set_or(words, 33, -9) != 32 ||
+        words[1] != 4294967295 || words[2] != sentinel) { return 3; }
+    if (!core::bitset::set(words, 33, 0) ||
+        !core::bitset::set(words, 33, 31) ||
+        core::bitset::count_ones_or(words, 33, -9) != 3 ||
+        core::bitset::first_set_or(words, 33, -9) != 0 ||
+        core::bitset::last_set_or(words, 33, -9) != 32) { return 4; }
+    if (!core::bitset::toggle(words, 33, 0) ||
+        !core::bitset::clear(words, 33, 31) ||
+        core::bitset::count_ones_or(words, 33, -9) != 1 ||
+        !core::bitset::get_or(words, 33, 32, false) ||
+        core::bitset::get_or(words, 33, 0, true)) { return 5; }
+    if (core::bitset::set(words, 33, 33) ||
+        core::bitset::set(words, 33, -1) ||
+        core::bitset::clear(words, 33, 33) ||
+        core::bitset::toggle(words, 33, -1) ||
+        !core::bitset::get_or(words, 33, 33, true) ||
+        core::bitset::get_or(words, 33, -1, false) ||
+        words[1] != 4294967295) { return 6; }
+    if (!core::bitset::fill(words, 33, true) ||
+        core::bitset::count_ones_or(words, 33, -9) != 33 ||
+        !core::bitset::all_or(words, 33, false) ||
+        words[0] != 4294967295 || words[1] != 4294967295 ||
+        words[2] != sentinel) { return 7; }
+    if (!core::bitset::fill(words, 33, false) ||
+        core::bitset::count_ones_or(words, 33, -9) != 0 ||
+        words[0] != zero || words[1] != high_padding ||
+        words[2] != sentinel) { return 8; }
+    let equal_words: [u32; 3] = [zero, zero, zero];
+    if (!core::bitset::equal(words, equal_words, 33) ||
+        !core::bitset::equal(words, equal_words, 0) ||
+        !core::bitset::set(equal_words, 33, 32) ||
+        core::bitset::equal(words, equal_words, 33)) { return 9; }
+    let left: [u32; 2] = [zero, zero];
+    let right: [u32; 2] = [zero, zero];
+    let destination: [u32; 2] = [zero, high_padding];
+    if (!core::bitset::set(left, 33, 0) ||
+        !core::bitset::set(left, 33, 32) ||
+        !core::bitset::set(right, 33, 31) ||
+        !core::bitset::set(right, 33, 32) ||
+        !core::bitset::union_into(destination, left, right, 33) ||
+        core::bitset::count_ones_or(destination, 33, -9) != 3 ||
+        destination[1] != 4294967295 ||
+        !core::bitset::intersect_into(destination, left, right, 33) ||
+        core::bitset::count_ones_or(destination, 33, -9) != 1 ||
+        !core::bitset::get_or(destination, 33, 32, false) ||
+        destination[1] != 4294967295) { return 10; }
+    if (!core::bitset::union_into(left, left, right, 33) ||
+        core::bitset::count_ones_or(left, 33, -9) != 3 ||
+        !core::bitset::intersect_into(left, left, right, 33) ||
+        core::bitset::count_ones_or(left, 33, -9) != 2) { return 11; }
+    if (core::bitset::get_or(words, -1, 0, false) ||
+        !core::bitset::get_or(words, -1, 0, true) ||
+        core::bitset::set(words, -1, 0) ||
+        core::bitset::clear(words, -1, 0) ||
+        core::bitset::toggle(words, -1, 0) ||
+        core::bitset::fill(words, -1, true) ||
+        core::bitset::count_ones_or(words, -1, -9) != -9 ||
+        !core::bitset::any_or(words, -1, true) ||
+        core::bitset::all_or(words, -1, false) ||
+        core::bitset::first_set_or(words, -1, -9) != -9 ||
+        core::bitset::last_set_or(words, -1, -9) != -9 ||
+        core::bitset::equal(words, words, -1) ||
+        core::bitset::union_into(words, words, words, -1) ||
+        core::bitset::intersect_into(words, words, words, -1) ||
+        words[0] != zero || words[1] != high_padding) { return 12; }
+    if (!core::bitset::fill(words, 0, true) ||
+        core::bitset::count_ones_or(words, 0, -9) != 0 ||
+        core::bitset::any_or(words, 0, true) ||
+        !core::bitset::all_or(words, 0, false) ||
+        core::bitset::first_set_or(words, 0, -9) != -9 ||
+        core::bitset::last_set_or(words, 0, -9) != -9 ||
+        words[0] != zero || words[1] != high_padding) { return 13; }
+    return 0;
+}

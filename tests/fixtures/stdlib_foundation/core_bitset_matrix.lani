@@ -1,0 +1,43 @@
+module app::main;
+import core::bitset;
+
+fn main() -> i32 {
+    let zero: u32 = 0;
+    let values: [u32; 3] = [zero, zero, zero];
+    let bit_len: i32 = 0;
+    while (bit_len <= 65) {
+        if (!core::bitset::fill(values, 65, false) ||
+            !core::bitset::fill(values, bit_len, true) ||
+            core::bitset::count_ones_or(values, bit_len, -9) != bit_len ||
+            !core::bitset::all_or(values, bit_len, false)) { return 1; }
+        if (bit_len == 0) {
+            if (core::bitset::first_set_or(values, bit_len, -9) != -9 ||
+                core::bitset::last_set_or(values, bit_len, -9) != -9) { return 2; }
+        } else {
+            if (core::bitset::first_set_or(values, bit_len, -9) != 0 ||
+                core::bitset::last_set_or(values, bit_len, -9) != bit_len - 1 ||
+                !core::bitset::get_or(values, bit_len, bit_len - 1, false)) { return 3; }
+        }
+        if (!core::bitset::fill(values, bit_len, false) ||
+            core::bitset::count_ones_or(values, bit_len, -9) != 0 ||
+            core::bitset::any_or(values, bit_len, false) ||
+            core::bitset::set(values, bit_len, bit_len)) { return 4; }
+        let index: i32 = 0;
+        while (index < bit_len) {
+            if (!core::bitset::set(values, bit_len, index) ||
+                !core::bitset::get_or(values, bit_len, index, false)) { return 5; }
+            index += 1;
+        }
+        if (core::bitset::count_ones_or(values, bit_len, -9) != bit_len) { return 6; }
+        index = 0;
+        while (index < bit_len) {
+            if (index % 2 == 0 && !core::bitset::clear(values, bit_len, index)) {
+                return 7;
+            }
+            index += 1;
+        }
+        if (core::bitset::count_ones_or(values, bit_len, -9) != bit_len / 2) { return 8; }
+        bit_len += 1;
+    }
+    return 0;
+}

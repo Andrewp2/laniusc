@@ -16,6 +16,7 @@ limited to native x86_64 output from this worktree.
 | `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
 | `core::byte` constants and all 44 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
 | `core::bits` all 42 public `i32`, `u32`, `u16`, and `u8` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across word widths, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. Byte operations run all 256 inputs; halfword operations run boundary values and 256 evenly spaced inputs; signed operations check negative patterns and all 32 one-hot bits. |
+| `core::bitset` all 14 public caller-backed bitset functions | Executable on x86_64 for `[u32]` backing | Runtime fixtures check word counts, bit access and mutation, fill, counts, any/all, first/last set bit, equality, union, and intersection. They cover logical lengths 0 through 65, word boundaries, aliases, invalid lengths and indices, preserved padding and unused words, and a physical backing overclaim that traps. A source scan requires a runtime call for every public function. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 25 public codec and backed-view functions | Executable on x86_64 | Native fixtures check ASCII and multibyte encoding/decoding, checked scalar append, scalar counts and lookup, first and last scalar and sequence search, byte/scalar boundary mapping, equality, prefix and suffix matching, lexicographic comparison, empty and truncated views, out-of-byte-range integer codes, malformed sequences, surrogate exclusion, and Unicode maximum. Direct caller-backed `[u8]` helpers validate and count scalars, map scalar and byte boundaries, and read scalars by index across one- through four-byte sequences. They reject malformed input and negative lengths, and native indexing traps on a physical length overclaim. The older general view functions use caller-backed `[i32]` byte codes and do not access string storage. |
@@ -209,6 +210,17 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   pattern through `u32`. `has_single_bit_i32(i32::MIN)` is true because its
   representation has one set bit. Rotations, reversal, and byte swap return
   the resulting bit pattern as `i32`.
+- `core::bitset` stores bit zero in the least-significant bit of word zero.
+  The caller supplies at least `ceil(bit_len / 32)` words. A negative logical
+  length returns `false` or the named fallback without touching storage;
+  out-of-range bit indices do the same. A nonnegative length that exceeds
+  physical backing traps when an out-of-bounds word is accessed. Empty sets
+  have no set bits and satisfy `all_or`. Counts and comparisons ignore unused
+  high bits in the last word; mutation preserves those bits and any extra
+  words. Union and intersection permit the destination to alias an input.
+  `sample_programs/bitset_prime_sieve.lani` uses this storage and
+  `core::number_i32` to count and sum primes through 100; its executable test
+  checks the printed results, 25 and 1060.
 - `core::bool` converts any nonzero i32 to true. Its selector functions return
   the chosen branch value. `core::char` tests ASCII classes; its case-insensitive
   equality and case conversion fold ASCII letters only. `is_ascii_control`
@@ -1056,6 +1068,8 @@ with multibyte, empty, exact-capacity, malformed, overlong, and EOF input.
 | Wasm | Not claimed or required for this foundation. |
 
 Run the focused gate with `cargo test --test stdlib_foundation_execution`.
+Run `cargo test --test stdlib_bitset_execution` for the caller-backed bitset,
+including the word-boundary matrix and native bounds trap.
 The test compiles small Lanius programs through `--stdlib-root`, executes
 the native ELFs, checks their exit status, checks the example's stdout, and
 checks the slice bounds trap. Each source is also suitable for direct CLI
