@@ -1,0 +1,122 @@
+// Executable unsigned ordering over the vector's i32 storage cells.
+module app::main;
+import std::vec_u32;
+import core::u32_cells;
+
+fn main() -> i32 {
+    let probe: [i32; 4] = [-1, 0, -2147483648, 1];
+    if (core::u32_cells::sort(probe, 4) != 4 ||
+        probe[0] != 0 || probe[1] != 1 ||
+        probe[2] != -2147483648 || probe[3] != -1) { return 70; }
+    if (core::u32_cells::lower_bound(probe, 4, -2147483648) != 2 ||
+        core::u32_cells::upper_bound(probe, 4, -2147483648) != 3) { return 71; }
+    if (core::u32_cells::reverse_in_place(probe, 4) != 2 ||
+        probe[0] != -1 || probe[1] != -2147483648 ||
+        probe[2] != 1 || probe[3] != 0) { return 72; }
+    let only: [i32; 1] = [-1];
+    if (core::u32_cells::sort(only, 1) != 1 ||
+        core::u32_cells::reverse_in_place(only, 1) != 0 ||
+        core::u32_cells::lower_bound(only, 1, -1) != 0 ||
+        core::u32_cells::upper_bound(only, 1, -1) != 1) { return 73; }
+
+    // Every five-cell sequence over 0, 2^31, and u32::MAX. Expected groups
+    // come from input counts, independently of the heap implementation.
+    let choices: [i32; 3] = [0, -2147483648, -1];
+    let code: i32 = 0;
+    while (code < 243) {
+        let cells: [i32; 5] = [0, 0, 0, 0, 0];
+        let encoded: i32 = code;
+        let count_zero: i32 = 0;
+        let count_high: i32 = 0;
+        let index: i32 = 0;
+        while (index < 5) {
+            let digit: i32 = encoded % 3;
+            encoded = encoded / 3;
+            cells[index] = choices[digit];
+            if (digit == 0) { count_zero += 1; }
+            if (digit == 1) { count_high += 1; }
+            index += 1;
+        }
+        if (core::u32_cells::sort(cells, 5) != 5) { return 74; }
+        index = 0;
+        while (index < 5) {
+            let expected: i32 = 0;
+            if (index >= count_zero) { expected = -2147483648; }
+            if (index >= count_zero + count_high) { expected = -1; }
+            if (cells[index] != expected) { return 75; }
+            index += 1;
+        }
+        if (core::u32_cells::lower_bound(cells, 5, -2147483648) != count_zero ||
+            core::u32_cells::upper_bound(cells, 5, -2147483648) != count_zero + count_high) { return 76; }
+        code += 1;
+    }
+
+    let empty: std::vec_u32::VecU32 = std::vec_u32::new();
+    if (std::vec_u32::sort_in_place(empty) != 0 ||
+        std::vec_u32::reverse_in_place(empty) != 0 ||
+        std::vec_u32::lower_bound(empty, 1) != 0 ||
+        std::vec_u32::upper_bound(empty, 1) != 0 ||
+        std::vec_u32::binary_search_first_or(empty, 1, -9) != -9 ||
+        std::vec_u32::binary_search_last_or(empty, 1, -7) != -7) { return 1; }
+    std::vec_u32::destroy(empty);
+
+    let single: std::vec_u32::VecU32 = std::vec_u32::try_with_capacity(2);
+    single = std::vec_u32::try_push(single, 2147483648);
+    if (std::vec_u32::len(single) != 1 ||
+        std::vec_u32::sort_in_place(single) != 1 ||
+        std::vec_u32::reverse_in_place(single) != 0 ||
+        std::vec_u32::lower_bound(single, 2147483648) != 0 ||
+        std::vec_u32::upper_bound(single, 2147483648) != 1 ||
+        std::vec_u32::binary_search_first_or(single, 2147483648, -1) != 0 ||
+        std::vec_u32::binary_search_last_or(single, 4294967295, -1) != -1 ||
+        std::vec_u32::capacity(single) != 2) { return 2; }
+    single = std::vec_u32::clear(single);
+    if (std::vec_u32::sort_in_place(single) != 0 ||
+        std::vec_u32::upper_bound(single, 2147483648) != 0 ||
+        std::vec_u32::capacity(single) != 2) { return 3; }
+    std::vec_u32::destroy(single);
+
+    let zero: u32 = 0;
+    let one: u32 = 1;
+    let two: u32 = 2;
+    let maximum: u32 = 4294967295;
+    let high_bit: u32 = 2147483648;
+    let values: [u32; 8] = [maximum, two, high_bit, zero, high_bit, one, maximum, two];
+    let owned: std::vec_u32::VecU32 = std::vec_u32::new();
+    owned = std::vec_u32::try_extend_from_slice(owned, values, 8);
+    if (std::vec_u32::len(owned) != 8 || std::vec_u32::capacity(owned) != 8) { return 4; }
+    if (std::vec_u32::sort_in_place(owned) != 8) { return 50; }
+    if (std::vec_u32::get_or(owned, 0, 99) != 0) { return 51; }
+    if (std::vec_u32::get_or(owned, 1, 99) != 1) { return 52; }
+    if (std::vec_u32::get_or(owned, 2, 99) != 2) { return 53; }
+    if (std::vec_u32::get_or(owned, 3, 99) != 2) { return 54; }
+    if (std::vec_u32::get_or(owned, 4, 99) != 2147483648) { return 55; }
+    if (std::vec_u32::get_or(owned, 5, 99) != 2147483648) { return 56; }
+    if (std::vec_u32::get_or(owned, 6, 99) != 4294967295) { return 57; }
+    if (std::vec_u32::get_or(owned, 7, 99) != 4294967295) { return 58; }
+    if (std::vec_u32::lower_bound(owned, 0) != 0 ||
+        std::vec_u32::upper_bound(owned, 0) != 1 ||
+        std::vec_u32::lower_bound(owned, 2) != 2 ||
+        std::vec_u32::upper_bound(owned, 2) != 4 ||
+        std::vec_u32::lower_bound(owned, 3) != 4 ||
+        std::vec_u32::lower_bound(owned, 2147483648) != 4 ||
+        std::vec_u32::upper_bound(owned, 2147483648) != 6 ||
+        std::vec_u32::lower_bound(owned, 4294967295) != 6 ||
+        std::vec_u32::upper_bound(owned, 4294967295) != 8) { return 6; }
+    if (std::vec_u32::binary_search_first_or(owned, 2147483648, -1) != 4 ||
+        std::vec_u32::binary_search_last_or(owned, 2147483648, -1) != 5 ||
+        std::vec_u32::binary_search_first_or(owned, 4294967295, -1) != 6 ||
+        std::vec_u32::binary_search_last_or(owned, 4294967295, -1) != 7 ||
+        std::vec_u32::binary_search_first_or(owned, 3, -12) != -12 ||
+        std::vec_u32::binary_search_last_or(owned, 2147483647, -13) != -13) { return 7; }
+    if (std::vec_u32::reverse_in_place(owned) != 4 ||
+        std::vec_u32::get_or(owned, 0, 99) != 4294967295 ||
+        std::vec_u32::get_or(owned, 1, 99) != 4294967295 ||
+        std::vec_u32::get_or(owned, 6, 99) != 1 ||
+        std::vec_u32::get_or(owned, 7, 99) != 0) { return 8; }
+    if (std::vec_u32::sort_in_place(owned) != 8 ||
+        std::vec_u32::binary_search_last_or(owned, 2, -1) != 3 ||
+        std::vec_u32::capacity(owned) != 8) { return 9; }
+    std::vec_u32::destroy(owned);
+    return 0;
+}

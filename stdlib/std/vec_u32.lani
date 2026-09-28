@@ -8,6 +8,7 @@
 module std::vec_u32;
 import alloc::allocator;
 import core::mem;
+import core::u32_cells;
 
 pub struct VecU32 {
     storage: ptr,
@@ -213,6 +214,62 @@ pub fn try_set(value: VecU32, index: i32, item: u32) -> bool {
     let raw_item: i32 = item as i32;
     elements[index] = raw_item;
     return true;
+}
+
+// The backing allocation contains i32 cells that preserve u32 bit patterns.
+// core::u32_cells applies unsigned comparisons to those stored words.
+pub fn sort_in_place(value: VecU32) -> i32 {
+    if (value.length <= 1) {
+        return value.length;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    return core::u32_cells::sort(cells, value.length);
+}
+
+// Reverse initialized elements and return the number of swaps performed.
+pub fn reverse_in_place(value: VecU32) -> i32 {
+    if (value.length <= 1) {
+        return 0;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    return core::u32_cells::reverse_in_place(cells, value.length);
+}
+
+// Search requires nondecreasing unsigned order. The bounds return an index
+// from zero through len; empty vectors return zero without reading storage.
+pub fn lower_bound(value: VecU32, needle: u32) -> i32 {
+    if (value.length == 0) {
+        return 0;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    let needle_bits: i32 = needle;
+    return core::u32_cells::lower_bound(cells, value.length, needle_bits);
+}
+
+pub fn upper_bound(value: VecU32, needle: u32) -> i32 {
+    if (value.length == 0) {
+        return 0;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    let needle_bits: i32 = needle;
+    return core::u32_cells::upper_bound(cells, value.length, needle_bits);
+}
+
+// Return first or last matching index, or fallback when the needle is absent.
+pub fn binary_search_first_or(value: VecU32, needle: u32, fallback: i32) -> i32 {
+    let index: i32 = lower_bound(value, needle);
+    if (index < value.length && get_or(value, index, 0) == needle) {
+        return index;
+    }
+    return fallback;
+}
+
+pub fn binary_search_last_or(value: VecU32, needle: u32, fallback: i32) -> i32 {
+    let after: i32 = upper_bound(value, needle);
+    if (after > 0 && get_or(value, after - 1, 0) == needle) {
+        return after - 1;
+    }
+    return fallback;
 }
 
 // On an empty vector, returns it unchanged. Read the last element with get_or
