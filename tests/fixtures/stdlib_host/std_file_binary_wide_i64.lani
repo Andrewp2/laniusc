@@ -1,0 +1,24 @@
+module app::main;
+import core::wide_i64;
+import std::file_binary_wide_i64;
+fn main() -> i32 {
+    let zero: core::wide_i64::WideI64 = core::wide_i64::zero();
+    let negative_thirteen: core::wide_i64::WideI64 = core::wide_i64::from_i32(-13);
+    let negative_boundary: core::wide_i64::WideI64 = core::wide_i64::wrapping_neg(core::wide_i64::from_words(1, 0));
+    let maximum: core::wide_i64::WideI64 = core::wide_i64::max_value();
+    let minimum: core::wide_i64::WideI64 = core::wide_i64::min_value();
+    let fallback: core::wide_i64::WideI64 = core::wide_i64::from_i32(4078);
+    if (!std::file_binary_wide_i64::write("zero_out.txt", zero) || !std::file_binary_wide_i64::write("negative_out.txt", negative_thirteen) || !std::file_binary_wide_i64::write("boundary_out.txt", negative_boundary) || !std::file_binary_wide_i64::write("max_out.txt", maximum) || !std::file_binary_wide_i64::write("min_out.txt", minimum)) {
+        return 1;
+    }
+    if (std::file_binary_wide_i64::write("missing/child.txt", zero) || std::file_binary_wide_i64::write("/dev/full", negative_thirteen)) {
+        return 2;
+    }
+    if (!core::wide_i64::eq(std::file_binary_wide_i64::read_or("zero.txt", 1, fallback), zero) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("negative.txt", 7, fallback), negative_thirteen) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("boundary.txt", 36, fallback), negative_boundary) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("max.txt", 63, fallback), maximum) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("min.txt", 67, fallback), minimum) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("space.txt", 20, fallback), core::wide_i64::from_i32(-165)) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("plus.txt", 7, fallback), core::wide_i64::from_i32(13)) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("negative_zero.txt", 2, fallback), zero) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("exact80.txt", 80, fallback), minimum)) {
+        return 3;
+    }
+    if (!core::wide_i64::eq(std::file_binary_wide_i64::read_or("excess81.txt", 80, fallback), fallback) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("positive_overflow.txt", 80, fallback), fallback) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("negative_overflow.txt", 80, fallback), fallback) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("prefix.txt", 80, fallback), fallback) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("sign.txt", 80, fallback), fallback) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("bad.txt", 80, fallback), fallback) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("empty.txt", 80, fallback), fallback) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("missing.txt", 80, fallback), fallback) || !core::wide_i64::eq(std::file_binary_wide_i64::read_or("zero.txt", 0, fallback), fallback)) {
+        return 4;
+    }
+    return 0;
+}
