@@ -110,17 +110,42 @@ fn imported_generic_free_arguments_reject_unrelated_nominal_type() {
 }
 
 #[test]
-fn imported_generic_free_direct_arguments_have_a_minimal_reproduction() {
+fn imported_generic_free_direct_arguments_execute_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry =
         root.join("tests/fixtures/stdlib_foundation/repro_vec_generic_free_direct_argument.lani");
     let stdlib_root = root.join("stdlib");
-    let result =
+    let bytes =
         common::run_gpu_codegen_with_timeout("direct imported generic arguments", move || {
             pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
-        });
-    let error =
-        result.expect_err("nested imported generic arguments still need call-result projection");
+        })
+        .expect("compile direct imported generic arguments");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "direct imported generic arguments",
+            "direct_imported_generic_arguments",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "unexpected stdout: {output:?}");
+        assert!(output.stderr.is_empty(), "unexpected stderr: {output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_generic_free_direct_arguments_reject_unrelated_type() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root
+        .join("tests/fixtures/stdlib_foundation/repro_vec_generic_free_direct_wrong_argument.lani");
+    let stdlib_root = root.join("stdlib");
+    let result = common::run_gpu_codegen_with_timeout("wrong direct generic argument", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    });
+    let error = result.expect_err("OptionI32 must not match Vec<T>");
     assert!(error.to_string().contains("LNC0006"), "{error}");
 }
 

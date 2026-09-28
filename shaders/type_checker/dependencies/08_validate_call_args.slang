@@ -41,6 +41,11 @@ StructuredBuffer<uint> external_type_unit_id;
 StructuredBuffer<uint> external_type_local_index;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_arg_count;
+StructuredBuffer<uint> type_instance_arg_start;
+StructuredBuffer<uint> type_instance_arg_ref_tag;
+StructuredBuffer<uint> type_instance_arg_row_start;
+StructuredBuffer<uint> type_instance_arg_row_count_out;
+StructuredBuffer<uint> type_instance_arg_row_ref_tag;
 StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
 StructuredBuffer<uint> canonical_type_roots;
@@ -66,6 +71,7 @@ static const uint INTERFACE_TYPE_DECLARATION = 3u;
 static const uint INTERFACE_TYPE_ARRAY = 4u;
 static const uint INTERFACE_TYPE_SLICE = 5u;
 static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
@@ -94,6 +100,7 @@ static const uint HIR_UNARY_EXPR = 17u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
+static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
 
 uint active_hir_count()
 {
@@ -154,6 +161,20 @@ uint scalar_type_for_argument(uint node, uint token)
             return HIR_SEM_TY_BOOL;
     }
     return token < gParams.visible_capacity ? visible_type[token] : HIR_SEM_TY_UNKNOWN;
+}
+
+bool single_scalar_instance_argument(uint instance)
+{
+    if (instance >= gParams.visible_capacity ||
+        type_instance_arg_count[instance] != 1u)
+        return false;
+    uint row_start = type_instance_arg_row_start[instance];
+    if (row_start != INVALID && row_start < type_instance_arg_row_count_out[0u])
+        return type_instance_arg_row_ref_tag[row_start] == TYPE_REF_SCALAR;
+    uint fixed_start = type_instance_arg_start[instance];
+    return fixed_start != INVALID &&
+        fixed_start / TYPE_INSTANCE_ARG_REF_STRIDE < gParams.visible_capacity &&
+        type_instance_arg_ref_tag[fixed_start] == TYPE_REF_SCALAR;
 }
 
 // Dependency calls use the same implicit scalar conversions as local calls.
@@ -320,16 +341,42 @@ void main(uint3 dtid: SV_DispatchThreadID)
             {
                 uint expected_subtree_count = canonical_subtree_count(expected_type_i);
                 uint actual_subtree_count = local_type_subtree_count(actual_payload);
-                matches = expected_subtree_count != INVALID &&
-                          expected_subtree_count == actual_subtree_count;
-                dependency_call_compare_scan_input[arg_node] = matches
-                    ? expected_subtree_count
-                    : 0u;
-                dependency_call_compare_expected_type[arg_node] = expected_type_i;
-                dependency_call_compare_actual_instance[arg_node] = actual_payload;
-                dependency_call_compare_callee[arg_node] = callee;
-                dependency_call_compare_error_token[arg_node] =
-                    arg_token < gParams.visible_capacity ? arg_token : callee;
+                if (expected_subtree_count != INVALID &&
+                    expected_subtree_count == actual_subtree_count)
+                {
+                    dependency_call_compare_scan_input[arg_node] = expected_subtree_count;
+                    dependency_call_compare_expected_type[arg_node] = expected_type_i;
+                    dependency_call_compare_actual_instance[arg_node] = actual_payload;
+                    dependency_call_compare_callee[arg_node] = callee;
+                    dependency_call_compare_error_token[arg_node] =
+                        arg_token < gParams.visible_capacity ? arg_token : callee;
+                }
+                else
+                {
+                    uint child_edge = dependency_type_word(expected_base + 3u);
+                    uint type_count = dependency_count(4u);
+                    uint child_i = child_edge < dependency_count(5u)
+                        ? dependency_type_edge_word(child_edge) : INVALID;
+                    uint child = child_i < type_count
+                        ? canonical_type_roots[child_i] : INVALID;
+                    uint return_i = dependency_type_edge_word(
+                        first_edge + edge_count - 1u);
+                    uint return_root = return_i < type_count
+                        ? canonical_type_roots[return_i] : INVALID;
+                    // The type instance on a qualified constructor call is
+                    // owned by a value path, so it has no annotation subtree.
+                    // One scalar generic parameter and a scalar result have
+                    // no cross-argument or result claim to compare.
+                    matches = compact_hir_core[expr_node].kind == HIR_CALL_EXPR &&
+                        edge_count == 2u && expected_count == 1u &&
+                        child < type_count &&
+                        dependency_type_word(child * TYPE_WORDS) ==
+                            INTERFACE_TYPE_GENERIC_PARAMETER &&
+                        return_root < type_count &&
+                        dependency_type_word(return_root * TYPE_WORDS) ==
+                            INTERFACE_TYPE_SCALAR &&
+                        single_scalar_instance_argument(actual_payload);
+                }
             }
         }
         else if ((expected_kind == INTERFACE_TYPE_ARRAY ||

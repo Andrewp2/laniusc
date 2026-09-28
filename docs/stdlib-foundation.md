@@ -111,7 +111,7 @@ limited to native x86_64 output from this worktree.
 | `test::assert` all 8 public helpers | Executable on x86_64 Linux | `tests/stdlib_assert_execution.rs` runs all passing conditions and separately checks that every false condition terminates with SIGILL. The helpers use no allocation or host calls. See dependency 35 for a separate compiler issue with explicit void returns. |
 | Generic `std::vec::Vec<T>` associated `new`, `len`, and `is_empty` | Executable on x86_64 for imported `i32` and `bool` empty values | `tests/stdlib_generic_vec_flat_execution.rs` compiles the real `std::vec` through `--stdlib-root` and executes both instantiations, including their methods. There is no generic storage or mutation. The former `push` silently discarded its argument and was removed. See dependencies 4 and 54. |
 | Generic `std::vec::new` | Executable on x86_64 for imported `i32` and `bool` empty values | An annotated `Vec<T>` supplies the result type, and the imported constructor runs through `--stdlib-root`. See `tests/stdlib_generic_vec_flat_execution.rs`. |
-| Generic `std::vec::{len,is_empty}` | Executable on x86_64 for imported `i32` and `bool` empty values bound to local names | `repro_vec_generic_free_new.lani` executes both through `--stdlib-root` with both instantiations, and the isolated argument fixture checks the associated-constructor input. Direct nested constructor arguments still fail `LNC0006`. Generic `Vec<T>` has no storage or mutation; concrete vectors use the allocator service. See dependencies 4 and 54. |
+| Generic `std::vec::{len,is_empty}` | Executable on x86_64 for imported `i32` and `bool` empty values | `repro_vec_generic_free_new.lani` executes both through `--stdlib-root` with both instantiations. `repro_vec_generic_free_direct_argument.lani` also executes direct nested constructor arguments. Generic `Vec<T>` has no storage or mutation; concrete vectors use the allocator service. See dependencies 4 and 54. |
 
 For all seven concrete vector types, the allocation-failure suite executes a
 successful clone and then injects failure into its allocation. It checks that
@@ -1732,10 +1732,12 @@ also fixes the imported struct-return relocation path described below.
     result. The call-argument claim pipeline now reads generic children from
     imported parameter types, so `repro_vec_generic_free_len_only.lani` and
     the complete `repro_vec_generic_free_new.lani` also execute. All six
-    operations execute when supplied in one flat source pack. Passing a nested
-    `Vec<i32>::new()` call directly to imported free `len` still reports
-    `LNC0006`; `repro_vec_generic_free_direct_argument.lani` isolates that
-    call-result projection dependency.
+    operations execute when supplied in one flat source pack. The direct
+    `Vec<i32>::new()` argument in `repro_vec_generic_free_direct_argument.lani`
+    also executes: the dependency-call validator reads its scalar generic
+    argument from the value-path type instance when no annotation subtree
+    exists. This path is limited to a single generic parameter and a scalar
+    return.
     The semantic-interface exporter previously omitted both public methods
     on plain `Thing` because it looked for a generic instance binding on the
     receiver. It now resolves plain receivers through the checked module type
