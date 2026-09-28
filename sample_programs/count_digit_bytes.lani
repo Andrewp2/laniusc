@@ -1,0 +1,29 @@
+// Print the number of ASCII digit bytes, then all other bytes, from stdin.
+module app::main;
+import core::byte;
+import std::io;
+import std::io_byte;
+import std::io_decimal;
+import std::map_bool_u32;
+
+fn main() -> i32 {
+    let counts: std::map_bool_u32::MapBoolU32 = std::map_bool_u32::new();
+    let maximum: u32 = 4294967295;
+    while (true) {
+        let code: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+        if (code == -1) { break; }
+        if (code == -2) { return 2; }
+        let item: u8 = code as u8;
+        let digit: bool = core::byte::is_ascii_digit(item);
+        let old: u32 = std::map_bool_u32::get_or(counts, digit, 0);
+        if (old == maximum) { return 3; }
+        counts = std::map_bool_u32::put(counts, digit, old + 1);
+    }
+    let digits: u32 = std::map_bool_u32::get_or(counts, true, 0);
+    let others: u32 = std::map_bool_u32::get_or(counts, false, 0);
+    if (std::io_decimal::write_u32(1, digits) < 0 ||
+        std::io::write_byte(1, 10) != 1 ||
+        std::io_decimal::write_u32(1, others) < 0 ||
+        std::io::write_byte(1, 10) != 1) { return 4; }
+    return 0;
+}
