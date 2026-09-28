@@ -1,0 +1,108 @@
+module app::main;
+import std::set_i8;
+
+fn main() -> i32 {
+    let zero: u32 = 0;
+    let left: [u32; 8] = [zero, zero, zero, zero, zero, zero, zero, zero];
+    let right: [u32; 8] = [zero, zero, zero, zero, zero, zero, zero, zero];
+    let output: [u32; 8] = [zero, zero, zero, zero, zero, zero, zero, zero];
+    std::set_i8::clear(left);
+    std::set_i8::clear(right);
+    if (!std::set_i8::is_empty(left) || std::set_i8::is_full(left) ||
+        std::set_i8::len(left) != 0) { return 1; }
+
+    if (!std::set_i8::insert(left, -128) ||
+        !std::set_i8::insert(left, -1) ||
+        !std::set_i8::insert(left, 0) ||
+        !std::set_i8::insert(left, 127) ||
+        std::set_i8::insert(left, -1)) { return 2; }
+    if (std::set_i8::len(left) != 4 ||
+        !std::set_i8::contains(left, -128) ||
+        !std::set_i8::contains(left, 127) ||
+        std::set_i8::contains(left, 7) ||
+        std::set_i8::at_or(left, 0, 5) != -128 ||
+        std::set_i8::at_or(left, 1, 5) != -1 ||
+        std::set_i8::at_or(left, 2, 5) != 0 ||
+        std::set_i8::at_or(left, 3, 5) != 127 ||
+        std::set_i8::at_or(left, -1, 5) != 5 ||
+        std::set_i8::at_or(left, 4, 5) != 5) { return 3; }
+    if (!std::set_i8::remove(left, -1) ||
+        std::set_i8::remove(left, -1) ||
+        std::set_i8::contains(left, -1) ||
+        std::set_i8::len(left) != 3) { return 4; }
+
+    std::set_i8::fill(right, true);
+    if (!std::set_i8::is_full(right) || std::set_i8::is_empty(right) ||
+        std::set_i8::len(right) != 256 ||
+        !std::set_i8::is_subset(left, right) ||
+        std::set_i8::is_disjoint(left, right)) { return 5; }
+    let ordinal: i32 = 0;
+    while (ordinal < 256) {
+        let value: i8 = ordinal - 128;
+        if (!std::set_i8::contains(right, value) ||
+            std::set_i8::at_or(right, ordinal, 0) != value) { return 6; }
+        ordinal += 1;
+    }
+
+    std::set_i8::fill(right, false);
+    if (!std::set_i8::is_empty(right) ||
+        !std::set_i8::is_disjoint(left, right)) { return 7; }
+    std::set_i8::insert(right, -128);
+    std::set_i8::insert(right, 7);
+    if (std::set_i8::is_subset(right, left) ||
+        std::set_i8::is_disjoint(right, left)) { return 8; }
+
+    std::set_i8::union_into(output, left, right);
+    if (std::set_i8::len(output) != 4 ||
+        !std::set_i8::contains(output, -128) ||
+        !std::set_i8::contains(output, 0) ||
+        !std::set_i8::contains(output, 7) ||
+        !std::set_i8::contains(output, 127)) { return 9; }
+    std::set_i8::intersection_into(output, left, right);
+    if (std::set_i8::len(output) != 1 ||
+        !std::set_i8::contains(output, -128)) { return 10; }
+    std::set_i8::difference_into(output, left, right);
+    if (std::set_i8::len(output) != 2 ||
+        !std::set_i8::contains(output, 0) ||
+        !std::set_i8::contains(output, 127)) { return 11; }
+    std::set_i8::symmetric_difference_into(output, left, right);
+    if (std::set_i8::len(output) != 3 ||
+        !std::set_i8::contains(output, 0) ||
+        !std::set_i8::contains(output, 7) ||
+        !std::set_i8::contains(output, 127)) { return 12; }
+
+    std::set_i8::union_into(left, left, right);
+    if (std::set_i8::len(left) != 4 ||
+        !std::set_i8::contains(left, 7)) { return 13; }
+    std::set_i8::clear(left);
+    if (!std::set_i8::is_empty(left) || std::set_i8::len(left) != 0) {
+        return 14;
+    }
+
+    ordinal = 0;
+    while (ordinal < 256) {
+        if (ordinal % 7 == 0) {
+            let value: i8 = ordinal - 128;
+            std::set_i8::insert(left, value);
+        }
+        ordinal += 1;
+    }
+    if (std::set_i8::len(left) != 37) { return 15; }
+    ordinal = 0;
+    while (ordinal < 256) {
+        let value: i8 = ordinal - 128;
+        if (std::set_i8::contains(left, value) != (ordinal % 7 == 0)) {
+            return 16;
+        }
+        ordinal += 1;
+    }
+    let selected: i32 = 0;
+    while (selected < 37) {
+        let expected: i8 = selected * 7 - 128;
+        if (std::set_i8::at_or(left, selected, 1) != expected) {
+            return 17;
+        }
+        selected += 1;
+    }
+    return 0;
+}
