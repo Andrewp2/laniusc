@@ -108,6 +108,7 @@ limited to native x86_64 output from this worktree.
 | `std::io_binary_wide_u64` both public two-word helpers | Executable x86_64 Linux host wrappers | The native suite calls both functions and checks shortest zero and full-width binary writes, byte counts, invalid handles, full-width stdin values, optional prefixes, surrounding whitespace, malformed and overflowing input, exact and exceeded byte limits, and zero-limit behavior. With Linux `strace`, it checks first and later short writes, write errors, and injected read failures. |
 | `std::file_hex` all 9 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_hex_execution.rs` checks lowercase and uppercase writes, bounded hexadecimal file reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed and overflowing input, missing and overlong files, and injected read/write/close errors. |
 | `std::file_binary` all 6 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_binary_execution.rs` checks shortest binary file writes and bounded reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed, missing, overlong, and overflowing input, plus injected read/write/close errors. |
+| `std::file_binary_wide_u64` both public two-word helpers | Executable x86_64 Linux host wrappers with literal paths | The native fixture calls both functions and checks shortest zero, word-boundary, high-bit, and maximum writes; full-width bounded reads, optional prefix and surrounding whitespace, missing and malformed files, exact and exceeded byte limits, overflow, invalid output paths, and `/dev/full`. With Linux `strace`, it checks short and failing writes plus read and close failures. |
 | `std::file` all 25 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, multi-chunk binary copies between files and standard streams, bounded decimal reads and writes across 8-, 16-, 32-, and two-word 64-bit integers, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded and inclusive unsigned and signed outputs, forced draws and rejection, full-range failure fallbacks, and secure i32 slice shuffling with preserved contents, a forced swap, and injected failure. The suite also runs a raw fill after a directory read to guard the runtime flags fix, and confirms that the raw scalar traps on host failure and short reads. |
 | `std::path` all 17 constants and all 37 public functions | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, path headers, full caller-backed component bytes, and last-component, extension, and stem byte offsets. The final-component helpers treat slash and backslash as separators, ignore trailing separators, accept non-UTF-8 bytes, and return the supplied fallback for empty or separator-only paths, negative lengths, or embedded NUL. A leading dot alone and a trailing dot do not create an extension. The two-byte header classifiers check only the supplied header when `length > 2`; use `path_component_is_normal_relative_bytes` or `path_component_matches_windows_relative_byte_rules` to inspect every byte. Negative and empty lengths return false in the classifiers; an overstated positive length traps on native indexing if scanning reaches beyond the backing slice. The Windows byte classifier rejects reserved bytes but does not reject reserved device names or trailing spaces/dots. Redundant no-argument functions that failed natively were removed in favor of the tested constants. Allocation and host normalization are unavailable. |
@@ -1170,6 +1171,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   least one digit. Missing, malformed, overlong, or overflowing input and
   read or close errors return the caller's fallback, which can also be a
   valid value. Narrow readers reject values above their type maximum.
+- `std::file_binary_wide_u64` applies the binary file rules to two-word
+  `WideU64` values. `write` returns false on open, write, or close failure,
+  possibly leaving a truncated file or digit prefix. `read_or` accepts at
+  most the caller's byte limit, including whitespace and an optional prefix,
+  and returns fallback for missing files, malformed or overflowing input,
+  excess bytes, and read or close errors. A zero limit reads nothing; a valid
+  value may equal fallback.
 - `std::random_checked::fill_secure_exact` fills the requested caller-buffer
   length, retrying short reads. Zero length succeeds without touching the
   pointer. Null storage for a nonzero length, a length above `i32::MAX`, a
@@ -1440,6 +1448,8 @@ Run `cargo test --test stdlib_file_hex_execution` for hexadecimal file input
 and output; fault cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_file_binary_execution` for binary file input
 and output; fault cases run when Linux `strace` is available.
+Run `cargo test --test stdlib_file_binary_wide_u64_execution` for full-width
+binary file I/O, bounds, and injected host failures.
 Run `cargo test --test stdlib_path_execution` for the lexical path predicates.
 Run `cargo test --test stdlib_utf8_bytes_execution` for direct `[u8]` UTF-8
 validation, owned text append, the text-report sample, native bounds trapping,

@@ -1,0 +1,26 @@
+module app::main;
+import core::wide_u64;
+import std::file_binary_wide_u64;
+fn matches(value: core::wide_u64::WideU64, high: u32, low: u32) -> bool {
+    return core::wide_u64::high_word(value) == high && core::wide_u64::low_word(value) == low;
+}
+fn main() -> i32 {
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let boundary: core::wide_u64::WideU64 = core::wide_u64::from_words(1, 0);
+    let pattern: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483649, 5);
+    let max: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    let fallback: core::wide_u64::WideU64 = core::wide_u64::from_u32(7);
+    if (!std::file_binary_wide_u64::write("zero_out.txt", zero) || !std::file_binary_wide_u64::write("boundary_out.txt", boundary) || !std::file_binary_wide_u64::write("pattern_out.txt", pattern) || !std::file_binary_wide_u64::write("max_out.txt", max)) {
+        return 1;
+    }
+    if (std::file_binary_wide_u64::write("missing/child.txt", zero) || std::file_binary_wide_u64::write("/dev/full", pattern)) {
+        return 2;
+    }
+    if (!matches(std::file_binary_wide_u64::read_or("zero.txt", 1, fallback), 0, 0) || !matches(std::file_binary_wide_u64::read_or("boundary.txt", 33, fallback), 1, 0) || !matches(std::file_binary_wide_u64::read_or("pattern.txt", 66, fallback), 2147483649, 5) || !matches(std::file_binary_wide_u64::read_or("max.txt", 64, fallback), 4294967295, 4294967295) || !matches(std::file_binary_wide_u64::read_or("space.txt", 20, fallback), 0, 165) || !matches(std::file_binary_wide_u64::read_or("exact80.txt", 80, fallback), 4294967295, 4294967295)) {
+        return 3;
+    }
+    if (!core::wide_u64::eq(std::file_binary_wide_u64::read_or("excess81.txt", 80, fallback), fallback) || !core::wide_u64::eq(std::file_binary_wide_u64::read_or("overflow.txt", 80, fallback), fallback) || !core::wide_u64::eq(std::file_binary_wide_u64::read_or("prefix.txt", 80, fallback), fallback) || !core::wide_u64::eq(std::file_binary_wide_u64::read_or("bad.txt", 80, fallback), fallback) || !core::wide_u64::eq(std::file_binary_wide_u64::read_or("empty.txt", 80, fallback), fallback) || !core::wide_u64::eq(std::file_binary_wide_u64::read_or("missing.txt", 80, fallback), fallback) || !core::wide_u64::eq(std::file_binary_wide_u64::read_or("zero.txt", 0, fallback), fallback)) {
+        return 4;
+    }
+    return 0;
+}
