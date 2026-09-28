@@ -1,0 +1,10 @@
+module app::main;
+import core::wide_u64;
+import std::file_hex_wide_u64;
+fn main() -> i32 {
+    let value: core::wide_u64::WideU64 = core::wide_u64::from_u32(43981);
+    if (!std::file_hex_wide_u64::write_upper("out.txt", value)) {
+        return 0;
+    }
+    return 1;
+}
