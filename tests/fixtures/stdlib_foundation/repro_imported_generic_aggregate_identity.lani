@@ -1,0 +1,12 @@
+module app::main;
+import core::mem;
+
+pub struct Pair { first: i32, second: i32 }
+
+fn main() -> i32 {
+    let original: Pair = Pair { first: 3, second: 7 };
+    let copied: Pair = core::mem::identity(original);
+    if (copied.first != 3) { return 1; }
+    if (copied.second != 7) { return 2; }
+    return 0;
+}

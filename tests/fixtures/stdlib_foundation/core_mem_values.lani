@@ -16,5 +16,30 @@ fn main() -> i32 {
     if (!core::mem::identity(true) || core::mem::identity(false)) {
         return 5;
     }
+    let high: u32 = 2147483648;
+    let one: u32 = 1;
+    if (core::mem::identity(high) != high ||
+        core::mem::first(high, one) != high ||
+        core::mem::second(one, high) != high ||
+        core::mem::select(true, high, one) != high ||
+        core::mem::select(false, one, high) != high) {
+        return 6;
+    }
+    let face: char = '😀';
+    if (core::mem::identity(face) != face ||
+        core::mem::first(face, 'a') != face ||
+        core::mem::second('a', face) != face ||
+        core::mem::select(true, face, 'a') != face ||
+        core::mem::select(false, 'a', face) != face) {
+        return 7;
+    }
+    let fraction: f32 = 1.25;
+    if (core::mem::identity(fraction) != fraction ||
+        core::mem::first(fraction, 2.5) != fraction ||
+        core::mem::second(2.5, fraction) != fraction ||
+        core::mem::select(true, fraction, 2.5) != fraction ||
+        core::mem::select(false, 2.5, fraction) != fraction) {
+        return 8;
+    }
     return 0;
 }
