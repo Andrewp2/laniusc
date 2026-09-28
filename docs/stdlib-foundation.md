@@ -2123,9 +2123,13 @@ also fixes the imported struct-return relocation path described below.
     `repro_cmp_receiver_call.lani` passes GPU `check` for an imported
     `i32::eq` call but native emission still reports `LNC0005`. Imported
     `core::hash::Hash<i32>::hash` also fails GPU `check` with `LNC0027` in
-    `repro_hash_trait_call.lani`. Imported trait-method export and native
-    dependency-call resolution remain before the trait APIs themselves can
-    be claimed executable.
+    `repro_hash_trait_call.lani`. The semantic-interface member count and
+    scatter passes filter for `METHOD_SIGNATURE_INHERENT_IMPL` in
+    `shaders/type_checker/interface/members/00c_method_counts.slang` and
+    `02_scatter_hir.slang`; public trait methods have no corresponding
+    exported member. Imported trait-method export and native dependency-call
+    resolution remain before the trait APIs themselves can be claimed
+    executable.
 32. **Resolved: unordered f32 comparisons.**
     `tests/fixtures/stdlib_foundation/repro_f32_unordered.lani` now exits 2:
     only `nan != nan` is true. Native x86 `UCOMISS` sets parity for unordered
