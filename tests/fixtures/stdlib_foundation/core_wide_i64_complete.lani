@@ -68,5 +68,68 @@ fn main() -> i32 {
         !core::wide_i64::eq(core::wide_i64::remainder_or(minimum, minus_one, high), high)) {
         return 8;
     }
+    let minimum_ascii: [i32; 20] = [
+        45, 57, 50, 50, 51, 51, 55, 50, 48, 51,
+        54, 56, 53, 52, 55, 55, 53, 56, 48, 56];
+    let maximum_ascii: [i32; 19] = [
+        57, 50, 50, 51, 51, 55, 50, 48, 51, 54,
+        56, 53, 52, 55, 55, 53, 56, 48, 55];
+    if (core::wide_i64::decimal_len(zero) != 1 ||
+        core::wide_i64::decimal_len(minus_one) != 2 ||
+        core::wide_i64::decimal_len(minimum) != 20 ||
+        core::wide_i64::decimal_len(maximum) != 19 ||
+        core::wide_i64::decimal_byte_at_or(minimum, 20, 88) != 88 ||
+        core::wide_i64::decimal_byte_at_or(minus_one, 0, 88) != 45 ||
+        core::wide_i64::decimal_byte_at_or(zero, 0, 88) != 48) { return 9; }
+    let index: u32 = 0;
+    while (index < 20) {
+        let byte: u8 = core::wide_i64::decimal_byte_at_or(minimum, index, 0);
+        let code: i32 = byte;
+        let offset: i32 = index;
+        if (code != minimum_ascii[offset]) { return 10; }
+        index += 1;
+    }
+    index = 0;
+    while (index < 19) {
+        let byte: u8 = core::wide_i64::decimal_byte_at_or(maximum, index, 0);
+        let code: i32 = byte;
+        let offset: i32 = index;
+        if (code != maximum_ascii[offset]) { return 11; }
+        index += 1;
+    }
+    let below_minimum: [i32; 20] = [
+        45, 57, 50, 50, 51, 51, 55, 50, 48, 51,
+        54, 56, 53, 52, 55, 55, 53, 56, 48, 57];
+    let above_maximum: [i32; 19] = [
+        57, 50, 50, 51, 51, 55, 50, 48, 51, 54,
+        56, 53, 52, 55, 55, 53, 56, 48, 56];
+    if (!core::wide_i64::can_parse_ascii_decimal(minimum_ascii, 20) ||
+        !core::wide_i64::can_parse_ascii_decimal(maximum_ascii, 19) ||
+        core::wide_i64::can_parse_ascii_decimal(below_minimum, 20) ||
+        core::wide_i64::can_parse_ascii_decimal(above_maximum, 19) ||
+        !core::wide_i64::eq(
+            core::wide_i64::parse_ascii_decimal_or(minimum_ascii, 20, zero), minimum) ||
+        !core::wide_i64::eq(
+            core::wide_i64::parse_ascii_decimal_or(maximum_ascii, 19, zero), maximum) ||
+        !core::wide_i64::eq(
+            core::wide_i64::parse_ascii_decimal_or(below_minimum, 20, high), high)) {
+        return 12;
+    }
+    let signed_zeros: [i32; 2] = [45, 48];
+    let plus_forty_two: [i32; 6] = [43, 48, 48, 48, 52, 50];
+    let sign_only: [i32; 1] = [45];
+    let whitespace: [i32; 2] = [32, 49];
+    if (!core::wide_i64::can_parse_ascii_decimal(signed_zeros, 2) ||
+        !core::wide_i64::can_parse_ascii_decimal(plus_forty_two, 6) ||
+        core::wide_i64::can_parse_ascii_decimal(sign_only, 1) ||
+        core::wide_i64::can_parse_ascii_decimal(whitespace, 2) ||
+        core::wide_i64::can_parse_ascii_decimal(plus_forty_two, 0) ||
+        !core::wide_i64::eq(
+            core::wide_i64::parse_ascii_decimal_or(signed_zeros, 2, one), zero) ||
+        !same(core::wide_i64::parse_ascii_decimal_or(plus_forty_two, 6, zero), 0, 42) ||
+        !core::wide_i64::eq(
+            core::wide_i64::parse_ascii_decimal_or(sign_only, 1, high), high)) {
+        return 13;
+    }
     return 0;
 }

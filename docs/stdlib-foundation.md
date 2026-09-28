@@ -15,7 +15,7 @@ limited to native x86_64 output from this worktree.
 | `core::number_i32` constants and all 26 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, wrapping arithmetic, multiplication and power overflow, signed GCD/LCM, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
 | `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
 | `core::wide_u64` all 24 public two-word and decimal functions | Executable on x86_64 | The imported runtime fixture calls every function and checks high-bit construction, ordering, wrapping add/subtract/multiply, bitwise operations, shifts across word boundaries, division and remainder, zero-divisor fallbacks, full-width decimal digits and parsing, malformed input, and overflow. A generated native fixture compares arithmetic and shifts against Rust `u64` across eight operand pairs and four values at eight shift counts. The decimal-double program reads and prints full-width values. The representation is two `u32` words; this does not claim native `u64` correctness. |
-| `core::wide_i64` all 25 public two-word functions | Executable on x86_64 | The imported runtime fixture calls every function and checks sign extension, signed bounds, ordering, wrapping and saturating arithmetic, bitwise operations, arithmetic right shifts, signed quotient and remainder, and zero-divisor and `MIN/-1` fallbacks. A generated native fixture compares arithmetic and shifts against Rust `i64` across eight operand pairs and four values at eight shift counts. It uses `core::wide_u64` internally and does not claim native `i64` correctness. |
+| `core::wide_i64` all 29 public two-word and decimal functions | Executable on x86_64 | The imported runtime fixture calls every function and checks sign extension, signed bounds, ordering, wrapping and saturating arithmetic, bitwise operations, arithmetic right shifts, signed quotient and remainder, zero-divisor and `MIN/-1` fallbacks, and full-width signed decimal parsing and output. A generated native fixture compares arithmetic and shifts against Rust `i64` across eight operand pairs and four values at eight shift counts. A decimal-double program exercises real input and output, including signed extrema and failure cases. It uses `core::wide_u64` internally and does not claim native `i64` correctness. |
 | `core::byte` constants and all 44 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
 | `core::bits` all 42 public `i32`, `u32`, `u16`, and `u8` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across word widths, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. Byte operations run all 256 inputs; halfword operations run boundary values and 256 evenly spaced inputs; signed operations check negative patterns and all 32 one-hot bits. |
 | `core::bitset` all 14 public caller-backed bitset functions | Executable on x86_64 for `[u32]` backing | Runtime fixtures check word counts, bit access and mutation, fill, counts, any/all, first/last set bit, equality, union, and intersection. They cover logical lengths 0 through 65, word boundaries, aliases, invalid lengths and indices, preserved padding and unused words, and a physical backing overclaim that traps. A source scan requires a runtime call for every public function. |
@@ -229,8 +229,17 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   and subtract clamp to the signed minimum or maximum. Division truncates
   toward zero and remainder has the dividend's sign. A zero divisor or
   `MIN / -1` returns the caller's fallback from either division helper.
-  Invalid shift counts return zero. These functions use no allocation or host
-  service and do not depend on native `i64` arithmetic.
+  Invalid shift counts return zero. `decimal_len` includes the minus sign,
+  and `decimal_byte_at_or` emits the shortest signed ASCII representation;
+  invalid indices return the caller fallback. `can_parse_ascii_decimal`
+  accepts an optional leading `+` or `-` followed by at least one ASCII
+  digit from a positive logical length of caller-backed `[i32]` codes. It
+  accepts leading zeros and negative zero, and rejects whitespace, malformed
+  input, and values outside the signed 64-bit range. An overstated physical
+  view can trap when indexed. `parse_ascii_decimal_or` returns the caller
+  fallback for invalid input; call the predicate first when a valid value
+  could equal the fallback. These functions use no allocation or host service
+  and do not depend on native `i64` arithmetic.
 - `core::byte` arithmetic saturates or wraps as its function name says.
   `wrapping_mul` computes multiplication modulo 256; the focused fixture
   compares all 65,536 byte pairs with a widened arithmetic reference.
@@ -1102,6 +1111,12 @@ full-width result. Its x86 test checks zero, a value above `u32::MAX`, the
 high bit, the unsigned maximum, malformed and overflowing input, empty input,
 and an overlong line.
 
+`tests/fixtures/stdlib_foundation/wide_i64_decimal_double.lani` reads one
+bounded signed decimal line, doubles its two-word value modulo 2^64, and
+prints the signed result. Its x86 test checks zero, negative zero, negative
+values, values beyond the 32-bit range, both signed extrema, overflow,
+malformed input, empty input, and an overlong line.
+
 `sample_programs/character_inventory.lani` sorts six Unicode scalar values,
 finds an ASCII letter range, and counts its members. It combines five portable
 modules and prints `3`.
@@ -1188,7 +1203,8 @@ Run `cargo test --test stdlib_wide_u64_execution` for all two-word 64-bit
 operations, full-width decimal parsing and output, the decimal-double program,
 high-bit edge cases, and generated differential arithmetic cases.
 Run `cargo test --test stdlib_wide_i64_execution` for signed two-word 64-bit
-operations, edge cases, and generated differential arithmetic cases.
+operations, full-width signed decimal parsing and output, the decimal-double
+program, edge cases, and generated differential arithmetic cases.
 Run `cargo test --test stdlib_endian_execution` for caller-backed endian
 fields, a packet-header sample, and native bounds trapping.
 Run `cargo test --test stdlib_mem_execution` for all public memory helper

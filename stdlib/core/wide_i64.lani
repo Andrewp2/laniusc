@@ -15,7 +15,7 @@ pub fn from_words(high: u32, low: u32) -> WideI64 {
 pub fn from_i32(value: i32) -> WideI64 {
     let upper: u32 = 0;
     if (value < 0) { upper = 4294967295; }
-    let lower: u32 = value as u32;
+    let lower: u32 = value;
     return from_words(upper, lower);
 }
 
@@ -183,5 +183,97 @@ pub fn remainder_or(dividend: WideI64, divisor: WideI64, fallback: WideI64) -> W
     let result: WideI64 = from_words(
         core::wide_u64::high_word(remainder), core::wide_u64::low_word(remainder));
     if (is_negative(dividend)) { return wrapping_neg(result); }
+    return result;
+}
+
+fn unsigned_magnitude(value: WideI64) -> core::wide_u64::WideU64 {
+    let magnitude: WideI64 = value;
+    if (is_negative(value)) { magnitude = wrapping_neg(value); }
+    return core::wide_u64::from_words(magnitude.high, magnitude.low);
+}
+
+// Shortest signed decimal length. MIN's magnitude is handled as unsigned.
+pub fn decimal_len(value: WideI64) -> u32 {
+    let digits: u32 = core::wide_u64::decimal_len(unsigned_magnitude(value));
+    if (is_negative(value)) { return digits + 1; }
+    return digits;
+}
+
+// Negative values have an ASCII minus at index zero. Invalid indices return
+// fallback unchanged.
+pub fn decimal_byte_at_or(value: WideI64, index: u32, fallback: u8) -> u8 {
+    if (is_negative(value)) {
+        if (index == 0) { return 45; }
+        return core::wide_u64::decimal_byte_at_or(
+            unsigned_magnitude(value), index - 1, fallback);
+    }
+    return core::wide_u64::decimal_byte_at_or(
+        unsigned_magnitude(value), index, fallback);
+}
+
+// Accept exactly len caller-backed [i32] ASCII codes: an optional leading
+// sign and at least one digit. No whitespace. Overflow and malformed input
+// return false; an overstated physical view can trap while indexing.
+pub fn can_parse_ascii_decimal(values: [i32], len: i32) -> bool {
+    if (len <= 0) { return false; }
+    let index: i32 = 0;
+    let negative: bool = false;
+    if (values[0] == 45) {
+        negative = true;
+        index = 1;
+    } else {
+        if (values[0] == 43) { index = 1; }
+    }
+    if (index == len) { return false; }
+    let limit: core::wide_u64::WideU64 =
+        core::wide_u64::from_words(214748364, 3435973836); // 2^63 / 10
+    let maximum_last_digit: u32 = 7;
+    if (negative) { maximum_last_digit = 8; }
+    let current: core::wide_u64::WideU64 = core::wide_u64::zero();
+    while (index < len) {
+        let code: i32 = values[index];
+        if (code < 48 || code > 57) { return false; }
+        let digit_i32: i32 = code - 48;
+        let digit: u32 = digit_i32;
+        let relation: i32 = core::wide_u64::compare(current, limit);
+        if (relation > 0 ||
+            (relation == 0 && digit > maximum_last_digit)) {
+            return false;
+        }
+        current = core::wide_u64::wrapping_add(
+            core::wide_u64::wrapping_mul(current,
+                core::wide_u64::from_u32(10)),
+            core::wide_u64::from_u32(digit));
+        index += 1;
+    }
+    return true;
+}
+
+// On failure return fallback. A valid value may equal fallback; call the
+// predicate first when a separate success result is needed.
+pub fn parse_ascii_decimal_or(values: [i32], len: i32, fallback: WideI64) -> WideI64 {
+    if (!can_parse_ascii_decimal(values, len)) { return fallback; }
+    let index: i32 = 0;
+    let negative: bool = false;
+    if (values[0] == 45) {
+        negative = true;
+        index = 1;
+    } else {
+        if (values[0] == 43) { index = 1; }
+    }
+    let magnitude: core::wide_u64::WideU64 = core::wide_u64::zero();
+    while (index < len) {
+        let digit_i32: i32 = values[index] - 48;
+        let digit: u32 = digit_i32;
+        magnitude = core::wide_u64::wrapping_add(
+            core::wide_u64::wrapping_mul(magnitude,
+                core::wide_u64::from_u32(10)),
+            core::wide_u64::from_u32(digit));
+        index += 1;
+    }
+    let result: WideI64 = from_words(
+        core::wide_u64::high_word(magnitude),
+        core::wide_u64::low_word(magnitude));
+    if (negative) { return wrapping_neg(result); }
     return result;
 }
