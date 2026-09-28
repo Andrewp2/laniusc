@@ -61,7 +61,53 @@ fn every_public_wide_u64_function_has_a_runtime_case() {
         assert!(fixture.contains(&call), "{call} lacks a runtime case");
         covered += 1;
     }
-    assert_eq!(covered, 20);
+    assert_eq!(covered, 24);
+}
+
+#[test]
+fn decimal_double_program_runs_full_width_input_on_x86() {
+    let entry = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/stdlib_foundation/wide_u64_decimal_double.lani");
+    let bytes = compile_entry(&entry, "wide_u64_decimal_double");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let executable = common::TempArtifact::new("laniusc_wide_u64", "decimal_double", None);
+        executable.write_bytes(&bytes);
+        let mut permissions = std::fs::metadata(executable.path()).unwrap().permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(executable.path(), permissions).unwrap();
+
+        for (input_bytes, expected_code, expected_stdout) in [
+            (&b"0\n"[..], 0, &b"0\n"[..]),
+            (&b"4294967296\n"[..], 0, &b"8589934592\n"[..]),
+            (&b"9223372036854775808\n"[..], 0, &b"0\n"[..]),
+            (
+                &b"18446744073709551615\n"[..],
+                0,
+                &b"18446744073709551614\n"[..],
+            ),
+            (&b"18446744073709551616\n"[..], 3, &b""[..]),
+            (&b"12x\n"[..], 3, &b""[..]),
+            (&b""[..], 2, &b""[..]),
+            (&b"123456789012345678901\n"[..], 2, &b""[..]),
+        ] {
+            let input = common::TempArtifact::new("laniusc_wide_u64", "decimal_input", None);
+            input.write_bytes(input_bytes);
+            let output = common::short_process_output_with_timeout(
+                "wide u64 decimal double",
+                std::process::Command::new(executable.path()).stdin(std::process::Stdio::from(
+                    std::fs::File::open(input.path()).unwrap(),
+                )),
+            );
+            assert_eq!(output.status.code(), Some(expected_code), "{output:?}");
+            assert_eq!(output.stdout, expected_stdout, "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
 }
 
 #[test]

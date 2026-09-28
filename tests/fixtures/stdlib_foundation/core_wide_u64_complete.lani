@@ -59,5 +59,46 @@ fn main() -> i32 {
         !core::wide_u64::eq(core::wide_u64::remainder_or(one, zero, high), high)) {
         return 8;
     }
+    let maximum_ascii: [i32; 20] = [
+        49, 56, 52, 52, 54, 55, 52, 52, 48, 55,
+        51, 55, 48, 57, 53, 53, 49, 54, 49, 53];
+    let overflow_ascii: [i32; 20] = [
+        49, 56, 52, 52, 54, 55, 52, 52, 48, 55,
+        51, 55, 48, 57, 53, 53, 49, 54, 49, 54];
+    if (core::wide_u64::decimal_len(zero) != 1 ||
+        core::wide_u64::decimal_len(one) != 1 ||
+        core::wide_u64::decimal_len(maximum) != 20 ||
+        core::wide_u64::decimal_byte_at_or(zero, 0, 88) != 48 ||
+        core::wide_u64::decimal_byte_at_or(maximum, 20, 88) != 88) {
+        return 9;
+    }
+    let digit_index: u32 = 0;
+    while (digit_index < 20) {
+        let byte: u8 = core::wide_u64::decimal_byte_at_or(maximum, digit_index, 0);
+        if (byte as i32 != maximum_ascii[digit_index as i32]) { return 10; }
+        digit_index += 1;
+    }
+    if (!core::wide_u64::can_parse_ascii_decimal(maximum_ascii, 20) ||
+        core::wide_u64::can_parse_ascii_decimal(overflow_ascii, 20) ||
+        core::wide_u64::can_parse_ascii_decimal(maximum_ascii, 0) ||
+        core::wide_u64::can_parse_ascii_decimal(maximum_ascii, -1) ||
+        !core::wide_u64::eq(
+            core::wide_u64::parse_ascii_decimal_or(maximum_ascii, 20, zero), maximum) ||
+        !core::wide_u64::eq(
+            core::wide_u64::parse_ascii_decimal_or(overflow_ascii, 20, one), one)) {
+        return 11;
+    }
+    let zero_ascii: [i32; 3] = [48, 48, 48];
+    let malformed_ascii: [i32; 3] = [49, 50, 65];
+    let crossed_word_ascii: [i32; 10] = [52, 50, 57, 52, 57, 54, 55, 50, 57, 54];
+    if (!core::wide_u64::can_parse_ascii_decimal(zero_ascii, 3) ||
+        core::wide_u64::can_parse_ascii_decimal(malformed_ascii, 3) ||
+        !core::wide_u64::eq(
+            core::wide_u64::parse_ascii_decimal_or(zero_ascii, 3, one), zero) ||
+        !same(core::wide_u64::parse_ascii_decimal_or(crossed_word_ascii, 10, zero), 1, 0) ||
+        !core::wide_u64::eq(
+            core::wide_u64::parse_ascii_decimal_or(malformed_ascii, 3, one), one)) {
+        return 12;
+    }
     return 0;
 }

@@ -168,3 +168,73 @@ pub fn remainder_or(dividend: WideU64, divisor: WideU64, fallback: WideU64) -> W
     }
     return remainder;
 }
+
+// Decimal rendering uses most-significant digit index zero. Zero has length
+// one. These helpers allocate no storage and never use native u64 literals.
+pub fn decimal_len(value: WideU64) -> u32 {
+    let remaining: WideU64 = value;
+    let length: u32 = 1;
+    let ten: WideU64 = from_u32(10);
+    while (compare(remaining, ten) >= 0) {
+        remaining = divide_or(remaining, ten, zero());
+        length += 1;
+    }
+    return length;
+}
+
+// Invalid indices return fallback unchanged.
+pub fn decimal_byte_at_or(value: WideU64, index: u32, fallback: u8) -> u8 {
+    let length: u32 = decimal_len(value);
+    if (index >= length) { return fallback; }
+    let shifted: WideU64 = value;
+    let remaining: u32 = length - index - 1;
+    let ten: WideU64 = from_u32(10);
+    while (remaining > 0) {
+        shifted = divide_or(shifted, ten, zero());
+        remaining -= 1;
+    }
+    let digit: WideU64 = remainder_or(shifted, ten, zero());
+    let ascii: u32 = 48 + low_word(digit);
+    let byte: u8 = ascii;
+    return byte;
+}
+
+// Exactly len caller-backed [i32] ASCII digit codes are accepted. Empty,
+// malformed, or overflowing input is rejected. Overclaiming the physical
+// view can trap when indexing reaches the end of its backing allocation.
+pub fn can_parse_ascii_decimal(values: [i32], len: i32) -> bool {
+    if (len <= 0) { return false; }
+    let limit: WideU64 = from_words(429496729, 2576980377); // MAX / 10
+    let current: WideU64 = zero();
+    let index: i32 = 0;
+    while (index < len) {
+        let code: i32 = values[index];
+        if (code < 48 || code > 57) { return false; }
+        let digit_i32: i32 = code - 48;
+        let digit: u32 = digit_i32;
+        let relation: i32 = compare(current, limit);
+        if (relation > 0 || (relation == 0 && digit > 5)) {
+            return false;
+        }
+        current = wrapping_add(wrapping_mul(current, from_u32(10)),
+            from_u32(digit));
+        index += 1;
+    }
+    return true;
+}
+
+// On failure return fallback. A valid value may equal fallback; call
+// can_parse_ascii_decimal first when a separate success result is needed.
+pub fn parse_ascii_decimal_or(values: [i32], len: i32, fallback: WideU64) -> WideU64 {
+    if (!can_parse_ascii_decimal(values, len)) { return fallback; }
+    let result: WideU64 = zero();
+    let index: i32 = 0;
+    while (index < len) {
+        let digit_i32: i32 = values[index] - 48;
+        let digit: u32 = digit_i32;
+        result = wrapping_add(wrapping_mul(result, from_u32(10)),
+            from_u32(digit));
+        index += 1;
+    }
+    return result;
+}
