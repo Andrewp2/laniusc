@@ -1,0 +1,124 @@
+module app::main;
+import core::wide_u64;
+import std::vec_wide_u64;
+fn same(value: core::wide_u64::WideU64, expected: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::eq(value, expected);
+}
+fn main() -> i32 {
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let one: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
+    let low_max: core::wide_u64::WideU64 = core::wide_u64::from_words(0, 4294967295);
+    let high_bit: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483648, 0);
+    let maximum: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    let boundary: core::wide_u64::WideU64 = core::wide_u64::from_words(1, 0);
+    let fallback: core::wide_u64::WideU64 = core::wide_u64::from_u32(777);
+    let value: std::vec_wide_u64::VecWideU64 = std::vec_wide_u64::new();
+    if (std::vec_wide_u64::len(value) != 0 || std::vec_wide_u64::capacity(value) != 0 || !std::vec_wide_u64::is_empty(value) || std::vec_wide_u64::MAX_CAPACITY != 268435455 || !same(std::vec_wide_u64::get_or(value, 0, fallback), fallback) || std::vec_wide_u64::try_set(value, 0, one)) {
+        return 1;
+    }
+    value = std::vec_wide_u64::try_pop(value);
+    value = std::vec_wide_u64::try_push(value, zero);
+    value = std::vec_wide_u64::try_push(value, high_bit);
+    value = std::vec_wide_u64::try_push(value, maximum);
+    value = std::vec_wide_u64::try_push(value, low_max);
+    if (std::vec_wide_u64::len(value) != 4 || std::vec_wide_u64::capacity(value) != 4 || std::vec_wide_u64::is_empty(value) || !same(std::vec_wide_u64::get_or(value, 0, fallback), zero) || !same(std::vec_wide_u64::get_or(value, 1, fallback), high_bit) || !same(std::vec_wide_u64::get_or(value, 2, fallback), maximum) || !same(std::vec_wide_u64::get_or(value, 3, fallback), low_max) || !same(std::vec_wide_u64::get_or(value, -1, fallback), fallback) || !same(std::vec_wide_u64::get_or(value, 4, fallback), fallback)) {
+        return 2;
+    }
+    let copy: std::vec_wide_u64::VecWideU64 = std::vec_wide_u64::try_clone(value);
+    if (std::vec_wide_u64::len(copy) != 4 || std::vec_wide_u64::capacity(copy) != 4 || !same(std::vec_wide_u64::get_or(copy, 1, fallback), high_bit) || !std::vec_wide_u64::try_set(copy, 1, one) || !same(std::vec_wide_u64::get_or(copy, 1, fallback), one) || !same(std::vec_wide_u64::get_or(value, 1, fallback), high_bit)) {
+        return 3;
+    }
+    std::vec_wide_u64::destroy(copy);
+    if (std::vec_wide_u64::try_set(value, -1, one) || std::vec_wide_u64::try_set(value, 4, one) || !std::vec_wide_u64::try_set(value, 3, boundary) || !same(std::vec_wide_u64::get_or(value, 3, fallback), boundary)) {
+        return 4;
+    }
+    value = std::vec_wide_u64::try_insert(value, -1, one);
+    value = std::vec_wide_u64::try_insert(value, 5, one);
+    value = std::vec_wide_u64::try_remove(value, -1);
+    value = std::vec_wide_u64::try_remove(value, 4);
+    if (std::vec_wide_u64::len(value) != 4 || std::vec_wide_u64::capacity(value) != 4) {
+        return 5;
+    }
+    value = std::vec_wide_u64::try_insert(value, 0, low_max);
+    if (std::vec_wide_u64::len(value) != 5 || std::vec_wide_u64::capacity(value) != 8 || !same(std::vec_wide_u64::get_or(value, 0, fallback), low_max) || !same(std::vec_wide_u64::get_or(value, 1, fallback), zero) || !same(std::vec_wide_u64::get_or(value, 2, fallback), high_bit) || !same(std::vec_wide_u64::get_or(value, 4, fallback), boundary)) {
+        return 6;
+    }
+    value = std::vec_wide_u64::try_insert(value, 3, one);
+    value = std::vec_wide_u64::try_insert(value, 6, one);
+    if (std::vec_wide_u64::len(value) != 7 || !same(std::vec_wide_u64::get_or(value, 3, fallback), one) || !same(std::vec_wide_u64::get_or(value, 4, fallback), maximum) || !same(std::vec_wide_u64::get_or(value, 6, fallback), one)) {
+        return 7;
+    }
+    value = std::vec_wide_u64::try_remove(value, 0);
+    value = std::vec_wide_u64::try_remove(value, 2);
+    value = std::vec_wide_u64::try_remove(value, 4);
+    if (std::vec_wide_u64::len(value) != 4 || !same(std::vec_wide_u64::get_or(value, 0, fallback), zero) || !same(std::vec_wide_u64::get_or(value, 1, fallback), high_bit) || !same(std::vec_wide_u64::get_or(value, 2, fallback), maximum) || !same(std::vec_wide_u64::get_or(value, 3, fallback), boundary)) {
+        return 8;
+    }
+    let words:[i32; 4] =[0, 1, -1, 0];
+    value = std::vec_wide_u64::try_extend_from_word_pairs(value, words, -1);
+    value = std::vec_wide_u64::try_extend_from_word_pairs(value, words, 0);
+    if (std::vec_wide_u64::len(value) != 4) {
+        return 9;
+    }
+    value = std::vec_wide_u64::try_extend_from_word_pairs(value, words, 2);
+    if (std::vec_wide_u64::len(value) != 6 || !same(std::vec_wide_u64::get_or(value, 4, fallback), boundary) || !same(std::vec_wide_u64::get_or(value, 5, fallback), low_max)) {
+        return 10;
+    }
+    value = std::vec_wide_u64::try_reserve(value, -1);
+    value = std::vec_wide_u64::try_reserve(value, 268435456);
+    value = std::vec_wide_u64::try_reserve(value, 4);
+    if (std::vec_wide_u64::capacity(value) != 8) {
+        return 11;
+    }
+    value = std::vec_wide_u64::try_reserve(value, 11);
+    if (std::vec_wide_u64::capacity(value) != 11 || !same(std::vec_wide_u64::get_or(value, 1, fallback), high_bit)) {
+        return 12;
+    }
+    value = std::vec_wide_u64::try_pop(value);
+    value = std::vec_wide_u64::truncate(value, -1);
+    value = std::vec_wide_u64::truncate(value, 6);
+    if (std::vec_wide_u64::len(value) != 5) {
+        return 13;
+    }
+    value = std::vec_wide_u64::truncate(value, 2);
+    value = std::vec_wide_u64::try_resize(value, -1, one);
+    value = std::vec_wide_u64::try_resize(value, 268435456, one);
+    if (std::vec_wide_u64::len(value) != 2 || !same(std::vec_wide_u64::get_or(value, 1, fallback), high_bit)) {
+        return 14;
+    }
+    value = std::vec_wide_u64::try_resize(value, 5, maximum);
+    if (std::vec_wide_u64::len(value) != 5 || !same(std::vec_wide_u64::get_or(value, 2, fallback), maximum) || !same(std::vec_wide_u64::get_or(value, 4, fallback), maximum)) {
+        return 15;
+    }
+    value = std::vec_wide_u64::try_resize(value, 1, one);
+    value = std::vec_wide_u64::try_shrink_to_fit(value);
+    if (std::vec_wide_u64::len(value) != 1 || std::vec_wide_u64::capacity(value) != 1 || !same(std::vec_wide_u64::get_or(value, 0, fallback), zero)) {
+        return 16;
+    }
+    value = std::vec_wide_u64::clear(value);
+    value = std::vec_wide_u64::try_shrink_to_fit(value);
+    if (std::vec_wide_u64::len(value) != 0 || std::vec_wide_u64::capacity(value) != 0 || !std::vec_wide_u64::is_empty(value)) {
+        return 17;
+    }
+    std::vec_wide_u64::destroy(value);
+    let preallocated: std::vec_wide_u64::VecWideU64 = std::vec_wide_u64::try_with_capacity(2);
+    if (std::vec_wide_u64::capacity(preallocated) != 2) {
+        return 18;
+    }
+    preallocated = std::vec_wide_u64::try_push(preallocated, high_bit);
+    if (!same(std::vec_wide_u64::get_or(preallocated, 0, fallback), high_bit)) {
+        return 19;
+    }
+    std::vec_wide_u64::destroy(preallocated);
+    let invalid: std::vec_wide_u64::VecWideU64 = std::vec_wide_u64::try_with_capacity(-1);
+    if (std::vec_wide_u64::capacity(invalid) != 0) {
+        return 20;
+    }
+    std::vec_wide_u64::destroy(invalid);
+    let empty_copy: std::vec_wide_u64::VecWideU64 = std::vec_wide_u64::try_clone(std::vec_wide_u64::new());
+    if (std::vec_wide_u64::len(empty_copy) != 0 || std::vec_wide_u64::capacity(empty_copy) != 0) {
+        return 21;
+    }
+    std::vec_wide_u64::destroy(empty_copy);
+    return 0;
+}
