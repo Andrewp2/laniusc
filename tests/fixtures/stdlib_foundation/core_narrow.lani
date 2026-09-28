@@ -1,0 +1,101 @@
+module app::main;
+import core::narrow;
+
+fn main() -> i32 {
+    // i8 from i32
+    if (core::narrow::i8_from_i32_wrapping(42) != 42) { return 1; }
+    if (core::narrow::i8_from_i32_wrapping(257) != 1) { return 2; }
+    if (core::narrow::i8_from_i32_wrapping(-1) != -1) { return 3; }
+    if (core::narrow::i8_from_i32_or(42, 17) != 42) { return 4; }
+    if (core::narrow::i8_from_i32_or(128, 17) != 17) { return 5; }
+    if (core::narrow::i8_from_i32_saturating(42) != 42) { return 6; }
+    if (core::narrow::i8_from_i32_saturating(128) != 127) { return 7; }
+    if (core::narrow::i8_from_i32_or(-129, 17) != 17) { return 8; }
+    if (core::narrow::i8_from_i32_saturating(-129) != -128) { return 9; }
+
+    // i8 from u32
+    if (core::narrow::i8_from_u32_wrapping(42) != 42) { return 10; }
+    if (core::narrow::i8_from_u32_wrapping(257) != 1) { return 11; }
+    if (core::narrow::i8_from_u32_wrapping(4294967295) != -1) { return 12; }
+    if (core::narrow::i8_from_u32_or(42, 17) != 42) { return 13; }
+    if (core::narrow::i8_from_u32_or(128, 17) != 17) { return 14; }
+    if (core::narrow::i8_from_u32_saturating(42) != 42) { return 15; }
+    if (core::narrow::i8_from_u32_saturating(128) != 127) { return 16; }
+    if (core::narrow::i8_from_u32_or(4294967295, 17) != 17) { return 17; }
+    if (core::narrow::i8_from_u32_saturating(4294967295) != 127) { return 18; }
+
+    // u8 from i32
+    if (core::narrow::u8_from_i32_wrapping(42) != 42) { return 19; }
+    if (core::narrow::u8_from_i32_wrapping(257) != 1) { return 20; }
+    if (core::narrow::u8_from_i32_wrapping(-1) != 255) { return 21; }
+    if (core::narrow::u8_from_i32_or(42, 17) != 42) { return 22; }
+    if (core::narrow::u8_from_i32_or(256, 17) != 17) { return 23; }
+    if (core::narrow::u8_from_i32_saturating(42) != 42) { return 24; }
+    if (core::narrow::u8_from_i32_saturating(256) != 255) { return 25; }
+    if (core::narrow::u8_from_i32_or(-1, 17) != 17) { return 26; }
+    if (core::narrow::u8_from_i32_saturating(-1) != 0) { return 27; }
+
+    // u8 from u32
+    if (core::narrow::u8_from_u32_wrapping(42) != 42) { return 28; }
+    if (core::narrow::u8_from_u32_wrapping(257) != 1) { return 29; }
+    if (core::narrow::u8_from_u32_wrapping(4294967295) != 255) { return 30; }
+    if (core::narrow::u8_from_u32_or(42, 17) != 42) { return 31; }
+    if (core::narrow::u8_from_u32_or(256, 17) != 17) { return 32; }
+    if (core::narrow::u8_from_u32_saturating(42) != 42) { return 33; }
+    if (core::narrow::u8_from_u32_saturating(256) != 255) { return 34; }
+    if (core::narrow::u8_from_u32_or(4294967295, 17) != 17) { return 35; }
+    if (core::narrow::u8_from_u32_saturating(4294967295) != 255) { return 36; }
+
+    // i16 from i32
+    if (core::narrow::i16_from_i32_wrapping(42) != 42) { return 37; }
+    if (core::narrow::i16_from_i32_wrapping(65537) != 1) { return 38; }
+    if (core::narrow::i16_from_i32_wrapping(-1) != -1) { return 39; }
+    if (core::narrow::i16_from_i32_or(42, 17) != 42) { return 40; }
+    if (core::narrow::i16_from_i32_or(32768, 17) != 17) { return 41; }
+    if (core::narrow::i16_from_i32_saturating(42) != 42) { return 42; }
+    if (core::narrow::i16_from_i32_saturating(32768) != 32767) { return 43; }
+    if (core::narrow::i16_from_i32_or(-32769, 17) != 17) { return 44; }
+    if (core::narrow::i16_from_i32_saturating(-32769) != -32768) { return 45; }
+
+    // i16 from u32
+    if (core::narrow::i16_from_u32_wrapping(42) != 42) { return 46; }
+    if (core::narrow::i16_from_u32_wrapping(65537) != 1) { return 47; }
+    if (core::narrow::i16_from_u32_wrapping(4294967295) != -1) { return 48; }
+    if (core::narrow::i16_from_u32_or(42, 17) != 42) { return 49; }
+    if (core::narrow::i16_from_u32_or(32768, 17) != 17) { return 50; }
+    if (core::narrow::i16_from_u32_saturating(42) != 42) { return 51; }
+    if (core::narrow::i16_from_u32_saturating(32768) != 32767) { return 52; }
+    if (core::narrow::i16_from_u32_or(4294967295, 17) != 17) { return 53; }
+    if (core::narrow::i16_from_u32_saturating(4294967295) != 32767) { return 54; }
+
+    // u16 from i32
+    if (core::narrow::u16_from_i32_wrapping(42) != 42) { return 55; }
+    if (core::narrow::u16_from_i32_wrapping(65537) != 1) { return 56; }
+    if (core::narrow::u16_from_i32_wrapping(-1) != 65535) { return 57; }
+    if (core::narrow::u16_from_i32_or(42, 17) != 42) { return 58; }
+    if (core::narrow::u16_from_i32_or(65536, 17) != 17) { return 59; }
+    if (core::narrow::u16_from_i32_saturating(42) != 42) { return 60; }
+    if (core::narrow::u16_from_i32_saturating(65536) != 65535) { return 61; }
+    if (core::narrow::u16_from_i32_or(-1, 17) != 17) { return 62; }
+    if (core::narrow::u16_from_i32_saturating(-1) != 0) { return 63; }
+
+    // u16 from u32
+    if (core::narrow::u16_from_u32_wrapping(42) != 42) { return 64; }
+    if (core::narrow::u16_from_u32_wrapping(65537) != 1) { return 65; }
+    if (core::narrow::u16_from_u32_wrapping(4294967295) != 65535) { return 66; }
+    if (core::narrow::u16_from_u32_or(42, 17) != 42) { return 67; }
+    if (core::narrow::u16_from_u32_or(65536, 17) != 17) { return 68; }
+    if (core::narrow::u16_from_u32_saturating(42) != 42) { return 69; }
+    if (core::narrow::u16_from_u32_saturating(65536) != 65535) { return 70; }
+    if (core::narrow::u16_from_u32_or(4294967295, 17) != 17) { return 71; }
+    if (core::narrow::u16_from_u32_saturating(4294967295) != 65535) { return 72; }
+
+    // Full-width input boundaries retain only the documented target bits.
+    if (core::narrow::i8_from_i32_wrapping(-2147483648) != 0) { return 73; }
+    if (core::narrow::i16_from_i32_wrapping(2147483647) != -1) { return 74; }
+    if (core::narrow::u8_from_i32_wrapping(2147483647) != 255) { return 75; }
+    if (core::narrow::u16_from_i32_wrapping(-2147483648) != 0) { return 76; }
+    if (core::narrow::i8_from_i32_or(-2147483648, 17) != 17) { return 77; }
+    if (core::narrow::u8_from_i32_saturating(-2147483648) != 0) { return 78; }
+    return 0;
+}

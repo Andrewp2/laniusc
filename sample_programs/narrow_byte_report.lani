@@ -1,0 +1,19 @@
+// Read one signed decimal value and report its explicit byte conversions.
+// The sentinel 123456789 is reserved for parse failure.
+module app::main;
+import core::byte;
+import core::narrow;
+import std::io_decimal;
+
+fn main() -> i32 {
+    let value: i32 = std::io_decimal::read_i32_stdin_or(12, 123456789);
+    if (value == 123456789) { return 2; }
+    let wrapped: u8 = core::narrow::u8_from_i32_wrapping(value);
+    let saturated: u8 = core::narrow::u8_from_i32_saturating(value);
+    let checked: u8 = core::narrow::u8_from_i32_or(value, 17);
+    let total: u8 = core::byte::wrapping_add(wrapped, checked);
+    print(wrapped as i32);
+    print(saturated as i32);
+    print(total as i32);
+    return 0;
+}

@@ -1,0 +1,160 @@
+// Explicit 32-bit to 8- and 16-bit conversions. Direct out-of-range `as`
+// casts currently miscompile on x86_64; these helpers normalize or check
+// the value before the final in-range cast.
+module core::narrow;
+
+// Keep the low 8 bits; signed results use two's-complement interpretation.
+pub fn i8_from_i32_wrapping(value: i32) -> i8 {
+    let masked: i32 = value & 255;
+    let normalized: i32 = masked;
+    if (normalized >= 128) { normalized -= 256; }
+    return normalized as i8;
+}
+
+// An out-of-range input returns the caller's fallback.
+pub fn i8_from_i32_or(value: i32, fallback: i8) -> i8 {
+    if (value < -128 || value > 127) { return fallback; }
+    return value as i8;
+}
+
+// Clamp to the target range before casting.
+pub fn i8_from_i32_saturating(value: i32) -> i8 {
+    if (value < -128) { return -128; }
+    if (value > 127) { return 127; }
+    return value as i8;
+}
+
+// Keep the low 8 bits; signed results use two's-complement interpretation.
+pub fn i8_from_u32_wrapping(value: u32) -> i8 {
+    let masked: u32 = value & 255;
+    let normalized: i32 = masked as i32;
+    if (normalized >= 128) { normalized -= 256; }
+    return normalized as i8;
+}
+
+// An out-of-range input returns the caller's fallback.
+pub fn i8_from_u32_or(value: u32, fallback: i8) -> i8 {
+    if (value > 127) { return fallback; }
+    return value as i8;
+}
+
+// Clamp to the target range before casting.
+pub fn i8_from_u32_saturating(value: u32) -> i8 {
+    if (value > 127) { return 127; }
+    return value as i8;
+}
+
+// Keep the low 8 bits; signed results use two's-complement interpretation.
+pub fn u8_from_i32_wrapping(value: i32) -> u8 {
+    let masked: i32 = value & 255;
+    return masked as u8;
+}
+
+// An out-of-range input returns the caller's fallback.
+pub fn u8_from_i32_or(value: i32, fallback: u8) -> u8 {
+    if (value < 0 || value > 255) { return fallback; }
+    return value as u8;
+}
+
+// Clamp to the target range before casting.
+pub fn u8_from_i32_saturating(value: i32) -> u8 {
+    if (value < 0) { return 0; }
+    if (value > 255) { return 255; }
+    return value as u8;
+}
+
+// Keep the low 8 bits; signed results use two's-complement interpretation.
+pub fn u8_from_u32_wrapping(value: u32) -> u8 {
+    let masked: u32 = value & 255;
+    return masked as u8;
+}
+
+// An out-of-range input returns the caller's fallback.
+pub fn u8_from_u32_or(value: u32, fallback: u8) -> u8 {
+    if (value > 255) { return fallback; }
+    return value as u8;
+}
+
+// Clamp to the target range before casting.
+pub fn u8_from_u32_saturating(value: u32) -> u8 {
+    if (value > 255) { return 255; }
+    return value as u8;
+}
+
+// Keep the low 16 bits; signed results use two's-complement interpretation.
+pub fn i16_from_i32_wrapping(value: i32) -> i16 {
+    let masked: i32 = value & 65535;
+    let normalized: i32 = masked;
+    if (normalized >= 32768) { normalized -= 65536; }
+    return normalized as i16;
+}
+
+// An out-of-range input returns the caller's fallback.
+pub fn i16_from_i32_or(value: i32, fallback: i16) -> i16 {
+    if (value < -32768 || value > 32767) { return fallback; }
+    return value as i16;
+}
+
+// Clamp to the target range before casting.
+pub fn i16_from_i32_saturating(value: i32) -> i16 {
+    if (value < -32768) { return -32768; }
+    if (value > 32767) { return 32767; }
+    return value as i16;
+}
+
+// Keep the low 16 bits; signed results use two's-complement interpretation.
+pub fn i16_from_u32_wrapping(value: u32) -> i16 {
+    let masked: u32 = value & 65535;
+    let normalized: i32 = masked as i32;
+    if (normalized >= 32768) { normalized -= 65536; }
+    return normalized as i16;
+}
+
+// An out-of-range input returns the caller's fallback.
+pub fn i16_from_u32_or(value: u32, fallback: i16) -> i16 {
+    if (value > 32767) { return fallback; }
+    return value as i16;
+}
+
+// Clamp to the target range before casting.
+pub fn i16_from_u32_saturating(value: u32) -> i16 {
+    if (value > 32767) { return 32767; }
+    return value as i16;
+}
+
+// Keep the low 16 bits; signed results use two's-complement interpretation.
+pub fn u16_from_i32_wrapping(value: i32) -> u16 {
+    let masked: i32 = value & 65535;
+    return masked as u16;
+}
+
+// An out-of-range input returns the caller's fallback.
+pub fn u16_from_i32_or(value: i32, fallback: u16) -> u16 {
+    if (value < 0 || value > 65535) { return fallback; }
+    return value as u16;
+}
+
+// Clamp to the target range before casting.
+pub fn u16_from_i32_saturating(value: i32) -> u16 {
+    if (value < 0) { return 0; }
+    if (value > 65535) { return 65535; }
+    return value as u16;
+}
+
+// Keep the low 16 bits; signed results use two's-complement interpretation.
+pub fn u16_from_u32_wrapping(value: u32) -> u16 {
+    let masked: u32 = value & 65535;
+    return masked as u16;
+}
+
+// An out-of-range input returns the caller's fallback.
+pub fn u16_from_u32_or(value: u32, fallback: u16) -> u16 {
+    if (value > 65535) { return fallback; }
+    return value as u16;
+}
+
+// Clamp to the target range before casting.
+pub fn u16_from_u32_saturating(value: u32) -> u16 {
+    if (value > 65535) { return 65535; }
+    return value as u16;
+}
