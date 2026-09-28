@@ -7,6 +7,7 @@ use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 #[derive(Clone, Copy)]
 enum Kind {
     Bool,
+    I8,
     U8,
     I32,
     U32,
@@ -18,6 +19,7 @@ impl Kind {
     fn module(self) -> &'static str {
         match self {
             Self::Bool => "deque_bool",
+            Self::I8 => "deque_i8",
             Self::U8 => "deque_u8",
             Self::I32 => "deque_i32",
             Self::U32 => "deque_u32",
@@ -29,6 +31,7 @@ impl Kind {
     fn deque_type(self) -> &'static str {
         match self {
             Self::Bool => "DequeBool",
+            Self::I8 => "DequeI8",
             Self::U8 => "DequeU8",
             Self::I32 => "DequeI32",
             Self::U32 => "DequeU32",
@@ -40,6 +43,7 @@ impl Kind {
     fn value_type(self) -> &'static str {
         match self {
             Self::Bool => "bool",
+            Self::I8 => "i8",
             Self::U8 => "u8",
             Self::I32 => "i32",
             Self::U32 => "u32",
@@ -51,6 +55,7 @@ impl Kind {
     fn literal(self, bits: u64) -> String {
         match self {
             Self::Bool => (bits & 1 == 1).to_string(),
+            Self::I8 => (bits as i8).to_string(),
             Self::U8 => (bits as u8).to_string(),
             Self::I32 => (bits as i32).to_string(),
             Self::U32 => (bits as u32).to_string(),
@@ -69,7 +74,9 @@ impl Kind {
 
     fn equal(self, left: &str, right: &str) -> String {
         match self {
-            Self::Bool | Self::U8 | Self::I32 | Self::U32 => format!("{left} == {right}"),
+            Self::Bool | Self::I8 | Self::U8 | Self::I32 | Self::U32 => {
+                format!("{left} == {right}")
+            }
             Self::WideU64 => format!("core::wide_u64::eq({left}, {right})"),
             Self::WideI64 => format!("core::wide_i64::eq({left}, {right})"),
         }
@@ -308,6 +315,11 @@ fn run(kind: Kind) {
 #[test]
 fn boolean_deque_matches_reference() {
     run(Kind::Bool);
+}
+
+#[test]
+fn signed_byte_deque_matches_reference() {
+    run(Kind::I8);
 }
 
 #[test]
