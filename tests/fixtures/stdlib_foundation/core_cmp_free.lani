@@ -51,5 +51,17 @@ fn main() -> i32 {
         !core::cmp::le_u16(high_u16, high_u16) || core::cmp::le_u16(high_u16, low_u16)) { return 17; }
     if (!core::cmp::gt_u16(high_u16, low_u16) || core::cmp::gt_u16(low_u16, high_u16) ||
         !core::cmp::ge_u16(high_u16, high_u16) || core::cmp::ge_u16(low_u16, high_u16)) { return 18; }
+    if (!core::cmp::eq_bool(false, false) || core::cmp::eq_bool(false, true) ||
+        !core::cmp::ne_bool(true, false) || core::cmp::ne_bool(true, true)) { return 19; }
+    if (!core::cmp::lt_bool(false, true) || core::cmp::lt_bool(true, false) ||
+        !core::cmp::le_bool(false, false) || core::cmp::le_bool(true, false)) { return 20; }
+    if (!core::cmp::gt_bool(true, false) || core::cmp::gt_bool(false, true) ||
+        !core::cmp::ge_bool(true, true) || core::cmp::ge_bool(false, true)) { return 21; }
+    if (!core::cmp::eq_char('é', 'é') || core::cmp::eq_char('A', 'é') ||
+        !core::cmp::ne_char('A', 'é') || core::cmp::ne_char('😀', '😀')) { return 22; }
+    if (!core::cmp::lt_char('A', 'é') || core::cmp::lt_char('😀', 'é') ||
+        !core::cmp::le_char('é', 'é') || core::cmp::le_char('😀', 'é')) { return 23; }
+    if (!core::cmp::gt_char('😀', 'é') || core::cmp::gt_char('A', 'é') ||
+        !core::cmp::ge_char('😀', '😀') || core::cmp::ge_char('A', 'é')) { return 24; }
     return 0;
 }

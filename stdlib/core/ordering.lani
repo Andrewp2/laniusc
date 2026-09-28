@@ -44,6 +44,67 @@ pub fn compare_u8(left: u8, right: u8) -> Ordering {
     }
 }
 
+pub fn compare_i8(left: i8, right: i8) -> Ordering {
+    if (left < right) {
+        return Less;
+    } else {
+        if (left > right) {
+            return Greater;
+        } else {
+            return Equal;
+        }
+    }
+}
+
+pub fn compare_i16(left: i16, right: i16) -> Ordering {
+    if (left < right) {
+        return Less;
+    } else {
+        if (left > right) {
+            return Greater;
+        } else {
+            return Equal;
+        }
+    }
+}
+
+pub fn compare_u16(left: u16, right: u16) -> Ordering {
+    if (left < right) {
+        return Less;
+    } else {
+        if (left > right) {
+            return Greater;
+        } else {
+            return Equal;
+        }
+    }
+}
+
+pub fn compare_char(left: char, right: char) -> Ordering {
+    if (left < right) {
+        return Less;
+    } else {
+        if (left > right) {
+            return Greater;
+        } else {
+            return Equal;
+        }
+    }
+}
+
+// false sorts before true.
+pub fn compare_bool(left: bool, right: bool) -> Ordering {
+    if (left == right) {
+        return Equal;
+    } else {
+        if (!left) {
+            return Less;
+        } else {
+            return Greater;
+        }
+    }
+}
+
 pub fn reverse(ordering: Ordering) -> Ordering {
     return match (ordering) {
         Less -> Greater,

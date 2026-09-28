@@ -63,5 +63,5 @@ fn every_public_cmp_free_function_has_a_runtime_case() {
         assert!(fixture.contains(&call), "{call} lacks a runtime case");
         count += 1;
     }
-    assert_eq!(count, 36);
+    assert_eq!(count, 48);
 }

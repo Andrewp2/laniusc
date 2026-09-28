@@ -1,0 +1,31 @@
+module app::main;
+import core::ordering;
+
+fn main() -> i32 {
+    let low_i8: i8 = -128;
+    let high_i8: i8 = 127;
+    if (!core::ordering::is_less(core::ordering::compare_i8(low_i8, high_i8)) ||
+        !core::ordering::is_equal(core::ordering::compare_i8(high_i8, high_i8)) ||
+        !core::ordering::is_greater(core::ordering::compare_i8(high_i8, low_i8))) { return 1; }
+
+    let low_i16: i16 = -32768;
+    let high_i16: i16 = 32767;
+    if (!core::ordering::is_less(core::ordering::compare_i16(low_i16, high_i16)) ||
+        !core::ordering::is_equal(core::ordering::compare_i16(low_i16, low_i16)) ||
+        !core::ordering::is_greater(core::ordering::compare_i16(high_i16, low_i16))) { return 2; }
+
+    let low_u16: u16 = 32767;
+    let high_u16: u16 = 65535;
+    if (!core::ordering::is_less(core::ordering::compare_u16(low_u16, high_u16)) ||
+        !core::ordering::is_equal(core::ordering::compare_u16(high_u16, high_u16)) ||
+        !core::ordering::is_greater(core::ordering::compare_u16(high_u16, low_u16))) { return 3; }
+
+    if (!core::ordering::is_less(core::ordering::compare_char('A', 'é')) ||
+        !core::ordering::is_equal(core::ordering::compare_char('😀', '😀')) ||
+        !core::ordering::is_greater(core::ordering::compare_char('😀', 'é'))) { return 4; }
+
+    if (!core::ordering::is_less(core::ordering::compare_bool(false, true)) ||
+        !core::ordering::is_equal(core::ordering::compare_bool(false, false)) ||
+        !core::ordering::is_greater(core::ordering::compare_bool(true, false))) { return 5; }
+    return 0;
+}

@@ -237,10 +237,7 @@ fn main() {
         }),
         "path manifest should include core::ordering from the stdlib root"
     );
-    for helper_name in [
-        "core::ordering::compare_u32",
-        "core::ordering::compare_u8",
-    ] {
+    for helper_name in ["core::ordering::compare_u32", "core::ordering::compare_u8"] {
         assert!(
             runtime_bound_api_diagnostic_info(helper_name).is_none(),
             "{helper_name} is a source-level helper and must not claim a runtime binding"
@@ -257,6 +254,29 @@ fn main() {
     {
         let output =
             common::run_x86_64_elf_output("ordering integers", "ordering_integers", &bytes);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn core_ordering_remaining_scalar_comparators_execute_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/core_ordering_more_scalars.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("ordering scalar widths", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile remaining scalar ordering functions");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "ordering scalar widths",
+            "ordering_scalar_widths",
+            &bytes,
+        );
         assert_eq!(output.status.code(), Some(0), "{output:?}");
     }
     #[cfg(not(all(unix, target_arch = "x86_64")))]
