@@ -1,0 +1,170 @@
+// Unsigned 64-bit arithmetic represented as two u32 words. This module does
+// not use the native u64 arithmetic path, which currently loses high bits.
+module core::wide_u64;
+import core::number_u32;
+
+pub struct WideU64 {
+    high: u32,
+    low: u32,
+}
+
+pub fn from_words(high: u32, low: u32) -> WideU64 {
+    return WideU64 { high: high, low: low };
+}
+
+pub fn from_u32(value: u32) -> WideU64 {
+    return from_words(0, value);
+}
+
+pub fn zero() -> WideU64 {
+    return from_words(0, 0);
+}
+
+pub fn max_value() -> WideU64 {
+    return from_words(4294967295, 4294967295);
+}
+
+pub fn high_word(value: WideU64) -> u32 {
+    return value.high;
+}
+
+pub fn low_word(value: WideU64) -> u32 {
+    return value.low;
+}
+
+pub fn is_zero(value: WideU64) -> bool {
+    return value.high == 0 && value.low == 0;
+}
+
+pub fn eq(left: WideU64, right: WideU64) -> bool {
+    return left.high == right.high && left.low == right.low;
+}
+
+// Return -1, 0, or 1 in unsigned 64-bit order.
+pub fn compare(left: WideU64, right: WideU64) -> i32 {
+    if (left.high < right.high) { return -1; }
+    if (left.high > right.high) { return 1; }
+    if (left.low < right.low) { return -1; }
+    if (left.low > right.low) { return 1; }
+    return 0;
+}
+
+pub fn wrapping_add(left: WideU64, right: WideU64) -> WideU64 {
+    let low: u32 = left.low + right.low;
+    let carry: u32 = 0;
+    if (low < left.low) { carry = 1; }
+    return from_words(left.high + right.high + carry, low);
+}
+
+pub fn wrapping_sub(left: WideU64, right: WideU64) -> WideU64 {
+    let low: u32 = left.low - right.low;
+    let borrow: u32 = 0;
+    if (left.low < right.low) { borrow = 1; }
+    return from_words(left.high - right.high - borrow, low);
+}
+
+pub fn bit_and(left: WideU64, right: WideU64) -> WideU64 {
+    return from_words(left.high & right.high, left.low & right.low);
+}
+
+pub fn bit_or(left: WideU64, right: WideU64) -> WideU64 {
+    return from_words(left.high | right.high, left.low | right.low);
+}
+
+pub fn bit_xor(left: WideU64, right: WideU64) -> WideU64 {
+    return from_words(left.high ^ right.high, left.low ^ right.low);
+}
+
+pub fn bit_not(value: WideU64) -> WideU64 {
+    return from_words(value.high ^ 4294967295, value.low ^ 4294967295);
+}
+
+// Counts outside 0..63 produce zero rather than a masked machine shift.
+pub fn shift_left(value: WideU64, count: i32) -> WideU64 {
+    if (count < 0 || count >= 64) { return zero(); }
+    if (count == 0) { return value; }
+    if (count >= 32) { return from_words(value.low << (count - 32), 0); }
+    return from_words((value.high << count) | (value.low >> (32 - count)),
+        value.low << count);
+}
+
+pub fn shift_right(value: WideU64, count: i32) -> WideU64 {
+    if (count < 0 || count >= 64) { return zero(); }
+    if (count == 0) { return value; }
+    if (count >= 32) { return from_words(0, value.high >> (count - 32)); }
+    return from_words(value.high >> count,
+        (value.low >> count) | (value.high << (32 - count)));
+}
+
+// The low 64 bits of a 64-by-64 product, calculated from 32-bit products.
+pub fn wrapping_mul(left: WideU64, right: WideU64) -> WideU64 {
+    let a0: u32 = left.low & 65535;
+    let a1: u32 = left.low >> 16;
+    let b0: u32 = right.low & 65535;
+    let b1: u32 = right.low >> 16;
+    let p0: u32 = core::number_u32::wrapping_mul(a0, b0);
+    let p1: u32 = core::number_u32::wrapping_mul(a1, b0);
+    let p2: u32 = core::number_u32::wrapping_mul(a0, b1);
+    let p3: u32 = core::number_u32::wrapping_mul(a1, b1);
+    let middle: u32 = (p0 >> 16) + (p1 & 65535) + (p2 & 65535);
+    let upper: u32 = p3 + (p1 >> 16) + (p2 >> 16) + (middle >> 16);
+    let high: u32 = upper +
+        core::number_u32::wrapping_mul(left.high, right.low) +
+        core::number_u32::wrapping_mul(left.low, right.high);
+    let low: u32 = core::number_u32::wrapping_mul(left.low, right.low);
+    return from_words(high, low);
+}
+
+// Binary long division. Zero divisor returns fallback. The inputs are never
+// mutated, and all 64 quotient bits are computed, including the high half.
+pub fn divide_or(dividend: WideU64, divisor: WideU64, fallback: WideU64) -> WideU64 {
+    if (is_zero(divisor)) { return fallback; }
+    let remainder: WideU64 = zero();
+    let quotient: WideU64 = zero();
+    let index: i32 = 63;
+    while (index >= 0) {
+        let bit: u32 = 0;
+        if (index >= 32) {
+            bit = (dividend.high >> (index - 32)) & 1;
+        } else {
+            bit = (dividend.low >> index) & 1;
+        }
+        let overflow: bool = (remainder.high & 2147483648) != 0;
+        remainder = shift_left(remainder, 1);
+        remainder = from_words(remainder.high, remainder.low | bit);
+        if (overflow || compare(remainder, divisor) >= 0) {
+            remainder = wrapping_sub(remainder, divisor);
+            if (index >= 32) {
+                quotient = from_words(quotient.high | (1 << (index - 32)), quotient.low);
+            } else {
+                quotient = from_words(quotient.high, quotient.low | (1 << index));
+            }
+        }
+        index -= 1;
+    }
+    return quotient;
+}
+
+// Zero divisor returns fallback. The restoring step keeps a carry bit for a
+// transient 65-bit remainder; subtraction then returns to 64 bits.
+pub fn remainder_or(dividend: WideU64, divisor: WideU64, fallback: WideU64) -> WideU64 {
+    if (is_zero(divisor)) { return fallback; }
+    let remainder: WideU64 = zero();
+    let index: i32 = 63;
+    while (index >= 0) {
+        let bit: u32 = 0;
+        if (index >= 32) {
+            bit = (dividend.high >> (index - 32)) & 1;
+        } else {
+            bit = (dividend.low >> index) & 1;
+        }
+        let overflow: bool = (remainder.high & 2147483648) != 0;
+        remainder = shift_left(remainder, 1);
+        remainder = from_words(remainder.high, remainder.low | bit);
+        if (overflow || compare(remainder, divisor) >= 0) {
+            remainder = wrapping_sub(remainder, divisor);
+        }
+        index -= 1;
+    }
+    return remainder;
+}

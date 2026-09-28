@@ -1,0 +1,63 @@
+module app::main;
+import core::wide_u64;
+
+fn same(value: core::wide_u64::WideU64, high: u32, low: u32) -> bool {
+    return core::wide_u64::high_word(value) == high &&
+        core::wide_u64::low_word(value) == low;
+}
+
+fn main() -> i32 {
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let one: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
+    let high: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483648, 0);
+    let maximum: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    if (!core::wide_u64::is_zero(zero) || core::wide_u64::is_zero(one) ||
+        !same(zero, 0, 0) || !same(one, 0, 1) ||
+        !same(maximum, 4294967295, 4294967295)) { return 1; }
+    if (!core::wide_u64::eq(one, one) || core::wide_u64::eq(one, high) ||
+        core::wide_u64::compare(high, one) != 1 ||
+        core::wide_u64::compare(one, high) != -1 ||
+        core::wide_u64::compare(one, one) != 0 ||
+        core::wide_u64::compare(maximum, high) != 1) { return 2; }
+    if (!same(core::wide_u64::wrapping_add(high, one), 2147483648, 1) ||
+        !same(core::wide_u64::wrapping_add(maximum, one), 0, 0) ||
+        !same(core::wide_u64::wrapping_sub(high, one), 2147483647, 4294967295) ||
+        !same(core::wide_u64::wrapping_sub(zero, one), 4294967295, 4294967295)) {
+        return 3;
+    }
+    if (!same(core::wide_u64::bit_and(maximum, one), 0, 1) ||
+        !same(core::wide_u64::bit_or(high, one), 2147483648, 1) ||
+        !same(core::wide_u64::bit_xor(maximum, high), 2147483647, 4294967295) ||
+        !same(core::wide_u64::bit_not(high), 2147483647, 4294967295)) { return 4; }
+    if (!same(core::wide_u64::shift_left(one, 63), 2147483648, 0) ||
+        !same(core::wide_u64::shift_left(one, 32), 1, 0) ||
+        !same(core::wide_u64::shift_right(high, 63), 0, 1) ||
+        !same(core::wide_u64::shift_right(high, 32), 0, 2147483648) ||
+        !same(core::wide_u64::shift_right(maximum, 1), 2147483647, 4294967295) ||
+        !same(core::wide_u64::shift_left(one, -1), 0, 0) ||
+        !same(core::wide_u64::shift_right(one, 64), 0, 0) ||
+        !core::wide_u64::eq(core::wide_u64::shift_left(high, 0), high)) { return 5; }
+    let low_max: core::wide_u64::WideU64 = core::wide_u64::from_u32(4294967295);
+    if (!same(core::wide_u64::wrapping_mul(low_max, low_max), 4294967294, 1) ||
+        !same(core::wide_u64::wrapping_mul(high, core::wide_u64::from_u32(2)), 0, 0) ||
+        !same(core::wide_u64::wrapping_mul(high, one), 2147483648, 0)) { return 6; }
+    let two: core::wide_u64::WideU64 = core::wide_u64::from_u32(2);
+    if (!same(core::wide_u64::divide_or(maximum, two, zero), 2147483647, 4294967295) ||
+        !same(core::wide_u64::remainder_or(maximum, two, zero), 0, 1) ||
+        !same(core::wide_u64::divide_or(high, core::wide_u64::from_u32(3), zero),
+            715827882, 2863311530) ||
+        !same(core::wide_u64::remainder_or(high, core::wide_u64::from_u32(3), zero), 0, 2)) {
+        return 7;
+    }
+    let high_plus_one: core::wide_u64::WideU64 = core::wide_u64::wrapping_add(high, one);
+    if (!same(core::wide_u64::divide_or(maximum, high_plus_one, zero), 0, 1) ||
+        !same(core::wide_u64::remainder_or(maximum, high_plus_one, zero),
+            2147483647, 4294967294) ||
+        !same(core::wide_u64::divide_or(one, high, zero), 0, 0) ||
+        !same(core::wide_u64::remainder_or(one, high, zero), 0, 1) ||
+        !core::wide_u64::eq(core::wide_u64::divide_or(one, zero, high), high) ||
+        !core::wide_u64::eq(core::wide_u64::remainder_or(one, zero, high), high)) {
+        return 8;
+    }
+    return 0;
+}

@@ -14,6 +14,7 @@ limited to native x86_64 output from this worktree.
 | `core::number_u16` constants and all 25 public functions | Executable on x86_64 | Focused runtime fixture checks unsigned 16-bit limits, widened saturation and wrapping, multiplication and power overflow, GCD/LCM, zero-divisor fallbacks, parity, and power-of-two and alignment boundaries. |
 | `core::number_i32` constants and all 26 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, wrapping arithmetic, multiplication and power overflow, signed GCD/LCM, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
 | `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
+| `core::wide_u64` all 20 public two-word functions | Executable on x86_64 | The imported runtime fixture calls every function and checks high-bit construction, ordering, wrapping add/subtract/multiply, bitwise operations, shifts across word boundaries, zero and out-of-range shift counts, division and remainder including a high-bit divisor, and zero-divisor fallbacks. A generated native fixture compares arithmetic and shifts against Rust `u64` across eight distinct operand pairs and four values at eight shift counts. The representation is two `u32` words; this does not claim native `u64` correctness. |
 | `core::byte` constants and all 44 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
 | `core::bits` all 42 public `i32`, `u32`, `u16`, and `u8` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across word widths, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. Byte operations run all 256 inputs; halfword operations run boundary values and 256 evenly spaced inputs; signed operations check negative patterns and all 32 one-hot bits. |
 | `core::bitset` all 14 public caller-backed bitset functions | Executable on x86_64 for `[u32]` backing | Runtime fixtures check word counts, bit access and mutation, fill, counts, any/all, first/last set bit, equality, union, and intersection. They cover logical lengths 0 through 65, word boundaries, aliases, invalid lengths and indices, preserved padding and unused words, and a physical backing overclaim that traps. A source scan requires a runtime call for every public function. |
@@ -201,7 +202,16 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   power above `u32::MAX`. `div_or` and `rem_or` return the caller's fallback
   for a zero divisor.
   `core::u32::saturating_mul` uses the same constant-time
-  source algorithm, but its imported module still lacks a native claim.
+  source algorithm and runs in its imported module fixture.
+- `core::wide_u64` represents an unsigned 64-bit integer explicitly as high
+  and low `u32` words. It performs unsigned comparisons, arithmetic modulo
+  2^64, bitwise operations, logical shifts, and quotient/remainder without
+  native `u64` operations. Shift counts outside 0 through 63 return zero;
+  division and remainder by zero return the caller's fallback. Its functions
+  allocate no memory and invoke no host service. The imported x86 fixtures
+  execute every public function and compare selected values against native
+  `u64` results. Native `u64` expressions themselves remain incorrect above
+  32 bits; see dependencies 26 and 30.
 - `core::byte` arithmetic saturates or wraps as its function name says.
   `wrapping_mul` computes multiplication modulo 256; the focused fixture
   compares all 65,536 byte pairs with a widened arithmetic reference.
@@ -1149,6 +1159,8 @@ Run `cargo test --test stdlib_base64_execution` for strict caller-backed
 Base64 encoding and decoding, all byte values, and native bounds trapping.
 Run `cargo test --test stdlib_crc32_execution` for streaming and caller-backed
 CRC-32/ISO-HDLC, known vectors, all byte values, and native bounds trapping.
+Run `cargo test --test stdlib_wide_u64_execution` for all two-word 64-bit
+operations, high-bit edge cases, and generated differential arithmetic cases.
 Run `cargo test --test stdlib_endian_execution` for caller-backed endian
 fields, a packet-header sample, and native bounds trapping.
 Run `cargo test --test stdlib_mem_execution` for all public memory helper
