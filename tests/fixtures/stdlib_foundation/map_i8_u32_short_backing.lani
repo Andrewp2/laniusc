@@ -1,0 +1,16 @@
+module app::main;
+import std::map_i8_u32;
+import core::mem;
+import alloc::allocator;
+
+fn main() -> i32 {
+    let zero: u32 = 0;
+    let keys: [u32; 7] = [zero, zero, zero, zero, zero, zero, zero];
+    let memory: ptr = alloc::allocator::alloc(2048, 8);
+    if (memory == 0) { return 1; }
+    let first: ptr = memory + 2040;
+    let values: [u32] = core::mem::typed_slice_from_raw_parts(first, 256);
+    std::map_i8_u32::clear(keys, values);
+    alloc::allocator::dealloc(memory, 2048, 8);
+    return 0;
+}
