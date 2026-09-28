@@ -27,5 +27,26 @@ fn main() -> i32 {
     if (!core::ordering::is_less(core::ordering::compare_bool(false, true)) ||
         !core::ordering::is_equal(core::ordering::compare_bool(false, false)) ||
         !core::ordering::is_greater(core::ordering::compare_bool(true, false))) { return 5; }
+    let zero: f32 = 0.0;
+    let minus_zero: f32 = -zero;
+    let nan: f32 = zero / zero;
+    let positive_infinity: f32 = 1.0 / zero;
+    let negative_infinity: f32 = -1.0 / zero;
+    let fallback_greater: core::ordering::Ordering = core::ordering::Greater;
+    let fallback_less: core::ordering::Ordering = core::ordering::Less;
+    if (!core::ordering::is_less(core::ordering::compare_f32_or(-1.0, 2.0, fallback_greater)) ||
+        !core::ordering::is_equal(core::ordering::compare_f32_or(zero, minus_zero, fallback_greater)) ||
+        !core::ordering::is_greater(core::ordering::compare_f32_or(2.0, -1.0, fallback_less))) {
+        return 6;
+    }
+    if (!core::ordering::is_less(core::ordering::compare_f32_or(negative_infinity, positive_infinity, fallback_greater)) ||
+        !core::ordering::is_greater(core::ordering::compare_f32_or(positive_infinity, negative_infinity, fallback_less))) {
+        return 7;
+    }
+    if (!core::ordering::is_greater(core::ordering::compare_f32_or(nan, 1.0, fallback_greater)) ||
+        !core::ordering::is_less(core::ordering::compare_f32_or(1.0, nan, fallback_less)) ||
+        !core::ordering::is_equal(core::ordering::compare_f32_or(nan, nan, core::ordering::Equal))) {
+        return 8;
+    }
     return 0;
 }

@@ -108,6 +108,14 @@ pub fn compare_bool(left: bool, right: bool) -> Ordering {
     }
 }
 
+// NaN has no ordering. Return the supplied fallback when either input is NaN.
+pub fn compare_f32_or(left: f32, right: f32, fallback: Ordering) -> Ordering {
+    if (left != left || right != right) { return fallback; }
+    if (left < right) { return Less; }
+    if (left > right) { return Greater; }
+    return Equal;
+}
+
 pub fn compare_wide_u64(
     left: core::wide_u64::WideU64,
     right: core::wide_u64::WideU64
