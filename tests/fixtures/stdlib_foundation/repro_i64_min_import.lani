@@ -1,0 +1,6 @@
+module app::main;
+import core::i64;
+fn main() -> i32 {
+    if (core::i64::min(2, 3) == 2) { return 0; }
+    return 1;
+}
