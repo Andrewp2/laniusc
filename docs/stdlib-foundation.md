@@ -23,6 +23,7 @@ limited to native x86_64 output from this worktree.
 | `core::base64` all 4 public caller-backed encoding functions | Executable on x86_64 for `[u8]` backing | Runtime fixtures check exact size calculation, standard padded Base64 encoding and strict decoding, empty input, all 256 values as the final byte of one-, two-, and three-byte round trips, one- and two-byte padding, same-buffer encode/decode, rejected malformed input and insufficient capacity without output changes, and overstated physical views that trap. A source scan requires a runtime call for every public function. |
 | `core::endian` all 12 public caller-backed byte-order functions | Executable on x86_64 for `[u8]` backing | Runtime fixtures check big- and little-endian 16-, 32-, and two-word 64-bit reads and writes, high-bit values, zero, maximum values, invalid logical bounds without writes, and physical backing overclaims that trap. The 16- and 32-bit matrix covers all 256 high-byte values across offsets 0 through 4. The packet-header sample combines byte-order reads with unsigned arithmetic and checks its printed result. A source scan requires a runtime call for every public function. |
 | `core::varint` and `core::varint_wide_u64`, all 12 public functions and five status constants | Executable on x86_64 for caller-backed `[u8]` views | Runtime fixtures call every function, check canonical unsigned LEB128 at 32 and two-word 64 bits, round-trip all 256 first-byte values and wide boundary values, distinguish invalid bounds, truncation, overflow, and nonminimal encodings, reject short write capacity without changing storage, and confirm native traps on physical backing overclaims. The frame-sum program uses both codecs and full-width decimal output. No native `u64` behavior is claimed. |
+| `core::varint_i32` and `core::varint_wide_i64`, all 12 public functions | Executable on x86_64 for caller-backed `[u8]` views | Runtime fixtures call every ZigZag transform, length, write, read, and value accessor. They check `i32` and two-word signed extrema, negative and positive boundaries, all signed values from -128 through 127, no-write capacity rejection, read error fallbacks, and a signed frame program that prints a full-width negative sum. Reads reuse the corresponding unsigned result statuses and next offsets. No native `i64` behavior is claimed. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 25 public codec and backed-view functions | Executable on x86_64 | Native fixtures check ASCII and multibyte encoding/decoding, checked scalar append, scalar counts and lookup, first and last scalar and sequence search, byte/scalar boundary mapping, equality, prefix and suffix matching, lexicographic comparison, empty and truncated views, out-of-byte-range integer codes, malformed sequences, surrogate exclusion, and Unicode maximum. Direct caller-backed `[u8]` helpers validate and count scalars, map scalar and byte boundaries, and read scalars by index across one- through four-byte sequences. They reject malformed input and negative lengths, and native indexing traps on a physical length overclaim. The older general view functions use caller-backed `[i32]` byte codes and do not access string storage. |
@@ -329,6 +330,14 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   portable Lanius source, but executable target evidence is x86_64 only.
   `sample_programs/varint_frame_sum.lani` writes a small frame, decodes it,
   and prints `4294967606`.
+- `core::varint_i32` and `core::varint_wide_i64` map signed values to unsigned
+  LEB128 with ZigZag encoding: `0 -> 0`, `-1 -> 1`, `1 -> 2`, and the signed
+  minimum to the corresponding unsigned maximum. The unsigned readers supply
+  the status and next offset. The signed `value_*_or` accessors decode only a
+  successful result and otherwise return the caller's fallback. Signed writes
+  inherit the unsigned no-write logical rejection and physical-backing trap
+  behavior. `sample_programs/varint_signed_frame_sum.lani` decodes three
+  signed readings and prints `-4294967321`.
 - `core::bool` converts any nonzero i32 to true. Its selector functions return
   the chosen branch value. `core::char` tests ASCII classes; its case-insensitive
   equality and case conversion fold ASCII letters only. `is_ascii_control`
@@ -1279,6 +1288,8 @@ Run `cargo test --test stdlib_endian_execution` for caller-backed endian
 fields, a packet-header sample, and native bounds trapping.
 Run `cargo test --test stdlib_varint_execution` for caller-backed canonical
 varints at both widths, the frame-sum program, and native bounds trapping.
+Run `cargo test --test stdlib_varint_signed_execution` for signed ZigZag
+round trips, both signed extrema, and the signed frame-sum program.
 Run `cargo test --test stdlib_mem_execution` for all public memory helper
 functions, including capability metadata, value helpers, and intrinsics.
 Run `cargo test --test stdlib_allocator_metadata_execution` for allocator

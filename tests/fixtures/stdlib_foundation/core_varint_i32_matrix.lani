@@ -1,0 +1,19 @@
+module app::main;
+import core::varint;
+import core::varint_i32;
+
+fn main() -> i32 {
+    let b0: u8 = 0;
+    let bytes: [u8; 5] = [b0, b0, b0, b0, b0];
+    let value: i32 = -128;
+    while (value <= 127) {
+        let end: i32 = core::varint_i32::write_i32(bytes, 5, 0, value);
+        if (end != core::varint_i32::len_i32(value)) { return 1; }
+        let decoded: core::varint::ReadU32 = core::varint_i32::read_i32(bytes, end, 0);
+        if (core::varint::status_u32(decoded) != core::varint::OK ||
+            core::varint_i32::value_i32_or(decoded, 999) != value ||
+            core::varint::next_u32_or(decoded, -1) != end) { return 2; }
+        value += 1;
+    }
+    return 0;
+}

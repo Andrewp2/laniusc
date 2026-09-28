@@ -1,0 +1,51 @@
+module app::main;
+import core::varint;
+import core::varint_i32;
+
+fn main() -> i32 {
+    if (core::varint_i32::zigzag_encode(0) != 0 ||
+        core::varint_i32::zigzag_encode(-1) != 1 ||
+        core::varint_i32::zigzag_encode(1) != 2 ||
+        core::varint_i32::zigzag_encode(-2147483648) != 4294967295 ||
+        core::varint_i32::zigzag_encode(2147483647) != 4294967294) { return 1; }
+    if (core::varint_i32::zigzag_decode(0) != 0 ||
+        core::varint_i32::zigzag_decode(1) != -1 ||
+        core::varint_i32::zigzag_decode(2) != 1 ||
+        core::varint_i32::zigzag_decode(4294967295) != -2147483648 ||
+        core::varint_i32::zigzag_decode(4294967294) != 2147483647) { return 2; }
+    if (core::varint_i32::len_i32(0) != 1 ||
+        core::varint_i32::len_i32(-64) != 1 ||
+        core::varint_i32::len_i32(-65) != 2 ||
+        core::varint_i32::len_i32(-2147483648) != 5 ||
+        core::varint_i32::len_i32(2147483647) != 5) { return 3; }
+
+    let marker: u8 = 170;
+    let bytes: [u8; 12] = [marker, marker, marker, marker, marker, marker,
+        marker, marker, marker, marker, marker, marker];
+    if (core::varint_i32::write_i32(bytes, 12, 1, -65) != 3 ||
+        bytes[0] != marker || bytes[1] != 129 || bytes[2] != 1 ||
+        bytes[3] != marker) { return 4; }
+    let negative: core::varint::ReadU32 = core::varint_i32::read_i32(bytes, 12, 1);
+    if (core::varint::status_u32(negative) != core::varint::OK ||
+        core::varint_i32::value_i32_or(negative, 99) != -65 ||
+        core::varint::next_u32_or(negative, 99) != 3) { return 5; }
+
+    if (core::varint_i32::write_i32(bytes, 12, 3, -2147483648) != 8 ||
+        bytes[3] != 255 || bytes[4] != 255 || bytes[5] != 255 ||
+        bytes[6] != 255 || bytes[7] != 15 || bytes[8] != marker) { return 6; }
+    let minimum: core::varint::ReadU32 = core::varint_i32::read_i32(bytes, 8, 3);
+    if (core::varint::status_u32(minimum) != core::varint::OK ||
+        core::varint_i32::value_i32_or(minimum, 99) != -2147483648 ||
+        core::varint::next_u32_or(minimum, 99) != 8) { return 7; }
+
+    if (core::varint_i32::write_i32(bytes, 4, 3, -65) != -1 ||
+        core::varint_i32::write_i32(bytes, 12, -1, 0) != -1 ||
+        bytes[8] != marker || bytes[11] != marker) { return 8; }
+    let truncated: core::varint::ReadU32 = core::varint_i32::read_i32(bytes, 4, 3);
+    let invalid: core::varint::ReadU32 = core::varint_i32::read_i32(bytes, 12, -1);
+    if (core::varint::status_u32(truncated) != core::varint::TRUNCATED ||
+        core::varint::status_u32(invalid) != core::varint::INVALID_BOUNDS ||
+        core::varint_i32::value_i32_or(truncated, 77) != 77 ||
+        core::varint_i32::value_i32_or(invalid, 88) != 88) { return 9; }
+    return 0;
+}
