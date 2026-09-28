@@ -1,0 +1,168 @@
+mod common;
+
+use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
+
+fn compile_fixture(name: &str) -> Vec<u8> {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join(format!("tests/fixtures/stdlib_foundation/{name}.lani"));
+    let stdlib_root = root.join("stdlib");
+    common::run_gpu_codegen_with_timeout(name, move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .unwrap_or_else(|error| panic!("{name}: compile: {error}"))
+}
+
+#[test]
+fn owned_character_set_executes_on_x86() {
+    for name in ["set_char_complete", "set_char_unicode"] {
+        let bytes = compile_fixture(name);
+        #[cfg(all(unix, target_arch = "x86_64"))]
+        {
+            let output = common::run_x86_64_elf_output("set_char", "set_char", &bytes);
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert!(output.stdout.is_empty(), "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+        #[cfg(not(all(unix, target_arch = "x86_64")))]
+        let _ = bytes;
+    }
+}
+
+#[test]
+fn unique_unicode_program_counts_scalars_and_errors() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("sample_programs/unique_unicode_count.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("unique unicode count", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile unique unicode count program");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let executable = common::TempArtifact::new("laniusc_set", "unique_unicode", None);
+        executable.write_bytes(&bytes);
+        let mut permissions = std::fs::metadata(executable.path()).unwrap().permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(executable.path(), permissions).unwrap();
+        for (input_bytes, expected_code, expected_stdout) in [
+            (b"".as_slice(), 0, b"0\n".as_slice()),
+            ("Ω😀éΩa".as_bytes(), 0, b"4\n".as_slice()),
+            (b"\0a\0".as_slice(), 0, b"2\n".as_slice()),
+            (b"\xff".as_slice(), 2, b"".as_slice()),
+            (b"\xf0\x9f".as_slice(), 2, b"".as_slice()),
+        ] {
+            let input = common::TempArtifact::new("laniusc_set", "input", None);
+            input.write_bytes(input_bytes);
+            let output = common::short_process_output_with_timeout(
+                "unique unicode count",
+                std::process::Command::new(executable.path()).stdin(std::process::Stdio::from(
+                    std::fs::File::open(input.path()).unwrap(),
+                )),
+            );
+            assert_eq!(
+                output.status.code(),
+                Some(expected_code),
+                "{input_bytes:?}: {output:?}"
+            );
+            assert_eq!(
+                output.stdout, expected_stdout,
+                "{input_bytes:?}: {output:?}"
+            );
+            assert!(output.stderr.is_empty());
+        }
+        let full = std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/full")
+            .unwrap();
+        let status = std::process::Command::new("timeout")
+            .arg("5s")
+            .arg(executable.path())
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::from(full))
+            .status()
+            .expect("run with /dev/full stdout");
+        assert_eq!(status.code(), Some(5), "{status:?}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn every_public_character_set_function_has_a_runtime_case() {
+    let source = include_str!("../stdlib/std/set_char.lani");
+    let fixture = include_str!("fixtures/stdlib_foundation/set_char_complete.lani");
+    let mut covered = 0;
+    for line in source.lines() {
+        let Some(tail) = line.strip_prefix("pub fn ") else {
+            continue;
+        };
+        let name = tail
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .next()
+            .expect("set function has a name");
+        let call = format!("std::set_char::{name}(");
+        assert!(fixture.contains(&call), "{call} lacks a runtime case");
+        covered += 1;
+    }
+    assert_eq!(covered, 19);
+    assert!(fixture.contains("std::set_char::MAX_CAPACITY"));
+}
+
+#[test]
+fn set_allocation_failures_preserve_owned_data() {
+    for (name, syscall, when) in [
+        ("set_char_alloc_failure", "mmap", 1),
+        ("set_char_realloc_failure", "mremap", 1),
+        ("set_char_shrink_failure", "mremap", 1),
+        ("set_char_clone_failure", "mmap", 2),
+        ("set_char_union_failure", "mmap", 3),
+        ("set_char_intersection_failure", "mmap", 3),
+        ("set_char_difference_failure", "mmap", 3),
+        ("set_char_symmetric_difference_failure", "mmap", 3),
+    ] {
+        let bytes = compile_fixture(name);
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let executable = common::TempArtifact::new("laniusc_set", name, None);
+            executable.write_bytes(&bytes);
+            let mut permissions = std::fs::metadata(executable.path()).unwrap().permissions();
+            permissions.set_mode(0o700);
+            std::fs::set_permissions(executable.path(), permissions).unwrap();
+
+            let normal = common::short_process_output_with_timeout(
+                format!("{name} normal allocation"),
+                &mut std::process::Command::new(executable.path()),
+            );
+            assert_eq!(normal.status.code(), Some(4), "{name}: {normal:?}");
+
+            if std::process::Command::new("strace")
+                .arg("-V")
+                .output()
+                .is_ok()
+            {
+                let trace = common::TempArtifact::new("laniusc_set", "trace", None);
+                let injected = common::short_process_output_with_timeout(
+                    format!("{name} injected allocation failure"),
+                    std::process::Command::new("strace")
+                        .arg("-qq")
+                        .arg("-o")
+                        .arg(trace.path())
+                        .arg("-e")
+                        .arg(format!("trace={syscall}"))
+                        .arg("-e")
+                        .arg(format!("inject={syscall}:error=ENOMEM:when={when}"))
+                        .arg(executable.path()),
+                );
+                assert_eq!(injected.status.code(), Some(0), "{name}: {injected:?}");
+                let trace_text = std::fs::read_to_string(trace.path()).unwrap();
+                assert!(trace_text.contains("INJECTED"), "{name}: {trace_text}");
+                assert!(trace_text.contains("ENOMEM"), "{name}: {trace_text}");
+            }
+        }
+        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        let _ = (bytes, syscall, when);
+    }
+}

@@ -8,6 +8,7 @@ use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 enum Kind {
     I32,
     U32,
+    Char,
     WideI64,
     WideU64,
 }
@@ -17,6 +18,7 @@ impl Kind {
         match self {
             Self::I32 => "set_i32",
             Self::U32 => "set_u32",
+            Self::Char => "set_char",
             Self::WideI64 => "set_wide_i64",
             Self::WideU64 => "set_wide_u64",
         }
@@ -26,6 +28,7 @@ impl Kind {
         match self {
             Self::I32 => "SetI32",
             Self::U32 => "SetU32",
+            Self::Char => "SetChar",
             Self::WideI64 => "SetWideI64",
             Self::WideU64 => "SetWideU64",
         }
@@ -35,6 +38,7 @@ impl Kind {
         match self {
             Self::I32 => "i32",
             Self::U32 => "u32",
+            Self::Char => "char",
             Self::WideI64 => "core::wide_i64::WideI64",
             Self::WideU64 => "core::wide_u64::WideU64",
         }
@@ -44,6 +48,7 @@ impl Kind {
         match self {
             Self::I32 => ["-2147483648", "-1", "0", "1", "7", "2147483647"],
             Self::U32 => ["0", "1", "7", "2147483648", "4294967295", "42"],
+            Self::Char => ["'\\0'", "'A'", "'é'", "'中'", "'😀'", "4294967295"],
             Self::WideI64 => [
                 "core::wide_i64::from_words(2147483648, 0)",
                 "core::wide_i64::from_i32(-1)",
@@ -67,6 +72,7 @@ impl Kind {
         match self {
             Self::I32 => "123",
             Self::U32 => "123",
+            Self::Char => "'?'",
             Self::WideI64 => "core::wide_i64::from_i32(123)",
             Self::WideU64 => "core::wide_u64::from_u32(123)",
         }
@@ -74,7 +80,7 @@ impl Kind {
 
     fn equality(self) -> &'static str {
         match self {
-            Self::I32 | Self::U32 => "left == right",
+            Self::I32 | Self::U32 | Self::Char => "left == right",
             Self::WideI64 => "core::wide_i64::eq(left, right)",
             Self::WideU64 => "core::wide_u64::eq(left, right)",
         }
@@ -409,4 +415,9 @@ fn signed_two_word_set_matches_ordered_reference() {
 #[test]
 fn unsigned_two_word_set_matches_ordered_reference() {
     run(Kind::WideU64);
+}
+
+#[test]
+fn character_set_matches_ordered_reference() {
+    run(Kind::Char);
 }

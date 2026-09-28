@@ -155,6 +155,7 @@ limited to native x86_64 output from this worktree.
 | `std::map_wide_i64_wide_i64` all 16 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed array stores signed two-word keys and values as unchanged two's-complement bit patterns. The native fixture calls every function and checks zero, `2^32`, signed minimum and maximum, full-width lookup, in-place replacement, duplicates, missing keys, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, and shrinking. Injected initial, growth, shrink, and clone allocation failures preserve prior entries or return an empty clone. The line-oriented frequency program covers negative inputs, signed extremes, duplicates, and malformed input. Ownership is linear by convention; no native `i64` behavior is claimed. A deterministic 40-operation execution test checks insertion order, lookup, update, removal, reserve, shrink, clear, clone independence, and invalid bounds against a reference map after every step. |
 | `std::set_i32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks empty and populated sets, both signed extremes, duplicates, absent items, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and ordered union, intersection, difference, and symmetric difference. Injected initial allocation, growth, shrink, clone, and each set-algebra allocation failure preserve ownership and existing items. The set owns one allocation of 32-bit cells; ownership is linear by convention. A deterministic 32-operation execution test checks two evolving sets against insertion-order references after every mutation, including cloning and invalid capacities, and compares ordered set algebra every fourth step. |
 | `std::set_u32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks zero, the unsigned high bit, `u32::MAX`, duplicates, absent items, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and all four ordered set-algebra operations. Injected initial allocation, growth, shrink, clone, and set-algebra allocation failures preserve ownership and existing items. A small program deduplicates unsigned readings and prints their wrapping sum. Values use 32-bit cells and preserve every bit pattern; ownership is linear by convention. A deterministic 32-operation execution test checks two evolving sets against insertion-order references after every mutation, including cloning and invalid capacities, and compares ordered set algebra every fourth step. |
+| `std::set_char` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The imported fixture calls every public function and checks insertion order, duplicates, stable removal, bounds, reserve, clone independence, shrinking, all four set-algebra operations, the unsigned high bit, and the all-bit character code. A second fixture checks NUL and two-, three-, and four-byte Unicode scalars through the set-algebra results. Eight injected allocation failures preserve source sets and ownership, or return an empty independent clone/result. A deterministic 32-operation test compares two evolving character sets and ordered algebra with a reference after every step. The input-driven distinct-Unicode program checks empty input, multibyte duplicates, NUL, malformed and truncated UTF-8, and output failure. Each character occupies one 32-bit cell; non-scalar codes can be stored but UTF-8 output accepts only scalars. Ownership is linear by convention. GPU frontend compilation emits the tested x86 program; user-program GPU execution is not claimed. |
 | `std::set_wide_u64` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks zero, `2^32`, the unsigned high bit, and `u64::MAX`, duplicate and absent values, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and all four ordered set-algebra operations. Eight injected allocation failures preserve owned input sets or return empty independent results. The line-oriented distinct-sum program covers duplicates, full-width decimal input, wraparound, and invalid input. Each value occupies two 32-bit cells; ownership is linear by convention. A deterministic 32-operation execution test checks two evolving sets against insertion-order references after every mutation, including cloning and invalid capacities, and compares ordered set algebra every fourth step. |
 | `std::set_wide_i64` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks zero, `2^32`, the signed minimum and maximum, duplicate and absent values, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and all four ordered set-algebra operations. Eight injected allocation failures preserve owned input sets or return empty independent results. The signed distinct-sum program covers ordinary negative values, both signed extrema, duplicates, full-width decimal input, wraparound, and rejected input. Each value occupies two 32-bit cells holding its two's-complement bit pattern; ownership is linear by convention. A deterministic 32-operation execution test checks two evolving sets against insertion-order references after every mutation, including cloning and invalid capacities, and compares ordered set algebra every fourth step. |
 | `std::net` all 64 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 10 host calls unbound | The native fixture calls every metadata function and constant, checks available and unavailable result classification, and confirms network capability flags against `core::runtime`. TCP and UDP calls have no runtime binding. |
@@ -725,7 +726,7 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   An empty source clones without allocation; a nonempty source with an invalid
   raw cell or failed allocation yields an empty zero-capacity vector. Compare
   lengths to detect that failure. The 8-bit, 16-bit, and boolean vectors reject
-  malformed raw cells before allocating; i32 and u32 accept every 32-bit cell.
+  malformed raw cells before allocating; i32, u32, and char accept every 32-bit cell.
 - `std::vec_wide_i64` owns one allocation of paired low/high 32-bit
   cells per signed two-word integer. Maximum capacity is `268435455` values
   so every byte count fits signed i32. Operations return the newest vector;
@@ -763,6 +764,12 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   than a partial result. An empty result can also be mathematically correct;
   callers expecting a nonempty result can detect failure with `len(result)`.
   The API requires x86_64 Linux allocator bindings.
+- `std::set_char` keeps each distinct 32-bit character code once, in
+  insertion order. It has the same bounds, ownership, clone, allocation-failure,
+  and ordered set-algebra contract as `std::set_i32`. Each code occupies one
+  i32 backing cell, including non-scalar bit patterns; only Unicode scalars
+  can be passed to UTF-8 output. The supported target is x86_64 Linux with
+  allocator bindings.
 - `std::set_u32` has the same ownership, insertion-order, bounds, failure,
   and set-algebra contract for unsigned values. It stores each `u32` as raw
   32-bit bits and preserves values above `i32::MAX`, including `u32::MAX`.
@@ -1790,13 +1797,19 @@ reference comparison on all four owned maps.
 Run `cargo test --test stdlib_set_i32_execution` for the owned integer set,
 set algebra, and its initial, growth, shrink, clone, and four set-algebra
 allocation failures.
+Run `cargo test --test stdlib_set_char_execution` for every character-set
+function, Unicode set algebra, eight injected allocation-failure paths, and
+the input-driven distinct-Unicode program. The GPU-resident frontend compiles
+these fixtures to executable x86_64 programs; `strace` is required for the
+injected failure branches.
+
 Run `cargo test --test stdlib_set_u32_execution` for the unsigned set,
 its allocation failures, and the unique-unsigned-total program.
 Run `cargo test --test stdlib_set_wide_u64_execution` for the two-word
 unsigned set, eight allocation failures, and the line-oriented distinct sum.
 Run `cargo test --test stdlib_set_stateful_execution` for 32 mixed
-operations and ordered algebra comparisons against a reference for all four
-owned set types.
+operations and ordered algebra comparisons against a reference for all five
+owned set types, including `std::set_char`.
 Run `cargo test --test stdlib_set_wide_i64_execution` for the signed two-word
 set, eight allocation failures, and the signed line-oriented distinct sum.
 Run `cargo test --test stdlib_fs_read_i32_execution` for the raw signed

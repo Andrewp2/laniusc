@@ -1,0 +1,126 @@
+module app::main;
+import std::set_char;
+
+fn main() -> i32 {
+    let value: std::set_char::SetChar = std::set_char::new();
+    if (std::set_char::MAX_CAPACITY != 536870911 ||
+        !std::set_char::is_empty(value) ||
+        std::set_char::len(value) != 0 ||
+        std::set_char::capacity(value) != 0 ||
+        std::set_char::contains(value, 0) ||
+        std::set_char::at_or(value, 0, 91) != 91) { return 1; }
+
+    value = std::set_char::try_reserve(value, 3);
+    if (std::set_char::capacity(value) != 3) { return 2; }
+    value = std::set_char::try_reserve(value, -1);
+    value = std::set_char::try_reserve(value, 536870912);
+    if (std::set_char::capacity(value) != 3) { return 3; }
+
+    value = std::set_char::try_insert(value, 0);
+    value = std::set_char::try_insert(value, 2147483648);
+    value = std::set_char::try_insert(value, 4294967295);
+    if (std::set_char::len(value) != 3 ||
+        std::set_char::is_empty(value) ||
+        !std::set_char::contains(value, 0) ||
+        !std::set_char::contains(value, 2147483648) ||
+        !std::set_char::contains(value, 4294967295) ||
+        std::set_char::contains(value, 42) ||
+        std::set_char::at_or(value, 0, 91) != 0 ||
+        std::set_char::at_or(value, 1, 91) != 2147483648 ||
+        std::set_char::at_or(value, 2, 91) != 4294967295 ||
+        std::set_char::at_or(value, -1, 91) != 91 ||
+        std::set_char::at_or(value, 3, 91) != 91) { return 4; }
+
+    value = std::set_char::try_insert(value, 0);
+    if (std::set_char::len(value) != 3) { return 5; }
+    let copy: std::set_char::SetChar = std::set_char::try_clone(value);
+    if (std::set_char::len(copy) != 3 ||
+        std::set_char::capacity(copy) != 3 ||
+        std::set_char::at_or(copy, 1, 91) != 2147483648) { return 6; }
+    copy = std::set_char::try_remove(copy, 0);
+    if (std::set_char::len(copy) != 2 ||
+        std::set_char::contains(copy, 0) ||
+        !std::set_char::contains(value, 0) ||
+        std::set_char::at_or(copy, 0, 91) != 2147483648) { return 7; }
+    std::set_char::destroy(copy);
+
+    value = std::set_char::try_remove(value, 2147483648);
+    if (std::set_char::len(value) != 2 ||
+        std::set_char::capacity(value) != 3 ||
+        std::set_char::at_or(value, 1, 91) != 4294967295) { return 8; }
+    value = std::set_char::try_remove(value, 42);
+    if (std::set_char::len(value) != 2) { return 9; }
+    value = std::set_char::try_shrink_to_fit(value);
+    if (std::set_char::capacity(value) != 2 ||
+        std::set_char::at_or(value, 0, 91) != 0 ||
+        std::set_char::at_or(value, 1, 91) != 4294967295) { return 10; }
+
+    value = std::set_char::try_insert(value, 17);
+    if (std::set_char::len(value) != 3 ||
+        std::set_char::at_or(value, 2, 91) != 17) { return 11; }
+    value = std::set_char::clear(value);
+    if (!std::set_char::is_empty(value) ||
+        std::set_char::contains(value, 17) ||
+        std::set_char::capacity(value) != 4) { return 12; }
+    let empty_copy: std::set_char::SetChar = std::set_char::try_clone(value);
+    if (std::set_char::len(empty_copy) != 0 ||
+        std::set_char::capacity(empty_copy) != 0) { return 13; }
+    std::set_char::destroy(empty_copy);
+    value = std::set_char::try_shrink_to_fit(value);
+    if (std::set_char::capacity(value) != 0) { return 14; }
+    std::set_char::destroy(value);
+
+    let left: std::set_char::SetChar = std::set_char::new();
+    left = std::set_char::try_insert(left, 0);
+    left = std::set_char::try_insert(left, 4294967289);
+    left = std::set_char::try_insert(left, 9);
+    let right: std::set_char::SetChar = std::set_char::new();
+    right = std::set_char::try_insert(right, 9);
+    right = std::set_char::try_insert(right, 42);
+    right = std::set_char::try_insert(right, 0);
+    if (std::set_char::is_subset(left, right) ||
+        std::set_char::is_disjoint(left, right) ||
+        !std::set_char::is_subset(std::set_char::new(), left) ||
+        !std::set_char::is_disjoint(std::set_char::new(), right)) { return 15; }
+
+    let joined: std::set_char::SetChar = std::set_char::try_union(left, right);
+    let common: std::set_char::SetChar = std::set_char::try_intersection(left, right);
+    let only_left: std::set_char::SetChar = std::set_char::try_difference(left, right);
+    let exclusive: std::set_char::SetChar = std::set_char::try_symmetric_difference(left, right);
+    if (std::set_char::len(joined) != 4 ||
+        std::set_char::at_or(joined, 0, 99) != 0 ||
+        std::set_char::at_or(joined, 1, 99) != 4294967289 ||
+        std::set_char::at_or(joined, 2, 99) != 9 ||
+        std::set_char::at_or(joined, 3, 99) != 42 ||
+        !std::set_char::is_subset(left, joined) ||
+        !std::set_char::is_subset(right, joined)) { return 16; }
+    if (std::set_char::len(common) != 2 ||
+        std::set_char::at_or(common, 0, 99) != 0 ||
+        std::set_char::at_or(common, 1, 99) != 9 ||
+        std::set_char::len(only_left) != 1 ||
+        std::set_char::at_or(only_left, 0, 99) != 4294967289 ||
+        !std::set_char::is_disjoint(only_left, right) ||
+        std::set_char::len(exclusive) != 2 ||
+        std::set_char::at_or(exclusive, 0, 99) != 4294967289 ||
+        std::set_char::at_or(exclusive, 1, 99) != 42) { return 17; }
+    left = std::set_char::try_remove(left, 0);
+    if (std::set_char::len(left) != 2 ||
+        !std::set_char::contains(joined, 0) ||
+        !std::set_char::contains(common, 0)) { return 18; }
+    let same: std::set_char::SetChar = std::set_char::try_intersection(left, left);
+    let none: std::set_char::SetChar = std::set_char::try_difference(left, left);
+    let no_exclusive: std::set_char::SetChar = std::set_char::try_symmetric_difference(left, left);
+    if (std::set_char::len(same) != 2 ||
+        !std::set_char::is_empty(none) ||
+        !std::set_char::is_empty(no_exclusive)) { return 19; }
+    std::set_char::destroy(same);
+    std::set_char::destroy(none);
+    std::set_char::destroy(no_exclusive);
+    std::set_char::destroy(exclusive);
+    std::set_char::destroy(only_left);
+    std::set_char::destroy(common);
+    std::set_char::destroy(joined);
+    std::set_char::destroy(right);
+    std::set_char::destroy(left);
+    return 0;
+}

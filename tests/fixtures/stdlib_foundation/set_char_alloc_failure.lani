@@ -1,0 +1,20 @@
+module app::main;
+import std::set_char;
+
+fn main() -> i32 {
+    let value: std::set_char::SetChar = std::set_char::new();
+    value = std::set_char::try_insert(value, 41);
+    if (std::set_char::len(value) == 0 &&
+        std::set_char::capacity(value) == 0 &&
+        !std::set_char::contains(value, 41)) {
+        std::set_char::destroy(value);
+        return 0;
+    }
+    if (std::set_char::len(value) == 1 &&
+        std::set_char::contains(value, 41)) {
+        std::set_char::destroy(value);
+        return 4;
+    }
+    std::set_char::destroy(value);
+    return 5;
+}

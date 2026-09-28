@@ -1,0 +1,37 @@
+// Count distinct Unicode scalars in UTF-8 stdin, preserving no input text.
+// Return 2 for malformed UTF-8, 3 for input failure, 4 for allocation or
+// capacity failure, and 5 for output failure.
+module app::main;
+import std::io_byte;
+import std::io_decimal;
+import std::io_utf8;
+import std::set_char;
+
+fn main() -> i32 {
+    let seen: std::set_char::SetChar = std::set_char::new();
+    while (true) {
+        let code: u32 = std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114);
+        if (code == 1114112) { break; }
+        if (code == 1114113) {
+            std::set_char::destroy(seen);
+            return 2;
+        }
+        if (code == 1114114) {
+            std::set_char::destroy(seen);
+            return 3;
+        }
+        let scalar: char = code;
+        let existed: bool = std::set_char::contains(seen, scalar);
+        let before: i32 = std::set_char::len(seen);
+        seen = std::set_char::try_insert(seen, scalar);
+        if (!existed && std::set_char::len(seen) != before + 1) {
+            std::set_char::destroy(seen);
+            return 4;
+        }
+    }
+    let count: i32 = std::set_char::len(seen);
+    std::set_char::destroy(seen);
+    if (std::io_decimal::write_i32(1, count) < 0) { return 5; }
+    if (!std::io_byte::write_stdout_byte(10)) { return 5; }
+    return 0;
+}
