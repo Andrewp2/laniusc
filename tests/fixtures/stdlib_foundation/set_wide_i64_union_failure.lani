@@ -1,0 +1,29 @@
+module app::main;
+import std::set_wide_i64;
+import core::wide_i64;
+fn same(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+    return core::wide_i64::eq(left, right);
+}
+
+fn main() -> i32 {
+    let large: core::wide_i64::WideI64 = core::wide_i64::min_value();
+    let small: core::wide_i64::WideI64 = core::wide_i64::from_i32(42);
+    let forty_one: core::wide_i64::WideI64 = core::wide_i64::from_i32(41);
+    let zero_value: core::wide_i64::WideI64 = core::wide_i64::zero();
+    let left: std::set_wide_i64::SetWideI64 = std::set_wide_i64::try_insert(std::set_wide_i64::new(), large);
+    let right: std::set_wide_i64::SetWideI64 = std::set_wide_i64::try_insert(std::set_wide_i64::new(), small);
+    if (std::set_wide_i64::len(left) != 1 || std::set_wide_i64::len(right) != 1) { return 2; }
+    let result: std::set_wide_i64::SetWideI64 = std::set_wide_i64::try_union(left, right);
+    let failed: bool = std::set_wide_i64::len(result) == 0 &&
+        std::set_wide_i64::capacity(result) == 0 &&
+        std::set_wide_i64::contains(left, large) && std::set_wide_i64::contains(right, small);
+    let succeeded: bool = std::set_wide_i64::len(result) == 2 &&
+        same(std::set_wide_i64::at_or(result, 0, zero_value), large) &&
+        same(std::set_wide_i64::at_or(result, 1, zero_value), small);
+    std::set_wide_i64::destroy(result);
+    std::set_wide_i64::destroy(right);
+    std::set_wide_i64::destroy(left);
+    if (failed) { return 0; }
+    if (succeeded) { return 4; }
+    return 5;
+}

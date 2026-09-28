@@ -136,6 +136,7 @@ limited to native x86_64 output from this worktree.
 | `std::set_i32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks empty and populated sets, both signed extremes, duplicates, absent items, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and ordered union, intersection, difference, and symmetric difference. Injected initial allocation, growth, shrink, clone, and each set-algebra allocation failure preserve ownership and existing items. The set owns one allocation of 32-bit cells; ownership is linear by convention. |
 | `std::set_u32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks zero, the unsigned high bit, `u32::MAX`, duplicates, absent items, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and all four ordered set-algebra operations. Injected initial allocation, growth, shrink, clone, and set-algebra allocation failures preserve ownership and existing items. A small program deduplicates unsigned readings and prints their wrapping sum. Values use 32-bit cells and preserve every bit pattern; ownership is linear by convention. |
 | `std::set_wide_u64` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks zero, `2^32`, the unsigned high bit, and `u64::MAX`, duplicate and absent values, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and all four ordered set-algebra operations. Eight injected allocation failures preserve owned input sets or return empty independent results. The line-oriented distinct-sum program covers duplicates, full-width decimal input, wraparound, and invalid input. Each value occupies two 32-bit cells; ownership is linear by convention. |
+| `std::set_wide_i64` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks zero, `2^32`, the signed minimum and maximum, duplicate and absent values, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and all four ordered set-algebra operations. Eight injected allocation failures preserve owned input sets or return empty independent results. The signed distinct-sum program covers ordinary negative values, both signed extrema, duplicates, full-width decimal input, wraparound, and rejected input. Each value occupies two 32-bit cells holding its two's-complement bit pattern; ownership is linear by convention. |
 | `std::net` all 64 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 10 host calls unbound | The native fixture calls every metadata function and constant, checks available and unavailable result classification, and confirms network capability flags against `core::runtime`. TCP and UDP calls have no runtime binding. |
 | `std::thread` all 32 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 4 host calls unbound | The native fixture calls every metadata function and constant, checks result classification, and confirms that spawn, join, yield, and current-id calls remain unavailable. |
 | `std::gpu` all 44 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 5 host calls unbound | The native fixture calls every metadata function and constant, checks result classification, and confirms unavailable buffer and dispatch services. Compiler execution on a GPU does not bind a user-program GPU API. |
@@ -672,6 +673,14 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   return the supplied `WideU64` fallback; failed growth leaves the original
   set live, and failed set algebra returns an empty independent set. The
   supported target is x86_64 Linux with allocator bindings.
+- `std::set_wide_i64` follows the same ordered-set, ownership, and failure
+  rules for two-word signed values. It stores low and high two's-complement
+  words unchanged, including the sign bit. The capacity limit is 268,435,455
+  entries; invalid ordinals use the caller fallback. Allocation failure during
+  insertion, reservation, or shrinking preserves the original set, while a
+  failed clone or set-algebra operation returns an empty independent set.
+  Callers distinguish an expected nonempty algebra result from failure with
+  `len`. The supported target is x86_64 Linux with allocator bindings.
 - `std::map_i32_i32` stores distinct signed keys and signed values as adjacent
   32-bit cells. Insertion and removal preserve the order of remaining keys.
   `try_insert` adds a missing key and leaves an existing one unchanged;
@@ -1577,6 +1586,8 @@ Run `cargo test --test stdlib_set_u32_execution` for the unsigned set,
 its allocation failures, and the unique-unsigned-total program.
 Run `cargo test --test stdlib_set_wide_u64_execution` for the two-word
 unsigned set, eight allocation failures, and the line-oriented distinct sum.
+Run `cargo test --test stdlib_set_wide_i64_execution` for the signed two-word
+set, eight allocation failures, and the signed line-oriented distinct sum.
 Run `cargo test --test stdlib_fs_read_i32_execution` for the raw signed
 integer reader's normal values, signed limits, overflow, line boundaries,
 empty lines, EOF, and an injected host read error when `strace` is available.

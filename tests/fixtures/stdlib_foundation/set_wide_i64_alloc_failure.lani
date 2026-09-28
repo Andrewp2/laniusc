@@ -1,0 +1,28 @@
+module app::main;
+import std::set_wide_i64;
+import core::wide_i64;
+fn same(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+    return core::wide_i64::eq(left, right);
+}
+
+fn main() -> i32 {
+    let large: core::wide_i64::WideI64 = core::wide_i64::min_value();
+    let small: core::wide_i64::WideI64 = core::wide_i64::from_i32(42);
+    let forty_one: core::wide_i64::WideI64 = core::wide_i64::from_i32(41);
+    let zero_value: core::wide_i64::WideI64 = core::wide_i64::zero();
+    let value: std::set_wide_i64::SetWideI64 = std::set_wide_i64::new();
+    value = std::set_wide_i64::try_insert(value, forty_one);
+    if (std::set_wide_i64::len(value) == 0 &&
+        std::set_wide_i64::capacity(value) == 0 &&
+        !std::set_wide_i64::contains(value, forty_one)) {
+        std::set_wide_i64::destroy(value);
+        return 0;
+    }
+    if (std::set_wide_i64::len(value) == 1 &&
+        std::set_wide_i64::contains(value, forty_one)) {
+        std::set_wide_i64::destroy(value);
+        return 4;
+    }
+    std::set_wide_i64::destroy(value);
+    return 5;
+}

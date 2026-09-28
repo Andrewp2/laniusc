@@ -1,0 +1,386 @@
+// Owned insertion-ordered two-word signed set. Each element occupies two
+// 32-bit cells in low/high order. Ownership is linear by convention: use only
+// the newest returned set and destroy it exactly once.
+module std::set_wide_i64;
+import alloc::allocator;
+import core::mem;
+import core::wide_i64;
+
+pub struct SetWideI64 {
+    storage: ptr,
+    length: i32,
+    reserved: i32,
+}
+
+pub const MAX_CAPACITY: i32 = 268435455;
+
+// Store the low and high words without changing either two's-complement bit pattern.
+fn store_at(cells: [i32], index: i32, item: core::wide_i64::WideI64) {
+    let offset: i32 = index * 2;
+    let low: u32 = core::wide_i64::low_word(item);
+    let high: u32 = core::wide_i64::high_word(item);
+    cells[offset] = low as i32;
+    cells[offset + 1] = high as i32;
+}
+
+pub fn new() -> SetWideI64 {
+    let empty: ptr = 0;
+    return SetWideI64 { storage: empty, length: 0, reserved: 0 };
+}
+
+pub fn len(value: SetWideI64) -> i32 {
+    return value.length;
+}
+
+pub fn capacity(value: SetWideI64) -> i32 {
+    return value.reserved;
+}
+
+pub fn is_empty(value: SetWideI64) -> bool {
+    return value.length == 0;
+}
+
+pub fn contains(value: SetWideI64, item: core::wide_i64::WideI64) -> bool {
+    if (value.length == 0) {
+        return false;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
+    let index: i32 = 0;
+    while (index < value.length) {
+        let offset: i32 = index * 2;
+        let stored_low: u32 = cells[offset];
+        let stored_high: u32 = cells[offset + 1];
+        if (stored_low == core::wide_i64::low_word(item) &&
+            stored_high == core::wide_i64::high_word(item)) {
+            return true;
+        }
+        index += 1;
+    }
+    return false;
+}
+
+// Elements retain insertion order. Invalid ordinals return fallback; use len
+// to distinguish an absent ordinal when a stored item equals the fallback.
+pub fn at_or(value: SetWideI64, ordinal: i32, fallback: core::wide_i64::WideI64) -> core::wide_i64::WideI64 {
+    if (ordinal < 0 || ordinal >= value.length) {
+        return fallback;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
+    let offset: i32 = ordinal * 2;
+    let low: u32 = cells[offset];
+    let high: u32 = cells[offset + 1];
+    return core::wide_i64::from_words(high, low);
+}
+
+// A negative or oversized request, or allocation failure, leaves the set
+// unchanged. Compare capacity(result) against the request to detect failure.
+pub fn try_reserve(value: SetWideI64, minimum_capacity: i32) -> SetWideI64 {
+    if (minimum_capacity < 0 || minimum_capacity > MAX_CAPACITY ||
+        minimum_capacity <= value.reserved) {
+        return value;
+    }
+    let byte_count: i32 = minimum_capacity * 8;
+    let new_bytes: usize = byte_count as usize;
+    let next: ptr = 0;
+    if (value.storage == 0) {
+        next = alloc::allocator::alloc(new_bytes, 4);
+    } else {
+        let old_byte_count: i32 = value.reserved * 8;
+        let old_bytes: usize = old_byte_count as usize;
+        next = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
+    }
+    if (next == 0) {
+        return value;
+    }
+    return SetWideI64 {
+        storage: next,
+        length: value.length,
+        reserved: minimum_capacity,
+    };
+}
+
+// Insert a new item. A duplicate, capacity limit, or allocation failure
+// leaves len unchanged. Compare len(result) to the old length for success.
+pub fn try_insert(value: SetWideI64, item: core::wide_i64::WideI64) -> SetWideI64 {
+    if (contains(value, item) || value.length >= MAX_CAPACITY) {
+        return value;
+    }
+    let grown: SetWideI64 = value;
+    if (grown.length == grown.reserved) {
+        let target: i32 = 4;
+        if (grown.reserved > 0) {
+            if (grown.reserved > MAX_CAPACITY / 2) {
+                target = MAX_CAPACITY;
+            } else {
+                target = grown.reserved * 2;
+            }
+        }
+        grown = try_reserve(grown, target);
+        if (grown.length == grown.reserved) {
+            return value;
+        }
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved * 2);
+    let offset: i32 = grown.length * 2;
+    let low: u32 = core::wide_i64::low_word(item);
+    let high: u32 = core::wide_i64::high_word(item);
+    cells[offset] = low as i32;
+    cells[offset + 1] = high as i32;
+    return SetWideI64 {
+        storage: grown.storage,
+        length: grown.length + 1,
+        reserved: grown.reserved,
+    };
+}
+
+// Remove an item while preserving the order of remaining items. Missing
+// items leave the set unchanged; successful removal decrements len.
+pub fn try_remove(value: SetWideI64, item: core::wide_i64::WideI64) -> SetWideI64 {
+    if (value.length == 0) {
+        return value;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
+    let index: i32 = 0;
+    while (index < value.length) {
+        let offset: i32 = index * 2;
+        let stored_low: u32 = cells[offset];
+        let stored_high: u32 = cells[offset + 1];
+        if (stored_low == core::wide_i64::low_word(item) &&
+            stored_high == core::wide_i64::high_word(item)) {
+            let cursor: i32 = index;
+            while (cursor + 1 < value.length) {
+                let destination: i32 = cursor * 2;
+                let source: i32 = destination + 2;
+                cells[destination] = cells[source];
+                cells[destination + 1] = cells[source + 1];
+                cursor += 1;
+            }
+            return SetWideI64 {
+                storage: value.storage,
+                length: value.length - 1,
+                reserved: value.reserved,
+            };
+        }
+        index += 1;
+    }
+    return value;
+}
+
+pub fn clear(value: SetWideI64) -> SetWideI64 {
+    return SetWideI64 {
+        storage: value.storage,
+        length: 0,
+        reserved: value.reserved,
+    };
+}
+
+// Release unused storage. Empty sets release their allocation. Reallocation
+// failure returns the original set with its old capacity and elements.
+pub fn try_shrink_to_fit(value: SetWideI64) -> SetWideI64 {
+    if (value.length == value.reserved) {
+        return value;
+    }
+    if (value.length == 0) {
+        destroy(value);
+        return new();
+    }
+    let old_byte_count: i32 = value.reserved * 8;
+    let new_byte_count: i32 = value.length * 8;
+    let old_bytes: usize = old_byte_count as usize;
+    let new_bytes: usize = new_byte_count as usize;
+    let next: ptr = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
+    if (next == 0) {
+        return value;
+    }
+    return SetWideI64 {
+        storage: next,
+        length: value.length,
+        reserved: value.length,
+    };
+}
+
+// An independent copy of initialized items. Allocation failure returns an
+// empty zero-capacity set and leaves the source unchanged. A nonempty source
+// cloned successfully when len(result) == len(value).
+pub fn try_clone(value: SetWideI64) -> SetWideI64 {
+    if (value.length == 0) {
+        return new();
+    }
+    let copy: SetWideI64 = try_reserve(new(), value.length);
+    if (copy.reserved < value.length) {
+        return new();
+    }
+    let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length * 2);
+    let destination: [i32] = core::mem::i32_slice_from_raw_parts(copy.storage, copy.reserved * 2);
+    let index: i32 = 0;
+    let count: i32 = value.length * 2;
+    while (index < count) {
+        destination[index] = source[index];
+        index += 1;
+    }
+    return SetWideI64 {
+        storage: copy.storage,
+        length: value.length,
+        reserved: copy.reserved,
+    };
+}
+
+pub fn is_subset(left: SetWideI64, right: SetWideI64) -> bool {
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (!contains(right, at_or(left, index, core::wide_i64::zero()))) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+pub fn is_disjoint(left: SetWideI64, right: SetWideI64) -> bool {
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (contains(right, at_or(left, index, core::wide_i64::zero()))) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Each set algebra operation returns a new independent owner. It reserves the
+// complete result before writing, so no allocation failure can leave a
+// partial set. An empty result means either the mathematical result is empty
+// or allocation/capacity failed; when a nonempty result is expected, compare
+// len(result) to zero. Source sets remain live and unchanged.
+pub fn try_union(left: SetWideI64, right: SetWideI64) -> SetWideI64 {
+    let count: i32 = left.length;
+    let index: i32 = 0;
+    while (index < right.length) {
+        if (!contains(left, at_or(right, index, core::wide_i64::zero()))) {
+            if (count >= MAX_CAPACITY) { return new(); }
+            count += 1;
+        }
+        index += 1;
+    }
+    if (count == 0) { return new(); }
+    let output: SetWideI64 = try_reserve(new(), count);
+    if (output.reserved < count) { return new(); }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(output.storage, output.reserved * 2);
+    index = 0;
+    while (index < left.length) {
+        let item: core::wide_i64::WideI64 = at_or(left, index, core::wide_i64::zero());
+        store_at(cells, index, item);
+        index += 1;
+    }
+    let written: i32 = left.length;
+    index = 0;
+    while (index < right.length) {
+        let item: core::wide_i64::WideI64 = at_or(right, index, core::wide_i64::zero());
+        if (!contains(left, item)) {
+            store_at(cells, written, item);
+            written += 1;
+        }
+        index += 1;
+    }
+    return SetWideI64 { storage: output.storage, length: count, reserved: output.reserved };
+}
+
+pub fn try_intersection(left: SetWideI64, right: SetWideI64) -> SetWideI64 {
+    let count: i32 = 0;
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (contains(right, at_or(left, index, core::wide_i64::zero()))) { count += 1; }
+        index += 1;
+    }
+    if (count == 0) { return new(); }
+    let output: SetWideI64 = try_reserve(new(), count);
+    if (output.reserved < count) { return new(); }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(output.storage, output.reserved * 2);
+    let written: i32 = 0;
+    index = 0;
+    while (index < left.length) {
+        let item: core::wide_i64::WideI64 = at_or(left, index, core::wide_i64::zero());
+        if (contains(right, item)) {
+            store_at(cells, written, item);
+            written += 1;
+        }
+        index += 1;
+    }
+    return SetWideI64 { storage: output.storage, length: count, reserved: output.reserved };
+}
+
+pub fn try_difference(left: SetWideI64, right: SetWideI64) -> SetWideI64 {
+    let count: i32 = 0;
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (!contains(right, at_or(left, index, core::wide_i64::zero()))) { count += 1; }
+        index += 1;
+    }
+    if (count == 0) { return new(); }
+    let output: SetWideI64 = try_reserve(new(), count);
+    if (output.reserved < count) { return new(); }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(output.storage, output.reserved * 2);
+    let written: i32 = 0;
+    index = 0;
+    while (index < left.length) {
+        let item: core::wide_i64::WideI64 = at_or(left, index, core::wide_i64::zero());
+        if (!contains(right, item)) {
+            store_at(cells, written, item);
+            written += 1;
+        }
+        index += 1;
+    }
+    return SetWideI64 { storage: output.storage, length: count, reserved: output.reserved };
+}
+
+pub fn try_symmetric_difference(left: SetWideI64, right: SetWideI64) -> SetWideI64 {
+    let count: i32 = 0;
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (!contains(right, at_or(left, index, core::wide_i64::zero()))) {
+            if (count >= MAX_CAPACITY) { return new(); }
+            count += 1;
+        }
+        index += 1;
+    }
+    index = 0;
+    while (index < right.length) {
+        if (!contains(left, at_or(right, index, core::wide_i64::zero()))) {
+            if (count >= MAX_CAPACITY) { return new(); }
+            count += 1;
+        }
+        index += 1;
+    }
+    if (count == 0) { return new(); }
+    let output: SetWideI64 = try_reserve(new(), count);
+    if (output.reserved < count) { return new(); }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(output.storage, output.reserved * 2);
+    let written: i32 = 0;
+    index = 0;
+    while (index < left.length) {
+        let item: core::wide_i64::WideI64 = at_or(left, index, core::wide_i64::zero());
+        if (!contains(right, item)) {
+            store_at(cells, written, item);
+            written += 1;
+        }
+        index += 1;
+    }
+    index = 0;
+    while (index < right.length) {
+        let item: core::wide_i64::WideI64 = at_or(right, index, core::wide_i64::zero());
+        if (!contains(left, item)) {
+            store_at(cells, written, item);
+            written += 1;
+        }
+        index += 1;
+    }
+    return SetWideI64 { storage: output.storage, length: count, reserved: output.reserved };
+}
+
+pub fn destroy(value: SetWideI64) {
+    if (value.storage != 0) {
+        let byte_count: i32 = value.reserved * 8;
+        let bytes: usize = byte_count as usize;
+        alloc::allocator::dealloc(value.storage, bytes, 4);
+    }
+}
