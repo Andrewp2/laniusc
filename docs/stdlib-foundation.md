@@ -78,7 +78,7 @@ limited to native x86_64 output from this worktree.
 | `std::io` all 54 public Lanius functions, 12 constants, and 7 host calls | Executable on x86_64 Linux | The foundation runtime fixture checks every metadata function and constant. Existing I/O fixtures execute all six higher-level public functions, including line output, `print_i32`, and synchronous flush semantics. Native tests exercise the seven bound calls with real stdin, stdout, stderr, and file handles, including short writes and host errors. GPU device execution is not claimed. |
 | `std::fs` all 67 public Lanius functions, 18 constants, and 14 host calls | Executable on x86_64 Linux | The foundation fixture checks every metadata function and constant. Native tests exercise raw open, append, read, write, close, path mutation, string paths, and decimal reads. Pointer path calls consume their supplied lengths and reject invalid bounds or embedded NUL bytes; decimal reads reject overflow. The file suite covers normal paths, missing paths, and host failures. GPU device execution is not claimed. |
 | `std::random` all 28 metadata functions, 8 constants, and 2 host calls | Executable on x86_64 Linux | The foundation fixture executes every metadata function and reads every constant. `fill_secure_bytes` returns a byte count or negative error, including after unrelated host calls (resolved dependency 44). The raw `secure_u32` returns a full-width draw or traps on a short read or host error (resolved dependency 18). GPU device execution is not claimed. |
-| `std::time` | Mixed: bound calls executable; i64 declarations contract-only | The x86 binding supports 16-byte clock reads, i32 millisecond sleep, and Unix seconds. The i64 clock and sleep declarations remain unbound. `std::time_checked` exercises the bounded operations. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
+| `std::time` all 53 public metadata functions and 7 host calls | Mixed: bound calls executable; i64 declarations contract-only | The native metadata fixture calls every public metadata function, checks available and unavailable capabilities, classifies ordinary and failure results, and directly executes all four bound host calls: two 16-byte clock reads, i32 millisecond sleep, and Unix seconds. Its i64 result checks cover only small values; full-width i64 behavior remains blocked by dependency 11. The three i64 clock and sleep host declarations remain unbound. `std::time_checked` tests bounded operations and host failures. Consult `laniusc diagnostics runtime-apis` for per-call binding status. |
 | `std::args_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks argument count including the executable, exact byte lengths and bytes, absent/negative indices, sufficient and insufficient capacity, null storage, and capacity above `i32::MAX`. Caller storage avoids allocation. |
 | `std::env_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_env_execution.rs` checks exact value and key bytes, missing and invalid indices, capacity and null-storage failures, current-directory bytes and its NUL terminator, and injected `getcwd` failure. Caller storage avoids allocation. |
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
@@ -1098,6 +1098,8 @@ Run `cargo test --test stdlib_mem_execution` for all public memory helper
 functions, including capability metadata, value helpers, and intrinsics.
 Run `cargo test --test stdlib_allocator_metadata_execution` for allocator
 capability metadata and live pointer classification.
+Run `cargo test --test stdlib_time_execution` for clock metadata, the four
+bound host calls, checked wrappers, and injected host failures.
 Run `cargo test --test stdlib_cast_store_execution` for direct indexed byte
 casts and the i32 and byte-slice store paths.
 The test compiles small Lanius programs through `--stdlib-root`, executes
@@ -1673,6 +1675,15 @@ also fixes the imported struct-return relocation path described below.
     `tests/stdlib_cast_store_execution.rs` runs the direct and named-local
     forms, a direct fixed-array cast store, an i32 store with a cast RHS, and
     existing i32 and byte-slice fixtures. They all exit 0 on x86_64.
+53. **Resolved: i32 millisecond sleep left half of each timespec field uninitialized.**
+    `tests/fixtures/stdlib_host/std_time_metadata.lani` calls both clock reads
+    and then zero-millisecond sleep after many metadata calls. Before the fix,
+    the native ELF exited 11; `strace` showed `nanosleep` receiving a nonzero
+    garbage upper half of `tv_nsec` and failing with `EINVAL`. The fixed x86
+    runtime writes both `timespec` fields as 64-bit words while preserving the
+    block's 55-byte size and every following runtime service offset.
+    `tests/stdlib_time_execution.rs` now runs this fixture and the checked
+    clock and sleep cases successfully.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

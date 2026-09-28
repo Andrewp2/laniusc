@@ -24,6 +24,28 @@ fn checked_time_functions_have_runtime_cases() {
     assert_eq!(count, 3);
 }
 
+#[test]
+fn every_public_time_metadata_function_has_a_runtime_case() {
+    let source = include_str!("../stdlib/std/time.lani");
+    let cases = include_str!("fixtures/stdlib_host/std_time_metadata.lani");
+    let mut count = 0;
+    for line in source.lines() {
+        let Some(tail) = line.strip_prefix("pub fn ") else {
+            continue;
+        };
+        let name = tail
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .next()
+            .expect("public time metadata function has a name");
+        assert!(
+            cases.contains(&format!("std::time::{name}(")),
+            "std::time::{name} lacks a runtime case"
+        );
+        count += 1;
+    }
+    assert_eq!(count, 53);
+}
+
 fn compile_fixture(name: &str) -> Vec<u8> {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join(format!("tests/fixtures/stdlib_host/{name}.lani"));
@@ -65,6 +87,22 @@ fn std_time_checked_executes_on_x86() {
             started.elapsed() >= std::time::Duration::from_millis(40),
             "50 ms sleep completed too quickly"
         );
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn std_time_metadata_executes_on_x86() {
+    let bytes = compile_fixture("std_time_metadata");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output =
+            common::run_x86_64_elf_output("std_time_metadata", "std_time_metadata", &bytes);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "unexpected stdout");
+        assert!(output.stderr.is_empty(), "unexpected stderr");
     }
     #[cfg(not(all(unix, target_arch = "x86_64")))]
     let _ = bytes;

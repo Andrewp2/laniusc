@@ -1,0 +1,88 @@
+module app::main;
+import core::mem;
+import core::runtime;
+import std::time;
+
+fn main() -> i32 {
+    if (std::time::clock_runtime_abi_version() != 1 ||
+        std::time::clock_service_id() != core::runtime::SERVICE_CLOCK_ID ||
+        !std::time::clock_service_is_known() ||
+        !std::time::clock_contract_metadata_is_available() ||
+        std::time::clock_service_status() != core::runtime::SERVICE_STATUS_AVAILABLE ||
+        !std::time::clock_is_available() ||
+        std::time::clock_is_blocked() ||
+        std::time::clock_is_known_but_unbound() ||
+        std::time::clock_requires_runtime_binding() ||
+        std::time::clock_host_abi_is_contract_only()) { return 1; }
+
+    if (!std::time::clock_read_api_is_executable() ||
+        std::time::clock_read_api_is_blocked() ||
+        std::time::clock_read_api_is_known_but_unbound() ||
+        std::time::clock_read_api_requires_runtime_binding() ||
+        !std::time::timespec_read_api_is_executable() ||
+        std::time::timespec_read_api_requires_runtime_binding() ||
+        std::time::clock_read_unavailable() != -1 ||
+        std::time::clock_seconds_unavailable() != -1) { return 2; }
+
+    if (!std::time::clock_seconds_result_succeeded(0) ||
+        std::time::clock_seconds_result_succeeded(-1) ||
+        !std::time::clock_seconds_result_failed(-1) ||
+        std::time::clock_seconds_result_failed(1) ||
+        !std::time::clock_seconds_result_is_unavailable(-1) ||
+        std::time::clock_seconds_result_is_unavailable(0)) { return 3; }
+
+    if (!std::time::clock_read_result_succeeded(0) ||
+        std::time::clock_read_result_succeeded(-1) ||
+        !std::time::clock_read_result_failed(-1) ||
+        std::time::clock_read_result_failed(1) ||
+        !std::time::clock_read_result_is_unavailable(-1) ||
+        std::time::clock_read_result_is_unavailable(0) ||
+        std::time::clock_read_result_is_fail_closed(-1)) { return 4; }
+
+    if (!std::time::clock_sleep_api_is_executable() ||
+        std::time::clock_sleep_api_is_blocked() ||
+        std::time::clock_sleep_api_is_known_but_unbound() ||
+        std::time::clock_sleep_api_requires_runtime_binding() ||
+        !std::time::sleep_ms_i32_is_executable() ||
+        std::time::sleep_ms_i32_requires_runtime_binding() ||
+        std::time::clock_sleep_ok() != 0 ||
+        std::time::clock_sleep_unavailable() != -1) { return 5; }
+
+    if (!std::time::clock_sleep_result_succeeded(0) ||
+        std::time::clock_sleep_result_succeeded(-1) ||
+        !std::time::clock_sleep_result_failed(-1) ||
+        std::time::clock_sleep_result_failed(1) ||
+        !std::time::clock_sleep_result_is_unavailable(-1) ||
+        std::time::clock_sleep_result_is_unavailable(0) ||
+        std::time::clock_sleep_result_is_fail_closed(-1)) { return 6; }
+
+    if (std::time::monotonic_now_ns_is_executable() ||
+        !std::time::monotonic_now_ns_is_blocked() ||
+        !std::time::monotonic_now_ns_is_known_but_unbound() ||
+        !std::time::monotonic_now_ns_requires_runtime_binding() ||
+        std::time::system_now_unix_ms_is_executable() ||
+        !std::time::system_now_unix_ms_is_blocked() ||
+        !std::time::system_now_unix_ms_is_known_but_unbound() ||
+        !std::time::system_now_unix_ms_requires_runtime_binding() ||
+        std::time::sleep_ms_is_executable() ||
+        !std::time::sleep_ms_is_blocked() ||
+        !std::time::sleep_ms_is_known_but_unbound() ||
+        !std::time::sleep_ms_requires_runtime_binding()) { return 7; }
+
+    if (!std::time::unix_seconds_is_executable() ||
+        std::time::unix_seconds_is_blocked() ||
+        std::time::unix_seconds_is_known_but_unbound() ||
+        std::time::unix_seconds_requires_runtime_binding()) { return 8; }
+
+    let monotonic: [i32; 4] = [0, 0, 0, 0];
+    let system: [i32; 4] = [0, 0, 0, 0];
+    let monotonic_ptr: ptr = core::mem::i32_array_data_ptr(monotonic);
+    let system_ptr: ptr = core::mem::i32_array_data_ptr(system);
+    if (std::time::monotonic_read(monotonic_ptr, 16) != 0) { return 9; }
+    if (std::time::system_read(system_ptr, 16) != 0) { return 10; }
+    if (std::time::sleep_ms_i32(0) != 0) { return 11; }
+    if (std::time::unix_seconds() < 0) { return 12; }
+    if (monotonic[2] < 0 || monotonic[2] >= 1000000000 ||
+        system[2] < 0 || system[2] >= 1000000000) { return 13; }
+    return 0;
+}
