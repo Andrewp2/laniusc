@@ -63,6 +63,13 @@ fn main() -> i32 {
         std::map_i32_i32::contains_key(value, -7) ||
         std::map_i32_i32::key_at_or(value, 1, 18) != 2147483647 ||
         std::map_i32_i32::value_at_or(value, 1, 19) != -99) { return 12; }
+    value = std::map_i32_i32::try_shrink_to_fit(value);
+    if (std::map_i32_i32::capacity(value) != 2 ||
+        std::map_i32_i32::get_or(value, 0, 17) != 99 ||
+        std::map_i32_i32::get_or(value, 2147483647, 17) != -99) { return 17; }
+    held_capacity = 2;
+    value = std::map_i32_i32::try_shrink_to_fit(value);
+    if (std::map_i32_i32::capacity(value) != 2) { return 18; }
     value = std::map_i32_i32::try_remove(value, 7);
     if (std::map_i32_i32::len(value) != 2) { return 13; }
     value = std::map_i32_i32::try_remove(value, 0);
@@ -79,6 +86,8 @@ fn main() -> i32 {
     if (std::map_i32_i32::len(empty_copy) != 0 ||
         std::map_i32_i32::capacity(empty_copy) != 0) { return 16; }
     std::map_i32_i32::destroy(empty_copy);
+    value = std::map_i32_i32::try_shrink_to_fit(value);
+    if (std::map_i32_i32::capacity(value) != 0) { return 19; }
     std::map_i32_i32::destroy(value);
     return 0;
 }

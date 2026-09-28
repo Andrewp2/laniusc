@@ -104,7 +104,7 @@ limited to native x86_64 output from this worktree.
 | `std::vec_u16` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, 32768, and 65535. The allocation-failure suite injects failed initial allocation and reallocation; the halfword checksum sample combines it with `core::number_u16` and `OptionU16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
 | `std::vec_i16` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The signed halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, `-32768`, and 32767. The allocation-failure suite injects failed initial allocation and reallocation; the signed halfword sum sample combines it with `core::number_i16` and `OptionI16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
 | `std::vec_bool` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The boolean fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, and stored `false` distinct from a `true` fallback. The allocation-failure suite injects failed initial allocation and reallocation; the true-count sample combines it with `core::bool` and `OptionBool`. Each boolean occupies one 32-bit cell containing 0 or 1. Ownership is linear by convention. |
-| `std::map_i32_i32` all 15 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed pair array provides linear lookup, insertion without partial pairs, in-place update, ordered removal, reservation, independent cloning, clearing, and destruction. The native fixture calls every function and checks zero and negative keys and values, the signed maximum key, duplicates, missing keys, ordinal bounds, retained capacity, and clone independence. Injected `mremap` and `mmap` failures preserve the original map or return an empty clone. The byte-histogram program combines it with numeric and byte I/O helpers on empty, text, and binary input. Ownership is linear by convention. |
+| `std::map_i32_i32` all 16 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed pair array provides linear lookup, insertion without partial pairs, in-place update, ordered removal, reservation, independent cloning, clearing, capacity release, and destruction. The native fixture calls every function and checks zero and negative keys and values, the signed maximum key, duplicates, missing keys, ordinal bounds, retained and reduced capacity, and clone independence. Injected initial, growth, shrink, and clone allocation failures preserve the original map or return an empty clone. The byte-histogram program combines it with numeric and byte I/O helpers on empty, text, and binary input. Ownership is linear by convention. |
 | `std::set_i32` all 13 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks empty and populated sets, both signed extremes, duplicates, absent items, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, and shrinking. Injected initial allocation, growth, shrink, and clone failures preserve ownership and existing items. The set owns one allocation of 32-bit cells; ownership is linear by convention. |
 | `std::net` all 64 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 10 host calls unbound | The native fixture calls every metadata function and constant, checks available and unavailable result classification, and confirms network capability flags against `core::runtime`. TCP and UDP calls have no runtime binding. |
 | `std::thread` all 32 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 4 host calls unbound | The native fixture calls every metadata function and constant, checks result classification, and confirms that spawn, join, yield, and current-id calls remain unavailable. |
@@ -493,6 +493,19 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   on allocation failure. The caller keeps only the newest returned owner and
   destroys each independent set once. These rules are not enforced by the
   language. The API requires x86_64 Linux allocator bindings.
+- `std::map_i32_i32` stores distinct signed keys and signed values as adjacent
+  32-bit cells. Insertion and removal preserve the order of remaining keys.
+  `try_insert` adds a missing key and leaves an existing one unchanged;
+  `try_set` updates only an existing key. A new key increases length by one on
+  success, while capacity overflow or allocation failure leaves the map
+  unchanged. `get_or` and ordinal access use caller fallbacks for missing
+  keys and indices; use `contains_key` or `len` when a stored value could
+  equal its fallback. `try_shrink_to_fit` releases empty storage or reduces
+  capacity to length. Failed reallocation preserves all entries and the old
+  capacity. `try_clone` returns an independent copy or an empty zero-capacity
+  map on allocation failure. The caller keeps only the newest returned owner
+  and destroys each independent map once. The API requires x86_64 Linux
+  allocator bindings.
 - `std::utf8_vec` stores canonical UTF-8 in `VecU8`. `try_append_scalar`
   validates the existing complete byte sequence, checks the scalar and
   capacity bound, and reserves storage for every encoded byte before writing.
@@ -1158,7 +1171,8 @@ shrinkage, invalid lengths, and an injected reallocation failure.
 Run `cargo test --test stdlib_vec_shrink_execution` for all seven concrete
 vectors' capacity release and an injected shrink reallocation failure.
 Run `cargo test --test stdlib_map_i32_i32_execution` for the owned map,
-initial, growth, and clone allocation failures, and the stdin byte histogram.
+initial, growth, shrink, and clone allocation failures, and the stdin byte
+histogram.
 Run `cargo test --test stdlib_set_i32_execution` for the owned integer set and
 its initial, growth, shrink, and clone allocation failures.
 Run `cargo test --test stdlib_fs_read_i32_execution` for the raw signed

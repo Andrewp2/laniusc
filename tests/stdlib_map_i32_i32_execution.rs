@@ -43,7 +43,7 @@ fn every_public_i32_map_function_has_a_runtime_case() {
         assert!(fixture.contains(&call), "{call} lacks a runtime case");
         covered += 1;
     }
-    assert_eq!(covered, 15);
+    assert_eq!(covered, 16);
 }
 
 #[test]
@@ -51,6 +51,7 @@ fn map_allocation_failures_preserve_owned_data() {
     for (name, syscall, when) in [
         ("map_i32_i32_alloc_failure", "mmap", 1),
         ("map_i32_i32_realloc_failure", "mremap", 1),
+        ("map_i32_i32_shrink_failure", "mremap", 1),
         ("map_i32_i32_clone_failure", "mmap", 2),
     ] {
         let bytes = compile_fixture(name);
