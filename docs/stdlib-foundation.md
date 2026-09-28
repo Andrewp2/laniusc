@@ -1101,6 +1101,8 @@ capability metadata and live pointer classification.
 Run `cargo test --test stdlib_generic_vec_flat_execution` for empty generic
 vector operations in a flat source pack; this does not establish imported
 `--stdlib-root` execution.
+Run `cargo test --test stdlib_generic_interface` for exported generic
+Option/Result types and associated methods on both plain and generic structs.
 Run `cargo test --test stdlib_time_execution` for clock metadata, the four
 bound host calls, checked wrappers, and injected host failures.
 Run `cargo test --test stdlib_cast_store_execution` for direct indexed byte
@@ -1705,15 +1707,22 @@ also fixes the imported struct-return relocation path described below.
     `tests/fixtures/stdlib_foundation/repro_imported_associated_new.lani`
     calls `core::thing::Thing::new()` through a separate stdlib root. GPU
     `check` accepts it, but native compilation reports `LNC0005` at the
-    qualified call. The generic
+    qualified call. The sibling `repro_imported_plain_method.lani` calls the
+    imported `value.get()` after a free constructor and reports `LNC0027` in
+    native compilation. The generic
     `repro_vec_generic_associated_new.lani` reports the same error through
     `--stdlib-root`, while `repro_vec_generic_free_new.lani` reports
     `LNC0006` for its contextual generic result. Both Vec fixtures compile
     and execute on x86 when the real `std::vec` source and app source are
     supplied in one flat source pack; `tests/stdlib_generic_vec_flat_execution.rs`
     checks all six empty-value operations with `i32` and `bool` types.
-    The exported `Vec` interface contains all three associated methods, so
-    import-time projection and generic return instantiation still need work.
+    The semantic-interface exporter previously omitted both public methods
+    on plain `Thing` because it looked for a generic instance binding on the
+    receiver. It now resolves plain receivers through the checked module type
+    path. `tests/stdlib_generic_interface.rs` confirms that `Thing::new`,
+    `Thing::get`, and all three `Vec<T>` methods are exported. This fixes
+    interface publication only. Imported call projection and generic return
+    instantiation remain compiler dependencies.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

@@ -22,6 +22,8 @@ StructuredBuffer<HirMethodSignature> compact_method_signatures;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> path_id_by_owner_token;
+StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> decl_id_by_name_token;
 StructuredBuffer<uint> public_decl_index_by_local;
 RWStructuredBuffer<uint> interface_type_parent;
@@ -75,15 +77,18 @@ uint method_owner(uint row)
     uint receiver_token = compact_hir_core[receiver].token_start;
     if (receiver_token >= gParams.token_capacity)
         return INVALID;
-    if (type_expr_ref_tag[receiver_token] != TYPE_REF_INSTANCE)
-        return INVALID;
-    uint instance = type_expr_ref_payload[receiver_token];
-    if (instance >= gParams.token_capacity)
-        return INVALID;
-    uint declaration_token = type_instance_decl_token[instance];
-    if (declaration_token >= gParams.token_capacity)
-        return INVALID;
-    uint local = decl_id_by_name_token[declaration_token];
+    // Plain nominal receivers resolve through the module path table. Generic
+    // receivers also carry an instance binding, retained as a fallback.
+    uint path = path_id_by_owner_token[receiver_token];
+    uint local = path < gParams.hir_capacity ? resolved_type_decl[path] : INVALID;
+    if (local >= gParams.decl_capacity && type_expr_ref_tag[receiver_token] == TYPE_REF_INSTANCE)
+    {
+        uint instance = type_expr_ref_payload[receiver_token];
+        uint declaration_token = instance < gParams.token_capacity
+            ? type_instance_decl_token[instance] : INVALID;
+        local = declaration_token < gParams.token_capacity
+            ? decl_id_by_name_token[declaration_token] : INVALID;
+    }
     return local < gParams.decl_capacity ? public_decl_index_by_local[local] : INVALID;
 }
 

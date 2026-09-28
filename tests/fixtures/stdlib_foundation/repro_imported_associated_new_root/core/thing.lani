@@ -10,3 +10,11 @@ impl Thing {
         return self.value;
     }
 }
+
+pub fn make() -> Thing {
+    return Thing { value: 7 };
+}
+
+pub fn read(value: Thing) -> i32 {
+    return value.value;
+}

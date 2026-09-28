@@ -11,15 +11,12 @@ StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<HirMethodCore> compact_method_cores;
 StructuredBuffer<HirMethodSignature> compact_method_signatures;
 StructuredBuffer<HirCore> compact_hir_core;
-StructuredBuffer<uint> type_expr_ref_tag;
-StructuredBuffer<uint> type_expr_ref_payload;
-StructuredBuffer<uint> type_instance_decl_token;
-StructuredBuffer<uint> decl_id_by_name_token;
+StructuredBuffer<uint> interface_type_local_decl_by_hir;
 StructuredBuffer<uint> public_decl_index_by_local;
 RWStructuredBuffer<uint> interface_member_count;
 RWStructuredBuffer<uint> interface_status;
 
-static const uint INVALID=0xffffffffu, TYPE_REF_INSTANCE=3u;
+static const uint INVALID=0xffffffffu;
 static const uint METHOD_VIS_PUBLIC=1u, METHOD_SIGNATURE_INHERENT_IMPL=4u;
 static const uint WG_SIZE=256u, MAX_GROUPS_X=65535u;
 uint linear_thread_id(uint3 d){return d.x+d.y*MAX_GROUPS_X*WG_SIZE;}
@@ -33,13 +30,7 @@ uint method_owner(uint row)
  if(((sig.metadata>>16u)&METHOD_SIGNATURE_INHERENT_IMPL)==0u ||
     (sig.metadata&0xffffu)!=METHOD_VIS_PUBLIC)return INVALID;
  uint receiver_type=sig.impl_receiver_type;
- uint receiver_token=receiver_type<gParams.hir_capacity?compact_hir_core[receiver_type].token_start:INVALID;
- uint tag=receiver_token<gParams.token_capacity?type_expr_ref_tag[receiver_token]:0u;
- uint payload=receiver_token<gParams.token_capacity?type_expr_ref_payload[receiver_token]:INVALID;
- if(tag!=TYPE_REF_INSTANCE||payload>=gParams.token_capacity)return INVALID;
- uint decl_token=type_instance_decl_token[payload];
- if(decl_token>=gParams.token_capacity)return INVALID;
- uint local=decl_id_by_name_token[decl_token];
+ uint local=receiver_type<gParams.hir_capacity?interface_type_local_decl_by_hir[receiver_type]:INVALID;
  return local<gParams.decl_capacity?public_decl_index_by_local[local]:INVALID;
 }
 
