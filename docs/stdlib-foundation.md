@@ -99,7 +99,7 @@ limited to native x86_64 output from this worktree.
 | `core::runtime` all 62 public functions and 40 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant, checking service IDs, ABI fields, available and unavailable services, unknown IDs, status classifiers, and fail-closed requirement rows. These helpers report bindings; they do not implement an unbound service operation. |
 | `core::panic` both trap functions, all 19 metadata functions, and 4 constants | Executable on x86_64 Linux for the trap functions and metadata | `tests/stdlib_panic_execution.rs` checks that `panic()` and `unreachable()` terminate with SIGILL, and a runtime fixture checks every metadata result. Panic hooks remain unbound; their availability flags stay false. |
 | `alloc::allocator` all 32 public metadata functions and 4 host calls | Executable x86_64 Linux host ABI for valid allocation arguments | The native metadata fixture calls every metadata function, checks available service flags and null/non-null pointer classification against `core::runtime`, and performs a real allocation and release. `tests/stdlib_allocator_metadata_execution.rs` requires a runtime call for each metadata function. Normal allocation, reallocation, and release have x86 tests; the `alloc_failed` host call is tested as terminating with exit status 1. `tests/stdlib_allocator_failure_execution.rs` injects `ENOMEM` into `mmap` and `mremap`: both return null, and failed reallocation leaves the old storage readable and releasable. The API is low-level; callers must pass a valid pointer and matching sizes to `realloc` and `dealloc`. |
-| `std::process` all 44 metadata functions, 12 constants, and 4 host calls | Executable on x86_64 Linux | The foundation runtime fixture checks every metadata function and constant, including successful and failed argument results, service availability, and exit status helpers. Native source-pack tests execute `argc`, `arg_len`, and `arg_read` with real process arguments; the process exit sample confirms that `exit(7)` terminates with status 7. This module reports the Linux host binding; GPU device execution is not claimed. |
+| `std::process` all 44 metadata functions, 12 constants, and 4 host calls | Executable on x86_64 Linux | The foundation runtime fixture checks every metadata function and constant, including successful and failed argument results, service availability, and exit status helpers. Native source-pack tests execute `argc`, `arg_len`, and `arg_read` with real process arguments; the process exit sample confirms that `exit(7)` terminates with status 7. An imported helper also executes `exit` through a transitive import and a directly declared host call. This module reports the Linux host binding; GPU device execution is not claimed. |
 | `std::env` all 54 public functions, 13 constants, and 6 host calls | Executable on x86_64 Linux | The foundation runtime fixture checks every metadata function and constant and calls `current_dir_len`. Native source-pack tests exercise environment lookup, enumeration, key reads, and current-directory reads with real host state. The focused environment suite checks missing keys, bounded storage, host failure, and allocation failure in `current_dir_len`. GPU device execution is not claimed. |
 | `std::io` all 54 public Lanius functions, 12 constants, and 7 host calls | Executable on x86_64 Linux | The foundation runtime fixture checks every metadata function and constant. Existing I/O fixtures execute all six higher-level public functions, including line output, `print_i32`, and synchronous flush semantics. Native tests exercise the seven bound calls with real stdin, stdout, stderr, and file handles, including short writes and host errors. GPU device execution is not claimed. |
 | `std::fs` all 67 public Lanius functions, 18 constants, and 14 host calls | Executable on x86_64 Linux | The foundation fixture checks every metadata function and constant. Native tests exercise raw open, append, read, write, close, path mutation, string paths, and decimal reads. Pointer path calls consume their supplied lengths and reject invalid bounds or embedded NUL bytes; decimal reads reject overflow. The file suite covers normal paths, missing paths, and host failures. GPU device execution is not claimed. |
@@ -2190,17 +2190,14 @@ also fixes the imported struct-return relocation path described below.
    executes a successful draw and injects both `EIO` and a two-byte read,
    checking for SIGILL. Callers needing a recoverable error can use the signed
    status from `fill_secure_bytes` or the Lanius `std::random_checked` wrappers.
-19. **Transitive host import loses the native entrypoint.** With
+19. **Resolved: transitive host imports retain the native entrypoint.** With
     `--stdlib-root tests/fixtures/stdlib_foundation/repro_transitive_host_root`,
     `repro_transitive_host_direct.lani` emits an x86_64 ELF that exits zero.
-    `repro_transitive_host_import.lani` type-checks with the same root, but
-    native emission reports `LNC0017: missing main entrypoint` at the
-    transitive `std::process` source. It calls the same bound exit operation
-    through `test::probe`; the adjacent small sources reproduce the issue.
-    `repro_imported_direct_exit.lani` also type-checks but fails native
-    emission with the same error when its imported helper declares the host
-    exit operation directly. This rules out that Lanius-source workaround and
-    blocks a source-level `test::assert` with a terminating failure path.
+    `repro_transitive_host_import.lani` now does likewise through `test::probe`
+    and its transitive `std::process` import. The earlier missing-main report
+    masked the GPU SSA failure on that helper's explicit void return.
+    `tests/stdlib_void_return_execution.rs` executes the transitive exit path
+    and a directly imported host exit on failure, checking status 0 and 7.
 20. **Resolved: imported non-i32 slice arguments from fixed arrays.** The
     dependency call validator now accepts the same fixed-array-to-slice
     conversion used for local calls, and checks the element type throughout
