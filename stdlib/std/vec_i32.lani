@@ -6,6 +6,7 @@
 module std::vec_i32;
 import alloc::allocator;
 import core::mem;
+import core::slice;
 
 pub struct VecI32 {
     storage: ptr,
@@ -208,6 +209,64 @@ pub fn try_set(value: VecI32, index: i32, item: i32) -> bool {
     let elements: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
     elements[index] = item;
     return true;
+}
+
+// Sort the initialized elements in ascending signed order. Returns len.
+// Empty and one-element vectors need no storage access. Capacity is unchanged.
+pub fn sort_in_place(value: VecI32) -> i32 {
+    if (value.length <= 1) {
+        return value.length;
+    }
+    let elements: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    return core::slice::sort_i32(elements, value.length);
+}
+
+// Reverse the initialized elements and return the number of swaps performed.
+// Capacity is unchanged.
+pub fn reverse_in_place(value: VecI32) -> i32 {
+    if (value.length <= 1) {
+        return 0;
+    }
+    let elements: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    return core::slice::reverse_in_place_i32(elements, value.length);
+}
+
+// Search functions require the initialized elements in nondecreasing order.
+// lower_bound returns the first index >= needle, or len when all are smaller.
+// upper_bound returns the first index > needle, or len when none is greater.
+// Empty vectors return zero without accessing storage.
+pub fn lower_bound(value: VecI32, needle: i32) -> i32 {
+    if (value.length == 0) {
+        return 0;
+    }
+    let elements: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    return core::slice::lower_bound_i32(elements, value.length, needle);
+}
+
+pub fn upper_bound(value: VecI32, needle: i32) -> i32 {
+    if (value.length == 0) {
+        return 0;
+    }
+    let elements: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    return core::slice::upper_bound_i32(elements, value.length, needle);
+}
+
+// Return the first or last matching index, or the caller's fallback when
+// absent. An empty vector always returns fallback.
+pub fn binary_search_first_or(value: VecI32, needle: i32, fallback: i32) -> i32 {
+    if (value.length == 0) {
+        return fallback;
+    }
+    let elements: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    return core::slice::binary_search_first_or_i32(elements, value.length, needle, fallback);
+}
+
+pub fn binary_search_last_or(value: VecI32, needle: i32, fallback: i32) -> i32 {
+    if (value.length == 0) {
+        return fallback;
+    }
+    let elements: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    return core::slice::binary_search_last_or_i32(elements, value.length, needle, fallback);
 }
 
 // On an empty vector, returns it unchanged. Read the last element with get_or

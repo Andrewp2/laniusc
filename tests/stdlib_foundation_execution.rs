@@ -1697,6 +1697,9 @@ fn executable_core_function_surface_has_runtime_cases() {
             let call = format!("std::{module}::{name}(");
             assert!(
                 vector_fixture.contains(&call)
+                    || (module == "vec_i32"
+                        && include_str!("fixtures/stdlib_foundation/vec_i32_sort_search.lani")
+                            .contains(&call))
                     || vector_additional_fixtures
                         .iter()
                         .any(|fixture| fixture.contains(&call)),
@@ -1704,7 +1707,13 @@ fn executable_core_function_surface_has_runtime_cases() {
             );
             vector_function_count += 1;
         }
-        let expected_functions = if module == "vec_u8" { 20 } else { 19 };
+        let expected_functions = if module == "vec_i32" {
+            25
+        } else if module == "vec_u8" {
+            20
+        } else {
+            19
+        };
         assert_eq!(vector_function_count, expected_functions);
         assert!(vector_fixture.contains(&format!("std::{module}::MAX_CAPACITY")));
     }

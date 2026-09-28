@@ -1,0 +1,65 @@
+// Read signed decimal lines, then print the upper median and its frequency.
+// Exit 2 for empty or overlong input, 3 for malformed/out-of-range input,
+// 4 for allocation failure, and 5 for output failure.
+module app::main;
+import core::wide_i64;
+import std::io_byte;
+import std::io_decimal;
+import std::io_line;
+import std::vec_i32;
+
+fn main() -> i32 {
+    let line: [i32; 20] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let lower: core::wide_i64::WideI64 = core::wide_i64::from_i32(-2147483648);
+    let upper: core::wide_i64::WideI64 = core::wide_i64::from_i32(2147483647);
+    let zero: core::wide_i64::WideI64 = core::wide_i64::zero();
+    let readings: std::vec_i32::VecI32 = std::vec_i32::new();
+    while (true) {
+        let length: i32 = std::io_line::read_stdin_lf_line_into_i32(line, 20);
+        if (length == -1) { break; }
+        if (length <= 0) {
+            std::vec_i32::destroy(readings);
+            return 2;
+        }
+        if (!core::wide_i64::can_parse_ascii_decimal(line, length)) {
+            std::vec_i32::destroy(readings);
+            return 3;
+        }
+        let parsed: core::wide_i64::WideI64 = core::wide_i64::parse_ascii_decimal_or(line, length, zero);
+        if (core::wide_i64::compare(parsed, lower) < 0 ||
+            core::wide_i64::compare(parsed, upper) > 0) {
+            std::vec_i32::destroy(readings);
+            return 3;
+        }
+        let word: u32 = core::wide_i64::low_word(parsed);
+        let number: i32 = word as i32;
+        let before: i32 = std::vec_i32::len(readings);
+        readings = std::vec_i32::try_push(readings, number);
+        if (std::vec_i32::len(readings) != before + 1) {
+            std::vec_i32::destroy(readings);
+            return 4;
+        }
+    }
+    if (std::vec_i32::len(readings) == 0) {
+        std::vec_i32::destroy(readings);
+        return 2;
+    }
+    let count: i32 = std::vec_i32::len(readings);
+    if (std::vec_i32::sort_in_place(readings) != count) {
+        std::vec_i32::destroy(readings);
+        return 4;
+    }
+    let middle: i32 = count / 2;
+    let median: i32 = std::vec_i32::get_or(readings, middle, 0);
+    let first: i32 = std::vec_i32::lower_bound(readings, median);
+    let after: i32 = std::vec_i32::upper_bound(readings, median);
+    if (std::io_decimal::write_i32(1, median) <= 0 ||
+        !std::io_byte::write_stdout_byte(32) ||
+        std::io_decimal::write_i32(1, after - first) <= 0 ||
+        !std::io_byte::write_stdout_byte(10)) {
+        std::vec_i32::destroy(readings);
+        return 5;
+    }
+    std::vec_i32::destroy(readings);
+    return 0;
+}
