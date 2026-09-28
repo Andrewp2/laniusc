@@ -1,0 +1,187 @@
+// Signed 64-bit two's-complement arithmetic represented as two u32 words.
+// This avoids the current native i64 literal and high-bit arithmetic path.
+module core::wide_i64;
+import core::wide_u64;
+
+pub struct WideI64 {
+    high: u32,
+    low: u32,
+}
+
+pub fn from_words(high: u32, low: u32) -> WideI64 {
+    return WideI64 { high: high, low: low };
+}
+
+pub fn from_i32(value: i32) -> WideI64 {
+    let upper: u32 = 0;
+    if (value < 0) { upper = 4294967295; }
+    let lower: u32 = value as u32;
+    return from_words(upper, lower);
+}
+
+pub fn zero() -> WideI64 {
+    return from_words(0, 0);
+}
+
+pub fn min_value() -> WideI64 {
+    return from_words(2147483648, 0);
+}
+
+pub fn max_value() -> WideI64 {
+    return from_words(2147483647, 4294967295);
+}
+
+pub fn high_word(value: WideI64) -> u32 {
+    return value.high;
+}
+
+pub fn low_word(value: WideI64) -> u32 {
+    return value.low;
+}
+
+pub fn is_zero(value: WideI64) -> bool {
+    return value.high == 0 && value.low == 0;
+}
+
+pub fn is_negative(value: WideI64) -> bool {
+    return value.high >= 2147483648;
+}
+
+pub fn eq(left: WideI64, right: WideI64) -> bool {
+    return left.high == right.high && left.low == right.low;
+}
+
+// Return -1, 0, or 1 in signed 64-bit order.
+pub fn compare(left: WideI64, right: WideI64) -> i32 {
+    let left_negative: bool = is_negative(left);
+    let right_negative: bool = is_negative(right);
+    if (left_negative && !right_negative) { return -1; }
+    if (!left_negative && right_negative) { return 1; }
+    return core::wide_u64::compare(
+        core::wide_u64::from_words(left.high, left.low),
+        core::wide_u64::from_words(right.high, right.low));
+}
+
+pub fn wrapping_add(left: WideI64, right: WideI64) -> WideI64 {
+    let result: core::wide_u64::WideU64 = core::wide_u64::wrapping_add(
+        core::wide_u64::from_words(left.high, left.low),
+        core::wide_u64::from_words(right.high, right.low));
+    return from_words(core::wide_u64::high_word(result), core::wide_u64::low_word(result));
+}
+
+pub fn wrapping_sub(left: WideI64, right: WideI64) -> WideI64 {
+    let result: core::wide_u64::WideU64 = core::wide_u64::wrapping_sub(
+        core::wide_u64::from_words(left.high, left.low),
+        core::wide_u64::from_words(right.high, right.low));
+    return from_words(core::wide_u64::high_word(result), core::wide_u64::low_word(result));
+}
+
+pub fn wrapping_neg(value: WideI64) -> WideI64 {
+    return wrapping_sub(zero(), value);
+}
+
+pub fn wrapping_mul(left: WideI64, right: WideI64) -> WideI64 {
+    let result: core::wide_u64::WideU64 = core::wide_u64::wrapping_mul(
+        core::wide_u64::from_words(left.high, left.low),
+        core::wide_u64::from_words(right.high, right.low));
+    return from_words(core::wide_u64::high_word(result), core::wide_u64::low_word(result));
+}
+
+pub fn saturating_add(left: WideI64, right: WideI64) -> WideI64 {
+    let result: WideI64 = wrapping_add(left, right);
+    if (is_negative(left) == is_negative(right) &&
+        is_negative(result) != is_negative(left)) {
+        if (is_negative(left)) { return min_value(); }
+        return max_value();
+    }
+    return result;
+}
+
+pub fn saturating_sub(left: WideI64, right: WideI64) -> WideI64 {
+    let result: WideI64 = wrapping_sub(left, right);
+    if (is_negative(left) != is_negative(right) &&
+        is_negative(result) != is_negative(left)) {
+        if (is_negative(left)) { return min_value(); }
+        return max_value();
+    }
+    return result;
+}
+
+pub fn bit_and(left: WideI64, right: WideI64) -> WideI64 {
+    return from_words(left.high & right.high, left.low & right.low);
+}
+
+pub fn bit_or(left: WideI64, right: WideI64) -> WideI64 {
+    return from_words(left.high | right.high, left.low | right.low);
+}
+
+pub fn bit_xor(left: WideI64, right: WideI64) -> WideI64 {
+    return from_words(left.high ^ right.high, left.low ^ right.low);
+}
+
+pub fn bit_not(value: WideI64) -> WideI64 {
+    return from_words(value.high ^ 4294967295, value.low ^ 4294967295);
+}
+
+// Counts outside 0..63 return zero. Left shift discards high bits.
+pub fn shift_left(value: WideI64, count: i32) -> WideI64 {
+    let result: core::wide_u64::WideU64 = core::wide_u64::shift_left(
+        core::wide_u64::from_words(value.high, value.low), count);
+    return from_words(core::wide_u64::high_word(result), core::wide_u64::low_word(result));
+}
+
+// Arithmetic right shift preserves the sign. Counts outside 0..63 return
+// zero, rather than applying the machine's masked shift count.
+pub fn shift_right(value: WideI64, count: i32) -> WideI64 {
+    if (count < 0 || count >= 64) { return zero(); }
+    if (count == 0) { return value; }
+    let unsigned: core::wide_u64::WideU64 = core::wide_u64::shift_right(
+        core::wide_u64::from_words(value.high, value.low), count);
+    let result: WideI64 = from_words(
+        core::wide_u64::high_word(unsigned), core::wide_u64::low_word(unsigned));
+    if (!is_negative(value)) { return result; }
+    let fill: core::wide_u64::WideU64 = core::wide_u64::shift_left(
+        core::wide_u64::max_value(), 64 - count);
+    return bit_or(result, from_words(
+        core::wide_u64::high_word(fill), core::wide_u64::low_word(fill)));
+}
+
+// Division truncates toward zero; remainder has the dividend's sign.
+// Zero divisor and MIN / -1 return the caller's fallback.
+pub fn divide_or(dividend: WideI64, divisor: WideI64, fallback: WideI64) -> WideI64 {
+    if (is_zero(divisor) ||
+        (eq(dividend, min_value()) && eq(divisor, from_i32(-1)))) {
+        return fallback;
+    }
+    let left: WideI64 = dividend;
+    let right: WideI64 = divisor;
+    if (is_negative(left)) { left = wrapping_neg(left); }
+    if (is_negative(right)) { right = wrapping_neg(right); }
+    let quotient: core::wide_u64::WideU64 = core::wide_u64::divide_or(
+        core::wide_u64::from_words(left.high, left.low),
+        core::wide_u64::from_words(right.high, right.low), core::wide_u64::zero());
+    let result: WideI64 = from_words(
+        core::wide_u64::high_word(quotient), core::wide_u64::low_word(quotient));
+    if (is_negative(dividend) != is_negative(divisor)) {
+        return wrapping_neg(result);
+    }
+    return result;
+}
+
+pub fn remainder_or(dividend: WideI64, divisor: WideI64, fallback: WideI64) -> WideI64 {
+    if (is_zero(divisor) ||
+        (eq(dividend, min_value()) && eq(divisor, from_i32(-1)))) {
+        return fallback;
+    }
+    let left: WideI64 = dividend;
+    let right: WideI64 = divisor;
+    if (is_negative(left)) { left = wrapping_neg(left); }
+    if (is_negative(right)) { right = wrapping_neg(right); }
+    let remainder: core::wide_u64::WideU64 = core::wide_u64::remainder_or(
+        core::wide_u64::from_words(left.high, left.low),
+        core::wide_u64::from_words(right.high, right.low), core::wide_u64::zero());
+    let result: WideI64 = from_words(
+        core::wide_u64::high_word(remainder), core::wide_u64::low_word(remainder));
+    if (is_negative(dividend)) { return wrapping_neg(result); }
+    return result;
+}

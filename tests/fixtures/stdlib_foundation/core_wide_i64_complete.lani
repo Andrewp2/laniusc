@@ -1,0 +1,72 @@
+module app::main;
+import core::wide_i64;
+
+fn same(value: core::wide_i64::WideI64, high: u32, low: u32) -> bool {
+    return core::wide_i64::high_word(value) == high &&
+        core::wide_i64::low_word(value) == low;
+}
+
+fn main() -> i32 {
+    let zero: core::wide_i64::WideI64 = core::wide_i64::zero();
+    let one: core::wide_i64::WideI64 = core::wide_i64::from_i32(1);
+    let minus_one: core::wide_i64::WideI64 = core::wide_i64::from_i32(-1);
+    let minimum: core::wide_i64::WideI64 = core::wide_i64::min_value();
+    let maximum: core::wide_i64::WideI64 = core::wide_i64::max_value();
+    let high: core::wide_i64::WideI64 = core::wide_i64::from_words(2147483648, 1);
+    if (!core::wide_i64::is_zero(zero) || core::wide_i64::is_zero(one) ||
+        !core::wide_i64::is_negative(minus_one) || core::wide_i64::is_negative(one) ||
+        !same(zero, 0, 0) || !same(minus_one, 4294967295, 4294967295) ||
+        !same(minimum, 2147483648, 0) ||
+        !same(maximum, 2147483647, 4294967295) ||
+        !same(high, 2147483648, 1)) { return 1; }
+    if (!core::wide_i64::eq(one, one) || core::wide_i64::eq(one, minus_one) ||
+        core::wide_i64::compare(minus_one, one) != -1 ||
+        core::wide_i64::compare(minimum, minus_one) != -1 ||
+        core::wide_i64::compare(one, minus_one) != 1 ||
+        core::wide_i64::compare(maximum, minimum) != 1 ||
+        core::wide_i64::compare(one, one) != 0) { return 2; }
+    if (!same(core::wide_i64::wrapping_add(maximum, one), 2147483648, 0) ||
+        !same(core::wide_i64::wrapping_sub(minimum, one), 2147483647, 4294967295) ||
+        !same(core::wide_i64::wrapping_neg(minimum), 2147483648, 0) ||
+        !same(core::wide_i64::wrapping_neg(one), 4294967295, 4294967295) ||
+        !same(core::wide_i64::wrapping_mul(minimum, core::wide_i64::from_i32(2)), 0, 0) ||
+        !same(core::wide_i64::wrapping_mul(minus_one, minus_one), 0, 1)) { return 3; }
+    if (!same(core::wide_i64::saturating_add(maximum, one), 2147483647, 4294967295) ||
+        !same(core::wide_i64::saturating_add(minimum, minus_one), 2147483648, 0) ||
+        !same(core::wide_i64::saturating_sub(minimum, one), 2147483648, 0) ||
+        !same(core::wide_i64::saturating_sub(maximum, minus_one),
+            2147483647, 4294967295) ||
+        !same(core::wide_i64::saturating_add(one, minus_one), 0, 0)) { return 4; }
+    if (!same(core::wide_i64::bit_and(minimum, minus_one), 2147483648, 0) ||
+        !same(core::wide_i64::bit_or(minimum, one), 2147483648, 1) ||
+        !same(core::wide_i64::bit_xor(minimum, minus_one), 2147483647, 4294967295) ||
+        !same(core::wide_i64::bit_not(minimum), 2147483647, 4294967295)) { return 5; }
+    if (!same(core::wide_i64::shift_left(one, 63), 2147483648, 0) ||
+        !same(core::wide_i64::shift_left(one, -1), 0, 0) ||
+        !same(core::wide_i64::shift_right(minus_one, 1), 4294967295, 4294967295) ||
+        !same(core::wide_i64::shift_right(minimum, 63), 4294967295, 4294967295) ||
+        !same(core::wide_i64::shift_right(minimum, 32), 4294967295, 2147483648) ||
+        !same(core::wide_i64::shift_right(one, 64), 0, 0) ||
+        !core::wide_i64::eq(core::wide_i64::shift_right(minimum, 0), minimum)) {
+        return 6;
+    }
+    let minus_seven: core::wide_i64::WideI64 = core::wide_i64::from_i32(-7);
+    let three: core::wide_i64::WideI64 = core::wide_i64::from_i32(3);
+    if (!same(core::wide_i64::divide_or(minus_seven, three, zero),
+            4294967295, 4294967294) ||
+        !same(core::wide_i64::remainder_or(minus_seven, three, zero),
+            4294967295, 4294967295) ||
+        !same(core::wide_i64::divide_or(core::wide_i64::from_i32(7),
+            core::wide_i64::from_i32(-3), zero), 4294967295, 4294967294) ||
+        !same(core::wide_i64::remainder_or(core::wide_i64::from_i32(7),
+            core::wide_i64::from_i32(-3), zero), 0, 1) ||
+        !same(core::wide_i64::divide_or(minimum, core::wide_i64::from_i32(2), zero),
+            3221225472, 0)) { return 7; }
+    if (!core::wide_i64::eq(core::wide_i64::divide_or(one, zero, high), high) ||
+        !core::wide_i64::eq(core::wide_i64::remainder_or(one, zero, high), high) ||
+        !core::wide_i64::eq(core::wide_i64::divide_or(minimum, minus_one, high), high) ||
+        !core::wide_i64::eq(core::wide_i64::remainder_or(minimum, minus_one, high), high)) {
+        return 8;
+    }
+    return 0;
+}

@@ -15,6 +15,7 @@ limited to native x86_64 output from this worktree.
 | `core::number_i32` constants and all 26 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, wrapping arithmetic, multiplication and power overflow, signed GCD/LCM, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
 | `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
 | `core::wide_u64` all 20 public two-word functions | Executable on x86_64 | The imported runtime fixture calls every function and checks high-bit construction, ordering, wrapping add/subtract/multiply, bitwise operations, shifts across word boundaries, zero and out-of-range shift counts, division and remainder including a high-bit divisor, and zero-divisor fallbacks. A generated native fixture compares arithmetic and shifts against Rust `u64` across eight distinct operand pairs and four values at eight shift counts. The representation is two `u32` words; this does not claim native `u64` correctness. |
+| `core::wide_i64` all 25 public two-word functions | Executable on x86_64 | The imported runtime fixture calls every function and checks sign extension, signed bounds, ordering, wrapping and saturating arithmetic, bitwise operations, arithmetic right shifts, signed quotient and remainder, and zero-divisor and `MIN/-1` fallbacks. A generated native fixture compares arithmetic and shifts against Rust `i64` across eight operand pairs and four values at eight shift counts. It uses `core::wide_u64` internally and does not claim native `i64` correctness. |
 | `core::byte` constants and all 44 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
 | `core::bits` all 42 public `i32`, `u32`, `u16`, and `u8` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across word widths, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. Byte operations run all 256 inputs; halfword operations run boundary values and 256 evenly spaced inputs; signed operations check negative patterns and all 32 one-hot bits. |
 | `core::bitset` all 14 public caller-backed bitset functions | Executable on x86_64 for `[u32]` backing | Runtime fixtures check word counts, bit access and mutation, fill, counts, any/all, first/last set bit, equality, union, and intersection. They cover logical lengths 0 through 65, word boundaries, aliases, invalid lengths and indices, preserved padding and unused words, and a physical backing overclaim that traps. A source scan requires a runtime call for every public function. |
@@ -212,6 +213,15 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   execute every public function and compare selected values against native
   `u64` results. Native `u64` expressions themselves remain incorrect above
   32 bits; see dependencies 26 and 30.
+- `core::wide_i64` uses the same two-word representation in two's complement.
+  `from_i32` sign-extends, comparison uses signed order, and arithmetic right
+  shifts fill vacated bits with the sign. Addition, subtraction,
+  multiplication, and negation wrap modulo 2^64 where named; saturating add
+  and subtract clamp to the signed minimum or maximum. Division truncates
+  toward zero and remainder has the dividend's sign. A zero divisor or
+  `MIN / -1` returns the caller's fallback from either division helper.
+  Invalid shift counts return zero. These functions use no allocation or host
+  service and do not depend on native `i64` arithmetic.
 - `core::byte` arithmetic saturates or wraps as its function name says.
   `wrapping_mul` computes multiplication modulo 256; the focused fixture
   compares all 65,536 byte pairs with a widened arithmetic reference.
@@ -1161,6 +1171,8 @@ Run `cargo test --test stdlib_crc32_execution` for streaming and caller-backed
 CRC-32/ISO-HDLC, known vectors, all byte values, and native bounds trapping.
 Run `cargo test --test stdlib_wide_u64_execution` for all two-word 64-bit
 operations, high-bit edge cases, and generated differential arithmetic cases.
+Run `cargo test --test stdlib_wide_i64_execution` for signed two-word 64-bit
+operations, edge cases, and generated differential arithmetic cases.
 Run `cargo test --test stdlib_endian_execution` for caller-backed endian
 fields, a packet-header sample, and native bounds trapping.
 Run `cargo test --test stdlib_mem_execution` for all public memory helper
@@ -1573,6 +1585,15 @@ also fixes the imported struct-return relocation path described below.
     This is broader than dependency 26's division failure. A complete
     `core::number_u64` cannot claim native correctness while these operations
     fail; fixing one division call in Lanius would leave other wrong results.
+    `repro_u64_literal_prefix.lani` narrows an earlier problem: the 11-digit
+    literal `10000000000` compares equal to `1000000000`, so its ELF exits 1
+    instead of 0. `parse_uint_token` in
+    `shaders/parser/hir/literal_values.slang` reads only ten decimal digits
+    into one `uint`; the compact HIR literal payload is also one 32-bit word.
+    Native 64-bit support needs exact literal representation as well as wide
+    arithmetic lowering. The executable `core::wide_u64` and
+    `core::wide_i64` modules take explicit 32-bit words and do not make the
+    primitive `u64` or `i64` types correct.
 31. **Calling comparison trait implementations.**
     `tests/fixtures/stdlib_foundation/repro_cmp_trait_call.lani` imports
     `core::cmp` and calls `core::cmp::Eq<i32>::eq` and
