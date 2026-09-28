@@ -1308,8 +1308,10 @@ fn executable_core_function_surface_has_runtime_cases() {
                     && include_str!("fixtures/stdlib_foundation/core_slice_f32_extended.lani")
                         .contains(&call)
                 || module == "slice_f32"
-                    && include_str!("fixtures/stdlib_foundation/core_slice_f32_finite_analysis.lani")
-                        .contains(&call);
+                    && include_str!(
+                        "fixtures/stdlib_foundation/core_slice_f32_finite_analysis.lani"
+                    )
+                    .contains(&call);
             assert!(covered, "{module}::{name} lacks a runtime case");
             count += 1;
         }
@@ -1380,7 +1382,7 @@ fn executable_core_function_surface_has_runtime_cases() {
         assert!(hash_fixture.contains(&call), "{call} lacks a runtime case");
         hash_count += 1;
     }
-    assert_eq!(hash_count, 3);
+    assert_eq!(hash_count, 10);
 
     let i32_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i32.lani");
     let u8_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_u8.lani");
@@ -1631,10 +1633,21 @@ fn executable_core_function_surface_has_runtime_cases() {
                 constant_count += 1;
             }
         }
-        assert_eq!(function_count, expected_functions, "{module} function count");
-        assert_eq!(constant_count, expected_constants, "{module} constant count");
+        assert_eq!(
+            function_count, expected_functions,
+            "{module} function count"
+        );
+        assert_eq!(
+            constant_count, expected_constants,
+            "{module} constant count"
+        );
     }
 
+    let vector_additional_fixtures = [
+        include_str!("fixtures/stdlib_foundation/vec_truncate_all.lani"),
+        include_str!("fixtures/stdlib_foundation/vec_resize_all.lani"),
+        include_str!("fixtures/stdlib_foundation/vec_shrink_all.lani"),
+    ];
     for (module, vector_source, vector_fixture) in [
         (
             "vec_i32",
@@ -1682,10 +1695,16 @@ fn executable_core_function_surface_has_runtime_cases() {
                 .next()
                 .expect("public vector function has a name");
             let call = format!("std::{module}::{name}(");
-            assert!(vector_fixture.contains(&call), "{call} lacks a runtime case");
+            assert!(
+                vector_fixture.contains(&call)
+                    || vector_additional_fixtures
+                        .iter()
+                        .any(|fixture| fixture.contains(&call)),
+                "{call} lacks a runtime case"
+            );
             vector_function_count += 1;
         }
-        let expected_functions = if module == "vec_u8" { 17 } else { 16 };
+        let expected_functions = if module == "vec_u8" { 20 } else { 19 };
         assert_eq!(vector_function_count, expected_functions);
         assert!(vector_fixture.contains(&format!("std::{module}::MAX_CAPACITY")));
     }
@@ -1707,10 +1726,14 @@ fn executable_core_function_surface_has_runtime_cases() {
             || include_str!("fixtures/stdlib_foundation/utf8_vec_replace.lani").contains(&call)
             || include_str!("fixtures/stdlib_foundation/utf8_vec_codes.lani").contains(&call)
             || include_str!("fixtures/stdlib_foundation/utf8_vec_bytes.lani").contains(&call)
-            || include_str!("fixtures/stdlib_foundation/utf8_vec_splice_bytes.lani").contains(&call)
-            || include_str!("fixtures/stdlib_foundation/utf8_vec_insert_codes.lani").contains(&call)
-            || include_str!("fixtures/stdlib_foundation/utf8_vec_remove_range.lani").contains(&call)
-            || include_str!("fixtures/stdlib_foundation/utf8_vec_splice_codes.lani").contains(&call);
+            || include_str!("fixtures/stdlib_foundation/utf8_vec_splice_bytes.lani")
+                .contains(&call)
+            || include_str!("fixtures/stdlib_foundation/utf8_vec_insert_codes.lani")
+                .contains(&call)
+            || include_str!("fixtures/stdlib_foundation/utf8_vec_remove_range.lani")
+                .contains(&call)
+            || include_str!("fixtures/stdlib_foundation/utf8_vec_splice_codes.lani")
+                .contains(&call);
         assert!(covered, "{call} lacks a runtime case");
         text_function_count += 1;
     }

@@ -36,5 +36,27 @@ fn main() -> i32 {
     if (core::hash::fnv1a_bytes_or(binary, 3, 0) != 1921939296) {
         return 7;
     }
+    let maximum: u32 = 4294967295;
+    if (core::hash::hash_u32(0) != 0 ||
+        core::hash::hash_u32(maximum) != maximum) { return 8; }
+    if (core::hash::hash_bool(false) != 0 ||
+        core::hash::hash_bool(true) != 1) { return 9; }
+    if (core::hash::hash_char('A') != 65 ||
+        core::hash::hash_char('é') != 233 ||
+        core::hash::hash_char('😀') != 128512) { return 10; }
+    let min_i8: i8 = -128;
+    if (core::hash::hash_i8(0) != 0 ||
+        core::hash::hash_i8(-1) != maximum ||
+        core::hash::hash_i8(min_i8) != 4294967168) { return 11; }
+    let min_i16: i16 = -32768;
+    if (core::hash::hash_i16(0) != 0 ||
+        core::hash::hash_i16(-1) != maximum ||
+        core::hash::hash_i16(min_i16) != 4294934528) { return 12; }
+    let max_u8: u8 = 255;
+    if (core::hash::hash_u8(0) != 0 ||
+        core::hash::hash_u8(max_u8) != 255) { return 13; }
+    let max_u16: u16 = 65535;
+    if (core::hash::hash_u16(0) != 0 ||
+        core::hash::hash_u16(max_u16) != 65535) { return 14; }
     return 0;
 }
