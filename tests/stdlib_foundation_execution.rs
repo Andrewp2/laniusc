@@ -1076,6 +1076,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             include_str!("fixtures/stdlib_foundation/core_base64.lani"),
         ),
         (
+            "endian",
+            include_str!("../stdlib/core/endian.lani"),
+            include_str!("fixtures/stdlib_foundation/core_endian.lani"),
+        ),
+        (
             "bool",
             include_str!("../stdlib/core/bool.lani"),
             include_str!("fixtures/stdlib_foundation/core_bool.lani"),

@@ -1,0 +1,36 @@
+module app::main;
+import core::endian;
+import core::number_u32;
+
+fn main() -> i32 {
+    // Network-order magic and payload length, then a little-endian message ID.
+    let magic_high: u8 = 202;
+    let magic_low: u8 = 254;
+    let zero: u8 = 0;
+    let count: u8 = 3;
+    let id: u8 = 7;
+    let first: u8 = 10;
+    let second: u8 = 20;
+    let third: u8 = 30;
+    let packet: [u8; 11] = [magic_high, magic_low, zero, count,
+        id, zero, zero, zero, first, second, third];
+    let fallback16: u16 = 0;
+    let fallback32: u32 = 0;
+    let magic: u16 = core::endian::read_u16_be_or(packet, 11, 0, fallback16);
+    if (magic != 51966) { return 1; }
+    let payload_len: u16 = core::endian::read_u16_be_or(packet, 11, 2, fallback16);
+    let payload_count: i32 = payload_len as i32;
+    if (payload_count != 3 || 8 + payload_count != 11) { return 2; }
+    let message_id: u32 = core::endian::read_u32_le_or(packet, 11, 4, fallback32);
+    let total: u32 = message_id;
+    let index: i32 = 0;
+    while (index < payload_count) {
+        let byte: u8 = packet[8 + index];
+        let widened: u32 = byte as u32;
+        total = core::number_u32::saturating_add(total, widened);
+        index += 1;
+    }
+    let printable: i32 = total as i32;
+    print(printable);
+    return 0;
+}

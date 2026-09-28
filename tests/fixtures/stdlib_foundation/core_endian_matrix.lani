@@ -1,0 +1,32 @@
+module app::main;
+import core::endian;
+
+fn main() -> i32 {
+    let marker: u8 = 255;
+    let bytes: [u8; 8] = [marker, marker, marker, marker, marker, marker, marker, marker];
+    let raw: i32 = 0;
+    while (raw <= 255) {
+        let first: u8 = raw as u8;
+        let first_u32: u32 = first as u32;
+        let word: u32 = (first_u32 << 24) | 1193046;
+        let offset: i32 = raw % 5;
+        if (!core::endian::write_u32_be(bytes, 8, offset, word) ||
+            bytes[offset] != first || bytes[offset + 1] != 18 ||
+            bytes[offset + 2] != 52 || bytes[offset + 3] != 86 ||
+            core::endian::read_u32_be_or(bytes, 8, offset, 0) != word) { return 1; }
+        if (!core::endian::write_u32_le(bytes, 8, offset, word) ||
+            bytes[offset] != 86 || bytes[offset + 1] != 52 ||
+            bytes[offset + 2] != 18 || bytes[offset + 3] != first ||
+            core::endian::read_u32_le_or(bytes, 8, offset, 0) != word) { return 2; }
+        let half_word: u32 = (first_u32 << 8) | 35;
+        let half: u16 = half_word as u16;
+        if (!core::endian::write_u16_be(bytes, 8, offset, half) ||
+            bytes[offset] != first || bytes[offset + 1] != 35 ||
+            core::endian::read_u16_be_or(bytes, 8, offset, 0) != half) { return 3; }
+        if (!core::endian::write_u16_le(bytes, 8, offset, half) ||
+            bytes[offset] != 35 || bytes[offset + 1] != first ||
+            core::endian::read_u16_le_or(bytes, 8, offset, 0) != half) { return 4; }
+        raw += 1;
+    }
+    return 0;
+}

@@ -1,0 +1,9 @@
+module app::main;
+import core::endian;
+
+fn main() -> i32 {
+    let zero: u8 = 0;
+    let short: [u8; 1] = [zero];
+    if (core::endian::write_u32_le(short, 4, 0, 305419896)) { return 1; }
+    return 0;
+}

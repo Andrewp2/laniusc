@@ -1,0 +1,101 @@
+// Allocation-free endian reads and writes over caller-backed byte views.
+module core::endian;
+import core::bits;
+
+fn has_width(len: i32, offset: i32, width: i32) -> bool {
+    return len >= width && offset >= 0 && offset <= len - width;
+}
+
+// A rejected logical length or offset returns fallback without reading.
+// Overstating physical backing can trap when an element is accessed.
+pub fn read_u16_be_or(bytes: [u8], len: i32, offset: i32, fallback: u16) -> u16 {
+    if (!has_width(len, offset, 2)) {
+        return fallback;
+    }
+    let first: u8 = bytes[offset];
+    let second: u8 = bytes[offset + 1];
+    let high: u32 = first as u32;
+    let low: u32 = second as u32;
+    let word: u32 = (high << 8) | low;
+    return word as u16;
+}
+
+pub fn read_u16_le_or(bytes: [u8], len: i32, offset: i32, fallback: u16) -> u16 {
+    if (!has_width(len, offset, 2)) {
+        return fallback;
+    }
+    let first: u8 = bytes[offset];
+    let second: u8 = bytes[offset + 1];
+    let low: u32 = first as u32;
+    let high: u32 = second as u32;
+    let word: u32 = (high << 8) | low;
+    return word as u16;
+}
+
+pub fn read_u32_be_or(bytes: [u8], len: i32, offset: i32, fallback: u32) -> u32 {
+    if (!has_width(len, offset, 4)) {
+        return fallback;
+    }
+    return core::bits::from_be_bytes_u32(
+        bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+}
+
+pub fn read_u32_le_or(bytes: [u8], len: i32, offset: i32, fallback: u32) -> u32 {
+    if (!has_width(len, offset, 4)) {
+        return fallback;
+    }
+    return core::bits::from_le_bytes_u32(
+        bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+}
+
+// Invalid logical lengths and offsets return false without writing. A true
+// result means every byte was written. Overstated physical backing can trap.
+pub fn write_u16_be(bytes: [u8], len: i32, offset: i32, value: u16) -> bool {
+    if (!has_width(len, offset, 2)) {
+        return false;
+    }
+    let wide: u32 = value as u32;
+    let high_word: u32 = (wide >> 8) & 255;
+    let low_word: u32 = wide & 255;
+    let high: u8 = high_word as u8;
+    let low: u8 = low_word as u8;
+    bytes[offset] = high;
+    bytes[offset + 1] = low;
+    return true;
+}
+
+pub fn write_u16_le(bytes: [u8], len: i32, offset: i32, value: u16) -> bool {
+    if (!has_width(len, offset, 2)) {
+        return false;
+    }
+    let wide: u32 = value as u32;
+    let high_word: u32 = (wide >> 8) & 255;
+    let low_word: u32 = wide & 255;
+    let high: u8 = high_word as u8;
+    let low: u8 = low_word as u8;
+    bytes[offset] = low;
+    bytes[offset + 1] = high;
+    return true;
+}
+
+pub fn write_u32_be(bytes: [u8], len: i32, offset: i32, value: u32) -> bool {
+    if (!has_width(len, offset, 4)) {
+        return false;
+    }
+    bytes[offset] = core::bits::byte_at_be_or_u32(value, 0, 0);
+    bytes[offset + 1] = core::bits::byte_at_be_or_u32(value, 1, 0);
+    bytes[offset + 2] = core::bits::byte_at_be_or_u32(value, 2, 0);
+    bytes[offset + 3] = core::bits::byte_at_be_or_u32(value, 3, 0);
+    return true;
+}
+
+pub fn write_u32_le(bytes: [u8], len: i32, offset: i32, value: u32) -> bool {
+    if (!has_width(len, offset, 4)) {
+        return false;
+    }
+    bytes[offset] = core::bits::byte_at_le_or_u32(value, 0, 0);
+    bytes[offset + 1] = core::bits::byte_at_le_or_u32(value, 1, 0);
+    bytes[offset + 2] = core::bits::byte_at_le_or_u32(value, 2, 0);
+    bytes[offset + 3] = core::bits::byte_at_le_or_u32(value, 3, 0);
+    return true;
+}

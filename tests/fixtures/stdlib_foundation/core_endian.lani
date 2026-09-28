@@ -1,0 +1,60 @@
+module app::main;
+import core::endian;
+
+fn main() -> i32 {
+    let sentinel: u8 = 171;
+    let b18: u8 = 18;
+    let b52: u8 = 52;
+    let b86: u8 = 86;
+    let b120: u8 = 120;
+    let bytes: [u8; 8] = [sentinel, b18, b52, b86, b120, sentinel, sentinel, sentinel];
+    let fallback16: u16 = 77;
+    let fallback32: u32 = 99;
+    if (core::endian::read_u16_be_or(bytes, 8, 1, fallback16) != 4660 ||
+        core::endian::read_u16_le_or(bytes, 8, 1, fallback16) != 13330 ||
+        core::endian::read_u32_be_or(bytes, 8, 1, fallback32) != 305419896 ||
+        core::endian::read_u32_le_or(bytes, 8, 1, fallback32) != 2018915346) { return 1; }
+    if (core::endian::read_u16_be_or(bytes, 8, -1, fallback16) != fallback16 ||
+        core::endian::read_u16_le_or(bytes, -1, 1, fallback16) != fallback16 ||
+        core::endian::read_u16_be_or(bytes, 8, 7, fallback16) != fallback16 ||
+        core::endian::read_u32_be_or(bytes, 8, 5, fallback32) != fallback32 ||
+        core::endian::read_u32_le_or(bytes, 3, 0, fallback32) != fallback32 ||
+        core::endian::read_u32_be_or(bytes, 8, 2147483647, fallback32) != fallback32) { return 2; }
+
+    let high16: u16 = 65244;
+    if (!core::endian::write_u16_be(bytes, 8, 5, high16) ||
+        bytes[5] != 254 || bytes[6] != 220 || bytes[7] != sentinel ||
+        core::endian::read_u16_be_or(bytes, 8, 5, fallback16) != high16) { return 3; }
+    let other16: u16 = 43981;
+    if (!core::endian::write_u16_le(bytes, 8, 1, other16) ||
+        bytes[0] != sentinel || bytes[1] != 205 || bytes[2] != 171 ||
+        bytes[3] != b86 || bytes[4] != b120 ||
+        core::endian::read_u16_le_or(bytes, 8, 1, fallback16) != other16) { return 4; }
+
+    let high32: u32 = 2309737967;
+    if (!core::endian::write_u32_be(bytes, 8, 1, high32) ||
+        bytes[0] != sentinel || bytes[1] != 137 || bytes[2] != 171 ||
+        bytes[3] != 205 || bytes[4] != 239 || bytes[5] != 254 ||
+        core::endian::read_u32_be_or(bytes, 8, 1, fallback32) != high32) { return 5; }
+    let low32: u32 = 19088743;
+    if (!core::endian::write_u32_le(bytes, 8, 1, low32) ||
+        bytes[0] != sentinel || bytes[1] != 103 || bytes[2] != 69 ||
+        bytes[3] != 35 || bytes[4] != 1 || bytes[5] != 254 ||
+        core::endian::read_u32_le_or(bytes, 8, 1, fallback32) != low32) { return 6; }
+
+    if (core::endian::write_u16_be(bytes, 8, -1, high16) ||
+        core::endian::write_u16_le(bytes, 8, 7, high16) ||
+        core::endian::write_u32_be(bytes, 3, 0, high32) ||
+        core::endian::write_u32_le(bytes, -1, 0, high32) ||
+        core::endian::write_u32_be(bytes, 8, 2147483647, high32)) { return 7; }
+    if (bytes[0] != sentinel || bytes[1] != 103 || bytes[2] != 69 ||
+        bytes[3] != 35 || bytes[4] != 1 || bytes[5] != 254 ||
+        bytes[6] != 220 || bytes[7] != sentinel) { return 8; }
+    let empty: [u8; 1] = [sentinel];
+    if (core::endian::read_u16_be_or(empty, 0, 0, fallback16) != fallback16 ||
+        core::endian::read_u32_le_or(empty, 0, 0, fallback32) != fallback32 ||
+        core::endian::write_u16_le(empty, 0, 0, high16) ||
+        core::endian::write_u32_be(empty, 0, 0, high32) ||
+        empty[0] != sentinel) { return 9; }
+    return 0;
+}
