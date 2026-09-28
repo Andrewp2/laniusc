@@ -109,7 +109,7 @@ limited to native x86_64 output from this worktree.
 | `std::host` all 15 metadata functions and 4 constants | Executable metadata on x86_64 Linux | The native fixture calls every public function and constant and checks its unavailable service report against `core::runtime`. No host operation ABI is declared here. |
 | `test::harness` all 31 metadata and status functions and 7 constants | Executable metadata on x86_64 Linux; test execution unbound | The native fixture calls every public function and constant, checks passed, failed, skipped, and unknown statuses, and confirms registration, discovery, and execution remain unavailable. |
 | `test::assert` all 8 public helpers | Executable on x86_64 Linux | `tests/stdlib_assert_execution.rs` runs all passing conditions and separately checks that every false condition terminates with SIGILL. The helpers use no allocation or host calls. See dependency 35 for a separate compiler issue with explicit void returns. |
-| Generic `std::vec::Vec<T>` | Contract-only after stub and misleading metadata removal | The former `push` returned without storing its argument and was removed. Generic `new`, `len`, and `is_empty` remain a type-checking contract; even empty generic construction currently fails native compilation. This module has no runtime service ID: concrete vectors use the allocator service, and service ID 13 belongs to the test harness. See dependency 4. |
+| Generic `std::vec::Vec<T>` | Executable empty values in a flat source pack; contract-only as an imported module | `tests/stdlib_generic_vec_flat_execution.rs` runs all three free and all three associated empty-value operations for `i32` and `bool` instantiations. A normal `--stdlib-root` build still rejects both constructor forms; there is no generic storage or mutation. The former `push` silently discarded its argument and was removed. This module has no runtime service ID: concrete vectors use the allocator service, and service ID 13 belongs to the test harness. See dependencies 4 and 54. |
 
 For all seven concrete vector types, the allocation-failure suite executes a
 successful clone and then injects failure into its allocation. It checks that
@@ -1098,6 +1098,9 @@ Run `cargo test --test stdlib_mem_execution` for all public memory helper
 functions, including capability metadata, value helpers, and intrinsics.
 Run `cargo test --test stdlib_allocator_metadata_execution` for allocator
 capability metadata and live pointer classification.
+Run `cargo test --test stdlib_generic_vec_flat_execution` for empty generic
+vector operations in a flat source pack; this does not establish imported
+`--stdlib-root` execution.
 Run `cargo test --test stdlib_time_execution` for clock metadata, the four
 bound host calls, checked wrappers, and injected host failures.
 Run `cargo test --test stdlib_cast_store_execution` for direct indexed byte
@@ -1223,17 +1226,20 @@ also fixes the imported struct-return relocation path described below.
    independent of caller-supplied lengths.
 4. **Generic allocation-backed vectors remain blocked.** The old `std::vec`
    silently dropped values in `push`, so that stub was removed. The empty
-   generic `Vec<T>` remains a type-checking contract. `std::vec_i32`,
+   generic `Vec<T>` now has executable flat-source-pack coverage for the three
+   free functions and three methods with `i32` and `bool` instantiations;
+   normal stdlib-root imports remain blocked by dependency 54. `std::vec_i32`,
    `std::vec_u32`, `std::vec_u8`, `std::vec_i8`, `std::vec_u16`, and
    `std::vec_i16`, and `std::vec_bool` have tested storage, growth, mutation, failure, and
    destruction on x86 Linux.
-   Two smaller reproductions show that even its empty constructor cannot yet
-   be claimed executable. Both
+   Two smaller reproductions show that its empty constructor cannot yet
+   be claimed executable through the normal imported-module path. Both
    `tests/fixtures/stdlib_foundation/repro_vec_generic_free_new.lani` and
    `repro_vec_generic_associated_new.lani` pass GPU `check`, but native
    compilation reports `LNC0006` for the free constructor's contextual
    generic result and `LNC0005` for qualified associated constructor
-   resolution, respectively. Neither reaches an executable runtime test.
+   resolution, respectively. Both compile and run when the same sources are
+   supplied as one flat source pack; the import path is the remaining gap.
    The former vector service metadata also incorrectly reused runtime service
    ID 13, which is the test harness. It was removed: the concrete vectors
    depend on the allocator service, while generic layout is a compiler
@@ -1695,6 +1701,19 @@ also fixes the imported struct-return relocation path described below.
     block's 55-byte size and every following runtime service offset.
     `tests/stdlib_time_execution.rs` now runs this fixture and the checked
     clock and sleep cases successfully.
+54. **Imported type-qualified associated constructors.**
+    `tests/fixtures/stdlib_foundation/repro_imported_associated_new.lani`
+    calls `core::thing::Thing::new()` through a separate stdlib root. GPU
+    `check` accepts it, but native compilation reports `LNC0005` at the
+    qualified call. The generic
+    `repro_vec_generic_associated_new.lani` reports the same error through
+    `--stdlib-root`, while `repro_vec_generic_free_new.lani` reports
+    `LNC0006` for its contextual generic result. Both Vec fixtures compile
+    and execute on x86 when the real `std::vec` source and app source are
+    supplied in one flat source pack; `tests/stdlib_generic_vec_flat_execution.rs`
+    checks all six empty-value operations with `i32` and `bool` types.
+    The exported `Vec` interface contains all three associated methods, so
+    import-time projection and generic return instantiation still need work.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

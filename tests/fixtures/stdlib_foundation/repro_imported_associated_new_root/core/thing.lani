@@ -1,0 +1,12 @@
+module core::thing;
+
+pub struct Thing { value: i32 }
+
+impl Thing {
+    pub fn new() -> Thing {
+        return Thing { value: 7 };
+    }
+    pub fn get(&self) -> i32 {
+        return self.value;
+    }
+}
