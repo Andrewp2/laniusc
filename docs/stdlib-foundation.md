@@ -19,6 +19,7 @@ limited to native x86_64 output from this worktree.
 | `core::wide_u64_checked` all 9 public functions and `core::wide_i64_checked` all 11 public functions | Executable on x86_64 | Imported fixtures call every checked and saturating operation with ordinary values, zero, high-bit values, signed extrema, overflow, zero divisors, and `MIN / -1`. Generated native fixtures compare checked arithmetic, powers, and saturation with Rust `u64` and `i64` across eight operand pairs and boundary exponents. The checked-factorial program prints `20!` and rejects `21!` overflow through `OptionWideU64`. These modules use explicit two-word arithmetic, not native 64-bit operators. |
 | `core::byte` constants and all 44 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
 | `core::bits` all 42 public `i32`, `u32`, `u16`, and `u8` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across word widths, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. Byte operations run all 256 inputs; halfword operations run boundary values and 256 evenly spaced inputs; signed operations check negative patterns and all 32 one-hot bits. |
+| `core::wide_u64_bits` all 12 public two-word bit functions | Executable on x86_64 | The imported runtime fixture calls every function and checks zero, one, high bit, maximum, and mixed byte patterns; zero and one counts; rotations at word and width boundaries and for all counts 0 through 127; bit reversal and byte swap; all eight byte positions in both orders; and caller fallbacks for invalid positions. It uses `WideU64` rather than native `u64`. |
 | `core::bitset` all 14 public caller-backed bitset functions | Executable on x86_64 for `[u32]` backing | Runtime fixtures check word counts, bit access and mutation, fill, counts, any/all, first/last set bit, equality, union, and intersection. They cover logical lengths 0 through 65, word boundaries, aliases, invalid lengths and indices, preserved padding and unused words, and a physical backing overclaim that traps. A source scan requires a runtime call for every public function. |
 | `core::base64` all 4 public caller-backed encoding functions | Executable on x86_64 for `[u8]` backing | Runtime fixtures check exact size calculation, standard padded Base64 encoding and strict decoding, empty input, all 256 values as the final byte of one-, two-, and three-byte round trips, one- and two-byte padding, same-buffer encode/decode, rejected malformed input and insufficient capacity without output changes, and overstated physical views that trap. A source scan requires a runtime call for every public function. |
 | `core::endian` all 12 public caller-backed byte-order functions | Executable on x86_64 for `[u8]` backing | Runtime fixtures check big- and little-endian 16-, 32-, and two-word 64-bit reads and writes, high-bit values, zero, maximum values, invalid logical bounds without writes, and physical backing overclaims that trap. The 16- and 32-bit matrix covers all 256 high-byte values across offsets 0 through 4. The packet-header sample combines byte-order reads with unsigned arithmetic and checks its printed result. A source scan requires a runtime call for every public function. |
@@ -288,6 +289,12 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   pattern through `u32`. `has_single_bit_i32(i32::MIN)` is true because its
   representation has one set bit. Rotations, reversal, and byte swap return
   the resulting bit pattern as `i32`.
+- `core::wide_u64_bits` counts and transforms the complete 64-bit pattern in
+  two `u32` words. Zero has 64 leading and trailing zeros. Rotation amounts
+  reduce modulo 64, including `u32::MAX`. Bit positions 0 through 63 and byte
+  positions 0 through 7 are valid; larger positions return the caller's
+  fallback. Little-endian byte zero is the least significant byte and
+  big-endian byte zero is the most significant byte.
 - `core::bitset` stores bit zero in the least-significant bit of word zero.
   The caller supplies at least `ceil(bit_len / 32)` words. A negative logical
   length returns `false` or the named fallback without touching storage;
@@ -1273,6 +1280,8 @@ with multibyte, empty, exact-capacity, malformed, overlong, and EOF input.
 | Wasm | Not claimed or required for this foundation. |
 
 Run the focused gate with `cargo test --test stdlib_foundation_execution`.
+Run `cargo test --test stdlib_wide_u64_bits_execution` for every public
+two-word bit helper, including rotation boundaries and invalid-index fallbacks.
 Run `cargo test --test stdlib_bitset_execution` for the caller-backed bitset,
 including the word-boundary matrix and native bounds trap.
 Run `cargo test --test stdlib_base64_execution` for strict caller-backed

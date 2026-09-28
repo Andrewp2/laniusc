@@ -1,0 +1,77 @@
+module app::main;
+import core::wide_u64_bits;
+import core::wide_u64;
+fn matches(value: core::wide_u64::WideU64, high: u32, low: u32) -> bool {
+    return core::wide_u64::high_word(value) == high && core::wide_u64::low_word(value) == low;
+}
+fn main() -> i32 {
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let one: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
+    let top: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483648, 0);
+    let max: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    let pattern: core::wide_u64::WideU64 = core::wide_u64::from_words(16909060, 84281096);
+    if (core::wide_u64_bits::count_ones(zero) != 0 || core::wide_u64_bits::count_ones(one) != 1 || core::wide_u64_bits::count_ones(top) != 1 || core::wide_u64_bits::count_ones(max) != 64 || core::wide_u64_bits::count_ones(pattern) != 13) {
+        return 1;
+    }
+    if (core::wide_u64_bits::count_zeros(zero) != 64 || core::wide_u64_bits::count_zeros(max) != 0 || core::wide_u64_bits::count_zeros(pattern) != 51) {
+        return 2;
+    }
+    if (core::wide_u64_bits::leading_zeros(zero) != 64 || core::wide_u64_bits::leading_zeros(one) != 63 || core::wide_u64_bits::leading_zeros(top) != 0 || core::wide_u64_bits::leading_zeros(pattern) != 7) {
+        return 3;
+    }
+    if (core::wide_u64_bits::trailing_zeros(zero) != 64 || core::wide_u64_bits::trailing_zeros(one) != 0 || core::wide_u64_bits::trailing_zeros(top) != 63 || core::wide_u64_bits::trailing_zeros(pattern) != 3) {
+        return 4;
+    }
+    if (core::wide_u64_bits::has_single_bit(zero) || !core::wide_u64_bits::has_single_bit(one) || !core::wide_u64_bits::has_single_bit(top) || core::wide_u64_bits::has_single_bit(max)) {
+        return 5;
+    }
+    if (!matches(core::wide_u64_bits::rotate_left(one, 0), 0, 1) || !matches(core::wide_u64_bits::rotate_left(one, 1), 0, 2) || !matches(core::wide_u64_bits::rotate_left(one, 31), 0, 2147483648) || !matches(core::wide_u64_bits::rotate_left(one, 32), 1, 0) || !matches(core::wide_u64_bits::rotate_left(one, 33), 2, 0) || !matches(core::wide_u64_bits::rotate_left(one, 63), 2147483648, 0) || !matches(core::wide_u64_bits::rotate_left(one, 64), 0, 1) || !matches(core::wide_u64_bits::rotate_left(one, 65), 0, 2)) {
+        return 6;
+    }
+    if (!matches(core::wide_u64_bits::rotate_right(one, 0), 0, 1) || !matches(core::wide_u64_bits::rotate_right(one, 1), 2147483648, 0) || !matches(core::wide_u64_bits::rotate_right(one, 31), 2, 0) || !matches(core::wide_u64_bits::rotate_right(one, 32), 1, 0) || !matches(core::wide_u64_bits::rotate_right(one, 33), 0, 2147483648) || !matches(core::wide_u64_bits::rotate_right(one, 63), 0, 2) || !matches(core::wide_u64_bits::rotate_right(one, 64), 0, 1) || !matches(core::wide_u64_bits::rotate_right(one, 65), 2147483648, 0)) {
+        return 7;
+    }
+    if (!matches(core::wide_u64_bits::rotate_left(one, 4294967295), 2147483648, 0) || !matches(core::wide_u64_bits::rotate_right(one, 4294967295), 0, 2)) {
+        return 13;
+    }
+    let amount: u32 = 0;
+    while (amount<128) {
+        let rotated_left: core::wide_u64::WideU64 = core::wide_u64_bits::rotate_left(pattern, amount);
+        let rotated_right: core::wide_u64::WideU64 = core::wide_u64_bits::rotate_right(pattern, amount);
+        if (!core::wide_u64::eq(core::wide_u64_bits::rotate_right(rotated_left, amount), pattern) || !core::wide_u64::eq(core::wide_u64_bits::rotate_left(rotated_right, amount), pattern)) {
+            return 14;
+        }
+        amount += 1;
+    }
+    if (!matches(core::wide_u64_bits::reverse_bits(zero), 0, 0) || !matches(core::wide_u64_bits::reverse_bits(one), 2147483648, 0) || !matches(core::wide_u64_bits::reverse_bits(top), 0, 1) || !matches(core::wide_u64_bits::reverse_bits(pattern), 283140256, 549470336)) {
+        return 8;
+    }
+    if (!matches(core::wide_u64_bits::swap_bytes(zero), 0, 0) || !matches(core::wide_u64_bits::swap_bytes(pattern), 134678021, 67305985) || !matches(core::wide_u64_bits::swap_bytes(max), 4294967295, 4294967295)) {
+        return 9;
+    }
+    if (!core::wide_u64::eq(core::wide_u64_bits::reverse_bits(core::wide_u64_bits::reverse_bits(pattern)), pattern) || !core::wide_u64::eq(core::wide_u64_bits::swap_bytes(core::wide_u64_bits::swap_bytes(pattern)), pattern)) {
+        return 15;
+    }
+    if (!core::wide_u64_bits::bit_at_or(one, 0, false) || core::wide_u64_bits::bit_at_or(one, 1, false) || !core::wide_u64_bits::bit_at_or(pattern, 34, false) || !core::wide_u64_bits::bit_at_or(top, 63, false) || !core::wide_u64_bits::bit_at_or(zero, 64, true) || core::wide_u64_bits::bit_at_or(max, 64, false) || !core::wide_u64_bits::bit_at_or(zero, 4294967295, true)) {
+        return 10;
+    }
+    let crossing: core::wide_u64::WideU64 = core::wide_u64::from_words(1, 2147483648);
+    if (!core::wide_u64_bits::bit_at_or(crossing, 31, false) || !core::wide_u64_bits::bit_at_or(crossing, 32, false) || core::wide_u64_bits::bit_at_or(crossing, 33, false)) {
+        return 16;
+    }
+    let index: u32 = 0;
+    while (index<8) {
+        let expected_le_word: u32 = 8 - index;
+        let expected_be_word: u32 = index + 1;
+        let expected_le: u8 = expected_le_word as u8;
+        let expected_be: u8 = expected_be_word as u8;
+        if (core::wide_u64_bits::byte_at_le_or(pattern, index, 99) != expected_le || core::wide_u64_bits::byte_at_be_or(pattern, index, 99) != expected_be) {
+            return 11;
+        }
+        index += 1;
+    }
+    if (core::wide_u64_bits::byte_at_le_or(pattern, 8, 99) != 99 || core::wide_u64_bits::byte_at_be_or(pattern, 8, 99) != 99 || core::wide_u64_bits::byte_at_le_or(pattern, 4294967295, 42) != 42 || core::wide_u64_bits::byte_at_be_or(pattern, 4294967295, 42) != 42) {
+        return 12;
+    }
+    return 0;
+}

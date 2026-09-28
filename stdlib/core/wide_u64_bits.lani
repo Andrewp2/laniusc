@@ -1,0 +1,83 @@
+// Allocation-free bit operations on an unsigned two-word 64-bit value.
+module core::wide_u64_bits;
+import core::bits;
+import core::wide_u64;
+pub fn count_ones(value: core::wide_u64::WideU64) -> u32 {
+    return core::bits::count_ones_u32(core::wide_u64::high_word(value)) + core::bits::count_ones_u32(core::wide_u64::low_word(value));
+}
+pub fn count_zeros(value: core::wide_u64::WideU64) -> u32 {
+    return 64 - count_ones(value);
+}
+// Zero has 64 leading or trailing zero bits.
+pub fn leading_zeros(value: core::wide_u64::WideU64) -> u32 {
+    let high: u32 = core::wide_u64::high_word(value);
+    if (high != 0) {
+        return core::bits::leading_zeros_u32(high);
+    }
+    return 32 + core::bits::leading_zeros_u32(core::wide_u64::low_word(value));
+}
+pub fn trailing_zeros(value: core::wide_u64::WideU64) -> u32 {
+    let low: u32 = core::wide_u64::low_word(value);
+    if (low != 0) {
+        return core::bits::trailing_zeros_u32(low);
+    }
+    return 32 + core::bits::trailing_zeros_u32(core::wide_u64::high_word(value));
+}
+pub fn has_single_bit(value: core::wide_u64::WideU64) -> bool {
+    return count_ones(value) == 1;
+}
+// Rotation counts are reduced modulo 64.
+pub fn rotate_left(value: core::wide_u64::WideU64, amount: u32) -> core::wide_u64::WideU64 {
+    let shift: u32 = amount % 64;
+    if (shift == 0) {
+        return value;
+    }
+    let opposite: u32 = 64 - shift;
+    let shift_count: i32 = shift as i32;
+    let opposite_count: i32 = opposite as i32;
+    return core::wide_u64::bit_or(core::wide_u64::shift_left(value, shift_count), core::wide_u64::shift_right(value, opposite_count));
+}
+pub fn rotate_right(value: core::wide_u64::WideU64, amount: u32) -> core::wide_u64::WideU64 {
+    let shift: u32 = amount % 64;
+    if (shift == 0) {
+        return value;
+    }
+    let opposite: u32 = 64 - shift;
+    let shift_count: i32 = shift as i32;
+    let opposite_count: i32 = opposite as i32;
+    return core::wide_u64::bit_or(core::wide_u64::shift_right(value, shift_count), core::wide_u64::shift_left(value, opposite_count));
+}
+pub fn reverse_bits(value: core::wide_u64::WideU64) -> core::wide_u64::WideU64 {
+    return core::wide_u64::from_words(core::bits::reverse_bits_u32(core::wide_u64::low_word(value)), core::bits::reverse_bits_u32(core::wide_u64::high_word(value)));
+}
+pub fn swap_bytes(value: core::wide_u64::WideU64) -> core::wide_u64::WideU64 {
+    return core::wide_u64::from_words(core::bits::swap_bytes_u32(core::wide_u64::low_word(value)), core::bits::swap_bytes_u32(core::wide_u64::high_word(value)));
+}
+// Invalid positions return the caller's fallback without reading a word.
+pub fn bit_at_or(value: core::wide_u64::WideU64, index: u32, fallback: bool) -> bool {
+    if (index >= 64) {
+        return fallback;
+    }
+    if (index<32) {
+        return core::bits::bit_at_or_u32(core::wide_u64::low_word(value), index, fallback);
+    }
+    return core::bits::bit_at_or_u32(core::wide_u64::high_word(value), index - 32, fallback);
+}
+pub fn byte_at_le_or(value: core::wide_u64::WideU64, index: u32, fallback: u8) -> u8 {
+    if (index >= 8) {
+        return fallback;
+    }
+    if (index<4) {
+        return core::bits::byte_at_le_or_u32(core::wide_u64::low_word(value), index, fallback);
+    }
+    return core::bits::byte_at_le_or_u32(core::wide_u64::high_word(value), index - 4, fallback);
+}
+pub fn byte_at_be_or(value: core::wide_u64::WideU64, index: u32, fallback: u8) -> u8 {
+    if (index >= 8) {
+        return fallback;
+    }
+    if (index<4) {
+        return core::bits::byte_at_be_or_u32(core::wide_u64::high_word(value), index, fallback);
+    }
+    return core::bits::byte_at_be_or_u32(core::wide_u64::low_word(value), index - 4, fallback);
+}
