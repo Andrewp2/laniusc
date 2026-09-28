@@ -47,7 +47,7 @@ pub fn try_reserve(value: DequeU32, minimum_capacity: i32) -> DequeU32 {
     if (minimum_capacity < 0 || minimum_capacity > MAX_CAPACITY ||
         minimum_capacity <= value.reserved) { return value; }
     let byte_count: i32 = minimum_capacity * 4;
-    let bytes: usize = byte_count as usize;
+    let bytes: usize = byte_count;
     let next: ptr = alloc::allocator::alloc(bytes, 4);
     if (next == 0) { return value; }
     if (value.length > 0) {
@@ -61,7 +61,7 @@ pub fn try_reserve(value: DequeU32, minimum_capacity: i32) -> DequeU32 {
     }
     if (value.storage != 0) {
         let old_byte_count: i32 = value.reserved * 4;
-        let old_bytes: usize = old_byte_count as usize;
+        let old_bytes: usize = old_byte_count;
         alloc::allocator::dealloc(value.storage, old_bytes, 4);
     }
     return DequeU32 {
@@ -108,7 +108,8 @@ pub fn try_push_back(value: DequeU32, item: u32) -> DequeU32 {
         if (grown.length == grown.reserved) { return value; }
     }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
-    cells[physical_index(grown, grown.length)] = item as i32;
+    let raw_item: i32 = item;
+    cells[physical_index(grown, grown.length)] = raw_item;
     return DequeU32 {
         storage: grown.storage, length: grown.length + 1,
         reserved: grown.reserved, head: grown.head,
@@ -130,7 +131,8 @@ pub fn try_push_front(value: DequeU32, item: u32) -> DequeU32 {
     let next_head: i32 = grown.head - 1;
     if (grown.head == 0) { next_head = grown.reserved - 1; }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
-    cells[next_head] = item as i32;
+    let raw_item: i32 = item;
+    cells[next_head] = raw_item;
     return DequeU32 {
         storage: grown.storage, length: grown.length + 1,
         reserved: grown.reserved, head: next_head,
@@ -143,7 +145,7 @@ pub fn at_or(value: DequeU32, ordinal: i32, fallback: u32) -> u32 {
     if (ordinal < 0 || ordinal >= value.length) { return fallback; }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
     let raw_item: i32 = cells[physical_index(value, ordinal)];
-    return raw_item as u32;
+    return raw_item;
 }
 
 pub fn front_or(value: DequeU32, fallback: u32) -> u32 {
@@ -167,7 +169,8 @@ pub fn contains(value: DequeU32, item: u32) -> bool {
 pub fn try_set(value: DequeU32, ordinal: i32, item: u32) -> bool {
     if (ordinal < 0 || ordinal >= value.length) { return false; }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
-    cells[physical_index(value, ordinal)] = item as i32;
+    let raw_item: i32 = item;
+    cells[physical_index(value, ordinal)] = raw_item;
     return true;
 }
 
@@ -219,7 +222,7 @@ pub fn try_shrink_to_fit(value: DequeU32) -> DequeU32 {
         return new();
     }
     let byte_count: i32 = value.length * 4;
-    let bytes: usize = byte_count as usize;
+    let bytes: usize = byte_count;
     let next: ptr = alloc::allocator::alloc(bytes, 4);
     if (next == 0) { return value; }
     let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
@@ -230,7 +233,7 @@ pub fn try_shrink_to_fit(value: DequeU32) -> DequeU32 {
         index += 1;
     }
     let old_byte_count: i32 = value.reserved * 4;
-    let old_bytes: usize = old_byte_count as usize;
+    let old_bytes: usize = old_byte_count;
     alloc::allocator::dealloc(value.storage, old_bytes, 4);
     return DequeU32 {
         storage: next, length: value.length, reserved: value.length, head: 0,
@@ -240,7 +243,7 @@ pub fn try_shrink_to_fit(value: DequeU32) -> DequeU32 {
 pub fn destroy(value: DequeU32) {
     if (value.storage != 0) {
         let byte_count: i32 = value.reserved * 4;
-        let bytes: usize = byte_count as usize;
+        let bytes: usize = byte_count;
         alloc::allocator::dealloc(value.storage, bytes, 4);
     }
 }

@@ -2278,17 +2278,19 @@ also fixes the imported struct-return relocation path described below.
     8-byte-stride load from its copied result. The relaxation was reverted.
     Contextual element typing and the corresponding native literal materialization
     must both work before this form can be exposed as executable.
-51. **Cast directly on a composite expression fails parsing.**
-    `tests/fixtures/stdlib_foundation/repro_cast_call_result.lani` applies
-    `as i32` to a `u32` function call, and
-    `tests/fixtures/stdlib_foundation/repro_cast_arithmetic_result.lani`
-    applies it to `(64 - shift)`. GPU `check` reports `LNC0016` at `as` in
-    both cases. Assigning the result to a typed `u32` local and casting that
-    local works. `core::utf8_view` and `core::wide_u64_bits` use the named-local
-    form; their executable fixtures pass without this compiler fix.
-    The same parse error occurs when casting an indexed `i32` backing cell
-    directly to `u32` in `std::deque_u32`; assigning the indexed value to an
-    `i32` local first lets the cast compile and execute for `u32::MAX`.
+51. **Cast spelling is not an executable language guarantee.**
+    `repro_ignored_postfix_identifier.lani` contains `x not_a_cast NotAType`.
+    GPU `check` accepts it, and the native executable exits zero after using
+    `x` as the value; neither trailing identifier is diagnosed. Replacing
+    those words with `as i32` or `as NotAType` behaves the same way for a
+    simple name, so a successful compile does not establish that an explicit
+    cast was parsed or checked. `repro_cast_call_result.lani` and
+    `repro_cast_arithmetic_result.lani` put `as` after a call and a grouped
+    arithmetic expression; GPU `check` instead reports `LNC0016` at `as`.
+    An indexed read followed directly by `as u32` has the same parse error.
+    The deque modules use typed locals and assignments and verify actual
+    high-bit behavior at runtime. A real cast operator needs grammar, semantic
+    checking, and target execution before source spelling can be relied on.
 52. **Resolved: cast directly into a byte-array slot misexecuted on x86.**
     `tests/fixtures/stdlib_foundation/repro_u8_cast_store.lani` casts an
     `i32` value to `u8` on the right side of two indexed assignments. GPU
