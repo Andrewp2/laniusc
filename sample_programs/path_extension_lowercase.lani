@@ -1,0 +1,42 @@
+// Extract a file extension from a byte path, then print it in ASCII lowercase.
+module app::main;
+import core::byte;
+import core::slice_u8;
+import std::io_byte;
+import std::path;
+
+fn main() -> i32 {
+    let d: u8 = 100;
+    let i: u8 = 105;
+    let r: u8 = 114;
+    let slash: u8 = 47;
+    let capital_r: u8 = 82;
+    let e: u8 = 101;
+    let p: u8 = 112;
+    let o: u8 = 111;
+    let t: u8 = 116;
+    let dot: u8 = 46;
+    let capital_t: u8 = 84;
+    let capital_x: u8 = 88;
+    let path: [u8; 15] = [d, i, r, slash, capital_r, e, p, o, r, t, dot,
+                          capital_t, capital_x, capital_t, slash];
+    let start: i32 = std::path::path_last_component_start_or(path, 15, -1);
+    let end: i32 = std::path::path_last_component_end_or(path, 15, -1);
+    let extension: i32 = std::path::path_extension_start_or(path, 15, -1);
+    if (start < 0 || extension <= start || extension >= end) {
+        return 1;
+    }
+    let index: i32 = extension;
+    while (index < end) {
+        let value: u8 = core::slice_u8::get_or(path, 15, index, 0);
+        let lowercase: u8 = core::byte::to_ascii_lowercase(value);
+        if (!std::io_byte::write_stdout_byte(lowercase as i32)) {
+            return 2;
+        }
+        index += 1;
+    }
+    if (!std::io_byte::write_stdout_byte(10)) {
+        return 3;
+    }
+    return 0;
+}

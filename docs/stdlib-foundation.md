@@ -948,6 +948,11 @@ the view, and accumulates with saturating arithmetic. It prints `96`.
 header and hexadecimal payload with `core::slice_u8`, `core::range`,
 `core::byte`, and `core::number_u32`. It prints the digit checksum `28`.
 
+`sample_programs/path_extension_lowercase.lani` finds the final component of
+a caller-backed byte path, ignores its trailing separator, lowercases its
+extension using `core::byte`, and writes `txt` through checked byte output.
+Its native execution test checks the exact output.
+
 `sample_programs/fnv1a_stdin.lani` hashes every input byte with the portable
 FNV-1a step and prints the lowercase hexadecimal result. Its native test checks
 text, empty input, and binary bytes. A host read error exits with status 2;
