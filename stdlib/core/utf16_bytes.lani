@@ -1,0 +1,240 @@
+// Strict UTF-16LE and UTF-16BE conversion over caller-backed byte views.
+// Offsets are byte offsets and must start on two-byte boundaries. No BOM is
+// consumed or emitted. Logical bounds are checked before writes; an overstated
+// physical view may still trap when indexed.
+module core::utf16_bytes;
+import core::endian;
+import core::utf16;
+
+pub struct Utf16ByteWrite {
+    status: i32,
+    next: i32,
+}
+
+pub struct Utf16ByteDecode {
+    status: i32,
+    scalar: u32,
+    next: i32,
+}
+
+pub fn write_succeeded(result: Utf16ByteWrite) -> bool {
+    return result.status == core::utf16::STATUS_OK;
+}
+
+pub fn write_status(result: Utf16ByteWrite) -> i32 {
+    return result.status;
+}
+
+pub fn write_next_or(result: Utf16ByteWrite, fallback: i32) -> i32 {
+    if (write_succeeded(result)) { return result.next; }
+    return fallback;
+}
+
+pub fn decode_succeeded(result: Utf16ByteDecode) -> bool {
+    return result.status == core::utf16::STATUS_OK;
+}
+
+pub fn decode_status(result: Utf16ByteDecode) -> i32 {
+    return result.status;
+}
+
+pub fn decode_scalar_or(result: Utf16ByteDecode, fallback: u32) -> u32 {
+    if (decode_succeeded(result)) { return result.scalar; }
+    return fallback;
+}
+
+pub fn decode_next_or(result: Utf16ByteDecode, fallback: i32) -> i32 {
+    if (decode_succeeded(result)) { return result.next; }
+    return fallback;
+}
+
+pub fn byte_len_for_scalar_or(scalar: u32, fallback: i32) -> i32 {
+    let units: i32 = core::utf16::encoded_len_or(scalar, -1);
+    if (units < 0) { return fallback; }
+    return units * 2;
+}
+
+// Reject negative and odd byte lengths; a complete UTF-16 view has whole
+// two-byte code units even when its scalar sequence is malformed.
+pub fn unit_count_or(byte_len: i32, fallback: i32) -> i32 {
+    if (byte_len < 0 || byte_len % 2 != 0) { return fallback; }
+    return byte_len / 2;
+}
+
+fn read_unit(bytes: [u8], len: i32, offset: i32, big_endian: bool) -> u16 {
+    if (big_endian) { return core::endian::read_u16_be_or(bytes, len, offset, 0); }
+    return core::endian::read_u16_le_or(bytes, len, offset, 0);
+}
+
+fn read_next(bytes: [u8], len: i32, offset: i32,
+             big_endian: bool) -> Utf16ByteDecode {
+    if (len < 0 || offset < 0 || offset >= len || offset % 2 != 0) {
+        return Utf16ByteDecode {
+            status: core::utf16::STATUS_BOUNDS, scalar: 0, next: offset,
+        };
+    }
+    if (len - offset < 2) {
+        return Utf16ByteDecode {
+            status: core::utf16::STATUS_SHORT, scalar: 0, next: offset,
+        };
+    }
+    let first: u16 = read_unit(bytes, len, offset, big_endian);
+    let zero: u16 = 0;
+    let units: [u16; 2] = [first, zero];
+    let unit_len: i32 = 1;
+    if (core::utf16::is_high_surrogate(first)) {
+        if (len - offset < 4) {
+            return Utf16ByteDecode {
+                status: core::utf16::STATUS_SHORT, scalar: 0, next: offset,
+            };
+        }
+        units[1] = read_unit(bytes, len, offset + 2, big_endian);
+        unit_len = 2;
+    }
+    let decoded: core::utf16::Utf16Decode =
+        core::utf16::decode_next(units, unit_len, 0);
+    let status: i32 = core::utf16::decode_status(decoded);
+    if (status != core::utf16::STATUS_OK) {
+        return Utf16ByteDecode { status: status, scalar: 0, next: offset };
+    }
+    return Utf16ByteDecode {
+        status: core::utf16::STATUS_OK,
+        scalar: core::utf16::decode_scalar_or(decoded, 0),
+        next: offset + unit_len * 2,
+    };
+}
+
+pub fn read_next_le(bytes: [u8], len: i32, offset: i32) -> Utf16ByteDecode {
+    return read_next(bytes, len, offset, false);
+}
+
+pub fn read_next_be(bytes: [u8], len: i32, offset: i32) -> Utf16ByteDecode {
+    return read_next(bytes, len, offset, true);
+}
+
+fn write_unit(bytes: [u8], capacity: i32, offset: i32,
+              unit: u16, big_endian: bool) -> bool {
+    if (big_endian) { return core::endian::write_u16_be(bytes, capacity, offset, unit); }
+    return core::endian::write_u16_le(bytes, capacity, offset, unit);
+}
+
+fn write_scalar(bytes: [u8], capacity: i32, offset: i32,
+                scalar: u32, big_endian: bool) -> Utf16ByteWrite {
+    if (capacity < 0 || offset < 0 || offset > capacity || offset % 2 != 0) {
+        return Utf16ByteWrite {
+            status: core::utf16::STATUS_BOUNDS, next: offset,
+        };
+    }
+    let needed: i32 = byte_len_for_scalar_or(scalar, -1);
+    if (needed < 0) {
+        return Utf16ByteWrite {
+            status: core::utf16::STATUS_INVALID_SCALAR, next: offset,
+        };
+    }
+    if (capacity - offset < needed) {
+        return Utf16ByteWrite {
+            status: core::utf16::STATUS_SHORT, next: offset,
+        };
+    }
+    let zero: u16 = 0;
+    let units: [u16; 2] = [zero, zero];
+    let encoded: core::utf16::Utf16Write =
+        core::utf16::write_scalar(units, 2, 0, scalar);
+    if (!core::utf16::write_succeeded(encoded)) {
+        return Utf16ByteWrite {
+            status: core::utf16::write_status(encoded), next: offset,
+        };
+    }
+    if (!write_unit(bytes, capacity, offset, units[0], big_endian)) {
+        return Utf16ByteWrite {
+            status: core::utf16::STATUS_BOUNDS, next: offset,
+        };
+    }
+    if (needed == 4) {
+        if (!write_unit(bytes, capacity, offset + 2, units[1], big_endian)) {
+            return Utf16ByteWrite {
+                status: core::utf16::STATUS_BOUNDS, next: offset,
+            };
+        }
+    }
+    return Utf16ByteWrite {
+        status: core::utf16::STATUS_OK, next: offset + needed,
+    };
+}
+
+// Rejected logical bounds, invalid scalars, and insufficient capacity leave
+// bytes untouched. Physical overclaims can trap during a write.
+pub fn write_scalar_le(bytes: [u8], capacity: i32, offset: i32,
+                       scalar: u32) -> Utf16ByteWrite {
+    return write_scalar(bytes, capacity, offset, scalar, false);
+}
+
+pub fn write_scalar_be(bytes: [u8], capacity: i32, offset: i32,
+                       scalar: u32) -> Utf16ByteWrite {
+    return write_scalar(bytes, capacity, offset, scalar, true);
+}
+
+fn validate(bytes: [u8], len: i32, big_endian: bool) -> bool {
+    if (unit_count_or(len, -1) < 0) { return false; }
+    let offset: i32 = 0;
+    while (offset < len) {
+        let decoded: Utf16ByteDecode = read_next(bytes, len, offset, big_endian);
+        if (!decode_succeeded(decoded)) { return false; }
+        offset = decoded.next;
+    }
+    return true;
+}
+
+pub fn validate_le(bytes: [u8], len: i32) -> bool {
+    return validate(bytes, len, false);
+}
+
+pub fn validate_be(bytes: [u8], len: i32) -> bool {
+    return validate(bytes, len, true);
+}
+
+fn scalar_count_or(bytes: [u8], len: i32, fallback: i32,
+                   big_endian: bool) -> i32 {
+    if (unit_count_or(len, -1) < 0) { return fallback; }
+    let offset: i32 = 0;
+    let count: i32 = 0;
+    while (offset < len) {
+        let decoded: Utf16ByteDecode = read_next(bytes, len, offset, big_endian);
+        if (!decode_succeeded(decoded)) { return fallback; }
+        offset = decoded.next;
+        count += 1;
+    }
+    return count;
+}
+
+pub fn scalar_count_or_le(bytes: [u8], len: i32, fallback: i32) -> i32 {
+    return scalar_count_or(bytes, len, fallback, false);
+}
+
+pub fn scalar_count_or_be(bytes: [u8], len: i32, fallback: i32) -> i32 {
+    return scalar_count_or(bytes, len, fallback, true);
+}
+
+fn scalar_at_or(bytes: [u8], len: i32, ordinal: i32, fallback: u32,
+                big_endian: bool) -> u32 {
+    if (ordinal < 0 || !validate(bytes, len, big_endian)) { return fallback; }
+    let offset: i32 = 0;
+    let index: i32 = 0;
+    while (offset < len) {
+        let decoded: Utf16ByteDecode = read_next(bytes, len, offset, big_endian);
+        if (index == ordinal) { return decoded.scalar; }
+        offset = decoded.next;
+        index += 1;
+    }
+    return fallback;
+}
+
+pub fn scalar_at_or_le(bytes: [u8], len: i32, ordinal: i32,
+                       fallback: u32) -> u32 {
+    return scalar_at_or(bytes, len, ordinal, fallback, false);
+}
+
+pub fn scalar_at_or_be(bytes: [u8], len: i32, ordinal: i32,
+                       fallback: u32) -> u32 {
+    return scalar_at_or(bytes, len, ordinal, fallback, true);
+}

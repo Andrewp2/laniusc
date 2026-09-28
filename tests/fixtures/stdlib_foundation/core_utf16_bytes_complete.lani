@@ -1,0 +1,192 @@
+module app::main;
+import core::utf16;
+import core::utf16_bytes;
+
+fn main() -> i32 {
+    if (core::utf16_bytes::byte_len_for_scalar_or(65, -1) != 2 ||
+        core::utf16_bytes::byte_len_for_scalar_or(128512, -1) != 4 ||
+        core::utf16_bytes::byte_len_for_scalar_or(55296, 7) != 7 ||
+        core::utf16_bytes::unit_count_or(0, -1) != 0 ||
+        core::utf16_bytes::unit_count_or(12, -1) != 6 ||
+        core::utf16_bytes::unit_count_or(3, -1) != -1 ||
+        core::utf16_bytes::unit_count_or(-2, 7) != 7) { return 1; }
+
+    let untouched: u8 = 99;
+    let le: [u8; 12] = [untouched, untouched, untouched, untouched,
+        untouched, untouched, untouched, untouched, untouched, untouched,
+        untouched, untouched];
+    let be: [u8; 12] = [untouched, untouched, untouched, untouched,
+        untouched, untouched, untouched, untouched, untouched, untouched,
+        untouched, untouched];
+    let a_le: core::utf16_bytes::Utf16ByteWrite =
+        core::utf16_bytes::write_scalar_le(le, 12, 0, 65);
+    let nul_le: core::utf16_bytes::Utf16ByteWrite =
+        core::utf16_bytes::write_scalar_le(le, 12, 2, 0);
+    let face_le: core::utf16_bytes::Utf16ByteWrite =
+        core::utf16_bytes::write_scalar_le(le, 12, 4, 128512);
+    let max_le: core::utf16_bytes::Utf16ByteWrite =
+        core::utf16_bytes::write_scalar_le(le, 12, 8, 1114111);
+    let a_be: core::utf16_bytes::Utf16ByteWrite =
+        core::utf16_bytes::write_scalar_be(be, 12, 0, 65);
+    let nul_be: core::utf16_bytes::Utf16ByteWrite =
+        core::utf16_bytes::write_scalar_be(be, 12, 2, 0);
+    let face_be: core::utf16_bytes::Utf16ByteWrite =
+        core::utf16_bytes::write_scalar_be(be, 12, 4, 128512);
+    let max_be: core::utf16_bytes::Utf16ByteWrite =
+        core::utf16_bytes::write_scalar_be(be, 12, 8, 1114111);
+    if (!core::utf16_bytes::write_succeeded(a_le) ||
+        core::utf16_bytes::write_status(a_le) != core::utf16::STATUS_OK ||
+        core::utf16_bytes::write_next_or(a_le, -1) != 2 ||
+        core::utf16_bytes::write_next_or(nul_le, -1) != 4 ||
+        core::utf16_bytes::write_next_or(face_le, -1) != 8 ||
+        core::utf16_bytes::write_next_or(max_le, -1) != 12 ||
+        core::utf16_bytes::write_next_or(a_be, -1) != 2 ||
+        core::utf16_bytes::write_next_or(nul_be, -1) != 4 ||
+        core::utf16_bytes::write_next_or(face_be, -1) != 8 ||
+        core::utf16_bytes::write_next_or(max_be, -1) != 12 ||
+        le[0] != 65 || le[1] != 0 || le[2] != 0 || le[3] != 0 ||
+        le[4] != 61 || le[5] != 216 || le[6] != 0 || le[7] != 222 ||
+        le[8] != 255 || le[9] != 219 || le[10] != 255 || le[11] != 223 ||
+        be[0] != 0 || be[1] != 65 || be[2] != 0 || be[3] != 0 ||
+        be[4] != 216 || be[5] != 61 || be[6] != 222 || be[7] != 0 ||
+        be[8] != 219 || be[9] != 255 || be[10] != 223 || be[11] != 255) {
+        return 2;
+    }
+
+    let first_le: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_le(le, 12, 0);
+    let third_le: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_le(le, 12, 4);
+    let last_le: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_le(le, 12, 8);
+    let first_be: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_be(be, 12, 0);
+    let third_be: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_be(be, 12, 4);
+    let last_be: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_be(be, 12, 8);
+    if (!core::utf16_bytes::decode_succeeded(first_le) ||
+        core::utf16_bytes::decode_status(first_le) != core::utf16::STATUS_OK ||
+        core::utf16_bytes::decode_scalar_or(first_le, 9) != 65 ||
+        core::utf16_bytes::decode_scalar_or(third_le, 9) != 128512 ||
+        core::utf16_bytes::decode_scalar_or(last_le, 9) != 1114111 ||
+        core::utf16_bytes::decode_scalar_or(first_be, 9) != 65 ||
+        core::utf16_bytes::decode_scalar_or(third_be, 9) != 128512 ||
+        core::utf16_bytes::decode_scalar_or(last_be, 9) != 1114111 ||
+        core::utf16_bytes::decode_next_or(first_le, -1) != 2 ||
+        core::utf16_bytes::decode_next_or(third_le, -1) != 8 ||
+        core::utf16_bytes::decode_next_or(last_le, -1) != 12 ||
+        core::utf16_bytes::decode_next_or(first_be, -1) != 2 ||
+        core::utf16_bytes::decode_next_or(third_be, -1) != 8 ||
+        core::utf16_bytes::decode_next_or(last_be, -1) != 12 ||
+        !core::utf16_bytes::validate_le(le, 12) ||
+        !core::utf16_bytes::validate_be(be, 12) ||
+        core::utf16_bytes::scalar_count_or_le(le, 12, -1) != 4 ||
+        core::utf16_bytes::scalar_count_or_be(be, 12, -1) != 4 ||
+        core::utf16_bytes::scalar_at_or_le(le, 12, 0, 9) != 65 ||
+        core::utf16_bytes::scalar_at_or_le(le, 12, 1, 9) != 0 ||
+        core::utf16_bytes::scalar_at_or_le(le, 12, 2, 9) != 128512 ||
+        core::utf16_bytes::scalar_at_or_le(le, 12, 3, 9) != 1114111 ||
+        core::utf16_bytes::scalar_at_or_be(be, 12, 0, 9) != 65 ||
+        core::utf16_bytes::scalar_at_or_be(be, 12, 1, 9) != 0 ||
+        core::utf16_bytes::scalar_at_or_be(be, 12, 2, 9) != 128512 ||
+        core::utf16_bytes::scalar_at_or_be(be, 12, 3, 9) != 1114111 ||
+        core::utf16_bytes::scalar_at_or_le(le, 12, 4, 9) != 9 ||
+        core::utf16_bytes::scalar_at_or_be(be, 12, -1, 9) != 9) {
+        return 3;
+    }
+
+    let short: [u8; 4] = [untouched, untouched, untouched, untouched];
+    let short_le: core::utf16_bytes::Utf16ByteWrite =
+        core::utf16_bytes::write_scalar_le(short, 3, 0, 128512);
+    let short_be: core::utf16_bytes::Utf16ByteWrite =
+        core::utf16_bytes::write_scalar_be(short, 2, 0, 128512);
+    let invalid_be: core::utf16_bytes::Utf16ByteWrite =
+        core::utf16_bytes::write_scalar_be(short, 4, 0, 55296);
+    let odd_offset: core::utf16_bytes::Utf16ByteWrite =
+        core::utf16_bytes::write_scalar_le(short, 4, 1, 65);
+    let negative: core::utf16_bytes::Utf16ByteWrite =
+        core::utf16_bytes::write_scalar_be(short, -1, 0, 65);
+    if (core::utf16_bytes::write_succeeded(short_le) ||
+        core::utf16_bytes::write_status(short_le) != core::utf16::STATUS_SHORT ||
+        core::utf16_bytes::write_status(short_be) != core::utf16::STATUS_SHORT ||
+        core::utf16_bytes::write_status(invalid_be) !=
+            core::utf16::STATUS_INVALID_SCALAR ||
+        core::utf16_bytes::write_status(odd_offset) != core::utf16::STATUS_BOUNDS ||
+        core::utf16_bytes::write_status(negative) != core::utf16::STATUS_BOUNDS ||
+        core::utf16_bytes::write_next_or(short_le, 77) != 77 ||
+        short[0] != untouched || short[1] != untouched ||
+        short[2] != untouched || short[3] != untouched) { return 4; }
+
+    let b0: u8 = 0;
+    let b65: u8 = 65;
+    let b216: u8 = 216;
+    let b220: u8 = 220;
+    let low_le: [u8; 2] = [b0, b220];
+    let high_le: [u8; 2] = [b0, b216];
+    let bad_pair_le: [u8; 4] = [b0, b216, b65, b0];
+    let low_be: [u8; 2] = [b220, b0];
+    let high_be: [u8; 2] = [b216, b0];
+    let bad_pair_be: [u8; 4] = [b216, b0, b0, b65];
+    let bad_low_le: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_le(low_le, 2, 0);
+    let truncated_le: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_le(high_le, 2, 0);
+    let malformed_le: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_le(bad_pair_le, 4, 0);
+    let bad_low_be: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_be(low_be, 2, 0);
+    let truncated_be: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_be(high_be, 2, 0);
+    let malformed_be: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_be(bad_pair_be, 4, 0);
+    let out_of_bounds: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_le(le, 12, 12);
+    let misaligned: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_be(be, 12, 1);
+    let odd_len: core::utf16_bytes::Utf16ByteDecode =
+        core::utf16_bytes::read_next_le(le, 1, 0);
+    if (core::utf16_bytes::decode_succeeded(bad_low_le) ||
+        core::utf16_bytes::decode_status(bad_low_le) !=
+            core::utf16::STATUS_MALFORMED ||
+        core::utf16_bytes::decode_status(truncated_le) != core::utf16::STATUS_SHORT ||
+        core::utf16_bytes::decode_status(malformed_le) !=
+            core::utf16::STATUS_MALFORMED ||
+        core::utf16_bytes::decode_status(bad_low_be) !=
+            core::utf16::STATUS_MALFORMED ||
+        core::utf16_bytes::decode_status(truncated_be) != core::utf16::STATUS_SHORT ||
+        core::utf16_bytes::decode_status(malformed_be) !=
+            core::utf16::STATUS_MALFORMED ||
+        core::utf16_bytes::decode_status(out_of_bounds) !=
+            core::utf16::STATUS_BOUNDS ||
+        core::utf16_bytes::decode_status(misaligned) !=
+            core::utf16::STATUS_BOUNDS ||
+        core::utf16_bytes::decode_status(odd_len) != core::utf16::STATUS_SHORT ||
+        core::utf16_bytes::decode_scalar_or(malformed_be, 77) != 77 ||
+        core::utf16_bytes::decode_next_or(truncated_le, 77) != 77 ||
+        core::utf16_bytes::validate_le(low_le, 2) ||
+        core::utf16_bytes::validate_be(low_be, 2) ||
+        core::utf16_bytes::validate_le(high_le, 2) ||
+        core::utf16_bytes::validate_be(high_be, 2) ||
+        core::utf16_bytes::validate_le(le, 11) ||
+        core::utf16_bytes::validate_be(be, -1) ||
+        core::utf16_bytes::scalar_count_or_le(bad_pair_le, 4, -1) != -1 ||
+        core::utf16_bytes::scalar_count_or_be(bad_pair_be, 4, -1) != -1 ||
+        core::utf16_bytes::scalar_at_or_le(bad_pair_le, 4, 0, 77) != 77 ||
+        core::utf16_bytes::scalar_at_or_be(bad_pair_be, 4, 0, 77) != 77) {
+        return 5;
+    }
+    let b254: u8 = 254;
+    let b255: u8 = 255;
+    let bom_le: [u8; 4] = [b255, b254, b65, b0];
+    let bom_be: [u8; 4] = [b254, b255, b0, b65];
+    if (core::utf16_bytes::scalar_count_or_le(bom_le, 4, -1) != 2 ||
+        core::utf16_bytes::scalar_count_or_be(bom_be, 4, -1) != 2 ||
+        core::utf16_bytes::scalar_at_or_le(bom_le, 4, 0, 0) != 65279 ||
+        core::utf16_bytes::scalar_at_or_be(bom_be, 4, 0, 0) != 65279 ||
+        core::utf16_bytes::scalar_at_or_le(bom_le, 4, 1, 0) != 65 ||
+        core::utf16_bytes::scalar_at_or_be(bom_be, 4, 1, 0) != 65) {
+        return 6;
+    }
+    return 0;
+}
