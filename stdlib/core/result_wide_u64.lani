@@ -1,0 +1,67 @@
+// A concrete result for a two-word unsigned value and an i32 error code.
+// The inactive high word is zero. On Err, low stores the error's 32-bit
+// pattern; callers must inspect success before reading the value.
+module core::result_wide_u64;
+import core::wide_u64;
+
+pub struct ResultWideU64 {
+    success: bool,
+    high: u32,
+    low: u32,
+}
+
+pub fn ok(value: core::wide_u64::WideU64) -> ResultWideU64 {
+    return ResultWideU64 {
+        success: true,
+        high: core::wide_u64::high_word(value),
+        low: core::wide_u64::low_word(value),
+    };
+}
+
+pub fn err(error: i32) -> ResultWideU64 {
+    let bits: u32 = error;
+    return ResultWideU64 { success: false, high: 0, low: bits };
+}
+
+pub fn is_ok(value: ResultWideU64) -> bool {
+    return value.success;
+}
+
+pub fn is_err(value: ResultWideU64) -> bool {
+    return !value.success;
+}
+
+pub fn contains(value: ResultWideU64, expected: core::wide_u64::WideU64) -> bool {
+    return value.success && value.high == core::wide_u64::high_word(expected) &&
+        value.low == core::wide_u64::low_word(expected);
+}
+
+pub fn contains_err(value: ResultWideU64, expected: i32) -> bool {
+    let stored: i32 = value.low;
+    return !value.success && stored == expected;
+}
+
+pub fn unwrap_or(
+    value: ResultWideU64, fallback: core::wide_u64::WideU64
+) -> core::wide_u64::WideU64 {
+    if (value.success) { return core::wide_u64::from_words(value.high, value.low); }
+    return fallback;
+}
+
+pub fn unwrap_err_or(value: ResultWideU64, fallback: i32) -> i32 {
+    if (!value.success) {
+        let stored: i32 = value.low;
+        return stored;
+    }
+    return fallback;
+}
+
+pub fn or(value: ResultWideU64, fallback: ResultWideU64) -> ResultWideU64 {
+    if (value.success) { return value; }
+    return fallback;
+}
+
+pub fn and(value: ResultWideU64, next: ResultWideU64) -> ResultWideU64 {
+    if (value.success) { return next; }
+    return value;
+}

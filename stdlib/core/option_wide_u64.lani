@@ -1,0 +1,84 @@
+// A concrete optional two-word unsigned value until generic enums execute.
+// None has zeroed words; inspect present before reading the payload.
+module core::option_wide_u64;
+import core::option_i32;
+import core::result_wide_u64;
+import core::wide_u64;
+
+pub struct OptionWideU64 {
+    present: bool,
+    high: u32,
+    low: u32,
+}
+
+pub fn some(value: core::wide_u64::WideU64) -> OptionWideU64 {
+    return OptionWideU64 {
+        present: true,
+        high: core::wide_u64::high_word(value),
+        low: core::wide_u64::low_word(value),
+    };
+}
+
+pub fn none() -> OptionWideU64 {
+    return OptionWideU64 { present: false, high: 0, low: 0 };
+}
+
+pub fn is_some(value: OptionWideU64) -> bool {
+    return value.present;
+}
+
+pub fn is_none(value: OptionWideU64) -> bool {
+    return !value.present;
+}
+
+pub fn contains(value: OptionWideU64, expected: core::wide_u64::WideU64) -> bool {
+    return value.present && value.high == core::wide_u64::high_word(expected) &&
+        value.low == core::wide_u64::low_word(expected);
+}
+
+pub fn unwrap_or(
+    value: OptionWideU64, fallback: core::wide_u64::WideU64
+) -> core::wide_u64::WideU64 {
+    if (value.present) { return core::wide_u64::from_words(value.high, value.low); }
+    return fallback;
+}
+
+pub fn or(value: OptionWideU64, fallback: OptionWideU64) -> OptionWideU64 {
+    if (value.present) { return value; }
+    return fallback;
+}
+
+pub fn and(value: OptionWideU64, next: OptionWideU64) -> OptionWideU64 {
+    if (value.present) { return next; }
+    return value;
+}
+
+pub fn xor(left: OptionWideU64, right: OptionWideU64) -> OptionWideU64 {
+    if (left.present) {
+        if (right.present) { return none(); }
+        return left;
+    }
+    return right;
+}
+
+pub fn ok_or(value: OptionWideU64, error: i32) -> core::result_wide_u64::ResultWideU64 {
+    if (value.present) {
+        return core::result_wide_u64::ok(
+            core::wide_u64::from_words(value.high, value.low));
+    }
+    return core::result_wide_u64::err(error);
+}
+
+pub fn ok(value: core::result_wide_u64::ResultWideU64) -> OptionWideU64 {
+    if (core::result_wide_u64::is_ok(value)) {
+        return some(core::result_wide_u64::unwrap_or(value, core::wide_u64::zero()));
+    }
+    return none();
+}
+
+pub fn err(value: core::result_wide_u64::ResultWideU64) -> core::option_i32::OptionI32 {
+    if (core::result_wide_u64::is_err(value)) {
+        return core::option_i32::some(core::result_wide_u64::unwrap_err_or(value, 0));
+    }
+    return core::option_i32::none();
+}

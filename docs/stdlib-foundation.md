@@ -63,6 +63,7 @@ limited to native x86_64 output from this worktree.
 | `core::option_i8` all 12 public functions and `core::result_i8` all 10 public functions | Executable on x86_64 | The signed byte fixture executes every function with both variants, zero, `-128`, and `127`, including Option to Result and Result to Option conversions. A source scan requires every public function to have a runtime call. See dependency 39 for local return coverage. |
 | `core::option_i16` all 12 public functions and `core::result_i16` all 10 public functions | Executable on x86_64 | The signed halfword fixture executes every function with both variants, zero, `-32768`, and `32767`, including conversions. A source scan requires every public function to have a runtime call. See dependency 39 for local return coverage. |
 | `core::option_u16` all 12 public functions and `core::result_u16` all 10 public functions | Executable on x86_64 | The unsigned halfword fixture executes every function with both variants, zero, `32768`, and `65535`, including conversions. A source scan requires every public function to have a runtime call. See dependency 39 for local return coverage. |
+| `core::option_wide_u64` and `core::option_wide_i64` all 12 public functions each; `core::result_wide_u64` and `core::result_wide_i64` all 10 public functions each | Executable on x86_64 | Imported runtime fixtures call every function and check both variants, zero, signed or unsigned high-bit values, wide extrema, negative and zero i32 error codes, fallbacks, `or`, `and`, `xor`, and conversions between concrete Option and Result types. Each representation uses a tag and two 32-bit words; an Err stores its i32 code in the low word. These modules do not claim native `i64` or `u64` correctness. |
 | `core::i8` all 28 public functions and 4 constants | Executable on x86_64 | The imported module fixture calls every function and reads every constant. It checks signed byte limits, wrapping and saturating overflow, checked results through `OptionI8`, ordinary comparisons and predicates, reversed bounds, and power-of-two overflow. |
 | `core::i16` all 28 public functions and 4 constants | Executable on x86_64 | The imported module fixture calls every function and reads every constant. It checks `MIN` and `MAX`, ordinary and overflowing arithmetic, checked results through `OptionI16`, signed predicates, reversed bounds, comparison, and power-of-two overflow. |
 | `core::i32` all 28 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks each function's ordinary result and selected edge cases: `MIN` absolute value, checked and saturating overflow, wrapping arithmetic, signed predicates, range boundaries, and power-of-two overflow. Checked results use concrete `OptionI32`. |
@@ -70,7 +71,7 @@ limited to native x86_64 output from this worktree.
 | `core::u16` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture calls every function and reads every constant. It checks ordinary and high-bit values, wrapping and saturating overflow, checked arithmetic through `OptionU16`, reversed bounds, zero divisors, power-of-two overflow, and invalid or overflowing alignment. |
 | `core::u32` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, unsigned high-bit and maximum values, checked and wrapping arithmetic, alignment failures, and power-of-two overflow. Checked results use concrete `OptionU32`. |
 | `core::ordering` all 12 public functions and `Ordering` variants | Executable on x86_64 | `tests/stdlib_ordering.rs` executes every function and direct qualified and unqualified `Less`, `Equal`, and `Greater` values through the real stdlib root, including predicates, reverse, then, and unsigned high-bit comparison. An inferred local holding `Greater` also executes. The broken `compare_i64` was removed until native i64 literal and comparison lowering works (dependency 11). |
-| Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Generic enum values fail GPU lowering and native 64-bit comparison/arithmetic are incomplete. The former by-value `Option::replace` ignored its input and was removed. Concrete 8-, 16-, and 32-bit Option/Result modules execute on x86_64. |
+| Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Generic enum values fail GPU lowering and native 64-bit comparison/arithmetic are incomplete. The former by-value `Option::replace` ignored its input and was removed. Concrete 8-, 16-, and 32-bit Option/Result modules and concrete two-word 64-bit variants execute on x86_64. |
 | `core::cmp`, the `core::hash::Hash<T>` trait, and `core::array_i32` | Contract-only as complete APIs in this audit | The free `core::hash` functions execute, but the generic trait does not have a native call claim. Generic fixed-array APIs and traits depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
 | `core::target` all 18 public functions and 16 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant. It checks the available allocator, filesystem, stdio, clock, secure RNG, process, and environment bindings against `core::runtime`; unbound network, threads, GPU, host services, panic hooks, and test harness remain false. This is a target snapshot, not a live host probe. |
 | `core::runtime` all 62 public functions and 40 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant, checking service IDs, ABI fields, available and unavailable services, unknown IDs, status classifiers, and fail-closed requirement rows. These helpers report bindings; they do not implement an unbound service operation. |
@@ -444,6 +445,14 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   success flags for unsigned payloads and error codes. `Some(0)`, `Ok(0)`,
   and `Err(0)` remain distinct. All extraction operations either inspect the
   active variant or return a caller fallback. Neither module allocates.
+- `core::option_wide_u64`, `core::result_wide_u64`, `core::option_wide_i64`,
+  and `core::result_wide_i64` carry full two-word values with a presence or
+  success flag. Their Result error type is `i32`; an Err stores its bit pattern
+  in the low word and zeroes the high word. Callers must inspect the tag or
+  use a fallback accessor before reading a value. `Some(0)`, `Ok(0)`, and
+  `Err(0)` are distinct. `ok_or` turns an optional wide value into a Result;
+  `ok` extracts a wide value and `err` extracts an `OptionI32` error. Both
+  signed and unsigned pairs make no heap allocation and use no host service.
 - `core::option_u8`, `core::option_i8`, `core::option_u16`, and
   `core::option_i16` pair with their matching concrete Result modules. A
   success or presence flag distinguishes `Some(0)`, `Ok(0)`, `Err(0)`, and
@@ -1227,6 +1236,9 @@ high-bit edge cases, and generated differential arithmetic cases.
 Run `cargo test --test stdlib_wide_i64_execution` for signed two-word 64-bit
 operations, full-width signed decimal parsing and output, the decimal-double
 program, edge cases, and generated differential arithmetic cases.
+Run `cargo test --test stdlib_option_result_wide_u64_execution --test stdlib_option_result_wide_i64_execution` for the concrete two-word optional
+and result variants, including every public function and imported aggregate
+returns.
 Run `cargo test --test stdlib_endian_execution` for caller-backed endian
 fields, a packet-header sample, and native bounds trapping.
 Run `cargo test --test stdlib_mem_execution` for all public memory helper
