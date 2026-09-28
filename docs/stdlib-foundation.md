@@ -2690,7 +2690,11 @@ also fixes the imported struct-return relocation path described below.
     This prevents a full-width `OptionUsize` or `ResultUsize` claim even though
     pointer-valued Option/Result operations execute. The GPU compiler must
     preserve pointer-width arithmetic and comparison before those APIs can be
-    considered executable across the declared `usize` domain.
+    considered executable across the declared `usize` domain. The builtin
+    declaration table currently assigns both `u32` and `usize` scalar type
+    code 4, so an x86 instruction selected from that code alone cannot
+    distinguish their widths. The fix must retain pointer-width type identity
+    through GPU semantic projection, not only change one emitted instruction.
 
 61. **Resolved: literal-left unsigned comparisons.**
     `tests/fixtures/stdlib_foundation/char_high_bit_comparisons.lani` compares
