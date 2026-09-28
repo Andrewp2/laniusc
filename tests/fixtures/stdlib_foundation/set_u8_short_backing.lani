@@ -1,0 +1,8 @@
+module app::main;
+import std::set_u8;
+
+fn main() -> i32 {
+    let zero: u32 = 0;
+    let too_short: [u32; 1] = [zero];
+    return std::set_u8::len(too_short);
+}
