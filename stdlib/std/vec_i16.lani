@@ -9,6 +9,7 @@
 module std::vec_i16;
 import alloc::allocator;
 import core::mem;
+import core::slice;
 
 pub struct VecI16 {
     storage: ptr,
@@ -222,6 +223,62 @@ pub fn try_set(value: VecI16, index: i32, item: i16) -> bool {
     let raw_item: i32 = item as i32;
     elements[index] = raw_item;
     return true;
+}
+
+// The backing cells contain sign-extended i16 values. Sort the initialized
+// prefix in ascending signed order; return len and retain capacity.
+pub fn sort_in_place(value: VecI16) -> i32 {
+    if (value.length <= 1) {
+        return value.length;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    return core::slice::sort_i32(cells, value.length);
+}
+
+// Reverse initialized values and return the number of swaps performed.
+pub fn reverse_in_place(value: VecI16) -> i32 {
+    if (value.length <= 1) {
+        return 0;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    return core::slice::reverse_in_place_i32(cells, value.length);
+}
+
+// Search requires nondecreasing signed order. Bounds range from zero to len;
+// an empty vector returns zero without accessing storage.
+pub fn lower_bound(value: VecI16, needle: i16) -> i32 {
+    if (value.length == 0) {
+        return 0;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    let needle_word: i32 = needle;
+    return core::slice::lower_bound_i32(cells, value.length, needle_word);
+}
+
+pub fn upper_bound(value: VecI16, needle: i16) -> i32 {
+    if (value.length == 0) {
+        return 0;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    let needle_word: i32 = needle;
+    return core::slice::upper_bound_i32(cells, value.length, needle_word);
+}
+
+// Return the first or last matching index, or fallback when absent.
+pub fn binary_search_first_or(value: VecI16, needle: i16, fallback: i32) -> i32 {
+    let index: i32 = lower_bound(value, needle);
+    if (index < value.length && get_or(value, index, 0) == needle) {
+        return index;
+    }
+    return fallback;
+}
+
+pub fn binary_search_last_or(value: VecI16, needle: i16, fallback: i32) -> i32 {
+    let after: i32 = upper_bound(value, needle);
+    if (after > 0 && get_or(value, after - 1, 0) == needle) {
+        return after - 1;
+    }
+    return fallback;
 }
 
 // On an empty vector, returns it unchanged. Read the last element with get_or

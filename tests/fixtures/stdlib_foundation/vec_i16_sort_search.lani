@@ -1,0 +1,71 @@
+// Runtime behavior of sorting and searching an owned signed-halfword allocation.
+module app::main;
+import std::vec_i16;
+
+fn main() -> i32 {
+    let minimum: i16 = -32768;
+    let maximum: i16 = 32767;
+    let seven: i16 = 7;
+    let zero: i16 = 0;
+    let negative_one: i16 = -1;
+    let empty: std::vec_i16::VecI16 = std::vec_i16::new();
+    if (std::vec_i16::sort_in_place(empty) != 0 ||
+        std::vec_i16::reverse_in_place(empty) != 0 ||
+        std::vec_i16::lower_bound(empty, seven) != 0 ||
+        std::vec_i16::upper_bound(empty, seven) != 0 ||
+        std::vec_i16::binary_search_first_or(empty, seven, -9) != -9 ||
+        std::vec_i16::binary_search_last_or(empty, seven, -7) != -7) { return 1; }
+    std::vec_i16::destroy(empty);
+
+    let single: std::vec_i16::VecI16 = std::vec_i16::try_with_capacity(2);
+    single = std::vec_i16::try_push(single, minimum);
+    if (std::vec_i16::len(single) != 1 ||
+        std::vec_i16::sort_in_place(single) != 1 ||
+        std::vec_i16::reverse_in_place(single) != 0 ||
+        std::vec_i16::lower_bound(single, minimum) != 0 ||
+        std::vec_i16::upper_bound(single, minimum) != 1 ||
+        std::vec_i16::binary_search_first_or(single, minimum, -1) != 0 ||
+        std::vec_i16::binary_search_last_or(single, maximum, -1) != -1 ||
+        std::vec_i16::capacity(single) != 2) { return 2; }
+    single = std::vec_i16::clear(single);
+    if (std::vec_i16::sort_in_place(single) != 0 ||
+        std::vec_i16::lower_bound(single, minimum) != 0 ||
+        std::vec_i16::capacity(single) != 2) { return 3; }
+    std::vec_i16::destroy(single);
+
+    let values: [i16; 8] = [minimum, seven, negative_one, seven, zero, maximum, minimum, seven];
+    let owned: std::vec_i16::VecI16 = std::vec_i16::new();
+    owned = std::vec_i16::try_extend_from_slice(owned, values, 8);
+    if (std::vec_i16::len(owned) != 8 || std::vec_i16::capacity(owned) != 8) { return 4; }
+    if (std::vec_i16::sort_in_place(owned) != 8 ||
+        std::vec_i16::get_or(owned, 0, maximum) != minimum ||
+        std::vec_i16::get_or(owned, 1, maximum) != minimum ||
+        std::vec_i16::get_or(owned, 2, maximum) != negative_one ||
+        std::vec_i16::get_or(owned, 3, maximum) != zero ||
+        std::vec_i16::get_or(owned, 4, maximum) != seven ||
+        std::vec_i16::get_or(owned, 5, maximum) != seven ||
+        std::vec_i16::get_or(owned, 6, maximum) != seven ||
+        std::vec_i16::get_or(owned, 7, minimum) != maximum) { return 5; }
+    if (std::vec_i16::lower_bound(owned, minimum) != 0 ||
+        std::vec_i16::upper_bound(owned, minimum) != 2 ||
+        std::vec_i16::lower_bound(owned, negative_one) != 2 ||
+        std::vec_i16::lower_bound(owned, seven) != 4 ||
+        std::vec_i16::upper_bound(owned, seven) != 7 ||
+        std::vec_i16::upper_bound(owned, maximum) != 8) { return 6; }
+    if (std::vec_i16::binary_search_first_or(owned, seven, -1) != 4 ||
+        std::vec_i16::binary_search_last_or(owned, seven, -1) != 6 ||
+        std::vec_i16::binary_search_first_or(owned, minimum, -1) != 0 ||
+        std::vec_i16::binary_search_last_or(owned, maximum, -1) != 7 ||
+        std::vec_i16::binary_search_first_or(owned, -2, -12) != -12 ||
+        std::vec_i16::binary_search_last_or(owned, 8, -13) != -13) { return 7; }
+    if (std::vec_i16::reverse_in_place(owned) != 4 ||
+        std::vec_i16::get_or(owned, 0, zero) != maximum ||
+        std::vec_i16::get_or(owned, 4, minimum) != zero ||
+        std::vec_i16::get_or(owned, 5, zero) != negative_one ||
+        std::vec_i16::get_or(owned, 7, zero) != minimum) { return 8; }
+    if (std::vec_i16::sort_in_place(owned) != 8 ||
+        std::vec_i16::binary_search_last_or(owned, seven, -1) != 6 ||
+        std::vec_i16::capacity(owned) != 8) { return 9; }
+    std::vec_i16::destroy(owned);
+    return 0;
+}
