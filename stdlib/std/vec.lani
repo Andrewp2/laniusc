@@ -1,7 +1,8 @@
 // Associated empty-vector operations execute through normal imports on x86.
-// The matching free generic functions still require imported generic-call
-// inference. No mutation API is offered: the former push silently discarded
-// elements. Concrete vectors use the allocator service.
+// Free new runs with an annotated result, and free len and is_empty infer
+// scalar arguments from imported Vec values. No mutation API is offered: the
+// former push silently discarded elements. Concrete vectors use the allocator
+// service.
 module std::vec;
 pub struct Vec<T> {
     len: i32,

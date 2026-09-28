@@ -1,0 +1,8 @@
+module app::main;
+import std::vec;
+
+fn main() -> i32 {
+    if (std::vec::len(std::vec::Vec<i32>::new()) != 0) { return 1; }
+    if (!std::vec::is_empty(std::vec::Vec<bool>::new())) { return 2; }
+    return 0;
+}

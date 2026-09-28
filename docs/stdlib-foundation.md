@@ -110,7 +110,8 @@ limited to native x86_64 output from this worktree.
 | `test::harness` all 31 metadata and status functions and 7 constants | Executable metadata on x86_64 Linux; test execution unbound | The native fixture calls every public function and constant, checks passed, failed, skipped, and unknown statuses, and confirms registration, discovery, and execution remain unavailable. |
 | `test::assert` all 8 public helpers | Executable on x86_64 Linux | `tests/stdlib_assert_execution.rs` runs all passing conditions and separately checks that every false condition terminates with SIGILL. The helpers use no allocation or host calls. See dependency 35 for a separate compiler issue with explicit void returns. |
 | Generic `std::vec::Vec<T>` associated `new`, `len`, and `is_empty` | Executable on x86_64 for imported `i32` and `bool` empty values | `tests/stdlib_generic_vec_flat_execution.rs` compiles the real `std::vec` through `--stdlib-root` and executes both instantiations, including their methods. There is no generic storage or mutation. The former `push` silently discarded its argument and was removed. See dependencies 4 and 54. |
-| Generic `std::vec` free `new`, `len`, and `is_empty` | Executable in a flat source pack; contract-only as imported functions | The flat-source runtime fixture calls all three for `i32` and `bool`. Normal imported calls still report `LNC0006` for contextual generic results or generic argument matching. Concrete vectors use the allocator service; generic `Vec<T>` has no runtime service ID. See dependencies 4 and 54. |
+| Generic `std::vec::new` | Executable on x86_64 for imported `i32` and `bool` empty values | An annotated `Vec<T>` supplies the result type, and the imported constructor runs through `--stdlib-root`. See `tests/stdlib_generic_vec_flat_execution.rs`. |
+| Generic `std::vec::{len,is_empty}` | Executable on x86_64 for imported `i32` and `bool` empty values bound to local names | `repro_vec_generic_free_new.lani` executes both through `--stdlib-root` with both instantiations, and the isolated argument fixture checks the associated-constructor input. Direct nested constructor arguments still fail `LNC0006`. Generic `Vec<T>` has no storage or mutation; concrete vectors use the allocator service. See dependencies 4 and 54. |
 
 For all seven concrete vector types, the allocation-failure suite executes a
 successful clone and then injects failure into its allocation. It checks that
@@ -1231,16 +1232,18 @@ also fixes the imported struct-return relocation path described below.
    silently dropped values in `push`, so that stub was removed. The empty
    generic `Vec<T>` has executable imported associated `new`, `len`, and
    `is_empty` methods with `i32` and `bool` instantiations. Its three free
-   functions execute only in a flat source pack; normal imports remain blocked
-   by dependency 54. `std::vec_i32`,
+   constructor also executes through an imported, annotated result. The free
+   `len` and `is_empty` functions now infer scalar type arguments from imported
+   `Vec<T>` values. `std::vec_i32`,
    `std::vec_u32`, `std::vec_u8`, `std::vec_i8`, `std::vec_u16`, and
    `std::vec_i16`, and `std::vec_bool` have tested storage, growth, mutation, failure, and
    destruction on x86 Linux.
    `tests/fixtures/stdlib_foundation/repro_vec_generic_associated_new.lani`
-   now compiles and executes through `--stdlib-root`. Its free-constructor
-   sibling still reports `LNC0006` for the contextual generic result. Imported
-   free `len` and `is_empty` also report `LNC0006` when given a constructed
-   `Vec<i32>`. All six forms compile and run in one flat source pack.
+   compiles and executes through `--stdlib-root`. The free constructor also
+   executes when its result has an explicit `Vec<T>` annotation. Imported free
+   `len` and `is_empty` infer `T` from `Vec<i32>` or `Vec<bool>` arguments;
+   `repro_vec_generic_free_new.lani` executes all three free functions through
+   normal imports. All six forms also compile and run in one flat source pack.
    The former vector service metadata also incorrectly reused runtime service
    ID 13, which is the test harness. It was removed: the concrete vectors
    depend on the allocator service, while generic layout is a compiler
@@ -1725,16 +1728,20 @@ also fixes the imported struct-return relocation path described below.
     `--stdlib-root` with both `i32` and `bool` types. The smaller `Bucket<T>`
     fixture also executes static construction and instance access, while a
     negative test rejects an unrelated `Other<T>` result. The free
-    `repro_vec_generic_free_new.lani` still reports `LNC0006` for its
-    contextual generic result; imported free `len` and `is_empty` also fail
-    generic argument matching. All six operations execute when supplied in
-    one flat source pack.
+    `repro_vec_generic_free_new_only.lani` compiles and runs with an annotated
+    result. The call-argument claim pipeline now reads generic children from
+    imported parameter types, so `repro_vec_generic_free_len_only.lani` and
+    the complete `repro_vec_generic_free_new.lani` also execute. All six
+    operations execute when supplied in one flat source pack. Passing a nested
+    `Vec<i32>::new()` call directly to imported free `len` still reports
+    `LNC0006`; `repro_vec_generic_free_direct_argument.lani` isolates that
+    call-result projection dependency.
     The semantic-interface exporter previously omitted both public methods
     on plain `Thing` because it looked for a generic instance binding on the
     receiver. It now resolves plain receivers through the checked module type
     path. `tests/stdlib_generic_interface.rs` confirms that `Thing::new`,
-    `Thing::get`, and all three `Vec<T>` methods are exported. Imported generic
-    free-function inference remains a compiler dependency.
+    `Thing::get`, and all three `Vec<T>` methods are exported. Generic vector
+    storage and mutation remain compiler and runtime dependencies.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

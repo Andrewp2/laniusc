@@ -1,0 +1,8 @@
+module app::main;
+import std::vec;
+import core::option_i32;
+
+fn main() -> i32 {
+    let value: core::option_i32::OptionI32 = std::vec::new();
+    return 0;
+}

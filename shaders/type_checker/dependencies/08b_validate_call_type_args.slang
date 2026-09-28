@@ -65,6 +65,10 @@ static const uint INTERFACE_TYPE_DECLARATION = 3u;
 static const uint INTERFACE_TYPE_ARRAY = 4u;
 static const uint INTERFACE_TYPE_SLICE = 5u;
 static const uint INTERFACE_TYPE_REFERENCE = 6u;
+static const uint HIR_STMT = 7u;
+static const uint HIR_LET_STMT = 8u;
+static const uint HIR_RETURN_STMT = 9u;
+static const uint HIR_ASSIGN_EXPR = 15u;
 static const uint HIR_TYPE_FORM_PATH = 1u;
 static const uint HIR_TYPE_FORM_ARRAY = 2u;
 static const uint HIR_TYPE_FORM_SLICE = 3u;
@@ -214,7 +218,7 @@ bool generic_claim_row_matches(uint row, uint form, uint tag, uint payload, uint
     return matches;
 }
 
-bool generic_claim_matches(uint callee, uint slot, uint form, uint tag, uint payload, uint token)
+uint generic_claim_row(uint callee, uint slot)
 {
     uint count = min(call_generic_claim_count_out[0u], generic_claim_capacity());
     uint bucket = call_claim_lookup_bucket(callee, slot, count);
@@ -230,11 +234,39 @@ bool generic_claim_matches(uint callee, uint slot, uint form, uint tag, uint pay
             canonical = min(canonical, row);
         link = call_generic_claim_lookup_next[row];
     }
-    return canonical != INVALID &&
-           generic_claim_row_matches(canonical, form, tag, payload, token);
+    return canonical;
 }
 
-bool node_matches(uint expected_row, uint local_row, uint callee, bool root_array_to_slice)
+bool single_generic_result_child(uint return_root, uint expected_child)
+{
+    uint type_count = dependency_count(4u);
+    if (return_root >= type_count)
+        return false;
+    uint base = return_root * TYPE_WORDS;
+    if (dependency_type_word(base) != INTERFACE_TYPE_DECLARATION ||
+        dependency_type_word(base + 4u) != 1u)
+        return false;
+    uint edge = dependency_type_word(base + 3u);
+    if (edge >= dependency_count(5u))
+        return false;
+    uint child = dependency_type_edge_word(edge);
+    return child < type_count && canonical_type_roots[child] == expected_child;
+}
+
+bool result_request(uint request)
+{
+    uint kind = compact_hir_core[request].kind;
+    return kind == HIR_STMT || kind == HIR_LET_STMT ||
+        kind == HIR_RETURN_STMT || kind == HIR_ASSIGN_EXPR;
+}
+
+bool node_matches(
+    uint expected_row,
+    uint local_row,
+    uint callee,
+    uint return_root,
+    bool contextual_result,
+    bool root_array_to_slice)
 {
     uint type_count = dependency_count(4u);
     uint semantic_count = active_hir_count();
@@ -257,13 +289,19 @@ bool node_matches(uint expected_row, uint local_row, uint callee, bool root_arra
     uint tag = type_expr_ref_tag[token];
     uint payload = type_expr_ref_payload[token];
     if (kind == INTERFACE_TYPE_GENERIC_PARAMETER)
-        return generic_claim_matches(
-            callee,
-            dependency_type_word(base + 1u),
-            form,
-            tag,
-            payload,
-            token);
+    {
+        uint slot = dependency_type_word(base + 1u);
+        uint claim = generic_claim_row(callee, slot);
+        if (claim != INVALID)
+            return generic_claim_row_matches(claim, form, tag, payload, token);
+        // A one-argument generic result with no argument claim can be
+        // instantiated from the enclosing annotation. Keep the contextual
+        // case to a direct scalar child; compound and repeated parameters
+        // still require explicit claims.
+        return contextual_result &&
+            single_generic_result_child(return_root, expected) &&
+            form == HIR_TYPE_FORM_PATH && tag == TYPE_REF_SCALAR;
+    }
     if (kind == INTERFACE_TYPE_SCALAR)
         return form == HIR_TYPE_FORM_PATH && tag == TYPE_REF_SCALAR &&
                payload == dependency_type_word(base + 1u) && edge_count == 0u;
@@ -317,7 +355,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint local_row = local_semantic_row(
         dependency_call_compare_actual_instance[request], relative);
     uint callee = dependency_call_compare_callee[request];
-    if (!node_matches(expected, local_row, callee, relative == 0u))
+    if (!node_matches(
+        expected, local_row, callee, expected_root,
+        result_request(request), relative == 0u))
         record_min_token_error(
             status,
             dependency_call_compare_error_token[request],

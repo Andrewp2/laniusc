@@ -143,6 +143,7 @@ static const uint TYPE_INSTANCE_NAMED = 1u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint INTERFACE_TYPE_GENERIC_PARAMETER = 2u;
+static const uint INTERFACE_TYPE_DECLARATION = 3u;
 static const uint INTERFACE_TYPE_ARRAY = 4u;
 static const uint INTERFACE_TYPE_SLICE = 5u;
 static const uint INTERFACE_TYPE_WORDS = 9u;
@@ -1085,6 +1086,19 @@ void emit_const_claim(uint row, uint callee_i, uint slot, uint arg_len)
 
 uint instance_generic_claim_upper_bound(uint param_row)
 {
+    if (param_row != INVALID &&
+        call_param_row_ref_tag[param_row] == TYPE_REF_EXTERNAL_CANONICAL)
+    {
+        uint type_i = call_param_row_ref_payload[param_row];
+        if (type_i < dependency_type_count())
+        {
+            // Imported parameter rows already carry the canonical root from
+            // dependency parameter projection.
+            uint base = type_i * INTERFACE_TYPE_WORDS;
+            if (dependency_type_word(base) == INTERFACE_TYPE_DECLARATION)
+                return dependency_type_word(base + 4u);
+        }
+    }
     uint instance_i;
     if (!param_instance_ref_for_row(param_row, instance_i))
         return 0u;

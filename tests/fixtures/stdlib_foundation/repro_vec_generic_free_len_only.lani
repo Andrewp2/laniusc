@@ -1,0 +1,10 @@
+module app::main;
+import std::vec;
+
+fn main() -> i32 {
+    let value: std::vec::Vec<i32> = std::vec::Vec<i32>::new();
+    if (std::vec::len(value) != 0) { return 1; }
+    let flags: std::vec::Vec<bool> = std::vec::Vec<bool>::new();
+    if (!std::vec::is_empty(flags)) { return 2; }
+    return 0;
+}

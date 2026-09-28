@@ -6,6 +6,125 @@ use laniusc_compiler::compiler::{
 };
 
 #[test]
+fn imported_generic_free_constructor_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_vec_generic_free_new_only.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("imported generic free new", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile imported generic free constructor");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported generic free new",
+            "imported_generic_free_new",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "unexpected stdout: {output:?}");
+        assert!(output.stderr.is_empty(), "unexpected stderr: {output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_generic_free_constructor_rejects_unrelated_result_type() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_vec_generic_free_wrong_result.lani");
+    let stdlib_root = root.join("stdlib");
+    let result =
+        common::run_gpu_codegen_with_timeout("wrong imported generic free result", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+        });
+    let error = result.expect_err("Vec<T> must not match OptionI32");
+    assert!(error.to_string().contains("LNC0006"), "{error}");
+}
+
+#[test]
+fn imported_generic_free_arguments_execute_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_vec_generic_free_len_only.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes =
+        common::run_gpu_codegen_with_timeout("imported generic free arguments", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+        })
+        .expect("compile imported generic free len and is_empty");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported generic free arguments",
+            "imported_generic_free_arguments",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "unexpected stdout: {output:?}");
+        assert!(output.stderr.is_empty(), "unexpected stderr: {output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_generic_vec_free_api_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_vec_generic_free_new.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("imported generic Vec free API", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile imported generic Vec free API");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported generic Vec free API",
+            "imported_generic_vec_free_api",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "unexpected stdout: {output:?}");
+        assert!(output.stderr.is_empty(), "unexpected stderr: {output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_generic_free_arguments_reject_unrelated_nominal_type() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_vec_generic_free_wrong_argument.lani");
+    let stdlib_root = root.join("stdlib");
+    let result =
+        common::run_gpu_codegen_with_timeout("wrong imported generic argument", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+        });
+    let error = result.expect_err("OptionI32 must not match Vec<T>");
+    assert!(error.to_string().contains("LNC0006"), "{error}");
+}
+
+#[test]
+fn imported_generic_free_direct_arguments_have_a_minimal_reproduction() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_vec_generic_free_direct_argument.lani");
+    let stdlib_root = root.join("stdlib");
+    let result =
+        common::run_gpu_codegen_with_timeout("direct imported generic arguments", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+        });
+    let error =
+        result.expect_err("nested imported generic arguments still need call-result projection");
+    assert!(error.to_string().contains("LNC0006"), "{error}");
+}
+
+#[test]
 fn imported_generic_vec_empty_operations_execute_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_foundation/repro_vec_generic_associated_new.lani");
@@ -34,7 +153,8 @@ fn imported_generic_vec_empty_operations_execute_on_x86() {
 fn imported_generic_method_receiver_and_return_execute_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_method.lani");
-    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_method_root");
+    let stdlib_root =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_method_root");
     let bytes = common::run_gpu_codegen_with_timeout("imported generic methods", move || {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
     })
@@ -58,8 +178,10 @@ fn imported_generic_method_receiver_and_return_execute_on_x86() {
 #[test]
 fn imported_generic_method_does_not_substitute_an_unrelated_return() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let entry = root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_wrong_return.lani");
-    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_method_root");
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_wrong_return.lani");
+    let stdlib_root =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_method_root");
     let result = common::run_gpu_codegen_with_timeout("wrong generic method return", move || {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
     });

@@ -134,6 +134,7 @@ static const uint TYPE_INSTANCE_NAMED = 1u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
 static const uint INTERFACE_TYPE_GENERIC_PARAMETER = 2u;
+static const uint INTERFACE_TYPE_DECLARATION = 3u;
 static const uint INTERFACE_TYPE_ARRAY = 4u;
 static const uint INTERFACE_TYPE_SLICE = 5u;
 static const uint INTERFACE_TYPE_WORDS = 9u;
@@ -932,6 +933,63 @@ void emit_instance_generic_claim(
     uint param_row,
     uint instance_arg_i)
 {
+    if (call_param_row_ref_tag[param_row] == TYPE_REF_EXTERNAL_CANONICAL)
+    {
+        uint type_i = call_param_row_ref_payload[param_row];
+        uint type_count = dependency_type_count();
+        if (type_i >= type_count)
+            return;
+        // Imported parameter rows already carry the canonical root.
+        uint base = type_i * INTERFACE_TYPE_WORDS;
+        if (dependency_type_word(base) != INTERFACE_TYPE_DECLARATION)
+            return;
+        uint expected_count = dependency_type_word(base + 4u);
+        uint edge_start = dependency_type_word(base + 3u);
+        if (instance_arg_i >= expected_count ||
+            edge_start > dependency_count(5u) ||
+            expected_count > dependency_count(5u) - edge_start)
+            return;
+        uint child_i = dependency_type_edge_word(edge_start + instance_arg_i);
+        if (child_i >= type_count)
+            return;
+        if (dependency_type_word(child_i * INTERFACE_TYPE_WORDS) !=
+                INTERFACE_TYPE_GENERIC_PARAMETER)
+            return;
+        uint slot = dependency_type_word(child_i * INTERFACE_TYPE_WORDS + 1u);
+
+        uint actual_tag = TYPE_REF_INVALID;
+        uint actual = INVALID;
+        uint actual_node = resolve_expr(arg_node);
+        if (valid_node(actual_node) &&
+            semantic_expr_ref_tag_by_hir[actual_node] == TYPE_REF_INSTANCE)
+        {
+            actual_tag = TYPE_REF_INSTANCE;
+            actual = semantic_expr_ref_payload_by_hir[actual_node];
+        }
+        else if (!arg_decl_type_ref(arg_node, actual_tag, actual))
+            return;
+        if (actual_tag != TYPE_REF_INSTANCE || !valid_token(actual) ||
+            type_instance_kind[actual] != TYPE_INSTANCE_NAMED ||
+            type_instance_arg_count[actual] != expected_count ||
+            !external_type_identity_valid(actual) ||
+            external_type_library_id[actual] != dependency_type_word(base + 1u) ||
+            external_type_local_index[actual] != dependency_type_word(base + 2u) ||
+            external_type_unit_id[actual] != dependency_type_word(base + 8u))
+            return;
+        uint arg_tag;
+        uint arg_payload;
+        // Nested imported type arguments need recursive claim comparison.
+        // Keep this path restricted to concrete scalar arguments for now.
+        if (!instance_arg_ref(actual, instance_arg_i, arg_tag, arg_payload) ||
+            arg_tag != TYPE_REF_SCALAR)
+            return;
+        uint arg_ty = leaf_type_code_for_ref(arg_tag, arg_payload);
+        emit_generic_claim(claim_i, arg_row, callee_i, slot, arg_ty);
+        call_generic_claim_ref_tag[claim_i] = arg_tag;
+        call_generic_claim_ref_payload[claim_i] = arg_payload;
+        return;
+    }
+
     uint expected_instance;
     if (!param_instance_ref_for_row(param_row, expected_instance))
         return;
