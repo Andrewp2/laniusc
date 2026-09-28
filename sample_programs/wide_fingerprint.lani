@@ -1,0 +1,29 @@
+// Read one full-width unsigned decimal line. Print its order relative to
+// 2^63 (-1, 0, or 1) and its stable eight-byte FNV-1a hash.
+module app::main;
+import core::wide_u64;
+import core::ordering;
+import core::hash;
+import std::io_line;
+import std::io_decimal;
+import std::io_byte;
+
+fn main() -> i32 {
+    let input: [i32; 20] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let length: i32 = std::io_line::read_stdin_lf_line_into_i32(input, 20);
+    if (length <= 0) { return 2; }
+    if (!core::wide_u64::can_parse_ascii_decimal(input, length)) { return 3; }
+    let value: core::wide_u64::WideU64 =
+        core::wide_u64::parse_ascii_decimal_or(input, length, core::wide_u64::zero());
+    let boundary: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483648, 0);
+    let order: core::ordering::Ordering =
+        core::ordering::compare_wide_u64(value, boundary);
+    let rank: i32 = core::ordering::to_i32(order);
+    let fingerprint: u32 = core::hash::hash_wide_u64(value);
+    if (std::io_decimal::write_i32(1, rank) <= 0) { return 4; }
+    if (!std::io_byte::write_stdout_byte(32)) { return 4; }
+    if (std::io_decimal::write_u32(1, fingerprint) <= 0) { return 4; }
+    if (!std::io_byte::write_stdout_byte(10)) { return 4; }
+    return 0;
+}

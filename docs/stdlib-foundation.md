@@ -1168,6 +1168,12 @@ FNV-1a step and prints the lowercase hexadecimal result. Its native test checks
 text, empty input, and binary bytes. A host read error exits with status 2;
 write failures exit with status 3 or 4.
 
+`sample_programs/wide_fingerprint.lani` reads one full-width unsigned decimal
+line, compares it with 2^63, and prints the resulting order (-1, 0, or 1)
+beside its stable two-word FNV-1a hash. The native test checks zero, values
+above 32 bits, the high-bit boundary, the unsigned maximum, malformed and
+overflowing input, and empty input.
+
 `sample_programs/halfword_window_total.lani` sorts six unsigned halfword
 readings, selects an inclusive value range, checks its first match through
 an Option returned by its local search helper and concrete Result helpers,
@@ -1298,6 +1304,8 @@ Run `cargo test --test stdlib_ordering` for imported `Ordering` values and
 comparators over six integer widths, Boolean values, and Unicode characters.
 Run `cargo test --test stdlib_ordering_wide` for the two-word signed and
 unsigned 64-bit comparators, including high-bit values and signed extrema.
+Run `cargo test --test stdlib_wide_fingerprint_program` for the stdin program
+combining wide parsing, ordering, hashing, and checked output.
 Run `cargo test --test stdlib_mem_execution` for all public memory helper
 functions, including capability metadata, value helpers, and intrinsics.
 Run `cargo test --test stdlib_allocator_metadata_execution` for allocator
