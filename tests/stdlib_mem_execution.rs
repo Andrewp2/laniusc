@@ -3,12 +3,13 @@ mod common;
 use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 
 #[test]
-fn public_memory_helpers_execute_on_x86() {
+fn memory_helpers_and_slice_intrinsics_execute_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for name in [
         "core_mem_metadata",
         "core_mem_values",
         "core_mem_intrinsics",
+        "core_mem_typed_slice_intrinsic",
     ] {
         let entry = root.join(format!("tests/fixtures/stdlib_foundation/{name}.lani"));
         let stdlib_root = root.join("stdlib");

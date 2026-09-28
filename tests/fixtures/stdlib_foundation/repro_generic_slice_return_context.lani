@@ -1,0 +1,12 @@
+module app::main;
+
+fn typed_slice_from_raw_parts<T>(data: ptr, length: i32) -> [T] {
+    return slice_from_raw_parts(data, length);
+}
+
+fn main() -> i32 {
+    let values: [i32; 1] = [42];
+    let data: ptr = i32_array_data_ptr(values);
+    let view: [i32] = typed_slice_from_raw_parts(data, 1);
+    return view[0] - 42;
+}

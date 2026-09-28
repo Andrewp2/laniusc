@@ -2044,9 +2044,14 @@ also fixes the imported struct-return relocation path described below.
    and view helpers are compiler-injected intrinsics with no Lanius source
    bodies. X86 lowering passes the backed-view fixture, and an existing Wasm
    byte-write test passes for `i32_array_data_ptr`; no full cross-target
-   behavioral claim follows from those checks. A portable slice constructor
-   and a way to read slice length are still needed before slice APIs can be
-   independent of caller-supplied lengths.
+   behavioral claim follows from those checks. The compiler also has a direct
+   `slice_from_raw_parts` intrinsic for a concrete typed result: the x86
+   record-slice test and an i32 caller-backed write execute. A generic Lanius
+   wrapper returning `[T]` does not infer `T` from a `let view: [i32]`
+   annotation; `repro_generic_slice_return_context.lani` is the minimal
+   `LNC0006` reproduction. A source-level portable constructor and a way to
+   read slice length are still needed before slice APIs can be independent of
+   caller-supplied lengths.
 4. **Generic allocation-backed vectors remain blocked.** The old `std::vec`
    silently dropped values in `push`, so that stub was removed. The empty
    generic `Vec<T>` has executable imported associated `new`, `len`, and
