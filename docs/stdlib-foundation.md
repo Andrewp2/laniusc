@@ -124,6 +124,7 @@ limited to native x86_64 output from this worktree.
 | `std::random_checked` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded and inclusive unsigned and signed outputs, forced draws and rejection, full-range failure fallbacks, and secure i32 slice shuffling with preserved contents, a forced swap, and injected failure. The suite also runs a raw fill after a directory read to guard the runtime flags fix, and confirms that the raw scalar traps on host failure and short reads. |
 | `std::random_wide` all 5 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_wide_execution.rs` runs all five functions, 64-bit unsigned and signed ranges including singleton, reversed, full-domain, and near-maximum cases, zero and unit bounds, and injected host errors, zero progress, short reads, and rejection. Results use concrete `OptionWideU64` and `OptionWideI64` values. |
 | `std::path` all 17 constants and all 37 public functions | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, path headers, full caller-backed component bytes, and last-component, extension, and stem byte offsets. The final-component helpers treat slash and backslash as separators, ignore trailing separators, accept non-UTF-8 bytes, and return the supplied fallback for empty or separator-only paths, negative lengths, or embedded NUL. A leading dot alone and a trailing dot do not create an extension. The two-byte header classifiers check only the supplied header when `length > 2`; use `path_component_is_normal_relative_bytes` or `path_component_matches_windows_relative_byte_rules` to inspect every byte. Negative and empty lengths return false in the classifiers; an overstated positive length traps on native indexing if scanning reaches beyond the backing slice. The Windows byte classifier rejects reserved bytes but does not reject reserved device names or trailing spaces/dots. Redundant no-argument functions that failed natively were removed in favor of the tested constants. Allocation and host normalization are unavailable. |
+| `std::deque_i32` all 20 public functions and its capacity constant | Executable on x86_64 Linux | The owned ring-buffer fixture calls every public function and checks both-end pushes and pops, wrapped storage, growth, reservation, shrinking, clone independence, signed extrema, empty and invalid-index behavior, and destruction. Six injected `mmap` failures cover initial allocation, both-end growth, wrapped reservation, cloning, and shrinking; existing contents and ownership remain intact. The line-oriented recent-values program combines the deque with decimal parsing and output and checks normal, extreme, malformed, and overlong input. Ownership is linear by convention. The GPU compiler emits the tested x86 program; no user-program GPU device behavior is claimed. |
 | `std::vec_i32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | `tests/fixtures/stdlib_foundation/vec_i32.lani` checks construction, growth, element access and mutation, bounds, reserve, pop, clear, cloning, and destruction. `tests/stdlib_vec_i32_execution.rs` injects allocation and reallocation failures and checks the vector and prior data stay unchanged. This is a linear-ownership API by convention; source-level moves are not enforced. |
 | `std::vec_u32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, `2^31`, and `u32::MAX`. The allocation-failure suite injects failed initial allocation and reallocation; the real checksum sample combines it with `core::number_u32` and `OptionU32`. Storage uses 32-bit cells and preserves every unsigned bit pattern. Ownership is linear by convention. |
 | `std::vec_wide_i64` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks pair-preserving growth, access, mutation, insertion, removal, caller-backed batch append, reserve, clone independence, resize, truncation, shrink, clearing, destruction, both signed extrema, the 32-bit boundary, invalid indices and capacities, and a physical input-view overclaim that traps. Injected initial, growth, batch-append, insert, resize, clone, and shrink allocation failures preserve prior values or return an empty clone. A signed decimal sum program uses the vector with real input. Each element uses two 32-bit cells; ownership is linear by convention. |
@@ -592,6 +593,16 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   value, including NaN. Presence and success predicates still report the
   active variant, and unwrap helpers preserve a stored NaN. Both modules are
   allocation-free.
+- `std::deque_i32` stores i32 values in an owned circular buffer. Push and
+  pop at either end are constant time until growth copies elements. Its maximum
+  capacity is 536,870,911 elements so four-byte allocation sizes fit i32.
+  Invalid indices return the supplied fallback or `false`; empty pops return
+  the original deque. Invalid capacity requests and failed allocation leave
+  the owner and logical order unchanged. Compare `len` after a push and
+  `capacity` after reserve to detect failure. A failed nonempty clone returns
+  an empty zero-capacity deque while preserving its source. Shrinking an empty
+  deque releases storage. Keep only the newest returned owner and destroy each
+  independent deque once; the language does not enforce this ownership rule.
 - `std::vec_i32`, `std::vec_u32`, `std::vec_u8`, `std::vec_i8`,
   `std::vec_u16`, `std::vec_i16`, and `std::vec_bool` own allocated 32-bit
   cells. The non-i32 modules access those cells through the currently available
@@ -1617,6 +1628,8 @@ Run `cargo test --test stdlib_vec_wide_u64_execution` for the owned
 unsigned two-word vector, every public operation, backing bounds, and
 injected allocation failures. Run `cargo test --test stdlib_wide_unsigned_sum_program`
 for its full-width input and output program.
+Run `cargo test --test stdlib_deque_i32_execution` for all deque APIs,
+wrapped order, six injected allocation failures, and the recent-values program.
 Run `cargo test --test stdlib_map_i32_i32_execution` for the owned map,
 initial, growth, shrink, and clone allocation failures, and the stdin byte
 histogram.

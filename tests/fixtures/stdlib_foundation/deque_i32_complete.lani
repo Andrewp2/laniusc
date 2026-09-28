@@ -1,0 +1,111 @@
+module app::main;
+import std::deque_i32;
+
+fn main() -> i32 {
+    let value: std::deque_i32::DequeI32 = std::deque_i32::new();
+    if (std::deque_i32::MAX_CAPACITY != 536870911 ||
+        !std::deque_i32::is_empty(value) ||
+        std::deque_i32::len(value) != 0 ||
+        std::deque_i32::capacity(value) != 0 ||
+        std::deque_i32::front_or(value, 77) != 77 ||
+        std::deque_i32::back_or(value, 78) != 78 ||
+        std::deque_i32::at_or(value, 0, 79) != 79 ||
+        std::deque_i32::contains(value, 0) ||
+        std::deque_i32::try_set(value, 0, 7) ||
+        std::deque_i32::try_swap(value, 0, 0)) { return 1; }
+    value = std::deque_i32::try_pop_front(value);
+    value = std::deque_i32::try_pop_back(value);
+    if (std::deque_i32::len(value) != 0) { return 2; }
+    value = std::deque_i32::try_reserve(value, -1);
+    value = std::deque_i32::try_reserve(value, 536870912);
+    if (std::deque_i32::capacity(value) != 0) { return 3; }
+    std::deque_i32::destroy(value);
+
+    let items: std::deque_i32::DequeI32 = std::deque_i32::try_with_capacity(3);
+    if (std::deque_i32::capacity(items) != 3 || !std::deque_i32::is_empty(items)) { return 4; }
+    items = std::deque_i32::try_push_back(items, 10);
+    items = std::deque_i32::try_push_back(items, 20);
+    items = std::deque_i32::try_push_back(items, 30);
+    if (std::deque_i32::len(items) != 3 || std::deque_i32::capacity(items) != 3 ||
+        std::deque_i32::front_or(items, -1) != 10 ||
+        std::deque_i32::back_or(items, -1) != 30) { return 5; }
+    items = std::deque_i32::try_pop_front(items);
+    items = std::deque_i32::try_push_back(items, 40);
+    if (std::deque_i32::len(items) != 3 ||
+        std::deque_i32::at_or(items, 0, -1) != 20 ||
+        std::deque_i32::at_or(items, 1, -1) != 30 ||
+        std::deque_i32::at_or(items, 2, -1) != 40) { return 6; }
+    items = std::deque_i32::try_pop_front(items);
+    items = std::deque_i32::try_push_front(items, 25);
+    if (std::deque_i32::len(items) != 3 ||
+        std::deque_i32::at_or(items, 0, -1) != 25 ||
+        std::deque_i32::at_or(items, 1, -1) != 30 ||
+        std::deque_i32::at_or(items, 2, -1) != 40) { return 7; }
+    items = std::deque_i32::try_push_back(items, 50);
+    if (std::deque_i32::len(items) != 4 || std::deque_i32::capacity(items) != 6 ||
+        std::deque_i32::front_or(items, -1) != 25 ||
+        std::deque_i32::back_or(items, -1) != 50 ||
+        std::deque_i32::at_or(items, 1, -1) != 30 ||
+        std::deque_i32::at_or(items, 2, -1) != 40 ||
+        std::deque_i32::at_or(items, -1, 77) != 77 ||
+        std::deque_i32::at_or(items, 4, 78) != 78 ||
+        !std::deque_i32::contains(items, 40) ||
+        std::deque_i32::contains(items, 60)) { return 8; }
+    if (std::deque_i32::try_set(items, -1, 2) ||
+        std::deque_i32::try_set(items, 4, 2) ||
+        !std::deque_i32::try_set(items, 1, -2147483648) ||
+        std::deque_i32::at_or(items, 1, 0) != -2147483648 ||
+        std::deque_i32::try_swap(items, 0, 4) ||
+        !std::deque_i32::try_swap(items, 0, 3) ||
+        std::deque_i32::front_or(items, -1) != 50 ||
+        std::deque_i32::back_or(items, -1) != 25 ||
+        !std::deque_i32::try_swap(items, 0, 3)) { return 9; }
+
+    let copy: std::deque_i32::DequeI32 = std::deque_i32::try_clone(items);
+    if (std::deque_i32::len(copy) != 4 || std::deque_i32::capacity(copy) != 4 ||
+        std::deque_i32::at_or(copy, 1, 0) != -2147483648) { return 10; }
+    if (!std::deque_i32::try_set(copy, 1, 2147483647) ||
+        std::deque_i32::at_or(copy, 1, 0) != 2147483647 ||
+        std::deque_i32::at_or(items, 1, 0) != -2147483648) { return 11; }
+    std::deque_i32::destroy(copy);
+
+    items = std::deque_i32::try_pop_back(items);
+    items = std::deque_i32::try_pop_front(items);
+    if (std::deque_i32::len(items) != 2 ||
+        std::deque_i32::front_or(items, 0) != -2147483648 ||
+        std::deque_i32::back_or(items, 0) != 40) { return 12; }
+    items = std::deque_i32::try_shrink_to_fit(items);
+    if (std::deque_i32::capacity(items) != 2 ||
+        std::deque_i32::at_or(items, 0, 0) != -2147483648 ||
+        std::deque_i32::at_or(items, 1, 0) != 40) { return 13; }
+    items = std::deque_i32::try_shrink_to_fit(items);
+    if (std::deque_i32::capacity(items) != 2) { return 14; }
+    items = std::deque_i32::clear(items);
+    if (!std::deque_i32::is_empty(items) || std::deque_i32::capacity(items) != 2 ||
+        std::deque_i32::contains(items, 40)) { return 15; }
+    let empty_copy: std::deque_i32::DequeI32 = std::deque_i32::try_clone(items);
+    if (std::deque_i32::len(empty_copy) != 0 ||
+        std::deque_i32::capacity(empty_copy) != 0) { return 16; }
+    std::deque_i32::destroy(empty_copy);
+    items = std::deque_i32::try_push_front(items, 2147483647);
+    if (std::deque_i32::front_or(items, 0) != 2147483647) { return 17; }
+    items = std::deque_i32::try_pop_front(items);
+    items = std::deque_i32::try_shrink_to_fit(items);
+    if (std::deque_i32::capacity(items) != 0) { return 18; }
+    std::deque_i32::destroy(items);
+
+    let wrapped: std::deque_i32::DequeI32 = std::deque_i32::try_with_capacity(3);
+    wrapped = std::deque_i32::try_push_back(wrapped, 1);
+    wrapped = std::deque_i32::try_push_back(wrapped, 2);
+    wrapped = std::deque_i32::try_push_back(wrapped, 3);
+    wrapped = std::deque_i32::try_pop_front(wrapped);
+    wrapped = std::deque_i32::try_push_back(wrapped, 4);
+    wrapped = std::deque_i32::try_reserve(wrapped, 5);
+    if (std::deque_i32::capacity(wrapped) != 5 ||
+        std::deque_i32::len(wrapped) != 3 ||
+        std::deque_i32::at_or(wrapped, 0, 0) != 2 ||
+        std::deque_i32::at_or(wrapped, 1, 0) != 3 ||
+        std::deque_i32::at_or(wrapped, 2, 0) != 4) { return 19; }
+    std::deque_i32::destroy(wrapped);
+    return 0;
+}

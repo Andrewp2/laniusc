@@ -1,0 +1,12 @@
+module app::main;
+import std::deque_i32;
+
+fn main() -> i32 {
+    let value: std::deque_i32::DequeI32 = std::deque_i32::try_with_capacity(3);
+    let failure: bool = std::deque_i32::capacity(value) == 0 && std::deque_i32::len(value) == 0;
+    let success: bool = std::deque_i32::capacity(value) == 3 && std::deque_i32::len(value) == 0;
+    std::deque_i32::destroy(value);
+    if (failure) { return 0; }
+    if (success) { return 4; }
+    return 5;
+}
