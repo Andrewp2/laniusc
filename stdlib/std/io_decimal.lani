@@ -241,6 +241,120 @@ pub fn read_i32_stdin_or(max_bytes: u32, fallback: i32) -> i32 {
     return positive;
 }
 
+fn append_wide_digit(value: core::wide_u64::WideU64, digit: u32) -> core::wide_u64::WideU64 {
+    return core::wide_u64::wrapping_add(
+        core::wide_u64::wrapping_mul(value, core::wide_u64::from_u32(10)),
+        core::wide_u64::from_u32(digit));
+}
+
+// Read a full-width unsigned decimal from all of stdin. Accept surrounding
+// SP, HT, LF, and CR, and one leading plus sign. Empty, malformed, overlong,
+// overflowing, or failed reads return fallback. Failure may consume a prefix.
+pub fn read_wide_u64_stdin_or(
+    max_bytes: u32, fallback: core::wide_u64::WideU64
+) -> core::wide_u64::WideU64 {
+    if (max_bytes == 0) { return fallback; }
+    let cell: [i32; 1] = [0];
+    let data: ptr = core::mem::i32_array_data_ptr(cell);
+    let consumed: u32 = 0;
+    let value: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let threshold: core::wide_u64::WideU64 =
+        core::wide_u64::from_words(429496729, 2576980377); // u64::MAX / 10
+    let started: bool = false;
+    let digits: bool = false;
+    let trailing: bool = false;
+    while (true) {
+        cell[0] = 0;
+        let received: i32 = std::io::read_stdin(data, 1);
+        if (received == 0) { break; }
+        if (received != 1 || consumed >= max_bytes) { return fallback; }
+        consumed += 1;
+        let byte: i32 = cell[0];
+        if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
+            if (started && !digits) { return fallback; }
+            if (digits) { trailing = true; }
+            continue;
+        }
+        if (byte == 43) {
+            if (started || trailing) { return fallback; }
+            started = true;
+            continue;
+        }
+        if (byte >= 48 && byte <= 57) {
+            if (trailing) { return fallback; }
+            started = true;
+            digits = true;
+            let digit_i32: i32 = byte - 48;
+            let digit: u32 = digit_i32;
+            let order: i32 = core::wide_u64::compare(value, threshold);
+            if (order > 0 || (order == 0 && digit > 5)) { return fallback; }
+            value = append_wide_digit(value, digit);
+            continue;
+        }
+        return fallback;
+    }
+    if (!digits) { return fallback; }
+    return value;
+}
+
+// Signed variant accepts one leading plus or minus and bounds the magnitude
+// to i64::MAX or 2^63. Negative zero is returned as zero.
+pub fn read_wide_i64_stdin_or(
+    max_bytes: u32, fallback: core::wide_i64::WideI64
+) -> core::wide_i64::WideI64 {
+    if (max_bytes == 0) { return fallback; }
+    let cell: [i32; 1] = [0];
+    let data: ptr = core::mem::i32_array_data_ptr(cell);
+    let consumed: u32 = 0;
+    let magnitude: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let threshold: core::wide_u64::WideU64 =
+        core::wide_u64::from_words(214748364, 3435973836); // 2^63 / 10
+    let started: bool = false;
+    let digits: bool = false;
+    let trailing: bool = false;
+    let negative: bool = false;
+    while (true) {
+        cell[0] = 0;
+        let received: i32 = std::io::read_stdin(data, 1);
+        if (received == 0) { break; }
+        if (received != 1 || consumed >= max_bytes) { return fallback; }
+        consumed += 1;
+        let byte: i32 = cell[0];
+        if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
+            if (started && !digits) { return fallback; }
+            if (digits) { trailing = true; }
+            continue;
+        }
+        if (byte == 43 || byte == 45) {
+            if (started || trailing) { return fallback; }
+            started = true;
+            negative = byte == 45;
+            continue;
+        }
+        if (byte >= 48 && byte <= 57) {
+            if (trailing) { return fallback; }
+            started = true;
+            digits = true;
+            let digit_i32: i32 = byte - 48;
+            let digit: u32 = digit_i32;
+            let last_digit: u32 = 7;
+            if (negative) { last_digit = 8; }
+            let order: i32 = core::wide_u64::compare(magnitude, threshold);
+            if (order > 0 || (order == 0 && digit > last_digit)) {
+                return fallback;
+            }
+            magnitude = append_wide_digit(magnitude, digit);
+            continue;
+        }
+        return fallback;
+    }
+    if (!digits) { return fallback; }
+    let value: core::wide_i64::WideI64 = core::wide_i64::from_words(
+        core::wide_u64::high_word(magnitude), core::wide_u64::low_word(magnitude));
+    if (negative) { return core::wide_i64::wrapping_neg(value); }
+    return value;
+}
+
 // Narrow readers inherit the full-stream syntax and max_bytes limit from the
 // 32-bit readers. A parsed value outside the destination type returns the
 // caller's fallback. Invalid input or a host error has the same result.

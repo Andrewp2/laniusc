@@ -325,6 +325,8 @@ fn std_io_decimal_public_functions_have_runtime_cases() {
         include_str!("fixtures/stdlib_host/std_io_decimal_read_u16.lani"),
         include_str!("fixtures/stdlib_host/std_io_decimal_read_i8.lani"),
         include_str!("fixtures/stdlib_host/std_io_decimal_read_i16.lani"),
+        include_str!("fixtures/stdlib_host/std_io_decimal_read_wide_u64.lani"),
+        include_str!("fixtures/stdlib_host/std_io_decimal_read_wide_i64.lani"),
         include_str!("fixtures/stdlib_host/std_io_wide_decimal.lani"),
         include_str!("fixtures/stdlib_foundation/wide_u64_decimal_double.lani"),
         include_str!("fixtures/stdlib_foundation/wide_i64_decimal_double.lani"),
@@ -345,5 +347,5 @@ fn std_io_decimal_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 14);
+    assert_eq!(count, 16);
 }

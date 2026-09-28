@@ -122,9 +122,96 @@ fn bounded_signed_stdin_decimal_executes_on_x86() {
 }
 
 #[test]
+fn bounded_wide_unsigned_stdin_decimal_executes_on_x86() {
+    let bytes = compile_fixture("std_io_decimal_read_wide_u64");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let executable = write_executable(&bytes, "read_wide_u64");
+        let cases: &[(&[u8], &[u8])] = &[
+            (b"0", b"0"),
+            (b"4294967296", b"4294967296"),
+            (b" \t+42\r\n", b"42"),
+            (b"00000000000000000042", b"42"),
+            (b"18446744073709551615", b"18446744073709551615"),
+            (b"", b"777"),
+            (b"  ", b"777"),
+            (b"+", b"777"),
+            (b"-1", b"777"),
+            (b"12 3", b"777"),
+            (b"12x", b"777"),
+            (b"18446744073709551616", b"777"),
+        ];
+        for &(input, expected) in cases {
+            let output = run_input(&executable, input);
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert_eq!(output.stdout, expected, "input={input:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+        let mut exact = vec![b' '; 44];
+        exact.extend_from_slice(b"18446744073709551615");
+        let output = run_input(&executable, &exact);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, b"18446744073709551615");
+        exact.push(b' ');
+        let output = run_input(&executable, &exact);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, b"777");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn bounded_wide_signed_stdin_decimal_executes_on_x86() {
+    let bytes = compile_fixture("std_io_decimal_read_wide_i64");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let executable = write_executable(&bytes, "read_wide_i64");
+        let cases: &[(&[u8], &[u8])] = &[
+            (b"0", b"0"),
+            (b"-0", b"0"),
+            (b"-4294967296", b"-4294967296"),
+            (b" \t+42\r\n", b"42"),
+            (b"-00000000000000000042", b"-42"),
+            (b"9223372036854775807", b"9223372036854775807"),
+            (b"-9223372036854775808", b"-9223372036854775808"),
+            (b"", b"-777"),
+            (b"  ", b"-777"),
+            (b"-", b"-777"),
+            (b"1 2", b"-777"),
+            (b"12x", b"-777"),
+            (b"--1", b"-777"),
+            (b"9223372036854775808", b"-777"),
+            (b"-9223372036854775809", b"-777"),
+        ];
+        for &(input, expected) in cases {
+            let output = run_input(&executable, input);
+            assert_eq!(output.status.code(), Some(0), "{output:?}");
+            assert_eq!(output.stdout, expected, "input={input:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+        let mut exact = vec![b' '; 44];
+        exact.extend_from_slice(b"-9223372036854775808");
+        let output = run_input(&executable, &exact);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, b"-9223372036854775808");
+        exact.push(b' ');
+        let output = run_input(&executable, &exact);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, b"-777");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn bounded_stdin_decimal_reports_host_failures_on_x86() {
     let unsigned_bytes = compile_fixture("std_io_decimal_read_u32");
     let signed_bytes = compile_fixture("std_io_decimal_read_i32");
+    let wide_unsigned_bytes = compile_fixture("std_io_decimal_read_wide_u64");
+    let wide_signed_bytes = compile_fixture("std_io_decimal_read_wide_i64");
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
@@ -138,6 +225,12 @@ fn bounded_stdin_decimal_reports_host_failures_on_x86() {
         for (name, bytes, fallback) in [
             ("u32", unsigned_bytes.as_slice(), b"777".as_slice()),
             ("i32", signed_bytes.as_slice(), b"-777".as_slice()),
+            (
+                "wide_u64",
+                wide_unsigned_bytes.as_slice(),
+                b"777".as_slice(),
+            ),
+            ("wide_i64", wide_signed_bytes.as_slice(), b"-777".as_slice()),
         ] {
             let executable = write_executable(bytes, name);
             for injection in [
@@ -174,7 +267,12 @@ fn bounded_stdin_decimal_reports_host_failures_on_x86() {
         }
     }
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = (unsigned_bytes, signed_bytes);
+    let _ = (
+        unsigned_bytes,
+        signed_bytes,
+        wide_unsigned_bytes,
+        wide_signed_bytes,
+    );
 }
 
 #[test]
