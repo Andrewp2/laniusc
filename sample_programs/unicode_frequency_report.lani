@@ -1,0 +1,60 @@
+// Count Unicode scalars in UTF-8 stdin and print first-seen order as
+// <scalar>:<decimal count> lines. NUL is accepted and emits a binary NUL.
+// Return 2 for malformed UTF-8, 3 for input failure, 4 for allocation or
+// capacity failure, 5 for output failure, and 6 for a count overflow.
+module app::main;
+import std::io_byte;
+import std::io_decimal;
+import std::io_utf8;
+import std::map_char_u32;
+
+fn main() -> i32 {
+    let counts: std::map_char_u32::MapCharU32 = std::map_char_u32::new();
+    while (true) {
+        let code: u32 = std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114);
+        if (code == 1114112) { break; }
+        if (code == 1114113) {
+            std::map_char_u32::destroy(counts);
+            return 2;
+        }
+        if (code == 1114114) {
+            std::map_char_u32::destroy(counts);
+            return 3;
+        }
+        let scalar: char = code;
+        if (std::map_char_u32::contains_key(counts, scalar)) {
+            let prior: u32 = std::map_char_u32::get_or(counts, scalar, 0);
+            if (prior == 4294967295) {
+                std::map_char_u32::destroy(counts);
+                return 6;
+            }
+            if (!std::map_char_u32::try_set(counts, scalar, prior + 1)) {
+                std::map_char_u32::destroy(counts);
+                return 4;
+            }
+        } else {
+            let before: i32 = std::map_char_u32::len(counts);
+            counts = std::map_char_u32::try_insert(counts, scalar, 1);
+            if (std::map_char_u32::len(counts) != before + 1) {
+                std::map_char_u32::destroy(counts);
+                return 4;
+            }
+        }
+    }
+    let index: i32 = 0;
+    while (index < std::map_char_u32::len(counts)) {
+        let scalar: char = std::map_char_u32::key_at_or(counts, index, '\0');
+        let code: u32 = scalar;
+        let count: u32 = std::map_char_u32::value_at_or(counts, index, 0);
+        if (!std::io_utf8::write_stdout_scalar(code) ||
+            !std::io_byte::write_stdout_byte(58) ||
+            std::io_decimal::write_u32(1, count) < 0 ||
+            !std::io_byte::write_stdout_byte(10)) {
+            std::map_char_u32::destroy(counts);
+            return 5;
+        }
+        index += 1;
+    }
+    std::map_char_u32::destroy(counts);
+    return 0;
+}
