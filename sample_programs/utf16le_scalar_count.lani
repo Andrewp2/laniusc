@@ -1,0 +1,35 @@
+// Count Unicode scalars in at most 64 UTF-16LE units from stdin. Empty input
+// prints zero. Odd byte counts, malformed UTF-16, and oversized input fail.
+module app::main;
+import core::utf16;
+import std::io;
+import std::io_byte;
+import std::io_decimal;
+
+fn main() -> i32 {
+    let zero: u16 = 0;
+    let units: [u16; 64] = [
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero
+    ];
+    let length: i32 = 0;
+    while (true) {
+        let low: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+        if (low == -1) { break; }
+        if (low == -2) { return 2; }
+        let high: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+        if (high == -2) { return 2; }
+        if (high == -1 || length >= 64) { return 3; }
+        let code: i32 = low + high * 256;
+        let unit: u16 = code;
+        units[length] = unit;
+        length += 1;
+    }
+    let count: i32 = core::utf16::scalar_count_or(units, length, -1);
+    if (count < 0) { return 3; }
+    if (std::io_decimal::write_i32(1, count) < 0 ||
+        std::io::write_byte(1, 10) != 1) { return 4; }
+    return 0;
+}

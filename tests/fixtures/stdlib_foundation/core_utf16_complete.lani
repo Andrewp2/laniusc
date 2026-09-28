@@ -1,0 +1,128 @@
+module app::main;
+import core::utf16;
+
+fn main() -> i32 {
+    if (core::utf16::STATUS_OK != 0 || core::utf16::STATUS_BOUNDS != 1 ||
+        core::utf16::STATUS_INVALID_SCALAR != 2 ||
+        core::utf16::STATUS_SHORT != 3 ||
+        core::utf16::STATUS_MALFORMED != 4 ||
+        !core::utf16::is_high_surrogate(55296) ||
+        !core::utf16::is_high_surrogate(56319) ||
+        core::utf16::is_high_surrogate(56320) ||
+        !core::utf16::is_low_surrogate(56320) ||
+        !core::utf16::is_low_surrogate(57343) ||
+        core::utf16::is_low_surrogate(56319) ||
+        !core::utf16::is_surrogate(55296) ||
+        !core::utf16::is_surrogate(57343) ||
+        core::utf16::is_surrogate(65) ||
+        !core::utf16::is_scalar(55295) ||
+        core::utf16::is_scalar(55296) ||
+        core::utf16::is_scalar(57343) ||
+        !core::utf16::is_scalar(57344) ||
+        !core::utf16::is_scalar(1114111) ||
+        core::utf16::is_scalar(1114112) ||
+        core::utf16::encoded_len_or(0, -1) != 1 ||
+        core::utf16::encoded_len_or(65535, -1) != 1 ||
+        core::utf16::encoded_len_or(65536, -1) != 2 ||
+        core::utf16::encoded_len_or(1114111, -1) != 2 ||
+        core::utf16::encoded_len_or(55296, -1) != -1 ||
+        core::utf16::encoded_len_or(1114112, 7) != 7) { return 1; }
+
+    let sentinel: u16 = 999;
+    let units: [u16; 6] = [sentinel, sentinel, sentinel,
+        sentinel, sentinel, sentinel];
+    let a: core::utf16::Utf16Write = core::utf16::write_scalar(units, 6, 0, 65);
+    let nul: core::utf16::Utf16Write = core::utf16::write_scalar(units, 6, 1, 0);
+    let face: core::utf16::Utf16Write =
+        core::utf16::write_scalar(units, 6, 2, 128512);
+    let maximum: core::utf16::Utf16Write =
+        core::utf16::write_scalar(units, 6, 4, 1114111);
+    if (!core::utf16::write_succeeded(a) ||
+        core::utf16::write_status(a) != core::utf16::STATUS_OK ||
+        core::utf16::write_next_or(a, -1) != 1 ||
+        core::utf16::write_next_or(nul, -1) != 2 ||
+        core::utf16::write_next_or(face, -1) != 4 ||
+        core::utf16::write_next_or(maximum, -1) != 6 ||
+        units[0] != 65 || units[1] != 0 ||
+        units[2] != 55357 || units[3] != 56832 ||
+        units[4] != 56319 || units[5] != 57343) { return 2; }
+
+    let first: core::utf16::Utf16Decode = core::utf16::decode_next(units, 6, 0);
+    let second: core::utf16::Utf16Decode = core::utf16::decode_next(units, 6, 1);
+    let third: core::utf16::Utf16Decode = core::utf16::decode_next(units, 6, 2);
+    let fourth: core::utf16::Utf16Decode = core::utf16::decode_next(units, 6, 4);
+    if (!core::utf16::decode_succeeded(first) ||
+        core::utf16::decode_status(first) != core::utf16::STATUS_OK ||
+        core::utf16::decode_scalar_or(first, 9) != 65 ||
+        core::utf16::decode_scalar_or(second, 9) != 0 ||
+        core::utf16::decode_scalar_or(third, 9) != 128512 ||
+        core::utf16::decode_scalar_or(fourth, 9) != 1114111 ||
+        core::utf16::decode_next_or(first, -1) != 1 ||
+        core::utf16::decode_next_or(second, -1) != 2 ||
+        core::utf16::decode_next_or(third, -1) != 4 ||
+        core::utf16::decode_next_or(fourth, -1) != 6 ||
+        !core::utf16::validate(units, 6) ||
+        core::utf16::scalar_count_or(units, 6, -1) != 4 ||
+        core::utf16::scalar_at_or(units, 6, 0, 9) != 65 ||
+        core::utf16::scalar_at_or(units, 6, 1, 9) != 0 ||
+        core::utf16::scalar_at_or(units, 6, 2, 9) != 128512 ||
+        core::utf16::scalar_at_or(units, 6, 3, 9) != 1114111 ||
+        core::utf16::scalar_at_or(units, 6, 4, 9) != 9 ||
+        core::utf16::scalar_at_or(units, 6, -1, 9) != 9) { return 3; }
+
+    let untouched: [u16; 2] = [sentinel, sentinel];
+    let short: core::utf16::Utf16Write =
+        core::utf16::write_scalar(untouched, 1, 0, 128512);
+    let invalid: core::utf16::Utf16Write =
+        core::utf16::write_scalar(untouched, 2, 0, 55296);
+    let bounds: core::utf16::Utf16Write =
+        core::utf16::write_scalar(untouched, 2, -1, 65);
+    let end: core::utf16::Utf16Write =
+        core::utf16::write_scalar(untouched, 2, 2, 65);
+    if (core::utf16::write_succeeded(short) ||
+        core::utf16::write_status(short) != core::utf16::STATUS_SHORT ||
+        core::utf16::write_next_or(short, 77) != 77 ||
+        core::utf16::write_status(invalid) != core::utf16::STATUS_INVALID_SCALAR ||
+        core::utf16::write_status(bounds) != core::utf16::STATUS_BOUNDS ||
+        core::utf16::write_status(end) != core::utf16::STATUS_SHORT ||
+        untouched[0] != sentinel || untouched[1] != sentinel) { return 4; }
+
+    let low: u16 = 56320;
+    let high: u16 = 55296;
+    let ordinary: u16 = 65;
+    let lone_low: [u16; 1] = [low];
+    let lone_high: [u16; 1] = [high];
+    let broken_pair: [u16; 2] = [high, ordinary];
+    let late_error: [u16; 2] = [ordinary, low];
+    let bad_low: core::utf16::Utf16Decode =
+        core::utf16::decode_next(lone_low, 1, 0);
+    let truncated: core::utf16::Utf16Decode =
+        core::utf16::decode_next(lone_high, 1, 0);
+    let malformed: core::utf16::Utf16Decode =
+        core::utf16::decode_next(broken_pair, 2, 0);
+    let out_of_bounds: core::utf16::Utf16Decode =
+        core::utf16::decode_next(units, 6, 6);
+    if (core::utf16::decode_succeeded(bad_low) ||
+        core::utf16::decode_status(bad_low) != core::utf16::STATUS_MALFORMED ||
+        core::utf16::decode_status(truncated) != core::utf16::STATUS_SHORT ||
+        core::utf16::decode_status(malformed) != core::utf16::STATUS_MALFORMED ||
+        core::utf16::decode_status(out_of_bounds) != core::utf16::STATUS_BOUNDS ||
+        core::utf16::decode_scalar_or(bad_low, 77) != 77 ||
+        core::utf16::decode_next_or(truncated, 77) != 77 ||
+        core::utf16::validate(lone_low, 1) ||
+        core::utf16::validate(lone_high, 1) ||
+        core::utf16::validate(broken_pair, 2) ||
+        core::utf16::validate(units, -1) ||
+        core::utf16::scalar_count_or(broken_pair, 2, -1) != -1 ||
+        core::utf16::scalar_count_or(units, -1, -1) != -1 ||
+        core::utf16::scalar_at_or(broken_pair, 2, 0, 77) != 77 ||
+        core::utf16::scalar_at_or(late_error, 2, 0, 77) != 77 ||
+        core::utf16::scalar_at_or(units, -1, 0, 77) != 77) { return 5; }
+
+    let empty: [u16; 1] = [ordinary];
+    if (!core::utf16::validate(empty, 0) ||
+        core::utf16::scalar_count_or(empty, 0, -1) != 0 ||
+        core::utf16::decode_status(core::utf16::decode_next(empty, 0, 0)) !=
+            core::utf16::STATUS_BOUNDS) { return 6; }
+    return 0;
+}

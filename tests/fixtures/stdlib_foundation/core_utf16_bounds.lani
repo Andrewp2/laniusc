@@ -1,0 +1,7 @@
+module app::main;
+import core::utf16;
+fn main() -> i32 {
+    let unit: u16 = 65;
+    let too_short: [u16; 1] = [unit];
+    return core::utf16::scalar_count_or(too_short, 2, -1);
+}

@@ -30,6 +30,7 @@ limited to native x86_64 output from this worktree.
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 25 public codec and backed-view functions | Executable on x86_64 | Native fixtures check ASCII and multibyte encoding/decoding, checked scalar append, scalar counts and lookup, first and last scalar and sequence search, byte/scalar boundary mapping, equality, prefix and suffix matching, lexicographic comparison, empty and truncated views, out-of-byte-range integer codes, malformed sequences, surrogate exclusion, and Unicode maximum. Direct caller-backed `[u8]` helpers validate and count scalars, map scalar and byte boundaries, and read scalars by index across one- through four-byte sequences. They reject malformed input and negative lengths, and native indexing traps on a physical length overclaim. The older general view functions use caller-backed `[i32]` byte codes and do not access string storage. |
+| `core::utf16` all 17 public functions, 5 status constants, and 2 result types | Executable on x86_64 for caller-backed `[u16]` views | The imported runtime fixture calls every function and checks ASCII, NUL, supplementary scalars, Unicode maximum, high and low surrogate boundaries, strict pair decoding, complete-view validation, scalar counts and ordinals, invalid bounds, malformed and truncated pairs, invalid scalar rejection without writes, and short capacity without writes. Result structs distinguish success, bounds, invalid scalar, short input or output, and malformed input; a physical length overclaim traps with exit 101. The stdin UTF-16LE scalar-count program checks empty, ordinary, supplementary, maximal-length, odd-byte, malformed, oversized, and output-failure cases. GPU frontend compilation emits the tested x86 program; user-program GPU execution is not claimed. |
 | `core::utf8_view` all 12 public byte-view functions | Executable on x86_64 for caller-backed `[u8]` views | Focused native fixtures check complete-view validation, equality, prefix and suffix matches, lexicographic ordering, first and last byte-sequence offsets, first and last Unicode scalar indices, and checked append, insertion, removal, and replacement of Unicode scalars in caller-owned bytes. They cover ASCII and two-, three-, and four-byte encodings, repeated matches, empty views and needles, malformed data, invalid scalars, negative lengths, missing matches, growth and shrinkage, exact-fit and insufficient capacity, and unchanged storage after rejected edits. Separate fixtures confirm physical length and capacity overclaims trap. The source scan requires a runtime call for every public function. |
 | `core::decimal` all 20 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of extrema across 8-, 16-, and 32-bit integers, ordinary values, sign placement, zero, out-of-range fallbacks, incremental and complete ASCII parsing for all six widths, and overflow against each width's limits. `std::io_decimal` and both bounded decimal file readers use the portable scalar helpers. |
 | `core::hex` all 14 public functions | Executable on x86_64 | Runtime fixture checks shortest lowercase and uppercase hexadecimal representations of `u8`, `u16`, and `u32`, zero and maximum values, invalid-index fallbacks, mixed-case digit accumulation, complete prefixed and unprefixed parsing, and overflow against each width's limit. The helpers allocate no storage and use no host calls. |
@@ -464,6 +465,14 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   searches return the caller fallback on malformed input or a missing match.
   A fallback can equal a valid result. Borrowed `str` storage remains a
   separate compiler dependency below.
+- `core::utf16` uses strict UTF-16 code units in caller-backed `[u16]` views.
+  `write_scalar` checks logical capacity before writing either unit and returns
+  a status plus the next offset. `decode_next` reports bounds, truncated high
+  surrogate, and malformed pairs separately, with a scalar and next offset
+  only on success. Complete-view validation, counting, and ordinal lookup
+  reject malformed input; ordinal lookup validates the entire view, including
+  any suffix after the requested scalar. Negative lengths are invalid and an
+  empty view is valid. An overstated physical view may trap on indexing.
 - `core::decimal` returns decimal length and the ASCII byte at a zero-based
   index for `u8`, `u16`, `u32`, `i8`, `i16`, and `i32`. The maximum lengths are
   3, 5, 10, 4, 6, and 11 respectively. Signed output includes `-` at index
@@ -1906,6 +1915,9 @@ including the UTF-8 Windows component checks and reserved-name boundaries.
 Run `cargo test --test stdlib_utf8_bytes_execution` for direct `[u8]` UTF-8
 validation, owned text append, the text-report sample, native bounds trapping,
 and injected allocation failure when Linux `strace` is available.
+Run `cargo test --test stdlib_utf16_execution` for strict UTF-16 scalar
+conversion, statuses, physical bounds trapping, and the stdin UTF-16LE count
+program.
 Run `cargo test --test stdlib_random_execution` for the checked random scalar;
 the failure injection cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_random_wide_execution` for checked two-word

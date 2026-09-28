@@ -1,0 +1,175 @@
+// Strict UTF-16 scalar conversion in caller-owned [u16] views. No allocation
+// or host service is used. Logical bounds are checked before indexing; a
+// caller that overstates physical backing can still trigger a native trap.
+module core::utf16;
+
+pub const STATUS_OK: i32 = 0;
+pub const STATUS_BOUNDS: i32 = 1;
+pub const STATUS_INVALID_SCALAR: i32 = 2;
+pub const STATUS_SHORT: i32 = 3;
+pub const STATUS_MALFORMED: i32 = 4;
+
+pub struct Utf16Write {
+    status: i32,
+    next: i32,
+}
+
+pub struct Utf16Decode {
+    status: i32,
+    scalar: u32,
+    next: i32,
+}
+
+pub fn write_succeeded(result: Utf16Write) -> bool {
+    return result.status == STATUS_OK;
+}
+
+pub fn write_status(result: Utf16Write) -> i32 {
+    return result.status;
+}
+
+pub fn write_next_or(result: Utf16Write, fallback: i32) -> i32 {
+    if (write_succeeded(result)) { return result.next; }
+    return fallback;
+}
+
+pub fn decode_succeeded(result: Utf16Decode) -> bool {
+    return result.status == STATUS_OK;
+}
+
+pub fn decode_status(result: Utf16Decode) -> i32 {
+    return result.status;
+}
+
+pub fn decode_scalar_or(result: Utf16Decode, fallback: u32) -> u32 {
+    if (decode_succeeded(result)) { return result.scalar; }
+    return fallback;
+}
+
+pub fn decode_next_or(result: Utf16Decode, fallback: i32) -> i32 {
+    if (decode_succeeded(result)) { return result.next; }
+    return fallback;
+}
+
+pub fn is_high_surrogate(unit: u16) -> bool {
+    return unit >= 55296 && unit <= 56319;
+}
+
+pub fn is_low_surrogate(unit: u16) -> bool {
+    return unit >= 56320 && unit <= 57343;
+}
+
+pub fn is_surrogate(unit: u16) -> bool {
+    return is_high_surrogate(unit) || is_low_surrogate(unit);
+}
+
+pub fn is_scalar(value: u32) -> bool {
+    return value <= 1114111 && !(value >= 55296 && value <= 57343);
+}
+
+// Return one or two UTF-16 units, or fallback for a non-scalar value.
+pub fn encoded_len_or(value: u32, fallback: i32) -> i32 {
+    if (!is_scalar(value)) { return fallback; }
+    if (value >= 65536) { return 2; }
+    return 1;
+}
+
+// On any failure, writes nothing. `capacity` is the caller's logical number
+// of units and may be smaller than the physical view. A successful result
+// holds the offset immediately after the encoded scalar.
+pub fn write_scalar(units: [u16], capacity: i32, offset: i32,
+                    scalar: u32) -> Utf16Write {
+    if (capacity < 0 || offset < 0 || offset > capacity) {
+        return Utf16Write { status: STATUS_BOUNDS, next: offset };
+    }
+    if (!is_scalar(scalar)) {
+        return Utf16Write { status: STATUS_INVALID_SCALAR, next: offset };
+    }
+    let needed: i32 = encoded_len_or(scalar, 0);
+    if (capacity - offset < needed) {
+        return Utf16Write { status: STATUS_SHORT, next: offset };
+    }
+    if (needed == 1) {
+        let unit: u16 = scalar;
+        units[offset] = unit;
+        return Utf16Write { status: STATUS_OK, next: offset + 1 };
+    }
+    let adjusted: u32 = scalar - 65536;
+    let high: u32 = 55296 + adjusted / 1024;
+    let low: u32 = 56320 + adjusted % 1024;
+    let high_unit: u16 = high;
+    let low_unit: u16 = low;
+    units[offset] = high_unit;
+    units[offset + 1] = low_unit;
+    return Utf16Write { status: STATUS_OK, next: offset + 2 };
+}
+
+// Reject an invalid logical index, lone low surrogate, unmatched high
+// surrogate, or a truncated pair with separate statuses. On failure, scalar
+// is zero and next is the original offset; access it only after success.
+pub fn decode_next(units: [u16], len: i32, offset: i32) -> Utf16Decode {
+    if (len < 0 || offset < 0 || offset >= len) {
+        return Utf16Decode { status: STATUS_BOUNDS, scalar: 0, next: offset };
+    }
+    let first: u16 = units[offset];
+    if (is_low_surrogate(first)) {
+        return Utf16Decode { status: STATUS_MALFORMED, scalar: 0, next: offset };
+    }
+    if (!is_high_surrogate(first)) {
+        let scalar: u32 = first;
+        return Utf16Decode { status: STATUS_OK, scalar: scalar, next: offset + 1 };
+    }
+    if (offset + 1 >= len) {
+        return Utf16Decode { status: STATUS_SHORT, scalar: 0, next: offset };
+    }
+    let second: u16 = units[offset + 1];
+    if (!is_low_surrogate(second)) {
+        return Utf16Decode { status: STATUS_MALFORMED, scalar: 0, next: offset };
+    }
+    let high: u32 = first;
+    let low: u32 = second;
+    let scalar: u32 = 65536 + (high - 55296) * 1024 + (low - 56320);
+    return Utf16Decode { status: STATUS_OK, scalar: scalar, next: offset + 2 };
+}
+
+pub fn validate(units: [u16], len: i32) -> bool {
+    if (len < 0) { return false; }
+    let offset: i32 = 0;
+    while (offset < len) {
+        let decoded: Utf16Decode = decode_next(units, len, offset);
+        if (!decode_succeeded(decoded)) { return false; }
+        offset = decoded.next;
+    }
+    return true;
+}
+
+// Invalid logical lengths or malformed UTF-16 return fallback.
+pub fn scalar_count_or(units: [u16], len: i32, fallback: i32) -> i32 {
+    if (len < 0) { return fallback; }
+    let offset: i32 = 0;
+    let count: i32 = 0;
+    while (offset < len) {
+        let decoded: Utf16Decode = decode_next(units, len, offset);
+        if (!decode_succeeded(decoded)) { return fallback; }
+        count += 1;
+        offset = decoded.next;
+    }
+    return count;
+}
+
+// Invalid ordinals, lengths, and malformed input return fallback. Validate
+// first when the fallback could equal a real scalar.
+pub fn scalar_at_or(units: [u16], len: i32, ordinal: i32,
+                    fallback: u32) -> u32 {
+    if (ordinal < 0 || !validate(units, len)) { return fallback; }
+    let offset: i32 = 0;
+    let index: i32 = 0;
+    while (offset < len) {
+        let decoded: Utf16Decode = decode_next(units, len, offset);
+        if (!decode_succeeded(decoded)) { return fallback; }
+        if (index == ordinal) { return decoded.scalar; }
+        index += 1;
+        offset = decoded.next;
+    }
+    return fallback;
+}
