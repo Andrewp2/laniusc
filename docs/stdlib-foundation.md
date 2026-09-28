@@ -1985,9 +1985,7 @@ also fixes the imported struct-return relocation path described below.
    treated every generic payload as one word: the scalar case then exited zero, but
    the two-word `Pair` case compiled and exited one. That representation is
    unsafe; generic enum layout must account for the concrete type argument
-   before these APIs can be claimed. The imported scalar reproducer also
-   reached an optimizer failure (`LNC0057`) under that experiment, so layout
-   alone is not the remaining compiler work.
+   before these APIs can be claimed.
    `repro_generic_enum_unused.lani` now compiles and executes with exit zero
    because an unused local generic declaration can retain an unresolved width.
    `repro_generic_enum_construct_only.lani` still fails closed with `LNC0017`
@@ -1995,11 +1993,14 @@ also fixes the imported struct-return relocation path described below.
    pass does not assume a one-word generic payload, and materialization marks
    construction unsupported until it has a concrete instance layout.
    `repro_generic_enum_import_unused.lani` imports an otherwise unused
-   three-line `Maybe<T>` module. GPU `check` succeeds, but native emission
-   still stops in optimization with `LNC0057` (flags `0x600`), so this change
-   does not make imported generic declarations or generic Option/Result
-   executable. Concrete type-instance arguments remain in type-checker tables
-   and are not currently passed to semantic codegen.
+   three-line `Maybe<T>` module. Native emission and execution now succeed:
+   zero-row modules still dispatch the counted scan's apply pass, which writes
+   zero totals before optimization consumes them. The executable regression
+   is `imported_declaration_only_generic_enum_executes_on_x86`. Importing
+   `core::option` still stops with `LNC0017` on its generic match body; this
+   fix does not make generic Option/Result executable. Concrete type-instance
+   arguments remain in type-checker tables and are not currently passed to
+   semantic codegen.
    `repro_generic_payload_struct_wide.lani` also compiles a two-word `Pair`
    through `Maybe<T>` as a generic struct, but the native ELF exits 1 instead
    of 0. A struct representation is therefore not a safe source-level

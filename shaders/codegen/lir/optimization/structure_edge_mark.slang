@@ -30,7 +30,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint total = min(gParams.block_capacity, opt_ir_block_total[0u]);
     if (block_id == 0u)
     {
-        uint groups = (total + WORKGROUP_SIZE - 1u) / WORKGROUP_SIZE;
+        uint groups = max(1u,
+            (total + WORKGROUP_SIZE - 1u) / WORKGROUP_SIZE);
         opt_ir_edge_scan_dispatch_args[0u] = min(groups, MAX_GROUPS_X);
         opt_ir_edge_scan_dispatch_args[1u] =
             max(1u, (groups + MAX_GROUPS_X - 1u) / MAX_GROUPS_X);
