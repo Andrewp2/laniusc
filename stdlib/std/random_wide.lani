@@ -1,0 +1,100 @@
+// Checked secure two-word random values on the x86_64 Linux host. Failure is
+// represented by concrete Option types, so every 64-bit pattern is valid.
+module std::random_wide;
+import core::mem;
+import core::option_wide_i64;
+import core::option_wide_u64;
+import core::wide_i64;
+import core::wide_u64;
+import std::random_checked;
+
+// Read eight secure bytes in native little-endian word order. None means a
+// host error or zero progress. Short reads are retried by fill_secure_exact.
+pub fn try_secure_u64() -> core::option_wide_u64::OptionWideU64 {
+    let words:[i32; 2] =[0, 0];
+    let data: ptr = core::mem::i32_array_data_ptr(words);
+    if (!std::random_checked::fill_secure_exact(data, 8)) {
+        return core::option_wide_u64::none();
+    }
+    let low: u32 = words[0];
+    let high: u32 = words[1];
+    return core::option_wide_u64::some(core::wide_u64::from_words(high, low));
+}
+
+// Preserve the same 64 random bits as a signed two-word value.
+pub fn try_secure_i64() -> core::option_wide_i64::OptionWideI64 {
+    let drawn: core::option_wide_u64::OptionWideU64 = try_secure_u64();
+    if (core::option_wide_u64::is_none(drawn)) {
+        return core::option_wide_i64::none();
+    }
+    let bits: core::wide_u64::WideU64 = core::option_wide_u64::unwrap_or(drawn, core::wide_u64::zero());
+    let value: core::wide_i64::WideI64 = core::wide_i64::from_words(core::wide_u64::high_word(bits), core::wide_u64::low_word(bits));
+    return core::option_wide_i64::some(value);
+}
+
+// Uniformly sample [0, bound) without modulo bias. A zero bound returns
+// None without host access; bound one returns Some(0) without host access.
+// Host failure after any rejected draw returns None.
+pub fn try_secure_u64_below(bound: core::wide_u64::WideU64) -> core::option_wide_u64::OptionWideU64 {
+    if (core::wide_u64::is_zero(bound)) {
+        return core::option_wide_u64::none();
+    }
+    let one: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
+    if (core::wide_u64::eq(bound, one)) {
+        return core::option_wide_u64::some(core::wide_u64::zero());
+    }
+    let negated: core::wide_u64::WideU64 = core::wide_u64::wrapping_sub(core::wide_u64::zero(), bound);
+    let threshold: core::wide_u64::WideU64 = core::wide_u64::remainder_or(negated, bound, core::wide_u64::zero());
+    while (true) {
+        let drawn: core::option_wide_u64::OptionWideU64 = try_secure_u64();
+        if (core::option_wide_u64::is_none(drawn)) {
+            return core::option_wide_u64::none();
+        }
+        let sample: core::wide_u64::WideU64 = core::option_wide_u64::unwrap_or(drawn, core::wide_u64::zero());
+        if (core::wide_u64::compare(sample, threshold) >= 0) {
+            let remainder: core::wide_u64::WideU64 = core::wide_u64::remainder_or(sample, bound, core::wide_u64::zero());
+            return core::option_wide_u64::some(remainder);
+        }
+    }
+    return core::option_wide_u64::none();
+}
+
+// Uniformly sample the inclusive unsigned interval. Reversed bounds return
+// None without host access; a singleton returns itself without host access.
+// The full interval uses an unbounded eight-byte draw.
+pub fn try_secure_u64_inclusive(low: core::wide_u64::WideU64, high: core::wide_u64::WideU64) -> core::option_wide_u64::OptionWideU64 {
+    if (core::wide_u64::compare(low, high)>0) {
+        return core::option_wide_u64::none();
+    }
+    if (core::wide_u64::eq(low, high)) {
+        return core::option_wide_u64::some(low);
+    }
+    if (core::wide_u64::is_zero(low) && core::wide_u64::eq(high, core::wide_u64::max_value())) {
+        return try_secure_u64();
+    }
+    let span: core::wide_u64::WideU64 = core::wide_u64::wrapping_add(core::wide_u64::wrapping_sub(high, low), core::wide_u64::from_u32(1));
+    let drawn: core::option_wide_u64::OptionWideU64 = try_secure_u64_below(span);
+    if (core::option_wide_u64::is_none(drawn)) {
+        return core::option_wide_u64::none();
+    }
+    let offset: core::wide_u64::WideU64 = core::option_wide_u64::unwrap_or(drawn, core::wide_u64::zero());
+    return core::option_wide_u64::some(core::wide_u64::wrapping_add(low, offset));
+}
+
+// XOR the sign bit to map signed ordering into the unsigned interval sampler.
+// Reversed bounds return None; singleton and full signed ranges are supported.
+pub fn try_secure_i64_inclusive(low: core::wide_i64::WideI64, high: core::wide_i64::WideI64) -> core::option_wide_i64::OptionWideI64 {
+    if (core::wide_i64::compare(low, high)>0) {
+        return core::option_wide_i64::none();
+    }
+    let bias: u32 = 2147483648;
+    let first: core::wide_u64::WideU64 = core::wide_u64::from_words(core::wide_i64::high_word(low)^bias, core::wide_i64::low_word(low));
+    let last: core::wide_u64::WideU64 = core::wide_u64::from_words(core::wide_i64::high_word(high)^bias, core::wide_i64::low_word(high));
+    let drawn: core::option_wide_u64::OptionWideU64 = try_secure_u64_inclusive(first, last);
+    if (core::option_wide_u64::is_none(drawn)) {
+        return core::option_wide_i64::none();
+    }
+    let selected: core::wide_u64::WideU64 = core::option_wide_u64::unwrap_or(drawn, core::wide_u64::zero());
+    let value: core::wide_i64::WideI64 = core::wide_i64::from_words(core::wide_u64::high_word(selected)^bias, core::wide_u64::low_word(selected));
+    return core::option_wide_i64::some(value);
+}

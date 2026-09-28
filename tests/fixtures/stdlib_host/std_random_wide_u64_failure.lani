@@ -1,0 +1,9 @@
+module app::main;
+import core::option_wide_u64;
+import std::random_wide;
+fn main() -> i32 {
+    if (core::option_wide_u64::is_none(std::random_wide::try_secure_u64())) {
+        return 0;
+    }
+    return 1;
+}

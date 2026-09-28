@@ -119,6 +119,7 @@ limited to native x86_64 output from this worktree.
 | `std::file_binary_wide_i64` both public signed two-word helpers | Executable x86_64 Linux host wrappers with literal paths | The native fixture calls both functions and checks shortest signed output at zero, an ordinary negative value, the word boundary, and both signed extrema; bounded reads with optional signs and prefixes, whitespace, malformed and overflowing input, exact and exceeded byte limits, missing files, invalid output paths, and `/dev/full`. With Linux `strace`, it checks short and failing writes plus read and close failures. |
 | `std::file` all 25 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_file_execution.rs` checks text writes, one-shot, exact, and read-to-end caller-buffer reads, complete handle and path buffer writes, multi-chunk binary copies between files and standard streams, bounded decimal reads and writes across 8-, 16-, 32-, and two-word 64-bit integers, empty and overlong files, invalid buffer sizes, missing paths, injected read/write/close errors, and write failures using `/dev/full`. `copy_distinct_with_buffer` requires distinct underlying files and a valid writable buffer. |
 | `std::random_checked` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_execution.rs` checks exact caller-buffer filling, zero length and invalid arguments, host errors and zero progress, short-read retries, bounded and inclusive unsigned and signed outputs, forced draws and rejection, full-range failure fallbacks, and secure i32 slice shuffling with preserved contents, a forced swap, and injected failure. The suite also runs a raw fill after a directory read to guard the runtime flags fix, and confirms that the raw scalar traps on host failure and short reads. |
+| `std::random_wide` all 5 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_random_wide_execution.rs` runs all five functions, 64-bit unsigned and signed ranges including singleton, reversed, full-domain, and near-maximum cases, zero and unit bounds, and injected host errors, zero progress, short reads, and rejection. Results use concrete `OptionWideU64` and `OptionWideI64` values. |
 | `std::path` all 17 constants and all 37 public functions | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, path headers, full caller-backed component bytes, and last-component, extension, and stem byte offsets. The final-component helpers treat slash and backslash as separators, ignore trailing separators, accept non-UTF-8 bytes, and return the supplied fallback for empty or separator-only paths, negative lengths, or embedded NUL. A leading dot alone and a trailing dot do not create an extension. The two-byte header classifiers check only the supplied header when `length > 2`; use `path_component_is_normal_relative_bytes` or `path_component_matches_windows_relative_byte_rules` to inspect every byte. Negative and empty lengths return false in the classifiers; an overstated positive length traps on native indexing if scanning reaches beyond the backing slice. The Windows byte classifier rejects reserved bytes but does not reject reserved device names or trailing spaces/dots. Redundant no-argument functions that failed natively were removed in favor of the tested constants. Allocation and host normalization are unavailable. |
 | `std::vec_i32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | `tests/fixtures/stdlib_foundation/vec_i32.lani` checks construction, growth, element access and mutation, bounds, reserve, pop, clear, cloning, and destruction. `tests/stdlib_vec_i32_execution.rs` injects allocation and reallocation failures and checks the vector and prior data stay unchanged. This is a linear-ownership API by convention; source-level moves are not enforced. |
 | `std::vec_u32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, `2^31`, and `u32::MAX`. The allocation-failure suite injects failed initial allocation and reallocation; the real checksum sample combines it with `core::number_u32` and `OptionU32`. Storage uses 32-bit cells and preserves every unsigned bit pattern. Ownership is linear by convention. |
@@ -1294,6 +1295,20 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   failure returns false and may leave a partially shuffled permutation. A
   caller-supplied length beyond the actual backing view can trap on indexing.
 
+- `std::random_wide::{try_secure_u64,try_secure_i64}` read eight secure
+  bytes into native little-endian 32-bit words and return a concrete wide
+  `Option`. Host errors and zero progress return `None`; short reads are
+  retried. Every 64-bit bit pattern, including zero, is a valid `Some` value.
+- `std::random_wide::try_secure_u64_below` draws uniformly from the half-open
+  interval `0..bound` using 64-bit rejection sampling. A zero bound returns
+  `None`; a unit bound returns `Some(0)` without host access. Host failure
+  after a rejected word returns `None`.
+- `std::random_wide::{try_secure_u64_inclusive,try_secure_i64_inclusive}` draw
+  uniformly from inclusive intervals. Reversed bounds return `None` and
+  singleton bounds return their value, both without host access. Full 64-bit
+  intervals use one direct secure draw. Signed bounds use sign-bit bias to
+  preserve ordering. The helpers allocate no heap storage.
+
 The checked random helpers report failure if the host call fails. The raw
 `secure_u32` returns a full-width draw or traps on a short read or host error.
 Use `fill_secure_bytes` or the checked helpers when failure must be recoverable.
@@ -1588,6 +1603,9 @@ validation, owned text append, the text-report sample, native bounds trapping,
 and injected allocation failure when Linux `strace` is available.
 Run `cargo test --test stdlib_random_execution` for the checked random scalar;
 the failure injection cases run when Linux `strace` is available.
+Run `cargo test --test stdlib_random_wide_execution` for checked two-word
+random values and intervals and the runnable range-draw sample; host injection
+cases require Linux `strace`.
 
 ## Compiler/runtime dependencies and minimal reproductions
 
@@ -2274,6 +2292,16 @@ also fixes the imported struct-return relocation path described below.
     its qualified type argument. The two-word comparison and hash free
     functions remain executable, but nominal `Eq`, `Ord`, and `Hash` impls
     cannot be claimed across this import boundary.
+
+59. **An unrelated imported module hides a local named `zero`.**
+    `laniusc --stdlib-root stdlib --emit x86_64 -o /tmp/random_zero`
+    on `tests/fixtures/stdlib_foundation/repro_random_wide_local_zero.lani`
+    reports `LNC0005` at the `zero` argument even though the local is
+    declared immediately above it. `laniusc check --stdlib-root stdlib`
+    reports the same error. Removing the unused `core::wide_i64`
+    import or renaming the local to `zero_value` allows emission. The
+    executable random fixture uses `zero_value`; its runtime calls pass.
+    Name resolution in the GPU compiler still needs repair.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

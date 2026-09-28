@@ -1,0 +1,16 @@
+module app::main;
+import core::option_wide_u64;
+import core::wide_u64;
+import std::random_wide;
+fn main() -> i32 {
+    let bound: core::wide_u64::WideU64 = core::wide_u64::from_u32(3);
+    let selected: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_below(bound);
+    if (core::option_wide_u64::is_none(selected)) {
+        return 1;
+    }
+    let value: core::wide_u64::WideU64 = core::option_wide_u64::unwrap_or(selected, bound);
+    if (core::wide_u64::compare(value, bound) >= 0) {
+        return 2;
+    }
+    return 0;
+}

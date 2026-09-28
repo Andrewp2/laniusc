@@ -1,0 +1,25 @@
+// Draw a secure uniform number from 2 through 12 using a wide interval.
+// Print the selected number, or exit 1 if the host random source fails.
+module app::main;
+import core::option_wide_u64;
+import core::wide_u64;
+import std::io;
+import std::io_decimal;
+import std::random_wide;
+
+fn main() -> i32 {
+    let first: core::wide_u64::WideU64 = core::wide_u64::from_u32(2);
+    let last: core::wide_u64::WideU64 = core::wide_u64::from_u32(12);
+    let drawn: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_inclusive(first, last);
+    if (core::option_wide_u64::is_none(drawn)) {
+        return 1;
+    }
+    let selected: core::wide_u64::WideU64 = core::option_wide_u64::unwrap_or(drawn, first);
+    if (std::io_decimal::write_wide_u64(1, selected) < 0) {
+        return 2;
+    }
+    if (std::io::write_byte(1, 10) != 1) {
+        return 3;
+    }
+    return 0;
+}

@@ -1,0 +1,10 @@
+module app::main;
+import core::option_wide_u64;
+import core::wide_i64;
+import core::wide_u64;
+import std::random_wide;
+fn main() -> i32 {
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let result: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_below(zero);
+    return 0;
+}
