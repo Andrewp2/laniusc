@@ -15,10 +15,10 @@ fn main() -> i32 {
         std::time::clock_requires_runtime_binding() ||
         std::time::clock_host_abi_is_contract_only()) { return 1; }
 
-    if (!std::time::clock_read_api_is_executable() ||
-        std::time::clock_read_api_is_blocked() ||
-        std::time::clock_read_api_is_known_but_unbound() ||
-        std::time::clock_read_api_requires_runtime_binding() ||
+    if (std::time::clock_read_api_is_executable() ||
+        !std::time::clock_read_api_is_blocked() ||
+        !std::time::clock_read_api_is_known_but_unbound() ||
+        !std::time::clock_read_api_requires_runtime_binding() ||
         !std::time::timespec_read_api_is_executable() ||
         std::time::timespec_read_api_requires_runtime_binding() ||
         std::time::clock_read_unavailable() != -1 ||
@@ -37,12 +37,13 @@ fn main() -> i32 {
         std::time::clock_read_result_failed(1) ||
         !std::time::clock_read_result_is_unavailable(-1) ||
         std::time::clock_read_result_is_unavailable(0) ||
-        std::time::clock_read_result_is_fail_closed(-1)) { return 4; }
+        !std::time::clock_read_result_is_fail_closed(-1) ||
+        std::time::clock_read_result_is_fail_closed(-2)) { return 4; }
 
-    if (!std::time::clock_sleep_api_is_executable() ||
-        std::time::clock_sleep_api_is_blocked() ||
-        std::time::clock_sleep_api_is_known_but_unbound() ||
-        std::time::clock_sleep_api_requires_runtime_binding() ||
+    if (std::time::clock_sleep_api_is_executable() ||
+        !std::time::clock_sleep_api_is_blocked() ||
+        !std::time::clock_sleep_api_is_known_but_unbound() ||
+        !std::time::clock_sleep_api_requires_runtime_binding() ||
         !std::time::sleep_ms_i32_is_executable() ||
         std::time::sleep_ms_i32_requires_runtime_binding() ||
         std::time::clock_sleep_ok() != 0 ||
@@ -54,7 +55,8 @@ fn main() -> i32 {
         std::time::clock_sleep_result_failed(1) ||
         !std::time::clock_sleep_result_is_unavailable(-1) ||
         std::time::clock_sleep_result_is_unavailable(0) ||
-        std::time::clock_sleep_result_is_fail_closed(-1)) { return 6; }
+        !std::time::clock_sleep_result_is_fail_closed(-1) ||
+        std::time::clock_sleep_result_is_fail_closed(-2)) { return 6; }
 
     if (std::time::monotonic_now_ns_is_executable() ||
         !std::time::monotonic_now_ns_is_blocked() ||
