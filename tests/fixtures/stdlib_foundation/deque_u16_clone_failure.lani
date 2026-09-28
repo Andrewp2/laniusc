@@ -1,0 +1,29 @@
+module app::main;
+import std::deque_u16;
+
+fn main() -> i32 {
+    let value: std::deque_u16::DequeU16 = std::deque_u16::try_with_capacity(3);
+    if (std::deque_u16::capacity(value) != 3) { return 5; }
+    value = std::deque_u16::try_push_back(value, 7);
+    value = std::deque_u16::try_push_back(value, 32768);
+    value = std::deque_u16::try_push_back(value, 9);
+    value = std::deque_u16::try_pop_front(value);
+    value = std::deque_u16::try_push_back(value, 65535);
+    let copy: std::deque_u16::DequeU16 = std::deque_u16::try_clone(value);
+    let intact: bool = std::deque_u16::len(value) == 3 &&
+        std::deque_u16::at_or(value, 0, 0) == 32768 &&
+        std::deque_u16::at_or(value, 1, 0) == 9 &&
+        std::deque_u16::at_or(value, 2, 0) == 65535;
+    let failure: bool = intact && std::deque_u16::len(copy) == 0 &&
+        std::deque_u16::capacity(copy) == 0;
+    let success: bool = intact && std::deque_u16::len(copy) == 3 &&
+        std::deque_u16::capacity(copy) == 3 &&
+        std::deque_u16::at_or(copy, 0, 0) == 32768 &&
+        std::deque_u16::at_or(copy, 1, 0) == 9 &&
+        std::deque_u16::at_or(copy, 2, 0) == 65535;
+    std::deque_u16::destroy(copy);
+    std::deque_u16::destroy(value);
+    if (failure) { return 0; }
+    if (success) { return 4; }
+    return 5;
+}

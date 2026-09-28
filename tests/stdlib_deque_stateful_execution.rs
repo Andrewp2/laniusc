@@ -10,6 +10,7 @@ enum Kind {
     I8,
     I16,
     U8,
+    U16,
     I32,
     U32,
     WideU64,
@@ -23,6 +24,7 @@ impl Kind {
             Self::I8 => "deque_i8",
             Self::I16 => "deque_i16",
             Self::U8 => "deque_u8",
+            Self::U16 => "deque_u16",
             Self::I32 => "deque_i32",
             Self::U32 => "deque_u32",
             Self::WideU64 => "deque_wide_u64",
@@ -36,6 +38,7 @@ impl Kind {
             Self::I8 => "DequeI8",
             Self::I16 => "DequeI16",
             Self::U8 => "DequeU8",
+            Self::U16 => "DequeU16",
             Self::I32 => "DequeI32",
             Self::U32 => "DequeU32",
             Self::WideU64 => "DequeWideU64",
@@ -49,6 +52,7 @@ impl Kind {
             Self::I8 => "i8",
             Self::I16 => "i16",
             Self::U8 => "u8",
+            Self::U16 => "u16",
             Self::I32 => "i32",
             Self::U32 => "u32",
             Self::WideU64 => "core::wide_u64::WideU64",
@@ -62,6 +66,7 @@ impl Kind {
             Self::I8 => (bits as i8).to_string(),
             Self::I16 => (bits as i16).to_string(),
             Self::U8 => (bits as u8).to_string(),
+            Self::U16 => (bits as u16).to_string(),
             Self::I32 => (bits as i32).to_string(),
             Self::U32 => (bits as u32).to_string(),
             Self::WideU64 => format!(
@@ -79,7 +84,7 @@ impl Kind {
 
     fn equal(self, left: &str, right: &str) -> String {
         match self {
-            Self::Bool | Self::I8 | Self::I16 | Self::U8 | Self::I32 | Self::U32 => {
+            Self::Bool | Self::I8 | Self::I16 | Self::U8 | Self::U16 | Self::I32 | Self::U32 => {
                 format!("{left} == {right}")
             }
             Self::WideU64 => format!("core::wide_u64::eq({left}, {right})"),
@@ -335,6 +340,11 @@ fn signed_halfword_deque_matches_reference() {
 #[test]
 fn byte_deque_matches_reference() {
     run(Kind::U8);
+}
+
+#[test]
+fn unsigned_halfword_deque_matches_reference() {
+    run(Kind::U16);
 }
 
 #[test]
