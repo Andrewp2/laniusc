@@ -1,0 +1,15 @@
+module app::main;
+import core::wide_u64;
+import std::io_binary_wide_u64;
+fn main() -> i32 {
+    let fallback: core::wide_u64::WideU64 = core::wide_u64::from_u32(7);
+    let skipped: core::wide_u64::WideU64 = std::io_binary_wide_u64::read_stdin_or(0, fallback);
+    if (!core::wide_u64::eq(skipped, fallback)) {
+        return 1;
+    }
+    let value: core::wide_u64::WideU64 = std::io_binary_wide_u64::read_stdin_or(80, fallback);
+    if (std::io_binary_wide_u64::write(1, value) <= 0) {
+        return 2;
+    }
+    return 0;
+}

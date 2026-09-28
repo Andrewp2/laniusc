@@ -1,0 +1,29 @@
+module app::main;
+import core::wide_u64;
+import std::io;
+import std::io_binary_wide_u64;
+fn newline() -> bool {
+    return std::io::write_byte(1, 10) == 1;
+}
+fn main() -> i32 {
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let boundary: core::wide_u64::WideU64 = core::wide_u64::from_words(1, 0);
+    let pattern: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483649, 5);
+    let max: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    if (std::io_binary_wide_u64::write(1, zero) != 1 || !newline()) {
+        return 1;
+    }
+    if (std::io_binary_wide_u64::write(1, boundary) != 33 || !newline()) {
+        return 2;
+    }
+    if (std::io_binary_wide_u64::write(1, pattern) != 64 || !newline()) {
+        return 3;
+    }
+    if (std::io_binary_wide_u64::write(1, max) != 64 || !newline()) {
+        return 4;
+    }
+    if (std::io_binary_wide_u64::write(-1, zero) >= 0) {
+        return 5;
+    }
+    return 0;
+}
