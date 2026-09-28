@@ -73,6 +73,7 @@ limited to native x86_64 output from this worktree.
 | `core::crc32` all 3 public functions and 3 constants | Executable on x86_64 for caller-backed `[u8]` views | The native fixtures check CRC-32/ISO-HDLC on `123456789`, empty input, a one-byte prefix, binary bytes, and every byte value through the streaming interface. Negative logical lengths return the fallback without reading storage; an overstated physical view traps. A source scan requires a runtime call for every public function. |
 | `core::option_i32` all 12 public functions and `core::result_i32` all 10 public functions | Executable on x86_64 | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, both branches of `or`, `and`, and `xor`, and conversions between the two concrete types. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function to have a runtime call. Local aggregate forwarding is covered by the executable return suite; see dependency 39. |
 | `core::option_u32` all 12 public functions and `core::result_u32` all 10 public functions | Executable on x86_64 | The matching runtime fixture covers every function and both variants with zero, ordinary values, the high bit, and `u32::MAX`. Both the success payload and error code are `u32`; inactive fields are zero. A source scan requires every public function to have a runtime call. See dependency 39 for local return coverage. |
+| `core::option_ptr` all 12 public functions and `core::result_ptr` all 10 public functions | Executable on x86_64 Linux | The imported fixture calls every function with two distinct live pointers, null as a present or successful payload, absence, negative and zero i32 errors, fallbacks, logical combinators, and conversions in both directions. The input-driven first-byte program passes a pointer result across a helper call, extracts its error through `OptionI32`, and reads real stdin including EOF and binary bytes. A source scan requires a runtime call for each public function. The modules do not allocate or own their pointers; the caller must keep pointed-to storage alive. User-program GPU device behavior is not claimed. |
 | `core::option_u8` all 12 public functions and `core::result_u8` all 10 public functions | Executable on x86_64 | The byte fixture executes every function with `None`, `Some`, `Ok`, and `Err`, including zero, 128, and 255 payloads. A source scan requires every public function to have a runtime call. See dependency 39 for local return coverage. |
 | `core::option_bool` all 12 public functions and `core::result_bool` all 10 public functions | Executable on x86_64 | The runtime fixture calls every function with both boolean values and all presence and success states. It distinguishes `Some(false)`, `Ok(false)`, and `Err(false)` from absence or the opposite variant, and checks conversions, fallbacks, `or`, `and`, and `xor`. A source scan requires a runtime call for every public function. Local aggregate forwarding is covered by the executable return suite; see dependency 39. |
 | `core::option_char` all 12 public functions and `core::result_char` all 10 public functions | Executable on x86_64 | The runtime fixture calls every function with both variants, NUL payloads, two distinct characters sharing a UTF-8 leading byte, and two-, three-, and four-byte Unicode scalars. It checks presence and error predicates, fallbacks, `or`, `and`, `xor`, and both conversion directions. Inactive payloads are NUL and must not be read without checking the tag. A source scan requires a runtime call for every public function. |
@@ -564,6 +565,12 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   success flags for unsigned payloads and error codes. `Some(0)`, `Ok(0)`,
   and `Err(0)` remain distinct. All extraction operations either inspect the
   active variant or return a caller fallback. Neither module allocates.
+- `core::option_ptr` distinguishes `None` from `Some(null)`;
+  `core::result_ptr` distinguishes `Ok(null)` from `Err(0)`. A Result error
+  is an `i32`. Their `or`, `and`, and `xor` branches preserve their respective
+  tags and payloads; `ok_or` and `ok` convert between pointer Option and
+  Result, while `err` extracts an `OptionI32`. These modules do not allocate
+  or free pointers, and the caller owns the pointed-to storage.
 - `core::option_wide_u64`, `core::result_wide_u64`, `core::option_wide_i64`,
   and `core::result_wide_i64` carry full two-word values with a presence or
   success flag. Their Result error type is `i32`; an Err stores its bit pattern
@@ -1607,6 +1614,9 @@ high-bit edge cases, and generated differential arithmetic cases.
 Run `cargo test --test stdlib_wide_i64_execution` for signed two-word 64-bit
 operations, full-width signed decimal parsing and output, the decimal-double
 program, edge cases, and generated differential arithmetic cases.
+Run `cargo test --test stdlib_option_result_ptr_execution` for every
+pointer Option/Result function, null payloads, error codes, and the real-stdin
+first-byte program.
 Run `cargo test --test stdlib_option_result_wide_u64_execution --test stdlib_option_result_wide_i64_execution` for the concrete two-word optional
 and result variants, including every public function and imported aggregate
 returns.
@@ -2490,6 +2500,17 @@ also fixes the imported struct-return relocation path described below.
     a local binder can win. Function-scope and module-scope ambiguous imports
     without a local binder still produce `LNC0005`. The native regression
     runs and exits zero.
+
+60. **x86-64 `usize` arithmetic has 32-bit range.**
+    `tests/fixtures/stdlib_foundation/repro_usize_x86_pointer_width.lani`
+    starts from `u32::MAX`, widens it to `usize`, and adds one. GPU checking
+    and native emission succeed, but the x86 executable exits 1 because the
+    result is zero after crossing the 32-bit boundary. The language decision in
+    `formal/SEMANTIC_DECISIONS.md` specifies a 64-bit `usize` on x86-64.
+    This prevents a full-width `OptionUsize` or `ResultUsize` claim even though
+    pointer-valued Option/Result operations execute. The GPU compiler must
+    preserve pointer-width arithmetic and comparison before those APIs can be
+    considered executable across the declared `usize` domain.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

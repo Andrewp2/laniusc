@@ -1,0 +1,79 @@
+module app::main;
+import core::mem;
+import core::option_i32;
+import core::option_ptr;
+import core::result_ptr;
+
+fn main() -> i32 {
+    let first_cells: [i32; 2] = [11, 22];
+    let second_cells: [i32; 2] = [33, 44];
+    let first: ptr = core::mem::i32_array_data_ptr(first_cells);
+    let second: ptr = core::mem::i32_array_data_ptr(second_cells);
+    let null: ptr = 0;
+    if (first == 0 || second == 0 || first == second) { return 1; }
+
+    let missing: core::option_ptr::OptionPtr = core::option_ptr::none();
+    let present: core::option_ptr::OptionPtr = core::option_ptr::some(first);
+    let present_null: core::option_ptr::OptionPtr = core::option_ptr::some(null);
+    let other: core::option_ptr::OptionPtr = core::option_ptr::some(second);
+    if (!core::option_ptr::is_none(missing) || core::option_ptr::is_some(missing) ||
+        !core::option_ptr::is_some(present) || core::option_ptr::is_none(present) ||
+        !core::option_ptr::is_some(present_null) ||
+        core::option_ptr::contains(missing, null) ||
+        !core::option_ptr::contains(present_null, null) ||
+        !core::option_ptr::contains(present, first) ||
+        core::option_ptr::contains(present, second)) { return 2; }
+    if (core::option_ptr::unwrap_or(missing, second) != second ||
+        core::option_ptr::unwrap_or(present, second) != first ||
+        core::option_ptr::unwrap_or(present_null, second) != null) { return 3; }
+    if (core::option_ptr::unwrap_or(core::option_ptr::or(missing, other), null) != second ||
+        core::option_ptr::unwrap_or(core::option_ptr::or(present, other), null) != first ||
+        !core::option_ptr::is_none(core::option_ptr::and(missing, other)) ||
+        core::option_ptr::unwrap_or(core::option_ptr::and(present, other), null) != second ||
+        !core::option_ptr::is_none(core::option_ptr::xor(present, other)) ||
+        core::option_ptr::unwrap_or(core::option_ptr::xor(present, missing), null) != first ||
+        core::option_ptr::unwrap_or(core::option_ptr::xor(missing, other), null) != second ||
+        !core::option_ptr::is_none(core::option_ptr::xor(missing, missing))) { return 4; }
+
+    let good: core::result_ptr::ResultPtr = core::result_ptr::ok(first);
+    let good_null: core::result_ptr::ResultPtr = core::result_ptr::ok(null);
+    let bad: core::result_ptr::ResultPtr = core::result_ptr::err(-7);
+    let bad_zero: core::result_ptr::ResultPtr = core::result_ptr::err(0);
+    if (!core::result_ptr::is_ok(good) || core::result_ptr::is_err(good) ||
+        !core::result_ptr::is_ok(good_null) ||
+        core::result_ptr::is_ok(bad) || !core::result_ptr::is_err(bad) ||
+        !core::result_ptr::contains(good, first) ||
+        core::result_ptr::contains(good, second) ||
+        core::result_ptr::contains(bad, null) ||
+        !core::result_ptr::contains(good_null, null) ||
+        !core::result_ptr::contains_err(bad, -7) ||
+        core::result_ptr::contains_err(good, 0) ||
+        !core::result_ptr::contains_err(bad_zero, 0)) { return 5; }
+    if (core::result_ptr::unwrap_or(good, second) != first ||
+        core::result_ptr::unwrap_or(good_null, second) != null ||
+        core::result_ptr::unwrap_or(bad, second) != second ||
+        core::result_ptr::unwrap_err_or(good, 9) != 9 ||
+        core::result_ptr::unwrap_err_or(bad, 9) != -7 ||
+        core::result_ptr::unwrap_err_or(bad_zero, 9) != 0) { return 6; }
+    if (core::result_ptr::unwrap_or(core::result_ptr::or(bad, good), null) != first ||
+        core::result_ptr::unwrap_or(core::result_ptr::or(good, good_null), second) != first ||
+        core::result_ptr::unwrap_err_or(core::result_ptr::and(bad, good), 9) != -7 ||
+        core::result_ptr::unwrap_or(core::result_ptr::and(good, good_null), second) != null) { return 7; }
+
+    let converted_good: core::result_ptr::ResultPtr = core::option_ptr::ok_or(present, 23);
+    let converted_bad: core::result_ptr::ResultPtr = core::option_ptr::ok_or(missing, 23);
+    let converted_null: core::result_ptr::ResultPtr = core::option_ptr::ok_or(present_null, 23);
+    if (!core::result_ptr::contains(converted_good, first) ||
+        !core::result_ptr::contains_err(converted_bad, 23) ||
+        !core::result_ptr::contains(converted_null, null) ||
+        core::option_ptr::unwrap_or(core::option_ptr::ok(good), second) != first ||
+        !core::option_ptr::is_none(core::option_ptr::ok(bad)) ||
+        !core::option_ptr::contains(core::option_ptr::ok(good_null), null)) { return 8; }
+    let extracted: core::option_i32::OptionI32 = core::option_ptr::err(bad);
+    let extracted_zero: core::option_i32::OptionI32 = core::option_ptr::err(bad_zero);
+    let no_error: core::option_i32::OptionI32 = core::option_ptr::err(good);
+    if (!core::option_i32::contains(extracted, -7) ||
+        !core::option_i32::contains(extracted_zero, 0) ||
+        !core::option_i32::is_none(no_error)) { return 9; }
+    return 0;
+}

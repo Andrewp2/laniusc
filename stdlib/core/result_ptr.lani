@@ -1,0 +1,55 @@
+// A concrete result for pointer values and i32 error codes while generic
+// Result<T, E> remains unavailable in native code. A null pointer is a valid
+// Ok payload; success is represented by the separate flag.
+module core::result_ptr;
+
+pub struct ResultPtr {
+    success: bool,
+    value: ptr,
+    error: i32,
+}
+
+pub fn ok(value: ptr) -> ResultPtr {
+    return ResultPtr { success: true, value: value, error: 0 };
+}
+
+pub fn err(error: i32) -> ResultPtr {
+    let null: ptr = 0;
+    return ResultPtr { success: false, value: null, error: error };
+}
+
+pub fn is_ok(value: ResultPtr) -> bool {
+    return value.success;
+}
+
+pub fn is_err(value: ResultPtr) -> bool {
+    return !value.success;
+}
+
+pub fn contains(value: ResultPtr, expected: ptr) -> bool {
+    return value.success && value.value == expected;
+}
+
+pub fn contains_err(value: ResultPtr, expected: i32) -> bool {
+    return !value.success && value.error == expected;
+}
+
+pub fn unwrap_or(value: ResultPtr, fallback: ptr) -> ptr {
+    if (value.success) { return value.value; }
+    return fallback;
+}
+
+pub fn unwrap_err_or(value: ResultPtr, fallback: i32) -> i32 {
+    if (!value.success) { return value.error; }
+    return fallback;
+}
+
+pub fn or(value: ResultPtr, fallback: ResultPtr) -> ResultPtr {
+    if (value.success) { return value; }
+    return fallback;
+}
+
+pub fn and(value: ResultPtr, next: ResultPtr) -> ResultPtr {
+    if (value.success) { return next; }
+    return value;
+}

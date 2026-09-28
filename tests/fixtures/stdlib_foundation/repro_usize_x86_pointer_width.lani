@@ -1,0 +1,9 @@
+// Expected x86-64 exit 0: usize has a 64-bit range on this target.
+fn main() -> i32 {
+    let last_u32: u32 = 4294967295;
+    let last_32_bit: usize = last_u32;
+    let next: usize = last_32_bit + 1;
+    if (next == 0) { return 1; }
+    if (next <= last_32_bit) { return 2; }
+    return 0;
+}

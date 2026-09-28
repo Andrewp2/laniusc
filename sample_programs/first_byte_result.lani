@@ -1,0 +1,34 @@
+// Read one byte into caller storage and report its value, or -1 at EOF.
+module app::main;
+import core::mem;
+import core::option_i32;
+import core::option_ptr;
+import core::result_ptr;
+import std::io_byte;
+
+fn read_first(destination: ptr) -> core::result_ptr::ResultPtr {
+    let byte: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+    if (byte < 0) { return core::result_ptr::err(byte); }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(destination, 1);
+    cells[0] = byte;
+    return core::result_ptr::ok(destination);
+}
+
+fn main() -> i32 {
+    let storage: [i32; 1] = [0];
+    let destination: ptr = core::mem::i32_array_data_ptr(storage);
+    let read: core::result_ptr::ResultPtr = read_first(destination);
+    let address: core::option_ptr::OptionPtr = core::option_ptr::ok(read);
+    if (core::option_ptr::is_some(address)) {
+        let pointer: ptr = core::option_ptr::unwrap_or(address, destination);
+        let cells: [i32] = core::mem::i32_slice_from_raw_parts(pointer, 1);
+        print(cells[0]);
+        return 0;
+    }
+    let error: core::option_i32::OptionI32 = core::option_ptr::err(read);
+    if (core::option_i32::unwrap_or(error, -2) == -1) {
+        print(-1);
+        return 0;
+    }
+    return 2;
+}
