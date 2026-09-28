@@ -48,6 +48,8 @@ static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint HIR_ENUM_ITEM = 26u;
 static const uint HIR_STRUCT_ITEM = 27u;
+static const uint HIR_TYPE = 5u;
+static const uint HIR_TYPE_FORM_SLICE = 3u;
 
 bool valid_token(uint token) { return token != LIR_INVALID && token < gParams.n_tokens; }
 
@@ -219,6 +221,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (result.result_word_count == 0u && return_type_node < hir_count)
         result.result_word_count =
             semantic_aggregate_word_count_by_hir[return_type_node];
+    if (result.result_word_count == 0u && return_type_node < hir_count &&
+        compact_hir_core[return_type_node].kind == HIR_TYPE &&
+        compact_hir_payload[return_type_node].a == HIR_TYPE_FORM_SLICE)
+        result.result_word_count = 2u;
     if (result.result_word_count == 0u && result_decl_hir < hir_count &&
         compact_hir_core[result_decl_hir].kind == HIR_STRUCT_ITEM)
         result.result_word_count = semantic_struct_word_count_by_hir[result_decl_hir];

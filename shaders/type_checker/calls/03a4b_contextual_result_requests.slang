@@ -4,6 +4,7 @@
 // type arguments so contextual generic inference remains parallel.
 
 import external_type_identity;
+import atomics;
 import hir_records;
 import gpu_index;
 import status;
@@ -23,6 +24,13 @@ StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_instance_kind;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_instance_arg_count;
+StructuredBuffer<uint> type_instance_elem_ref_tag;
+StructuredBuffer<uint> type_instance_elem_ref_payload;
+StructuredBuffer<uint> type_generic_param_slot_by_token;
+StructuredBuffer<uint> visible_decl;
+RWStructuredBuffer<uint> call_generic_slot_type;
+RWStructuredBuffer<uint> call_return_type;
+RWStructuredBuffer<uint> call_result_instance;
 
 RWStructuredBuffer<uint> aggregate_compare_scan_input;
 RWStructuredBuffer<uint> aggregate_compare_expected_instance;
@@ -41,7 +49,12 @@ static const uint HIR_STMT_LET = 1u;
 static const uint HIR_STMT_RETURN = 2u;
 static const uint HIR_STMT_CONST = 4u;
 static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_INSTANCE_NAMED = 1u;
+static const uint TYPE_INSTANCE_SLICE = 3u;
+static const uint TY_ARRAY_BASE = 128u;
+static const uint PARAM_CACHE_STRIDE = 4u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 
@@ -135,6 +148,40 @@ void main(uint3 dtid: SV_DispatchThreadID)
         record_min_token_error(status, compact_hir_core[call].token_start,
                                ERR_ASSIGN_MISMATCH, 0u);
         return;
+    }
+    if (expected_kind == TYPE_INSTANCE_SLICE &&
+        type_instance_elem_ref_tag[expected] == TYPE_REF_SCALAR &&
+        type_instance_elem_ref_tag[actual] == TYPE_REF_GENERIC_PARAM)
+    {
+        // A caller annotation such as `[i32]` can supply the element of a
+        // local generic `[T]` result even when no argument mentions T.
+        uint generic_token = type_instance_elem_ref_payload[actual];
+        uint slot = valid_token(generic_token)
+            ? type_generic_param_slot_by_token[generic_token] : INVALID;
+        if (slot == INVALID && valid_token(generic_token))
+        {
+            uint declaration = visible_decl[generic_token];
+            if (valid_token(declaration))
+                slot = type_generic_param_slot_by_token[declaration];
+        }
+        uint element_type = type_instance_elem_ref_payload[expected];
+        if (slot < PARAM_CACHE_STRIDE && element_type != 0u &&
+            element_type < TY_ARRAY_BASE)
+        {
+            uint state_i = callee * PARAM_CACHE_STRIDE + slot;
+            uint prior = atomic_u32_compare_exchange(
+                call_generic_slot_type, state_i, INVALID, element_type);
+            if (prior != INVALID && prior != element_type)
+            {
+                record_min_token_error(status,
+                    compact_hir_core[call].token_start,
+                    ERR_ASSIGN_MISMATCH, 0u);
+                return;
+            }
+            call_return_type[callee] = TY_ARRAY_BASE + element_type;
+            call_result_instance[call] = expected;
+            return;
+        }
     }
     uint count = type_instance_arg_count[expected];
     if (count == 0u) return;

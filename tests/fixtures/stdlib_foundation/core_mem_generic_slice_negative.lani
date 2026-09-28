@@ -1,0 +1,9 @@
+module app::main;
+import core::mem;
+
+fn main() -> i32 {
+    let words: [i32; 1] = [42];
+    let data: ptr = core::mem::i32_array_data_ptr(words);
+    let view: [i32] = core::mem::typed_slice_from_raw_parts(data, -1);
+    return view[0];
+}

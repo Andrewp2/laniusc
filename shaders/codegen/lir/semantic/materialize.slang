@@ -5,6 +5,7 @@ import codegen.lowering_ir;
 
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint TY_STRUCT_BASE = 4096u;
+static const uint TYPE_REF_INSTANCE = 3u;
 
 struct Params
 {
@@ -285,6 +286,11 @@ uint aggregate_word_count_for_hir(uint node, uint hir_count)
     if (projected_words != 0u) return projected_words;
     uint ref_tag = semantic_expr_ref_tag[node];
     uint ref_payload = semantic_expr_ref_payload[node];
+    // A borrowed slice has a pointer and length even when its element type
+    // was instantiated from an imported generic function at this call site.
+    if (ref_tag == TYPE_REF_INSTANCE &&
+        array_length == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
+        return 2u;
     if (ref_tag == 1u)
     {
         uint words = aggregate_word_count_for_type(ref_payload, hir_count);

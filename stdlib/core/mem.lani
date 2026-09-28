@@ -93,6 +93,15 @@ pub fn select<T>(condition: bool, when_true: T, when_false: T) -> T {
     }
 }
 
+// Borrow `length` elements from caller-owned storage. The caller must keep
+// `data` alive, aligned for T, and backed by at least `length` T values for
+// the entire use of the returned view. The view does not own or free storage.
+// A negative length traps; an invalid pointer cannot be checked here.
+pub fn typed_slice_from_raw_parts<T>(data: ptr, length: i32) -> [T] {
+    assert(length >= 0);
+    return slice_from_raw_parts(data, length);
+}
+
 // Compiler-provided intrinsics available through this module:
 // i32_array_data_ptr, i32_slice_data_ptr, string_data_ptr, and
 // i32_slice_from_raw_parts. They are not defined in Lanius source because a

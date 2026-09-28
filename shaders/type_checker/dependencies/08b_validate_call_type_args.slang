@@ -243,7 +243,8 @@ bool single_generic_result_child(uint return_root, uint expected_child)
     if (return_root >= type_count)
         return false;
     uint base = return_root * TYPE_WORDS;
-    if (dependency_type_word(base) != INTERFACE_TYPE_DECLARATION ||
+    uint kind = dependency_type_word(base);
+    if ((kind != INTERFACE_TYPE_DECLARATION && kind != INTERFACE_TYPE_SLICE) ||
         dependency_type_word(base + 4u) != 1u)
         return false;
     uint edge = dependency_type_word(base + 3u);
@@ -294,9 +295,9 @@ bool node_matches(
         uint claim = generic_claim_row(callee, slot);
         if (claim != INVALID)
             return generic_claim_row_matches(claim, form, tag, payload, token);
-        // A one-argument generic result with no argument claim can be
+        // A result with one generic child and no argument claim can be
         // instantiated from the enclosing annotation. Keep the contextual
-        // case to a direct scalar child; compound and repeated parameters
+        // case to a direct concrete child; compound and repeated parameters
         // still require explicit claims.
         return contextual_result &&
             single_generic_result_child(return_root, expected) &&

@@ -1,0 +1,58 @@
+module app::main;
+import core::mem;
+import alloc::allocator;
+
+struct Pair { left: i32, right: i32 }
+
+fn main() -> i32 {
+    let words: [i32; 3] = [7, 11, 19];
+    let data: ptr = core::mem::i32_array_data_ptr(words);
+    let signed: [i32] = core::mem::typed_slice_from_raw_parts(data, 3);
+    if (signed[0] != 7 || signed[2] != 19) {
+        return 1;
+    }
+    signed[1] = -23;
+    if (words[1] != -23) {
+        return 2;
+    }
+
+    // General scalar slices use native eight-byte element slots. Allocate
+    // backing for that layout rather than reinterpreting a packed i32 array.
+    let memory: ptr = alloc::allocator::alloc(24, 8);
+    if (memory == 0) { return 3; }
+    let first: ptr = memory + 16;
+    let unsigned: [u32] = core::mem::typed_slice_from_raw_parts(first, 3);
+    unsigned[0] = 7;
+    unsigned[1] = 11;
+    unsigned[2] = 19;
+    if (unsigned[0] != 7 || unsigned[2] != 19) {
+        alloc::allocator::dealloc(memory, 24, 8);
+        return 3;
+    }
+    unsigned[0] = 42;
+    let alias: [u32] = core::mem::typed_slice_from_raw_parts(first, 3);
+    if (alias[0] != 42 || alias[1] != 11) {
+        alloc::allocator::dealloc(memory, 24, 8);
+        return 4;
+    }
+    alloc::allocator::dealloc(memory, 24, 8);
+
+    let pair_memory: ptr = alloc::allocator::alloc(32, 8);
+    if (pair_memory == 0) { return 6; }
+    let first_pair: ptr = pair_memory + 24;
+    let pairs: [Pair] = core::mem::typed_slice_from_raw_parts(first_pair, 2);
+    pairs[0].left = 3;
+    pairs[0].right = 2;
+    pairs[1].left = 8;
+    pairs[1].right = 17;
+    let pair_sum: i32 = pairs[0].left + pairs[0].right +
+        pairs[1].left + pairs[1].right;
+    alloc::allocator::dealloc(pair_memory, 32, 8);
+    if (pair_sum != 30) { return 7; }
+
+    let empty: [i32] = core::mem::typed_slice_from_raw_parts(data, 0);
+    if (core::mem::i32_slice_data_ptr(empty) != data) {
+        return 5;
+    }
+    return 0;
+}
