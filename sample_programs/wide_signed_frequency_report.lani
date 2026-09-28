@@ -1,0 +1,58 @@
+// Read signed decimal lines and print each distinct value and its count
+// in first-seen order. Counts use two's-complement wrapping arithmetic.
+module app::main;
+import core::wide_i64;
+import std::io_byte;
+import std::io_decimal;
+import std::io_line;
+import std::map_wide_i64_wide_i64;
+
+fn main() -> i32 {
+    let data: [i32; 20] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let counts: std::map_wide_i64_wide_i64::MapWideI64WideI64 = std::map_wide_i64_wide_i64::new();
+    let zero: core::wide_i64::WideI64 = core::wide_i64::zero();
+    let one: core::wide_i64::WideI64 = core::wide_i64::from_i32(1);
+    while (true) {
+        let length: i32 = std::io_line::read_stdin_lf_line_into_i32(data, 20);
+        if (length == -1) { break; }
+        if (length <= 0) {
+            std::map_wide_i64_wide_i64::destroy(counts);
+            return 2;
+        }
+        if (!core::wide_i64::can_parse_ascii_decimal(data, length)) {
+            std::map_wide_i64_wide_i64::destroy(counts);
+            return 3;
+        }
+        let key: core::wide_i64::WideI64 = core::wide_i64::parse_ascii_decimal_or(data, length, zero);
+        if (std::map_wide_i64_wide_i64::contains_key(counts, key)) {
+            let previous: core::wide_i64::WideI64 = std::map_wide_i64_wide_i64::get_or(counts, key, zero);
+            let next: core::wide_i64::WideI64 = core::wide_i64::wrapping_add(previous, one);
+            if (!std::map_wide_i64_wide_i64::try_set(counts, key, next)) {
+                std::map_wide_i64_wide_i64::destroy(counts);
+                return 4;
+            }
+        } else {
+            let before: i32 = std::map_wide_i64_wide_i64::len(counts);
+            counts = std::map_wide_i64_wide_i64::try_insert(counts, key, one);
+            if (std::map_wide_i64_wide_i64::len(counts) != before + 1) {
+                std::map_wide_i64_wide_i64::destroy(counts);
+                return 4;
+            }
+        }
+    }
+    let index: i32 = 0;
+    while (index < std::map_wide_i64_wide_i64::len(counts)) {
+        let key: core::wide_i64::WideI64 = std::map_wide_i64_wide_i64::key_at_or(counts, index, zero);
+        let amount: core::wide_i64::WideI64 = std::map_wide_i64_wide_i64::value_at_or(counts, index, zero);
+        if (std::io_decimal::write_wide_i64(1, key) <= 0 ||
+            !std::io_byte::write_stdout_byte(32) ||
+            std::io_decimal::write_wide_i64(1, amount) <= 0 ||
+            !std::io_byte::write_stdout_byte(10)) {
+            std::map_wide_i64_wide_i64::destroy(counts);
+            return 5;
+        }
+        index += 1;
+    }
+    std::map_wide_i64_wide_i64::destroy(counts);
+    return 0;
+}
