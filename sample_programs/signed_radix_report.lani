@@ -1,0 +1,34 @@
+// Read one signed binary line and print its binary, hexadecimal, and decimal
+// values. Input accepts an optional sign and 0b/0B prefix, with no spaces.
+module app::main;
+import core::binary_wide_i64;
+import core::wide_i64;
+import std::io_binary_wide_i64;
+import std::io_byte;
+import std::io_decimal;
+import std::io_hex_wide_i64;
+import std::io_line;
+fn separator(code: i32) -> bool {
+    return std::io_byte::write_stdout_byte(code);
+}
+fn main() -> i32 {
+    let input:[i32; 85] =[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let length: i32 = std::io_line::read_stdin_lf_line_into_i32(input, 85);
+    if (length <= 0) {
+        return 2;
+    }
+    if (!core::binary_wide_i64::can_parse_ascii(input, length)) {
+        return 3;
+    }
+    let value: core::wide_i64::WideI64 = core::binary_wide_i64::parse_ascii_or(input, length, core::wide_i64::zero());
+    if (std::io_binary_wide_i64::write(1, value) <= 0 || !separator(32)) {
+        return 4;
+    }
+    if (std::io_hex_wide_i64::write_lower(1, value) <= 0 || !separator(32)) {
+        return 4;
+    }
+    if (std::io_decimal::write_wide_i64(1, value) <= 0 || !separator(10)) {
+        return 4;
+    }
+    return 0;
+}

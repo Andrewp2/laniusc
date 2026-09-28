@@ -1295,6 +1295,12 @@ beside its stable two-word FNV-1a hash. The native test checks zero, values
 above 32 bits, the high-bit boundary, the unsigned maximum, malformed and
 overflowing input, and empty input.
 
+`sample_programs/signed_radix_report.lani` reads one bounded signed binary
+line, validates it with the portable `core::binary_wide_i64` parser, and
+prints its binary, lowercase hexadecimal, and decimal forms through checked
+stdout writers. Its native test checks zero, positive and negative values,
+both signed extrema, malformed and empty input, and an overlong line.
+
 `sample_programs/halfword_window_total.lani` sorts six unsigned halfword
 readings, selects an inclusive value range, checks its first match through
 an Option returned by its local search helper and concrete Result helpers,
@@ -1414,6 +1420,8 @@ Run `cargo test --test stdlib_wide_i64_bits_execution` for the signed
 two-word bit view, including negative patterns and sign-bit rotations.
 Run `cargo test --test stdlib_signed_bit_report_program` for a real program
 combining signed parsing, bit operations, and decimal output.
+Run `cargo test --test stdlib_signed_radix_report_program` for a bounded
+signed binary input program that reports three representations.
 Run `cargo test --test stdlib_bitset_execution` for the caller-backed bitset,
 including the word-boundary matrix and native bounds trap.
 Run `cargo test --test stdlib_base64_execution` for strict caller-backed
