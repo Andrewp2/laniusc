@@ -1,0 +1,56 @@
+module app::main;
+import core::hex_wide_i64;
+import core::wide_i64;
+fn matches(value: core::wide_i64::WideI64, high: u32, low: u32) -> bool {
+    return core::wide_i64::high_word(value) == high && core::wide_i64::low_word(value) == low;
+}
+fn main() -> i32 {
+    let zero: core::wide_i64::WideI64 = core::wide_i64::zero();
+    let one: core::wide_i64::WideI64 = core::wide_i64::from_i32(1);
+    let negative_one: core::wide_i64::WideI64 = core::wide_i64::from_i32(-1);
+    let min: core::wide_i64::WideI64 = core::wide_i64::min_value();
+    let max: core::wide_i64::WideI64 = core::wide_i64::max_value();
+    let pattern: core::wide_i64::WideI64 = core::wide_i64::from_words(305419896, 2596069104);
+    let negative_pattern: core::wide_i64::WideI64 = core::wide_i64::wrapping_neg(pattern);
+    if (core::hex_wide_i64::len(zero) != 1 || core::hex_wide_i64::len(negative_one) != 2 || core::hex_wide_i64::len(min) != 17 || core::hex_wide_i64::len(max) != 16 || core::hex_wide_i64::len(negative_pattern) != 17) {
+        return 1;
+    }
+    if (core::hex_wide_i64::byte_at_lower_or(zero, 0, 255) != 48 || core::hex_wide_i64::byte_at_upper_or(negative_one, 0, 255) != 45 || core::hex_wide_i64::byte_at_upper_or(negative_one, 1, 255) != 49 || core::hex_wide_i64::byte_at_lower_or(min, 1, 255) != 56 || core::hex_wide_i64::byte_at_lower_or(min, 17, 255) != 255 || core::hex_wide_i64::byte_at_upper_or(max, 16, 254) != 254) {
+        return 2;
+    }
+    let lower:[i32; 17] =[45, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102, 48];
+    let upper:[i32; 17] =[45, 49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70, 48];
+    let index: u32 = 0;
+    while (index<17) {
+        let low_code: i32 = lower[index];
+        let up_code: i32 = upper[index];
+        let low_byte: u8 = low_code as u8;
+        let up_byte: u8 = up_code as u8;
+        if (core::hex_wide_i64::byte_at_lower_or(negative_pattern, index, 255) != low_byte || core::hex_wide_i64::byte_at_upper_or(negative_pattern, index, 255) != up_byte) {
+            return 3;
+        }
+        index += 1;
+    }
+    let zero_code:[i32; 1] =[48];
+    let max_code:[i32; 16] =[55, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70];
+    let min_code:[i32; 19] =[45, 48, 120, 56, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48];
+    let plus_prefixed:[i32; 7] =[43, 48, 88, 49, 97, 50, 66];
+    let negative_zero:[i32; 2] =[45, 48];
+    let leading_zero:[i32; 4] =[48, 48, 48, 49];
+    let positive_overflow:[i32; 16] =[56, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48];
+    let negative_overflow:[i32; 17] =[45, 56, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 49];
+    let wide_overflow:[i32; 17] =[49, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48];
+    let sign_only:[i32; 1] =[45];
+    let prefix_only:[i32; 3] =[45, 48, 120];
+    let bad:[i32; 3] =[49, 120, 50];
+    let whitespace:[i32; 2] =[32, 49];
+    let negative_code:[i32; 1] =[-1];
+    let large_code:[i32; 1] =[256];
+    if (!core::hex_wide_i64::can_parse_ascii(zero_code, 1) || !core::hex_wide_i64::can_parse_ascii(max_code, 16) || !core::hex_wide_i64::can_parse_ascii(min_code, 19) || !core::hex_wide_i64::can_parse_ascii(lower, 17) || !core::hex_wide_i64::can_parse_ascii(plus_prefixed, 7) || !core::hex_wide_i64::can_parse_ascii(negative_zero, 2) || !core::hex_wide_i64::can_parse_ascii(leading_zero, 4) || core::hex_wide_i64::can_parse_ascii(zero_code, 0) || core::hex_wide_i64::can_parse_ascii(zero_code, -1) || core::hex_wide_i64::can_parse_ascii(positive_overflow, 16) || core::hex_wide_i64::can_parse_ascii(negative_overflow, 17) || core::hex_wide_i64::can_parse_ascii(wide_overflow, 17) || core::hex_wide_i64::can_parse_ascii(sign_only, 1) || core::hex_wide_i64::can_parse_ascii(prefix_only, 3) || core::hex_wide_i64::can_parse_ascii(bad, 3) || core::hex_wide_i64::can_parse_ascii(whitespace, 2) || core::hex_wide_i64::can_parse_ascii(negative_code, 1) || core::hex_wide_i64::can_parse_ascii(large_code, 1)) {
+        return 4;
+    }
+    if (!matches(core::hex_wide_i64::parse_ascii_or(zero_code, 1, one), 0, 0) || !matches(core::hex_wide_i64::parse_ascii_or(max_code, 16, zero), 2147483647, 4294967295) || !matches(core::hex_wide_i64::parse_ascii_or(min_code, 19, zero), 2147483648, 0) || !core::wide_i64::eq(core::hex_wide_i64::parse_ascii_or(lower, 17, zero), negative_pattern) || !matches(core::hex_wide_i64::parse_ascii_or(plus_prefixed, 7, zero), 0, 6699) || !matches(core::hex_wide_i64::parse_ascii_or(negative_zero, 2, one), 0, 0) || !matches(core::hex_wide_i64::parse_ascii_or(leading_zero, 4, zero), 0, 1) || !matches(core::hex_wide_i64::parse_ascii_or(positive_overflow, 16, one), 0, 1) || !matches(core::hex_wide_i64::parse_ascii_or(negative_overflow, 17, one), 0, 1) || !matches(core::hex_wide_i64::parse_ascii_or(prefix_only, 3, one), 0, 1)) {
+        return 5;
+    }
+    return 0;
+}
