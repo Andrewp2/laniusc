@@ -28,6 +28,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint HIR_ENUM_ITEM = 26u;
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -72,6 +73,38 @@ uint nominal_declaration(uint type_node, uint type_id, uint hir_count)
     return enum_declaration != INVALID ? enum_declaration : struct_declaration;
 }
 
+bool owner_has_generic_payload(uint owner, uint hir_count)
+{
+    uint variant_total = min(compact_variant_count[0u], hir_count);
+    uint lo = 0u;
+    uint hi = variant_total;
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        if (compact_variants[mid].owner < owner) lo = mid + 1u;
+        else hi = mid;
+    }
+    uint payload_total = min(compact_variant_payload_row_count[0u], hir_count);
+    for (uint row = lo;
+         row < variant_total && compact_variants[row].owner == owner;
+         row += 1u)
+    {
+        uint start = compact_variant_payload_start[row];
+        uint count = compact_variant_payload_count[row];
+        if (count != 0u && (start >= payload_total || count > payload_total - start))
+            continue;
+        for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+        {
+            HirVariantPayload payload = compact_variant_payloads[start + ordinal];
+            if (payload.variant == row && payload.ordinal == ordinal &&
+                payload.type_node < hir_count &&
+                semantic_expr_ref_tag[payload.type_node] == TYPE_REF_GENERIC_PARAM)
+                return true;
+        }
+    }
+    return false;
+}
+
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -87,14 +120,26 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint count = compact_variant_payload_count[row];
     uint payload_total = min(compact_variant_payload_row_count[0u], hir_count);
     uint words = 1u; // discriminant
+    bool unresolved_generic = false;
     if (count != 0u && (start >= payload_total || count > payload_total - start))
         words = INVALID;
     for (uint ordinal = 0u; ordinal < count && words != INVALID; ordinal += 1u)
     {
         HirVariantPayload payload = compact_variant_payloads[start + ordinal];
         if (payload.variant != row || payload.ordinal != ordinal ||
-            payload.type_node >= hir_count ||
-            semantic_expr_ref_tag[payload.type_node] != TYPE_REF_SCALAR)
+            payload.type_node >= hir_count)
+        {
+            words = INVALID;
+            break;
+        }
+        uint ref_tag = semantic_expr_ref_tag[payload.type_node];
+        if (ref_tag == TYPE_REF_GENERIC_PARAM)
+        {
+            unresolved_generic = true;
+            words = INVALID;
+            break;
+        }
+        if (ref_tag != TYPE_REF_SCALAR)
         {
             words = INVALID;
             break;
@@ -125,7 +170,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // growing and is rejected instead of being assigned a finite layout.
     if (gParams.reserved == 0u)
     {
+        // Generic declarations have no fixed by-value layout. Keep their
+        // width invalid so instantiations cannot assume one payload word.
+        if (unresolved_generic) return;
         uint current = semantic_struct_word_count_by_hir[variant.owner];
+        if (current == INVALID && words != INVALID &&
+            owner_has_generic_payload(variant.owner, hir_count))
+            return;
         if (words == INVALID || current == INVALID || words > current)
         {
             InterlockedOr(lowering_status[0u].flags,

@@ -1,0 +1,6 @@
+module app::main;
+import core::maybe;
+
+fn main() -> i32 {
+    return 0;
+}

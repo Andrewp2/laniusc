@@ -1,0 +1,6 @@
+pub enum Maybe<T> { Some(T), None }
+
+fn main() -> i32 {
+    let value: Maybe<i32> = Some(7);
+    return 0;
+}

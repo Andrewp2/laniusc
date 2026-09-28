@@ -1008,8 +1008,18 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
         core.value_word_count = element_count * element_words;
     }
     if (op == SEMANTIC_LIR_OP_AGGREGATE_NEW && semantic_call_kind[node] == 5u)
+    {
         core.value_word_count = hir.kind == HIR_CALL_EXPR
             ? enum_constructor_word_count(node, payload, hir_count) : 1u;
+        uint variant = semantic_call_target[node];
+        if (variant < min(compact_variant_count[0u], gParams.n_hir_nodes))
+        {
+            uint owner = compact_variants[variant].owner;
+            if (owner < hir_count &&
+                semantic_struct_word_count_by_hir[owner] == LIR_INVALID)
+                core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
+        }
+    }
     if ((op == SEMANTIC_LIR_OP_LOAD || op == SEMANTIC_LIR_OP_STORE) &&
         (hir.kind == HIR_INDEX_EXPR || assignment_indexed))
     {

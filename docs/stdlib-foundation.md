@@ -1754,6 +1754,9 @@ vector operations, including imported `--stdlib-root` calls and flat source
 packs. Storage and mutation for generic vectors remain unavailable.
 Run `cargo test --test stdlib_generic_interface` for exported generic
 Option/Result types and associated methods on both plain and generic structs.
+Run `cargo test --test stdlib_generic_enum_declaration_execution` for an
+unused local generic enum that executes and for construction cases that still
+fail closed until concrete payload layout is available.
 Run `cargo test --test stdlib_time_execution` for clock metadata, the four
 bound host calls, checked wrappers, and injected host failures.
 Run `cargo test --test stdlib_time_wide_execution` for two-word clock
@@ -1985,13 +1988,18 @@ also fixes the imported struct-return relocation path described below.
    before these APIs can be claimed. The imported scalar reproducer also
    reached an optimizer failure (`LNC0057`) under that experiment, so layout
    alone is not the remaining compiler work.
-   `repro_generic_enum_unused.lani` returns zero without constructing its
-   generic enum. It passes GPU `check`, but native emission still stops with
-   `LNC0057`. The compiler lays out every enum declaration, including unused
-   generic declarations, while concrete type-instance arguments exist only in
-   the type-checker tables and are not currently passed to semantic codegen.
-   Native lowering must either specialize the instance before layout or avoid
-   lowering an unused declaration without weakening checks on used values.
+   `repro_generic_enum_unused.lani` now compiles and executes with exit zero
+   because an unused local generic declaration can retain an unresolved width.
+   `repro_generic_enum_construct_only.lani` still fails closed with `LNC0017`
+   at `Some(7)`; scalar and two-word match reproducers do likewise. The layout
+   pass does not assume a one-word generic payload, and materialization marks
+   construction unsupported until it has a concrete instance layout.
+   `repro_generic_enum_import_unused.lani` imports an otherwise unused
+   three-line `Maybe<T>` module. GPU `check` succeeds, but native emission
+   still stops in optimization with `LNC0057` (flags `0x600`), so this change
+   does not make imported generic declarations or generic Option/Result
+   executable. Concrete type-instance arguments remain in type-checker tables
+   and are not currently passed to semantic codegen.
    `repro_generic_payload_struct_wide.lani` also compiles a two-word `Pair`
    through `Maybe<T>` as a generic struct, but the native ELF exits 1 instead
    of 0. A struct representation is therefore not a safe source-level
