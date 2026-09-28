@@ -1,0 +1,111 @@
+module app::main;
+import core::wide_u64;
+import std::deque_wide_u64;
+
+fn same(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::eq(left, right);
+}
+
+fn main() -> i32 {
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let one: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
+    let word: core::wide_u64::WideU64 = core::wide_u64::from_words(1, 0);
+    let high: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483648, 7);
+    let max: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    let empty: std::deque_wide_u64::DequeWideU64 = std::deque_wide_u64::new();
+    if (std::deque_wide_u64::MAX_CAPACITY != 268435455 ||
+        !std::deque_wide_u64::is_empty(empty) ||
+        std::deque_wide_u64::len(empty) != 0 ||
+        std::deque_wide_u64::capacity(empty) != 0 ||
+        !same(std::deque_wide_u64::front_or(empty, max), max) ||
+        !same(std::deque_wide_u64::back_or(empty, high), high) ||
+        !same(std::deque_wide_u64::at_or(empty, 0, word), word) ||
+        std::deque_wide_u64::contains(empty, zero) ||
+        std::deque_wide_u64::try_set(empty, 0, one) ||
+        std::deque_wide_u64::try_swap(empty, 0, 0)) { return 1; }
+    empty = std::deque_wide_u64::try_pop_front(empty);
+    empty = std::deque_wide_u64::try_pop_back(empty);
+    empty = std::deque_wide_u64::try_reserve(empty, -1);
+    empty = std::deque_wide_u64::try_reserve(empty, 268435456);
+    if (std::deque_wide_u64::capacity(empty) != 0) { return 2; }
+    std::deque_wide_u64::destroy(empty);
+
+    let items: std::deque_wide_u64::DequeWideU64 = std::deque_wide_u64::try_with_capacity(3);
+    if (std::deque_wide_u64::capacity(items) != 3) { return 3; }
+    items = std::deque_wide_u64::try_push_back(items, word);
+    items = std::deque_wide_u64::try_push_back(items, high);
+    items = std::deque_wide_u64::try_push_back(items, max);
+    if (std::deque_wide_u64::len(items) != 3 ||
+        !same(std::deque_wide_u64::front_or(items, zero), word) ||
+        !same(std::deque_wide_u64::back_or(items, zero), max)) { return 4; }
+    items = std::deque_wide_u64::try_pop_front(items);
+    items = std::deque_wide_u64::try_push_back(items, one);
+    if (!same(std::deque_wide_u64::at_or(items, 0, zero), high) ||
+        !same(std::deque_wide_u64::at_or(items, 1, zero), max) ||
+        !same(std::deque_wide_u64::at_or(items, 2, zero), one)) { return 5; }
+    items = std::deque_wide_u64::try_push_front(items, zero);
+    if (std::deque_wide_u64::capacity(items) != 6 ||
+        std::deque_wide_u64::len(items) != 4 ||
+        !same(std::deque_wide_u64::at_or(items, 0, max), zero) ||
+        !same(std::deque_wide_u64::at_or(items, 1, zero), high) ||
+        !same(std::deque_wide_u64::at_or(items, 2, zero), max) ||
+        !same(std::deque_wide_u64::at_or(items, 3, zero), one) ||
+        !same(std::deque_wide_u64::at_or(items, -1, word), word) ||
+        !same(std::deque_wide_u64::at_or(items, 4, word), word) ||
+        !std::deque_wide_u64::contains(items, high) ||
+        std::deque_wide_u64::contains(items, word)) { return 6; }
+    if (std::deque_wide_u64::try_set(items, -1, word) ||
+        std::deque_wide_u64::try_set(items, 4, word) ||
+        !std::deque_wide_u64::try_set(items, 1, word) ||
+        !same(std::deque_wide_u64::at_or(items, 1, zero), word) ||
+        std::deque_wide_u64::try_swap(items, 0, 4) ||
+        !std::deque_wide_u64::try_swap(items, 0, 3) ||
+        !same(std::deque_wide_u64::front_or(items, zero), one) ||
+        !same(std::deque_wide_u64::back_or(items, zero), zero) ||
+        !std::deque_wide_u64::try_swap(items, 0, 3)) { return 7; }
+
+    let copy: std::deque_wide_u64::DequeWideU64 = std::deque_wide_u64::try_clone(items);
+    if (std::deque_wide_u64::len(copy) != 4 ||
+        std::deque_wide_u64::capacity(copy) != 4 ||
+        !same(std::deque_wide_u64::at_or(copy, 1, zero), word) ||
+        !std::deque_wide_u64::try_set(copy, 1, high) ||
+        !same(std::deque_wide_u64::at_or(copy, 1, zero), high) ||
+        !same(std::deque_wide_u64::at_or(items, 1, zero), word)) { return 8; }
+    std::deque_wide_u64::destroy(copy);
+
+    items = std::deque_wide_u64::try_pop_back(items);
+    items = std::deque_wide_u64::try_pop_front(items);
+    if (std::deque_wide_u64::len(items) != 2 ||
+        !same(std::deque_wide_u64::front_or(items, zero), word) ||
+        !same(std::deque_wide_u64::back_or(items, zero), max)) { return 9; }
+    items = std::deque_wide_u64::try_shrink_to_fit(items);
+    if (std::deque_wide_u64::capacity(items) != 2 ||
+        !same(std::deque_wide_u64::at_or(items, 0, zero), word) ||
+        !same(std::deque_wide_u64::at_or(items, 1, zero), max)) { return 10; }
+    items = std::deque_wide_u64::clear(items);
+    if (!std::deque_wide_u64::is_empty(items) ||
+        std::deque_wide_u64::capacity(items) != 2) { return 11; }
+    let empty_copy: std::deque_wide_u64::DequeWideU64 = std::deque_wide_u64::try_clone(items);
+    if (std::deque_wide_u64::capacity(empty_copy) != 0) { return 12; }
+    std::deque_wide_u64::destroy(empty_copy);
+    items = std::deque_wide_u64::try_push_front(items, max);
+    if (!same(std::deque_wide_u64::front_or(items, zero), max)) { return 13; }
+    items = std::deque_wide_u64::try_pop_front(items);
+    items = std::deque_wide_u64::try_shrink_to_fit(items);
+    if (std::deque_wide_u64::capacity(items) != 0) { return 14; }
+    std::deque_wide_u64::destroy(items);
+
+    let wrapped: std::deque_wide_u64::DequeWideU64 = std::deque_wide_u64::try_with_capacity(3);
+    wrapped = std::deque_wide_u64::try_push_back(wrapped, zero);
+    wrapped = std::deque_wide_u64::try_push_back(wrapped, word);
+    wrapped = std::deque_wide_u64::try_push_back(wrapped, high);
+    wrapped = std::deque_wide_u64::try_pop_front(wrapped);
+    wrapped = std::deque_wide_u64::try_push_back(wrapped, max);
+    wrapped = std::deque_wide_u64::try_reserve(wrapped, 5);
+    if (std::deque_wide_u64::capacity(wrapped) != 5 ||
+        !same(std::deque_wide_u64::at_or(wrapped, 0, zero), word) ||
+        !same(std::deque_wide_u64::at_or(wrapped, 1, zero), high) ||
+        !same(std::deque_wide_u64::at_or(wrapped, 2, zero), max)) { return 15; }
+    std::deque_wide_u64::destroy(wrapped);
+    return 0;
+}

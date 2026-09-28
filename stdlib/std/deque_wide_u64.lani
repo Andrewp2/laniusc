@@ -1,0 +1,265 @@
+// Owned ring-buffer deque for explicit two-word unsigned values. Push and pop
+// at either end are O(1) except when growth copies the initialized pairs.
+// Ownership is linear by convention: keep only the newest returned value and
+// destroy each independent deque exactly once.
+module std::deque_wide_u64;
+import alloc::allocator;
+import core::mem;
+import core::wide_u64;
+
+pub struct DequeWideU64 {
+    storage: ptr,
+    length: i32,
+    reserved: i32,
+    head: i32,
+}
+
+// Each element occupies two i32 cells and eight allocation bytes.
+pub const MAX_CAPACITY: i32 = 268435455;
+
+fn physical_index(value: DequeWideU64, ordinal: i32) -> i32 {
+    let slot: i32 = value.head + ordinal;
+    if (slot >= value.reserved) { slot -= value.reserved; }
+    return slot * 2;
+}
+
+fn load_at(value: DequeWideU64, ordinal: i32) -> core::wide_u64::WideU64 {
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
+    let offset: i32 = physical_index(value, ordinal);
+    let low: u32 = cells[offset];
+    let high: u32 = cells[offset + 1];
+    return core::wide_u64::from_words(high, low);
+}
+
+fn store_at(value: DequeWideU64, ordinal: i32, item: core::wide_u64::WideU64) {
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
+    let offset: i32 = physical_index(value, ordinal);
+    let low: i32 = core::wide_u64::low_word(item);
+    let high: i32 = core::wide_u64::high_word(item);
+    cells[offset] = low;
+    cells[offset + 1] = high;
+}
+
+pub fn new() -> DequeWideU64 {
+    let empty: ptr = 0;
+    return DequeWideU64 { storage: empty, length: 0, reserved: 0, head: 0 };
+}
+
+pub fn len(value: DequeWideU64) -> i32 { return value.length; }
+pub fn capacity(value: DequeWideU64) -> i32 { return value.reserved; }
+pub fn is_empty(value: DequeWideU64) -> bool { return value.length == 0; }
+
+// Invalid capacity or allocation failure returns the original owner unchanged.
+// A successful reservation copies logical order to slots beginning at zero.
+pub fn try_reserve(value: DequeWideU64, minimum_capacity: i32) -> DequeWideU64 {
+    if (minimum_capacity < 0 || minimum_capacity > MAX_CAPACITY ||
+        minimum_capacity <= value.reserved) { return value; }
+    let byte_count: i32 = minimum_capacity * 8;
+    let bytes: usize = byte_count;
+    let next: ptr = alloc::allocator::alloc(bytes, 4);
+    if (next == 0) { return value; }
+    if (value.length > 0) {
+        let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
+        let destination: [i32] = core::mem::i32_slice_from_raw_parts(next, minimum_capacity * 2);
+        let index: i32 = 0;
+        while (index < value.length) {
+            let from: i32 = physical_index(value, index);
+            let to: i32 = index * 2;
+            destination[to] = source[from];
+            destination[to + 1] = source[from + 1];
+            index += 1;
+        }
+    }
+    if (value.storage != 0) {
+        let old_byte_count: i32 = value.reserved * 8;
+        let old_bytes: usize = old_byte_count;
+        alloc::allocator::dealloc(value.storage, old_bytes, 4);
+    }
+    return DequeWideU64 {
+        storage: next, length: value.length, reserved: minimum_capacity, head: 0,
+    };
+}
+
+// On invalid capacity or allocation failure returns an empty zero-capacity
+// deque. Compare capacity(result) with the request to distinguish failure.
+pub fn try_with_capacity(initial_capacity: i32) -> DequeWideU64 {
+    return try_reserve(new(), initial_capacity);
+}
+
+// A nonempty source with failed allocation yields an empty independent deque;
+// the source stays owned and intact. An empty clone allocates nothing.
+pub fn try_clone(value: DequeWideU64) -> DequeWideU64 {
+    if (value.length == 0) { return new(); }
+    let copy: DequeWideU64 = try_with_capacity(value.length);
+    if (copy.reserved < value.length) { return new(); }
+    let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
+    let destination: [i32] = core::mem::i32_slice_from_raw_parts(copy.storage, copy.reserved * 2);
+    let index: i32 = 0;
+    while (index < value.length) {
+        let from: i32 = physical_index(value, index);
+        let to: i32 = index * 2;
+        destination[to] = source[from];
+        destination[to + 1] = source[from + 1];
+        index += 1;
+    }
+    return DequeWideU64 {
+        storage: copy.storage, length: value.length, reserved: copy.reserved, head: 0,
+    };
+}
+
+// Push success increments len. A failed growth leaves the owner unchanged.
+pub fn try_push_back(value: DequeWideU64, item: core::wide_u64::WideU64) -> DequeWideU64 {
+    if (value.length >= MAX_CAPACITY) { return value; }
+    let grown: DequeWideU64 = value;
+    if (grown.length == grown.reserved) {
+        let target: i32 = 4;
+        if (grown.reserved > 0) {
+            if (grown.reserved > MAX_CAPACITY / 2) { target = MAX_CAPACITY; }
+            else { target = grown.reserved * 2; }
+        }
+        grown = try_reserve(grown, target);
+        if (grown.length == grown.reserved) { return value; }
+    }
+    store_at(grown, grown.length, item);
+    return DequeWideU64 {
+        storage: grown.storage, length: grown.length + 1,
+        reserved: grown.reserved, head: grown.head,
+    };
+}
+
+pub fn try_push_front(value: DequeWideU64, item: core::wide_u64::WideU64) -> DequeWideU64 {
+    if (value.length >= MAX_CAPACITY) { return value; }
+    let grown: DequeWideU64 = value;
+    if (grown.length == grown.reserved) {
+        let target: i32 = 4;
+        if (grown.reserved > 0) {
+            if (grown.reserved > MAX_CAPACITY / 2) { target = MAX_CAPACITY; }
+            else { target = grown.reserved * 2; }
+        }
+        grown = try_reserve(grown, target);
+        if (grown.length == grown.reserved) { return value; }
+    }
+    let next_head: i32 = grown.head - 1;
+    if (grown.head == 0) { next_head = grown.reserved - 1; }
+    let slot: DequeWideU64 = DequeWideU64 {
+        storage: grown.storage, length: grown.length,
+        reserved: grown.reserved, head: next_head,
+    };
+    store_at(slot, 0, item);
+    return DequeWideU64 {
+        storage: grown.storage, length: grown.length + 1,
+        reserved: grown.reserved, head: next_head,
+    };
+}
+
+// Empty or invalid ordinal returns the caller's wide fallback.
+pub fn at_or(value: DequeWideU64, ordinal: i32,
+             fallback: core::wide_u64::WideU64) -> core::wide_u64::WideU64 {
+    if (ordinal < 0 || ordinal >= value.length) { return fallback; }
+    return load_at(value, ordinal);
+}
+
+pub fn front_or(value: DequeWideU64,
+                fallback: core::wide_u64::WideU64) -> core::wide_u64::WideU64 {
+    return at_or(value, 0, fallback);
+}
+
+pub fn back_or(value: DequeWideU64,
+               fallback: core::wide_u64::WideU64) -> core::wide_u64::WideU64 {
+    return at_or(value, value.length - 1, fallback);
+}
+
+pub fn contains(value: DequeWideU64, item: core::wide_u64::WideU64) -> bool {
+    let index: i32 = 0;
+    while (index < value.length) {
+        if (core::wide_u64::eq(load_at(value, index), item)) { return true; }
+        index += 1;
+    }
+    return false;
+}
+
+pub fn try_set(value: DequeWideU64, ordinal: i32, item: core::wide_u64::WideU64) -> bool {
+    if (ordinal < 0 || ordinal >= value.length) { return false; }
+    store_at(value, ordinal, item);
+    return true;
+}
+
+pub fn try_swap(value: DequeWideU64, left: i32, right: i32) -> bool {
+    if (left < 0 || right < 0 || left >= value.length || right >= value.length) {
+        return false;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
+    let a: i32 = physical_index(value, left);
+    let b: i32 = physical_index(value, right);
+    let low: i32 = cells[a];
+    let high: i32 = cells[a + 1];
+    cells[a] = cells[b];
+    cells[a + 1] = cells[b + 1];
+    cells[b] = low;
+    cells[b + 1] = high;
+    return true;
+}
+
+// Empty pops return the original owner; storage remains reusable. Read the
+// endpoint first when the removed item is needed.
+pub fn try_pop_front(value: DequeWideU64) -> DequeWideU64 {
+    if (value.length == 0) { return value; }
+    let next_head: i32 = value.head + 1;
+    if (next_head == value.reserved) { next_head = 0; }
+    return DequeWideU64 {
+        storage: value.storage, length: value.length - 1,
+        reserved: value.reserved, head: next_head,
+    };
+}
+
+pub fn try_pop_back(value: DequeWideU64) -> DequeWideU64 {
+    if (value.length == 0) { return value; }
+    return DequeWideU64 {
+        storage: value.storage, length: value.length - 1,
+        reserved: value.reserved, head: value.head,
+    };
+}
+
+pub fn clear(value: DequeWideU64) -> DequeWideU64 {
+    return DequeWideU64 {
+        storage: value.storage, length: 0, reserved: value.reserved, head: 0,
+    };
+}
+
+// Reduce capacity to len and copy logical order. Empty deques release storage;
+// failed allocation leaves a nonempty source unchanged.
+pub fn try_shrink_to_fit(value: DequeWideU64) -> DequeWideU64 {
+    if (value.length == value.reserved) { return value; }
+    if (value.length == 0) {
+        destroy(value);
+        return new();
+    }
+    let byte_count: i32 = value.length * 8;
+    let bytes: usize = byte_count;
+    let next: ptr = alloc::allocator::alloc(bytes, 4);
+    if (next == 0) { return value; }
+    let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
+    let destination: [i32] = core::mem::i32_slice_from_raw_parts(next, value.length * 2);
+    let index: i32 = 0;
+    while (index < value.length) {
+        let from: i32 = physical_index(value, index);
+        let to: i32 = index * 2;
+        destination[to] = source[from];
+        destination[to + 1] = source[from + 1];
+        index += 1;
+    }
+    let old_byte_count: i32 = value.reserved * 8;
+    let old_bytes: usize = old_byte_count;
+    alloc::allocator::dealloc(value.storage, old_bytes, 4);
+    return DequeWideU64 {
+        storage: next, length: value.length, reserved: value.length, head: 0,
+    };
+}
+
+pub fn destroy(value: DequeWideU64) {
+    if (value.storage != 0) {
+        let byte_count: i32 = value.reserved * 8;
+        let bytes: usize = byte_count;
+        alloc::allocator::dealloc(value.storage, bytes, 4);
+    }
+}
