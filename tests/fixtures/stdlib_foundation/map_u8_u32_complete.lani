@@ -1,0 +1,100 @@
+module app::main;
+import std::map_u8_u32;
+
+fn main() -> i32 {
+    let zero: u32 = 0;
+    let maximum: u32 = 4294967295;
+    let keys: [u32; 8] = [zero, zero, zero, zero, zero, zero, zero, zero];
+    let values: [u32; 256] = [
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero
+    ];
+    std::map_u8_u32::clear(keys, values);
+    if (!std::map_u8_u32::is_empty(keys) || std::map_u8_u32::is_full(keys) ||
+        std::map_u8_u32::len(keys) != 0 ||
+        std::map_u8_u32::contains_key(keys, 255) ||
+        std::map_u8_u32::get_or(keys, values, 255, maximum) != maximum ||
+        std::map_u8_u32::key_at_or(keys, 0, 251) != 251 ||
+        std::map_u8_u32::value_at_or(keys, values, 0, maximum) != maximum) {
+        return 1;
+    }
+
+    let code: i32 = 0;
+    while (code < 256) {
+        if (code % 3 == 0) {
+            let key: u8 = code;
+            let widened: u32 = key;
+            if (!std::map_u8_u32::insert(keys, values, key, maximum - widened)) {
+                return 2;
+            }
+        }
+        code += 1;
+    }
+    if (std::map_u8_u32::len(keys) != 86 ||
+        std::map_u8_u32::key_at_or(keys, 0, 251) != 0 ||
+        std::map_u8_u32::key_at_or(keys, 1, 251) != 3 ||
+        std::map_u8_u32::key_at_or(keys, 85, 251) != 255 ||
+        std::map_u8_u32::key_at_or(keys, -1, 251) != 251 ||
+        std::map_u8_u32::key_at_or(keys, 86, 251) != 251 ||
+        std::map_u8_u32::value_at_or(keys, values, 0, 1) != maximum ||
+        std::map_u8_u32::value_at_or(keys, values, 85, 1) != maximum - 255 ||
+        std::map_u8_u32::value_at_or(keys, values, -1, 123) != 123 ||
+        std::map_u8_u32::value_at_or(keys, values, 86, 123) != 123 ||
+        std::map_u8_u32::insert(keys, values, 0, 7) ||
+        std::map_u8_u32::get_or(keys, values, 0, 1) != maximum) { return 3; }
+
+    code = 0;
+    while (code < 256) {
+        let key: u8 = code;
+        let present: bool = code % 3 == 0;
+        let widened: u32 = key;
+        let expected: u32 = 77;
+        if (present) { expected = maximum - widened; }
+        if (std::map_u8_u32::contains_key(keys, key) != present ||
+            std::map_u8_u32::get_or(keys, values, key, 77) != expected) {
+            return 4;
+        }
+        code += 1;
+    }
+
+    if (std::map_u8_u32::set(keys, values, 1, 9) ||
+        std::map_u8_u32::remove(keys, values, 1) ||
+        std::map_u8_u32::put(keys, values, 0, 7) ||
+        !std::map_u8_u32::set(keys, values, 3, 9) ||
+        !std::map_u8_u32::put(keys, values, 254, maximum) ||
+        !std::map_u8_u32::remove(keys, values, 6) ||
+        std::map_u8_u32::remove(keys, values, 6) ||
+        std::map_u8_u32::len(keys) != 86 ||
+        std::map_u8_u32::get_or(keys, values, 0, 1) != 7 ||
+        std::map_u8_u32::get_or(keys, values, 3, 1) != 9 ||
+        std::map_u8_u32::get_or(keys, values, 254, 1) != maximum ||
+        std::map_u8_u32::get_or(keys, values, 6, 77) != 77 ||
+        values[6] != 0) { return 5; }
+
+    code = 0;
+    while (code < 256) {
+        let key: u8 = code;
+        std::map_u8_u32::put(keys, values, key, maximum);
+        code += 1;
+    }
+    if (!std::map_u8_u32::is_full(keys) || std::map_u8_u32::len(keys) != 256 ||
+        std::map_u8_u32::get_or(keys, values, 128, 0) != maximum) { return 6; }
+    std::map_u8_u32::clear(keys, values);
+    if (!std::map_u8_u32::is_empty(keys) || std::map_u8_u32::len(keys) != 0 ||
+        values[0] != 0 || values[128] != 0 || values[255] != 0) { return 7; }
+    return 0;
+}

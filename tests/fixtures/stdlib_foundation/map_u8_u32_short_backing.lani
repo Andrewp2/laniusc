@@ -1,0 +1,9 @@
+module app::main;
+import std::map_u8_u32;
+fn main() -> i32 {
+    let zero: u32 = 0;
+    let keys: [u32; 8] = [zero, zero, zero, zero, zero, zero, zero, zero];
+    let values: [u32; 1] = [zero];
+    std::map_u8_u32::clear(keys, values);
+    return 0;
+}
