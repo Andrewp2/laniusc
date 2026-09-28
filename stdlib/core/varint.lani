@@ -1,0 +1,81 @@
+// Canonical unsigned LEB128 for u32 over caller-backed byte views.
+module core::varint;
+
+pub const OK: i32 = 0;
+pub const INVALID_BOUNDS: i32 = 1;
+pub const TRUNCATED: i32 = 2;
+pub const OVERFLOW: i32 = 3;
+pub const NON_CANONICAL: i32 = 4;
+
+pub struct ReadU32 {
+    // Inspect status before using value or next through their accessors.
+    status: i32,
+    value: u32,
+    next: i32,
+}
+
+fn failed_u32(status: i32) -> ReadU32 {
+    return ReadU32 { status: status, value: 0, next: -1 };
+}
+
+pub fn status_u32(result: ReadU32) -> i32 { return result.status; }
+pub fn value_u32_or(result: ReadU32, fallback: u32) -> u32 {
+    if (result.status == OK) { return result.value; }
+    return fallback;
+}
+pub fn next_u32_or(result: ReadU32, fallback: i32) -> i32 {
+    if (result.status == OK) { return result.next; }
+    return fallback;
+}
+
+pub fn len_u32(value: u32) -> i32 {
+    let remaining: u32 = value;
+    let count: i32 = 1;
+    while (remaining >= 128) {
+        remaining >>= 7;
+        count += 1;
+    }
+    return count;
+}
+
+// Return the next offset, or -1 if logical bounds or capacity fail. A -1
+// result writes nothing; an overclaimed physical backing may trap mid-write.
+pub fn write_u32(bytes: [u8], len: i32, offset: i32, value: u32) -> i32 {
+    if (len < 0 || offset < 0 || offset > len) { return -1; }
+    let count: i32 = len_u32(value);
+    if (count > len - offset) { return -1; }
+    let remaining: u32 = value;
+    let position: i32 = offset;
+    while (remaining >= 128) {
+        let encoded_word: u32 = (remaining & 127) + 128;
+        let encoded_byte: u8 = encoded_word as u8;
+        bytes[position] = encoded_byte;
+        remaining >>= 7;
+        position += 1;
+    }
+    let last_byte: u8 = remaining as u8;
+    bytes[position] = last_byte;
+    return offset + count;
+}
+
+// Status distinguishes invalid bounds, a truncated prefix, overflow, and a
+// nonminimal encoding. A physical backing overclaim can trap on indexing.
+pub fn read_u32(bytes: [u8], len: i32, offset: i32) -> ReadU32 {
+    if (len < 0 || offset < 0 || offset > len) { return failed_u32(INVALID_BOUNDS); }
+    let value: u32 = 0;
+    let index: i32 = 0;
+    while (index < 5) {
+        if (index >= len - offset) { return failed_u32(TRUNCATED); }
+        let raw_byte: u8 = bytes[offset + index];
+        let byte: u32 = raw_byte as u32;
+        let payload: u32 = byte & 127;
+        if (index == 4 && payload > 15) { return failed_u32(OVERFLOW); }
+        value |= payload << (index * 7);
+        if ((byte & 128) == 0) {
+            if (index > 0 && payload == 0) { return failed_u32(NON_CANONICAL); }
+            return ReadU32 { status: OK, value: value, next: offset + index + 1 };
+        }
+        index += 1;
+    }
+    return failed_u32(OVERFLOW);
+}

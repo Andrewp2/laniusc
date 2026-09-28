@@ -1,0 +1,10 @@
+module app::main;
+import core::varint_wide_u64;
+
+fn main() -> i32 {
+    let continuation: u8 = 128;
+    let bytes: [u8; 1] = [continuation];
+    let result: core::varint_wide_u64::ReadWideU64 =
+        core::varint_wide_u64::read_wide_u64(bytes, 2, 0);
+    return core::varint_wide_u64::status_wide_u64(result);
+}

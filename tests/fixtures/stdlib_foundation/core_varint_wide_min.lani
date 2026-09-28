@@ -1,0 +1,20 @@
+module app::main;
+import core::varint;
+import core::varint_wide_u64;
+import core::wide_u64;
+
+fn main() -> i32 {
+    let b0: u8 = 0;
+    let bytes: [u8; 10] = [b0, b0, b0, b0, b0, b0, b0, b0, b0, b0];
+    let maximum: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    if (core::varint_wide_u64::write_wide_u64(bytes, 10, 0, maximum) != 10) { return 1; }
+    let result: core::varint_wide_u64::ReadWideU64 =
+        core::varint_wide_u64::read_wide_u64(bytes, 10, 0);
+    if (core::varint_wide_u64::status_wide_u64(result) != core::varint::OK) { return 2; }
+    let value: core::wide_u64::WideU64 =
+        core::varint_wide_u64::value_wide_u64_or(result, core::wide_u64::zero());
+    if (core::wide_u64::high_word(value) != 4294967295) { return 3; }
+    if (core::wide_u64::low_word(value) != 4294967295) { return 4; }
+    if (core::varint_wide_u64::next_wide_u64_or(result, 99) != 10) { return 5; }
+    return 0;
+}

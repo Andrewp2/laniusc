@@ -1,0 +1,11 @@
+module core::nested;
+pub struct Pair { high: u32, low: u32 }
+pub struct Read { state: i32, value: Pair, next: i32 }
+pub fn make() -> Read {
+    let pair: Pair = Pair { high: 4294967295, low: 4294967295 };
+    return Read { state: 0, value: pair, next: 13 };
+}
+pub fn state(value: Read) -> i32 { return value.state; }
+pub fn high(value: Read) -> u32 { return value.value.high; }
+pub fn low(value: Read) -> u32 { return value.value.low; }
+pub fn next(value: Read) -> i32 { return value.next; }

@@ -1,0 +1,10 @@
+module app::main;
+import core::nested;
+fn main() -> i32 {
+    let value: core::nested::Read = core::nested::make();
+    if (core::nested::state(value) != 0) { return 1; }
+    if (core::nested::high(value) != 4294967295) { return 2; }
+    if (core::nested::low(value) != 4294967295) { return 3; }
+    if (core::nested::next(value) != 13) { return 4; }
+    return 0;
+}

@@ -22,6 +22,7 @@ limited to native x86_64 output from this worktree.
 | `core::bitset` all 14 public caller-backed bitset functions | Executable on x86_64 for `[u32]` backing | Runtime fixtures check word counts, bit access and mutation, fill, counts, any/all, first/last set bit, equality, union, and intersection. They cover logical lengths 0 through 65, word boundaries, aliases, invalid lengths and indices, preserved padding and unused words, and a physical backing overclaim that traps. A source scan requires a runtime call for every public function. |
 | `core::base64` all 4 public caller-backed encoding functions | Executable on x86_64 for `[u8]` backing | Runtime fixtures check exact size calculation, standard padded Base64 encoding and strict decoding, empty input, all 256 values as the final byte of one-, two-, and three-byte round trips, one- and two-byte padding, same-buffer encode/decode, rejected malformed input and insufficient capacity without output changes, and overstated physical views that trap. A source scan requires a runtime call for every public function. |
 | `core::endian` all 12 public caller-backed byte-order functions | Executable on x86_64 for `[u8]` backing | Runtime fixtures check big- and little-endian 16-, 32-, and two-word 64-bit reads and writes, high-bit values, zero, maximum values, invalid logical bounds without writes, and physical backing overclaims that trap. The 16- and 32-bit matrix covers all 256 high-byte values across offsets 0 through 4. The packet-header sample combines byte-order reads with unsigned arithmetic and checks its printed result. A source scan requires a runtime call for every public function. |
+| `core::varint` and `core::varint_wide_u64`, all 12 public functions and five status constants | Executable on x86_64 for caller-backed `[u8]` views | Runtime fixtures call every function, check canonical unsigned LEB128 at 32 and two-word 64 bits, round-trip all 256 first-byte values and wide boundary values, distinguish invalid bounds, truncation, overflow, and nonminimal encodings, reject short write capacity without changing storage, and confirm native traps on physical backing overclaims. The frame-sum program uses both codecs and full-width decimal output. No native `u64` behavior is claimed. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 25 public codec and backed-view functions | Executable on x86_64 | Native fixtures check ASCII and multibyte encoding/decoding, checked scalar append, scalar counts and lookup, first and last scalar and sequence search, byte/scalar boundary mapping, equality, prefix and suffix matching, lexicographic comparison, empty and truncated views, out-of-byte-range integer codes, malformed sequences, surrogate exclusion, and Unicode maximum. Direct caller-backed `[u8]` helpers validate and count scalars, map scalar and byte boundaries, and read scalars by index across one- through four-byte sequences. They reject malformed input and negative lengths, and native indexing traps on a physical length overclaim. The older general view functions use caller-backed `[i32]` byte codes and do not access string storage. |
@@ -315,6 +316,19 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `core::wide_u64::WideU64`, avoiding the incomplete native `u64` path.
   `sample_programs/packet_header_sum.lani`
   parses a mixed-endian packet header, sums its payload, and prints `67`.
+- `core::varint` and `core::varint_wide_u64` encode canonical unsigned LEB128
+  into caller-owned bytes and decode one value from a caller-supplied offset.
+  Zero uses one byte; the maxima use five and ten bytes. The write functions
+  return the next offset or `-1` for invalid logical bounds or insufficient
+  space, and reject those cases before writing. Read results expose `OK`,
+  `INVALID_BOUNDS`, `TRUNCATED`, `OVERFLOW`, and `NON_CANONICAL`; failed value
+  and next-offset accessors return the caller's fallback. A terminated
+  encoding with a zero final group after an earlier group is noncanonical.
+  Physical backing overclaims trap when an element is accessed. The wide
+  result stores flat scalar words to avoid dependency 56. The codecs are
+  portable Lanius source, but executable target evidence is x86_64 only.
+  `sample_programs/varint_frame_sum.lani` writes a small frame, decodes it,
+  and prints `4294967606`.
 - `core::bool` converts any nonzero i32 to true. Its selector functions return
   the chosen branch value. `core::char` tests ASCII classes; its case-insensitive
   equality and case conversion fold ASCII letters only. `is_ascii_control`
@@ -1263,6 +1277,8 @@ arithmetic, differential native comparisons, and the checked-factorial
 program.
 Run `cargo test --test stdlib_endian_execution` for caller-backed endian
 fields, a packet-header sample, and native bounds trapping.
+Run `cargo test --test stdlib_varint_execution` for caller-backed canonical
+varints at both widths, the frame-sum program, and native bounds trapping.
 Run `cargo test --test stdlib_mem_execution` for all public memory helper
 functions, including capability metadata, value helpers, and intrinsics.
 Run `cargo test --test stdlib_allocator_metadata_execution` for allocator
@@ -1952,6 +1968,19 @@ also fixes the imported struct-return relocation path described below.
     The executable map stores its pointer, length, and capacity directly and
     uses the bound allocator; it does not rely on nested imported aggregate
     returns. Nested aggregate layout and projection remain compiler work.
+56. **Imported return with a nested aggregate and following field.**
+    `tests/fixtures/stdlib_foundation/repro_imported_nested_return.lani`
+    imports a `Read` struct containing an `i32`, a two-word `Pair`, and a
+    following `i32`. GPU checking and native emission succeed, and the ELF
+    reads the first three scalar words correctly but exits 4 because the
+    trailing field differs from its initializer. Four flat scalar fields in
+    the same shape execute correctly in a separate local check. Compile with
+    `laniusc --stdlib-root tests/fixtures/stdlib_foundation/repro_imported_nested_return_root --emit x86_64 -o /tmp/repro_nested tests/fixtures/stdlib_foundation/repro_imported_nested_return.lani`
+    and run `/tmp/repro_nested` to reproduce the exit status. The wide
+    varint decoder uses three flat scalar fields and encodes its successful
+    next offset in a private negative state; this gives executable status,
+    value, and next-offset accessors without relying on the broken nested
+    return layout.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those
