@@ -1,0 +1,20 @@
+module app::main;
+import std::set_i32;
+
+fn main() -> i32 {
+    let value: std::set_i32::SetI32 = std::set_i32::new();
+    value = std::set_i32::try_insert(value, 41);
+    if (std::set_i32::len(value) == 0 &&
+        std::set_i32::capacity(value) == 0 &&
+        !std::set_i32::contains(value, 41)) {
+        std::set_i32::destroy(value);
+        return 0;
+    }
+    if (std::set_i32::len(value) == 1 &&
+        std::set_i32::contains(value, 41)) {
+        std::set_i32::destroy(value);
+        return 4;
+    }
+    std::set_i32::destroy(value);
+    return 5;
+}

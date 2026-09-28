@@ -1,0 +1,204 @@
+// Owned insertion-ordered i32 set with linear lookup. Ownership is linear by
+// convention: use only the newest returned set, and destroy it exactly once.
+module std::set_i32;
+import alloc::allocator;
+import core::mem;
+
+pub struct SetI32 {
+    storage: ptr,
+    length: i32,
+    reserved: i32,
+}
+
+pub const MAX_CAPACITY: i32 = 536870911;
+
+pub fn new() -> SetI32 {
+    let empty: ptr = 0;
+    return SetI32 { storage: empty, length: 0, reserved: 0 };
+}
+
+pub fn len(value: SetI32) -> i32 {
+    return value.length;
+}
+
+pub fn capacity(value: SetI32) -> i32 {
+    return value.reserved;
+}
+
+pub fn is_empty(value: SetI32) -> bool {
+    return value.length == 0;
+}
+
+pub fn contains(value: SetI32, item: i32) -> bool {
+    if (value.length == 0) {
+        return false;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
+    let index: i32 = 0;
+    while (index < value.length) {
+        if (cells[index] == item) {
+            return true;
+        }
+        index += 1;
+    }
+    return false;
+}
+
+// Elements retain insertion order. Invalid ordinals return fallback; use len
+// to distinguish an absent ordinal when a stored item equals the fallback.
+pub fn at_or(value: SetI32, ordinal: i32, fallback: i32) -> i32 {
+    if (ordinal < 0 || ordinal >= value.length) {
+        return fallback;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
+    return cells[ordinal];
+}
+
+// A negative or oversized request, or allocation failure, leaves the set
+// unchanged. Compare capacity(result) against the request to detect failure.
+pub fn try_reserve(value: SetI32, minimum_capacity: i32) -> SetI32 {
+    if (minimum_capacity < 0 || minimum_capacity > MAX_CAPACITY ||
+        minimum_capacity <= value.reserved) {
+        return value;
+    }
+    let byte_count: i32 = minimum_capacity * 4;
+    let new_bytes: usize = byte_count as usize;
+    let next: ptr = 0;
+    if (value.storage == 0) {
+        next = alloc::allocator::alloc(new_bytes, 4);
+    } else {
+        let old_byte_count: i32 = value.reserved * 4;
+        let old_bytes: usize = old_byte_count as usize;
+        next = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
+    }
+    if (next == 0) {
+        return value;
+    }
+    return SetI32 {
+        storage: next,
+        length: value.length,
+        reserved: minimum_capacity,
+    };
+}
+
+// Insert a new item. A duplicate, capacity limit, or allocation failure
+// leaves len unchanged. Compare len(result) to the old length for success.
+pub fn try_insert(value: SetI32, item: i32) -> SetI32 {
+    if (contains(value, item) || value.length >= MAX_CAPACITY) {
+        return value;
+    }
+    let grown: SetI32 = value;
+    if (grown.length == grown.reserved) {
+        let target: i32 = 4;
+        if (grown.reserved > 0) {
+            if (grown.reserved > MAX_CAPACITY / 2) {
+                target = MAX_CAPACITY;
+            } else {
+                target = grown.reserved * 2;
+            }
+        }
+        grown = try_reserve(grown, target);
+        if (grown.length == grown.reserved) {
+            return value;
+        }
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
+    cells[grown.length] = item;
+    return SetI32 {
+        storage: grown.storage,
+        length: grown.length + 1,
+        reserved: grown.reserved,
+    };
+}
+
+// Remove an item while preserving the order of remaining items. Missing
+// items leave the set unchanged; successful removal decrements len.
+pub fn try_remove(value: SetI32, item: i32) -> SetI32 {
+    if (value.length == 0) {
+        return value;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
+    let index: i32 = 0;
+    while (index < value.length) {
+        if (cells[index] == item) {
+            let cursor: i32 = index;
+            while (cursor + 1 < value.length) {
+                cells[cursor] = cells[cursor + 1];
+                cursor += 1;
+            }
+            return SetI32 {
+                storage: value.storage,
+                length: value.length - 1,
+                reserved: value.reserved,
+            };
+        }
+        index += 1;
+    }
+    return value;
+}
+
+pub fn clear(value: SetI32) -> SetI32 {
+    return SetI32 {
+        storage: value.storage,
+        length: 0,
+        reserved: value.reserved,
+    };
+}
+
+// Release unused storage. Empty sets release their allocation. Reallocation
+// failure returns the original set with its old capacity and elements.
+pub fn try_shrink_to_fit(value: SetI32) -> SetI32 {
+    if (value.length == value.reserved) {
+        return value;
+    }
+    if (value.length == 0) {
+        destroy(value);
+        return new();
+    }
+    let old_byte_count: i32 = value.reserved * 4;
+    let new_byte_count: i32 = value.length * 4;
+    let old_bytes: usize = old_byte_count as usize;
+    let new_bytes: usize = new_byte_count as usize;
+    let next: ptr = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
+    if (next == 0) {
+        return value;
+    }
+    return SetI32 {
+        storage: next,
+        length: value.length,
+        reserved: value.length,
+    };
+}
+
+// An independent copy of initialized items. Allocation failure returns an
+// empty zero-capacity set and leaves the source unchanged. A nonempty source
+// cloned successfully when len(result) == len(value).
+pub fn try_clone(value: SetI32) -> SetI32 {
+    if (value.length == 0) {
+        return new();
+    }
+    let copy: SetI32 = try_reserve(new(), value.length);
+    if (copy.reserved < value.length) {
+        return new();
+    }
+    let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
+    let destination: [i32] = core::mem::i32_slice_from_raw_parts(copy.storage, copy.reserved);
+    let index: i32 = 0;
+    while (index < value.length) {
+        destination[index] = source[index];
+        index += 1;
+    }
+    return SetI32 {
+        storage: copy.storage,
+        length: value.length,
+        reserved: copy.reserved,
+    };
+}
+
+pub fn destroy(value: SetI32) {
+    if (value.storage != 0) {
+        let byte_count: i32 = value.reserved * 4;
+        let bytes: usize = byte_count as usize;
+        alloc::allocator::dealloc(value.storage, bytes, 4);
+    }
+}

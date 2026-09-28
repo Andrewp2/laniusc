@@ -105,6 +105,7 @@ limited to native x86_64 output from this worktree.
 | `std::vec_i16` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The signed halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, `-32768`, and 32767. The allocation-failure suite injects failed initial allocation and reallocation; the signed halfword sum sample combines it with `core::number_i16` and `OptionI16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
 | `std::vec_bool` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The boolean fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, and stored `false` distinct from a `true` fallback. The allocation-failure suite injects failed initial allocation and reallocation; the true-count sample combines it with `core::bool` and `OptionBool`. Each boolean occupies one 32-bit cell containing 0 or 1. Ownership is linear by convention. |
 | `std::map_i32_i32` all 15 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed pair array provides linear lookup, insertion without partial pairs, in-place update, ordered removal, reservation, independent cloning, clearing, and destruction. The native fixture calls every function and checks zero and negative keys and values, the signed maximum key, duplicates, missing keys, ordinal bounds, retained capacity, and clone independence. Injected `mremap` and `mmap` failures preserve the original map or return an empty clone. The byte-histogram program combines it with numeric and byte I/O helpers on empty, text, and binary input. Ownership is linear by convention. |
+| `std::set_i32` all 13 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks empty and populated sets, both signed extremes, duplicates, absent items, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, and shrinking. Injected initial allocation, growth, shrink, and clone failures preserve ownership and existing items. The set owns one allocation of 32-bit cells; ownership is linear by convention. |
 | `std::net` all 64 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 10 host calls unbound | The native fixture calls every metadata function and constant, checks available and unavailable result classification, and confirms network capability flags against `core::runtime`. TCP and UDP calls have no runtime binding. |
 | `std::thread` all 32 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 4 host calls unbound | The native fixture calls every metadata function and constant, checks result classification, and confirms that spawn, join, yield, and current-id calls remain unavailable. |
 | `std::gpu` all 44 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 5 host calls unbound | The native fixture calls every metadata function and constant, checks result classification, and confirms unavailable buffer and dispatch services. Compiler execution on a GPU does not bind a user-program GPU API. |
@@ -478,6 +479,20 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   raw cell or failed allocation yields an empty zero-capacity vector. Compare
   lengths to detect that failure. The 8-bit, 16-bit, and boolean vectors reject
   malformed raw cells before allocating; i32 and u32 accept every 32-bit cell.
+- `std::set_i32` owns 32-bit cells and keeps each distinct item once, in
+  insertion order. `try_insert` leaves duplicate items unchanged and grows
+  capacity by doubling from four cells. A new item increases length by one on
+  success; capacity overflow or allocation failure leaves the set unchanged.
+  `try_remove` preserves the order of remaining items and decreases length
+  only when the item existed. `at_or` returns the caller fallback for an
+  invalid ordinal; use `len` to distinguish a stored equal value. Invalid
+  `try_reserve` requests and failed reallocation leave the original set live.
+  `try_shrink_to_fit` releases storage when empty, reduces capacity to length
+  otherwise, and retains original storage and elements if reallocation fails.
+  `try_clone` makes an independent copy or returns an empty zero-capacity set
+  on allocation failure. The caller keeps only the newest returned owner and
+  destroys each independent set once. These rules are not enforced by the
+  language. The API requires x86_64 Linux allocator bindings.
 - `std::utf8_vec` stores canonical UTF-8 in `VecU8`. `try_append_scalar`
   validates the existing complete byte sequence, checks the scalar and
   capacity bound, and reserves storage for every encoded byte before writing.
@@ -1144,6 +1159,8 @@ Run `cargo test --test stdlib_vec_shrink_execution` for all seven concrete
 vectors' capacity release and an injected shrink reallocation failure.
 Run `cargo test --test stdlib_map_i32_i32_execution` for the owned map,
 initial, growth, and clone allocation failures, and the stdin byte histogram.
+Run `cargo test --test stdlib_set_i32_execution` for the owned integer set and
+its initial, growth, shrink, and clone allocation failures.
 Run `cargo test --test stdlib_fs_read_i32_execution` for the raw signed
 integer reader's normal values, signed limits, overflow, line boundaries,
 empty lines, EOF, and an injected host read error when `strace` is available.
