@@ -1,0 +1,27 @@
+module app::main;
+import std::map_u32_u32;
+
+fn main() -> i32 {
+    let value: std::map_u32_u32::MapU32U32 = std::map_u32_u32::new();
+    value = std::map_u32_u32::try_reserve(value, 1);
+    if (std::map_u32_u32::capacity(value) != 1) { return 2; }
+    value = std::map_u32_u32::try_insert(value, 0, 41);
+    if (std::map_u32_u32::len(value) != 1) { return 3; }
+    value = std::map_u32_u32::try_insert(value, 2147483648, 42);
+    if (std::map_u32_u32::len(value) == 1 &&
+        std::map_u32_u32::capacity(value) == 1 &&
+        std::map_u32_u32::get_or(value, 0, 4294967295) == 41 &&
+        !std::map_u32_u32::contains_key(value, 2147483648)) {
+        std::map_u32_u32::destroy(value);
+        return 0;
+    }
+    if (std::map_u32_u32::len(value) == 2 &&
+        std::map_u32_u32::capacity(value) == 2 &&
+        std::map_u32_u32::get_or(value, 0, 4294967295) == 41 &&
+        std::map_u32_u32::get_or(value, 2147483648, 4294967295) == 42) {
+        std::map_u32_u32::destroy(value);
+        return 4;
+    }
+    std::map_u32_u32::destroy(value);
+    return 5;
+}

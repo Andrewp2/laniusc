@@ -1,0 +1,93 @@
+module app::main;
+import std::map_u32_u32;
+
+fn main() -> i32 {
+    let value: std::map_u32_u32::MapU32U32 = std::map_u32_u32::new();
+    if (std::map_u32_u32::MAX_ENTRIES != 268435455 ||
+        !std::map_u32_u32::is_empty(value) ||
+        std::map_u32_u32::len(value) != 0 ||
+        std::map_u32_u32::capacity(value) != 0) { return 1; }
+    if (std::map_u32_u32::contains_key(value, 0) ||
+        std::map_u32_u32::get_or(value, 0, 17) != 17 ||
+        std::map_u32_u32::key_at_or(value, 0, 18) != 18 ||
+        std::map_u32_u32::value_at_or(value, -1, 19) != 19) { return 2; }
+
+    value = std::map_u32_u32::try_reserve(value, 3);
+    if (std::map_u32_u32::capacity(value) != 3) { return 3; }
+    value = std::map_u32_u32::try_reserve(value, -1);
+    value = std::map_u32_u32::try_reserve(value, 268435456);
+    if (std::map_u32_u32::capacity(value) != 3 ||
+        std::map_u32_u32::len(value) != 0) { return 4; }
+
+    value = std::map_u32_u32::try_insert(value, 0, 0);
+    value = std::map_u32_u32::try_insert(value, 2147483648, 42);
+    value = std::map_u32_u32::try_insert(value, 4294967295, 4294967295);
+    if (std::map_u32_u32::len(value) != 3 ||
+        std::map_u32_u32::is_empty(value) ||
+        !std::map_u32_u32::contains_key(value, 0) ||
+        !std::map_u32_u32::contains_key(value, 2147483648) ||
+        !std::map_u32_u32::contains_key(value, 4294967295) ||
+        std::map_u32_u32::contains_key(value, 7)) { return 5; }
+    if (std::map_u32_u32::get_or(value, 0, 17) != 0 ||
+        std::map_u32_u32::get_or(value, 2147483648, 17) != 42 ||
+        std::map_u32_u32::get_or(value, 4294967295, 17) != 4294967295 ||
+        std::map_u32_u32::get_or(value, 8, 17) != 17) { return 6; }
+    if (std::map_u32_u32::key_at_or(value, 0, 18) != 0 ||
+        std::map_u32_u32::key_at_or(value, 1, 18) != 2147483648 ||
+        std::map_u32_u32::key_at_or(value, 2, 18) != 4294967295 ||
+        std::map_u32_u32::value_at_or(value, 0, 19) != 0 ||
+        std::map_u32_u32::value_at_or(value, 1, 19) != 42 ||
+        std::map_u32_u32::value_at_or(value, 2, 19) != 4294967295 ||
+        std::map_u32_u32::key_at_or(value, 3, 18) != 18 ||
+        std::map_u32_u32::value_at_or(value, -1, 19) != 19) { return 7; }
+
+    value = std::map_u32_u32::try_insert(value, 2147483648, 999);
+    if (std::map_u32_u32::len(value) != 3 ||
+        std::map_u32_u32::get_or(value, 2147483648, 17) != 42) { return 8; }
+    if (std::map_u32_u32::try_set(value, 8, 1) ||
+        !std::map_u32_u32::try_set(value, 0, 99) ||
+        std::map_u32_u32::get_or(value, 0, 17) != 99) { return 9; }
+
+    let copy: std::map_u32_u32::MapU32U32 = std::map_u32_u32::try_clone(value);
+    if (std::map_u32_u32::len(copy) != 3 ||
+        std::map_u32_u32::get_or(copy, 0, 17) != 99) { return 10; }
+    if (!std::map_u32_u32::try_set(copy, 0, 4294967292) ||
+        std::map_u32_u32::get_or(copy, 0, 17) != 4294967292 ||
+        std::map_u32_u32::get_or(value, 0, 17) != 99) { return 11; }
+    std::map_u32_u32::destroy(copy);
+
+    let held_capacity: i32 = std::map_u32_u32::capacity(value);
+    value = std::map_u32_u32::try_remove(value, 2147483648);
+    if (std::map_u32_u32::len(value) != 2 ||
+        std::map_u32_u32::capacity(value) != held_capacity ||
+        std::map_u32_u32::contains_key(value, 2147483648) ||
+        std::map_u32_u32::key_at_or(value, 1, 18) != 4294967295 ||
+        std::map_u32_u32::value_at_or(value, 1, 19) != 4294967295) { return 12; }
+    value = std::map_u32_u32::try_shrink_to_fit(value);
+    if (std::map_u32_u32::capacity(value) != 2 ||
+        std::map_u32_u32::get_or(value, 0, 17) != 99 ||
+        std::map_u32_u32::get_or(value, 4294967295, 17) != 4294967295) { return 17; }
+    held_capacity = 2;
+    value = std::map_u32_u32::try_shrink_to_fit(value);
+    if (std::map_u32_u32::capacity(value) != 2) { return 18; }
+    value = std::map_u32_u32::try_remove(value, 7);
+    if (std::map_u32_u32::len(value) != 2) { return 13; }
+    value = std::map_u32_u32::try_remove(value, 0);
+    value = std::map_u32_u32::try_remove(value, 4294967295);
+    if (!std::map_u32_u32::is_empty(value) ||
+        std::map_u32_u32::capacity(value) != held_capacity) { return 14; }
+
+    value = std::map_u32_u32::try_insert(value, 4294967293, 8);
+    value = std::map_u32_u32::clear(value);
+    if (std::map_u32_u32::len(value) != 0 ||
+        std::map_u32_u32::capacity(value) != held_capacity ||
+        std::map_u32_u32::contains_key(value, 4294967293)) { return 15; }
+    let empty_copy: std::map_u32_u32::MapU32U32 = std::map_u32_u32::try_clone(value);
+    if (std::map_u32_u32::len(empty_copy) != 0 ||
+        std::map_u32_u32::capacity(empty_copy) != 0) { return 16; }
+    std::map_u32_u32::destroy(empty_copy);
+    value = std::map_u32_u32::try_shrink_to_fit(value);
+    if (std::map_u32_u32::capacity(value) != 0) { return 19; }
+    std::map_u32_u32::destroy(value);
+    return 0;
+}
