@@ -1,0 +1,36 @@
+// Read one signed full-width decimal line. Print its two's-complement bit
+// count and the unsigned decimal value of its 64-bit reversal.
+module app::main;
+import core::wide_i64;
+import core::wide_i64_bits;
+import core::wide_u64;
+import std::io_line;
+import std::io_decimal;
+import std::io_byte;
+fn main() -> i32 {
+    let input:[i32; 20] =[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let length: i32 = std::io_line::read_stdin_lf_line_into_i32(input, 20);
+    if (length <= 0) {
+        return 2;
+    }
+    if (!core::wide_i64::can_parse_ascii_decimal(input, length)) {
+        return 3;
+    }
+    let value: core::wide_i64::WideI64 = core::wide_i64::parse_ascii_decimal_or(input, length, core::wide_i64::zero());
+    let ones: u32 = core::wide_i64_bits::count_ones(value);
+    let reversed: core::wide_i64::WideI64 = core::wide_i64_bits::reverse_bits(value);
+    let reversed_unsigned: core::wide_u64::WideU64 = core::wide_u64::from_words(core::wide_i64::high_word(reversed), core::wide_i64::low_word(reversed));
+    if (std::io_decimal::write_u32(1, ones) <= 0) {
+        return 4;
+    }
+    if (!std::io_byte::write_stdout_byte(32)) {
+        return 4;
+    }
+    if (std::io_decimal::write_wide_u64(1, reversed_unsigned) <= 0) {
+        return 4;
+    }
+    if (!std::io_byte::write_stdout_byte(10)) {
+        return 4;
+    }
+    return 0;
+}
