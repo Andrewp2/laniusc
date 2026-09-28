@@ -15,10 +15,11 @@ pub fn read_u16_be_or(bytes: [u8], len: i32, offset: i32, fallback: u16) -> u16 
     }
     let first: u8 = bytes[offset];
     let second: u8 = bytes[offset + 1];
-    let high: u32 = first as u32;
-    let low: u32 = second as u32;
+    let high: u32 = first;
+    let low: u32 = second;
     let word: u32 = (high << 8) | low;
-    return word as u16;
+    let result: u16 = word;
+    return result;
 }
 
 pub fn read_u16_le_or(bytes: [u8], len: i32, offset: i32, fallback: u16) -> u16 {
@@ -27,10 +28,11 @@ pub fn read_u16_le_or(bytes: [u8], len: i32, offset: i32, fallback: u16) -> u16 
     }
     let first: u8 = bytes[offset];
     let second: u8 = bytes[offset + 1];
-    let low: u32 = first as u32;
-    let high: u32 = second as u32;
+    let low: u32 = first;
+    let high: u32 = second;
     let word: u32 = (high << 8) | low;
-    return word as u16;
+    let result: u16 = word;
+    return result;
 }
 
 pub fn read_u32_be_or(bytes: [u8], len: i32, offset: i32, fallback: u32) -> u32 {
@@ -79,11 +81,11 @@ pub fn write_u16_be(bytes: [u8], len: i32, offset: i32, value: u16) -> bool {
     if (!has_width(len, offset, 2)) {
         return false;
     }
-    let wide: u32 = value as u32;
+    let wide: u32 = value;
     let high_word: u32 = (wide >> 8) & 255;
     let low_word: u32 = wide & 255;
-    let high: u8 = high_word as u8;
-    let low: u8 = low_word as u8;
+    let high: u8 = high_word;
+    let low: u8 = low_word;
     bytes[offset] = high;
     bytes[offset + 1] = low;
     return true;
@@ -93,11 +95,11 @@ pub fn write_u16_le(bytes: [u8], len: i32, offset: i32, value: u16) -> bool {
     if (!has_width(len, offset, 2)) {
         return false;
     }
-    let wide: u32 = value as u32;
+    let wide: u32 = value;
     let high_word: u32 = (wide >> 8) & 255;
     let low_word: u32 = wide & 255;
-    let high: u8 = high_word as u8;
-    let low: u8 = low_word as u8;
+    let high: u8 = high_word;
+    let low: u8 = low_word;
     bytes[offset] = low;
     bytes[offset + 1] = high;
     return true;

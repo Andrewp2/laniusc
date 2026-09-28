@@ -17,6 +17,21 @@ fn portable_transcoding_executes_on_x86() {
             101,
         ),
         (
+            "core_transcode_byte_views",
+            "tests/fixtures/stdlib_foundation/core_transcode_byte_views.lani",
+            0,
+        ),
+        (
+            "core_transcode_byte_source_bounds",
+            "tests/fixtures/stdlib_foundation/core_transcode_byte_source_bounds.lani",
+            101,
+        ),
+        (
+            "core_transcode_byte_dest_bounds",
+            "tests/fixtures/stdlib_foundation/core_transcode_byte_dest_bounds.lani",
+            101,
+        ),
+        (
             "core_transcode_dest_bounds",
             "tests/fixtures/stdlib_foundation/core_transcode_dest_bounds.lani",
             101,
@@ -48,7 +63,10 @@ fn portable_transcoding_executes_on_x86() {
 #[test]
 fn every_transcode_function_has_an_executable_case() {
     let source = include_str!("../stdlib/core/transcode.lani");
-    let fixture = include_str!("fixtures/stdlib_foundation/core_transcode_complete.lani");
+    let fixture = concat!(
+        include_str!("fixtures/stdlib_foundation/core_transcode_complete.lani"),
+        include_str!("fixtures/stdlib_foundation/core_transcode_byte_views.lani"),
+    );
     let mut covered = 0;
     for line in source.lines() {
         let Some(tail) = line.strip_prefix("pub fn ") else {
@@ -62,7 +80,7 @@ fn every_transcode_function_has_an_executable_case() {
         assert!(fixture.contains(&call), "{call} lacks an executable case");
         covered += 1;
     }
-    assert_eq!(covered, 6);
+    assert_eq!(covered, 10);
 }
 
 #[test]

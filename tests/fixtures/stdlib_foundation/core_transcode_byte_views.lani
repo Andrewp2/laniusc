@@ -1,0 +1,122 @@
+module app::main;
+import core::transcode;
+import core::utf16;
+
+fn main() -> i32 {
+    let zero: u8 = 0;
+    let a: u8 = 65;
+    let c2: u8 = 194;
+    let a2: u8 = 162;
+    let e2: u8 = 226;
+    let b82: u8 = 130;
+    let ac: u8 = 172;
+    let f0: u8 = 240;
+    let b9f: u8 = 159;
+    let b98: u8 = 152;
+    let b80: u8 = 128;
+    let source: [u8; 10] = [a, c2, a2, e2, b82, ac,
+                            f0, b9f, b98, b80];
+    let le: [u8; 10] = [zero, zero, zero, zero, zero,
+                        zero, zero, zero, zero, zero];
+    let be: [u8; 10] = [zero, zero, zero, zero, zero,
+                        zero, zero, zero, zero, zero];
+    let forward_le: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16le(source, 10, le, 10);
+    let forward_be: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16be(source, 10, be, 10);
+    if (!core::transcode::succeeded(forward_le) ||
+        !core::transcode::succeeded(forward_be) ||
+        core::transcode::read_or(forward_le, -1) != 10 ||
+        core::transcode::written_or(forward_be, -1) != 10 ||
+        le[0] != 65 || le[1] != 0 || le[2] != 162 || le[3] != 0 ||
+        le[4] != 172 || le[5] != 32 || le[6] != 61 || le[7] != 216 ||
+        le[8] != 0 || le[9] != 222 ||
+        be[0] != 0 || be[1] != 65 || be[2] != 0 || be[3] != 162 ||
+        be[4] != 32 || be[5] != 172 || be[6] != 216 || be[7] != 61 ||
+        be[8] != 222 || be[9] != 0) { return 1; }
+
+    let out_le: [u8; 10] = [zero, zero, zero, zero, zero,
+                            zero, zero, zero, zero, zero];
+    let out_be: [u8; 10] = [zero, zero, zero, zero, zero,
+                            zero, zero, zero, zero, zero];
+    let reverse_le: core::transcode::TranscodeResult =
+        core::transcode::utf16le_to_utf8(le, 10, out_le, 10);
+    let reverse_be: core::transcode::TranscodeResult =
+        core::transcode::utf16be_to_utf8(be, 10, out_be, 10);
+    if (!core::transcode::succeeded(reverse_le) ||
+        !core::transcode::succeeded(reverse_be) ||
+        core::transcode::read_or(reverse_be, -1) != 10 ||
+        core::transcode::written_or(reverse_le, -1) != 10) { return 2; }
+    let index: i32 = 0;
+    while (index < 10) {
+        if (out_le[index] != source[index] || out_be[index] != source[index]) {
+            return 3;
+        }
+        index += 1;
+    }
+
+    let sentinel: u8 = 99;
+    let untouched: [u8; 10] = [sentinel, sentinel, sentinel,
+        sentinel, sentinel, sentinel, sentinel, sentinel,
+        sentinel, sentinel];
+    let c0: u8 = 192;
+    let d8: u8 = 216;
+    let malformed_utf8: [u8; 3] = [a, c0, b80];
+    let bad_le: [u8; 4] = [a, zero, zero, d8];
+    let bad_be: [u8; 4] = [zero, a, d8, zero];
+    let short_le: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16le(source, 10, untouched, 9);
+    let short_be: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16be(source, 10, untouched, 9);
+    let malformed_le: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16le(malformed_utf8, 3, untouched, 10);
+    let malformed_be: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16be(malformed_utf8, 3, untouched, 10);
+    let invalid_le: core::transcode::TranscodeResult =
+        core::transcode::utf16le_to_utf8(bad_le, 4, untouched, 10);
+    let invalid_be: core::transcode::TranscodeResult =
+        core::transcode::utf16be_to_utf8(bad_be, 4, untouched, 10);
+    let odd_le: core::transcode::TranscodeResult =
+        core::transcode::utf16le_to_utf8(le, 9, untouched, 10);
+    let odd_be: core::transcode::TranscodeResult =
+        core::transcode::utf16be_to_utf8(be, 9, untouched, 10);
+    let short_reverse_le: core::transcode::TranscodeResult =
+        core::transcode::utf16le_to_utf8(le, 10, untouched, 9);
+    let short_reverse_be: core::transcode::TranscodeResult =
+        core::transcode::utf16be_to_utf8(be, 10, untouched, 9);
+    let negative_length: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16le(source, -1, untouched, 10);
+    let negative_capacity: core::transcode::TranscodeResult =
+        core::transcode::utf16be_to_utf8(be, 10, untouched, -1);
+    if (core::transcode::status(short_le) != core::utf16::STATUS_SHORT ||
+        core::transcode::status(short_be) != core::utf16::STATUS_SHORT ||
+        core::transcode::status(malformed_le) != core::utf16::STATUS_MALFORMED ||
+        core::transcode::status(malformed_be) != core::utf16::STATUS_MALFORMED ||
+        core::transcode::status(invalid_le) != core::utf16::STATUS_MALFORMED ||
+        core::transcode::status(invalid_be) != core::utf16::STATUS_MALFORMED ||
+        core::transcode::status(odd_le) != core::utf16::STATUS_MALFORMED ||
+        core::transcode::status(odd_be) != core::utf16::STATUS_MALFORMED ||
+        core::transcode::status(short_reverse_le) != core::utf16::STATUS_SHORT ||
+        core::transcode::status(short_reverse_be) != core::utf16::STATUS_SHORT ||
+        core::transcode::status(negative_length) != core::utf16::STATUS_BOUNDS ||
+        core::transcode::status(negative_capacity) != core::utf16::STATUS_BOUNDS ||
+        core::transcode::read_or(short_be, 77) != 77 ||
+        core::transcode::written_or(invalid_le, 77) != 77) { return 4; }
+    index = 0;
+    while (index < 10) {
+        if (untouched[index] != sentinel) { return 5; }
+        index += 1;
+    }
+
+    let empty: [u8; 1] = [sentinel];
+    let empty_forward: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16be(empty, 0, untouched, 0);
+    let empty_reverse: core::transcode::TranscodeResult =
+        core::transcode::utf16le_to_utf8(empty, 0, untouched, 0);
+    if (!core::transcode::succeeded(empty_forward) ||
+        !core::transcode::succeeded(empty_reverse) ||
+        core::transcode::written_or(empty_forward, -1) != 0 ||
+        core::transcode::written_or(empty_reverse, -1) != 0 ||
+        untouched[0] != sentinel) { return 6; }
+    return 0;
+}

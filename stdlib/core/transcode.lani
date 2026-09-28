@@ -4,6 +4,7 @@
 module core::transcode;
 import core::utf8;
 import core::utf16;
+import core::utf16_bytes;
 
 pub struct TranscodeResult {
     status: i32,
@@ -135,4 +136,141 @@ pub fn utf16_to_utf8(source: [u16], source_len: i32,
     return TranscodeResult {
         status: core::utf16::STATUS_OK, read: source_len, written: written,
     };
+}
+
+// Byte-view variants use byte lengths and capacities, and do not consume or
+// emit a BOM. Both passes finish before any destination byte is changed.
+fn write_utf16_byte_scalar(destination: [u8], capacity: i32,
+                           offset: i32, scalar: u32,
+                           big_endian: bool) -> core::utf16_bytes::Utf16ByteWrite {
+    if (big_endian) {
+        return core::utf16_bytes::write_scalar_be(destination, capacity,
+                                                    offset, scalar);
+    }
+    return core::utf16_bytes::write_scalar_le(destination, capacity,
+                                                offset, scalar);
+}
+
+fn read_utf16_byte_scalar(source: [u8], source_len: i32,
+                          offset: i32,
+                          big_endian: bool) -> core::utf16_bytes::Utf16ByteDecode {
+    if (big_endian) {
+        return core::utf16_bytes::read_next_be(source, source_len, offset);
+    }
+    return core::utf16_bytes::read_next_le(source, source_len, offset);
+}
+
+fn validate_utf16_bytes(source: [u8], source_len: i32,
+                        big_endian: bool) -> bool {
+    if (big_endian) {
+        return core::utf16_bytes::validate_be(source, source_len);
+    }
+    return core::utf16_bytes::validate_le(source, source_len);
+}
+
+fn utf8_to_utf16_bytes(source: [u8], source_len: i32,
+                       destination: [u8], capacity: i32,
+                       big_endian: bool) -> TranscodeResult {
+    if (source_len < 0 || capacity < 0) {
+        return failure(core::utf16::STATUS_BOUNDS);
+    }
+    if (!core::utf8::bytes_are_valid(source, source_len)) {
+        return failure(core::utf16::STATUS_MALFORMED);
+    }
+    let offset: i32 = 0;
+    let needed: i32 = 0;
+    while (offset < source_len) {
+        let width_u32: u32 = core::utf8::sequence_len_or(source[offset], 0);
+        let width: i32 = width_u32;
+        let scalar: u32 = utf8_scalar_at(source, offset, width);
+        let bytes: i32 = core::utf16_bytes::byte_len_for_scalar_or(scalar, -1);
+        if (bytes < 0) { return failure(core::utf16::STATUS_MALFORMED); }
+        if (bytes > capacity - needed) {
+            return failure(core::utf16::STATUS_SHORT);
+        }
+        needed += bytes;
+        offset += width;
+    }
+    offset = 0;
+    let written: i32 = 0;
+    while (offset < source_len) {
+        let width_u32: u32 = core::utf8::sequence_len_or(source[offset], 0);
+        let width: i32 = width_u32;
+        let scalar: u32 = utf8_scalar_at(source, offset, width);
+        let result: core::utf16_bytes::Utf16ByteWrite =
+            write_utf16_byte_scalar(destination, capacity, written, scalar,
+                                    big_endian);
+        if (!core::utf16_bytes::write_succeeded(result)) {
+            return failure(core::utf16_bytes::write_status(result));
+        }
+        written = core::utf16_bytes::write_next_or(result, written);
+        offset += width;
+    }
+    return TranscodeResult {
+        status: core::utf16::STATUS_OK, read: source_len, written: written,
+    };
+}
+
+fn utf16_bytes_to_utf8(source: [u8], source_len: i32,
+                       destination: [u8], capacity: i32,
+                       big_endian: bool) -> TranscodeResult {
+    if (source_len < 0 || capacity < 0) {
+        return failure(core::utf16::STATUS_BOUNDS);
+    }
+    if (!validate_utf16_bytes(source, source_len, big_endian)) {
+        return failure(core::utf16::STATUS_MALFORMED);
+    }
+    let offset: i32 = 0;
+    let needed: i32 = 0;
+    while (offset < source_len) {
+        let decoded: core::utf16_bytes::Utf16ByteDecode =
+            read_utf16_byte_scalar(source, source_len, offset, big_endian);
+        let scalar: u32 = core::utf16_bytes::decode_scalar_or(decoded, 4294967295);
+        let width_u32: u32 = core::utf8::encoded_len_or(scalar, 0);
+        let width: i32 = width_u32;
+        if (width == 0) { return failure(core::utf16::STATUS_MALFORMED); }
+        if (width > capacity - needed) {
+            return failure(core::utf16::STATUS_SHORT);
+        }
+        needed += width;
+        offset = core::utf16_bytes::decode_next_or(decoded, source_len);
+    }
+    offset = 0;
+    let written: i32 = 0;
+    while (offset < source_len) {
+        let decoded: core::utf16_bytes::Utf16ByteDecode =
+            read_utf16_byte_scalar(source, source_len, offset, big_endian);
+        let scalar: u32 = core::utf16_bytes::decode_scalar_or(decoded, 0);
+        let width: u32 = core::utf8::encoded_len_or(scalar, 0);
+        let index: u32 = 0;
+        while (index < width) {
+            destination[written] = core::utf8::encoded_byte_or(scalar, index, 0);
+            written += 1;
+            index += 1;
+        }
+        offset = core::utf16_bytes::decode_next_or(decoded, source_len);
+    }
+    return TranscodeResult {
+        status: core::utf16::STATUS_OK, read: source_len, written: written,
+    };
+}
+
+pub fn utf8_to_utf16le(source: [u8], source_len: i32,
+                        destination: [u8], capacity: i32) -> TranscodeResult {
+    return utf8_to_utf16_bytes(source, source_len, destination, capacity, false);
+}
+
+pub fn utf8_to_utf16be(source: [u8], source_len: i32,
+                        destination: [u8], capacity: i32) -> TranscodeResult {
+    return utf8_to_utf16_bytes(source, source_len, destination, capacity, true);
+}
+
+pub fn utf16le_to_utf8(source: [u8], source_len: i32,
+                        destination: [u8], capacity: i32) -> TranscodeResult {
+    return utf16_bytes_to_utf8(source, source_len, destination, capacity, false);
+}
+
+pub fn utf16be_to_utf8(source: [u8], source_len: i32,
+                        destination: [u8], capacity: i32) -> TranscodeResult {
+    return utf16_bytes_to_utf8(source, source_len, destination, capacity, true);
 }

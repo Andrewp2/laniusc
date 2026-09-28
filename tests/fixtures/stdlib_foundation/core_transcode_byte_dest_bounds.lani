@@ -1,0 +1,13 @@
+module app::main;
+import core::transcode;
+
+fn main() -> i32 {
+    let a: u8 = 65;
+    let source: [u8; 1] = [a];
+    let zero: u8 = 0;
+    let output: [u8; 1] = [zero];
+    let result: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16be(source, 1, output, 2);
+    if (core::transcode::succeeded(result)) { return 1; }
+    return 2;
+}
