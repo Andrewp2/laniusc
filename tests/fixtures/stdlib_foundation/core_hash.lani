@@ -1,5 +1,7 @@
 module app::main;
 import core::hash;
+import core::wide_u64;
+import core::wide_i64;
 fn main() -> i32 {
     if (core::hash::hash_i32(0) != 0) {
         return 1;
@@ -29,10 +31,10 @@ fn main() -> i32 {
         core::hash::fnv1a_bytes_or(word, -1, 1234567) != 1234567) {
         return 6;
     }
-    let zero: u8 = 0;
+    let zero_byte: u8 = 0;
     let high: u8 = 255;
     let upper: u8 = 128;
-    let binary: [u8; 3] = [zero, high, upper];
+    let binary: [u8; 3] = [zero_byte, high, upper];
     if (core::hash::fnv1a_bytes_or(binary, 3, 0) != 1921939296) {
         return 7;
     }
@@ -58,5 +60,23 @@ fn main() -> i32 {
     let max_u16: u16 = 65535;
     if (core::hash::hash_u16(0) != 0 ||
         core::hash::hash_u16(max_u16) != 65535) { return 14; }
+    let zero_wide_u: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let one_wide_u: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
+    let high_wide_u: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483648, 0);
+    let swapped_wide_u: core::wide_u64::WideU64 = core::wide_u64::from_words(1, 0);
+    let max_wide_u: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    if (core::hash::hash_wide_u64(zero_wide_u) != 2615243109) { return 15; }
+    if (core::hash::hash_wide_u64(one_wide_u) != 1048580676) { return 16; }
+    if (core::hash::hash_wide_u64(high_wide_u) != 467811045) { return 17; }
+    if (core::hash::hash_wide_u64(swapped_wide_u) != 1270166100) { return 18; }
+    if (core::hash::hash_wide_u64(max_wide_u) != 1823345245) { return 19; }
+    let zero_wide_i: core::wide_i64::WideI64 = core::wide_i64::zero();
+    let min_wide_i: core::wide_i64::WideI64 = core::wide_i64::min_value();
+    let max_wide_i: core::wide_i64::WideI64 = core::wide_i64::max_value();
+    let neg_one_wide_i: core::wide_i64::WideI64 = core::wide_i64::from_i32(-1);
+    if (core::hash::hash_wide_i64(zero_wide_i) != 2615243109) { return 20; }
+    if (core::hash::hash_wide_i64(min_wide_i) != 467811045) { return 21; }
+    if (core::hash::hash_wide_i64(max_wide_i) != 3970880477) { return 22; }
+    if (core::hash::hash_wide_i64(neg_one_wide_i) != 1823345245) { return 23; }
     return 0;
 }

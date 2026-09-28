@@ -55,7 +55,7 @@ limited to native x86_64 output from this worktree.
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::mem` capability metadata, all 10 public functions | Executable on x86_64 Linux | The native metadata fixture calls every function and checks runtime-free value helpers and the unavailable raw-memory host API against `core::runtime`. The unavailable host API is distinct from the four executable compiler-provided intrinsics above. `tests/stdlib_mem_execution.rs` requires a runtime call for all 18 public functions across the metadata and value fixtures. |
-| `core::hash` ten public free functions and two FNV-1a constants | Executable on x86_64 | The runtime fixture checks stable 32-bit bit-pattern hashes for six integer widths, both Boolean values, and ASCII and Unicode characters. The i32, u32, bool, and char functions call local `Hash<T>` implementations; narrow integers widen explicitly. It also checks both constants, a one-byte step, known byte-sequence hashes, empty input, binary bytes, and a negative-length fallback. A separate native fixture confirms that overstating the physical byte view traps. The stdin fingerprint sample combines hashing with byte input and hexadecimal output. Direct imported `Hash<T>` calls remain outside the claim. |
+| `core::hash` twelve public free functions and two FNV-1a constants | Executable on x86_64 | The runtime fixture checks stable 32-bit bit-pattern hashes for six integer widths, both Boolean values, and ASCII and Unicode characters. The i32, u32, bool, and char functions call local `Hash<T>` implementations; narrow integers widen explicitly. `hash_wide_u64` and `hash_wide_i64` apply FNV-1a to eight little-endian bytes of the two-word representation and check zero, high-bit, maximum, and signed boundary values against exact outputs. The byte extraction masks before narrowing because direct unsigned casts misexecute (dependency 33). The fixture also checks both constants, a one-byte step, known byte-sequence hashes, empty input, binary bytes, and a negative-length fallback. A separate native fixture confirms that overstating the physical byte view traps. The stdin fingerprint sample combines hashing with byte input and hexadecimal output. Direct imported `Hash<T>` calls remain outside the claim. |
 | `core::crc32` all 3 public functions and 3 constants | Executable on x86_64 for caller-backed `[u8]` views | The native fixtures check CRC-32/ISO-HDLC on `123456789`, empty input, a one-byte prefix, binary bytes, and every byte value through the streaming interface. Negative logical lengths return the fallback without reading storage; an overstated physical view traps. A source scan requires a runtime call for every public function. |
 | `core::option_i32` all 12 public functions and `core::result_i32` all 10 public functions | Executable on x86_64 | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, both branches of `or`, `and`, and `xor`, and conversions between the two concrete types. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function to have a runtime call. Local aggregate forwarding is covered by the executable return suite; see dependency 39. |
 | `core::option_u32` all 12 public functions and `core::result_u32` all 10 public functions | Executable on x86_64 | The matching runtime fixture covers every function and both variants with zero, ordinary values, the high bit, and `u32::MAX`. Both the success payload and error code are `u32`; inactive fields are zero. A source scan requires every public function to have a runtime call. See dependency 39 for local return coverage. |
@@ -1744,14 +1744,18 @@ also fixes the imported struct-return relocation path described below.
     ordinary condition with the parity flag. The executable fixtures cover
     direct branches, bool values passed between functions, both operand
     orders, signed zero, and NaN behavior of `core::f32` helpers.
-33. **Out-of-range signed narrowing casts.**
+33. **Out-of-range narrow integer casts.**
     `tests/fixtures/stdlib_foundation/repro_signed_narrow_cast.lani` passes
     `laniusc check --stdlib-root stdlib` and emits x86_64 output. It casts
     128 from `i16` to `i8` and 32,768 from `i32` to `i16`, then compares the
     results with -128 and -32,768. Both comparisons fail: the ELF exits 3
     instead of 0. The executable signed wrapping helpers reduce the widened
     result modulo the target width and bring it into the signed range before
-    casting. Direct out-of-range signed narrowing still needs a compiler fix.
+    casting. `repro_unsigned_narrow_cast.lani` demonstrates the same issue for
+    `u32 as u8` and `u32 as u16`: values 256 and 65,536 retain their full
+    native values instead of becoming zero, so the ELF exits 3. The wide hash
+    byte extractor masks every shifted word to 0..255 before casting. Direct
+    out-of-range signed and unsigned narrowing still need a compiler fix.
 34. **Resolved: qualified imported unit enum variants.**
     The original `repro_ordering_variant_import.lani` passed `laniusc check`
     but native compilation reported `LNC0005` at `core::ordering::Less`.

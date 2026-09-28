@@ -1,0 +1,12 @@
+module app::main;
+
+fn main() -> i32 {
+    let failures: i32 = 0;
+    let wide_byte: u32 = 256;
+    let byte: u8 = wide_byte as u8;
+    if (byte != 0) { failures += 1; }
+    let wide_half: u32 = 65536;
+    let half: u16 = wide_half as u16;
+    if (half != 0) { failures += 2; }
+    return failures;
+}

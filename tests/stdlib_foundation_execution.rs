@@ -1382,7 +1382,7 @@ fn executable_core_function_surface_has_runtime_cases() {
         assert!(hash_fixture.contains(&call), "{call} lacks a runtime case");
         hash_count += 1;
     }
-    assert_eq!(hash_count, 10);
+    assert_eq!(hash_count, 12);
 
     let i32_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i32.lani");
     let u8_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_u8.lani");

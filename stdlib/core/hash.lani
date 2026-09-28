@@ -3,6 +3,8 @@
 module core::hash;
 
 import core::number_u32;
+import core::wide_u64;
+import core::wide_i64;
 
 // Stable, noncryptographic 32-bit FNV-1a hashing for caller-backed byte views.
 pub const FNV1A_OFFSET_BASIS: u32 = 2166136261;
@@ -65,6 +67,29 @@ pub fn hash_u16(value: u16) -> u32 {
 pub fn fnv1a_step(state: u32, value: u8) -> u32 {
     let byte: u32 = value;
     return core::number_u32::wrapping_mul(state ^ byte, FNV1A_PRIME);
+}
+
+fn fnv1a_word_le(state: u32, word: u32) -> u32 {
+    let first: u32 = word & 255;
+    let second: u32 = (word >> 8) & 255;
+    let third: u32 = (word >> 16) & 255;
+    let fourth: u32 = (word >> 24) & 255;
+    let next: u32 = fnv1a_step(state, first as u8);
+    next = fnv1a_step(next, second as u8);
+    next = fnv1a_step(next, third as u8);
+    return fnv1a_step(next, fourth as u8);
+}
+
+// FNV-1a over the low word followed by the high word, each in little-endian
+// byte order. Signed values use their two's-complement bit pattern.
+pub fn hash_wide_u64(value: core::wide_u64::WideU64) -> u32 {
+    let state: u32 = fnv1a_word_le(FNV1A_OFFSET_BASIS, core::wide_u64::low_word(value));
+    return fnv1a_word_le(state, core::wide_u64::high_word(value));
+}
+
+pub fn hash_wide_i64(value: core::wide_i64::WideI64) -> u32 {
+    let state: u32 = fnv1a_word_le(FNV1A_OFFSET_BASIS, core::wide_i64::low_word(value));
+    return fnv1a_word_le(state, core::wide_i64::high_word(value));
 }
 
 // A negative logical length returns fallback. A length greater than the
