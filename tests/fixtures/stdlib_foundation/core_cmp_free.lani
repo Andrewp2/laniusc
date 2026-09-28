@@ -2,6 +2,9 @@ module app::main;
 import core::cmp;
 
 fn main() -> i32 {
+    let high: u32 = 2147483648;
+    let low: u32 = 2147483647;
+    let maximum: u32 = 4294967295;
     if (!core::cmp::eq_i32(7, 7) || core::cmp::eq_i32(7, -7) ||
         !core::cmp::ne_i32(7, -7) || core::cmp::ne_i32(7, 7)) { return 1; }
     if (!core::cmp::lt_i32(-2147483648, 2147483647) ||
@@ -10,5 +13,43 @@ fn main() -> i32 {
     if (!core::cmp::gt_i32(2147483647, -2147483648) ||
         core::cmp::gt_i32(7, 7) ||
         !core::cmp::ge_i32(7, 7) || core::cmp::ge_i32(7, 8)) { return 3; }
+    if (!core::cmp::eq_u32(maximum, maximum) || core::cmp::eq_u32(high, low) ||
+        !core::cmp::ne_u32(high, low) || core::cmp::ne_u32(high, high)) { return 4; }
+    if (!core::cmp::lt_u32(low, high) || core::cmp::lt_u32(high, low) ||
+        !core::cmp::le_u32(high, high) || core::cmp::le_u32(maximum, high)) { return 5; }
+    if (!core::cmp::gt_u32(high, low) || core::cmp::gt_u32(low, high) ||
+        !core::cmp::ge_u32(maximum, high) || core::cmp::ge_u32(low, high)) { return 6; }
+    let low_i8: i8 = -128;
+    let high_i8: i8 = 127;
+    if (!core::cmp::eq_i8(low_i8, low_i8) || core::cmp::eq_i8(low_i8, high_i8) ||
+        !core::cmp::ne_i8(low_i8, high_i8) || core::cmp::ne_i8(high_i8, high_i8)) { return 7; }
+    if (!core::cmp::lt_i8(low_i8, high_i8) || core::cmp::lt_i8(high_i8, low_i8) ||
+        !core::cmp::le_i8(high_i8, high_i8) || core::cmp::le_i8(high_i8, low_i8)) { return 8; }
+    if (!core::cmp::gt_i8(high_i8, low_i8) || core::cmp::gt_i8(low_i8, high_i8) ||
+        !core::cmp::ge_i8(high_i8, high_i8) || core::cmp::ge_i8(low_i8, high_i8)) { return 9; }
+    let low_i16: i16 = -32768;
+    let high_i16: i16 = 32767;
+    if (!core::cmp::eq_i16(low_i16, low_i16) || core::cmp::eq_i16(low_i16, high_i16) ||
+        !core::cmp::ne_i16(low_i16, high_i16) || core::cmp::ne_i16(high_i16, high_i16)) { return 10; }
+    if (!core::cmp::lt_i16(low_i16, high_i16) || core::cmp::lt_i16(high_i16, low_i16) ||
+        !core::cmp::le_i16(high_i16, high_i16) || core::cmp::le_i16(high_i16, low_i16)) { return 11; }
+    if (!core::cmp::gt_i16(high_i16, low_i16) || core::cmp::gt_i16(low_i16, high_i16) ||
+        !core::cmp::ge_i16(high_i16, high_i16) || core::cmp::ge_i16(low_i16, high_i16)) { return 12; }
+    let low_u8: u8 = 0;
+    let high_u8: u8 = 255;
+    if (!core::cmp::eq_u8(low_u8, low_u8) || core::cmp::eq_u8(low_u8, high_u8) ||
+        !core::cmp::ne_u8(low_u8, high_u8) || core::cmp::ne_u8(high_u8, high_u8)) { return 13; }
+    if (!core::cmp::lt_u8(low_u8, high_u8) || core::cmp::lt_u8(high_u8, low_u8) ||
+        !core::cmp::le_u8(high_u8, high_u8) || core::cmp::le_u8(high_u8, low_u8)) { return 14; }
+    if (!core::cmp::gt_u8(high_u8, low_u8) || core::cmp::gt_u8(low_u8, high_u8) ||
+        !core::cmp::ge_u8(high_u8, high_u8) || core::cmp::ge_u8(low_u8, high_u8)) { return 15; }
+    let low_u16: u16 = 0;
+    let high_u16: u16 = 65535;
+    if (!core::cmp::eq_u16(low_u16, low_u16) || core::cmp::eq_u16(low_u16, high_u16) ||
+        !core::cmp::ne_u16(low_u16, high_u16) || core::cmp::ne_u16(high_u16, high_u16)) { return 16; }
+    if (!core::cmp::lt_u16(low_u16, high_u16) || core::cmp::lt_u16(high_u16, low_u16) ||
+        !core::cmp::le_u16(high_u16, high_u16) || core::cmp::le_u16(high_u16, low_u16)) { return 17; }
+    if (!core::cmp::gt_u16(high_u16, low_u16) || core::cmp::gt_u16(low_u16, high_u16) ||
+        !core::cmp::ge_u16(high_u16, high_u16) || core::cmp::ge_u16(low_u16, high_u16)) { return 18; }
     return 0;
 }

@@ -75,8 +75,8 @@ limited to native x86_64 output from this worktree.
 | `core::u32` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, unsigned high-bit and maximum values, checked and wrapping arithmetic, alignment failures, and power-of-two overflow. Checked results use concrete `OptionU32`. |
 | `core::ordering` all 12 public functions and `Ordering` variants | Executable on x86_64 | `tests/stdlib_ordering.rs` executes every function and direct qualified and unqualified `Less`, `Equal`, and `Greater` values through the real stdlib root, including predicates, reverse, then, and unsigned high-bit comparison. An inferred local holding `Greater` also executes. The broken `compare_i64` was removed until native i64 literal and comparison lowering works (dependency 11). |
 | Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Generic enum values fail GPU lowering and native 64-bit comparison/arithmetic are incomplete. The former by-value `Option::replace` ignored its input and was removed. Concrete 8-, 16-, and 32-bit Option/Result modules and concrete two-word 64-bit variants execute on x86_64. |
-| `core::cmp` all six public `i32` free functions | Executable on x86_64 | The imported runtime fixture calls equality and ordering in both directions, equal values, and signed extrema. Each free function calls its local `Eq<i32>` or `Ord<i32>` implementation. Local trait methods also execute through `i32::eq` and value method syntax. Imported trait method calls still lack a native claim; see dependency 31. |
-| `core::cmp` trait methods, `core::hash::Hash<T>` trait methods, and `core::array_i32` | Contract-only as complete APIs in this audit | The public free comparison and hashing functions execute, but direct imported trait method calls do not. Generic fixed-array APIs depend on backend support. See dependencies 7 and 31. |
+| `core::cmp` all 36 public free functions for `i8`, `i16`, `i32`, `u8`, `u16`, and `u32` | Executable on x86_64 | The imported runtime fixture calls every equality and ordering function with equal and unequal values, both directions, signed extrema, and unsigned values across the high bit. The `i32` and `u32` functions execute local trait implementation bodies. Narrow integer functions use scalar operators because their trait keys collide with the corresponding 32-bit type; see dependency 57. Direct imported trait calls remain outside this claim. |
+| `core::cmp` trait methods, `core::hash::Hash<T>` trait methods, and `core::array_i32` | Contract-only as complete APIs in this audit | The public free comparison and hashing functions execute, but direct imported trait method calls do not. Generic fixed-array APIs depend on backend support. See dependencies 7, 31, and 57. |
 | `core::target` all 18 public functions and 16 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant. It checks the available allocator, filesystem, stdio, clock, secure RNG, process, and environment bindings against `core::runtime`; unbound network, threads, GPU, host services, panic hooks, and test harness remain false. This is a target snapshot, not a live host probe. |
 | `core::runtime` all 62 public functions and 40 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant, checking service IDs, ABI fields, available and unavailable services, unknown IDs, status classifiers, and fail-closed requirement rows. These helpers report bindings; they do not implement an unbound service operation. |
 | `core::panic` both trap functions, all 19 metadata functions, and 4 constants | Executable on x86_64 Linux for the trap functions and metadata | `tests/stdlib_panic_execution.rs` checks that `panic()` and `unreachable()` terminate with SIGILL, and a runtime fixture checks every metadata result. Panic hooks remain unbound; their availability flags stay false. |
@@ -1722,8 +1722,9 @@ also fixes the imported struct-return relocation path described below.
     The GPU method table now indexes trait impl bodies, and built-in scalar
     receiver names acquire a method lookup key. Local `i32::eq`, `Box::eq`,
     and `value.describe()` calls execute in `tests/stdlib_cmp_execution.rs`.
-    The public `core::cmp` free functions call these trait bodies inside their
-    defining library and execute through ordinary imports. Likewise,
+    The public `core::cmp` i32 and u32 free functions call these trait bodies
+    inside their defining library and execute through ordinary imports. The
+    narrow integer free functions use scalar operators (dependency 57). Likewise,
     `core::hash::hash_i32` calls its local trait body. The separate
     `repro_cmp_receiver_call.lani` passes GPU `check` for an imported
     `i32::eq` call but native emission still reports `LNC0005`. Imported
@@ -2004,6 +2005,18 @@ also fixes the imported struct-return relocation path described below.
     next offset in a private negative state; this gives executable status,
     value, and next-offset accessors without relying on the broken nested
     return layout.
+57. **Narrow integer trait implementation keys collide with 32-bit keys.**
+    `laniusc check tests/fixtures/stdlib_foundation/repro_cmp_signed_width_trait_impls.lani`
+    reports `LNC0021` on `impl Marker<i32> for i32` after an `i8` impl.
+    The matching unsigned reproducer reports the same error for `u8` and
+    `u32`. The GPU language declaration table currently assigns one type
+    code to every signed integer width and another to every unsigned width;
+    the exact trait-impl index therefore treats distinct primitive types as
+    the same key. A single narrow-width impl succeeds, and `i8` beside `u32`
+    succeeds. Widening type identity through the compiler is required before
+    `core::cmp` can provide distinct trait impls for every integer width.
+    The 36 imported free functions execute and cover all six widths without
+    claiming those colliding trait impls.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

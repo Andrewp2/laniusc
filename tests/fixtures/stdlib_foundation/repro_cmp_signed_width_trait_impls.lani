@@ -1,0 +1,4 @@
+trait Marker<T> {}
+impl Marker<i8> for i8 {}
+impl Marker<i32> for i32 {}
+fn main() { return 0; }
