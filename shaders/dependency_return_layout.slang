@@ -77,6 +77,7 @@ public uint dependency_aggregate_word_count(
     if (type_i >= dependency_type_count()) return 0u;
     uint base = type_i * RETURN_LAYOUT_TYPE_WORDS;
     uint kind = dependency_type_word(base);
+    if (kind == RETURN_LAYOUT_SCALAR) return 0u;
     uint library_id = kind == RETURN_LAYOUT_DECLARATION
         ? dependency_type_word(base + 1u)
         : dependency_type_library_id(type_i);

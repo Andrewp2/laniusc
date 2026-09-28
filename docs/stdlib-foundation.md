@@ -1703,7 +1703,7 @@ also fixes the imported struct-return relocation path described below.
     block's 55-byte size and every following runtime service offset.
     `tests/stdlib_time_execution.rs` now runs this fixture and the checked
     clock and sleep cases successfully.
-54. **Partially resolved: imported type-qualified associated constructors.**
+54. **Partially resolved: imported methods.**
     `tests/fixtures/stdlib_foundation/repro_imported_associated_new.lani`
     calls `core::thing::Thing::new()` through a separate stdlib root and
     checks both returned fields through an imported free function. The native
@@ -1711,8 +1711,14 @@ also fixes the imported struct-return relocation path described below.
     Method projection now runs for import-only entries, publishes the
     qualified call at its owner token, and reports the imported aggregate
     return width. The sibling `repro_imported_plain_method.lani` calls the
-    imported `value.get()` after a free constructor and reports `LNC0027` in
-    native compilation. The generic
+    imported `value.get()` after a free constructor, and
+    `repro_imported_plain_method_inferred.lani` does the same through an
+    unannotated binding. Both compile and exit zero in the native executable
+    tests. Receiver lookup follows the stable imported identity on the
+    annotation or inferred call result, rather than a page-local canonical
+    type index. Scalar method returns have zero aggregate result words; the
+    specialized imported `RangeFrom<u32>::contains` executable test catches
+    a wrong return layout. The generic
     `repro_vec_generic_associated_new.lani` still reports `LNC0005` through
     `--stdlib-root`, while `repro_vec_generic_free_new.lani` reports
     `LNC0006` for its contextual generic result. Both Vec fixtures compile
@@ -1723,9 +1729,9 @@ also fixes the imported struct-return relocation path described below.
     on plain `Thing` because it looked for a generic instance binding on the
     receiver. It now resolves plain receivers through the checked module type
     path. `tests/stdlib_generic_interface.rs` confirms that `Thing::new`,
-    `Thing::get`, and all three `Vec<T>` methods are exported. Imported
-    instance-call projection and generic return instantiation remain compiler
-    dependencies.
+    `Thing::get`, and all three `Vec<T>` methods are exported. Generic
+    associated-call resolution and generic return instantiation remain
+    compiler dependencies.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

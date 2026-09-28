@@ -31,6 +31,7 @@ StructuredBuffer<uint> type_instance_elem_ref_payload;
 
 RWStructuredBuffer<uint> decl_type_ref_tag;
 RWStructuredBuffer<uint> decl_type_ref_payload;
+RWStructuredBuffer<uint> decl_imported_type_token;
 
 static const uint INVALID = 0xffffffffu;
 
@@ -48,6 +49,7 @@ static const uint HIR_ITEM_KIND_CONST = 3u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_ERROR = 4u;
 static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 
 static const uint TYPE_INSTANCE_ARRAY = 2u;
 static const uint TYPE_INSTANCE_SLICE = 3u;
@@ -104,6 +106,10 @@ void publish_compact_decl_ref(uint decl_token, uint type_node)
 
     decl_type_ref_tag[decl_token] = tag;
     decl_type_ref_payload[decl_token] = payload;
+    // The resolved type expression retains the stable imported identity;
+    // canonical type indices in `payload` are page-local.
+    if (tag == TYPE_REF_EXTERNAL_CANONICAL)
+        decl_imported_type_token[decl_token] = type_token;
 }
 
 void publish_decl_ref_value(uint decl_token, uint tag, uint payload)

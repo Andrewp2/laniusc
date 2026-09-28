@@ -2839,6 +2839,7 @@ fn build_graph(
     graph_resources!(graph, Workspace {
         decl_type_ref_tag in Tokens => token_rows * 4;
         decl_type_ref_payload in Tokens => token_rows * 4;
+        _decl_imported_type_token as "decl_imported_type_token" in Tokens => token_rows * 4;
         _call_dependency_library_id as "call_dependency_library_id" in Tokens => token_rows * 4;
         _call_dependency_unit_id as "call_dependency_unit_id" in Tokens => token_rows * 4;
         _call_dependency_local_index as "call_dependency_local_index" in Tokens => token_rows * 4;

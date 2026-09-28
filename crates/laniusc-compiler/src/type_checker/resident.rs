@@ -928,6 +928,12 @@ impl GpuTypeChecker {
                 timer.stamp(encoder, "typecheck.calls_row_args.done");
             }
             if methods_required {
+                // An imported call result can supply the receiver type for
+                // a later method call through an unannotated let binding.
+                bind_groups
+                    .type_instances
+                    .infer_imported_decl_refs
+                    .record(encoder)?;
                 bind_groups
                     .methods
                     .mark_call_keys

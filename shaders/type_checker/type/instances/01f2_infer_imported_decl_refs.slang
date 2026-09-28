@@ -12,6 +12,7 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 RWStructuredBuffer<uint> decl_type_ref_tag;
 RWStructuredBuffer<uint> decl_type_ref_payload;
+RWStructuredBuffer<uint> decl_imported_type_token;
 RWStructuredBuffer<uint> external_type_library_id;
 RWStructuredBuffer<uint> external_type_unit_id;
 RWStructuredBuffer<uint> external_type_local_index;
@@ -92,6 +93,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!imported_nominal_token(source)) return;
     decl_type_ref_tag[stmt.b] = TYPE_REF_EXTERNAL_CANONICAL;
     decl_type_ref_payload[stmt.b] = decl_type_ref_payload[source];
+    decl_imported_type_token[stmt.b] = source;
     external_type_library_id[stmt.b] = external_type_library_id[source];
     external_type_unit_id[stmt.b] = external_type_unit_id[source];
     external_type_local_index[stmt.b] = external_type_local_index[source];

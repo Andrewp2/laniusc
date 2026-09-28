@@ -39,6 +39,8 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> name_hash_lo;
 StructuredBuffer<uint> name_hash_hi;
+StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> decl_imported_type_token;
 StructuredBuffer<uint> method_call_receiver_ref_tag;
 StructuredBuffer<uint> method_call_receiver_ref_payload;
 StructuredBuffer<uint> type_instance_arg_start;
@@ -243,6 +245,14 @@ uint receiver_identity_token(uint receiver_tag, uint receiver_payload, uint raw_
     if (receiver_tag == 3u && valid_token(receiver_payload) &&
         external_type_library_id[receiver_payload] != INVALID)
         return receiver_payload;
+    if (receiver_tag == TYPE_REF_EXTERNAL_CANONICAL && valid_token(raw_receiver))
+    {
+        uint declaration = visible_decl[raw_receiver];
+        uint identity = valid_token(declaration)
+            ? decl_imported_type_token[declaration] : INVALID;
+        if (valid_token(identity) && external_type_library_id[identity] != INVALID)
+            return identity;
+    }
     if (receiver_tag == TYPE_REF_EXTERNAL_CANONICAL && valid_token(raw_receiver) &&
         external_type_library_id[raw_receiver] != INVALID)
         return raw_receiver;

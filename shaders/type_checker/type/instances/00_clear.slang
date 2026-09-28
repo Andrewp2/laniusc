@@ -52,6 +52,7 @@ RWStructuredBuffer<uint> fn_return_ref_tag;
 RWStructuredBuffer<uint> fn_return_ref_payload;
 RWStructuredBuffer<uint> decl_type_ref_tag;
 RWStructuredBuffer<uint> decl_type_ref_payload;
+RWStructuredBuffer<uint> decl_imported_type_token;
 RWStructuredBuffer<uint> member_result_context_instance;
 RWStructuredBuffer<uint> member_result_ref_tag;
 RWStructuredBuffer<uint> member_result_ref_payload;
@@ -132,6 +133,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     fn_return_ref_payload[i] = INVALID;
     decl_type_ref_tag[i] = TYPE_REF_INVALID;
     decl_type_ref_payload[i] = INVALID;
+    decl_imported_type_token[i] = INVALID;
     member_result_context_instance[i] = INVALID;
     member_result_ref_tag[i] = TYPE_REF_INVALID;
     if ((gParams.parser_feature_flags & PARSER_FEATURE_MEMBERS) != 0u)

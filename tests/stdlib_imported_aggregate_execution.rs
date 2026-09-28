@@ -31,6 +31,56 @@ fn imported_associated_constructor_returns_aggregate_on_x86() {
 }
 
 #[test]
+fn imported_plain_instance_method_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_imported_plain_method.lani");
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_imported_associated_new_root");
+    let bytes = common::run_gpu_codegen_with_timeout("imported Thing::get", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile imported instance method");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported Thing::get",
+            "repro_imported_plain_method",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "unexpected stdout: {output:?}");
+        assert!(output.stderr.is_empty(), "unexpected stderr: {output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_instance_method_on_inferred_value_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_imported_plain_method_inferred.lani");
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_imported_associated_new_root");
+    let bytes = common::run_gpu_codegen_with_timeout("inferred imported Thing::get", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile imported method on inferred value");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "inferred imported Thing::get",
+            "repro_imported_plain_method_inferred",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "unexpected stdout: {output:?}");
+        assert!(output.stderr.is_empty(), "unexpected stderr: {output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
 fn imported_calls_with_seven_to_nine_arguments_execute_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_foundation/repro_seven_arguments.lani");
