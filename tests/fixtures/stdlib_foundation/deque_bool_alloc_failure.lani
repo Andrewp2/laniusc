@@ -1,0 +1,12 @@
+module app::main;
+import std::deque_bool;
+
+fn main() -> i32 {
+    let value: std::deque_bool::DequeBool = std::deque_bool::try_with_capacity(3);
+    let failure: bool = std::deque_bool::capacity(value) == 0 && std::deque_bool::len(value) == 0;
+    let success: bool = std::deque_bool::capacity(value) == 3 && std::deque_bool::len(value) == 0;
+    std::deque_bool::destroy(value);
+    if (failure) { return 0; }
+    if (success) { return 4; }
+    return 5;
+}

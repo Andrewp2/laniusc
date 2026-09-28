@@ -1,0 +1,42 @@
+// Read zeroes and ones, then print how many of the last five are one.
+module app::main;
+import core::byte;
+import std::deque_bool;
+import std::io_byte;
+
+fn main() -> i32 {
+    let recent: std::deque_bool::DequeBool = std::deque_bool::new();
+    let next: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+    while (next >= 0) {
+        let character: u8 = next;
+        if (!core::byte::is_ascii_whitespace(character)) {
+            if (character != 48 && character != 49) {
+                std::deque_bool::destroy(recent);
+                return 3;
+            }
+            let before: i32 = std::deque_bool::len(recent);
+            recent = std::deque_bool::try_push_back(recent, character == 49);
+            if (std::deque_bool::len(recent) != before + 1) {
+                std::deque_bool::destroy(recent);
+                return 2;
+            }
+            if (std::deque_bool::len(recent) > 5) {
+                recent = std::deque_bool::try_pop_front(recent);
+            }
+        }
+        next = std::io_byte::read_stdin_byte_or(-1, -2);
+    }
+    if (next != -1) {
+        std::deque_bool::destroy(recent);
+        return 4;
+    }
+    let count: i32 = 0;
+    let index: i32 = 0;
+    while (index < std::deque_bool::len(recent)) {
+        if (std::deque_bool::at_or(recent, index, false)) { count += 1; }
+        index += 1;
+    }
+    std::deque_bool::destroy(recent);
+    print(count);
+    return 0;
+}
