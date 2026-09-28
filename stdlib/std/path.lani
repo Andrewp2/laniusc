@@ -3,6 +3,7 @@
 // filesystem to canonicalize paths.
 
 module std::path;
+import core::utf8;
 
 pub type PathCapability = bool;
 pub type PathByte = u8;
@@ -354,6 +355,59 @@ pub fn path_component_matches_windows_relative_byte_rules(bytes: [PathByte], len
         index += 1;
     }
     return true;
+}
+
+fn path_ascii_upper(value: PathByte) -> PathByte {
+    if (value >= 97 && value <= 122) {
+        return value - 32;
+    }
+    return value;
+}
+
+fn path_windows_reserved_device_stem(bytes: [PathByte], end: i32) -> bool {
+    if (end < 3) { return false; }
+    let first: PathByte = path_ascii_upper(bytes[0]);
+    let second: PathByte = path_ascii_upper(bytes[1]);
+    let third: PathByte = path_ascii_upper(bytes[2]);
+    if (end == 3) {
+        return (first == 67 && second == 79 && third == 78) ||
+            (first == 80 && second == 82 && third == 78) ||
+            (first == 65 && second == 85 && third == 88) ||
+            (first == 78 && second == 85 && third == 76);
+    }
+    let port: bool = (first == 67 && second == 79 && third == 77) ||
+        (first == 76 && second == 80 && third == 84);
+    if (!port) { return false; }
+    if (end == 4) {
+        return bytes[3] >= 49 && bytes[3] <= 57;
+    }
+    // UTF-8 encodings of the superscript digits ¹, ², and ³.
+    return end == 5 && bytes[3] == 194 &&
+        (bytes[4] == 185 || bytes[4] == 178 || bytes[4] == 179);
+}
+
+// Validate a UTF-8 relative component against common user-facing Win32 name
+// restrictions: reserved bytes, trailing space or period, and device names
+// (including extensions and superscript port digits). This is a portable
+// lexical predicate, not a filesystem probe; a target volume can impose
+// further limits. An overclaimed physical view may trap on native indexing.
+// Reference: https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file
+pub fn path_component_is_windows_portable_utf8(bytes: [PathByte], length: i32) -> PathCapability {
+    if (!path_component_matches_windows_relative_byte_rules(bytes, length) ||
+        !core::utf8::bytes_are_valid(bytes, length)) { return false; }
+    let last: PathByte = bytes[length - 1];
+    if (last == 32 || last == PATH_EXTENSION_SEPARATOR) { return false; }
+
+    let stem_end: i32 = 0;
+    while (stem_end < length && bytes[stem_end] != PATH_EXTENSION_SEPARATOR) {
+        stem_end += 1;
+    }
+    // Treat spaces before an extension conservatively when checking a device
+    // stem, so a portable name does not resemble a reserved device.
+    while (stem_end > 0 && bytes[stem_end - 1] == 32) {
+        stem_end -= 1;
+    }
+    return !path_windows_reserved_device_stem(bytes, stem_end);
 }
 
 // Locate the last nonempty component in a caller-backed byte path. Both slash

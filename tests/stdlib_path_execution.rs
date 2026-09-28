@@ -36,6 +36,7 @@ fn path_lexical_helpers_execute_on_x86() {
         "path_separator_kind",
         "path_constants",
         "path_full_components",
+        "path_windows_portable_utf8",
         "path_last_component",
     ] {
         let entry = root.join(format!("tests/fixtures/stdlib_host/{name}.lani"));
@@ -85,7 +86,11 @@ fn path_extension_sample_executes_on_x86() {
 fn path_view_length_overclaims_trap_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let stdlib_root = root.join("stdlib");
-    for name in ["path_full_component_bounds", "path_last_component_bounds"] {
+    for name in [
+        "path_full_component_bounds",
+        "path_windows_portable_bounds",
+        "path_last_component_bounds",
+    ] {
         let entry = root.join(format!("tests/fixtures/stdlib_host/{name}.lani"));
         let stdlib_root = stdlib_root.clone();
         let bytes = common::run_gpu_codegen_with_timeout(name, move || {
@@ -105,11 +110,12 @@ fn path_view_length_overclaims_trap_on_x86() {
 #[test]
 fn public_path_functions_have_runtime_cases() {
     let cases = format!(
-        "{}{}{}{}{}",
+        "{}{}{}{}{}{}",
         include_str!("fixtures/stdlib_host/path_bytes.lani"),
         include_str!("fixtures/stdlib_host/path_components.lani"),
         include_str!("fixtures/stdlib_host/path_separator_kind.lani"),
         include_str!("fixtures/stdlib_host/path_full_components.lani"),
+        include_str!("fixtures/stdlib_host/path_windows_portable_utf8.lani"),
         include_str!("fixtures/stdlib_host/path_last_component.lani")
     );
     let mut covered = 0;
@@ -125,7 +131,7 @@ fn public_path_functions_have_runtime_cases() {
         assert!(cases.contains(&call), "{call} lacks a runtime case");
         covered += 1;
     }
-    assert_eq!(covered, 37);
+    assert_eq!(covered, 38);
 
     let constants = include_str!("fixtures/stdlib_host/path_constants.lani");
     let mut constant_count = 0;

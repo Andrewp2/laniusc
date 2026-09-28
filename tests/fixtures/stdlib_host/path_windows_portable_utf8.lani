@@ -1,0 +1,103 @@
+module app::main;
+import std::path;
+
+fn main() -> i32 {
+    let b0: u8 = 0;
+    let b10: u8 = 10;
+    let b32: u8 = 32;
+    let b40: u8 = 40;
+    let b46: u8 = 46;
+    let b48: u8 = 48;
+    let b49: u8 = 49;
+    let b57: u8 = 57;
+    let b58: u8 = 58;
+    let b63: u8 = 63;
+    let b65: u8 = 65;
+    let b67: u8 = 67;
+    let b69: u8 = 69;
+    let b76: u8 = 76;
+    let b77: u8 = 77;
+    let b78: u8 = 78;
+    let b79: u8 = 79;
+    let b80: u8 = 80;
+    let b82: u8 = 82;
+    let b83: u8 = 83;
+    let b84: u8 = 84;
+    let b85: u8 = 85;
+    let b88: u8 = 88;
+    let b97: u8 = 97;
+    let b99: u8 = 99;
+    let b101: u8 = 101;
+    let b102: u8 = 102;
+    let b103: u8 = 103;
+    let b105: u8 = 105;
+    let b108: u8 = 108;
+    let b109: u8 = 109;
+    let b110: u8 = 110;
+    let b111: u8 = 111;
+    let b112: u8 = 112;
+    let b114: u8 = 114;
+    let b116: u8 = 116;
+    let b117: u8 = 117;
+    let b120: u8 = 120;
+    let b169: u8 = 169;
+    let b179: u8 = 179;
+    let b185: u8 = 185;
+    let b194: u8 = 194;
+    let b195: u8 = 195;
+    let report: [u8; 10] = [b114, b101, b112, b111, b114, b116, b46, b116, b120, b116];
+    let unicode: [u8; 6] = [b195, b169, b46, b116, b120, b116];
+    let hidden: [u8; 7] = [b46, b99, b111, b110, b102, b105, b103];
+    let com_zero: [u8; 4] = [b67, b79, b77, b48];
+    let console: [u8; 7] = [b67, b79, b78, b83, b79, b76, b69];
+    let com_ten: [u8; 5] = [b67, b79, b77, b49, b48];
+    if (!std::path::path_component_is_windows_portable_utf8(report, 10) ||
+        !std::path::path_component_is_windows_portable_utf8(unicode, 6) ||
+        !std::path::path_component_is_windows_portable_utf8(hidden, 7) ||
+        !std::path::path_component_is_windows_portable_utf8(com_zero, 4) ||
+        !std::path::path_component_is_windows_portable_utf8(console, 7) ||
+        !std::path::path_component_is_windows_portable_utf8(com_ten, 5)) { return 1; }
+
+    let con: [u8; 3] = [b67, b79, b78];
+    let prn: [u8; 3] = [b112, b82, b110];
+    let aux: [u8; 3] = [b65, b85, b88];
+    let nul_extension: [u8; 7] = [b110, b117, b108, b46, b116, b120, b116];
+    let com_one: [u8; 4] = [b99, b111, b109, b49];
+    let lpt_nine_extension: [u8; 8] = [b76, b80, b84, b57, b46, b116, b120, b116];
+    let com_superscript_one: [u8; 5] = [b67, b79, b77, b194, b185];
+    let lpt_superscript_three_extension: [u8; 7] = [b108, b112, b116, b194, b179, b46, b120];
+    if (std::path::path_component_is_windows_portable_utf8(con, 3) ||
+        std::path::path_component_is_windows_portable_utf8(prn, 3) ||
+        std::path::path_component_is_windows_portable_utf8(aux, 3) ||
+        std::path::path_component_is_windows_portable_utf8(nul_extension, 7) ||
+        std::path::path_component_is_windows_portable_utf8(com_one, 4) ||
+        std::path::path_component_is_windows_portable_utf8(lpt_nine_extension, 8) ||
+        std::path::path_component_is_windows_portable_utf8(com_superscript_one, 5) ||
+        std::path::path_component_is_windows_portable_utf8(lpt_superscript_three_extension, 7)) {
+        return 2;
+    }
+
+    let trailing_dot: [u8; 4] = [b102, b111, b111, b46];
+    let trailing_space: [u8; 4] = [b102, b111, b111, b32];
+    let spaced_device: [u8; 8] = [b67, b79, b78, b32, b46, b116, b120, b116];
+    let malformed_utf8: [u8; 2] = [b195, b40];
+    let reserved_punctuation: [u8; 2] = [b97, b63];
+    let control: [u8; 2] = [b97, b10];
+    let nul_byte: [u8; 2] = [b97, b0];
+    let dot: [u8; 1] = [b46];
+    let parent: [u8; 2] = [b46, b46];
+    let drive: [u8; 2] = [b67, b58];
+    if (std::path::path_component_is_windows_portable_utf8(trailing_dot, 4) ||
+        std::path::path_component_is_windows_portable_utf8(trailing_space, 4) ||
+        std::path::path_component_is_windows_portable_utf8(spaced_device, 8) ||
+        std::path::path_component_is_windows_portable_utf8(malformed_utf8, 2) ||
+        std::path::path_component_is_windows_portable_utf8(reserved_punctuation, 2) ||
+        std::path::path_component_is_windows_portable_utf8(control, 2) ||
+        std::path::path_component_is_windows_portable_utf8(nul_byte, 2) ||
+        std::path::path_component_is_windows_portable_utf8(dot, 1) ||
+        std::path::path_component_is_windows_portable_utf8(parent, 2) ||
+        std::path::path_component_is_windows_portable_utf8(drive, 2) ||
+        std::path::path_component_is_windows_portable_utf8(report, 0) ||
+        std::path::path_component_is_windows_portable_utf8(report, -1)) { return 3; }
+    return 0;
+}
