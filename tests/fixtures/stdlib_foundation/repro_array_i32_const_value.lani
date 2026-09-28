@@ -1,0 +1,10 @@
+module app::main;
+
+fn length<const N: usize>(values: [i32; N]) -> i32 {
+    return N as i32;
+}
+
+fn main() -> i32 {
+    let values: [i32; 4] = [7, -2, 9, 4];
+    return length(values) - 4;
+}

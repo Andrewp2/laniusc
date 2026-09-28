@@ -1101,8 +1101,8 @@ functions, including capability metadata, value helpers, and intrinsics.
 Run `cargo test --test stdlib_allocator_metadata_execution` for allocator
 capability metadata and live pointer classification.
 Run `cargo test --test stdlib_generic_vec_flat_execution` for empty generic
-vector operations in a flat source pack; this does not establish imported
-`--stdlib-root` execution.
+vector operations, including imported `--stdlib-root` calls and flat source
+packs. Storage and mutation for generic vectors remain unavailable.
 Run `cargo test --test stdlib_generic_interface` for exported generic
 Option/Result types and associated methods on both plain and generic structs.
 Run `cargo test --test stdlib_time_execution` for clock metadata, the four
@@ -1317,7 +1317,16 @@ also fixes the imported struct-return relocation path described below.
     `core::array_i32::first` on a four-element array. Native emission stops
     with `LNC0017` at `values[0]` in the const-generic helper, so the generic
     array module remains contract-only; the concrete `core::array_i32_4`
-    scalar functions have separate executable tests.
+    scalar functions have separate executable tests. A source-level attempt
+    to form a bounded slice from the array pointer needs the length as a
+    value. `repro_array_i32_const_value.lani` shows that `N as i32` inside a
+    const-generic function fails GPU checking with `LNC0005` (unresolved
+    identifier). Fixed arrays also lack a callable `values.len()` method
+    (`LNC0027`). Neither route currently gives a safe source-level
+    replacement for generic array indexing. For comparison, a temporary
+    four-element-only slice length compiled and the reproducer exited 7,
+    confirming the pointer and slice intrinsics work for that concrete case;
+    that hard-coded length was not retained in the generic API.
 13. **Resolved: raw host integer read overflow.** The native
     `std::fs::read_i32(handle, fallback)` parser now accumulates magnitude in
     64 bits and returns the fallback above `i32::MAX` or below `i32::MIN`.
