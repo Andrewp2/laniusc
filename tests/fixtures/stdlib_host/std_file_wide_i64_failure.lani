@@ -1,0 +1,12 @@
+module app::main;
+import core::wide_i64;
+import std::file;
+
+fn main() -> i32 {
+    let fallback: core::wide_i64::WideI64 = core::wide_i64::from_i32(-777);
+    let value: core::wide_i64::WideI64 =
+        std::file::read_wide_i64_decimal_or("valid.txt", 64, fallback);
+    if (core::wide_i64::eq(value, fallback)) { return 0; }
+    if (!std::file::write_wide_i64_decimal("out.txt", value)) { return 0; }
+    return 1;
+}

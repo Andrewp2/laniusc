@@ -1,0 +1,95 @@
+module app::main;
+import core::wide_i64;
+import core::wide_u64;
+import std::file;
+
+fn main() -> i32 {
+    let unsigned_fallback: core::wide_u64::WideU64 = core::wide_u64::from_u32(777);
+    let signed_fallback: core::wide_i64::WideI64 = core::wide_i64::from_i32(-777);
+    if (!core::wide_u64::eq(
+            std::file::read_wide_u64_decimal_or("u_zero.txt", 64, unsigned_fallback),
+            core::wide_u64::zero()) ||
+        !core::wide_u64::eq(
+            std::file::read_wide_u64_decimal_or("u_plus.txt", 64, unsigned_fallback),
+            core::wide_u64::from_u32(17)) ||
+        !core::wide_u64::eq(
+            std::file::read_wide_u64_decimal_or("u_max.txt", 20, unsigned_fallback),
+            core::wide_u64::max_value())) { return 1; }
+    if (!core::wide_u64::eq(
+            std::file::read_wide_u64_decimal_or("u_over.txt", 64, unsigned_fallback),
+            unsigned_fallback) ||
+        !core::wide_u64::eq(
+            std::file::read_wide_u64_decimal_or("u_minus.txt", 64, unsigned_fallback),
+            unsigned_fallback) ||
+        !core::wide_u64::eq(
+            std::file::read_wide_u64_decimal_or("u_bad.txt", 64, unsigned_fallback),
+            unsigned_fallback) ||
+        !core::wide_u64::eq(
+            std::file::read_wide_u64_decimal_or("u_empty.txt", 64, unsigned_fallback),
+            unsigned_fallback)) { return 2; }
+    if (!core::wide_u64::eq(
+            std::file::read_wide_u64_decimal_or("u_max.txt", 19, unsigned_fallback),
+            unsigned_fallback) ||
+        !core::wide_u64::eq(
+            std::file::read_wide_u64_decimal_or("u_max.txt", 0, unsigned_fallback),
+            unsigned_fallback) ||
+        !core::wide_u64::eq(
+            std::file::read_wide_u64_decimal_or("missing.txt", 64, unsigned_fallback),
+            unsigned_fallback) ||
+        !core::wide_u64::eq(
+            std::file::read_wide_u64_decimal_or("u_leading.txt", 64, unsigned_fallback),
+            core::wide_u64::from_u32(42))) { return 3; }
+    if (!core::wide_i64::eq(
+            std::file::read_wide_i64_decimal_or("i_zero.txt", 64, signed_fallback),
+            core::wide_i64::zero()) ||
+        !core::wide_i64::eq(
+            std::file::read_wide_i64_decimal_or("i_minus.txt", 64, signed_fallback),
+            core::wide_i64::from_i32(-42)) ||
+        !core::wide_i64::eq(
+            std::file::read_wide_i64_decimal_or("i_max.txt", 64, signed_fallback),
+            core::wide_i64::max_value()) ||
+        !core::wide_i64::eq(
+            std::file::read_wide_i64_decimal_or("i_min.txt", 20, signed_fallback),
+            core::wide_i64::min_value())) { return 4; }
+    if (!core::wide_i64::eq(
+            std::file::read_wide_i64_decimal_or("i_over.txt", 64, signed_fallback),
+            signed_fallback) ||
+        !core::wide_i64::eq(
+            std::file::read_wide_i64_decimal_or("i_under.txt", 64, signed_fallback),
+            signed_fallback) ||
+        !core::wide_i64::eq(
+            std::file::read_wide_i64_decimal_or("i_bad.txt", 64, signed_fallback),
+            signed_fallback) ||
+        !core::wide_i64::eq(
+            std::file::read_wide_i64_decimal_or("i_empty.txt", 64, signed_fallback),
+            signed_fallback)) { return 5; }
+    if (!core::wide_i64::eq(
+            std::file::read_wide_i64_decimal_or("i_min.txt", 19, signed_fallback),
+            signed_fallback) ||
+        !core::wide_i64::eq(
+            std::file::read_wide_i64_decimal_or("i_min.txt", 0, signed_fallback),
+            signed_fallback) ||
+        !core::wide_i64::eq(
+            std::file::read_wide_i64_decimal_or("missing.txt", 64, signed_fallback),
+            signed_fallback) ||
+        !core::wide_i64::eq(
+            std::file::read_wide_i64_decimal_or("i_leading.txt", 64, signed_fallback),
+            core::wide_i64::from_i32(-42))) { return 6; }
+    if (!std::file::write_wide_u64_decimal("out_u.txt", core::wide_u64::max_value()) ||
+        !std::file::write_wide_i64_decimal("out_i.txt", core::wide_i64::min_value())) {
+        return 7;
+    }
+    if (!core::wide_u64::eq(
+            std::file::read_wide_u64_decimal_or("out_u.txt", 20, unsigned_fallback),
+            core::wide_u64::max_value()) ||
+        !core::wide_i64::eq(
+            std::file::read_wide_i64_decimal_or("out_i.txt", 20, signed_fallback),
+            core::wide_i64::min_value())) { return 8; }
+    if (std::file::write_wide_u64_decimal("missing/out.txt", core::wide_u64::zero()) ||
+        std::file::write_wide_i64_decimal("missing/out.txt", core::wide_i64::zero()) ||
+        std::file::write_wide_u64_decimal("/dev/full", core::wide_u64::max_value()) ||
+        std::file::write_wide_i64_decimal("/dev/full", core::wide_i64::min_value())) {
+        return 9;
+    }
+    return 0;
+}

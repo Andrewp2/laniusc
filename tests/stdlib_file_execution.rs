@@ -61,7 +61,10 @@ fn std_fs_raw_paths_honor_supplied_lengths_on_x86() {
         std::fs::create_dir(run_dir.path()).expect("create run directory");
         let output = run_in_directory(&bytes, run_dir.path(), "std_fs_path_lengths");
         assert_eq!(output.status.code(), Some(0), "{output:?}");
-        assert_eq!(std::fs::read(run_dir.path().join("new.txt")).unwrap(), b"AB");
+        assert_eq!(
+            std::fs::read(run_dir.path().join("new.txt")).unwrap(),
+            b"AB"
+        );
         assert_eq!(std::fs::read(run_dir.path().join("path.txt")).unwrap(), b"");
         assert!(!run_dir.path().join("old.txt").exists());
         assert!(!run_dir.path().join("copy.txt").exists());
@@ -131,10 +134,16 @@ fn std_fs_raw_paths_accept_more_than_255_total_bytes_on_x86() {
         permissions.set_mode(0o700);
         std::fs::set_permissions(&exe_path, permissions).unwrap();
         let mut command = std::process::Command::new(&exe_path);
-        command.current_dir(run_dir.path()).arg(format!("{relative}.ignored"));
-        let output = common::short_process_output_with_timeout("run std_fs_long_path", &mut command);
+        command
+            .current_dir(run_dir.path())
+            .arg(format!("{relative}.ignored"));
+        let output =
+            common::short_process_output_with_timeout("run std_fs_long_path", &mut command);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
-        assert_eq!(std::fs::read(run_dir.path().join(&relative)).unwrap(), b"long");
+        assert_eq!(
+            std::fs::read(run_dir.path().join(&relative)).unwrap(),
+            b"long"
+        );
         assert!(!run_dir.path().join(format!("{relative}.ignored")).exists());
         std::fs::remove_dir_all(run_dir.path()).expect("remove run directory");
     }
@@ -607,6 +616,145 @@ fn std_file_write_u32_decimal_executes_on_x86() {
 }
 
 #[test]
+fn std_file_wide_decimal_reads_and_writes_execute_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_host/std_file_wide_decimal.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("std_file_wide_decimal", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile two-word decimal file operations");
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let run_dir = common::TempArtifact::new("laniusc_std_file_wide_decimal", "run_dir", None);
+        std::fs::create_dir(run_dir.path()).expect("create two-word decimal directory");
+        for (name, contents) in [
+            ("u_zero.txt", b"0".as_slice()),
+            ("u_plus.txt", b" \t+17\r\n".as_slice()),
+            ("u_max.txt", b"18446744073709551615".as_slice()),
+            ("u_over.txt", b"18446744073709551616".as_slice()),
+            ("u_minus.txt", b"-1".as_slice()),
+            ("u_bad.txt", b"12 3".as_slice()),
+            ("u_empty.txt", b"".as_slice()),
+            ("u_leading.txt", b"00000000000000000042".as_slice()),
+            ("i_zero.txt", b"-0".as_slice()),
+            ("i_minus.txt", b" \t-42\r\n".as_slice()),
+            ("i_max.txt", b"9223372036854775807".as_slice()),
+            ("i_min.txt", b"-9223372036854775808".as_slice()),
+            ("i_over.txt", b"9223372036854775808".as_slice()),
+            ("i_under.txt", b"-9223372036854775809".as_slice()),
+            ("i_bad.txt", b"--1".as_slice()),
+            ("i_empty.txt", b"".as_slice()),
+            ("i_leading.txt", b"-00000000000000000042".as_slice()),
+        ] {
+            std::fs::write(run_dir.path().join(name), contents).expect("write wide input fixture");
+        }
+        let output = run_in_directory(&bytes, run_dir.path(), "std_file_wide_decimal");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+        assert_eq!(
+            std::fs::read(run_dir.path().join("out_u.txt")).expect("read unsigned output"),
+            b"18446744073709551615"
+        );
+        assert_eq!(
+            std::fs::read(run_dir.path().join("out_i.txt")).expect("read signed output"),
+            b"-9223372036854775808"
+        );
+        assert!(!run_dir.path().join("missing/out.txt").exists());
+        std::fs::remove_dir_all(run_dir.path()).expect("remove wide decimal directory");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn std_file_wide_decimal_reports_host_failures_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let stdlib_root = root.join("stdlib");
+    for (name, valid) in [
+        (
+            "std_file_wide_u64_failure",
+            b"18446744073709551615".as_slice(),
+        ),
+        (
+            "std_file_wide_i64_failure",
+            b"-9223372036854775808".as_slice(),
+        ),
+    ] {
+        let entry = root.join(format!("tests/fixtures/stdlib_host/{name}.lani"));
+        let stdlib_root = stdlib_root.clone();
+        let bytes = common::run_gpu_codegen_with_timeout(name, move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+        })
+        .expect("compile two-word decimal file failure fixture");
+
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            if std::process::Command::new("strace")
+                .arg("-V")
+                .output()
+                .is_err()
+            {
+                return;
+            }
+            let run_dir = common::TempArtifact::new("laniusc_std_file_wide_fault", name, None);
+            std::fs::create_dir(run_dir.path()).expect("create wide fault directory");
+            std::fs::write(run_dir.path().join("valid.txt"), valid)
+                .expect("write valid wide decimal input");
+            let executable = run_dir.path().join(name);
+            std::fs::write(&executable, &bytes).expect("write wide fault ELF");
+            let mut permissions = std::fs::metadata(&executable)
+                .expect("stat wide fault ELF")
+                .permissions();
+            permissions.set_mode(0o700);
+            std::fs::set_permissions(&executable, permissions).expect("chmod wide fault ELF");
+
+            let baseline = run_in_directory(&bytes, run_dir.path(), name);
+            assert_eq!(baseline.status.code(), Some(1), "{baseline:?}");
+            assert_eq!(
+                std::fs::read(run_dir.path().join("out.txt")).unwrap(),
+                valid
+            );
+            for injection in [
+                "read:error=EIO:when=1",
+                "close:error=EIO:when=1",
+                "write:error=EIO:when=1",
+                "write:retval=0:when=1",
+                "close:error=EIO:when=2",
+            ] {
+                let output = common::short_process_output_with_timeout(
+                    format!("wide decimal file {name} {injection}"),
+                    std::process::Command::new("strace")
+                        .arg("-qq")
+                        .arg("-e")
+                        .arg("trace=read,write,close")
+                        .arg("-e")
+                        .arg(format!("inject={injection}"))
+                        .arg(&executable)
+                        .current_dir(run_dir.path()),
+                );
+                assert_eq!(
+                    output.status.code(),
+                    Some(0),
+                    "{name} {injection}: {output:?}"
+                );
+                assert!(
+                    String::from_utf8_lossy(&output.stderr).contains("INJECTED"),
+                    "fault was not injected: {output:?}"
+                );
+            }
+            std::fs::remove_dir_all(run_dir.path()).expect("remove wide fault directory");
+        }
+        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        let _ = (bytes, valid);
+    }
+}
+
+#[test]
 fn std_file_narrow_decimal_reads_and_writes_execute_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("tests/fixtures/stdlib_host/std_file_narrow_decimal.lani");
@@ -1009,6 +1157,7 @@ fn std_file_public_functions_have_runtime_cases() {
         include_str!("fixtures/stdlib_host/std_file_write_decimal.lani"),
         include_str!("fixtures/stdlib_host/std_file_u32_decimal.lani"),
         include_str!("fixtures/stdlib_host/std_file_write_u32_decimal.lani"),
+        include_str!("fixtures/stdlib_host/std_file_wide_decimal.lani"),
         include_str!("fixtures/stdlib_host/std_file_narrow_decimal.lani"),
         include_str!("fixtures/stdlib_host/std_file_copy_stdout.lani"),
         include_str!("fixtures/stdlib_host/std_file_copy_stdin.lani"),
@@ -1029,5 +1178,5 @@ fn std_file_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 21);
+    assert_eq!(count, 25);
 }

@@ -7,6 +7,8 @@
 module std::file;
 import core::decimal;
 import core::mem;
+import core::wide_i64;
+import core::wide_u64;
 import std::fs;
 import std::io;
 import std::io_checked;
@@ -442,6 +444,143 @@ pub fn read_u32_decimal_or(path: str, max_bytes: u32, fallback: u32) -> u32 {
     return value;
 }
 
+fn append_wide_decimal_digit(
+    value: core::wide_u64::WideU64, digit: u32
+) -> core::wide_u64::WideU64 {
+    return core::wide_u64::wrapping_add(
+        core::wide_u64::wrapping_mul(value, core::wide_u64::from_u32(10)),
+        core::wide_u64::from_u32(digit));
+}
+
+// Read an entire unsigned two-word decimal file. Surrounding SP, HT, LF, and
+// CR and one leading plus are accepted. All failures return fallback, and an
+// opened handle is always closed before returning.
+pub fn read_wide_u64_decimal_or(
+    path: str, max_bytes: u32, fallback: core::wide_u64::WideU64
+) -> core::wide_u64::WideU64 {
+    if (max_bytes == 0) { return fallback; }
+    let handle: i32 = std::fs::open_read_path(path);
+    if (handle < 0) { return fallback; }
+    let cell: [i32; 1] = [0];
+    let data: ptr = core::mem::i32_array_data_ptr(cell);
+    let consumed: u32 = 0;
+    let value: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let threshold: core::wide_u64::WideU64 =
+        core::wide_u64::from_words(429496729, 2576980377); // u64::MAX / 10
+    let started: bool = false;
+    let digits: bool = false;
+    let trailing: bool = false;
+    let valid: bool = true;
+    while (true) {
+        cell[0] = 0;
+        let received: i32 = std::fs::read(handle, data, 1);
+        if (received == 0) { break; }
+        if (received != 1 || consumed >= max_bytes) {
+            valid = false;
+            break;
+        }
+        consumed += 1;
+        let byte: i32 = cell[0];
+        if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
+            if (started && !digits) { valid = false; break; }
+            if (digits) { trailing = true; }
+            continue;
+        }
+        if (byte == 43) {
+            if (started || trailing) { valid = false; break; }
+            started = true;
+            continue;
+        }
+        if (byte >= 48 && byte <= 57) {
+            if (trailing) { valid = false; break; }
+            started = true;
+            digits = true;
+            let digit_i32: i32 = byte - 48;
+            let digit: u32 = digit_i32;
+            let order: i32 = core::wide_u64::compare(value, threshold);
+            if (order > 0 || (order == 0 && digit > 5)) {
+                valid = false;
+                break;
+            }
+            value = append_wide_decimal_digit(value, digit);
+            continue;
+        }
+        valid = false;
+        break;
+    }
+    let closed: i32 = std::fs::close_file(handle);
+    if (!valid || !digits || closed < 0) { return fallback; }
+    return value;
+}
+
+// Signed form accepts one leading plus or minus. The negative magnitude may
+// reach 2^63; positive input is capped at i64::MAX. Invalid input, a byte
+// limit, or any host failure returns fallback after closing an open handle.
+pub fn read_wide_i64_decimal_or(
+    path: str, max_bytes: u32, fallback: core::wide_i64::WideI64
+) -> core::wide_i64::WideI64 {
+    if (max_bytes == 0) { return fallback; }
+    let handle: i32 = std::fs::open_read_path(path);
+    if (handle < 0) { return fallback; }
+    let cell: [i32; 1] = [0];
+    let data: ptr = core::mem::i32_array_data_ptr(cell);
+    let consumed: u32 = 0;
+    let magnitude: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let threshold: core::wide_u64::WideU64 =
+        core::wide_u64::from_words(214748364, 3435973836); // 2^63 / 10
+    let started: bool = false;
+    let digits: bool = false;
+    let trailing: bool = false;
+    let negative: bool = false;
+    let valid: bool = true;
+    while (true) {
+        cell[0] = 0;
+        let received: i32 = std::fs::read(handle, data, 1);
+        if (received == 0) { break; }
+        if (received != 1 || consumed >= max_bytes) {
+            valid = false;
+            break;
+        }
+        consumed += 1;
+        let byte: i32 = cell[0];
+        if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
+            if (started && !digits) { valid = false; break; }
+            if (digits) { trailing = true; }
+            continue;
+        }
+        if (byte == 43 || byte == 45) {
+            if (started || trailing) { valid = false; break; }
+            started = true;
+            negative = byte == 45;
+            continue;
+        }
+        if (byte >= 48 && byte <= 57) {
+            if (trailing) { valid = false; break; }
+            started = true;
+            digits = true;
+            let digit_i32: i32 = byte - 48;
+            let digit: u32 = digit_i32;
+            let last_digit: u32 = 7;
+            if (negative) { last_digit = 8; }
+            let order: i32 = core::wide_u64::compare(magnitude, threshold);
+            if (order > 0 || (order == 0 && digit > last_digit)) {
+                valid = false;
+                break;
+            }
+            magnitude = append_wide_decimal_digit(magnitude, digit);
+            continue;
+        }
+        valid = false;
+        break;
+    }
+    let closed: i32 = std::fs::close_file(handle);
+    if (!valid || !digits || closed < 0) { return fallback; }
+    let value: core::wide_i64::WideI64 = core::wide_i64::from_words(
+        core::wide_u64::high_word(magnitude), core::wide_u64::low_word(magnitude));
+    if (negative) { return core::wide_i64::wrapping_neg(value); }
+    return value;
+}
+
 // Creates or truncates path and writes the full signed decimal representation
 // through single-byte writes. False reports open, write, or close failure; the
 // file may already contain a decimal prefix. Closing is attempted after a
@@ -465,6 +604,26 @@ pub fn write_u32_decimal(path: str, value: u32) -> bool {
         return false;
     }
     let written: i32 = std::io_decimal::write_u32(handle, value);
+    let closed: i32 = std::fs::close_file(handle);
+    return written > 0 && closed >= 0;
+}
+
+// Write a two-word unsigned value, closing even after a failed write. False
+// reports open, write, or close failure; a prefix may remain in the file.
+pub fn write_wide_u64_decimal(path: str, value: core::wide_u64::WideU64) -> bool {
+    let handle: i32 = std::fs::open_write_path(path);
+    if (handle < 0) { return false; }
+    let written: i32 = std::io_decimal::write_wide_u64(handle, value);
+    let closed: i32 = std::fs::close_file(handle);
+    return written > 0 && closed >= 0;
+}
+
+// Signed form includes a minus for negative values and has the same failure
+// and partial-file behavior as the unsigned writer.
+pub fn write_wide_i64_decimal(path: str, value: core::wide_i64::WideI64) -> bool {
+    let handle: i32 = std::fs::open_write_path(path);
+    if (handle < 0) { return false; }
+    let written: i32 = std::io_decimal::write_wide_i64(handle, value);
     let closed: i32 = std::fs::close_file(handle);
     return written > 0 && closed >= 0;
 }
