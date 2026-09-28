@@ -69,5 +69,58 @@ fn main() -> i32 {
     value = std::set_i32::try_shrink_to_fit(value);
     if (std::set_i32::capacity(value) != 0) { return 14; }
     std::set_i32::destroy(value);
+
+    let left: std::set_i32::SetI32 = std::set_i32::new();
+    left = std::set_i32::try_insert(left, 0);
+    left = std::set_i32::try_insert(left, -7);
+    left = std::set_i32::try_insert(left, 9);
+    let right: std::set_i32::SetI32 = std::set_i32::new();
+    right = std::set_i32::try_insert(right, 9);
+    right = std::set_i32::try_insert(right, 42);
+    right = std::set_i32::try_insert(right, 0);
+    if (std::set_i32::is_subset(left, right) ||
+        std::set_i32::is_disjoint(left, right) ||
+        !std::set_i32::is_subset(std::set_i32::new(), left) ||
+        !std::set_i32::is_disjoint(std::set_i32::new(), right)) { return 15; }
+
+    let joined: std::set_i32::SetI32 = std::set_i32::try_union(left, right);
+    let common: std::set_i32::SetI32 = std::set_i32::try_intersection(left, right);
+    let only_left: std::set_i32::SetI32 = std::set_i32::try_difference(left, right);
+    let exclusive: std::set_i32::SetI32 = std::set_i32::try_symmetric_difference(left, right);
+    if (std::set_i32::len(joined) != 4 ||
+        std::set_i32::at_or(joined, 0, 99) != 0 ||
+        std::set_i32::at_or(joined, 1, 99) != -7 ||
+        std::set_i32::at_or(joined, 2, 99) != 9 ||
+        std::set_i32::at_or(joined, 3, 99) != 42 ||
+        !std::set_i32::is_subset(left, joined) ||
+        !std::set_i32::is_subset(right, joined)) { return 16; }
+    if (std::set_i32::len(common) != 2 ||
+        std::set_i32::at_or(common, 0, 99) != 0 ||
+        std::set_i32::at_or(common, 1, 99) != 9 ||
+        std::set_i32::len(only_left) != 1 ||
+        std::set_i32::at_or(only_left, 0, 99) != -7 ||
+        !std::set_i32::is_disjoint(only_left, right) ||
+        std::set_i32::len(exclusive) != 2 ||
+        std::set_i32::at_or(exclusive, 0, 99) != -7 ||
+        std::set_i32::at_or(exclusive, 1, 99) != 42) { return 17; }
+    left = std::set_i32::try_remove(left, 0);
+    if (std::set_i32::len(left) != 2 ||
+        !std::set_i32::contains(joined, 0) ||
+        !std::set_i32::contains(common, 0)) { return 18; }
+    let same: std::set_i32::SetI32 = std::set_i32::try_intersection(left, left);
+    let none: std::set_i32::SetI32 = std::set_i32::try_difference(left, left);
+    let no_exclusive: std::set_i32::SetI32 = std::set_i32::try_symmetric_difference(left, left);
+    if (std::set_i32::len(same) != 2 ||
+        !std::set_i32::is_empty(none) ||
+        !std::set_i32::is_empty(no_exclusive)) { return 19; }
+    std::set_i32::destroy(same);
+    std::set_i32::destroy(none);
+    std::set_i32::destroy(no_exclusive);
+    std::set_i32::destroy(exclusive);
+    std::set_i32::destroy(only_left);
+    std::set_i32::destroy(common);
+    std::set_i32::destroy(joined);
+    std::set_i32::destroy(right);
+    std::set_i32::destroy(left);
     return 0;
 }

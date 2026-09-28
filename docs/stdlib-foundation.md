@@ -105,7 +105,7 @@ limited to native x86_64 output from this worktree.
 | `std::vec_i16` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The signed halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, `-32768`, and 32767. The allocation-failure suite injects failed initial allocation and reallocation; the signed halfword sum sample combines it with `core::number_i16` and `OptionI16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
 | `std::vec_bool` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The boolean fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, and stored `false` distinct from a `true` fallback. The allocation-failure suite injects failed initial allocation and reallocation; the true-count sample combines it with `core::bool` and `OptionBool`. Each boolean occupies one 32-bit cell containing 0 or 1. Ownership is linear by convention. |
 | `std::map_i32_i32` all 16 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed pair array provides linear lookup, insertion without partial pairs, in-place update, ordered removal, reservation, independent cloning, clearing, capacity release, and destruction. The native fixture calls every function and checks zero and negative keys and values, the signed maximum key, duplicates, missing keys, ordinal bounds, retained and reduced capacity, and clone independence. Injected initial, growth, shrink, and clone allocation failures preserve the original map or return an empty clone. The byte-histogram program combines it with numeric and byte I/O helpers on empty, text, and binary input. Ownership is linear by convention. |
-| `std::set_i32` all 13 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks empty and populated sets, both signed extremes, duplicates, absent items, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, and shrinking. Injected initial allocation, growth, shrink, and clone failures preserve ownership and existing items. The set owns one allocation of 32-bit cells; ownership is linear by convention. |
+| `std::set_i32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks empty and populated sets, both signed extremes, duplicates, absent items, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and ordered union, intersection, difference, and symmetric difference. Injected initial allocation, growth, shrink, clone, and each set-algebra allocation failure preserve ownership and existing items. The set owns one allocation of 32-bit cells; ownership is linear by convention. |
 | `std::net` all 64 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 10 host calls unbound | The native fixture calls every metadata function and constant, checks available and unavailable result classification, and confirms network capability flags against `core::runtime`. TCP and UDP calls have no runtime binding. |
 | `std::thread` all 32 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 4 host calls unbound | The native fixture calls every metadata function and constant, checks result classification, and confirms that spawn, join, yield, and current-id calls remain unavailable. |
 | `std::gpu` all 44 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 5 host calls unbound | The native fixture calls every metadata function and constant, checks result classification, and confirms unavailable buffer and dispatch services. Compiler execution on a GPU does not bind a user-program GPU API. |
@@ -492,7 +492,14 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `try_clone` makes an independent copy or returns an empty zero-capacity set
   on allocation failure. The caller keeps only the newest returned owner and
   destroys each independent set once. These rules are not enforced by the
-  language. The API requires x86_64 Linux allocator bindings.
+  language. `is_subset` and `is_disjoint` read their inputs without allocation.
+  The four `try_` set-algebra operations return independent allocations,
+  retaining left input order and then right input order for new items. They
+  compute the full result size and reserve before writing, so failed
+  allocation or capacity overflow returns an empty zero-capacity set rather
+  than a partial result. An empty result can also be mathematically correct;
+  callers expecting a nonempty result can detect failure with `len(result)`.
+  The API requires x86_64 Linux allocator bindings.
 - `std::map_i32_i32` stores distinct signed keys and signed values as adjacent
   32-bit cells. Insertion and removal preserve the order of remaining keys.
   `try_insert` adds a missing key and leaves an existing one unchanged;
@@ -1173,8 +1180,9 @@ vectors' capacity release and an injected shrink reallocation failure.
 Run `cargo test --test stdlib_map_i32_i32_execution` for the owned map,
 initial, growth, shrink, and clone allocation failures, and the stdin byte
 histogram.
-Run `cargo test --test stdlib_set_i32_execution` for the owned integer set and
-its initial, growth, shrink, and clone allocation failures.
+Run `cargo test --test stdlib_set_i32_execution` for the owned integer set,
+set algebra, and its initial, growth, shrink, clone, and four set-algebra
+allocation failures.
 Run `cargo test --test stdlib_fs_read_i32_execution` for the raw signed
 integer reader's normal values, signed limits, overflow, line boundaries,
 empty lines, EOF, and an injected host read error when `strace` is available.

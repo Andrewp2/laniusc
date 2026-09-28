@@ -1,0 +1,20 @@
+module app::main;
+import std::set_i32;
+
+fn main() -> i32 {
+    let left: std::set_i32::SetI32 = std::set_i32::try_insert(std::set_i32::new(), -7);
+    let right: std::set_i32::SetI32 = std::set_i32::try_insert(std::set_i32::new(), -7);
+    if (std::set_i32::len(left) != 1 || std::set_i32::len(right) != 1) { return 2; }
+    let result: std::set_i32::SetI32 = std::set_i32::try_intersection(left, right);
+    let failed: bool = std::set_i32::len(result) == 0 &&
+        std::set_i32::capacity(result) == 0 &&
+        std::set_i32::contains(left, -7) && std::set_i32::contains(right, -7);
+    let succeeded: bool = std::set_i32::len(result) == 1 &&
+        std::set_i32::at_or(result, 0, 0) == -7;
+    std::set_i32::destroy(result);
+    std::set_i32::destroy(right);
+    std::set_i32::destroy(left);
+    if (failed) { return 0; }
+    if (succeeded) { return 4; }
+    return 5;
+}

@@ -43,7 +43,7 @@ fn every_public_i32_set_function_has_a_runtime_case() {
         assert!(fixture.contains(&call), "{call} lacks a runtime case");
         covered += 1;
     }
-    assert_eq!(covered, 13);
+    assert_eq!(covered, 19);
 }
 
 #[test]
@@ -53,6 +53,10 @@ fn set_allocation_failures_preserve_owned_data() {
         ("set_i32_realloc_failure", "mremap", 1),
         ("set_i32_shrink_failure", "mremap", 1),
         ("set_i32_clone_failure", "mmap", 2),
+        ("set_i32_union_failure", "mmap", 3),
+        ("set_i32_intersection_failure", "mmap", 3),
+        ("set_i32_difference_failure", "mmap", 3),
+        ("set_i32_symmetric_difference_failure", "mmap", 3),
     ] {
         let bytes = compile_fixture(name);
         #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
