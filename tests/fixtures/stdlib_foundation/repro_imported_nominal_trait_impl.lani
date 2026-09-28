@@ -1,0 +1,19 @@
+module app::main;
+import core::wide_u64;
+
+trait Equal<T> {
+    fn equal(left: T, right: T) -> bool;
+}
+
+impl Equal<core::wide_u64::WideU64> for core::wide_u64::WideU64 {
+    fn equal(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+        return core::wide_u64::eq(left, right);
+    }
+}
+
+fn main() -> i32 {
+    let left: core::wide_u64::WideU64 = core::wide_u64::from_u32(7);
+    let right: core::wide_u64::WideU64 = core::wide_u64::from_u32(7);
+    if (!core::wide_u64::WideU64::equal(left, right)) { return 1; }
+    return 0;
+}

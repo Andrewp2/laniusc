@@ -75,8 +75,8 @@ limited to native x86_64 output from this worktree.
 | `core::u32` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, unsigned high-bit and maximum values, checked and wrapping arithmetic, alignment failures, and power-of-two overflow. Checked results use concrete `OptionU32`. |
 | `core::ordering` all 20 public functions and `Ordering` variants | Executable on x86_64 | `tests/stdlib_ordering.rs` and `tests/stdlib_ordering_wide.rs` execute every function and direct qualified and unqualified `Less`, `Equal`, and `Greater` values through the real stdlib root. They cover predicates, reverse, then, all six scalar integer widths, Boolean false-before-true order, Unicode scalar order, unsigned high-bit comparison, and full-width signed and unsigned ordering through the two-word `WideI64` and `WideU64` types. `compare_f32_or` checks finite values, signed zero, infinities, and caller-supplied fallbacks for NaN. The broken primitive `compare_i64` was removed until native i64 literal and comparison lowering works (dependency 11). |
 | Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Generic enum values fail GPU lowering and native 64-bit comparison/arithmetic are incomplete. The former by-value `Option::replace` ignored its input and was removed. Concrete 8-, 16-, and 32-bit Option/Result modules and concrete two-word 64-bit variants execute on x86_64. |
-| `core::cmp` all 48 public free functions for six integer widths, `bool`, and `char` | Executable on x86_64 | The imported runtime fixture calls every equality and ordering function with equal and unequal values, both directions, signed extrema, unsigned values across the high bit, both Boolean values, and Unicode characters. The `i32`, `u32`, `bool`, and `char` functions execute local trait implementation bodies. Narrow integer functions use scalar operators because their trait keys collide with the corresponding 32-bit type; see dependency 57. Direct imported trait calls remain outside this claim. |
-| `core::cmp` trait methods, `core::hash::Hash<T>` trait methods, and `core::array_i32` | Contract-only as complete APIs in this audit | The public free comparison and hashing functions execute, but direct imported trait method calls do not. Generic fixed-array APIs depend on backend support. See dependencies 7, 31, and 57. |
+| `core::cmp` all 60 public free functions for six integer widths, `bool`, `char`, `WideU64`, and `WideI64` | Executable on x86_64 | The imported runtime fixture calls every equality and ordering function with equal and unequal values, both directions, signed and two-word extrema, unsigned high-bit values, both Boolean values, and Unicode characters. The `i32`, `u32`, `bool`, and `char` functions execute local trait implementation bodies. Narrow integer functions use scalar operators because their trait keys collide with the corresponding 32-bit type (dependency 57); two-word functions use the executable wide modules because imported nominal trait arguments fail in native emission (dependency 58). Direct imported trait calls remain outside this claim. |
+| `core::cmp` trait methods, `core::hash::Hash<T>` trait methods, and `core::array_i32` | Contract-only as complete APIs in this audit | The public free comparison and hashing functions execute, but direct imported trait method calls do not. Generic fixed-array APIs depend on backend support. See dependencies 7, 31, 57, and 58. |
 | `core::target` all 18 public functions and 16 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant. It checks the available allocator, filesystem, stdio, clock, secure RNG, process, and environment bindings against `core::runtime`; unbound network, threads, GPU, host services, panic hooks, and test harness remain false. This is a target snapshot, not a live host probe. |
 | `core::runtime` all 62 public functions and 40 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant, checking service IDs, ABI fields, available and unavailable services, unknown IDs, status classifiers, and fail-closed requirement rows. These helpers report bindings; they do not implement an unbound service operation. |
 | `core::panic` both trap functions, all 19 metadata functions, and 4 constants | Executable on x86_64 Linux for the trap functions and metadata | `tests/stdlib_panic_execution.rs` checks that `panic()` and `unreachable()` terminate with SIGILL, and a runtime fixture checks every metadata result. Panic hooks remain unbound; their availability flags stay false. |
@@ -2033,9 +2033,19 @@ also fixes the imported struct-return relocation path described below.
     the same key. A single narrow-width impl succeeds, and `i8` beside `u32`
     succeeds. Widening type identity through the compiler is required before
     `core::cmp` can provide distinct trait impls for every integer width.
-    The 48 imported free functions execute and cover all six integer widths,
-    Boolean values, and Unicode characters without
-    claiming those colliding trait impls.
+    The 60 imported free functions execute and cover all six scalar integer
+    widths, Boolean values, Unicode characters, and two-word signed and
+    unsigned 64-bit values without claiming those colliding trait impls.
+58. **Imported nominal trait argument differs between checking and emission.**
+    `repro_imported_nominal_trait_impl.lani` defines a local trait for imported
+    `core::wide_u64::WideU64`. `laniusc check --stdlib-root stdlib` succeeds,
+    but emitting x86_64 rejects the same impl header with `LNC0021`, saying
+    the qualified trait argument type is unknown. An unqualified local alias
+    fails with an unsupported trait-argument shape. The source-pack predicate
+    collection path does not recover this imported nominal declaration from
+    its qualified type argument. The two-word comparison and hash free
+    functions remain executable, but nominal `Eq`, `Ord`, and `Hash` impls
+    cannot be claimed across this import boundary.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

@@ -1,6 +1,9 @@
-// Core comparison traits and scalar entry points.
+// Core comparison traits and portable value entry points.
 
 module core::cmp;
+
+import core::wide_u64;
+import core::wide_i64;
 
 pub trait Eq<T> {
     pub fn eq(left: T, right: T) -> bool;
@@ -82,6 +85,8 @@ pub impl Ord<char> for char {
 // unavailable. i32, u32, bool, and char call their local trait implementations. Narrow
 // integer trait impl keys currently collapse to the same signed or unsigned
 // type code as 32-bit integers, so their entry points use scalar operators.
+// Imported nominal trait arguments remain unavailable during native emission;
+// the two-word entry points below call their concrete modules directly.
 pub fn eq_i32(left: i32, right: i32) -> bool { return i32::eq(left, right); }
 pub fn ne_i32(left: i32, right: i32) -> bool { return i32::ne(left, right); }
 pub fn lt_i32(left: i32, right: i32) -> bool { return i32::lt(left, right); }
@@ -137,3 +142,41 @@ pub fn lt_u16(left: u16, right: u16) -> bool { return left < right; }
 pub fn le_u16(left: u16, right: u16) -> bool { return left <= right; }
 pub fn gt_u16(left: u16, right: u16) -> bool { return left > right; }
 pub fn ge_u16(left: u16, right: u16) -> bool { return left >= right; }
+
+pub fn eq_wide_u64(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::eq(left, right);
+}
+pub fn ne_wide_u64(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return !core::wide_u64::eq(left, right);
+}
+pub fn lt_wide_u64(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::compare(left, right) < 0;
+}
+pub fn le_wide_u64(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::compare(left, right) <= 0;
+}
+pub fn gt_wide_u64(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::compare(left, right) > 0;
+}
+pub fn ge_wide_u64(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::compare(left, right) >= 0;
+}
+
+pub fn eq_wide_i64(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+    return core::wide_i64::eq(left, right);
+}
+pub fn ne_wide_i64(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+    return !core::wide_i64::eq(left, right);
+}
+pub fn lt_wide_i64(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+    return core::wide_i64::compare(left, right) < 0;
+}
+pub fn le_wide_i64(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+    return core::wide_i64::compare(left, right) <= 0;
+}
+pub fn gt_wide_i64(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+    return core::wide_i64::compare(left, right) > 0;
+}
+pub fn ge_wide_i64(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+    return core::wide_i64::compare(left, right) >= 0;
+}

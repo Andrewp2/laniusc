@@ -1,5 +1,7 @@
 module app::main;
 import core::cmp;
+import core::wide_u64;
+import core::wide_i64;
 
 fn main() -> i32 {
     let high: u32 = 2147483648;
@@ -63,5 +65,36 @@ fn main() -> i32 {
         !core::cmp::le_char('é', 'é') || core::cmp::le_char('😀', 'é')) { return 23; }
     if (!core::cmp::gt_char('😀', 'é') || core::cmp::gt_char('A', 'é') ||
         !core::cmp::ge_char('😀', '😀') || core::cmp::ge_char('A', 'é')) { return 24; }
+    let zero_wide_u: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let high_wide_u: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483648, 0);
+    let max_wide_u: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    if (!core::cmp::eq_wide_u64(max_wide_u, max_wide_u) ||
+        core::cmp::eq_wide_u64(zero_wide_u, high_wide_u) ||
+        !core::cmp::ne_wide_u64(zero_wide_u, high_wide_u) ||
+        core::cmp::ne_wide_u64(max_wide_u, max_wide_u)) { return 25; }
+    if (!core::cmp::lt_wide_u64(zero_wide_u, high_wide_u) ||
+        core::cmp::lt_wide_u64(high_wide_u, zero_wide_u) ||
+        !core::cmp::le_wide_u64(high_wide_u, high_wide_u) ||
+        core::cmp::le_wide_u64(max_wide_u, high_wide_u)) { return 26; }
+    if (!core::cmp::gt_wide_u64(max_wide_u, high_wide_u) ||
+        core::cmp::gt_wide_u64(zero_wide_u, high_wide_u) ||
+        !core::cmp::ge_wide_u64(max_wide_u, max_wide_u) ||
+        core::cmp::ge_wide_u64(zero_wide_u, high_wide_u)) { return 27; }
+    let min_wide_i: core::wide_i64::WideI64 = core::wide_i64::min_value();
+    let neg_wide_i: core::wide_i64::WideI64 = core::wide_i64::from_i32(-1);
+    let zero_wide_i: core::wide_i64::WideI64 = core::wide_i64::zero();
+    let max_wide_i: core::wide_i64::WideI64 = core::wide_i64::max_value();
+    if (!core::cmp::eq_wide_i64(min_wide_i, min_wide_i) ||
+        core::cmp::eq_wide_i64(min_wide_i, neg_wide_i) ||
+        !core::cmp::ne_wide_i64(min_wide_i, neg_wide_i) ||
+        core::cmp::ne_wide_i64(zero_wide_i, zero_wide_i)) { return 28; }
+    if (!core::cmp::lt_wide_i64(min_wide_i, neg_wide_i) ||
+        core::cmp::lt_wide_i64(zero_wide_i, min_wide_i) ||
+        !core::cmp::le_wide_i64(neg_wide_i, neg_wide_i) ||
+        core::cmp::le_wide_i64(max_wide_i, neg_wide_i)) { return 29; }
+    if (!core::cmp::gt_wide_i64(max_wide_i, zero_wide_i) ||
+        core::cmp::gt_wide_i64(min_wide_i, zero_wide_i) ||
+        !core::cmp::ge_wide_i64(max_wide_i, max_wide_i) ||
+        core::cmp::ge_wide_i64(neg_wide_i, zero_wide_i)) { return 30; }
     return 0;
 }
