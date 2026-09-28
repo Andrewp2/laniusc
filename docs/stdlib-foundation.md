@@ -2721,6 +2721,16 @@ also fixes the imported struct-return relocation path described below.
     `core_mem_values.lani` execute; aggregate instances cannot be claimed
     until generic return layout and call lowering agree on the concrete type.
 
+63. **Nested fixed enum returned from a helper.**
+    `cargo test --test codegen_x86 x86_executes_nominal_struct_enum_payloads`
+    fails in its `nominal_enum_nested_return.lani` subcase: the x86 executable
+    exits 1 instead of 0 after `make` returns `Outer::Wrapped(Inner::Number(5),
+    7)`. The same failure occurs at clean commit `406f7aa`, before concrete
+    generic-enum layout was added. The other four cases in that test reach
+    the final subcase. This remains an existing fixed-enum return dependency;
+    the concrete generic-enum tests do not establish nested enum return
+    correctness.
+
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those
 components to change and the reproductions above to pass.
