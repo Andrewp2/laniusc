@@ -1,0 +1,11 @@
+module app::main;
+import core::wide_i64;
+import std::file_hex_wide_i64;
+fn main() -> i32 {
+    let fallback: core::wide_i64::WideI64 = core::wide_i64::from_i32(4078);
+    let value: core::wide_i64::WideI64 = std::file_hex_wide_i64::read_or("valid.txt", 8, fallback);
+    if (core::wide_i64::eq(value, fallback)) {
+        return 0;
+    }
+    return 1;
+}

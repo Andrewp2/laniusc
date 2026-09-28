@@ -1,0 +1,23 @@
+module app::main;
+import core::wide_i64;
+import std::file_hex_wide_i64;
+fn main() -> i32 {
+    let zero: core::wide_i64::WideI64 = core::wide_i64::zero();
+    let pattern: core::wide_i64::WideI64 = core::wide_i64::wrapping_neg(core::wide_i64::from_words(305419896, 2596069104));
+    let maximum: core::wide_i64::WideI64 = core::wide_i64::max_value();
+    let minimum: core::wide_i64::WideI64 = core::wide_i64::min_value();
+    let fallback: core::wide_i64::WideI64 = core::wide_i64::from_i32(4078);
+    if (!std::file_hex_wide_i64::write_lower("zero_out.txt", zero) || !std::file_hex_wide_i64::write_lower("pattern_lower_out.txt", pattern) || !std::file_hex_wide_i64::write_upper("pattern_upper_out.txt", pattern) || !std::file_hex_wide_i64::write_upper("max_out.txt", maximum) || !std::file_hex_wide_i64::write_lower("min_out.txt", minimum)) {
+        return 1;
+    }
+    if (std::file_hex_wide_i64::write_lower("missing/child.txt", zero) || std::file_hex_wide_i64::write_upper("/dev/full", pattern)) {
+        return 2;
+    }
+    if (!core::wide_i64::eq(std::file_hex_wide_i64::read_or("zero.txt", 1, fallback), zero) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("pattern.txt", 19, fallback), pattern) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("max.txt", 16, fallback), maximum) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("min.txt", 19, fallback), minimum) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("space.txt", 20, fallback), core::wide_i64::from_i32(-6699)) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("plus.txt", 7, fallback), core::wide_i64::from_i32(6699)) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("negative_zero.txt", 2, fallback), zero) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("exact32.txt", 32, fallback), maximum)) {
+        return 3;
+    }
+    if (!core::wide_i64::eq(std::file_hex_wide_i64::read_or("excess33.txt", 32, fallback), fallback) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("positive_overflow.txt", 32, fallback), fallback) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("negative_overflow.txt", 32, fallback), fallback) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("prefix.txt", 32, fallback), fallback) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("sign.txt", 32, fallback), fallback) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("bad.txt", 32, fallback), fallback) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("empty.txt", 32, fallback), fallback) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("missing.txt", 32, fallback), fallback) || !core::wide_i64::eq(std::file_hex_wide_i64::read_or("zero.txt", 0, fallback), fallback)) {
+        return 4;
+    }
+    return 0;
+}

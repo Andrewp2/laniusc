@@ -1,0 +1,131 @@
+// Signed full-width hexadecimal file I/O for literal paths on x86_64 Linux.
+module std::file_hex_wide_i64;
+import core::hex_wide_u64;
+import core::mem;
+import core::wide_i64;
+import core::wide_u64;
+import std::fs;
+import std::io_hex_wide_i64;
+fn write_digits(path: str, value: core::wide_i64::WideI64, uppercase: bool) -> bool {
+    let handle: i32 = std::fs::open_write_path(path);
+    if (handle<0) {
+        return false;
+    }
+    let written: i32 = 0;
+    if (uppercase) {
+        written = std::io_hex_wide_i64::write_upper(handle, value);
+    } else {
+        written = std::io_hex_wide_i64::write_lower(handle, value);
+    }
+    let closed: i32 = std::fs::close_file(handle);
+    return written>0 && closed >= 0;
+}
+// Create or truncate path and write the shortest signed hexadecimal form.
+// False reports open, write, or close failure; a failure can leave a truncated
+// file or character prefix. No allocation occurs.
+pub fn write_lower(path: str, value: core::wide_i64::WideI64) -> bool {
+    return write_digits(path, value, false);
+}
+pub fn write_upper(path: str, value: core::wide_i64::WideI64) -> bool {
+    return write_digits(path, value, true);
+}
+// Read a complete ASCII signed hexadecimal file of at most max_bytes bytes.
+// Surrounding SP, HT, LF, and CR, one leading sign, and one optional 0x/0X
+// prefix after the sign are accepted. At least one digit is required. Missing
+// files, malformed or overlong input, signed overflow, read/close failure, and
+// max_bytes == 0 return fallback. A valid result may equal fallback.
+pub fn read_or(path: str, max_bytes: u32, fallback: core::wide_i64::WideI64) -> core::wide_i64::WideI64 {
+    if (max_bytes == 0) {
+        return fallback;
+    }
+    let handle: i32 = std::fs::open_read_path(path);
+    if (handle<0) {
+        return fallback;
+    }
+    let cell:[i32; 1] =[0];
+    let data: ptr = core::mem::i32_array_data_ptr(cell);
+    let consumed: u32 = 0;
+    let magnitude: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let limit: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483647, 4294967295);
+    let started: bool = false;
+    let digits: bool = false;
+    let trailing: bool = false;
+    let negative: bool = false;
+    let leading_zero: bool = false;
+    let prefix_seen: bool = false;
+    let valid: bool = true;
+    while (true) {
+        cell[0] = 0;
+        let received: i32 = std::fs::read(handle, data, 1);
+        if (received == 0) {
+            break;
+        }
+        if (received != 1 || consumed >= max_bytes) {
+            valid = false;
+            break;
+        }
+        consumed += 1;
+        let byte: i32 = cell[0];
+        if (byte == 32 || byte == 9 || byte == 10 || byte == 13) {
+            if (started && !digits) {
+                valid = false;
+                break;
+            }
+            if (digits) {
+                trailing = true;
+            }
+            continue;
+        }
+        if (trailing) {
+            valid = false;
+            break;
+        }
+        if (byte == 43 || byte == 45) {
+            if (started) {
+                valid = false;
+                break;
+            }
+            started = true;
+            negative = byte == 45;
+            if (negative) {
+                limit = core::wide_u64::from_words(2147483648, 0);
+            }
+            continue;
+        }
+        if (!started) {
+            started = true;
+        }
+        if (byte == 48 && !digits && !prefix_seen) {
+            digits = true;
+            leading_zero = true;
+            continue;
+        }
+        if (leading_zero && !prefix_seen &&(byte == 120 || byte == 88)) {
+            digits = false;
+            leading_zero = false;
+            prefix_seen = true;
+            continue;
+        }
+        leading_zero = false;
+        if (byte<0 || byte>255) {
+            valid = false;
+            break;
+        }
+        let ascii: u8 = byte as u8;
+        if (!core::hex_wide_u64::can_append_ascii_digit(magnitude, ascii, limit)) {
+            valid = false;
+            break;
+        }
+        magnitude = core::hex_wide_u64::append_ascii_digit_or(magnitude, ascii, limit, magnitude);
+        digits = true;
+    }
+    let closed: i32 = std::fs::close_file(handle);
+    if (!valid || !digits || closed<0) {
+        return fallback;
+    }
+    let value: core::wide_i64::WideI64 = core::wide_i64::from_words(core::wide_u64::high_word(magnitude), core::wide_u64::low_word(magnitude));
+    if (negative) {
+        return core::wide_i64::wrapping_neg(value);
+    }
+    return value;
+}
