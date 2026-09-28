@@ -1230,6 +1230,9 @@ fn executable_core_function_surface_has_runtime_cases() {
                 || module == "utf8_view"
                     && include_str!("fixtures/stdlib_foundation/core_utf8_byte_append.lani")
                         .contains(&call)
+                || module == "utf8_view"
+                    && include_str!("fixtures/stdlib_foundation/core_utf8_byte_edit.lani")
+                        .contains(&call)
                 || module == "range_u8"
                     && include_str!("fixtures/stdlib_foundation/core_range_u8_aggregate.lani")
                         .contains(&call)

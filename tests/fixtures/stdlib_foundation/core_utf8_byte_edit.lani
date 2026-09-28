@@ -1,0 +1,76 @@
+module app::main;
+import core::utf8_view;
+
+fn main() -> i32 {
+    let a: u8 = 65;
+    let b: u8 = 66;
+    let c: u8 = 67;
+    let d: u8 = 68;
+    let c2: u8 = 194;
+    let a2: u8 = 162;
+    let e2: u8 = 226;
+    let cont82: u8 = 130;
+    let ac: u8 = 172;
+    let f0: u8 = 240;
+    let cont9f: u8 = 159;
+    let cont99: u8 = 153;
+    let fill: u8 = 120;
+    let low: u8 = 128;
+    let values: [u8; 16] = [a, c2, a2, b, fill, fill, fill, fill,
+                            fill, fill, fill, fill, fill, fill, fill, fill];
+    let len: i32 = 4;
+    len = core::utf8_view::byte_view_insert_scalar_or(values, len, 16, 2, 8364, -9);
+    if (len != 7 || values[3] != e2 || values[4] != cont82 ||
+        values[5] != ac || values[6] != b || values[7] != fill) { return 1; }
+    len = core::utf8_view::byte_view_insert_scalar_or(values, len, 16, 0, 128578, -9);
+    if (len != 11 || values[0] != f0 || values[1] != cont9f ||
+        values[2] != cont99 || values[3] != cont82 || values[4] != a ||
+        values[10] != b || values[11] != fill) { return 2; }
+    len = core::utf8_view::byte_view_insert_scalar_or(values, len, 16, 5, 67, -9);
+    if (len != 12 || values[11] != c || values[12] != fill ||
+        core::utf8_view::byte_view_insert_scalar_or(values, len, 16, -1, 68, -9) != -9 ||
+        core::utf8_view::byte_view_insert_scalar_or(values, len, 16, 7, 68, -9) != -9 ||
+        core::utf8_view::byte_view_insert_scalar_or(values, len, 16, 0, 55296, -9) != -9 ||
+        core::utf8_view::byte_view_insert_scalar_or(values, len, 11, 0, 68, -9) != -9 ||
+        core::utf8_view::byte_view_insert_scalar_or(values, len, 12, 0, 68, -9) != -9 ||
+        values[0] != f0 || values[11] != c || values[12] != fill) { return 3; }
+    len = core::utf8_view::byte_view_remove_scalar_or(values, len, 0, -9);
+    if (len != 8 || values[0] != a || values[1] != c2 || values[2] != a2 ||
+        values[3] != e2 || values[6] != b || values[7] != c) { return 4; }
+    len = core::utf8_view::byte_view_remove_scalar_or(values, len, 2, -9);
+    if (len != 5 || values[3] != b || values[4] != c) { return 5; }
+    len = core::utf8_view::byte_view_remove_scalar_or(values, len, 3, -9);
+    if (len != 4 || values[0] != a || values[1] != c2 ||
+        values[2] != a2 || values[3] != b ||
+        core::utf8_view::byte_view_remove_scalar_or(values, len, 3, -9) != -9 ||
+        core::utf8_view::byte_view_remove_scalar_or(values, len, -1, -9) != -9 ||
+        values[3] != b) { return 6; }
+    if (core::utf8_view::byte_view_replace_scalar_or(values, len, 4, 1, 128578, -9) != -9 ||
+        values[1] != c2 || values[2] != a2 || values[3] != b) { return 12; }
+    len = core::utf8_view::byte_view_replace_scalar_or(values, len, 16, 1, 128578, -9);
+    if (len != 6 || values[0] != a || values[1] != f0 ||
+        values[2] != cont9f || values[3] != cont99 ||
+        values[4] != cont82 || values[5] != b) { return 7; }
+    len = core::utf8_view::byte_view_replace_scalar_or(values, len, 16, 1, 8364, -9);
+    if (len != 5 || values[1] != e2 || values[2] != cont82 ||
+        values[3] != ac || values[4] != b) { return 8; }
+    len = core::utf8_view::byte_view_replace_scalar_or(values, len, 16, 1, 67, -9);
+    len = core::utf8_view::byte_view_replace_scalar_or(values, len, 16, 1, 68, -9);
+    if (len != 3 || values[0] != a || values[1] != d || values[2] != b ||
+        core::utf8_view::byte_view_replace_scalar_or(values, len, 16, 3, 65, -9) != -9 ||
+        core::utf8_view::byte_view_replace_scalar_or(values, len, 16, -1, 65, -9) != -9 ||
+        core::utf8_view::byte_view_replace_scalar_or(values, len, 16, 1, 1114112, -9) != -9 ||
+        core::utf8_view::byte_view_replace_scalar_or(values, len, 2, 1, 65, -9) != -9 ||
+        values[1] != d || values[2] != b) { return 9; }
+    let malformed: [u8; 3] = [a, low, fill];
+    if (core::utf8_view::byte_view_insert_scalar_or(malformed, 2, 3, 1, 66, -9) != -9 ||
+        core::utf8_view::byte_view_remove_scalar_or(malformed, 2, 0, -9) != -9 ||
+        core::utf8_view::byte_view_replace_scalar_or(malformed, 2, 3, 0, 66, -9) != -9 ||
+        malformed[0] != a || malformed[1] != low || malformed[2] != fill) { return 10; }
+    let empty: [u8; 1] = [fill];
+    if (core::utf8_view::byte_view_remove_scalar_or(empty, 0, 0, -9) != -9 ||
+        core::utf8_view::byte_view_replace_scalar_or(empty, 0, 1, 0, 65, -9) != -9 ||
+        core::utf8_view::byte_view_insert_scalar_or(empty, 0, 1, 0, 65, -9) != 1 ||
+        empty[0] != a) { return 11; }
+    return 0;
+}

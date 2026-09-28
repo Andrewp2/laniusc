@@ -19,7 +19,7 @@ limited to native x86_64 output from this worktree.
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 25 public codec and backed-view functions | Executable on x86_64 | Native fixtures check ASCII and multibyte encoding/decoding, checked scalar append, scalar counts and lookup, first and last scalar and sequence search, byte/scalar boundary mapping, equality, prefix and suffix matching, lexicographic comparison, empty and truncated views, out-of-byte-range integer codes, malformed sequences, surrogate exclusion, and Unicode maximum. Direct caller-backed `[u8]` helpers validate and count scalars, map scalar and byte boundaries, and read scalars by index across one- through four-byte sequences. They reject malformed input and negative lengths, and native indexing traps on a physical length overclaim. The older general view functions use caller-backed `[i32]` byte codes and do not access string storage. |
-| `core::utf8_view` all 9 public byte-view functions | Executable on x86_64 for caller-backed `[u8]` views | Focused native fixtures check complete-view validation, equality, prefix and suffix matches, lexicographic ordering, first and last byte-sequence offsets, first and last Unicode scalar indices, and checked append of one scalar to caller-owned bytes. They cover ASCII and two-, three-, and four-byte encodings, repeated matches, empty views and needles, malformed data, invalid scalars, negative lengths, missing matches, exact-fit and insufficient capacity, and unchanged storage after rejected appends. Separate fixtures confirm physical length and capacity overclaims trap. The source scan requires a runtime call for every public function. |
+| `core::utf8_view` all 12 public byte-view functions | Executable on x86_64 for caller-backed `[u8]` views | Focused native fixtures check complete-view validation, equality, prefix and suffix matches, lexicographic ordering, first and last byte-sequence offsets, first and last Unicode scalar indices, and checked append, insertion, removal, and replacement of Unicode scalars in caller-owned bytes. They cover ASCII and two-, three-, and four-byte encodings, repeated matches, empty views and needles, malformed data, invalid scalars, negative lengths, missing matches, growth and shrinkage, exact-fit and insufficient capacity, and unchanged storage after rejected edits. Separate fixtures confirm physical length and capacity overclaims trap. The source scan requires a runtime call for every public function. |
 | `core::decimal` all 20 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of extrema across 8-, 16-, and 32-bit integers, ordinary values, sign placement, zero, out-of-range fallbacks, incremental and complete ASCII parsing for all six widths, and overflow against each width's limits. `std::io_decimal` and both bounded decimal file readers use the portable scalar helpers. |
 | `core::hex` all 14 public functions | Executable on x86_64 | Runtime fixture checks shortest lowercase and uppercase hexadecimal representations of `u8`, `u16`, and `u32`, zero and maximum values, invalid-index fallbacks, mixed-case digit accumulation, complete prefixed and unprefixed parsing, and overflow against each width's limit. The helpers allocate no storage and use no host calls. |
 | `core::binary` all 11 public functions | Executable on x86_64 | Runtime fixture checks shortest unsigned binary representations across `u8`, `u16`, and `u32`, zero and high-bit values, invalid-index fallbacks, bounded digit accumulation, optional prefixes, malformed and overflowing input, and format/parse round trips for all 256 byte values. The helpers allocate no storage and use no host calls. |
@@ -241,6 +241,12 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   fallback. `byte_view_append_scalar_or` encodes one valid scalar into a
   validated caller-owned prefix and returns its new length. Invalid UTF-8,
   scalar, length, or logical capacity returns fallback without writing.
+  `byte_view_insert_scalar_or` accepts a scalar index from zero through the
+  scalar count; removal and replacement require an existing scalar. They
+  return the new byte length, or fallback without writing for malformed
+  input, an invalid scalar or index, or insufficient logical capacity.
+  Removal and shrinking replacement leave bytes above the new length outside
+  the logical view.
   All views must physically back their claimed lengths and writable capacity.
   `byte_offset_of_scalar_or` maps scalar indices to byte starts and permits
   the index equal to the scalar count, returning the end offset. The inverse
@@ -1122,7 +1128,11 @@ also fixes the imported struct-return relocation path described below.
    unsafe; generic enum layout must account for the concrete type argument
    before these APIs can be claimed. The imported scalar reproducer also
    reached an optimizer failure (`LNC0057`) under that experiment, so layout
-   alone is not the remaining compiler work. The former by-value
+   alone is not the remaining compiler work.
+   `repro_generic_payload_struct_wide.lani` also compiles a two-word `Pair`
+   through `Maybe<T>` as a generic struct, but the native ELF exits 1 instead
+   of 0. A struct representation is therefore not a safe source-level
+   workaround for the generic enum layout failure. The former by-value
    `core::option::replace(value, next)` always returned `Some(next)` without
    changing `value`; it was removed rather than retained as a misleading
    mutation API. A real replacement operation needs a mutable Option receiver

@@ -1,0 +1,11 @@
+module app::main;
+
+pub struct Pair { first: i32, second: i32 }
+pub struct Maybe<T> { present: bool, value: T }
+
+fn main() -> i32 {
+    let pair: Pair = Pair { first: 4, second: 9 };
+    let value: Maybe<Pair> = Maybe { present: true, value: pair };
+    if (!value.present || value.value.second != 9) { return 1; }
+    return 0;
+}

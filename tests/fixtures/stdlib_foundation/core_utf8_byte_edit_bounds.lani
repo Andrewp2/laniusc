@@ -1,0 +1,9 @@
+module app::main;
+import core::utf8_view;
+
+fn main() -> i32 {
+    let a: u8 = 65;
+    let short: [u8; 1] = [a];
+    if (core::utf8_view::byte_view_insert_scalar_or(short, 1, 3, 0, 162, -9) >= 0) { return 1; }
+    return 0;
+}
