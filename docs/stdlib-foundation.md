@@ -109,7 +109,7 @@ limited to native x86_64 output from this worktree.
 | `std::host` all 15 metadata functions and 4 constants | Executable metadata on x86_64 Linux | The native fixture calls every public function and constant and checks its unavailable service report against `core::runtime`. No host operation ABI is declared here. |
 | `test::harness` all 31 metadata and status functions and 7 constants | Executable metadata on x86_64 Linux; test execution unbound | The native fixture calls every public function and constant, checks passed, failed, skipped, and unknown statuses, and confirms registration, discovery, and execution remain unavailable. |
 | `test::assert` all 8 public helpers | Executable on x86_64 Linux | `tests/stdlib_assert_execution.rs` runs all passing conditions and separately checks that every false condition terminates with SIGILL. The helpers use no allocation or host calls. See dependency 35 for a separate compiler issue with explicit void returns. |
-| `std::vec` six capability functions and generic `Vec<T>` | Mixed: executable x86_64 Linux metadata; generic value API contract-only | `tests/stdlib_vec_capability_execution.rs` calls every capability function, checks that generic storage remains unavailable, then constructs, fills, reads, and destroys a concrete `VecI32`. The former generic `Vec<T>::push` returned without storing its argument and was removed. Generic `new`, `len`, and `is_empty` remain a type-checking contract; even empty generic construction currently fails native compilation. See dependency 4. |
+| Generic `std::vec::Vec<T>` | Contract-only after stub and misleading metadata removal | The former `push` returned without storing its argument and was removed. Generic `new`, `len`, and `is_empty` remain a type-checking contract; even empty generic construction currently fails native compilation. This module has no runtime service ID: concrete vectors use the allocator service, and service ID 13 belongs to the test harness. See dependency 4. |
 
 For all seven concrete vector types, the allocation-failure suite executes a
 successful clone and then injects failure into its allocation. It checks that
@@ -1098,8 +1098,6 @@ Run `cargo test --test stdlib_mem_execution` for all public memory helper
 functions, including capability metadata, value helpers, and intrinsics.
 Run `cargo test --test stdlib_allocator_metadata_execution` for allocator
 capability metadata and live pointer classification.
-Run `cargo test --test stdlib_vec_capability_execution` for the generic vector
-capability report and a real concrete vector fallback.
 Run `cargo test --test stdlib_time_execution` for clock metadata, the four
 bound host calls, checked wrappers, and injected host failures.
 Run `cargo test --test stdlib_cast_store_execution` for direct indexed byte
@@ -1236,6 +1234,10 @@ also fixes the imported struct-return relocation path described below.
    compilation reports `LNC0006` for the free constructor's contextual
    generic result and `LNC0005` for qualified associated constructor
    resolution, respectively. Neither reaches an executable runtime test.
+   The former vector service metadata also incorrectly reused runtime service
+   ID 13, which is the test harness. It was removed: the concrete vectors
+   depend on the allocator service, while generic layout is a compiler
+   dependency rather than a missing host service.
    A generic collection still needs executable generic value layout and a
    language-level move/borrow rule to enforce ownership rather than relying
    on caller discipline.
