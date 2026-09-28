@@ -122,6 +122,7 @@ limited to native x86_64 output from this worktree.
 | `std::path` all 17 constants and all 37 public functions | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, path headers, full caller-backed component bytes, and last-component, extension, and stem byte offsets. The final-component helpers treat slash and backslash as separators, ignore trailing separators, accept non-UTF-8 bytes, and return the supplied fallback for empty or separator-only paths, negative lengths, or embedded NUL. A leading dot alone and a trailing dot do not create an extension. The two-byte header classifiers check only the supplied header when `length > 2`; use `path_component_is_normal_relative_bytes` or `path_component_matches_windows_relative_byte_rules` to inspect every byte. Negative and empty lengths return false in the classifiers; an overstated positive length traps on native indexing if scanning reaches beyond the backing slice. The Windows byte classifier rejects reserved bytes but does not reject reserved device names or trailing spaces/dots. Redundant no-argument functions that failed natively were removed in favor of the tested constants. Allocation and host normalization are unavailable. |
 | `std::vec_i32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | `tests/fixtures/stdlib_foundation/vec_i32.lani` checks construction, growth, element access and mutation, bounds, reserve, pop, clear, cloning, and destruction. `tests/stdlib_vec_i32_execution.rs` injects allocation and reallocation failures and checks the vector and prior data stay unchanged. This is a linear-ownership API by convention; source-level moves are not enforced. |
 | `std::vec_u32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, `2^31`, and `u32::MAX`. The allocation-failure suite injects failed initial allocation and reallocation; the real checksum sample combines it with `core::number_u32` and `OptionU32`. Storage uses 32-bit cells and preserves every unsigned bit pattern. Ownership is linear by convention. |
+| `std::vec_wide_i64` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks pair-preserving growth, access, mutation, insertion, removal, caller-backed batch append, reserve, clone independence, resize, truncation, shrink, clearing, destruction, both signed extrema, the 32-bit boundary, invalid indices and capacities, and a physical input-view overclaim that traps. Injected initial, growth, batch-append, insert, resize, clone, and shrink allocation failures preserve prior values or return an empty clone. A signed decimal sum program uses the vector with real input. Each element uses two 32-bit cells; ownership is linear by convention. |
 | `std::vec_u8` all 20 public functions and its capacity constant | Executable on x86_64 Linux | The byte vector fixture checks construction, growth, independent cloning, access, mutation, bounds, reserve, pop, clear, destruction, 128, and 255. `data_ptr` exposes its 32-bit byte-code cells for a caller-bounded borrowed view; the fixture checks empty and initialized views. The allocation-failure suite injects failed initial allocation, reallocation, and a clone allocation through the text wrapper; the byte checksum sample combines it with `core::byte` and `OptionU8`. Each byte occupies one 32-bit cell because the raw-slice intrinsic currently accepts i32 cells. Ownership is linear by convention. |
 | `std::utf8_vec` all 30 public text helpers | Executable on x86_64 Linux | The runtime fixtures construct and edit text from Unicode scalars, complete caller-backed UTF-8 byte-code views, and ordinary `[u8]` byte views; check independent cloning, multibyte bytes, scalar count and lookup, first and last search, equality, prefixes, suffixes, ordering, byte-offset sequence search, insertion, removal, replacement, splicing, pop, clear, and destruction. Byte-view splicing covers growth, shrinkage, equal-width replacement, and insertion at the end; malformed input and invalid indices leave data unchanged. Injected allocation failures check that failed scalar, byte-code, and `[u8]` edits preserve prior bytes. Storage is a `VecU8` with one 32-bit cell per encoded byte and linear ownership by convention. |
 | `std::vec_i8` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The signed byte vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, `-128`, and 127. The allocation-failure suite injects failed initial allocation and reallocation; the signed byte sum sample combines it with `core::number_i8` and `OptionI8`. Each signed byte occupies one 32-bit cell, preserving its sign. Ownership is linear by convention. |
@@ -140,11 +141,11 @@ limited to native x86_64 output from this worktree.
 | Generic `std::vec::new` | Executable on x86_64 for imported `i32` and `bool` empty values | An annotated `Vec<T>` supplies the result type, and the imported constructor runs through `--stdlib-root`. See `tests/stdlib_generic_vec_flat_execution.rs`. |
 | Generic `std::vec::{len,is_empty}` | Executable on x86_64 for imported `i32` and `bool` empty values | `repro_vec_generic_free_new.lani` executes both through `--stdlib-root` with both instantiations. `repro_vec_generic_free_direct_argument.lani` also executes direct nested constructor arguments. Generic `Vec<T>` has no storage or mutation; concrete vectors use the allocator service. See dependencies 4 and 54. |
 
-All seven concrete vector modules also implement `truncate(value, new_len)`.
+All seven single-cell concrete vector modules also implement `truncate(value, new_len)`.
 `tests/stdlib_vec_truncate_execution.rs` executes each imported implementation:
 valid truncation preserves the prefix and capacity, invalid lengths leave the
 vector unchanged, and appending after truncation reuses the allocation.
-All seven also implement `try_resize(value, new_len, fill)`: growth fills each
+All seven single-cell modules also implement `try_resize(value, new_len, fill)`: growth fills each
 new element, shrinking retains the prefix and allocation, and invalid lengths
 or allocation failure leave the original vector unchanged. The imported
 runtime fixture checks all seven element types, including signed and unsigned
@@ -156,7 +157,7 @@ storage for an empty vector, and permits subsequent growth. An injected
 `mremap` failure checks that the old allocation, capacity, and elements stay
 owned by the returned vector.
 
-For all seven concrete vector types, the allocation-failure suite executes a
+For all seven single-cell concrete vector types, the allocation-failure suite executes a
 successful clone and then injects failure into its allocation. It checks that
 the failed clone is empty and that the original vector retains its elements
 and ownership. `strace` is required for the injected branch.
@@ -618,6 +619,17 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   raw cell or failed allocation yields an empty zero-capacity vector. Compare
   lengths to detect that failure. The 8-bit, 16-bit, and boolean vectors reject
   malformed raw cells before allocating; i32 and u32 accept every 32-bit cell.
+- `std::vec_wide_i64` owns one allocation of paired low/high 32-bit
+  cells per signed two-word integer. Maximum capacity is `268435455` values
+  so every byte count fits signed i32. Operations return the newest vector;
+  callers must use only that value and destroy it once. Failed growth, insert,
+  resize, reserve, or shrink retains the original length, capacity, elements,
+  and allocation. A failed nonempty clone is empty and leaves the source
+  owned. `try_extend_from_word_pairs` takes a caller-backed `[i32]` view of
+  `2 * count` interleaved low/high words, reserves before writing, and requires
+  nonaliasing input; overstating physical backing may trap. Invalid indices
+  return fallback or preserve the vector. Compare returned lengths or capacity
+  to detect allocation failure.
 - `std::set_i32` owns 32-bit cells and keeps each distinct item once, in
   insertion order. `try_insert` leaves duplicate items unchanged and grows
   capacity by doubling from four cells. A new item increases length by one on
@@ -1345,6 +1357,11 @@ them through `core::slice_f32`, sums and checks them against an inclusive
 floating total is `7.0`. Floating-to-integer conversion remains a compiler
 dependency; see item 43 below.
 
+`sample_programs/wide_signed_sum.lani` reads bounded signed decimal lines
+into `std::vec_wide_i64`, sums them modulo 2^64, and prints the signed
+result. Its native test covers empty input, both signed extrema, wrapping,
+multiple values, an unterminated final line, malformed and overlong input.
+
 `sample_programs/vector_square_sum.lani` uses the allocation-backed vector,
 checked push length, bounded indexed reads, saturating arithmetic, and native
 integer output. It prints `285` and releases its storage.
@@ -1495,6 +1512,10 @@ Run `cargo test --test stdlib_vec_resize_execution` for growth, fill,
 shrinkage, invalid lengths, and an injected reallocation failure.
 Run `cargo test --test stdlib_vec_shrink_execution` for all seven concrete
 vectors' capacity release and an injected shrink reallocation failure.
+Run `cargo test --test stdlib_vec_wide_i64_execution` for the owned
+signed two-word vector, every public operation, backing bounds, and injected
+allocation failures. Run `cargo test --test stdlib_wide_signed_sum_program`
+for its full-width input and output program.
 Run `cargo test --test stdlib_map_i32_i32_execution` for the owned map,
 initial, growth, shrink, and clone allocation failures, and the stdin byte
 histogram.

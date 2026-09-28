@@ -1,0 +1,303 @@
+// Owned, allocation-backed WideI64 vector on x86_64 Linux. Each value uses
+// two 32-bit cells in low-word, high-word order. Ownership is linear by
+// convention: keep only the latest returned VecWideI64, never copy it or use
+// it after destroy. The language cannot enforce moves yet. Allocation failure
+// returns the original vector; compare length or capacity to detect it.
+module std::vec_wide_i64;
+import alloc::allocator;
+import core::mem;
+import core::wide_i64;
+pub struct VecWideI64 {
+    storage: ptr,
+    length: i32,
+    reserved: i32,
+}
+// Eight bytes per element; all allocation byte counts fit signed i32.
+pub const MAX_CAPACITY: i32 = 268435455;
+pub fn new() -> VecWideI64 {
+    let empty: ptr = 0;
+    return VecWideI64 {
+        storage: empty,
+        length: 0,
+        reserved: 0
+    };
+}
+pub fn len(value: VecWideI64) -> i32 {
+    return value.length;
+}
+pub fn capacity(value: VecWideI64) -> i32 {
+    return value.reserved;
+}
+pub fn is_empty(value: VecWideI64) -> bool {
+    return value.length == 0;
+}
+// Invalid requests or allocation failure leave the original vector intact.
+pub fn try_reserve(value: VecWideI64, minimum_capacity: i32) -> VecWideI64 {
+    if (minimum_capacity<0 || minimum_capacity>MAX_CAPACITY) {
+        return value;
+    }
+    if (minimum_capacity <= value.reserved) {
+        return value;
+    }
+    let new_byte_count: i32 = minimum_capacity * 8;
+    let new_bytes: usize = new_byte_count as usize;
+    let next: ptr = 0;
+    if (value.storage == 0) {
+        next = alloc::allocator::alloc(new_bytes, 4);
+    } else {
+        let old_byte_count: i32 = value.reserved * 8;
+        let old_bytes: usize = old_byte_count as usize;
+        next = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
+    }
+    if (next == 0) {
+        return value;
+    }
+    return VecWideI64 {
+        storage: next,
+        length: value.length,
+        reserved: minimum_capacity
+    };
+}
+pub fn try_with_capacity(initial_capacity: i32) -> VecWideI64 {
+    return try_reserve(new(), initial_capacity);
+}
+// A failed clone is empty; the source remains owned and unchanged. A
+// successful nonempty clone has the source length and an independent buffer.
+pub fn try_clone(value: VecWideI64) -> VecWideI64 {
+    if (value.length == 0) {
+        return new();
+    }
+    let copy: VecWideI64 = try_with_capacity(value.length);
+    if (copy.reserved<value.length) {
+        return new();
+    }
+    let index: i32 = 0;
+    while (index<value.length) {
+        let item: core::wide_i64::WideI64 = get_or(value, index, core::wide_i64::zero());
+        copy = try_push(copy, item);
+        index += 1;
+    }
+    return copy;
+}
+// A successful push increments len; failure returns the original vector.
+pub fn try_push(value: VecWideI64, item: core::wide_i64::WideI64) -> VecWideI64 {
+    let grown: VecWideI64 = value;
+    if (grown.length == grown.reserved) {
+        let target: i32 = 4;
+        if (grown.reserved>0) {
+            if (grown.reserved>MAX_CAPACITY / 2) {
+                target = MAX_CAPACITY;
+            } else {
+                target = grown.reserved * 2;
+            }
+        }
+        grown = try_reserve(grown, target);
+        if (grown.length == grown.reserved) {
+            return value;
+        }
+    }
+    let cells:[i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved * 2);
+    let offset: i32 = grown.length * 2;
+    let low: u32 = core::wide_i64::low_word(item);
+    let high: u32 = core::wide_i64::high_word(item);
+    cells[offset] = low as i32;
+    cells[offset + 1] = high as i32;
+    return VecWideI64 {
+        storage: grown.storage,
+        length: grown.length + 1,
+        reserved: grown.reserved
+    };
+}
+// Append count values from caller-backed low/high i32 word pairs. Reserve
+// before writing, so invalid count, capacity overflow, or allocation failure
+// leave the vector unchanged. The caller must back 2 * count words; a false
+// backing claim may trap. Input must not alias this vector because growth can
+// move storage. Success increases len by count.
+pub fn try_extend_from_word_pairs(value: VecWideI64, words:[i32], count: i32) -> VecWideI64 {
+    if (count<0 || count>MAX_CAPACITY - value.length) {
+        return value;
+    }
+    if (count == 0) {
+        return value;
+    }
+    let needed: i32 = value.length + count;
+    let grown: VecWideI64 = value;
+    if (grown.reserved<needed) {
+        let target: i32 = 4;
+        if (grown.reserved>0) {
+            if (grown.reserved>MAX_CAPACITY / 2) {
+                target = MAX_CAPACITY;
+            } else {
+                target = grown.reserved * 2;
+            }
+        }
+        if (target<needed) {
+            target = needed;
+        }
+        grown = try_reserve(grown, target);
+        if (grown.reserved<needed) {
+            return value;
+        }
+    }
+    let cells:[i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved * 2);
+    let index: i32 = 0;
+    while (index<count) {
+        let source: i32 = index * 2;
+        let destination: i32 =(grown.length + index) * 2;
+        cells[destination] = words[source];
+        cells[destination + 1] = words[source + 1];
+        index += 1;
+    }
+    return VecWideI64 {
+        storage: grown.storage,
+        length: needed,
+        reserved: grown.reserved
+    };
+}
+// Insert at [0, len]. Invalid index or allocation failure leaves it unchanged.
+pub fn try_insert(value: VecWideI64, index: i32, item: core::wide_i64::WideI64) -> VecWideI64 {
+    let old_len: i32 = value.length;
+    if (index<0 || index>old_len) {
+        return value;
+    }
+    let grown: VecWideI64 = try_push(value, item);
+    if (grown.length == old_len) {
+        return grown;
+    }
+    let cells:[i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved * 2);
+    let cursor: i32 = old_len;
+    while (cursor>index) {
+        let destination: i32 = cursor * 2;
+        let source: i32 =(cursor - 1) * 2;
+        cells[destination] = cells[source];
+        cells[destination + 1] = cells[source + 1];
+        cursor -= 1;
+    }
+    let offset: i32 = index * 2;
+    let low: u32 = core::wide_i64::low_word(item);
+    let high: u32 = core::wide_i64::high_word(item);
+    cells[offset] = low as i32;
+    cells[offset + 1] = high as i32;
+    return grown;
+}
+// Remove one element at [0, len), retaining capacity. Invalid index is a no-op.
+pub fn try_remove(value: VecWideI64, index: i32) -> VecWideI64 {
+    if (index<0 || index >= value.length) {
+        return value;
+    }
+    let cells:[i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
+    let cursor: i32 = index;
+    while (cursor + 1<value.length) {
+        let destination: i32 = cursor * 2;
+        let source: i32 =(cursor + 1) * 2;
+        cells[destination] = cells[source];
+        cells[destination + 1] = cells[source + 1];
+        cursor += 1;
+    }
+    return try_pop(value);
+}
+// Invalid indices return fallback without reading storage.
+pub fn get_or(value: VecWideI64, index: i32, fallback: core::wide_i64::WideI64) -> core::wide_i64::WideI64 {
+    if (index<0 || index >= value.length) {
+        return fallback;
+    }
+    let cells:[i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
+    let offset: i32 = index * 2;
+    let low: u32 = cells[offset];
+    let high: u32 = cells[offset + 1];
+    return core::wide_i64::from_words(high, low);
+}
+// Mutate one initialized element; invalid indices leave storage unchanged.
+pub fn try_set(value: VecWideI64, index: i32, item: core::wide_i64::WideI64) -> bool {
+    if (index<0 || index >= value.length) {
+        return false;
+    }
+    let cells:[i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved * 2);
+    let offset: i32 = index * 2;
+    let low: u32 = core::wide_i64::low_word(item);
+    let high: u32 = core::wide_i64::high_word(item);
+    cells[offset] = low as i32;
+    cells[offset + 1] = high as i32;
+    return true;
+}
+// Empty pop is a no-op; read the last item first when needed.
+pub fn try_pop(value: VecWideI64) -> VecWideI64 {
+    if (value.length == 0) {
+        return value;
+    }
+    return VecWideI64 {
+        storage: value.storage,
+        length: value.length - 1,
+        reserved: value.reserved
+    };
+}
+// Keep a prefix and retain the allocation. Invalid new_len is a no-op.
+pub fn truncate(value: VecWideI64, new_len: i32) -> VecWideI64 {
+    if (new_len<0 || new_len>value.length) {
+        return value;
+    }
+    return VecWideI64 {
+        storage: value.storage,
+        length: new_len,
+        reserved: value.reserved
+    };
+}
+// Grow with initialized fill or shrink to a prefix. Invalid length or failed
+// growth returns the original vector unchanged.
+pub fn try_resize(value: VecWideI64, new_len: i32, fill: core::wide_i64::WideI64) -> VecWideI64 {
+    if (new_len<0 || new_len>MAX_CAPACITY) {
+        return value;
+    }
+    if (new_len <= value.length) {
+        return truncate(value, new_len);
+    }
+    let grown: VecWideI64 = try_reserve(value, new_len);
+    if (grown.reserved<new_len) {
+        return value;
+    }
+    while (grown.length<new_len) {
+        grown = try_push(grown, fill);
+    }
+    return grown;
+}
+pub fn clear(value: VecWideI64) -> VecWideI64 {
+    return VecWideI64 {
+        storage: value.storage,
+        length: 0,
+        reserved: value.reserved
+    };
+}
+// A successful shrink makes capacity equal len. Failed realloc preserves the
+// original. Shrinking an empty vector releases its allocation.
+pub fn try_shrink_to_fit(value: VecWideI64) -> VecWideI64 {
+    if (value.length == value.reserved) {
+        return value;
+    }
+    if (value.length == 0) {
+        let byte_count: i32 = value.reserved * 8;
+        let bytes: usize = byte_count as usize;
+        alloc::allocator::dealloc(value.storage, bytes, 4);
+        return new();
+    }
+    let old_byte_count: i32 = value.reserved * 8;
+    let new_byte_count: i32 = value.length * 8;
+    let old_bytes: usize = old_byte_count as usize;
+    let new_bytes: usize = new_byte_count as usize;
+    let next: ptr = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
+    if (next == 0) {
+        return value;
+    }
+    return VecWideI64 {
+        storage: next,
+        length: value.length,
+        reserved: value.length
+    };
+}
+// Release the one allocation; never use any copy after this call.
+pub fn destroy(value: VecWideI64) {
+    if (value.storage != 0) {
+        let byte_count: i32 = value.reserved * 8;
+        let bytes: usize = byte_count as usize;
+        alloc::allocator::dealloc(value.storage, bytes, 4);
+    }
+}
