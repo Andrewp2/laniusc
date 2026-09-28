@@ -1,0 +1,10 @@
+module app::helper;
+
+pub fn write_selected(values: [i32], early: bool) {
+    if (early) {
+        values[0] = 7;
+        return;
+    }
+    values[0] = 9;
+    return;
+}

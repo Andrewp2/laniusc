@@ -2379,15 +2379,13 @@ also fixes the imported struct-return relocation path described below.
     that also has payload variants;
     a bare imported payload variant remains rejected. Unqualified variant
     names also execute; see resolved dependency 45.
-35. **Explicit return in a void helper.**
+35. **Resolved: explicit return in a void helper.**
     `tests/fixtures/stdlib_foundation/repro_void_return.lani` defines an
     unused void helper containing only `return;` alongside a valid `main`.
-    Type checking succeeds, but native compilation stops in the GPU SSA
-    operand rewrite pass (optimization structure flag 1024, row 0). The
-    diagnostic now preserves that failure instead of incorrectly claiming
-    that `main` is missing; it still needs a specific compiler diagnostic and
-    a lowering fix. `test::assert` omits redundant void returns, so this
-    compiler limitation does not affect its executable helpers.
+    Native compilation and execution now succeed. The GPU SSA operand-role
+    helper recognizes that a void return has no value edge. The executable
+    `tests/stdlib_void_return_execution.rs` also calls an imported void helper
+    twice and checks the side effect after both an early and a final return.
 36. **Resolved: imported generic slice parameter from a fixed array.** The
     late GPU dependency-call checker used an argument token to look up a
     generic claim keyed by the callee token. It now carries the callee token

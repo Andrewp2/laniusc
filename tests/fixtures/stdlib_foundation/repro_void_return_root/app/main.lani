@@ -1,0 +1,11 @@
+module app::main;
+import app::helper;
+
+fn main() -> i32 {
+    let values: [i32; 1] = [0];
+    app::helper::write_selected(values, true);
+    if (values[0] != 7) { return 1; }
+    app::helper::write_selected(values, false);
+    if (values[0] != 9) { return 2; }
+    return 0;
+}

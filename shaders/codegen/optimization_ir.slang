@@ -353,6 +353,10 @@ bool opt_ir_operand_is_value(OptIrNodeCore core, uint ordinal)
 {
     if (ordinal >= 3u) return false;
     uint op = opt_ir_op(core);
+    // A bare `return;` has no value operand. Its absent slot must not enter
+    // SSA just because valued returns use operand a.
+    if (op == SEMANTIC_LIR_OP_RETURN && core.type_id == 1u)
+        return false;
     bool indexed = (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u;
     bool field = (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u;
     bool projected = indexed || field;
