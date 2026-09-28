@@ -1,0 +1,114 @@
+module app::main;
+import core::base64;
+
+fn main() -> i32 {
+    let zero: u8 = 0;
+    let ascii_f: u8 = 102;
+    let ascii_o: u8 = 111;
+    let ascii_b: u8 = 98;
+    let ascii_a: u8 = 97;
+    let ascii_r: u8 = 114;
+    let ascii_Z: u8 = 90;
+    let ascii_m: u8 = 109;
+    let ascii_9: u8 = 57;
+    let ascii_v: u8 = 118;
+    let ascii_Y: u8 = 89;
+    let ascii_F: u8 = 70;
+    let ascii_y: u8 = 121;
+    let ascii_g: u8 = 103;
+    let ascii_8: u8 = 56;
+    let ascii_A: u8 = 65;
+    let ascii_h: u8 = 104;
+    let ascii_eq: u8 = 61;
+    let newline: u8 = 10;
+    if (core::base64::encoded_len_or(0, -9) != 0 ||
+        core::base64::encoded_len_or(1, -9) != 4 ||
+        core::base64::encoded_len_or(2, -9) != 4 ||
+        core::base64::encoded_len_or(3, -9) != 4 ||
+        core::base64::encoded_len_or(4, -9) != 8 ||
+        core::base64::encoded_len_or(1610612733, -9) != 2147483644 ||
+        core::base64::encoded_len_or(1610612734, -9) != -9 ||
+        core::base64::encoded_len_or(-1, -9) != -9) { return 1; }
+
+    let sentinel: u8 = 123;
+    let empty: [u8; 1] = [sentinel];
+    if (core::base64::decoded_len_or(empty, 0, -9) != 0 ||
+        core::base64::encode_into(empty, 0, empty, 0) != 0 ||
+        core::base64::decode_into(empty, 0, empty, 0) != 0 ||
+        empty[0] != sentinel) { return 2; }
+
+    let plain: [u8; 6] = [ascii_f, ascii_o, ascii_o, ascii_b, ascii_a, ascii_r];
+    let encoded: [u8; 9] = [sentinel, sentinel, sentinel, sentinel, sentinel, sentinel, sentinel, sentinel, sentinel];
+    if (core::base64::encode_into(plain, 6, encoded, 8) != 8 ||
+        encoded[0] != ascii_Z || encoded[1] != ascii_m || encoded[2] != ascii_9 || encoded[3] != ascii_v ||
+        encoded[4] != ascii_Y || encoded[5] != ascii_m || encoded[6] != ascii_F || encoded[7] != ascii_y ||
+        encoded[8] != sentinel ||
+        core::base64::decoded_len_or(encoded, 8, -9) != 6) { return 3; }
+    let decoded: [u8; 7] = [sentinel, sentinel, sentinel, sentinel, sentinel, sentinel, sentinel];
+    if (core::base64::decode_into(encoded, 8, decoded, 6) != 6) { return 40; }
+    if (decoded[0] != ascii_f) { return 41; }
+    if (decoded[1] != ascii_o) { return 42; }
+    if (decoded[2] != ascii_o) { return 43; }
+    if (decoded[3] != ascii_b) { return 44; }
+    if (decoded[4] != ascii_a) { return 45; }
+    if (decoded[5] != ascii_r) { return 46; }
+    if (decoded[6] != sentinel) { return 47; }
+
+    let one: [u8; 1] = [ascii_f];
+    let two: [u8; 2] = [ascii_f, ascii_o];
+    let one_encoded: [u8; 4] = [zero, zero, zero, zero];
+    let two_encoded: [u8; 4] = [zero, zero, zero, zero];
+    if (core::base64::encode_into(one, 1, one_encoded, 4) != 4) { return 50; }
+    if (one_encoded[0] != ascii_Z) { return 51; }
+    if (one_encoded[1] != ascii_g) { return 52; }
+    if (one_encoded[2] != ascii_eq || one_encoded[3] != ascii_eq) { return 53; }
+    if (core::base64::decoded_len_or(one_encoded, 4, -9) != 1) { return 54; }
+    if (core::base64::encode_into(two, 2, two_encoded, 4) != 4) { return 55; }
+    if (two_encoded[0] != ascii_Z) { return 56; }
+    if (two_encoded[1] != ascii_m) { return 57; }
+    if (two_encoded[2] != ascii_8 || two_encoded[3] != ascii_eq) { return 58; }
+    if (core::base64::decoded_len_or(two_encoded, 4, -9) != 2) { return 59; }
+
+    // Encode backward and decode forward within exactly the same storage.
+    let shared: [u8; 8] = [ascii_f, ascii_o, ascii_o, ascii_b, ascii_a, ascii_r, sentinel, sentinel];
+    if (core::base64::encode_into(shared, 6, shared, 8) != 8 ||
+        shared[0] != 90 || shared[3] != 118 || shared[7] != 121 ||
+        core::base64::decode_into(shared, 8, shared, 8) != 6 ||
+        shared[0] != 102 || shared[1] != 111 || shared[2] != 111 ||
+        shared[3] != 98 || shared[4] != 97 || shared[5] != 114) { return 6; }
+    let shared_one: [u8; 4] = [ascii_f, sentinel, sentinel, sentinel];
+    let shared_two: [u8; 4] = [ascii_f, ascii_o, sentinel, sentinel];
+    if (core::base64::encode_into(shared_one, 1, shared_one, 4) != 4 ||
+        shared_one[0] != ascii_Z || shared_one[1] != ascii_g ||
+        shared_one[2] != ascii_eq || shared_one[3] != ascii_eq ||
+        core::base64::decode_into(shared_one, 4, shared_one, 4) != 1 ||
+        shared_one[0] != ascii_f ||
+        core::base64::encode_into(shared_two, 2, shared_two, 4) != 4 ||
+        shared_two[0] != ascii_Z || shared_two[1] != ascii_m ||
+        shared_two[2] != ascii_8 || shared_two[3] != ascii_eq ||
+        core::base64::decode_into(shared_two, 4, shared_two, 4) != 2 ||
+        shared_two[0] != ascii_f || shared_two[1] != ascii_o) { return 60; }
+
+    let bad_length: [u8; 3] = [ascii_Z, ascii_g, ascii_eq];
+    let bad_pad: [u8; 4] = [ascii_Z, ascii_g, ascii_eq, ascii_A];
+    let bad_one_bit: [u8; 4] = [ascii_Z, ascii_h, ascii_eq, ascii_eq];
+    let bad_two_bits: [u8; 4] = [ascii_Z, ascii_m, ascii_9, ascii_eq];
+    let middle_pad: [u8; 8] = [ascii_Z, ascii_g, ascii_eq, ascii_eq, ascii_Z, ascii_m, ascii_9, ascii_v];
+    let whitespace: [u8; 4] = [ascii_Z, ascii_g, newline, ascii_eq];
+    if (core::base64::decoded_len_or(bad_length, 3, -9) != -9 ||
+        core::base64::decoded_len_or(bad_pad, 4, -9) != -9 ||
+        core::base64::decoded_len_or(bad_one_bit, 4, -9) != -9 ||
+        core::base64::decoded_len_or(bad_two_bits, 4, -9) != -9 ||
+        core::base64::decoded_len_or(middle_pad, 8, -9) != -9 ||
+        core::base64::decoded_len_or(whitespace, 4, -9) != -9 ||
+        core::base64::decoded_len_or(encoded, -1, -9) != -9) { return 7; }
+
+    let unchanged: [u8; 2] = [sentinel, sentinel];
+    if (core::base64::encode_into(plain, 6, unchanged, 7) != -1 ||
+        core::base64::encode_into(plain, -1, unchanged, 2) != -1 ||
+        core::base64::decode_into(bad_pad, 4, unchanged, 2) != -1 ||
+        core::base64::decode_into(one_encoded, 4, unchanged, 0) != -1 ||
+        core::base64::decode_into(one_encoded, -1, unchanged, 2) != -1 ||
+        unchanged[0] != sentinel || unchanged[1] != sentinel) { return 8; }
+    return 0;
+}

@@ -17,6 +17,7 @@ limited to native x86_64 output from this worktree.
 | `core::byte` constants and all 44 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
 | `core::bits` all 42 public `i32`, `u32`, `u16`, and `u8` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across word widths, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. Byte operations run all 256 inputs; halfword operations run boundary values and 256 evenly spaced inputs; signed operations check negative patterns and all 32 one-hot bits. |
 | `core::bitset` all 14 public caller-backed bitset functions | Executable on x86_64 for `[u32]` backing | Runtime fixtures check word counts, bit access and mutation, fill, counts, any/all, first/last set bit, equality, union, and intersection. They cover logical lengths 0 through 65, word boundaries, aliases, invalid lengths and indices, preserved padding and unused words, and a physical backing overclaim that traps. A source scan requires a runtime call for every public function. |
+| `core::base64` all 4 public caller-backed encoding functions | Executable on x86_64 for `[u8]` backing | Runtime fixtures check exact size calculation, standard padded Base64 encoding and strict decoding, empty input, all 256 values as the final byte of one-, two-, and three-byte round trips, one- and two-byte padding, same-buffer encode/decode, rejected malformed input and insufficient capacity without output changes, and overstated physical views that trap. A source scan requires a runtime call for every public function. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 25 public codec and backed-view functions | Executable on x86_64 | Native fixtures check ASCII and multibyte encoding/decoding, checked scalar append, scalar counts and lookup, first and last scalar and sequence search, byte/scalar boundary mapping, equality, prefix and suffix matching, lexicographic comparison, empty and truncated views, out-of-byte-range integer codes, malformed sequences, surrogate exclusion, and Unicode maximum. Direct caller-backed `[u8]` helpers validate and count scalars, map scalar and byte boundaries, and read scalars by index across one- through four-byte sequences. They reject malformed input and negative lengths, and native indexing traps on a physical length overclaim. The older general view functions use caller-backed `[i32]` byte codes and do not access string storage. |
@@ -221,6 +222,15 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   `sample_programs/bitset_prime_sieve.lani` uses this storage and
   `core::number_i32` to count and sum primes through 100; its executable test
   checks the printed results, 25 and 1060.
+- `core::base64` uses the standard `A-Z`, `a-z`, `0-9`, `+`, `/` alphabet with
+  required `=` padding. It rejects whitespace, misplaced padding, and nonzero
+  unused bits. `encoded_len_or` returns the caller's fallback if the input
+  length is negative or the encoded size exceeds `i32::MAX`; `decoded_len_or`
+  validates the complete view before returning its size. `encode_into` and
+  `decode_into` return `-1` for invalid logical lengths, malformed input, or
+  insufficient declared output capacity, leaving output untouched in those
+  cases. Both allow input and output to be the same byte array. A length or
+  capacity that overstates physical backing can trap on native indexing.
 - `core::bool` converts any nonzero i32 to true. Its selector functions return
   the chosen branch value. `core::char` tests ASCII classes; its case-insensitive
   equality and case conversion fold ASCII letters only. `is_ascii_control`
@@ -1070,6 +1080,8 @@ with multibyte, empty, exact-capacity, malformed, overlong, and EOF input.
 Run the focused gate with `cargo test --test stdlib_foundation_execution`.
 Run `cargo test --test stdlib_bitset_execution` for the caller-backed bitset,
 including the word-boundary matrix and native bounds trap.
+Run `cargo test --test stdlib_base64_execution` for strict caller-backed
+Base64 encoding and decoding, all byte values, and native bounds trapping.
 The test compiles small Lanius programs through `--stdlib-root`, executes
 the native ELFs, checks their exit status, checks the example's stdout, and
 checks the slice bounds trap. Each source is also suitable for direct CLI
@@ -1631,8 +1643,16 @@ also fixes the imported struct-return relocation path described below.
     `as i32` to a `u32` function call. GPU `check` reports `LNC0016` at `as`.
     Assigning the call result to a typed `u32` local and casting that local
     works. `core::utf8_view` uses the named-local form when converting codec
-    widths, so all eight byte-view operations execute without this compiler
+    widths, so all byte-view operations execute without this compiler
     fix.
+52. **Cast directly into a byte-array slot misexecutes on x86.**
+    `tests/fixtures/stdlib_foundation/repro_u8_cast_store.lani` casts an
+    `i32` value to `u8` on the right side of two indexed assignments. GPU
+    `check` and native compilation succeed, but the ELF exits 1 because the
+    second byte is not stored. The otherwise identical
+    `repro_u8_cast_store_named_local.lani` casts into typed `u8` locals before
+    each assignment and exits 0. `core::base64` uses the tested named-local
+    form for decoded byte writes. The direct form still needs a compiler fix.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

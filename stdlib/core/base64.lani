@@ -1,0 +1,190 @@
+// Strict padded Base64 for caller-backed byte views. The alphabet is RFC 4648
+// standard Base64 (A-Z, a-z, 0-9, +, /), without whitespace or a URL variant.
+module core::base64;
+
+fn alphabet_at(value: u32) -> u8 {
+    let code: u32 = 0;
+    if (value < 26) {
+        code = 65 + value;
+    } else {
+        if (value < 52) {
+            code = 97 + value - 26;
+        } else {
+            if (value < 62) {
+                code = 48 + value - 52;
+            } else {
+                if (value == 62) {
+                    code = 43;
+                } else {
+                    code = 47;
+                }
+            }
+        }
+    }
+    return code as u8;
+}
+
+fn sextet_or(value: u8) -> i32 {
+    let code: i32 = value as i32;
+    if (code >= 65 && code <= 90) {
+        return code - 65;
+    }
+    if (code >= 97 && code <= 122) {
+        return code - 97 + 26;
+    }
+    if (code >= 48 && code <= 57) {
+        return code - 48 + 52;
+    }
+    if (code == 43) {
+        return 62;
+    }
+    if (code == 47) {
+        return 63;
+    }
+    return -1;
+}
+
+// Return the exact encoded length or fallback for a negative input length or
+// an output length above i32::MAX. No storage is accessed.
+pub fn encoded_len_or(input_len: i32, fallback: i32) -> i32 {
+    if (input_len < 0 || input_len > 1610612733) {
+        return fallback;
+    }
+    let groups: i32 = input_len / 3;
+    if (input_len % 3 != 0) {
+        groups += 1;
+    }
+    return groups * 4;
+}
+
+// Validate the entire encoded view and return its decoded length. Padding is
+// required for a partial final group, permitted only there, and must leave
+// zero unused bits. Empty input is valid. Invalid input returns fallback.
+pub fn decoded_len_or(input: [u8], input_len: i32, fallback: i32) -> i32 {
+    if (input_len < 0 || input_len % 4 != 0) {
+        return fallback;
+    }
+    let result: i32 = 0;
+    let index: i32 = 0;
+    while (index < input_len) {
+        let first: i32 = sextet_or(input[index]);
+        let second: i32 = sextet_or(input[index + 1]);
+        let third_byte: u8 = input[index + 2];
+        let fourth_byte: u8 = input[index + 3];
+        if (first < 0 || second < 0) {
+            return fallback;
+        }
+        let final_group: bool = index + 4 == input_len;
+        if (third_byte == 61) {
+            if (!final_group || fourth_byte != 61 || second % 16 != 0) {
+                return fallback;
+            }
+            result += 1;
+        } else {
+            let third: i32 = sextet_or(third_byte);
+            if (third < 0) {
+                return fallback;
+            }
+            if (fourth_byte == 61) {
+                if (!final_group || third % 4 != 0) {
+                    return fallback;
+                }
+                result += 2;
+            } else {
+                if (sextet_or(fourth_byte) < 0) {
+                    return fallback;
+                }
+                result += 3;
+            }
+        }
+        index += 4;
+    }
+    return result;
+}
+
+// Return written bytes, or -1 for invalid logical lengths or insufficient
+// declared output capacity. Those failures leave output unchanged. Encoding
+// runs backward so input and output may be the same caller-owned byte array.
+pub fn encode_into(input: [u8], input_len: i32, output: [u8], capacity: i32) -> i32 {
+    let encoded_len: i32 = encoded_len_or(input_len, -1);
+    if (encoded_len < 0 || capacity < encoded_len) {
+        return -1;
+    }
+    let padding: u8 = 61;
+    let group: i32 = encoded_len / 4;
+    while (group > 0) {
+        group -= 1;
+        let source: i32 = group * 3;
+        let target: i32 = group * 4;
+        let first_byte: u8 = input[source];
+        let first: u32 = first_byte as u32;
+        let second: u32 = 0;
+        let third: u32 = 0;
+        let remaining: i32 = input_len - source;
+        if (remaining >= 2) {
+            let second_byte: u8 = input[source + 1];
+            second = second_byte as u32;
+        }
+        if (remaining >= 3) {
+            let third_byte: u8 = input[source + 2];
+            third = third_byte as u32;
+        }
+        output[target] = alphabet_at(first >> 2);
+        output[target + 1] = alphabet_at(((first & 3) << 4) | (second >> 4));
+        if (remaining >= 2) {
+            output[target + 2] = alphabet_at(((second & 15) << 2) | (third >> 6));
+        } else {
+            output[target + 2] = padding;
+        }
+        if (remaining >= 3) {
+            output[target + 3] = alphabet_at(third & 63);
+        } else {
+            output[target + 3] = padding;
+        }
+    }
+    return encoded_len;
+}
+
+// Validate all input before writing. Return written bytes or -1 on malformed
+// input, invalid length, or insufficient declared capacity. Same-array input
+// and output work because decoding shrinks and writes from the front.
+pub fn decode_into(input: [u8], input_len: i32, output: [u8], capacity: i32) -> i32 {
+    let decoded_len: i32 = decoded_len_or(input, input_len, -1);
+    if (decoded_len < 0 || capacity < decoded_len) {
+        return -1;
+    }
+    let source: i32 = 0;
+    let target: i32 = 0;
+    while (source < input_len) {
+        let first: i32 = sextet_or(input[source]);
+        let second: i32 = sextet_or(input[source + 1]);
+        let third_byte: u8 = input[source + 2];
+        let fourth_byte: u8 = input[source + 3];
+        let third: i32 = 0;
+        let fourth: i32 = 0;
+        if (third_byte != 61) {
+            third = sextet_or(third_byte);
+            if (fourth_byte != 61) {
+                fourth = sextet_or(fourth_byte);
+            }
+        }
+        let first_value: i32 = first * 4 + second / 16;
+        let first_output: u8 = first_value as u8;
+        output[target] = first_output;
+        target += 1;
+        if (third_byte != 61) {
+            let second_value: i32 = (second % 16) * 16 + third / 4;
+            let second_output: u8 = second_value as u8;
+            output[target] = second_output;
+            target += 1;
+            if (fourth_byte != 61) {
+                let third_value: i32 = (third % 4) * 64 + fourth;
+                let third_output: u8 = third_value as u8;
+                output[target] = third_output;
+                target += 1;
+            }
+        }
+        source += 4;
+    }
+    return decoded_len;
+}
