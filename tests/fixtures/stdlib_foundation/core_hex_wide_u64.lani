@@ -1,0 +1,64 @@
+module app::main;
+import core::hex_wide_u64;
+import core::wide_u64;
+fn matches(value: core::wide_u64::WideU64, high: u32, low: u32) -> bool {
+    return core::wide_u64::high_word(value) == high && core::wide_u64::low_word(value) == low;
+}
+fn main() -> i32 {
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let one: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
+    let boundary: core::wide_u64::WideU64 = core::wide_u64::from_words(1, 0);
+    let pattern: core::wide_u64::WideU64 = core::wide_u64::from_words(305419896, 2596069104);
+    let max: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    if (core::hex_wide_u64::len(zero) != 1 || core::hex_wide_u64::len(one) != 1 || core::hex_wide_u64::len(boundary) != 9 || core::hex_wide_u64::len(pattern) != 16 || core::hex_wide_u64::len(max) != 16) {
+        return 1;
+    }
+    if (core::hex_wide_u64::byte_at_lower_or(zero, 0, 255) != 48 || core::hex_wide_u64::byte_at_upper_or(zero, 0, 255) != 48 || core::hex_wide_u64::byte_at_lower_or(boundary, 0, 255) != 49 || core::hex_wide_u64::byte_at_lower_or(boundary, 8, 255) != 48 || core::hex_wide_u64::byte_at_lower_or(boundary, 9, 255) != 255) {
+        return 2;
+    }
+    let lower:[i32; 16] =[49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102, 48];
+    let upper:[i32; 16] =[49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70, 48];
+    let index: u32 = 0;
+    while (index<16) {
+        let lower_code: i32 = lower[index];
+        let upper_code: i32 = upper[index];
+        let lower_byte: u8 = lower_code as u8;
+        let upper_byte: u8 = upper_code as u8;
+        if (core::hex_wide_u64::byte_at_lower_or(pattern, index, 255) != lower_byte || core::hex_wide_u64::byte_at_upper_or(pattern, index, 255) != upper_byte) {
+            return 3;
+        }
+        index += 1;
+    }
+    if (core::hex_wide_u64::byte_at_upper_or(pattern, 16, 255) != 255 || core::hex_wide_u64::byte_at_lower_or(pattern, 4294967295, 255) != 255) {
+        return 4;
+    }
+    let quotient: core::wide_u64::WideU64 = core::wide_u64::from_words(268435455, 4294967295);
+    let beyond: core::wide_u64::WideU64 = core::wide_u64::from_words(268435456, 0);
+    let limited: core::wide_u64::WideU64 = core::wide_u64::from_u32(255);
+    let fifteen: core::wide_u64::WideU64 = core::wide_u64::from_u32(15);
+    let sixteen: core::wide_u64::WideU64 = core::wide_u64::from_u32(16);
+    if (!core::hex_wide_u64::can_append_ascii_digit(quotient, 70, max) || core::hex_wide_u64::can_append_ascii_digit(beyond, 48, max) || !core::hex_wide_u64::can_append_ascii_digit(fifteen, 102, limited) || core::hex_wide_u64::can_append_ascii_digit(sixteen, 48, limited) || core::hex_wide_u64::can_append_ascii_digit(zero, 71, max)) {
+        return 5;
+    }
+    if (!matches(core::hex_wide_u64::append_ascii_digit_or(quotient, 70, max, zero), 4294967295, 4294967295) || !matches(core::hex_wide_u64::append_ascii_digit_or(fifteen, 102, limited, zero), 0, 255) || !matches(core::hex_wide_u64::append_ascii_digit_or(beyond, 48, max, one), 0, 1) || !matches(core::hex_wide_u64::append_ascii_digit_or(zero, 71, max, one), 0, 1)) {
+        return 6;
+    }
+    let mixed:[i32; 18] =[48, 120, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 66, 99, 68, 101, 70, 48];
+    let uppercase_prefix:[i32; 4] =[48, 88, 102, 70];
+    let leading_zeros:[i32; 4] =[48, 48, 48, 49];
+    let maximum:[i32; 16] =[70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70];
+    let just_prefix:[i32; 2] =[48, 88];
+    let malformed:[i32; 3] =[49, 50, 120];
+    let overflow:[i32; 17] =[70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70];
+    let negative_code:[i32; 1] =[-1];
+    let large_code:[i32; 1] =[256];
+    let leading_space:[i32; 2] =[32, 49];
+    let one_digit:[i32; 1] =[48];
+    if (!core::hex_wide_u64::can_parse_ascii(mixed, 18) || !core::hex_wide_u64::can_parse_ascii(uppercase_prefix, 4) || !core::hex_wide_u64::can_parse_ascii(leading_zeros, 4) || !core::hex_wide_u64::can_parse_ascii(maximum, 16) || !core::hex_wide_u64::can_parse_ascii(one_digit, 1) || core::hex_wide_u64::can_parse_ascii(one_digit, 0) || core::hex_wide_u64::can_parse_ascii(one_digit, -1) || core::hex_wide_u64::can_parse_ascii(just_prefix, 2) || core::hex_wide_u64::can_parse_ascii(malformed, 3) || core::hex_wide_u64::can_parse_ascii(overflow, 17) || core::hex_wide_u64::can_parse_ascii(negative_code, 1) || core::hex_wide_u64::can_parse_ascii(large_code, 1) || core::hex_wide_u64::can_parse_ascii(leading_space, 2)) {
+        return 7;
+    }
+    if (!matches(core::hex_wide_u64::parse_ascii_or(mixed, 18, zero), 305419896, 2596069104) || !matches(core::hex_wide_u64::parse_ascii_or(uppercase_prefix, 4, zero), 0, 255) || !matches(core::hex_wide_u64::parse_ascii_or(leading_zeros, 4, zero), 0, 1) || !matches(core::hex_wide_u64::parse_ascii_or(maximum, 16, zero), 4294967295, 4294967295) || !matches(core::hex_wide_u64::parse_ascii_or(one_digit, 1, one), 0, 0) || !matches(core::hex_wide_u64::parse_ascii_or(overflow, 17, one), 0, 1) || !matches(core::hex_wide_u64::parse_ascii_or(just_prefix, 2, one), 0, 1)) {
+        return 8;
+    }
+    return 0;
+}

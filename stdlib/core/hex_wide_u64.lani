@@ -1,0 +1,108 @@
+// Allocation-free hexadecimal formatting and parsing for two-word u64 values.
+module core::hex_wide_u64;
+import core::byte;
+import core::hex;
+import core::wide_u64;
+pub fn len(value: core::wide_u64::WideU64) -> u32 {
+    let high: u32 = core::wide_u64::high_word(value);
+    if (high != 0) {
+        return 8 + core::hex::len_u32(high);
+    }
+    return core::hex::len_u32(core::wide_u64::low_word(value));
+}
+fn nibble_at(value: core::wide_u64::WideU64, index: u32, length: u32) -> u8 {
+    let position: u32 = length - index - 1;
+    let nibble: u32 = 0;
+    if (position<8) {
+        nibble =(core::wide_u64::low_word(value) >>(position * 4))&15;
+    } else {
+        nibble =(core::wide_u64::high_word(value) >>((position - 8) * 4))&15;
+    }
+    return nibble as u8;
+}
+// Index zero is the most significant digit of the shortest representation.
+pub fn byte_at_lower_or(value: core::wide_u64::WideU64, index: u32, fallback: u8) -> u8 {
+    let length: u32 = len(value);
+    if (index >= length) {
+        return fallback;
+    }
+    let digit: u8 = nibble_at(value, index, length);
+    return core::byte::ascii_lower_hex_digit_or(digit, fallback);
+}
+pub fn byte_at_upper_or(value: core::wide_u64::WideU64, index: u32, fallback: u8) -> u8 {
+    let length: u32 = len(value);
+    if (index >= length) {
+        return fallback;
+    }
+    let digit: u8 = nibble_at(value, index, length);
+    return core::byte::ascii_upper_hex_digit_or(digit, fallback);
+}
+// Check before shifting left four bits; limit may be below 2^64-1.
+pub fn can_append_ascii_digit(current: core::wide_u64::WideU64, digit_byte: u8, limit: core::wide_u64::WideU64) -> bool {
+    if (!core::byte::is_ascii_hexdigit(digit_byte)) {
+        return false;
+    }
+    let digit: u8 = core::byte::ascii_hexdigit_value_or(digit_byte, 0);
+    let widened: u32 = digit as u32;
+    let quotient: core::wide_u64::WideU64 = core::wide_u64::shift_right(limit, 4);
+    let compared: i32 = core::wide_u64::compare(current, quotient);
+    return compared<0 ||(compared == 0 && widened <=(core::wide_u64::low_word(limit)&15));
+}
+pub fn append_ascii_digit_or(current: core::wide_u64::WideU64, digit_byte: u8, limit: core::wide_u64::WideU64, fallback: core::wide_u64::WideU64) -> core::wide_u64::WideU64 {
+    if (!can_append_ascii_digit(current, digit_byte, limit)) {
+        return fallback;
+    }
+    let digit: u8 = core::byte::ascii_hexdigit_value_or(digit_byte, 0);
+    let widened: u32 = digit as u32;
+    let shifted: core::wide_u64::WideU64 = core::wide_u64::shift_left(current, 4);
+    return core::wide_u64::bit_or(shifted, core::wide_u64::from_u32(widened));
+}
+// Parse exactly len ASCII byte codes. A 0x or 0X prefix is optional, but
+// whitespace, signs, empty digits, malformed codes, and overflow are rejected.
+// A physical backing overclaim can trap when indexed.
+pub fn can_parse_ascii(values:[i32], length: i32) -> bool {
+    if (length <= 0) {
+        return false;
+    }
+    let index: i32 = 0;
+    if (length >= 2 && values[0] == 48 &&(values[1] == 120 || values[1] == 88)) {
+        index = 2;
+    }
+    if (index == length) {
+        return false;
+    }
+    let current: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let maximum: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    while (index<length) {
+        let code: i32 = values[index];
+        if (code<0 || code>255) {
+            return false;
+        }
+        let digit_byte: u8 = code as u8;
+        if (!can_append_ascii_digit(current, digit_byte, maximum)) {
+            return false;
+        }
+        current = append_ascii_digit_or(current, digit_byte, maximum, current);
+        index += 1;
+    }
+    return true;
+}
+// A valid value may equal fallback; use can_parse_ascii to distinguish it.
+pub fn parse_ascii_or(values:[i32], length: i32, fallback: core::wide_u64::WideU64) -> core::wide_u64::WideU64 {
+    if (!can_parse_ascii(values, length)) {
+        return fallback;
+    }
+    let index: i32 = 0;
+    if (length >= 2 && values[0] == 48 &&(values[1] == 120 || values[1] == 88)) {
+        index = 2;
+    }
+    let current: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let maximum: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    while (index<length) {
+        let code: i32 = values[index];
+        let digit_byte: u8 = code as u8;
+        current = append_ascii_digit_or(current, digit_byte, maximum, fallback);
+        index += 1;
+    }
+    return current;
+}

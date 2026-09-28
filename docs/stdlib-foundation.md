@@ -32,6 +32,7 @@ limited to native x86_64 output from this worktree.
 | `core::utf8_view` all 12 public byte-view functions | Executable on x86_64 for caller-backed `[u8]` views | Focused native fixtures check complete-view validation, equality, prefix and suffix matches, lexicographic ordering, first and last byte-sequence offsets, first and last Unicode scalar indices, and checked append, insertion, removal, and replacement of Unicode scalars in caller-owned bytes. They cover ASCII and two-, three-, and four-byte encodings, repeated matches, empty views and needles, malformed data, invalid scalars, negative lengths, missing matches, growth and shrinkage, exact-fit and insufficient capacity, and unchanged storage after rejected edits. Separate fixtures confirm physical length and capacity overclaims trap. The source scan requires a runtime call for every public function. |
 | `core::decimal` all 20 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of extrema across 8-, 16-, and 32-bit integers, ordinary values, sign placement, zero, out-of-range fallbacks, incremental and complete ASCII parsing for all six widths, and overflow against each width's limits. `std::io_decimal` and both bounded decimal file readers use the portable scalar helpers. |
 | `core::hex` all 14 public functions | Executable on x86_64 | Runtime fixture checks shortest lowercase and uppercase hexadecimal representations of `u8`, `u16`, and `u32`, zero and maximum values, invalid-index fallbacks, mixed-case digit accumulation, complete prefixed and unprefixed parsing, and overflow against each width's limit. The helpers allocate no storage and use no host calls. |
+| `core::hex_wide_u64` all 7 public two-word functions | Executable on x86_64 | Runtime fixtures call every function and check shortest lowercase and uppercase hexadecimal bytes for zero, the word boundary, a mixed full-width pattern, and the maximum; invalid-index fallbacks; bounded digit appends and overflow; optional prefixes, mixed case, leading zeros, malformed input, and full-width parse overflow. An overstated physical input view traps. The module uses `WideU64`, not native `u64`. |
 | `core::binary` all 11 public functions | Executable on x86_64 | Runtime fixture checks shortest unsigned binary representations across `u8`, `u16`, and `u32`, zero and high-bit values, invalid-index fallbacks, bounded digit accumulation, optional prefixes, malformed and overflowing input, and format/parse round trips for all 256 byte values. The helpers allocate no storage and use no host calls. |
 | `core::f32` both public constants and all 17 public functions | Executable on x86_64 for tested finite, infinite, and NaN inputs | Runtime fixtures check `ZERO` and imported `ONE`, classification, sign, comparison, valid and reversed clamp bounds, fallback behavior, and square root for zero, negative, small, ordinary, large, infinite, and NaN inputs. Direct and materialized NaN comparisons follow unordered semantics. |
 | `core::array_i32_4` all 14 public functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, saturating sum, and caller-backed copy, fill, and reverse. Invalid destination lengths return false without writing; reverse supports shared source/destination backing. Fixed-array-returning predecessors were removed because they misexecute; see dependency 7. |
@@ -444,6 +445,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   one digit. Empty, prefix-only, malformed, whitespace-containing, or
   overflowing input returns the caller fallback. A valid value can equal that
   fallback. An overstated physical view length can trap on native indexing.
+- `core::hex_wide_u64` extends those rules to 64-bit values stored in two
+  `u32` words. It formats zero as one digit and values through `2^64-1` as up
+  to 16 digits. `can_parse_ascii` distinguishes a valid value equal to the
+  caller's fallback from a failed `parse_ascii_or`. Both accept an optional
+  `0x` or `0X` prefix and reject whitespace, signs, invalid codes, empty
+  digits, and overflow. The caller supplies the logical `[i32]` view length;
+  overstating physical backing traps when indexed.
 - `core::binary` returns the shortest unsigned binary length and ASCII byte
   at a zero-based index for `u8`, `u16`, and `u32`. Zero is one digit;
   out-of-range indices return fallback. Its digit predicate accepts only
@@ -1298,6 +1306,8 @@ with multibyte, empty, exact-capacity, malformed, overlong, and EOF input.
 Run the focused gate with `cargo test --test stdlib_foundation_execution`.
 Run `cargo test --test stdlib_wide_u64_bits_execution` for every public
 two-word bit helper, including rotation boundaries and invalid-index fallbacks.
+Run `cargo test --test stdlib_hex_wide_u64_execution` for full-width
+hexadecimal formatting, bounded parsing, fallbacks, and native bounds trapping.
 Run `cargo test --test stdlib_wide_u64_range_execution` for the full-width
 unsigned range forms, their receiver methods, and endpoint boundaries.
 Run `cargo test --test stdlib_wide_i64_range_execution` for the signed
