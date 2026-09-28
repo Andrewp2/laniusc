@@ -188,6 +188,8 @@ bool assignable(uint expected, uint actual)
         return actual == TY_UINT || actual == TY_CHAR;
     if (expected == TY_UINT)
         return actual == TY_INT || actual == TY_CHAR;
+    if (expected == TY_CHAR)
+        return actual == TY_INT || actual == TY_UINT;
     if (expected == TY_FLOAT)
         return actual == TY_INT || actual == TY_UINT || actual == TY_CHAR;
     return false;

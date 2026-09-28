@@ -1,0 +1,23 @@
+module app::main;
+import std::vec_char;
+
+fn main() -> i32 {
+    let fallback: char = '?';
+    let value: std::vec_char::VecChar = std::vec_char::try_with_capacity(5);
+    if (std::vec_char::capacity(value) != 5) { return 2; }
+    value = std::vec_char::try_push(value, 'Ω');
+    value = std::vec_char::try_push(value, '😀');
+    if (std::vec_char::len(value) != 2) { return 3; }
+    value = std::vec_char::try_shrink_to_fit(value);
+    if (std::vec_char::len(value) == 2 && std::vec_char::capacity(value) == 2 &&
+        std::vec_char::get_or(value, 0, fallback) == 'Ω' &&
+        std::vec_char::get_or(value, 1, fallback) == '😀') {
+        std::vec_char::destroy(value);
+        return 4;
+    }
+    if (std::vec_char::len(value) != 2 || std::vec_char::capacity(value) != 5 ||
+        std::vec_char::get_or(value, 0, fallback) != 'Ω' ||
+        std::vec_char::get_or(value, 1, fallback) != '😀') { return 5; }
+    std::vec_char::destroy(value);
+    return 0;
+}

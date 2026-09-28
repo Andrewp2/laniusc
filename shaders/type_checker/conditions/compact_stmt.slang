@@ -146,6 +146,7 @@ bool assignable(uint dst, uint src, uint source_node)
         return src == TY_INT && null_pointer_constant(source_node);
     if (dst == TY_INT) return src == TY_UINT || src == TY_CHAR;
     if (dst == TY_UINT) return src == TY_INT || src == TY_CHAR;
+    if (dst == TY_CHAR) return src == TY_INT || src == TY_UINT;
     if (dst == TY_FLOAT) return src == TY_INT || src == TY_UINT || src == TY_CHAR;
     return false;
 }

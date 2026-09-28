@@ -486,6 +486,8 @@ bool assignable(uint dst, uint src)
         return src == TY_UINT || src == TY_CHAR;
     if (dst == TY_UINT)
         return src == TY_INT || src == TY_CHAR;
+    if (dst == TY_CHAR)
+        return src == TY_INT || src == TY_UINT;
     if (dst == TY_FLOAT)
         return src == TY_INT || src == TY_UINT || src == TY_CHAR;
     return false;

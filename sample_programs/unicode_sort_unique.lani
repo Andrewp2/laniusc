@@ -1,0 +1,53 @@
+// Read up to 4096 UTF-8 scalars, print distinct scalars in code-value order.
+// Input must be valid UTF-8. Return 2 for malformed input, 3 for I/O failure,
+// 4 for too many scalars, and 5 if vector growth or output fails.
+module app::main;
+import std::io_utf8;
+import std::vec_char;
+
+fn main() -> i32 {
+    let values: std::vec_char::VecChar = std::vec_char::new();
+    while (true) {
+        let code: u32 = std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114);
+        if (code == 1114112) { break; }
+        if (code == 1114113) {
+            std::vec_char::destroy(values);
+            return 2;
+        }
+        if (code == 1114114) {
+            std::vec_char::destroy(values);
+            return 3;
+        }
+        if (std::vec_char::len(values) == 4096) {
+            std::vec_char::destroy(values);
+            return 4;
+        }
+        let scalar: char = code;
+        let before: i32 = std::vec_char::len(values);
+        values = std::vec_char::try_push(values, scalar);
+        if (std::vec_char::len(values) != before + 1) {
+            std::vec_char::destroy(values);
+            return 5;
+        }
+    }
+    std::vec_char::sort_in_place(values);
+    let previous: char = '\0';
+    let has_previous: bool = false;
+    let index: i32 = 0;
+    while (index < std::vec_char::len(values)) {
+        let item: char = std::vec_char::get_or(values, index, '\0');
+        if (!has_previous || item != previous) {
+            let code: u32 = item;
+            if (!std::io_utf8::write_stdout_scalar(code)) {
+                std::vec_char::destroy(values);
+                return 5;
+            }
+            previous = item;
+            has_previous = true;
+        }
+        index += 1;
+    }
+    std::vec_char::destroy(values);
+    if (!std::io_utf8::write_stdout_scalar(10)) { return 5; }
+    return 0;
+}

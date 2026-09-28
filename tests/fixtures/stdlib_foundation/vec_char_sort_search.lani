@@ -1,0 +1,91 @@
+// Runtime ordering over an owned unsigned halfword vector.
+module app::main;
+import std::vec_char;
+
+fn main() -> i32 {
+    let zero: char = '\0';
+    let seven: char = '7';
+    let high: char = '😀';
+    let max_code: u32 = 4294967295;
+    let maximum: char = max_code;
+    let empty: std::vec_char::VecChar = std::vec_char::new();
+    if (std::vec_char::sort_in_place(empty) != 0 ||
+        std::vec_char::reverse_in_place(empty) != 0 ||
+        std::vec_char::lower_bound(empty, high) != 0 ||
+        std::vec_char::upper_bound(empty, high) != 0 ||
+        std::vec_char::binary_search_first_or(empty, high, -9) != -9 ||
+        std::vec_char::binary_search_last_or(empty, high, -7) != -7) { return 1; }
+    std::vec_char::destroy(empty);
+
+    let single: std::vec_char::VecChar = std::vec_char::try_with_capacity(2);
+    single = std::vec_char::try_push(single, maximum);
+    if (std::vec_char::len(single) != 1 ||
+        std::vec_char::sort_in_place(single) != 1 ||
+        std::vec_char::reverse_in_place(single) != 0 ||
+        std::vec_char::lower_bound(single, maximum) != 0 ||
+        std::vec_char::upper_bound(single, maximum) != 1 ||
+        std::vec_char::binary_search_first_or(single, maximum, -1) != 0 ||
+        std::vec_char::binary_search_last_or(single, high, -1) != -1 ||
+        std::vec_char::capacity(single) != 2) { return 2; }
+    single = std::vec_char::clear(single);
+    if (std::vec_char::sort_in_place(single) != 0 ||
+        std::vec_char::lower_bound(single, high) != 0 ||
+        std::vec_char::capacity(single) != 2) { return 3; }
+    std::vec_char::destroy(single);
+
+    let values: [char; 8] = [maximum, seven, high, seven, zero, maximum, high, seven];
+    let owned: std::vec_char::VecChar = std::vec_char::new();
+    owned = std::vec_char::try_extend_from_slice(owned, values, 8);
+    if (std::vec_char::len(owned) != 8 || std::vec_char::capacity(owned) != 8) { return 4; }
+    if (std::vec_char::sort_in_place(owned) != 8 ||
+        std::vec_char::get_or(owned, 0, maximum) != zero ||
+        std::vec_char::get_or(owned, 1, zero) != seven ||
+        std::vec_char::get_or(owned, 2, zero) != seven ||
+        std::vec_char::get_or(owned, 3, zero) != seven ||
+        std::vec_char::get_or(owned, 4, zero) != high ||
+        std::vec_char::get_or(owned, 5, zero) != high ||
+        std::vec_char::get_or(owned, 6, zero) != maximum ||
+        std::vec_char::get_or(owned, 7, zero) != maximum) { return 5; }
+    if (std::vec_char::lower_bound(owned, zero) != 0 ||
+        std::vec_char::upper_bound(owned, zero) != 1 ||
+        std::vec_char::lower_bound(owned, seven) != 1 ||
+        std::vec_char::upper_bound(owned, seven) != 4 ||
+        std::vec_char::lower_bound(owned, high) != 4 ||
+        std::vec_char::upper_bound(owned, high) != 6 ||
+        std::vec_char::upper_bound(owned, maximum) != 8) { return 6; }
+    if (std::vec_char::binary_search_first_or(owned, high, -1) != 4 ||
+        std::vec_char::binary_search_last_or(owned, high, -1) != 5 ||
+        std::vec_char::binary_search_first_or(owned, maximum, -1) != 6 ||
+        std::vec_char::binary_search_last_or(owned, maximum, -1) != 7 ||
+        std::vec_char::binary_search_first_or(owned, '8', -12) != -12 ||
+        std::vec_char::binary_search_last_or(owned, 'Ω', -13) != -13) { return 7; }
+    if (std::vec_char::reverse_in_place(owned) != 4 ||
+        std::vec_char::get_or(owned, 0, zero) != maximum ||
+        std::vec_char::get_or(owned, 3, zero) != high ||
+        std::vec_char::get_or(owned, 7, maximum) != zero) { return 8; }
+    if (std::vec_char::sort_in_place(owned) != 8 ||
+        std::vec_char::binary_search_last_or(owned, seven, -1) != 3 ||
+        std::vec_char::capacity(owned) != 8) { return 9; }
+    std::vec_char::destroy(owned);
+
+    // Character storage admits all 32-bit patterns. Verify unsigned order
+    // across the sign bit as well as ordinary Unicode scalar values.
+    let sign_code: u32 = 2147483648;
+    let sign_bit: char = sign_code;
+    let full: [char; 5] = [maximum, sign_bit, zero, high, sign_bit];
+    let bit_patterns: std::vec_char::VecChar = std::vec_char::new();
+    bit_patterns = std::vec_char::try_extend_from_slice(bit_patterns, full, 5);
+    if (std::vec_char::len(bit_patterns) != 5 ||
+        std::vec_char::sort_in_place(bit_patterns) != 5 ||
+        std::vec_char::get_or(bit_patterns, 0, maximum) != zero ||
+        std::vec_char::get_or(bit_patterns, 1, maximum) != high ||
+        std::vec_char::get_or(bit_patterns, 2, maximum) != sign_bit ||
+        std::vec_char::get_or(bit_patterns, 3, maximum) != sign_bit ||
+        std::vec_char::get_or(bit_patterns, 4, zero) != maximum ||
+        std::vec_char::lower_bound(bit_patterns, sign_bit) != 2 ||
+        std::vec_char::upper_bound(bit_patterns, sign_bit) != 4 ||
+        std::vec_char::binary_search_first_or(bit_patterns, sign_bit, -1) != 2 ||
+        std::vec_char::binary_search_last_or(bit_patterns, sign_bit, -1) != 3) { return 10; }
+    std::vec_char::destroy(bit_patterns);
+    return 0;
+}

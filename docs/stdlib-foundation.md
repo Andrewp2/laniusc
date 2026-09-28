@@ -145,6 +145,7 @@ limited to native x86_64 output from this worktree.
 | `std::utf8_vec` all 30 public text helpers | Executable on x86_64 Linux | The runtime fixtures construct and edit text from Unicode scalars, complete caller-backed UTF-8 byte-code views, and ordinary `[u8]` byte views; check independent cloning, multibyte bytes, scalar count and lookup, first and last search, equality, prefixes, suffixes, ordering, byte-offset sequence search, insertion, removal, replacement, splicing, pop, clear, and destruction. Byte-view splicing covers growth, shrinkage, equal-width replacement, and insertion at the end; malformed input and invalid indices leave data unchanged. Injected allocation failures check that failed scalar, byte-code, and `[u8]` edits preserve prior bytes. Storage is a `VecU8` with one 32-bit cell per encoded byte and linear ownership by convention. |
 | `std::vec_i8` all 25 public functions and its capacity constant | Executable on x86_64 Linux | The signed byte vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, `-128`, and 127. The sort/search fixture executes in-place signed ordering, reversal, lower and upper bounds, first and last matches, empty and single-element behavior, duplicates, signed limits, and capacity preservation. Search requires nondecreasing input; sort returns len and reverse returns swap count. The allocation-failure suite injects failed initial allocation and reallocation; the signed byte sum sample combines it with `core::number_i8` and `OptionI8`. Each signed byte occupies one 32-bit cell, preserving its sign. Ownership is linear by convention. |
 | `std::vec_u16` all 25 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, 32768, and 65535. The sort/search fixture executes in-place ordering, reversal, lower and upper bounds, first and last matches, empty and single-element behavior, duplicates, the unsigned high bit, maximum value, and capacity preservation. Search requires nondecreasing input; sort returns len and reverse returns swap count. The allocation-failure suite injects failed initial allocation and reallocation; the halfword checksum sample combines it with `core::number_u16` and `OptionU16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
+| `std::vec_char` all 25 public functions and its capacity constant | Executable on x86_64 Linux | Imported runtime fixtures call every function, checking construction, growth, independent cloning, indexed access and mutation, insertion, removal, bulk append, resize, truncation, shrinking, destruction, invalid indices and capacities, Unicode scalars, NUL, and all-bit character codes. Ordering and search use unsigned 32-bit code-value order; the sort/search fixture checks empty, single-element, duplicate, and maximum-value cases. Seven injected allocation failures cover initial allocation, growth, batch append, insertion, cloning, resize, and shrinking; each retains the prior owner or returns an empty clone. The input-driven `unicode_sort_unique` program reads valid UTF-8 scalars, sorts and deduplicates them, and reports malformed input, size limit, allocation failure, and output failure. A character occupies one 32-bit cell; non-scalar patterns can be stored but UTF-8 output rejects them. Ownership is linear by convention. |
 | `std::vec_i16` all 25 public functions and its capacity constant | Executable on x86_64 Linux | The signed halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, `-32768`, and 32767. The sort/search fixture executes in-place signed ordering, reversal, lower and upper bounds, first and last matches, empty and single-element behavior, duplicates, signed limits, and capacity preservation. Search requires nondecreasing input; sort returns len and reverse returns swap count. The allocation-failure suite injects failed initial allocation and reallocation; the signed halfword sum sample combines it with `core::number_i16` and `OptionI16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
 | `std::vec_bool` all 25 public functions and its capacity constant | Executable on x86_64 Linux | The boolean fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, and stored `false` distinct from a `true` fallback. The sort/search fixture executes false-before-true ordering, reversal, lower and upper bounds, first and last matches, absent-value fallbacks, empty and single-element vectors, duplicate values, and retained capacity. Searches require sorted input; sort returns len and reverse returns swap count. The allocation-failure suite injects failed initial allocation and reallocation; the true-count sample combines it with `core::bool` and `OptionBool`. Each boolean occupies one 32-bit cell containing 0 or 1. Ownership is linear by convention. |
 | `std::map_i32_i32` all 16 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed pair array provides linear lookup, insertion without partial pairs, in-place update, ordered removal, reservation, independent cloning, clearing, capacity release, and destruction. The native fixture calls every function and checks zero and negative keys and values, the signed maximum key, duplicates, missing keys, ordinal bounds, retained and reduced capacity, and clone independence. Injected initial, growth, shrink, and clone allocation failures preserve the original map or return an empty clone. The byte-histogram program combines it with numeric and byte I/O helpers on empty, text, and binary input. Ownership is linear by convention. A deterministic 40-operation execution test checks insertion order, lookup, update, removal, reserve, shrink, clear, clone independence, and invalid bounds against a reference map after every step. |
@@ -165,11 +166,11 @@ limited to native x86_64 output from this worktree.
 | Generic `std::vec::new` | Executable on x86_64 for imported `i32` and `bool` empty values | An annotated `Vec<T>` supplies the result type, and the imported constructor runs through `--stdlib-root`. See `tests/stdlib_generic_vec_flat_execution.rs`. |
 | Generic `std::vec::{len,is_empty}` | Executable on x86_64 for imported `i32` and `bool` empty values | `repro_vec_generic_free_new.lani` executes both through `--stdlib-root` with both instantiations. `repro_vec_generic_free_direct_argument.lani` also executes direct nested constructor arguments. Generic `Vec<T>` has no storage or mutation; concrete vectors use the allocator service. See dependencies 4 and 54. |
 
-All seven single-cell concrete vector modules also implement `truncate(value, new_len)`.
+The original seven single-cell concrete vector modules also implement `truncate(value, new_len)`.
 `tests/stdlib_vec_truncate_execution.rs` executes each imported implementation:
 valid truncation preserves the prefix and capacity, invalid lengths leave the
 vector unchanged, and appending after truncation reuses the allocation.
-All seven single-cell modules also implement `try_resize(value, new_len, fill)`: growth fills each
+Those seven modules also implement `try_resize(value, new_len, fill)`: growth fills each
 new element, shrinking retains the prefix and allocation, and invalid lengths
 or allocation failure leave the original vector unchanged. The imported
 runtime fixture checks all seven element types, including signed and unsigned
@@ -181,7 +182,7 @@ storage for an empty vector, and permits subsequent growth. An injected
 `mremap` failure checks that the old allocation, capacity, and elements stay
 owned by the returned vector.
 
-For all seven single-cell concrete vector types, the allocation-failure suite executes a
+For those seven single-cell concrete vector types, the allocation-failure suite executes a
 successful clone and then injects failure into its allocation. It checks that
 the failed clone is empty and that the original vector retains its elements
 and ownership. `strace` is required for the injected branch.
@@ -1702,6 +1703,12 @@ Run `cargo test --test stdlib_vec_i8_sort_search_execution` for owned
 signed-byte sorting, reversal, and search boundaries.
 Run `cargo test --test stdlib_vec_i16_sort_search_execution` for owned
 signed-halfword sorting, reversal, and search boundaries.
+Run `cargo test --test stdlib_vec_char_execution` for imported character-vector
+operations, Unicode and full-width ordering, seven allocation-failure branches,
+and the input-driven Unicode sort/deduplicate program. The test compiles through
+the GPU-resident frontend and executes native x86_64 output. `strace` is required
+for injected allocation failures; the test checks normal paths without it.
+
 Run `cargo test --test stdlib_vec_u16_sort_search_execution` for owned
 unsigned-halfword sorting, reversal, and search boundaries.
 Run `cargo test --test stdlib_vec_u8_sort_search_execution` for owned
@@ -1922,7 +1929,7 @@ also fixes the imported struct-return relocation path described below.
    `len` and `is_empty` functions now infer scalar type arguments from imported
    `Vec<T>` values. `std::vec_i32`,
    `std::vec_u32`, `std::vec_u8`, `std::vec_i8`, `std::vec_u16`, and
-   `std::vec_i16`, and `std::vec_bool` have tested storage, growth, mutation, failure, and
+   `std::vec_i16`, `std::vec_bool`, and `std::vec_char` have tested storage, growth, mutation, failure, and
    destruction on x86 Linux.
    `tests/fixtures/stdlib_foundation/repro_vec_generic_associated_new.lani`
    compiles and executes through `--stdlib-root`. The free constructor also
@@ -2040,16 +2047,15 @@ also fixes the imported struct-return relocation path described below.
    stack array containing known little-endian bytes; native execution exits 1
    because `bytes[2]` is not the expected value 65. Both minimal reproductions
    are recorded here for the GPU compiler work.
-17. **Integer-to-character cast.**
-    `tests/fixtures/stdlib_foundation/repro_u32_to_char.lani` returns a
-    `u32` value as `char`. Native compilation reports `LNC0006`: the return
-    context expects `char` but still sees `u32`. `core::char` uses explicit
-    ASCII mappings for executable case conversion, while general conversion
-    from a Unicode scalar to `char` remains a GPU compiler dependency.
-    `repro_i32_to_char.lani` shows the same `LNC0006` for an `i32` source;
-    that conversion is needed to read a character vector backed by the
-    currently available 32-bit raw-slice intrinsic. These reproductions are
-    recorded here.
+17. **Resolved: integer-to-character conversion.**
+    The GPU type checker now accepts `i32` and `u32` values in `char` contexts
+    across returns, calls, locals, fields, and enum payloads. Both original
+    `repro_i32_to_char.lani` and `repro_u32_to_char.lani` execute on x86.
+    `char_conversion_runtime.lani` checks Unicode round trips, raw-cell reads,
+    and preservation of the all-bit `u32` pattern. The imported `std::vec_char`
+    fixtures and `unicode_sort_unique` program exercise the conversion during
+    storage, cloning, search, and UTF-8 I/O. This is a GPU frontend plus x86
+    runtime claim; no user-program GPU target execution is claimed.
 18. **Resolved: raw secure random scalar failure channel.** The x86 runtime
    bytes for `std::random::secure_u32` previously returned `0xFFFFFFFF` when
    the `getrandom` syscall did not return four bytes. That bit pattern is a

@@ -1,0 +1,37 @@
+module app::main;
+import core::char;
+import core::mem;
+
+struct Holder { value: char }
+enum MaybeChar { Some(char), None }
+
+fn from_signed(value: i32) -> char { return value; }
+fn from_unsigned(value: u32) -> char { return value; }
+fn is_omega(value: char) -> bool { return value == 'Ω'; }
+
+fn main() -> i32 {
+    let omega_code: i32 = 937;
+    let omega: char = omega_code;
+    if (omega != 'Ω' || from_signed(omega_code) != 'Ω' ||
+        !is_omega(omega_code)) { return 1; }
+    let face_code: u32 = 128512;
+    let face: char = from_unsigned(face_code);
+    if (face != '😀') { return 2; }
+    if (!core::char::is_ascii_digit(53) || core::char::is_ascii_digit(937)) { return 3; }
+    let held: Holder = Holder { value: omega_code };
+    if (held.value != 'Ω') { return 4; }
+    let tagged: MaybeChar = Some(omega_code);
+    let extracted: char = match (tagged) { Some(value) -> value, None -> 'x' };
+    if (extracted != 'Ω') { return 5; }
+    let cells: [i32; 1] = [0];
+    let address: ptr = core::mem::i32_array_data_ptr(cells);
+    let view: [i32] = core::mem::i32_slice_from_raw_parts(address, 1);
+    view[0] = 128512;
+    let from_cell: char = view[0];
+    if (from_cell != '😀') { return 6; }
+    let all_bits: u32 = 4294967295;
+    let non_scalar: char = all_bits;
+    let back: u32 = non_scalar;
+    if (back != all_bits) { return 7; }
+    return 0;
+}
