@@ -1,0 +1,70 @@
+// Runtime ordering over an owned boolean vector.
+module app::main;
+import std::vec_bool;
+
+fn main() -> i32 {
+    let empty: std::vec_bool::VecBool = std::vec_bool::new();
+    if (std::vec_bool::sort_in_place(empty) != 0 ||
+        std::vec_bool::reverse_in_place(empty) != 0 ||
+        std::vec_bool::lower_bound(empty, true) != 0 ||
+        std::vec_bool::upper_bound(empty, false) != 0 ||
+        std::vec_bool::binary_search_first_or(empty, true, -9) != -9 ||
+        std::vec_bool::binary_search_last_or(empty, false, -7) != -7) { return 1; }
+    std::vec_bool::destroy(empty);
+
+    let single: std::vec_bool::VecBool = std::vec_bool::try_with_capacity(2);
+    single = std::vec_bool::try_push(single, false);
+    if (std::vec_bool::len(single) != 1 ||
+        std::vec_bool::sort_in_place(single) != 1 ||
+        std::vec_bool::reverse_in_place(single) != 0 ||
+        std::vec_bool::lower_bound(single, false) != 0 ||
+        std::vec_bool::upper_bound(single, false) != 1 ||
+        std::vec_bool::lower_bound(single, true) != 1 ||
+        std::vec_bool::binary_search_first_or(single, false, -1) != 0 ||
+        std::vec_bool::binary_search_last_or(single, true, -1) != -1 ||
+        std::vec_bool::capacity(single) != 2) { return 2; }
+    single = std::vec_bool::clear(single);
+    if (std::vec_bool::sort_in_place(single) != 0 ||
+        std::vec_bool::upper_bound(single, true) != 0 ||
+        std::vec_bool::capacity(single) != 2) { return 3; }
+    std::vec_bool::destroy(single);
+
+    let values: [bool; 8] = [true, false, true, false, true, false, true, true];
+    let owned: std::vec_bool::VecBool = std::vec_bool::new();
+    owned = std::vec_bool::try_extend_from_slice(owned, values, 8);
+    if (std::vec_bool::len(owned) != 8 || std::vec_bool::capacity(owned) != 8) { return 4; }
+    if (std::vec_bool::sort_in_place(owned) != 8 ||
+        std::vec_bool::get_or(owned, 0, true) ||
+        std::vec_bool::get_or(owned, 1, true) ||
+        std::vec_bool::get_or(owned, 2, true) ||
+        !std::vec_bool::get_or(owned, 3, false) ||
+        !std::vec_bool::get_or(owned, 4, false) ||
+        !std::vec_bool::get_or(owned, 5, false) ||
+        !std::vec_bool::get_or(owned, 6, false) ||
+        !std::vec_bool::get_or(owned, 7, false)) { return 5; }
+    if (std::vec_bool::lower_bound(owned, false) != 0 ||
+        std::vec_bool::upper_bound(owned, false) != 3 ||
+        std::vec_bool::lower_bound(owned, true) != 3 ||
+        std::vec_bool::upper_bound(owned, true) != 8 ||
+        std::vec_bool::binary_search_first_or(owned, false, -1) != 0 ||
+        std::vec_bool::binary_search_last_or(owned, false, -1) != 2 ||
+        std::vec_bool::binary_search_first_or(owned, true, -1) != 3 ||
+        std::vec_bool::binary_search_last_or(owned, true, -1) != 7) { return 6; }
+    if (std::vec_bool::reverse_in_place(owned) != 4 ||
+        !std::vec_bool::get_or(owned, 0, false) ||
+        !std::vec_bool::get_or(owned, 4, false) ||
+        std::vec_bool::get_or(owned, 5, true) ||
+        std::vec_bool::get_or(owned, 7, true)) { return 7; }
+    if (std::vec_bool::sort_in_place(owned) != 8 ||
+        std::vec_bool::lower_bound(owned, true) != 3 ||
+        std::vec_bool::capacity(owned) != 8) { return 8; }
+    std::vec_bool::destroy(owned);
+
+    let only_true: std::vec_bool::VecBool = std::vec_bool::new();
+    only_true = std::vec_bool::try_push(only_true, true);
+    if (std::vec_bool::sort_in_place(only_true) != 1 ||
+        std::vec_bool::binary_search_first_or(only_true, false, -3) != -3 ||
+        std::vec_bool::binary_search_last_or(only_true, false, -4) != -4) { return 9; }
+    std::vec_bool::destroy(only_true);
+    return 0;
+}
