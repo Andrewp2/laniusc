@@ -1985,6 +1985,13 @@ also fixes the imported struct-return relocation path described below.
    before these APIs can be claimed. The imported scalar reproducer also
    reached an optimizer failure (`LNC0057`) under that experiment, so layout
    alone is not the remaining compiler work.
+   `repro_generic_enum_unused.lani` returns zero without constructing its
+   generic enum. It passes GPU `check`, but native emission still stops with
+   `LNC0057`. The compiler lays out every enum declaration, including unused
+   generic declarations, while concrete type-instance arguments exist only in
+   the type-checker tables and are not currently passed to semantic codegen.
+   Native lowering must either specialize the instance before layout or avoid
+   lowering an unused declaration without weakening checks on used values.
    `repro_generic_payload_struct_wide.lani` also compiles a two-word `Pair`
    through `Maybe<T>` as a generic struct, but the native ELF exits 1 instead
    of 0. A struct representation is therefore not a safe source-level
@@ -2538,13 +2545,13 @@ also fixes the imported struct-return relocation path described below.
     arithmetic expression; GPU `check` instead reports `LNC0016` at `as`.
     An indexed read followed directly by `as u32` has the same parse error.
     The deque and `core::narrow` modules use typed locals and assignments
-    and verify actual high-bit behavior at runtime. The UTF-8, bit, and endian
-    modules now also use typed assignments; their former `as` spellings made
-    imported UTF-8 clients fail parsing at `core::utf8::to_byte` and, once
-    repaired, `core::bits::widen_byte`. Their focused executable suites pass
-    after the change. A real cast operator needs
-    grammar, semantic checking, and target execution before source spelling
-    can be relied on.
+    and verify actual high-bit behavior at runtime. The UTF-8, bit, endian,
+    UTF-8 view, owned byte-vector, owned UTF-8 text, and UTF-8 I/O modules now
+    also use typed assignments. Earlier `as` spellings made imported UTF-8
+    clients fail parsing at `core::utf8::to_byte` and, once repaired,
+    `core::bits::widen_byte`. Their focused executable suites pass after the
+    change. A real cast operator needs grammar, semantic checking, and target
+    execution before source spelling can be relied on.
 52. **Resolved: cast directly into a byte-array slot misexecuted on x86.**
     `tests/fixtures/stdlib_foundation/repro_u8_cast_store.lani` casts an
     `i32` value to `u8` on the right side of two indexed assignments. GPU

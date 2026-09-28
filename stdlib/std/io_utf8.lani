@@ -17,7 +17,7 @@ pub fn read_stdin_scalar_or(eof_fallback: u32, invalid_fallback: u32, error_fall
     if (first_code == -2) {
         return error_fallback;
     }
-    let first: u8 = first_code as u8;
+    let first: u8 = first_code;
     let length: u32 = core::utf8::sequence_len_or(first, 0);
     if (length == 0) {
         return invalid_fallback;
@@ -33,7 +33,8 @@ pub fn read_stdin_scalar_or(eof_fallback: u32, invalid_fallback: u32, error_fall
         if (code == -1) {
             return invalid_fallback;
         }
-        second = code as u8;
+        let decoded_byte: u8 = code;
+        second = decoded_byte;
         if (!core::utf8::is_continuation_byte(second)) {
             return invalid_fallback;
         }
@@ -46,7 +47,8 @@ pub fn read_stdin_scalar_or(eof_fallback: u32, invalid_fallback: u32, error_fall
         if (code == -1) {
             return invalid_fallback;
         }
-        third = code as u8;
+        let decoded_byte: u8 = code;
+        third = decoded_byte;
         if (!core::utf8::is_continuation_byte(third)) {
             return invalid_fallback;
         }
@@ -59,7 +61,8 @@ pub fn read_stdin_scalar_or(eof_fallback: u32, invalid_fallback: u32, error_fall
         if (code == -1) {
             return invalid_fallback;
         }
-        fourth = code as u8;
+        let decoded_byte: u8 = code;
+        fourth = decoded_byte;
     }
     return core::utf8::decode_or(first, second, third, fourth, length, invalid_fallback);
 }
@@ -141,7 +144,7 @@ fn write_bytes(values: [u8], len: i32, to_stderr: bool) -> bool {
     let index: i32 = 0;
     while (index < len) {
         let byte: u8 = values[index];
-        let code: i32 = byte as i32;
+        let code: i32 = byte;
         if (to_stderr) {
             if (!std::io_byte::write_stderr_byte(code)) {
                 return false;

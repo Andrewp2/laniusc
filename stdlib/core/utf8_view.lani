@@ -145,16 +145,16 @@ pub fn byte_view_index_of_scalar_or(values: [u8], len: i32, needle: u32, fallbac
         return fallback;
     }
     let needle_width_u32: u32 = core::utf8::encoded_len_or(needle, 0);
-    let needle_width: i32 = needle_width_u32 as i32;
+    let needle_width: i32 = needle_width_u32;
     let offset: i32 = 0;
     let scalar_index: i32 = 0;
     while (offset < len) {
         let width_u32: u32 = core::utf8::sequence_len_or(values[offset], 0);
-        let width: i32 = width_u32 as i32;
+        let width: i32 = width_u32;
         if (width == needle_width) {
             let byte_index: i32 = 0;
             while (byte_index < width) {
-                let encoded_index: u32 = byte_index as u32;
+                let encoded_index: u32 = byte_index;
                 if (values[offset + byte_index] != core::utf8::encoded_byte_or(needle, encoded_index, 0)) {
                     break;
                 }
@@ -176,17 +176,17 @@ pub fn byte_view_last_index_of_scalar_or(values: [u8], len: i32, needle: u32, fa
         return fallback;
     }
     let needle_width_u32: u32 = core::utf8::encoded_len_or(needle, 0);
-    let needle_width: i32 = needle_width_u32 as i32;
+    let needle_width: i32 = needle_width_u32;
     let found: i32 = fallback;
     let offset: i32 = 0;
     let scalar_index: i32 = 0;
     while (offset < len) {
         let width_u32: u32 = core::utf8::sequence_len_or(values[offset], 0);
-        let width: i32 = width_u32 as i32;
+        let width: i32 = width_u32;
         if (width == needle_width) {
             let byte_index: i32 = 0;
             while (byte_index < width) {
-                let encoded_index: u32 = byte_index as u32;
+                let encoded_index: u32 = byte_index;
                 if (values[offset + byte_index] != core::utf8::encoded_byte_or(needle, encoded_index, 0)) {
                     break;
                 }
@@ -214,13 +214,13 @@ pub fn byte_view_append_scalar_or(
         return fallback;
     }
     let width_u32: u32 = core::utf8::encoded_len_or(scalar, 0);
-    let width: i32 = width_u32 as i32;
+    let width: i32 = width_u32;
     if (width > capacity - len) {
         return fallback;
     }
     let index: i32 = 0;
     while (index < width) {
-        let byte_index: u32 = index as u32;
+        let byte_index: u32 = index;
         values[len + index] = core::utf8::encoded_byte_or(scalar, byte_index, 0);
         index += 1;
     }
@@ -243,7 +243,7 @@ pub fn byte_view_insert_scalar_or(
         return fallback;
     }
     let width_u32: u32 = core::utf8::encoded_len_or(scalar, 0);
-    let width: i32 = width_u32 as i32;
+    let width: i32 = width_u32;
     if (width > capacity - len) {
         return fallback;
     }
@@ -254,7 +254,7 @@ pub fn byte_view_insert_scalar_or(
     }
     let index: i32 = 0;
     while (index < width) {
-        let byte_index: u32 = index as u32;
+        let byte_index: u32 = index;
         values[at + index] = core::utf8::encoded_byte_or(scalar, byte_index, 0);
         index += 1;
     }
@@ -300,7 +300,7 @@ pub fn byte_view_replace_scalar_or(
     let end: i32 = core::utf8::byte_view_offset_of_scalar_or(values, len, scalar_index + 1, -1);
     let old_width: i32 = end - start;
     let new_width_u32: u32 = core::utf8::encoded_len_or(scalar, 0);
-    let new_width: i32 = new_width_u32 as i32;
+    let new_width: i32 = new_width_u32;
     let without_old: i32 = len - old_width;
     if (new_width > capacity - without_old) {
         return fallback;
@@ -324,7 +324,7 @@ pub fn byte_view_replace_scalar_or(
     }
     let index: i32 = 0;
     while (index < new_width) {
-        let byte_index: u32 = index as u32;
+        let byte_index: u32 = index;
         values[start + index] = core::utf8::encoded_byte_or(scalar, byte_index, 0);
         index += 1;
     }
