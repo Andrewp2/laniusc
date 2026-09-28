@@ -8,6 +8,7 @@ use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 enum Kind {
     Bool,
     I8,
+    I16,
     U8,
     I32,
     U32,
@@ -20,6 +21,7 @@ impl Kind {
         match self {
             Self::Bool => "deque_bool",
             Self::I8 => "deque_i8",
+            Self::I16 => "deque_i16",
             Self::U8 => "deque_u8",
             Self::I32 => "deque_i32",
             Self::U32 => "deque_u32",
@@ -32,6 +34,7 @@ impl Kind {
         match self {
             Self::Bool => "DequeBool",
             Self::I8 => "DequeI8",
+            Self::I16 => "DequeI16",
             Self::U8 => "DequeU8",
             Self::I32 => "DequeI32",
             Self::U32 => "DequeU32",
@@ -44,6 +47,7 @@ impl Kind {
         match self {
             Self::Bool => "bool",
             Self::I8 => "i8",
+            Self::I16 => "i16",
             Self::U8 => "u8",
             Self::I32 => "i32",
             Self::U32 => "u32",
@@ -56,6 +60,7 @@ impl Kind {
         match self {
             Self::Bool => (bits & 1 == 1).to_string(),
             Self::I8 => (bits as i8).to_string(),
+            Self::I16 => (bits as i16).to_string(),
             Self::U8 => (bits as u8).to_string(),
             Self::I32 => (bits as i32).to_string(),
             Self::U32 => (bits as u32).to_string(),
@@ -74,7 +79,7 @@ impl Kind {
 
     fn equal(self, left: &str, right: &str) -> String {
         match self {
-            Self::Bool | Self::I8 | Self::U8 | Self::I32 | Self::U32 => {
+            Self::Bool | Self::I8 | Self::I16 | Self::U8 | Self::I32 | Self::U32 => {
                 format!("{left} == {right}")
             }
             Self::WideU64 => format!("core::wide_u64::eq({left}, {right})"),
@@ -320,6 +325,11 @@ fn boolean_deque_matches_reference() {
 #[test]
 fn signed_byte_deque_matches_reference() {
     run(Kind::I8);
+}
+
+#[test]
+fn signed_halfword_deque_matches_reference() {
+    run(Kind::I16);
 }
 
 #[test]
