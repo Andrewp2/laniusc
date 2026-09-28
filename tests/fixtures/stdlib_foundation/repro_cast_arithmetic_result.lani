@@ -1,0 +1,6 @@
+module app::main;
+fn main() -> i32 {
+    let shift: u32 = 1;
+    let count: i32 = (64 - shift) as i32;
+    return count - 63;
+}

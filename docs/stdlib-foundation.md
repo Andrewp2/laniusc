@@ -1949,13 +1949,14 @@ also fixes the imported struct-return relocation path described below.
     8-byte-stride load from its copied result. The relaxation was reverted.
     Contextual element typing and the corresponding native literal materialization
     must both work before this form can be exposed as executable.
-51. **Cast directly on a call result fails parsing.**
+51. **Cast directly on a composite expression fails parsing.**
     `tests/fixtures/stdlib_foundation/repro_cast_call_result.lani` applies
-    `as i32` to a `u32` function call. GPU `check` reports `LNC0016` at `as`.
-    Assigning the call result to a typed `u32` local and casting that local
-    works. `core::utf8_view` uses the named-local form when converting codec
-    widths, so all byte-view operations execute without this compiler
-    fix.
+    `as i32` to a `u32` function call, and
+    `tests/fixtures/stdlib_foundation/repro_cast_arithmetic_result.lani`
+    applies it to `(64 - shift)`. GPU `check` reports `LNC0016` at `as` in
+    both cases. Assigning the result to a typed `u32` local and casting that
+    local works. `core::utf8_view` and `core::wide_u64_bits` use the named-local
+    form; their executable fixtures pass without this compiler fix.
 52. **Resolved: cast directly into a byte-array slot misexecuted on x86.**
     `tests/fixtures/stdlib_foundation/repro_u8_cast_store.lani` casts an
     `i32` value to `u8` on the right side of two indexed assignments. GPU
