@@ -58,6 +58,7 @@ limited to native x86_64 output from this worktree.
 | `core::slice_i16` all 36 public signed-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Matching fixtures cover every public function, `-32768`, `32767`, signed ordering and binary search, sums clamped after each addition, all 243 small sorting sequences, invalid logical lengths, and a native trap on physical length overclaim. |
 | `core::slice_u16` all 36 public unsigned-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every public function and check access, mutation, copy and rotation, compaction, insertion, sequence search, unsigned ordering across `32768`, sort and binary search, partitioning, and sums saturating at `65535`. They cover empty and invalid logical lengths, rejected mutation, and all 243 five-element sequences over `{0,1,2}` for sorting. A separate fixture confirms exit 101 when the claimed length exceeds the physical backing and is indexed. |
 | `core::slice_u32` all 36 public unsigned-word-view functions | Executable on x86_64 for fixed-array-backed views | Matching runtime fixtures cover the same operations and failure cases, including unsigned ordering across `2^31` and saturation at `u32::MAX`, plus the exhaustive small-sort fixture. The caller supplies a logical length within the physical backing. A source scan requires a runtime call for every public function. |
+| `core::slice_wide_u64` all 36 public two-word slice functions and its length limit | Executable on x86_64 for caller-backed `[u32]` views | Each element uses adjacent low/high words. The imported runtime fixture calls every function and checks full-width access, mutation, overlap-safe copying, rotation, compaction, insertion, subsequence search, unsigned ordering, heapsort, binary search, partitioning, and wrapping sum. Sorting and extrema run all 243 five-element sequences over zero, `2^32`, and `u64::MAX`. Invalid logical bounds use documented fallbacks or reject mutation; physical backing overclaims exit 101. A five-number median program reads and prints full-width decimal values. Native `u64` behavior and GPU device execution are not claimed. |
 | `core::slice_bool` all 35 public boolean-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every function and check reads, writes, fill, swap, overlapping and disjoint-range copies, rotation, compaction, insertion and removal, prefix, suffix, and subsequence search, false-before-true comparison, binary bounds and search, partitioning, true counts, `any` and `all`, empty and invalid lengths, and an overclaimed physical length that traps. Sorting and binary search check all 32 five-element Boolean sequences. The boolean checksum sample uses it with numeric and Option helpers. Generic `[T]` operations are withheld because signed element instantiations misexecute; see dependency 41. |
 | `core::slice_char` all 35 public character-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every function and check access, mutation, overlap-safe and disjoint-range copying, rotation, compaction, insertion, extrema, partitioning, prefix and subsequence matching, equality, Unicode scalar ordering, sorting, bounds, binary search, empty and invalid lengths, and non-ASCII values. They assert the scalar values of two-, three-, and four-byte UTF-8 character literals, including two literals with the same leading byte. Sorting checks all 243 five-element sequences over `{'a', 'z', 'é'}`. An overclaimed physical length traps. The character inventory sample combines it with `core::char`, `core::range`, `core::range_char`, and `core::number_i32`. |
 | `core::slice_f32` all 36 public floating-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every function and check finite, infinite, and NaN values, IEEE equality and signed zero, left-to-right sums, overlap-safe and disjoint-range copying, rotation, compaction, insertion, prefix and subsequence matching, finite extrema and lexicographic comparison, checked partitioning, invalid bounds, and native trapping on an overclaimed physical length. Finite-only heapsort, extrema, and partitioning check all 243 five-element sequences over `{-1, 0, 1}`; binary bounds and searches cover duplicates, missing values, signed zero, and invalid input. The floating window sample combines it with `core::f32`, `core::range_f32`, and `OptionF32`. |
@@ -846,6 +847,15 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   values can lower an earlier saturated total. The physical backing
   must contain at least the claimed length, or native indexing can trap.
   String-backed and arbitrary raw byte views remain outside this claim.
+  `core::slice_wide_u64` uses a caller-owned `[u32]` view with two words per
+  logical element. `len` and `capacity` count elements, never words, and are
+  limited to 1,073,741,823 so index arithmetic cannot overflow `i32`. All
+  checked calls reject invalid logical bounds before writing; an overstated
+  physical view traps with exit 101 if indexed. `first` requires at least two
+  backing words. Search and extrema compare full unsigned 64-bit values,
+  `sort` is in-place heapsort, and `sum` wraps modulo 2^64. The caller must
+  advance its logical length after successful `insert` or `push`; copying
+  between distinct views requires nonoverlapping backing.
   `core::slice_bool` provides access, mutation, copying, rotation, compaction,
   insertion, search, and sorting for the tested scalar element
   type `bool`. `get_or` returns its caller fallback for a negative
@@ -1559,6 +1569,9 @@ Run `cargo test --test stdlib_mem_execution` for all public memory helper
 functions, including capability metadata, value helpers, and intrinsics.
 Run `cargo test --test stdlib_array_i32_view_execution` for both borrowed
 array helpers across fixed lengths and native bounds failures.
+Run `cargo test --test stdlib_slice_wide_u64_execution` for every two-word
+unsigned slice operation, backing traps, exhaustive small sorts, and a median
+program.
 Run `cargo test --test stdlib_allocator_metadata_execution` for allocator
 capability metadata and live pointer classification.
 Run `cargo test --test stdlib_generic_vec_flat_execution` for empty generic

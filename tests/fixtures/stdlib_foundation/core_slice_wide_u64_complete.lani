@@ -1,0 +1,266 @@
+module app::main;
+import core::slice_wide_u64;
+import core::wide_u64;
+
+fn same(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::eq(left, right);
+}
+
+fn trit_value(digit: i32) -> core::wide_u64::WideU64 {
+    if (digit == 0) { return core::wide_u64::zero(); }
+    if (digit == 1) { return core::wide_u64::from_words(1, 0); }
+    return core::wide_u64::max_value();
+}
+
+fn main() -> i32 {
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let cell_zero: u32 = 0;
+    let one: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
+    let two: core::wide_u64::WideU64 = core::wide_u64::from_u32(2);
+    let three: core::wide_u64::WideU64 = core::wide_u64::from_u32(3);
+    let four: core::wide_u64::WideU64 = core::wide_u64::from_u32(4);
+    let five: core::wide_u64::WideU64 = core::wide_u64::from_u32(5);
+    let high: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483648, 0);
+    let boundary: core::wide_u64::WideU64 = core::wide_u64::from_words(1, 0);
+    let maximum: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    let fallback: core::wide_u64::WideU64 = core::wide_u64::from_u32(777);
+    if (core::slice_wide_u64::MAX_LENGTH != 1073741823) { return 1; }
+    let a: [u32; 10] = [cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero];
+    if (!core::slice_wide_u64::set(a, 5, 0, one) ||
+        !core::slice_wide_u64::set(a, 5, 1, high) ||
+        !core::slice_wide_u64::set(a, 5, 2, one) ||
+        !core::slice_wide_u64::set(a, 5, 3, maximum) ||
+        !core::slice_wide_u64::set(a, 5, 4, boundary) ||
+        core::slice_wide_u64::set(a, 5, 5, two) ||
+        core::slice_wide_u64::set(a, 5, -1, two) ||
+        core::slice_wide_u64::set(a, 1073741824, 0, two)) { return 2; }
+    if (!same(core::slice_wide_u64::first(a), one) ||
+        !same(core::slice_wide_u64::first_or(a, 5, fallback), one) ||
+        !same(core::slice_wide_u64::first_or(a, 0, fallback), fallback) ||
+        !same(core::slice_wide_u64::get_or(a, 5, 1, fallback), high) ||
+        !same(core::slice_wide_u64::get_or(a, 5, 3, fallback), maximum) ||
+        !same(core::slice_wide_u64::get_or(a, 5, 4, fallback), boundary) ||
+        !same(core::slice_wide_u64::get_or(a, 5, -1, fallback), fallback) ||
+        !same(core::slice_wide_u64::get_or(a, 5, 5, fallback), fallback) ||
+        !same(core::slice_wide_u64::get_or(a, 1073741824, 0, fallback), fallback)) { return 3; }
+    if (core::slice_wide_u64::index_of_or(a, 5, one, -9) != 0 ||
+        core::slice_wide_u64::last_index_of_or(a, 5, one, -9) != 2 ||
+        core::slice_wide_u64::index_of_or(a, 5, two, -9) != -9 ||
+        core::slice_wide_u64::last_index_of_or(a, -1, one, -9) != -9 ||
+        !core::slice_wide_u64::contains(a, 5, maximum) ||
+        core::slice_wide_u64::contains(a, 5, two) ||
+        core::slice_wide_u64::count(a, 5, one) != 2 ||
+        core::slice_wide_u64::count(a, -1, one) != 0 ||
+        !same(core::slice_wide_u64::min_or(a, 5, fallback), one) ||
+        !same(core::slice_wide_u64::max_or(a, 5, fallback), maximum) ||
+        !same(core::slice_wide_u64::min_or(a, 0, fallback), fallback) ||
+        !same(core::slice_wide_u64::max_or(a, -1, fallback), fallback) ||
+        core::slice_wide_u64::is_sorted(a, 5) ||
+        !core::slice_wide_u64::is_sorted(a, 0)) { return 4; }
+    if (core::slice_wide_u64::swap(a, 5, -1, 0) ||
+        core::slice_wide_u64::swap(a, 5, 0, 5) ||
+        !core::slice_wide_u64::swap(a, 5, 0, 3) ||
+        !same(core::slice_wide_u64::first(a), maximum) ||
+        !same(core::slice_wide_u64::get_or(a, 5, 3, fallback), one) ||
+        !core::slice_wide_u64::swap(a, 5, 0, 3)) { return 5; }
+
+    let fill_values: [u32; 6] = [cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero];
+    if (core::slice_wide_u64::fill(fill_values, -1, high) != 0 ||
+        core::slice_wide_u64::fill(fill_values, 3, high) != 3 ||
+        !same(core::slice_wide_u64::get_or(fill_values, 3, 2, fallback), high)) { return 6; }
+
+    let moved: [u32; 10] = [cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero];
+    core::slice_wide_u64::set(moved, 5, 0, one);
+    core::slice_wide_u64::set(moved, 5, 1, two);
+    core::slice_wide_u64::set(moved, 5, 2, three);
+    core::slice_wide_u64::set(moved, 5, 3, four);
+    core::slice_wide_u64::set(moved, 5, 4, five);
+    if (core::slice_wide_u64::copy_within(moved, 5, 0, 3, 3) ||
+        !core::slice_wide_u64::copy_within(moved, 5, 0, 3, 2) ||
+        !same(core::slice_wide_u64::get_or(moved, 5, 2, fallback), one) ||
+        !same(core::slice_wide_u64::get_or(moved, 5, 4, fallback), three) ||
+        !core::slice_wide_u64::copy_within(moved, 5, 2, 5, 0) ||
+        !same(core::slice_wide_u64::get_or(moved, 5, 0, fallback), one) ||
+        !same(core::slice_wide_u64::get_or(moved, 5, 2, fallback), three)) { return 7; }
+
+    let sequence: [u32; 12] = [cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero];
+    core::slice_wide_u64::set(sequence, 6, 0, one);
+    core::slice_wide_u64::set(sequence, 6, 1, high);
+    core::slice_wide_u64::set(sequence, 6, 2, one);
+    core::slice_wide_u64::set(sequence, 6, 3, high);
+    core::slice_wide_u64::set(sequence, 6, 4, three);
+    core::slice_wide_u64::set(sequence, 6, 5, maximum);
+    let needle: [u32; 4] = [cell_zero, cell_zero, cell_zero, cell_zero];
+    core::slice_wide_u64::set(needle, 2, 0, one);
+    core::slice_wide_u64::set(needle, 2, 1, high);
+    let suffix: [u32; 4] = [cell_zero, cell_zero, cell_zero, cell_zero];
+    core::slice_wide_u64::set(suffix, 2, 0, three);
+    core::slice_wide_u64::set(suffix, 2, 1, maximum);
+    if (!core::slice_wide_u64::starts_with(sequence, 6, needle, 2) ||
+        !core::slice_wide_u64::ends_with(sequence, 6, suffix, 2) ||
+        core::slice_wide_u64::ends_with(sequence, 6, needle, 2) ||
+        !core::slice_wide_u64::equals(sequence, 6, sequence, 6) ||
+        core::slice_wide_u64::equals(sequence, 6, needle, 2) ||
+        core::slice_wide_u64::equals(sequence, -1, sequence, -1) ||
+        core::slice_wide_u64::index_of_subslice(sequence, 6, needle, 2) != 0 ||
+        core::slice_wide_u64::last_index_of_subslice(sequence, 6, needle, 2) != 2 ||
+        core::slice_wide_u64::index_of_subslice(sequence, 6, needle, 0) != 0 ||
+        core::slice_wide_u64::last_index_of_subslice(sequence, 6, needle, 0) != 6 ||
+        core::slice_wide_u64::index_of_subslice(sequence, 6, suffix, 2) != 4 ||
+        core::slice_wide_u64::last_index_of_subslice(sequence, 6, suffix, 7) != -1) { return 8; }
+    if (core::slice_wide_u64::compare_lexicographic(needle, 2, sequence, 6) != -1 ||
+        core::slice_wide_u64::compare_lexicographic(sequence, 6, needle, 2) != 1 ||
+        core::slice_wide_u64::compare_lexicographic(needle, 2, needle, 2) != 0 ||
+        core::slice_wide_u64::compare_lexicographic(sequence, -1, needle, 2) != -2) { return 9; }
+
+    let rotated: [u32; 10] = [cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero];
+    core::slice_wide_u64::set(rotated, 5, 0, one);
+    core::slice_wide_u64::set(rotated, 5, 1, two);
+    core::slice_wide_u64::set(rotated, 5, 2, three);
+    core::slice_wide_u64::set(rotated, 5, 3, four);
+    core::slice_wide_u64::set(rotated, 5, 4, five);
+    if (core::slice_wide_u64::rotate_left(rotated, 5, -1) ||
+        core::slice_wide_u64::rotate_right(rotated, 5, 6) ||
+        !core::slice_wide_u64::rotate_left(rotated, 5, 2) ||
+        !same(core::slice_wide_u64::get_or(rotated, 5, 0, fallback), three) ||
+        !same(core::slice_wide_u64::get_or(rotated, 5, 4, fallback), two) ||
+        !core::slice_wide_u64::rotate_right(rotated, 5, 2) ||
+        !same(core::slice_wide_u64::get_or(rotated, 5, 0, fallback), one) ||
+        core::slice_wide_u64::reverse_in_place(rotated, 5) != 2 ||
+        !same(core::slice_wide_u64::get_or(rotated, 5, 0, fallback), five) ||
+        !same(core::slice_wide_u64::get_or(rotated, 5, 4, fallback), one) ||
+        core::slice_wide_u64::reverse_in_place(rotated, -1) != 0) { return 10; }
+    let destination: [u32; 6] = [cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero];
+    if (core::slice_wide_u64::copy_nonoverlapping_prefix(destination, 1, needle, 2) ||
+        !core::slice_wide_u64::copy_nonoverlapping_prefix(destination, 3, needle, 2) ||
+        !same(core::slice_wide_u64::get_or(destination, 3, 0, fallback), one) ||
+        !same(core::slice_wide_u64::get_or(destination, 3, 1, fallback), high) ||
+        !same(core::slice_wide_u64::get_or(destination, 3, 2, fallback), zero)) { return 11; }
+
+    let compact: [u32; 14] = [cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero];
+    core::slice_wide_u64::set(compact, 7, 0, one);
+    core::slice_wide_u64::set(compact, 7, 1, one);
+    core::slice_wide_u64::set(compact, 7, 2, high);
+    core::slice_wide_u64::set(compact, 7, 3, high);
+    core::slice_wide_u64::set(compact, 7, 4, two);
+    core::slice_wide_u64::set(compact, 7, 5, two);
+    core::slice_wide_u64::set(compact, 7, 6, one);
+    if (core::slice_wide_u64::dedup_adjacent(compact, -1) != 0 ||
+        core::slice_wide_u64::dedup_adjacent(compact, 7) != 4 ||
+        !same(core::slice_wide_u64::get_or(compact, 4, 0, fallback), one) ||
+        !same(core::slice_wide_u64::get_or(compact, 4, 1, fallback), high) ||
+        !same(core::slice_wide_u64::get_or(compact, 4, 2, fallback), two) ||
+        !same(core::slice_wide_u64::get_or(compact, 4, 3, fallback), one) ||
+        core::slice_wide_u64::retain_not_equal(compact, 4, high) != 3 ||
+        !same(core::slice_wide_u64::get_or(compact, 3, 1, fallback), two) ||
+        !core::slice_wide_u64::remove_at(compact, 3, 1) ||
+        !same(core::slice_wide_u64::get_or(compact, 2, 1, fallback), one) ||
+        core::slice_wide_u64::remove_at(compact, 2, 2)) { return 12; }
+
+    let insertion: [u32; 10] = [cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero];
+    core::slice_wide_u64::set(insertion, 5, 0, one);
+    core::slice_wide_u64::set(insertion, 5, 1, three);
+    core::slice_wide_u64::set(insertion, 5, 2, five);
+    if (core::slice_wide_u64::insert(insertion, 3, 3, 1, two) ||
+        core::slice_wide_u64::insert(insertion, -1, 5, 0, two) ||
+        core::slice_wide_u64::push(insertion, 5, 5, two) ||
+        !core::slice_wide_u64::insert(insertion, 3, 5, 1, two) ||
+        !same(core::slice_wide_u64::get_or(insertion, 4, 1, fallback), two) ||
+        !same(core::slice_wide_u64::get_or(insertion, 4, 2, fallback), three) ||
+        !core::slice_wide_u64::push(insertion, 4, 5, high) ||
+        !same(core::slice_wide_u64::get_or(insertion, 5, 4, fallback), high)) { return 13; }
+
+    let sortable: [u32; 14] = [cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero];
+    core::slice_wide_u64::set(sortable, 7, 0, maximum);
+    core::slice_wide_u64::set(sortable, 7, 1, two);
+    core::slice_wide_u64::set(sortable, 7, 2, one);
+    core::slice_wide_u64::set(sortable, 7, 3, two);
+    core::slice_wide_u64::set(sortable, 7, 4, zero);
+    core::slice_wide_u64::set(sortable, 7, 5, high);
+    core::slice_wide_u64::set(sortable, 7, 6, three);
+    if (core::slice_wide_u64::sort(sortable, -1) != 0 ||
+        core::slice_wide_u64::sort(sortable, 7) != 7 ||
+        !core::slice_wide_u64::is_sorted(sortable, 7) ||
+        !same(core::slice_wide_u64::get_or(sortable, 7, 0, fallback), zero) ||
+        !same(core::slice_wide_u64::get_or(sortable, 7, 1, fallback), one) ||
+        !same(core::slice_wide_u64::get_or(sortable, 7, 2, fallback), two) ||
+        !same(core::slice_wide_u64::get_or(sortable, 7, 3, fallback), two) ||
+        !same(core::slice_wide_u64::get_or(sortable, 7, 4, fallback), three) ||
+        !same(core::slice_wide_u64::get_or(sortable, 7, 5, fallback), high) ||
+        !same(core::slice_wide_u64::get_or(sortable, 7, 6, fallback), maximum)) { return 14; }
+    if (core::slice_wide_u64::lower_bound(sortable, 7, two) != 2 ||
+        core::slice_wide_u64::upper_bound(sortable, 7, two) != 4 ||
+        core::slice_wide_u64::lower_bound(sortable, 7, high) != 5 ||
+        core::slice_wide_u64::upper_bound(sortable, 7, maximum) != 7 ||
+        core::slice_wide_u64::binary_search_first_or(sortable, 7, two, -9) != 2 ||
+        core::slice_wide_u64::binary_search_last_or(sortable, 7, two, -9) != 3 ||
+        core::slice_wide_u64::binary_search_first_or(sortable, 7, boundary, -9) != -9 ||
+        core::slice_wide_u64::binary_search_last_or(sortable, 0, two, -9) != -9) { return 15; }
+
+    let partition: [u32; 10] = [cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero, cell_zero];
+    core::slice_wide_u64::set(partition, 5, 0, maximum);
+    core::slice_wide_u64::set(partition, 5, 1, one);
+    core::slice_wide_u64::set(partition, 5, 2, two);
+    core::slice_wide_u64::set(partition, 5, 3, zero);
+    core::slice_wide_u64::set(partition, 5, 4, three);
+    let split: i32 = core::slice_wide_u64::partition_lt(partition, 5, three);
+    if (split != 3 ||
+        core::wide_u64::compare(core::slice_wide_u64::get_or(partition, 5, 0, fallback), three) >= 0 ||
+        core::wide_u64::compare(core::slice_wide_u64::get_or(partition, 5, 1, fallback), three) >= 0 ||
+        core::wide_u64::compare(core::slice_wide_u64::get_or(partition, 5, 2, fallback), three) >= 0 ||
+        core::wide_u64::compare(core::slice_wide_u64::get_or(partition, 5, 3, fallback), three) < 0 ||
+        core::wide_u64::compare(core::slice_wide_u64::get_or(partition, 5, 4, fallback), three) < 0 ||
+        core::slice_wide_u64::partition_lt(partition, -1, three) != 0) { return 16; }
+
+    let sums: [u32; 4] = [cell_zero, cell_zero, cell_zero, cell_zero];
+    core::slice_wide_u64::set(sums, 2, 0, maximum);
+    core::slice_wide_u64::set(sums, 2, 1, one);
+    if (!same(core::slice_wide_u64::sum(sums, 2), zero) ||
+        !same(core::slice_wide_u64::sum(sums, -1), zero)) { return 17; }
+
+    // All 3^5 sequences of zero, 2^32, and the unsigned maximum.
+    let patterns: [u32; 10] = [cell_zero, cell_zero, cell_zero, cell_zero, cell_zero,
+                               cell_zero, cell_zero, cell_zero, cell_zero, cell_zero];
+    let pattern: i32 = 0;
+    while (pattern < 243) {
+        let digits: i32 = pattern;
+        let zeros: i32 = 0;
+        let middles: i32 = 0;
+        let maxima: i32 = 0;
+        let position: i32 = 0;
+        while (position < 5) {
+            let digit: i32 = digits % 3;
+            if (digit == 0) { zeros += 1; }
+            if (digit == 1) { middles += 1; }
+            if (digit == 2) { maxima += 1; }
+            let generated: core::wide_u64::WideU64 = trit_value(digit);
+            if (!core::slice_wide_u64::set(patterns, 5, position, generated)) { return 18; }
+            digits = digits / 3;
+            position += 1;
+        }
+        let minimum_item: core::wide_u64::WideU64 = core::slice_wide_u64::min_or(patterns, 5, fallback);
+        let maximum_item: core::wide_u64::WideU64 = core::slice_wide_u64::max_or(patterns, 5, fallback);
+        if (zeros > 0 && !same(minimum_item, zero)) { return 23; }
+        if (zeros == 0 && middles > 0 && !same(minimum_item, boundary)) { return 24; }
+        if (zeros == 0 && middles == 0 && !same(minimum_item, maximum)) { return 25; }
+        if (maxima > 0 && !same(maximum_item, maximum)) { return 26; }
+        if (maxima == 0 && middles > 0 && !same(maximum_item, boundary)) { return 27; }
+        if (maxima == 0 && middles == 0 && !same(maximum_item, zero)) { return 28; }
+        if (core::slice_wide_u64::sort(patterns, 5) != 5 ||
+            !core::slice_wide_u64::is_sorted(patterns, 5) ||
+            core::slice_wide_u64::count(patterns, 5, zero) != zeros ||
+            core::slice_wide_u64::count(patterns, 5, boundary) != middles ||
+            core::slice_wide_u64::count(patterns, 5, maximum) != maxima) { return 19; }
+        position = 0;
+        while (position < 5) {
+            let actual: core::wide_u64::WideU64 = core::slice_wide_u64::get_or(patterns, 5, position, fallback);
+            if (position < zeros && !same(actual, zero)) { return 20; }
+            if (position >= zeros && position < zeros + middles &&
+                !same(actual, boundary)) { return 21; }
+            if (position >= zeros + middles && !same(actual, maximum)) { return 22; }
+            position += 1;
+        }
+        pattern += 1;
+    }
+    return 0;
+}

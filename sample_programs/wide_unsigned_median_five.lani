@@ -1,0 +1,31 @@
+// Read exactly five unsigned decimal lines and print their full-width median.
+module app::main;
+import core::slice_wide_u64;
+import core::wide_u64;
+import std::io_byte;
+import std::io_decimal;
+import std::io_line;
+
+fn main() -> i32 {
+    let word_zero: u32 = 0;
+    let values: [u32; 10] = [word_zero, word_zero, word_zero, word_zero, word_zero,
+                             word_zero, word_zero, word_zero, word_zero, word_zero];
+    let line: [i32; 20] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                           0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let index: i32 = 0;
+    while (index < 5) {
+        let length: i32 = std::io_line::read_stdin_lf_line_into_i32(line, 20);
+        if (length <= 0) { return 2; }
+        if (!core::wide_u64::can_parse_ascii_decimal(line, length)) { return 3; }
+        let value: core::wide_u64::WideU64 = core::wide_u64::parse_ascii_decimal_or(line, length, zero);
+        if (!core::slice_wide_u64::set(values, 5, index, value)) { return 4; }
+        index += 1;
+    }
+    if (std::io_line::read_stdin_lf_line_into_i32(line, 20) != -1) { return 2; }
+    if (core::slice_wide_u64::sort(values, 5) != 5) { return 4; }
+    let median: core::wide_u64::WideU64 = core::slice_wide_u64::get_or(values, 5, 2, zero);
+    if (std::io_decimal::write_wide_u64(1, median) <= 0 ||
+        !std::io_byte::write_stdout_byte(10)) { return 5; }
+    return 0;
+}
