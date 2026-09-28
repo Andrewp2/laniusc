@@ -255,6 +255,30 @@ pub fn clear(value: VecI32) -> VecI32 {
     return VecI32 { storage: value.storage, length: 0, reserved: value.reserved };
 }
 
+// Reduce capacity to len. An empty vector releases its allocation. Failed
+// reallocation returns the original vector with its elements and capacity
+// unchanged; compare capacity(result) with len(result) to detect failure.
+pub fn try_shrink_to_fit(value: VecI32) -> VecI32 {
+    if (value.length == value.reserved) {
+        return value;
+    }
+    if (value.length == 0) {
+        let byte_count: i32 = value.reserved * 4;
+        let bytes: usize = byte_count as usize;
+        alloc::allocator::dealloc(value.storage, bytes, 4);
+        return new();
+    }
+    let old_byte_count: i32 = value.reserved * 4;
+    let new_byte_count: i32 = value.length * 4;
+    let old_bytes: usize = old_byte_count as usize;
+    let new_bytes: usize = new_byte_count as usize;
+    let next: ptr = alloc::allocator::realloc(value.storage, old_bytes, new_bytes, 4);
+    if (next == 0) {
+        return value;
+    }
+    return VecI32 { storage: next, length: value.length, reserved: value.length };
+}
+
 // Releases the one owned allocation. The caller must never use any copy of
 // the vector after this call.
 pub fn destroy(value: VecI32) {

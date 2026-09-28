@@ -1,0 +1,208 @@
+module app::main;
+import std::vec_i32;
+import std::vec_u32;
+import std::vec_u8;
+import std::vec_i8;
+import std::vec_u16;
+import std::vec_i16;
+import std::vec_bool;
+
+fn check_i32() -> i32 {
+    let first: i32 = -7;
+    let second: i32 = 44;
+    let third: i32 = 99;
+    let fallback: i32 = 123;
+    let value: std::vec_i32::VecI32 = std::vec_i32::try_with_capacity(5);
+    if (std::vec_i32::capacity(value) != 5) { return 1; }
+    value = std::vec_i32::try_push(value, first);
+    value = std::vec_i32::try_push(value, second);
+    value = std::vec_i32::try_shrink_to_fit(value);
+    if (std::vec_i32::len(value) != 2 || std::vec_i32::capacity(value) != 2 ||
+        std::vec_i32::get_or(value, 0, fallback) != first ||
+        std::vec_i32::get_or(value, 1, fallback) != second) { return 2; }
+    value = std::vec_i32::try_shrink_to_fit(value);
+    if (std::vec_i32::capacity(value) != 2 || std::vec_i32::get_or(value, 1, fallback) != second) { return 3; }
+    value = std::vec_i32::try_push(value, third);
+    if (std::vec_i32::len(value) != 3 || std::vec_i32::get_or(value, 2, fallback) != third) { return 4; }
+    value = std::vec_i32::truncate(value, 0);
+    if (std::vec_i32::capacity(value) < 3) { return 5; }
+    value = std::vec_i32::try_shrink_to_fit(value);
+    if (std::vec_i32::len(value) != 0 || std::vec_i32::capacity(value) != 0) { return 6; }
+    value = std::vec_i32::try_push(value, first);
+    if (std::vec_i32::len(value) != 1 || std::vec_i32::get_or(value, 0, fallback) != first) { return 7; }
+    std::vec_i32::destroy(value);
+    return 0;
+}
+
+fn check_u32() -> i32 {
+    let first: u32 = 2147483648;
+    let second: u32 = 4294967295;
+    let third: u32 = 99;
+    let fallback: u32 = 123;
+    let value: std::vec_u32::VecU32 = std::vec_u32::try_with_capacity(5);
+    if (std::vec_u32::capacity(value) != 5) { return 1; }
+    value = std::vec_u32::try_push(value, first);
+    value = std::vec_u32::try_push(value, second);
+    value = std::vec_u32::try_shrink_to_fit(value);
+    if (std::vec_u32::len(value) != 2 || std::vec_u32::capacity(value) != 2 ||
+        std::vec_u32::get_or(value, 0, fallback) != first ||
+        std::vec_u32::get_or(value, 1, fallback) != second) { return 2; }
+    value = std::vec_u32::try_shrink_to_fit(value);
+    if (std::vec_u32::capacity(value) != 2 || std::vec_u32::get_or(value, 1, fallback) != second) { return 3; }
+    value = std::vec_u32::try_push(value, third);
+    if (std::vec_u32::len(value) != 3 || std::vec_u32::get_or(value, 2, fallback) != third) { return 4; }
+    value = std::vec_u32::truncate(value, 0);
+    if (std::vec_u32::capacity(value) < 3) { return 5; }
+    value = std::vec_u32::try_shrink_to_fit(value);
+    if (std::vec_u32::len(value) != 0 || std::vec_u32::capacity(value) != 0) { return 6; }
+    value = std::vec_u32::try_push(value, first);
+    if (std::vec_u32::len(value) != 1 || std::vec_u32::get_or(value, 0, fallback) != first) { return 7; }
+    std::vec_u32::destroy(value);
+    return 0;
+}
+
+fn check_u8() -> i32 {
+    let first: u8 = 128;
+    let second: u8 = 255;
+    let third: u8 = 99;
+    let fallback: u8 = 123;
+    let value: std::vec_u8::VecU8 = std::vec_u8::try_with_capacity(5);
+    if (std::vec_u8::capacity(value) != 5) { return 1; }
+    value = std::vec_u8::try_push(value, first);
+    value = std::vec_u8::try_push(value, second);
+    value = std::vec_u8::try_shrink_to_fit(value);
+    if (std::vec_u8::len(value) != 2 || std::vec_u8::capacity(value) != 2 ||
+        std::vec_u8::get_or(value, 0, fallback) != first ||
+        std::vec_u8::get_or(value, 1, fallback) != second) { return 2; }
+    value = std::vec_u8::try_shrink_to_fit(value);
+    if (std::vec_u8::capacity(value) != 2 || std::vec_u8::get_or(value, 1, fallback) != second) { return 3; }
+    value = std::vec_u8::try_push(value, third);
+    if (std::vec_u8::len(value) != 3 || std::vec_u8::get_or(value, 2, fallback) != third) { return 4; }
+    value = std::vec_u8::truncate(value, 0);
+    if (std::vec_u8::capacity(value) < 3) { return 5; }
+    value = std::vec_u8::try_shrink_to_fit(value);
+    if (std::vec_u8::len(value) != 0 || std::vec_u8::capacity(value) != 0) { return 6; }
+    value = std::vec_u8::try_push(value, first);
+    if (std::vec_u8::len(value) != 1 || std::vec_u8::get_or(value, 0, fallback) != first) { return 7; }
+    std::vec_u8::destroy(value);
+    return 0;
+}
+
+fn check_i8() -> i32 {
+    let first: i8 = -128;
+    let second: i8 = 127;
+    let third: i8 = 99;
+    let fallback: i8 = 42;
+    let value: std::vec_i8::VecI8 = std::vec_i8::try_with_capacity(5);
+    if (std::vec_i8::capacity(value) != 5) { return 1; }
+    value = std::vec_i8::try_push(value, first);
+    value = std::vec_i8::try_push(value, second);
+    value = std::vec_i8::try_shrink_to_fit(value);
+    if (std::vec_i8::len(value) != 2 || std::vec_i8::capacity(value) != 2 ||
+        std::vec_i8::get_or(value, 0, fallback) != first ||
+        std::vec_i8::get_or(value, 1, fallback) != second) { return 2; }
+    value = std::vec_i8::try_shrink_to_fit(value);
+    if (std::vec_i8::capacity(value) != 2 || std::vec_i8::get_or(value, 1, fallback) != second) { return 3; }
+    value = std::vec_i8::try_push(value, third);
+    if (std::vec_i8::len(value) != 3 || std::vec_i8::get_or(value, 2, fallback) != third) { return 4; }
+    value = std::vec_i8::truncate(value, 0);
+    if (std::vec_i8::capacity(value) < 3) { return 5; }
+    value = std::vec_i8::try_shrink_to_fit(value);
+    if (std::vec_i8::len(value) != 0 || std::vec_i8::capacity(value) != 0) { return 6; }
+    value = std::vec_i8::try_push(value, first);
+    if (std::vec_i8::len(value) != 1 || std::vec_i8::get_or(value, 0, fallback) != first) { return 7; }
+    std::vec_i8::destroy(value);
+    return 0;
+}
+
+fn check_u16() -> i32 {
+    let first: u16 = 32768;
+    let second: u16 = 65535;
+    let third: u16 = 99;
+    let fallback: u16 = 123;
+    let value: std::vec_u16::VecU16 = std::vec_u16::try_with_capacity(5);
+    if (std::vec_u16::capacity(value) != 5) { return 1; }
+    value = std::vec_u16::try_push(value, first);
+    value = std::vec_u16::try_push(value, second);
+    value = std::vec_u16::try_shrink_to_fit(value);
+    if (std::vec_u16::len(value) != 2 || std::vec_u16::capacity(value) != 2 ||
+        std::vec_u16::get_or(value, 0, fallback) != first ||
+        std::vec_u16::get_or(value, 1, fallback) != second) { return 2; }
+    value = std::vec_u16::try_shrink_to_fit(value);
+    if (std::vec_u16::capacity(value) != 2 || std::vec_u16::get_or(value, 1, fallback) != second) { return 3; }
+    value = std::vec_u16::try_push(value, third);
+    if (std::vec_u16::len(value) != 3 || std::vec_u16::get_or(value, 2, fallback) != third) { return 4; }
+    value = std::vec_u16::truncate(value, 0);
+    if (std::vec_u16::capacity(value) < 3) { return 5; }
+    value = std::vec_u16::try_shrink_to_fit(value);
+    if (std::vec_u16::len(value) != 0 || std::vec_u16::capacity(value) != 0) { return 6; }
+    value = std::vec_u16::try_push(value, first);
+    if (std::vec_u16::len(value) != 1 || std::vec_u16::get_or(value, 0, fallback) != first) { return 7; }
+    std::vec_u16::destroy(value);
+    return 0;
+}
+
+fn check_i16() -> i32 {
+    let first: i16 = -32768;
+    let second: i16 = 32767;
+    let third: i16 = 99;
+    let fallback: i16 = 123;
+    let value: std::vec_i16::VecI16 = std::vec_i16::try_with_capacity(5);
+    if (std::vec_i16::capacity(value) != 5) { return 1; }
+    value = std::vec_i16::try_push(value, first);
+    value = std::vec_i16::try_push(value, second);
+    value = std::vec_i16::try_shrink_to_fit(value);
+    if (std::vec_i16::len(value) != 2 || std::vec_i16::capacity(value) != 2 ||
+        std::vec_i16::get_or(value, 0, fallback) != first ||
+        std::vec_i16::get_or(value, 1, fallback) != second) { return 2; }
+    value = std::vec_i16::try_shrink_to_fit(value);
+    if (std::vec_i16::capacity(value) != 2 || std::vec_i16::get_or(value, 1, fallback) != second) { return 3; }
+    value = std::vec_i16::try_push(value, third);
+    if (std::vec_i16::len(value) != 3 || std::vec_i16::get_or(value, 2, fallback) != third) { return 4; }
+    value = std::vec_i16::truncate(value, 0);
+    if (std::vec_i16::capacity(value) < 3) { return 5; }
+    value = std::vec_i16::try_shrink_to_fit(value);
+    if (std::vec_i16::len(value) != 0 || std::vec_i16::capacity(value) != 0) { return 6; }
+    value = std::vec_i16::try_push(value, first);
+    if (std::vec_i16::len(value) != 1 || std::vec_i16::get_or(value, 0, fallback) != first) { return 7; }
+    std::vec_i16::destroy(value);
+    return 0;
+}
+
+fn check_bool() -> i32 {
+    let first: bool = false;
+    let second: bool = true;
+    let third: bool = false;
+    let fallback: bool = true;
+    let value: std::vec_bool::VecBool = std::vec_bool::try_with_capacity(5);
+    if (std::vec_bool::capacity(value) != 5) { return 1; }
+    value = std::vec_bool::try_push(value, first);
+    value = std::vec_bool::try_push(value, second);
+    value = std::vec_bool::try_shrink_to_fit(value);
+    if (std::vec_bool::len(value) != 2 || std::vec_bool::capacity(value) != 2 ||
+        std::vec_bool::get_or(value, 0, fallback) != first ||
+        std::vec_bool::get_or(value, 1, fallback) != second) { return 2; }
+    value = std::vec_bool::try_shrink_to_fit(value);
+    if (std::vec_bool::capacity(value) != 2 || std::vec_bool::get_or(value, 1, fallback) != second) { return 3; }
+    value = std::vec_bool::try_push(value, third);
+    if (std::vec_bool::len(value) != 3 || std::vec_bool::get_or(value, 2, fallback) != third) { return 4; }
+    value = std::vec_bool::truncate(value, 0);
+    if (std::vec_bool::capacity(value) < 3) { return 5; }
+    value = std::vec_bool::try_shrink_to_fit(value);
+    if (std::vec_bool::len(value) != 0 || std::vec_bool::capacity(value) != 0) { return 6; }
+    value = std::vec_bool::try_push(value, first);
+    if (std::vec_bool::len(value) != 1 || std::vec_bool::get_or(value, 0, fallback) != first) { return 7; }
+    std::vec_bool::destroy(value);
+    return 0;
+}
+
+fn main() -> i32 {
+    if (check_i32() != 0) { return 1; }
+    if (check_u32() != 0) { return 2; }
+    if (check_u8() != 0) { return 3; }
+    if (check_i8() != 0) { return 4; }
+    if (check_u16() != 0) { return 5; }
+    if (check_i16() != 0) { return 6; }
+    if (check_bool() != 0) { return 7; }
+    return 0;
+}
