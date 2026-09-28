@@ -6,6 +6,7 @@ use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 
 #[derive(Clone, Copy)]
 enum Kind {
+    U8,
     I32,
     U32,
     WideU64,
@@ -15,6 +16,7 @@ enum Kind {
 impl Kind {
     fn module(self) -> &'static str {
         match self {
+            Self::U8 => "deque_u8",
             Self::I32 => "deque_i32",
             Self::U32 => "deque_u32",
             Self::WideU64 => "deque_wide_u64",
@@ -24,6 +26,7 @@ impl Kind {
 
     fn deque_type(self) -> &'static str {
         match self {
+            Self::U8 => "DequeU8",
             Self::I32 => "DequeI32",
             Self::U32 => "DequeU32",
             Self::WideU64 => "DequeWideU64",
@@ -33,6 +36,7 @@ impl Kind {
 
     fn value_type(self) -> &'static str {
         match self {
+            Self::U8 => "u8",
             Self::I32 => "i32",
             Self::U32 => "u32",
             Self::WideU64 => "core::wide_u64::WideU64",
@@ -42,6 +46,7 @@ impl Kind {
 
     fn literal(self, bits: u64) -> String {
         match self {
+            Self::U8 => (bits as u8).to_string(),
             Self::I32 => (bits as i32).to_string(),
             Self::U32 => (bits as u32).to_string(),
             Self::WideU64 => format!(
@@ -59,7 +64,7 @@ impl Kind {
 
     fn equal(self, left: &str, right: &str) -> String {
         match self {
-            Self::I32 | Self::U32 => format!("{left} == {right}"),
+            Self::U8 | Self::I32 | Self::U32 => format!("{left} == {right}"),
             Self::WideU64 => format!("core::wide_u64::eq({left}, {right})"),
             Self::WideI64 => format!("core::wide_i64::eq({left}, {right})"),
         }
@@ -293,6 +298,11 @@ fn run(kind: Kind) {
     }
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     let _ = bytes;
+}
+
+#[test]
+fn byte_deque_matches_reference() {
+    run(Kind::U8);
 }
 
 #[test]

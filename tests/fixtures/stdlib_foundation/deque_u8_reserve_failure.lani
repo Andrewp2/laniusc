@@ -1,0 +1,23 @@
+module app::main;
+import std::deque_u8;
+
+fn main() -> i32 {
+    let value: std::deque_u8::DequeU8 = std::deque_u8::try_with_capacity(3);
+    if (std::deque_u8::capacity(value) != 3) { return 5; }
+    value = std::deque_u8::try_push_back(value, 1);
+    value = std::deque_u8::try_push_back(value, 2);
+    value = std::deque_u8::try_push_back(value, 3);
+    value = std::deque_u8::try_pop_front(value);
+    value = std::deque_u8::try_push_back(value, 4);
+    value = std::deque_u8::try_reserve(value, 5);
+    let intact: bool = std::deque_u8::len(value) == 3 &&
+        std::deque_u8::at_or(value, 0, 0) == 2 &&
+        std::deque_u8::at_or(value, 1, 0) == 3 &&
+        std::deque_u8::at_or(value, 2, 0) == 4;
+    let failure: bool = intact && std::deque_u8::capacity(value) == 3;
+    let success: bool = intact && std::deque_u8::capacity(value) == 5;
+    std::deque_u8::destroy(value);
+    if (failure) { return 0; }
+    if (success) { return 4; }
+    return 5;
+}

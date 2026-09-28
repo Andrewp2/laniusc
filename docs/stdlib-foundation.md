@@ -128,6 +128,7 @@ limited to native x86_64 output from this worktree.
 | `std::path` all 17 constants and all 37 public functions | Executable on x86_64 | `tests/stdlib_path_execution.rs` runs ordinary and boundary cases for byte classes, separator kind, component headers, path headers, full caller-backed component bytes, and last-component, extension, and stem byte offsets. The final-component helpers treat slash and backslash as separators, ignore trailing separators, accept non-UTF-8 bytes, and return the supplied fallback for empty or separator-only paths, negative lengths, or embedded NUL. A leading dot alone and a trailing dot do not create an extension. The two-byte header classifiers check only the supplied header when `length > 2`; use `path_component_is_normal_relative_bytes` or `path_component_matches_windows_relative_byte_rules` to inspect every byte. Negative and empty lengths return false in the classifiers; an overstated positive length traps on native indexing if scanning reaches beyond the backing slice. The Windows byte classifier rejects reserved bytes but does not reject reserved device names or trailing spaces/dots. Redundant no-argument functions that failed natively were removed in favor of the tested constants. Allocation and host normalization are unavailable. |
 | `std::deque_wide_i64` all 20 public functions and its capacity constant | Executable on x86_64 Linux | The owned ring-buffer fixture calls every public function and checks pair-preserving front/back operations, wrapped order, growth, reservation, shrinking, clone independence, invalid bounds, signed minimum, and signed maximum. Six injected `mmap` failures leave prior logical values and ownership intact. The line-oriented recent-values program reads and writes negative full-width decimal values, including both signed extremes, and rejects malformed, overflowing, or underflowing input. Each value occupies two 32-bit cells; no native `i64` or user-program GPU device behavior is claimed. |
 | `std::deque_wide_u64` all 20 public functions and its capacity constant | Executable on x86_64 Linux | The owned ring-buffer fixture calls every public function and checks pair-preserving front/back operations, wrapped order, growth, reservation, shrinking, clone independence, invalid bounds, `2^32`, the unsigned high bit, and `u64::MAX`. Six injected `mmap` failures leave prior logical values and ownership intact. The line-oriented recent-values program reads and writes full-width decimal values and rejects malformed or overflowing input. Each value occupies two 32-bit cells; no native `u64` or user-program GPU device behavior is claimed. |
+| `std::deque_u8` all 20 public functions and its capacity constant | Executable on x86_64 Linux | The owned byte ring-buffer fixture calls every public function and checks both-end operations, wraparound, growth, reservation, shrinking, clone independence, invalid bounds, and all 256 byte values. The stateful fixture checks 48 mixed operations against a reference deque. Six injected allocation failures preserve the original owner and order, or return an empty clone. A binary-input checksum program combines the deque with byte arithmetic, `OptionU8`, and stdin. Each byte occupies one 32-bit backing cell; ownership is linear by convention. GPU compiler execution emits the tested x86 program; user-program GPU device execution is not claimed. |
 | `std::deque_u32` all 20 public functions and its capacity constant | Executable on x86_64 Linux | The owned ring-buffer fixture calls every public function and checks both-end operations, wrapped order, growth, reservation, shrinking, clone independence, invalid bounds, `2^31`, and `u32::MAX` through mutation and copying. Six injected `mmap` failures preserve existing data and ownership. The line-oriented recent-values program checks unsigned decimal input, output, full-width values, malformed input, and overflow. Each value occupies one 32-bit cell; ownership is linear by convention. The GPU compiler emits the tested x86 program, with no user-program GPU device claim. |
 | `std::deque_i32` all 20 public functions and its capacity constant | Executable on x86_64 Linux | The owned ring-buffer fixture calls every public function and checks both-end pushes and pops, wrapped storage, growth, reservation, shrinking, clone independence, signed extrema, empty and invalid-index behavior, and destruction. Six injected `mmap` failures cover initial allocation, both-end growth, wrapped reservation, cloning, and shrinking; existing contents and ownership remain intact. The line-oriented recent-values program combines the deque with decimal parsing and output and checks normal, extreme, malformed, and overlong input. Ownership is linear by convention. The GPU compiler emits the tested x86 program; no user-program GPU device behavior is claimed. |
 | `std::vec_i32` all 25 public functions and its capacity constant | Executable on x86_64 Linux | `tests/fixtures/stdlib_foundation/vec_i32.lani` checks construction, growth, element access and mutation, bounds, reserve, pop, clear, cloning, and destruction. `tests/stdlib_vec_i32_sort_search_execution.rs` executes in-place signed sort and reverse, lower and upper bounds, and first and last binary matches against owned storage, including empty vectors, duplicates, and signed extrema. Searches require nondecreasing input; empty searches return zero or the caller's fallback. Sort returns len, reverse returns swap count, and both preserve capacity. The median program combines these operations with checked decimal input and output. `tests/stdlib_vec_i32_execution.rs` injects allocation and reallocation failures and checks the vector and prior data stay unchanged. This is a linear-ownership API by convention; source-level moves are not enforced. |
@@ -610,6 +611,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   failure leaves the owner and its values intact, except that a failed clone
   returns an empty independent deque. Retain only the newest returned owner
   and destroy each independent deque once.
+- `std::deque_u8` stores each byte in one 32-bit backing cell. Its maximum
+  capacity is 536,870,911 elements so allocation byte counts fit i32. Invalid
+  indices return the supplied fallback or `false`; empty pops and invalid
+  capacity requests leave the deque unchanged. Compare `len` after a push and
+  `capacity` after reserve to detect allocation failure. A failed nonempty
+  clone returns an independent empty deque. Retain only the newest owner and
+  destroy each independent deque once.
 - `std::deque_u32` uses the same ring-buffer ownership, capacity, bounds,
   and allocation-failure rules as `std::deque_i32`. Its 32-bit backing cells
   preserve all unsigned bit patterns. The executable fixture checks the high
@@ -1668,13 +1676,16 @@ injected allocation failures. Run `cargo test --test stdlib_wide_unsigned_sum_pr
 for its full-width input and output program.
 Run `cargo test --test stdlib_deque_stateful_execution` for 48
 deterministic mixed operations per deque, checked against a reference deque
-after every step for all four owned deque types.
+after every step for all five owned deque types.
 Run `cargo test --test stdlib_deque_wide_i64_execution` for all
 two-word signed deque APIs, six injected allocation failures, and the
 signed recent-values program.
 Run `cargo test --test stdlib_deque_wide_u64_execution` for all
 two-word unsigned deque APIs, six injected allocation failures, and the
 full-width recent-values program.
+Run `cargo test --test stdlib_deque_u8_execution` for every byte deque
+function, all byte values through wraparound, six injected allocation
+failures, and the binary-input checksum program.
 Run `cargo test --test stdlib_deque_u32_execution` for the unsigned
 deque APIs, high-bit values, six injected allocation failures, and the
 recent-values program.

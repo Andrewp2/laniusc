@@ -1,0 +1,250 @@
+// Owned ring-buffer deque for u8 values. Both ends push and pop in O(1)
+// except when growth copies existing elements into a larger allocation.
+// Each byte uses one i32 backing cell because the raw-slice intrinsic
+// currently accepts i32 cells.
+// Ownership is linear by convention: keep only the newest returned DequeU8
+// and destroy each independent deque exactly once.
+module std::deque_u8;
+import alloc::allocator;
+import core::mem;
+
+pub struct DequeU8 {
+    storage: ptr,
+    length: i32,
+    reserved: i32,
+    head: i32,
+}
+
+// Four bytes per item; byte counts and doubled capacities fit signed i32.
+pub const MAX_CAPACITY: i32 = 536870911;
+
+fn physical_index(value: DequeU8, ordinal: i32) -> i32 {
+    let slot: i32 = value.head + ordinal;
+    if (slot >= value.reserved) { slot -= value.reserved; }
+    return slot;
+}
+
+pub fn new() -> DequeU8 {
+    let empty: ptr = 0;
+    return DequeU8 { storage: empty, length: 0, reserved: 0, head: 0 };
+}
+
+pub fn len(value: DequeU8) -> i32 {
+    return value.length;
+}
+
+pub fn capacity(value: DequeU8) -> i32 {
+    return value.reserved;
+}
+
+pub fn is_empty(value: DequeU8) -> bool {
+    return value.length == 0;
+}
+
+// Invalid requests or allocation failure return the original owner unchanged.
+// Successful reservation reorders physical storage so the first item is at
+// slot zero; logical order is retained. Compare capacity with the request.
+pub fn try_reserve(value: DequeU8, minimum_capacity: i32) -> DequeU8 {
+    if (minimum_capacity < 0 || minimum_capacity > MAX_CAPACITY ||
+        minimum_capacity <= value.reserved) { return value; }
+    let byte_count: i32 = minimum_capacity * 4;
+    let bytes: usize = byte_count;
+    let next: ptr = alloc::allocator::alloc(bytes, 4);
+    if (next == 0) { return value; }
+    if (value.length > 0) {
+        let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
+        let destination: [i32] = core::mem::i32_slice_from_raw_parts(next, minimum_capacity);
+        let index: i32 = 0;
+        while (index < value.length) {
+            destination[index] = source[physical_index(value, index)];
+            index += 1;
+        }
+    }
+    if (value.storage != 0) {
+        let old_byte_count: i32 = value.reserved * 4;
+        let old_bytes: usize = old_byte_count;
+        alloc::allocator::dealloc(value.storage, old_bytes, 4);
+    }
+    return DequeU8 {
+        storage: next, length: value.length, reserved: minimum_capacity, head: 0,
+    };
+}
+
+// On invalid capacity or allocation failure return an empty zero-capacity
+// deque. Compare capacity(result) with the request to distinguish failure.
+pub fn try_with_capacity(initial_capacity: i32) -> DequeU8 {
+    return try_reserve(new(), initial_capacity);
+}
+
+// Return an independent copy in logical order. Allocation failure for a
+// nonempty source returns an empty deque; the source stays owned and intact.
+pub fn try_clone(value: DequeU8) -> DequeU8 {
+    if (value.length == 0) { return new(); }
+    let copy: DequeU8 = try_with_capacity(value.length);
+    if (copy.reserved < value.length) { return new(); }
+    let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
+    let destination: [i32] = core::mem::i32_slice_from_raw_parts(copy.storage, copy.reserved);
+    let index: i32 = 0;
+    while (index < value.length) {
+        destination[index] = source[physical_index(value, index)];
+        index += 1;
+    }
+    return DequeU8 {
+        storage: copy.storage, length: value.length, reserved: copy.reserved, head: 0,
+    };
+}
+
+// Push success increments len; capacity limit or allocation failure returns
+// the original deque unchanged. Growth preserves logical order.
+pub fn try_push_back(value: DequeU8, item: u8) -> DequeU8 {
+    if (value.length >= MAX_CAPACITY) { return value; }
+    let grown: DequeU8 = value;
+    if (grown.length == grown.reserved) {
+        let target: i32 = 4;
+        if (grown.reserved > 0) {
+            if (grown.reserved > MAX_CAPACITY / 2) { target = MAX_CAPACITY; }
+            else { target = grown.reserved * 2; }
+        }
+        grown = try_reserve(grown, target);
+        if (grown.length == grown.reserved) { return value; }
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
+    let raw_item: i32 = item as i32;
+    cells[physical_index(grown, grown.length)] = raw_item;
+    return DequeU8 {
+        storage: grown.storage, length: grown.length + 1,
+        reserved: grown.reserved, head: grown.head,
+    };
+}
+
+pub fn try_push_front(value: DequeU8, item: u8) -> DequeU8 {
+    if (value.length >= MAX_CAPACITY) { return value; }
+    let grown: DequeU8 = value;
+    if (grown.length == grown.reserved) {
+        let target: i32 = 4;
+        if (grown.reserved > 0) {
+            if (grown.reserved > MAX_CAPACITY / 2) { target = MAX_CAPACITY; }
+            else { target = grown.reserved * 2; }
+        }
+        grown = try_reserve(grown, target);
+        if (grown.length == grown.reserved) { return value; }
+    }
+    let next_head: i32 = grown.head - 1;
+    if (grown.head == 0) { next_head = grown.reserved - 1; }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(grown.storage, grown.reserved);
+    let raw_item: i32 = item as i32;
+    cells[next_head] = raw_item;
+    return DequeU8 {
+        storage: grown.storage, length: grown.length + 1,
+        reserved: grown.reserved, head: next_head,
+    };
+}
+
+// Fallbacks are returned on empty or out-of-range access. A stored value may
+// equal the fallback; use len to distinguish empty or invalid ordinals.
+pub fn at_or(value: DequeU8, ordinal: i32, fallback: u8) -> u8 {
+    if (ordinal < 0 || ordinal >= value.length) { return fallback; }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
+    let raw_item: i32 = cells[physical_index(value, ordinal)];
+    return raw_item as u8;
+}
+
+pub fn front_or(value: DequeU8, fallback: u8) -> u8 {
+    return at_or(value, 0, fallback);
+}
+
+pub fn back_or(value: DequeU8, fallback: u8) -> u8 {
+    return at_or(value, value.length - 1, fallback);
+}
+
+pub fn contains(value: DequeU8, item: u8) -> bool {
+    let index: i32 = 0;
+    while (index < value.length) {
+        if (at_or(value, index, 0) == item) { return true; }
+        index += 1;
+    }
+    return false;
+}
+
+// In-place mutation is limited to valid logical ordinals.
+pub fn try_set(value: DequeU8, ordinal: i32, item: u8) -> bool {
+    if (ordinal < 0 || ordinal >= value.length) { return false; }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
+    let raw_item: i32 = item as i32;
+    cells[physical_index(value, ordinal)] = raw_item;
+    return true;
+}
+
+pub fn try_swap(value: DequeU8, left: i32, right: i32) -> bool {
+    if (left < 0 || right < 0 || left >= value.length || right >= value.length) {
+        return false;
+    }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
+    let left_slot: i32 = physical_index(value, left);
+    let right_slot: i32 = physical_index(value, right);
+    let saved: i32 = cells[left_slot];
+    cells[left_slot] = cells[right_slot];
+    cells[right_slot] = saved;
+    return true;
+}
+
+// Popping an empty deque returns it unchanged. Read front_or/back_or first if
+// the removed item is needed. The allocation remains available for reuse.
+pub fn try_pop_front(value: DequeU8) -> DequeU8 {
+    if (value.length == 0) { return value; }
+    let next_head: i32 = value.head + 1;
+    if (next_head == value.reserved) { next_head = 0; }
+    return DequeU8 {
+        storage: value.storage, length: value.length - 1,
+        reserved: value.reserved, head: next_head,
+    };
+}
+
+pub fn try_pop_back(value: DequeU8) -> DequeU8 {
+    if (value.length == 0) { return value; }
+    return DequeU8 {
+        storage: value.storage, length: value.length - 1,
+        reserved: value.reserved, head: value.head,
+    };
+}
+
+pub fn clear(value: DequeU8) -> DequeU8 {
+    return DequeU8 {
+        storage: value.storage, length: 0, reserved: value.reserved, head: 0,
+    };
+}
+
+// Reduce capacity to len, preserving logical order. Empty deques release
+// their allocation. A failed allocation leaves the source unchanged.
+pub fn try_shrink_to_fit(value: DequeU8) -> DequeU8 {
+    if (value.length == value.reserved) { return value; }
+    if (value.length == 0) {
+        destroy(value);
+        return new();
+    }
+    let byte_count: i32 = value.length * 4;
+    let bytes: usize = byte_count;
+    let next: ptr = alloc::allocator::alloc(bytes, 4);
+    if (next == 0) { return value; }
+    let source: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.reserved);
+    let destination: [i32] = core::mem::i32_slice_from_raw_parts(next, value.length);
+    let index: i32 = 0;
+    while (index < value.length) {
+        destination[index] = source[physical_index(value, index)];
+        index += 1;
+    }
+    let old_byte_count: i32 = value.reserved * 4;
+    let old_bytes: usize = old_byte_count;
+    alloc::allocator::dealloc(value.storage, old_bytes, 4);
+    return DequeU8 {
+        storage: next, length: value.length, reserved: value.length, head: 0,
+    };
+}
+
+pub fn destroy(value: DequeU8) {
+    if (value.storage != 0) {
+        let byte_count: i32 = value.reserved * 4;
+        let bytes: usize = byte_count;
+        alloc::allocator::dealloc(value.storage, bytes, 4);
+    }
+}
