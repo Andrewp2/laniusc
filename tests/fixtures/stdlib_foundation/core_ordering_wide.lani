@@ -1,0 +1,29 @@
+module app::main;
+import core::ordering;
+import core::wide_u64;
+import core::wide_i64;
+
+fn main() -> i32 {
+    let zero_u: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let high_u: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483648, 0);
+    let larger_u: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483648, 1);
+    let max_u: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    if (!core::ordering::is_less(core::ordering::compare_wide_u64(zero_u, high_u)) ||
+        !core::ordering::is_less(core::ordering::compare_wide_u64(high_u, larger_u)) ||
+        !core::ordering::is_equal(core::ordering::compare_wide_u64(max_u, max_u)) ||
+        !core::ordering::is_greater(core::ordering::compare_wide_u64(max_u, high_u))) {
+        return 1;
+    }
+
+    let min_i: core::wide_i64::WideI64 = core::wide_i64::min_value();
+    let neg_one: core::wide_i64::WideI64 = core::wide_i64::from_i32(-1);
+    let zero_i: core::wide_i64::WideI64 = core::wide_i64::zero();
+    let max_i: core::wide_i64::WideI64 = core::wide_i64::max_value();
+    if (!core::ordering::is_less(core::ordering::compare_wide_i64(min_i, neg_one)) ||
+        !core::ordering::is_less(core::ordering::compare_wide_i64(neg_one, zero_i)) ||
+        !core::ordering::is_equal(core::ordering::compare_wide_i64(max_i, max_i)) ||
+        !core::ordering::is_greater(core::ordering::compare_wide_i64(max_i, zero_i))) {
+        return 2;
+    }
+    return 0;
+}

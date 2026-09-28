@@ -2,6 +2,9 @@
 
 module core::ordering;
 
+import core::wide_u64;
+import core::wide_i64;
+
 pub enum Ordering {
     Less,
     Equal,
@@ -103,6 +106,26 @@ pub fn compare_bool(left: bool, right: bool) -> Ordering {
             return Greater;
         }
     }
+}
+
+pub fn compare_wide_u64(
+    left: core::wide_u64::WideU64,
+    right: core::wide_u64::WideU64
+) -> Ordering {
+    let relation: i32 = core::wide_u64::compare(left, right);
+    if (relation < 0) { return Less; }
+    if (relation > 0) { return Greater; }
+    return Equal;
+}
+
+pub fn compare_wide_i64(
+    left: core::wide_i64::WideI64,
+    right: core::wide_i64::WideI64
+) -> Ordering {
+    let relation: i32 = core::wide_i64::compare(left, right);
+    if (relation < 0) { return Less; }
+    if (relation > 0) { return Greater; }
+    return Equal;
 }
 
 pub fn reverse(ordering: Ordering) -> Ordering {
