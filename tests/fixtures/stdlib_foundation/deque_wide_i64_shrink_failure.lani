@@ -1,0 +1,29 @@
+module app::main;
+import core::wide_i64;
+import std::deque_wide_i64;
+fn same(a: core::wide_i64::WideI64, b: core::wide_i64::WideI64) -> bool {
+    return core::wide_i64::eq(a, b);
+}
+fn main() -> i32 {
+    let zero: core::wide_i64::WideI64 = core::wide_i64::zero();
+    let one: core::wide_i64::WideI64 = core::wide_i64::from_i32(1);
+    let word: core::wide_i64::WideI64 = core::wide_i64::from_words(1, 0);
+    let high: core::wide_i64::WideI64 = core::wide_i64::min_value();
+    let max: core::wide_i64::WideI64 = core::wide_i64::max_value();
+    let value: std::deque_wide_i64::DequeWideI64 = std::deque_wide_i64::try_with_capacity(4);
+    if (std::deque_wide_i64::capacity(value) != 4) { return 5; }
+    value = std::deque_wide_i64::try_push_back(value, one);
+    value = std::deque_wide_i64::try_push_back(value, word);
+    value = std::deque_wide_i64::try_push_back(value, high);
+    value = std::deque_wide_i64::try_pop_front(value);
+    value = std::deque_wide_i64::try_shrink_to_fit(value);
+    let intact: bool = std::deque_wide_i64::len(value) == 2 &&
+        same(std::deque_wide_i64::at_or(value, 0, zero), word) &&
+        same(std::deque_wide_i64::at_or(value, 1, zero), high);
+    let failure: bool = intact && std::deque_wide_i64::capacity(value) == 4;
+    let success: bool = intact && std::deque_wide_i64::capacity(value) == 2;
+    std::deque_wide_i64::destroy(value);
+    if (failure) { return 0; }
+    if (success) { return 4; }
+    return 5;
+}
