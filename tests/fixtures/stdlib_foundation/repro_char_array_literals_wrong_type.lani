@@ -1,0 +1,8 @@
+module app::main;
+fn main() -> i32 {
+    let values:[char; 2] =['A', 1];
+    if (values[0] == 'A') {
+        return 0;
+    }
+    return 1;
+}

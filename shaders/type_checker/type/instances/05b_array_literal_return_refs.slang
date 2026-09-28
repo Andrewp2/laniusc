@@ -85,6 +85,7 @@ static const uint HIR_EXPR_SHL = 24u;
 static const uint HIR_EXPR_SHR = 25u;
 static const uint HIR_EXPR_INDEX = 26u;
 static const uint HIR_EXPR_FLOAT = 27u;
+static const uint HIR_EXPR_CHAR = 29u;
 
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_INSTANCE = 3u;
@@ -95,6 +96,7 @@ static const uint TY_UNKNOWN = 0u;
 static const uint TY_BOOL = 2u;
 static const uint TY_INT = 3u;
 static const uint TY_FLOAT = 5u;
+static const uint TY_CHAR = 6u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 
@@ -318,6 +320,8 @@ uint compact_direct_scalar_expr_type(uint node)
         return TY_INT;
     if (form == HIR_EXPR_FLOAT)
         return TY_FLOAT;
+    if (form == HIR_EXPR_CHAR)
+        return TY_CHAR;
     if (form == HIR_EXPR_TRUE || form == HIR_EXPR_FALSE)
         return TY_BOOL;
     if (form == HIR_EXPR_NAME || core.kind == HIR_NAME_EXPR)

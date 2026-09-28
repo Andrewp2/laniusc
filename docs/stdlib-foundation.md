@@ -1326,6 +1326,8 @@ with multibyte, empty, exact-capacity, malformed, overlong, and EOF input.
 | Wasm | Not claimed or required for this foundation. |
 
 Run the focused gate with `cargo test --test stdlib_foundation_execution`.
+Run `cargo test --test stdlib_char_array_literal_execution` for direct
+Unicode character arrays through imported slice helpers and type rejection.
 Run `cargo test --test stdlib_wide_u64_bits_execution` for every public
 two-word bit helper, including rotation boundaries and invalid-index fallbacks.
 Run `cargo test --test stdlib_hex_wide_u64_execution` for full-width
@@ -1986,13 +1988,14 @@ also fixes the imported struct-return relocation path described below.
     an extra argument to `Some`, with `LNC0027`; GPU `check` reports the same
     arity error for the constructor calls. A Boolean payload reports `LNC0006`,
     and a bare payload variant remains rejected.
-48. **Direct character literals in fixed-array initializers.**
-    `repro_char_array_literals.lani` declares `[char; 2] = ['A', 'é']`.
-    GPU `check` reports `LNC0006` at the first character literal even though
-    each literal can initialize a scalar `char`. Initializing two typed `char`
-    locals first and then using `[a, e]` compiles and executes, including
-    imported `core::slice_char` access. The character-slice fixtures and sample
-    use that workaround; direct literal arrays need a type-checker fix.
+48. **Resolved: direct character literals in fixed-array initializers.**
+    The GPU array-element checker now identifies a direct character expression
+    as `char`. `repro_char_array_literals.lani` initializes `[char; 3]`
+    with ASCII and two- and four-byte Unicode literals, reads the values
+    directly and through imported `core::slice_char`, and mutates the array.
+    The emitted x86_64 ELF exits zero. A separate fixture with an `i32`
+    element still reports `LNC0006`. Both run in
+    `tests/stdlib_char_array_literal_execution.rs`.
 49. **Returned slice values in native code.**
     `tests/fixtures/stdlib_foundation/repro_slice_return.lani` constructs a
     `[i32]` view in a helper and returns it. GPU `check` succeeds, but native
