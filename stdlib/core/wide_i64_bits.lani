@@ -1,0 +1,51 @@
+// Bit operations on the two's-complement pattern of a signed two-word value.
+module core::wide_i64_bits;
+import core::wide_i64;
+import core::wide_u64;
+import core::wide_u64_bits;
+fn as_unsigned(value: core::wide_i64::WideI64) -> core::wide_u64::WideU64 {
+    return core::wide_u64::from_words(core::wide_i64::high_word(value), core::wide_i64::low_word(value));
+}
+fn as_signed(value: core::wide_u64::WideU64) -> core::wide_i64::WideI64 {
+    return core::wide_i64::from_words(core::wide_u64::high_word(value), core::wide_u64::low_word(value));
+}
+pub fn count_ones(value: core::wide_i64::WideI64) -> u32 {
+    return core::wide_u64_bits::count_ones(as_unsigned(value));
+}
+pub fn count_zeros(value: core::wide_i64::WideI64) -> u32 {
+    return core::wide_u64_bits::count_zeros(as_unsigned(value));
+}
+pub fn leading_zeros(value: core::wide_i64::WideI64) -> u32 {
+    return core::wide_u64_bits::leading_zeros(as_unsigned(value));
+}
+pub fn trailing_zeros(value: core::wide_i64::WideI64) -> u32 {
+    return core::wide_u64_bits::trailing_zeros(as_unsigned(value));
+}
+pub fn has_single_bit(value: core::wide_i64::WideI64) -> bool {
+    return core::wide_u64_bits::has_single_bit(as_unsigned(value));
+}
+pub fn rotate_left(value: core::wide_i64::WideI64, amount: u32) -> core::wide_i64::WideI64 {
+    let rotated: core::wide_u64::WideU64 = core::wide_u64_bits::rotate_left(as_unsigned(value), amount);
+    return as_signed(rotated);
+}
+pub fn rotate_right(value: core::wide_i64::WideI64, amount: u32) -> core::wide_i64::WideI64 {
+    let rotated: core::wide_u64::WideU64 = core::wide_u64_bits::rotate_right(as_unsigned(value), amount);
+    return as_signed(rotated);
+}
+pub fn reverse_bits(value: core::wide_i64::WideI64) -> core::wide_i64::WideI64 {
+    let reversed: core::wide_u64::WideU64 = core::wide_u64_bits::reverse_bits(as_unsigned(value));
+    return as_signed(reversed);
+}
+pub fn swap_bytes(value: core::wide_i64::WideI64) -> core::wide_i64::WideI64 {
+    let swapped: core::wide_u64::WideU64 = core::wide_u64_bits::swap_bytes(as_unsigned(value));
+    return as_signed(swapped);
+}
+pub fn bit_at_or(value: core::wide_i64::WideI64, index: u32, fallback: bool) -> bool {
+    return core::wide_u64_bits::bit_at_or(as_unsigned(value), index, fallback);
+}
+pub fn byte_at_le_or(value: core::wide_i64::WideI64, index: u32, fallback: u8) -> u8 {
+    return core::wide_u64_bits::byte_at_le_or(as_unsigned(value), index, fallback);
+}
+pub fn byte_at_be_or(value: core::wide_i64::WideI64, index: u32, fallback: u8) -> u8 {
+    return core::wide_u64_bits::byte_at_be_or(as_unsigned(value), index, fallback);
+}
