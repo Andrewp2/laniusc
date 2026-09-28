@@ -1703,6 +1703,9 @@ fn executable_core_function_surface_has_runtime_cases() {
                     || (module == "vec_u32"
                         && include_str!("fixtures/stdlib_foundation/vec_u32_sort_search.lani")
                             .contains(&call))
+                    || (module == "vec_i8"
+                        && include_str!("fixtures/stdlib_foundation/vec_i8_sort_search.lani")
+                            .contains(&call))
                     || vector_additional_fixtures
                         .iter()
                         .any(|fixture| fixture.contains(&call)),
@@ -1713,6 +1716,8 @@ fn executable_core_function_surface_has_runtime_cases() {
         let expected_functions = if module == "vec_i32" {
             25
         } else if module == "vec_u32" {
+            25
+        } else if module == "vec_i8" {
             25
         } else if module == "vec_u8" {
             20
