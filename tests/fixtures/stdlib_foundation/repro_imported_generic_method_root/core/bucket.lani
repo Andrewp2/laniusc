@@ -1,0 +1,11 @@
+module core::bucket;
+
+pub struct Bucket<T> { marker_value: i32 }
+pub struct Other<T> { marker_value: i32 }
+
+impl<T>Bucket<T> {
+    pub fn marker() -> i32 { return 42; }
+    pub fn new() -> Bucket<T> { return Bucket { marker_value: 42 }; }
+    pub fn get(&self) -> i32 { return self.marker_value; }
+    pub fn other() -> Other<T> { return Other { marker_value: 42 }; }
+}

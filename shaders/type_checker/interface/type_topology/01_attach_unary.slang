@@ -50,7 +50,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row < min(compact_type_arg_count[0u], gParams.hir_capacity))
     {
         HirTypeArg arg = compact_type_args[row];
-        attach(arg.value, arg.owner, arg.ordinal, row);
+        // Qualified value calls can carry explicit generic arguments, but
+        // only type-owned arguments belong to the exported type topology.
+        if (type_node(arg.owner))
+            attach(arg.value, arg.owner, arg.ordinal, row);
     }
     if (!type_node(row)) return;
     HirPayload payload = compact_hir_payload[row];

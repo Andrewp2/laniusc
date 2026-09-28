@@ -1,6 +1,7 @@
-// Empty generic vectors execute in a flat source pack, but imported calls
-// still fail native compilation. No mutation API is offered: the former push
-// silently discarded elements. Concrete vectors use the allocator service.
+// Associated empty-vector operations execute through normal imports on x86.
+// The matching free generic functions still require imported generic-call
+// inference. No mutation API is offered: the former push silently discarded
+// elements. Concrete vectors use the allocator service.
 module std::vec;
 pub struct Vec<T> {
     len: i32,

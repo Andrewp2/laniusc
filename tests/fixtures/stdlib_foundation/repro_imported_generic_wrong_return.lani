@@ -1,0 +1,7 @@
+module app::main;
+import core::bucket;
+
+fn main() -> i32 {
+    let value: core::bucket::Bucket<i32> = core::bucket::Bucket<i32>::other();
+    return 0;
+}

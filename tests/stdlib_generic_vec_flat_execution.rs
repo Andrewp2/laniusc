@@ -1,6 +1,71 @@
 mod common;
 
-use laniusc_compiler::compiler::compile_source_pack_to_x86_64_with_gpu_codegen;
+use laniusc_compiler::compiler::{
+    compile_entry_to_x86_64_with_stdlib,
+    compile_source_pack_to_x86_64_with_gpu_codegen,
+};
+
+#[test]
+fn imported_generic_vec_empty_operations_execute_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_vec_generic_associated_new.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("imported generic Vec", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile imported generic Vec operations");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported generic Vec",
+            "imported_generic_vec_empty",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "unexpected stdout: {output:?}");
+        assert!(output.stderr.is_empty(), "unexpected stderr: {output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_generic_method_receiver_and_return_execute_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_method.lani");
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_method_root");
+    let bytes = common::run_gpu_codegen_with_timeout("imported generic methods", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile imported generic methods");
+
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported generic methods",
+            "repro_imported_generic_method",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "unexpected stdout: {output:?}");
+        assert!(output.stderr.is_empty(), "unexpected stderr: {output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_generic_method_does_not_substitute_an_unrelated_return() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_wrong_return.lani");
+    let stdlib_root = root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_method_root");
+    let result = common::run_gpu_codegen_with_timeout("wrong generic method return", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    });
+    let error = result.expect_err("Other<i32> must not be accepted as Bucket<i32>");
+    assert!(error.to_string().contains("LNC0006"), "{error}");
+}
 
 #[test]
 fn generic_vec_empty_from_flat_source_pack_executes() {

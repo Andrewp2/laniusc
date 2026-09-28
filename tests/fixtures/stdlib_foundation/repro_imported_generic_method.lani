@@ -1,0 +1,9 @@
+module app::main;
+import core::bucket;
+
+fn main() -> i32 {
+    if (core::bucket::Bucket<i32>::marker() != 42) { return 1; }
+    let value: core::bucket::Bucket<i32> = core::bucket::Bucket<i32>::new();
+    if (value.get() != 42) { return 2; }
+    return 0;
+}

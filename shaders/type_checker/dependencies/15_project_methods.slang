@@ -65,9 +65,9 @@ ByteAddressBuffer language_symbol_bytes;
 StructuredBuffer<uint> dependency_visible_owner_module;
 StructuredBuffer<uint> dependency_visible_decl;
 StructuredBuffer<uint> dependency_visible_lookup;
-StructuredBuffer<uint> external_type_library_id;
-StructuredBuffer<uint> external_type_unit_id;
-StructuredBuffer<uint> external_type_local_index;
+RWStructuredBuffer<uint> external_type_library_id;
+RWStructuredBuffer<uint> external_type_unit_id;
+RWStructuredBuffer<uint> external_type_local_index;
 
 RWStructuredBuffer<uint> call_dependency_library_id;
 RWStructuredBuffer<uint> call_dependency_unit_id;
@@ -373,7 +373,67 @@ uint associated_method_member(
     return match;
 }
 
-void publish_method_result(uint method_token, uint member_i, uint owner_declaration)
+bool method_returns_receiver_instance(
+    uint return_root,
+    uint member_base,
+    uint receiver_tag,
+    uint receiver_payload)
+{
+    if (receiver_tag != TYPE_REF_INSTANCE || !valid_token(receiver_payload))
+        return false;
+    uint receiver_type_i = dependency_member_word(member_base + 10u);
+    if (receiver_type_i >= dependency_type_count()) return false;
+    uint receiver_root = canonical_type_roots[receiver_type_i];
+    if (receiver_root >= dependency_type_count()) return false;
+    uint return_base = return_root * TYPE_WORDS;
+    uint receiver_base = receiver_root * TYPE_WORDS;
+    if (dependency_type_word(return_base) != TYPE_KIND_DECLARATION ||
+        dependency_type_word(receiver_base) != TYPE_KIND_DECLARATION ||
+        dependency_type_word(return_base + 1u) != dependency_type_word(receiver_base + 1u) ||
+        dependency_type_word(return_base + 2u) != dependency_type_word(receiver_base + 2u) ||
+        dependency_type_word(return_base + 8u) != dependency_type_word(receiver_base + 8u))
+        return false;
+    uint count = dependency_type_word(return_base + 4u);
+    if (count == 0u || count != dependency_type_word(receiver_base + 4u) ||
+        count != type_instance_arg_count[receiver_payload])
+        return false;
+    uint return_start = dependency_type_word(return_base + 3u);
+    uint receiver_start = dependency_type_word(receiver_base + 3u);
+    uint edge_count = dependency_count(5u);
+    if (return_start > edge_count || count > edge_count - return_start ||
+        receiver_start > edge_count || count > edge_count - receiver_start)
+        return false;
+    for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+    {
+        uint returned_child = dependency_type_edge_word(return_start + ordinal);
+        uint receiver_child = dependency_type_edge_word(receiver_start + ordinal);
+        if (returned_child >= dependency_type_count() ||
+            receiver_child >= dependency_type_count())
+            return false;
+        returned_child = canonical_type_roots[returned_child];
+        receiver_child = canonical_type_roots[receiver_child];
+        if (returned_child >= dependency_type_count() ||
+            receiver_child >= dependency_type_count())
+            return false;
+        if (returned_child == receiver_child) continue;
+        uint returned_base = returned_child * TYPE_WORDS;
+        uint receiver_child_base = receiver_child * TYPE_WORDS;
+        uint child_kind = dependency_type_word(returned_base);
+        if (child_kind != dependency_type_word(receiver_child_base) ||
+            (child_kind != TYPE_KIND_GENERIC_PARAMETER && child_kind != TYPE_KIND_SCALAR) ||
+            dependency_type_word(returned_base + 1u) !=
+                dependency_type_word(receiver_child_base + 1u))
+            return false;
+    }
+    return true;
+}
+
+void publish_method_result(
+    uint method_token,
+    uint member_i,
+    uint owner_declaration,
+    uint receiver_tag,
+    uint receiver_payload)
 {
     uint member_base = member_i * MEMBER_WORDS;
     // The callable identity and arity do not depend on return-type
@@ -414,8 +474,12 @@ void publish_method_result(uint method_token, uint member_i, uint owner_declarat
     {
         call_return_type[method_token] = 0u;
         call_return_type_token[method_token] = method_token;
-        decl_type_ref_tag[method_token] = TYPE_REF_EXTERNAL_CANONICAL;
-        decl_type_ref_payload[method_token] = return_root;
+        bool same_receiver = method_returns_receiver_instance(
+            return_root, member_base, receiver_tag, receiver_payload);
+        decl_type_ref_tag[method_token] = same_receiver
+            ? TYPE_REF_INSTANCE : TYPE_REF_EXTERNAL_CANONICAL;
+        decl_type_ref_payload[method_token] = same_receiver
+            ? receiver_payload : return_root;
     }
 }
 
@@ -460,6 +524,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint receiver_tag = method_call_receiver_ref_tag[method_token];
     uint receiver_payload = method_call_receiver_ref_payload[method_token];
+    if (receiver_tag == TYPE_REF_INVALID && valid_token(raw_receiver) &&
+        type_instance_arg_count[raw_receiver] > 0u)
+    {
+        receiver_tag = TYPE_REF_INSTANCE;
+        receiver_payload = raw_receiver;
+    }
     uint owner_declaration = receiver_declaration;
     if (owner_declaration == INVALID)
     {
@@ -484,10 +554,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
         receiver_payload);
     if (member_i == INVALID)
         return;
-    publish_method_result(method_token, member_i, owner_declaration);
+    if (qualified_owner_token != INVALID && receiver_tag == TYPE_REF_INSTANCE &&
+        valid_token(receiver_payload))
+    {
+        external_type_library_id[receiver_payload] =
+            dependency_declaration_library_id(owner_declaration);
+        external_type_unit_id[receiver_payload] =
+            dependency_declaration_unit_id(owner_declaration);
+        external_type_local_index[receiver_payload] =
+            dependency_declaration_local_index(owner_declaration);
+    }
+    publish_method_result(
+        method_token, member_i, owner_declaration, receiver_tag, receiver_payload);
     // The checked call artifact reads a path call at its callee owner token,
     // while method lookup uses the final segment token. Keep both views of
     // the same resolved imported method in sync.
     if (valid_token(qualified_owner_token) && qualified_owner_token != method_token)
-        publish_method_result(qualified_owner_token, member_i, owner_declaration);
+        publish_method_result(
+            qualified_owner_token, member_i, owner_declaration,
+            receiver_tag, receiver_payload);
 }
