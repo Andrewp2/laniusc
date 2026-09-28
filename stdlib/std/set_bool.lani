@@ -1,0 +1,121 @@
+// A finite, insertion-ordered set of Boolean values. The value owns no
+// allocation and can be copied freely. It contains at most two elements.
+module std::set_bool;
+
+pub struct SetBool {
+    has_false: bool,
+    has_true: bool,
+    first: bool,
+}
+
+pub fn new() -> SetBool {
+    return SetBool { has_false: false, has_true: false, first: false };
+}
+
+pub fn len(value: SetBool) -> i32 {
+    if (value.has_false && value.has_true) { return 2; }
+    if (value.has_false || value.has_true) { return 1; }
+    return 0;
+}
+
+pub fn is_empty(value: SetBool) -> bool {
+    return !value.has_false && !value.has_true;
+}
+
+pub fn contains(value: SetBool, item: bool) -> bool {
+    if (item) { return value.has_true; }
+    return value.has_false;
+}
+
+// Invalid ordinals return fallback. The first and second elements follow
+// insertion order, which is preserved by removal and set algebra.
+pub fn at_or(value: SetBool, ordinal: i32, fallback: bool) -> bool {
+    if (ordinal == 0) {
+        if (!is_empty(value)) { return value.first; }
+    }
+    if (ordinal == 1 && value.has_false && value.has_true) {
+        return !value.first;
+    }
+    return fallback;
+}
+
+pub fn insert(value: SetBool, item: bool) -> SetBool {
+    if (contains(value, item)) { return value; }
+    if (is_empty(value)) {
+        return SetBool {
+            has_false: !item, has_true: item, first: item,
+        };
+    }
+    return SetBool {
+        has_false: true, has_true: true, first: value.first,
+    };
+}
+
+pub fn remove(value: SetBool, item: bool) -> SetBool {
+    if (!contains(value, item)) { return value; }
+    if (item) {
+        return SetBool {
+            has_false: value.has_false, has_true: false, first: false,
+        };
+    }
+    return SetBool {
+        has_false: false, has_true: value.has_true, first: value.has_true,
+    };
+}
+
+pub fn clear(value: SetBool) -> SetBool {
+    return new();
+}
+
+pub fn is_subset(left: SetBool, right: SetBool) -> bool {
+    return (!left.has_false || right.has_false) &&
+        (!left.has_true || right.has_true);
+}
+
+pub fn is_disjoint(left: SetBool, right: SetBool) -> bool {
+    return !(left.has_false && right.has_false) &&
+        !(left.has_true && right.has_true);
+}
+
+pub fn union(left: SetBool, right: SetBool) -> SetBool {
+    let result: SetBool = left;
+    let index: i32 = 0;
+    while (index < len(right)) {
+        result = insert(result, at_or(right, index, false));
+        index += 1;
+    }
+    return result;
+}
+
+pub fn intersection(left: SetBool, right: SetBool) -> SetBool {
+    let result: SetBool = new();
+    let index: i32 = 0;
+    while (index < len(left)) {
+        let item: bool = at_or(left, index, false);
+        if (contains(right, item)) { result = insert(result, item); }
+        index += 1;
+    }
+    return result;
+}
+
+pub fn difference(left: SetBool, right: SetBool) -> SetBool {
+    let result: SetBool = new();
+    let index: i32 = 0;
+    while (index < len(left)) {
+        let item: bool = at_or(left, index, false);
+        if (!contains(right, item)) { result = insert(result, item); }
+        index += 1;
+    }
+    return result;
+}
+
+pub fn symmetric_difference(left: SetBool, right: SetBool) -> SetBool {
+    let result: SetBool = difference(left, right);
+    let index: i32 = 0;
+    while (index < len(right)) {
+        let item: bool = at_or(right, index, false);
+        if (!contains(left, item)) { result = insert(result, item); }
+        index += 1;
+    }
+    return result;
+}

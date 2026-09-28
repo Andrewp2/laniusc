@@ -1,0 +1,112 @@
+module app::main;
+import std::set_bool;
+
+fn state(code: i32) -> std::set_bool::SetBool {
+    let value: std::set_bool::SetBool = std::set_bool::new();
+    if (code == 1 || code == 3) { value = std::set_bool::insert(value, false); }
+    if (code == 2 || code == 3 || code == 4) {
+        value = std::set_bool::insert(value, true);
+    }
+    if (code == 4) { value = std::set_bool::insert(value, false); }
+    return value;
+}
+
+fn has_false(code: i32) -> bool { return code == 1 || code == 3 || code == 4; }
+fn has_true(code: i32) -> bool { return code == 2 || code == 3 || code == 4; }
+
+fn has_members(value: std::set_bool::SetBool, expected_false: bool, expected_true: bool) -> bool {
+    let expected_len: i32 = 0;
+    if (expected_false) { expected_len += 1; }
+    if (expected_true) { expected_len += 1; }
+    return std::set_bool::len(value) == expected_len &&
+        std::set_bool::is_empty(value) == (expected_len == 0) &&
+        std::set_bool::contains(value, false) == expected_false &&
+        std::set_bool::contains(value, true) == expected_true;
+}
+
+fn main() -> i32 {
+    let empty: std::set_bool::SetBool = state(0);
+    let false_then_true: std::set_bool::SetBool = state(3);
+    let true_then_false: std::set_bool::SetBool = state(4);
+    if (!has_members(empty, false, false) ||
+        std::set_bool::at_or(empty, 0, true) != true ||
+        std::set_bool::at_or(empty, 0, false) != false ||
+        std::set_bool::at_or(false_then_true, 0, true) != false ||
+        std::set_bool::at_or(false_then_true, 1, false) != true ||
+        std::set_bool::at_or(true_then_false, 0, false) != true ||
+        std::set_bool::at_or(true_then_false, 1, true) != false ||
+        std::set_bool::at_or(true_then_false, -1, true) != true ||
+        std::set_bool::at_or(true_then_false, 2, false) != false) { return 1; }
+
+    let duplicate: std::set_bool::SetBool = std::set_bool::insert(false_then_true, false);
+    if (!has_members(duplicate, true, true) ||
+        std::set_bool::at_or(duplicate, 0, true) != false) { return 2; }
+    let without_first: std::set_bool::SetBool =
+        std::set_bool::remove(false_then_true, false);
+    let without_second: std::set_bool::SetBool =
+        std::set_bool::remove(false_then_true, true);
+    let only_false: std::set_bool::SetBool = state(1);
+    let only_true: std::set_bool::SetBool = state(2);
+    let missing: std::set_bool::SetBool = std::set_bool::remove(only_false, true);
+    let cleared: std::set_bool::SetBool = std::set_bool::clear(false_then_true);
+    let removed_false: std::set_bool::SetBool = std::set_bool::remove(only_false, false);
+    let removed_true: std::set_bool::SetBool = std::set_bool::remove(only_true, true);
+    if (!has_members(without_first, false, true) ||
+        std::set_bool::at_or(without_first, 0, false) != true ||
+        !has_members(without_second, true, false) ||
+        std::set_bool::at_or(without_second, 0, true) != false ||
+        !has_members(missing, true, false) ||
+        !has_members(removed_false, false, false) ||
+        !has_members(removed_true, false, false) ||
+        !has_members(cleared, false, false)) { return 3; }
+
+    let left_code: i32 = 0;
+    while (left_code < 5) {
+        let left: std::set_bool::SetBool = state(left_code);
+        if (!has_members(left, has_false(left_code), has_true(left_code))) { return 4; }
+        let right_code: i32 = 0;
+        while (right_code < 5) {
+            let right: std::set_bool::SetBool = state(right_code);
+            let lf: bool = has_false(left_code);
+            let lt: bool = has_true(left_code);
+            let rf: bool = has_false(right_code);
+            let rt: bool = has_true(right_code);
+            if (std::set_bool::is_subset(left, right) !=
+                    ((!lf || rf) && (!lt || rt)) ||
+                std::set_bool::is_disjoint(left, right) !=
+                    (!(lf && rf) && !(lt && rt))) { return 5; }
+            let joined: std::set_bool::SetBool = std::set_bool::union(left, right);
+            let common: std::set_bool::SetBool = std::set_bool::intersection(left, right);
+            let only_left: std::set_bool::SetBool = std::set_bool::difference(left, right);
+            let exclusive: std::set_bool::SetBool =
+                std::set_bool::symmetric_difference(left, right);
+            if (!has_members(joined, lf || rf, lt || rt) ||
+                !has_members(common, lf && rf, lt && rt) ||
+                !has_members(only_left, lf && !rf, lt && !rt) ||
+                !has_members(exclusive, lf != rf, lt != rt)) { return 6; }
+            right_code += 1;
+        }
+        left_code += 1;
+    }
+
+    let joined: std::set_bool::SetBool = std::set_bool::union(only_false, only_true);
+    let common: std::set_bool::SetBool =
+        std::set_bool::intersection(true_then_false, false_then_true);
+    let exclusive: std::set_bool::SetBool =
+        std::set_bool::symmetric_difference(true_then_false, only_true);
+    let copied_order: std::set_bool::SetBool =
+        std::set_bool::difference(true_then_false, empty);
+    let appended_order: std::set_bool::SetBool =
+        std::set_bool::symmetric_difference(empty, true_then_false);
+    if (std::set_bool::at_or(joined, 0, true) != false ||
+        std::set_bool::at_or(joined, 1, false) != true ||
+        std::set_bool::at_or(common, 0, false) != true ||
+        std::set_bool::at_or(common, 1, true) != false ||
+        !has_members(exclusive, true, false) ||
+        std::set_bool::at_or(exclusive, 0, true) != false ||
+        std::set_bool::at_or(copied_order, 0, false) != true ||
+        std::set_bool::at_or(copied_order, 1, true) != false ||
+        std::set_bool::at_or(appended_order, 0, false) != true ||
+        std::set_bool::at_or(appended_order, 1, true) != false) { return 7; }
+    return 0;
+}
