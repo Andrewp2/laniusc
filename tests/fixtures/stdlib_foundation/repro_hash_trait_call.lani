@@ -1,0 +1,6 @@
+module app::main;
+import core::hash;
+fn main() -> i32 {
+    if (core::hash::Hash<i32>::hash(7) == 7) { return 0; }
+    return 1;
+}

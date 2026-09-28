@@ -1,0 +1,6 @@
+module app::main;
+import core::cmp;
+fn main() -> i32 {
+    if (i32::eq(3, 3)) { return 0; }
+    return 1;
+}

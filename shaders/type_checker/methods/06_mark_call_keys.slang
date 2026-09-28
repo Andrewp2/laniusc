@@ -968,8 +968,20 @@ bool associated_receiver_ref(
 {
     receiver_tag = TYPE_REF_INVALID;
     receiver_payload = INVALID;
-    if (!valid_token(receiver_token) || !valid_token(decl_token))
+    if (!valid_token(receiver_token))
         return false;
+
+    // Built-in scalar type names have language type codes but no declaration
+    // row in the module type namespace. They can still own impl methods.
+    if (!valid_token(decl_token))
+    {
+        uint scalar_ty = language_type_code_for_token(receiver_token);
+        if (scalar_ty == TY_UNKNOWN || scalar_ty >= TY_STRUCT_BASE)
+            return false;
+        receiver_tag = TYPE_REF_SCALAR;
+        receiver_payload = scalar_ty;
+        return true;
+    }
 
     uint expected_count = type_decl_generic_param_count[decl_token];
     if (expected_count == 0u)

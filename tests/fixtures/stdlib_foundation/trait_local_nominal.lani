@@ -1,0 +1,12 @@
+module app::main;
+struct Box { value: i32 }
+trait Eq<T> { fn eq(left: T, right: T) -> bool; }
+impl Eq<Box> for Box {
+    fn eq(left: Box, right: Box) -> bool { return left.value == right.value; }
+}
+fn main() -> i32 {
+    let a: Box = Box { value: 4 };
+    let b: Box = Box { value: 4 };
+    if (Box::eq(a, b)) { return 0; }
+    return 1;
+}

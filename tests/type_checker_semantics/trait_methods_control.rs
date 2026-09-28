@@ -1853,8 +1853,8 @@ fn main() {
 }
 
 #[test]
-fn type_checker_rejects_trait_method_dispatch_until_gpu_lookup_supports_it() {
-    let err = crate::common::type_check_source_with_timeout(
+fn type_checker_resolves_local_trait_impl_method_dispatch_on_gpu() {
+    assert_gpu_type_check_ok(
         r#"
 trait Describe<T> {
     fn describe(value: T) -> i32;
@@ -1871,31 +1871,28 @@ fn main() {
     return value.describe();
 }
 "#,
-    )
-    .expect_err("trait impl methods should not be available through inherent method dispatch");
+    );
+}
 
-    match err {
-        CompileError::Diagnostic(diagnostic) => {
-            assert_eq!(diagnostic.code, "LNC0027");
-            assert_eq!(diagnostic.message, "call resolution failed");
-            let label = diagnostic
-                .primary_label
-                .as_ref()
-                .expect("method dispatch rejection should point at the method name");
-            assert_eq!(
-                label.message,
-                "call does not match a resolved function or method"
-            );
-            assert!(
-                diagnostic
-                    .notes
-                    .iter()
-                    .any(|note| note.contains("supported function or method signature")),
-                "diagnostic should describe unsupported callable lookup: {diagnostic:?}"
-            );
-        }
-        other => panic!("expected stable method dispatch diagnostic, got {other:?}"),
-    }
+#[test]
+fn type_checker_does_not_dispatch_trait_method_on_other_scalar_type() {
+    assert_gpu_type_check_diagnostic(
+        r#"
+trait Describe<T> {
+    fn describe(value: T) -> i32;
+}
+
+impl Describe<i32> for i32 {
+    fn describe(value: i32) -> i32 { return value; }
+}
+
+fn main() -> i32 {
+    return u32::describe(7);
+}
+"#,
+        "LNC0027",
+        &["call does not match a resolved function or method"],
+    );
 }
 
 #[test]

@@ -41,3 +41,12 @@ pub impl Ord<i32> for i32 {
         return left >= right;
     }
 }
+
+// Callable scalar entry points while imported trait-qualified dispatch remains
+// unavailable. These execute the same trait implementation bodies locally.
+pub fn eq_i32(left: i32, right: i32) -> bool { return i32::eq(left, right); }
+pub fn ne_i32(left: i32, right: i32) -> bool { return i32::ne(left, right); }
+pub fn lt_i32(left: i32, right: i32) -> bool { return i32::lt(left, right); }
+pub fn le_i32(left: i32, right: i32) -> bool { return i32::le(left, right); }
+pub fn gt_i32(left: i32, right: i32) -> bool { return i32::gt(left, right); }
+pub fn ge_i32(left: i32, right: i32) -> bool { return i32::ge(left, right); }

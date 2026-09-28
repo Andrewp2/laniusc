@@ -55,7 +55,7 @@ limited to native x86_64 output from this worktree.
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. Byte-slice access to string storage remains broken; see dependency 16. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for i32 instantiations | Runtime fixture exercises each generic helper and both selector branches, plus `identity<bool>`. Aggregate instantiations are outside this claim. |
 | `core::mem` capability metadata, all 10 public functions | Executable on x86_64 Linux | The native metadata fixture calls every function and checks runtime-free value helpers and the unavailable raw-memory host API against `core::runtime`. The unavailable host API is distinct from the four executable compiler-provided intrinsics above. `tests/stdlib_mem_execution.rs` requires a runtime call for all 18 public functions across the metadata and value fixtures. |
-| `core::hash` three public free functions and two FNV-1a constants | Executable on x86_64 | The runtime fixture checks the existing `hash_i32` bit-pattern behavior, both constants, a one-byte step, known byte-sequence hashes, empty input, binary bytes, and a negative-length fallback. A separate native fixture confirms that overstating the physical byte view traps. The stdin fingerprint sample combines hashing with byte input and hexadecimal output. The generic `Hash<T>` trait remains outside the claim. |
+| `core::hash` three public free functions and two FNV-1a constants | Executable on x86_64 | The runtime fixture checks `hash_i32` bit-pattern behavior through its local `Hash<i32>` implementation, both constants, a one-byte step, known byte-sequence hashes, empty input, binary bytes, and a negative-length fallback. A separate native fixture confirms that overstating the physical byte view traps. The stdin fingerprint sample combines hashing with byte input and hexadecimal output. Direct imported `Hash<T>` calls remain outside the claim. |
 | `core::crc32` all 3 public functions and 3 constants | Executable on x86_64 for caller-backed `[u8]` views | The native fixtures check CRC-32/ISO-HDLC on `123456789`, empty input, a one-byte prefix, binary bytes, and every byte value through the streaming interface. Negative logical lengths return the fallback without reading storage; an overstated physical view traps. A source scan requires a runtime call for every public function. |
 | `core::option_i32` all 12 public functions and `core::result_i32` all 10 public functions | Executable on x86_64 | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, both branches of `or`, `and`, and `xor`, and conversions between the two concrete types. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function to have a runtime call. Local aggregate forwarding is covered by the executable return suite; see dependency 39. |
 | `core::option_u32` all 12 public functions and `core::result_u32` all 10 public functions | Executable on x86_64 | The matching runtime fixture covers every function and both variants with zero, ordinary values, the high bit, and `u32::MAX`. Both the success payload and error code are `u32`; inactive fields are zero. A source scan requires every public function to have a runtime call. See dependency 39 for local return coverage. |
@@ -75,7 +75,8 @@ limited to native x86_64 output from this worktree.
 | `core::u32` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, unsigned high-bit and maximum values, checked and wrapping arithmetic, alignment failures, and power-of-two overflow. Checked results use concrete `OptionU32`. |
 | `core::ordering` all 12 public functions and `Ordering` variants | Executable on x86_64 | `tests/stdlib_ordering.rs` executes every function and direct qualified and unqualified `Less`, `Equal`, and `Greater` values through the real stdlib root, including predicates, reverse, then, and unsigned high-bit comparison. An inferred local holding `Greater` also executes. The broken `compare_i64` was removed until native i64 literal and comparison lowering works (dependency 11). |
 | Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Generic enum values fail GPU lowering and native 64-bit comparison/arithmetic are incomplete. The former by-value `Option::replace` ignored its input and was removed. Concrete 8-, 16-, and 32-bit Option/Result modules and concrete two-word 64-bit variants execute on x86_64. |
-| `core::cmp`, the `core::hash::Hash<T>` trait, and `core::array_i32` | Contract-only as complete APIs in this audit | The free `core::hash` functions execute, but the generic trait does not have a native call claim. Generic fixed-array APIs and traits depend on backend support. A qualified `core::cmp` trait-method call fails resolution; see dependencies 7 and 31. |
+| `core::cmp` all six public `i32` free functions | Executable on x86_64 | The imported runtime fixture calls equality and ordering in both directions, equal values, and signed extrema. Each free function calls its local `Eq<i32>` or `Ord<i32>` implementation. Local trait methods also execute through `i32::eq` and value method syntax. Imported trait method calls still lack a native claim; see dependency 31. |
+| `core::cmp` trait methods, `core::hash::Hash<T>` trait methods, and `core::array_i32` | Contract-only as complete APIs in this audit | The public free comparison and hashing functions execute, but direct imported trait method calls do not. Generic fixed-array APIs depend on backend support. See dependencies 7 and 31. |
 | `core::target` all 18 public functions and 16 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant. It checks the available allocator, filesystem, stdio, clock, secure RNG, process, and environment bindings against `core::runtime`; unbound network, threads, GPU, host services, panic hooks, and test harness remain false. This is a target snapshot, not a live host probe. |
 | `core::runtime` all 62 public functions and 40 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant, checking service IDs, ABI fields, available and unavailable services, unknown IDs, status classifiers, and fail-closed requirement rows. These helpers report bindings; they do not implement an unbound service operation. |
 | `core::panic` both trap functions, all 19 metadata functions, and 4 constants | Executable on x86_64 Linux for the trap functions and metadata | `tests/stdlib_panic_execution.rs` checks that `panic()` and `unreachable()` terminate with SIGILL, and a runtime fixture checks every metadata result. Panic hooks remain unbound; their availability flags stay false. |
@@ -1290,6 +1291,9 @@ Run `cargo test --test stdlib_varint_execution` for caller-backed canonical
 varints at both widths, the frame-sum program, and native bounds trapping.
 Run `cargo test --test stdlib_varint_signed_execution` for signed ZigZag
 round trips, both signed extrema, and the signed frame-sum program.
+Run `cargo test --test stdlib_cmp_execution` for local trait method dispatch,
+imported `core::cmp` free calls, and `core::hash::hash_i32` through its local
+trait implementation.
 Run `cargo test --test stdlib_mem_execution` for all public memory helper
 functions, including capability metadata, value helpers, and intrinsics.
 Run `cargo test --test stdlib_allocator_metadata_execution` for allocator
@@ -1709,16 +1713,24 @@ also fixes the imported struct-return relocation path described below.
     arithmetic lowering. The executable `core::wide_u64` and
     `core::wide_i64` modules take explicit 32-bit words and do not make the
     primitive `u64` or `i64` types correct.
-31. **Calling comparison trait implementations.**
+31. **Partially resolved: calling comparison trait implementations.**
     `tests/fixtures/stdlib_foundation/repro_cmp_trait_call.lani` imports
     `core::cmp` and calls `core::cmp::Eq<i32>::eq` and
     `core::cmp::Ord<i32>::lt`. `laniusc check --stdlib-root stdlib` rejects the
     first call with `LNC0027` (no resolved function or method signature);
     native emission rejects it with `LNC0005` (unresolved identifier).
-    The `i32` implementations have function bodies, but the public trait
-    methods are not executable through this qualified call form. The compiler
-    task needs to establish supported trait dispatch and native lowering
-    before the complete `core::cmp` module can be promoted.
+    The GPU method table now indexes trait impl bodies, and built-in scalar
+    receiver names acquire a method lookup key. Local `i32::eq`, `Box::eq`,
+    and `value.describe()` calls execute in `tests/stdlib_cmp_execution.rs`.
+    The public `core::cmp` free functions call these trait bodies inside their
+    defining library and execute through ordinary imports. Likewise,
+    `core::hash::hash_i32` calls its local trait body. The separate
+    `repro_cmp_receiver_call.lani` passes GPU `check` for an imported
+    `i32::eq` call but native emission still reports `LNC0005`. Imported
+    `core::hash::Hash<i32>::hash` also fails GPU `check` with `LNC0027` in
+    `repro_hash_trait_call.lani`. Imported trait-method export and native
+    dependency-call resolution remain before the trait APIs themselves can
+    be claimed executable.
 32. **Resolved: unordered f32 comparisons.**
     `tests/fixtures/stdlib_foundation/repro_f32_unordered.lani` now exits 2:
     only `nan != nan` is true. Native x86 `UCOMISS` sets parity for unordered

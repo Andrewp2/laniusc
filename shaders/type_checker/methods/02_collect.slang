@@ -1,6 +1,7 @@
 import hir_records;
 
-// Project compact inherent-method rows into token-keyed lookup metadata.
+// Project compact implemented-method rows into token-keyed lookup metadata.
+// Trait declarations have no impl node and do not provide callable bodies.
 
 struct Params
 {
@@ -26,8 +27,6 @@ RWStructuredBuffer<uint> method_decl_signature_flags;
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
-
-static const uint METHOD_SIGNATURE_INHERENT_IMPL = 4u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -56,8 +55,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirMethodSignature signature = compact_method_signatures[row];
     uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
     uint flags = signature.metadata >> 16u;
-    if (core.node >= hir_count || core.impl_node >= hir_count ||
-        (flags & METHOD_SIGNATURE_INHERENT_IMPL) == 0u)
+    if (core.node >= hir_count || core.impl_node >= hir_count)
         return;
 
     // Method metadata shares the canonical declaration-name token domain with
