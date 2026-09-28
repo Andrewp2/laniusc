@@ -1,0 +1,72 @@
+module app::main;
+import core::option_wide_u64;
+import core::wide_u64;
+import core::wide_u64_checked;
+
+fn has_value(
+    value: core::option_wide_u64::OptionWideU64,
+    expected: core::wide_u64::WideU64
+) -> bool {
+    return core::option_wide_u64::contains(value, expected);
+}
+
+fn main() -> i32 {
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let one: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
+    let two: core::wide_u64::WideU64 = core::wide_u64::from_u32(2);
+    let three: core::wide_u64::WideU64 = core::wide_u64::from_u32(3);
+    let ten: core::wide_u64::WideU64 = core::wide_u64::from_u32(10);
+    let maximum: core::wide_u64::WideU64 = core::wide_u64::max_value();
+    let high: core::wide_u64::WideU64 = core::wide_u64::from_words(1, 0);
+    if (!has_value(core::wide_u64_checked::checked_add(high, ten),
+            core::wide_u64::from_words(1, 10)) ||
+        !has_value(core::wide_u64_checked::checked_add(maximum, zero), maximum) ||
+        !core::option_wide_u64::is_none(
+            core::wide_u64_checked::checked_add(maximum, one))) { return 1; }
+    if (!has_value(core::wide_u64_checked::checked_sub(ten, three),
+            core::wide_u64::from_u32(7)) ||
+        !has_value(core::wide_u64_checked::checked_sub(high, one),
+            core::wide_u64::from_u32(4294967295)) ||
+        !core::option_wide_u64::is_none(
+            core::wide_u64_checked::checked_sub(zero, one))) { return 2; }
+    if (!has_value(core::wide_u64_checked::checked_mul(high, two),
+            core::wide_u64::from_words(2, 0)) ||
+        !has_value(core::wide_u64_checked::checked_mul(maximum, one), maximum) ||
+        !has_value(core::wide_u64_checked::checked_mul(zero, maximum), zero) ||
+        !core::option_wide_u64::is_none(
+            core::wide_u64_checked::checked_mul(high, high))) { return 3; }
+    if (!has_value(core::wide_u64_checked::checked_div(ten, three), three) ||
+        !has_value(core::wide_u64_checked::checked_rem(ten, three), one) ||
+        !core::option_wide_u64::is_none(
+            core::wide_u64_checked::checked_div(ten, zero)) ||
+        !core::option_wide_u64::is_none(
+            core::wide_u64_checked::checked_rem(ten, zero))) { return 4; }
+    if (!has_value(core::wide_u64_checked::checked_pow(three, 4),
+            core::wide_u64::from_u32(81)) ||
+        !has_value(core::wide_u64_checked::checked_pow(zero, 0), one) ||
+        !has_value(core::wide_u64_checked::checked_pow(zero, 1), zero) ||
+        !has_value(core::wide_u64_checked::checked_pow(two, 63),
+            core::wide_u64::from_words(2147483648, 0)) ||
+        !core::option_wide_u64::is_none(
+            core::wide_u64_checked::checked_pow(two, 64)) ||
+        !core::option_wide_u64::is_none(
+            core::wide_u64_checked::checked_pow(high, 2))) { return 5; }
+    if (!core::wide_u64::eq(
+            core::wide_u64_checked::saturating_add(high, ten),
+            core::wide_u64::from_words(1, 10)) ||
+        !core::wide_u64::eq(
+            core::wide_u64_checked::saturating_add(maximum, one), maximum) ||
+        !core::wide_u64::eq(
+            core::wide_u64_checked::saturating_sub(ten, three),
+            core::wide_u64::from_u32(7)) ||
+        !core::wide_u64::eq(
+            core::wide_u64_checked::saturating_sub(zero, one), zero) ||
+        !core::wide_u64::eq(
+            core::wide_u64_checked::saturating_mul(high, two),
+            core::wide_u64::from_words(2, 0)) ||
+        !core::wide_u64::eq(
+            core::wide_u64_checked::saturating_mul(high, high), maximum)) {
+        return 6;
+    }
+    return 0;
+}

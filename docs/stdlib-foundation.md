@@ -16,6 +16,7 @@ limited to native x86_64 output from this worktree.
 | `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
 | `core::wide_u64` all 24 public two-word and decimal functions | Executable on x86_64 | The imported runtime fixture calls every function and checks high-bit construction, ordering, wrapping add/subtract/multiply, bitwise operations, shifts across word boundaries, division and remainder, zero-divisor fallbacks, full-width decimal digits and parsing, malformed input, and overflow. A generated native fixture compares arithmetic and shifts against Rust `u64` across eight operand pairs and four values at eight shift counts. The decimal-double program reads and prints full-width values. The representation is two `u32` words; this does not claim native `u64` correctness. |
 | `core::wide_i64` all 29 public two-word and decimal functions | Executable on x86_64 | The imported runtime fixture calls every function and checks sign extension, signed bounds, ordering, wrapping and saturating arithmetic, bitwise operations, arithmetic right shifts, signed quotient and remainder, zero-divisor and `MIN/-1` fallbacks, and full-width signed decimal parsing and output. A generated native fixture compares arithmetic and shifts against Rust `i64` across eight operand pairs and four values at eight shift counts. A decimal-double program exercises real input and output, including signed extrema and failure cases. It uses `core::wide_u64` internally and does not claim native `i64` correctness. |
+| `core::wide_u64_checked` all 9 public functions and `core::wide_i64_checked` all 11 public functions | Executable on x86_64 | Imported fixtures call every checked and saturating operation with ordinary values, zero, high-bit values, signed extrema, overflow, zero divisors, and `MIN / -1`. Generated native fixtures compare checked arithmetic, powers, and saturation with Rust `u64` and `i64` across eight operand pairs and boundary exponents. The checked-factorial program prints `20!` and rejects `21!` overflow through `OptionWideU64`. These modules use explicit two-word arithmetic, not native 64-bit operators. |
 | `core::byte` constants and all 44 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
 | `core::bits` all 42 public `i32`, `u32`, `u16`, and `u8` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across word widths, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. Byte operations run all 256 inputs; halfword operations run boundary values and 256 evenly spaced inputs; signed operations check negative patterns and all 32 one-hot bits. |
 | `core::bitset` all 14 public caller-backed bitset functions | Executable on x86_64 for `[u32]` backing | Runtime fixtures check word counts, bit access and mutation, fill, counts, any/all, first/last set bit, equality, union, and intersection. They cover logical lengths 0 through 65, word boundaries, aliases, invalid lengths and indices, preserved padding and unused words, and a physical backing overclaim that traps. A source scan requires a runtime call for every public function. |
@@ -241,6 +242,17 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   fallback for invalid input; call the predicate first when a valid value
   could equal the fallback. These functions use no allocation or host service
   and do not depend on native `i64` arithmetic.
+- `core::wide_u64_checked` returns `OptionWideU64` for add, subtract,
+  multiply, divide, remainder, and power. Overflow, underflow, and a zero
+  divisor return `None`; `checked_pow` defines `0^0` as one. Saturating add
+  and multiply return the unsigned maximum on overflow, while saturating
+  subtract returns zero on underflow.
+- `core::wide_i64_checked` returns `OptionWideI64` for add, subtract, negate,
+  absolute value, multiply, divide, remainder, and power. `MIN` negation or
+  absolute value, `MIN / -1`, a zero divisor, and unrepresentable arithmetic
+  return `None`. Its saturating multiply clamps according to the result sign;
+  saturating negate and absolute value map `MIN` to `MAX`. Both checked
+  modules allocate no memory and invoke no host service.
 - `core::byte` arithmetic saturates or wraps as its function name says.
   `wrapping_mul` computes multiplication modulo 256; the focused fixture
   compares all 65,536 byte pairs with a widened arithmetic reference.
@@ -1148,6 +1160,11 @@ prints the signed result. Its x86 test checks zero, negative zero, negative
 values, values beyond the 32-bit range, both signed extrema, overflow,
 malformed input, empty input, and an overlong line.
 
+`sample_programs/wide_checked_factorial.lani` reads a bounded unsigned count,
+computes its factorial through `core::wide_u64_checked::checked_mul`, and
+prints the full-width decimal result. Its x86 test checks `0!`, `5!`, and
+`20!`, as well as `21!` overflow, malformed input, and an overlong input.
+
 `sample_programs/character_inventory.lani` sorts six Unicode scalar values,
 finds an ASCII letter range, and counts its members. It combines five portable
 modules and prints `3`.
@@ -1239,6 +1256,9 @@ program, edge cases, and generated differential arithmetic cases.
 Run `cargo test --test stdlib_option_result_wide_u64_execution --test stdlib_option_result_wide_i64_execution` for the concrete two-word optional
 and result variants, including every public function and imported aggregate
 returns.
+Run `cargo test --test stdlib_wide_u64_checked_execution --test stdlib_wide_i64_checked_execution` for the checked and saturating two-word
+arithmetic, differential native comparisons, and the checked-factorial
+program.
 Run `cargo test --test stdlib_endian_execution` for caller-backed endian
 fields, a packet-header sample, and native bounds trapping.
 Run `cargo test --test stdlib_mem_execution` for all public memory helper
