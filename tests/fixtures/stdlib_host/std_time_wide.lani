@@ -1,0 +1,42 @@
+module app::main;
+import core::wide_i64;
+import std::time_wide;
+fn main() -> i32 {
+    let fallback: core::wide_i64::WideI64 = core::wide_i64::from_i32(17);
+    let positive:[i32; 4] =[0, 1, 999999999, 0];
+    let negative:[i32; 4] =[-1, -1, 0, 0];
+    let bad_high:[i32; 4] =[0, 0, 10, 1];
+    let bad_negative:[i32; 4] =[0, 0, -1, 0];
+    let bad_max:[i32; 4] =[0, 0, 1000000000, 0];
+    if (!std::time_wide::can_decode(positive, 4) || !std::time_wide::can_decode(negative, 4) || std::time_wide::can_decode(positive, 3) || std::time_wide::can_decode(bad_high, 4) || std::time_wide::can_decode(bad_negative, 4) || std::time_wide::can_decode(bad_max, 4)) {
+        return 1;
+    }
+    let positive_seconds: core::wide_i64::WideI64 = std::time_wide::seconds_or(positive, 4, fallback);
+    let negative_seconds: core::wide_i64::WideI64 = std::time_wide::seconds_or(negative, 4, fallback);
+    if (core::wide_i64::high_word(positive_seconds) != 1 || core::wide_i64::low_word(positive_seconds) != 0 || !core::wide_i64::eq(negative_seconds, core::wide_i64::from_i32(-1))) {
+        return 2;
+    }
+    if (!core::wide_i64::eq(std::time_wide::seconds_or(positive, 3, fallback), fallback) || !core::wide_i64::eq(std::time_wide::seconds_or(bad_max, 4, fallback), fallback) || std::time_wide::nanoseconds_or(positive, 4, 17) != 999999999 || std::time_wide::nanoseconds_or(negative, 4, 17) != 0 || std::time_wide::nanoseconds_or(positive, 3, 17) != 17 || std::time_wide::nanoseconds_or(bad_negative, 4, 17) != 17) {
+        return 3;
+    }
+    let monotonic:[i32; 4] =[11, 12, 13, 14];
+    let system:[i32; 4] =[21, 22, 23, 24];
+    if (std::time_wide::read_monotonic_into(monotonic, 3) || std::time_wide::read_system_into(system, -1)) {
+        return 4;
+    }
+    if (monotonic[0] != 11 || monotonic[1] != 12 || monotonic[2] != 13 || monotonic[3] != 14 || system[0] != 21 || system[1] != 22 || system[2] != 23 || system[3] != 24) {
+        return 5;
+    }
+    if (!std::time_wide::read_monotonic_into(monotonic, 4) || !std::time_wide::read_system_into(system, 4)) {
+        return 6;
+    }
+    if (!std::time_wide::can_decode(monotonic, 4) || !std::time_wide::can_decode(system, 4)) {
+        return 7;
+    }
+    let mono_seconds: core::wide_i64::WideI64 = std::time_wide::seconds_or(monotonic, 4, fallback);
+    let system_seconds: core::wide_i64::WideI64 = std::time_wide::seconds_or(system, 4, fallback);
+    if (core::wide_i64::is_negative(mono_seconds) || core::wide_i64::is_negative(system_seconds) || core::wide_i64::is_zero(system_seconds) || std::time_wide::nanoseconds_or(monotonic, 4, 1000000000) >= 1000000000 || std::time_wide::nanoseconds_or(system, 4, 1000000000) >= 1000000000) {
+        return 8;
+    }
+    return 0;
+}

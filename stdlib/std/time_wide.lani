@@ -1,0 +1,58 @@
+// x86_64 Linux timespec reads with seconds represented as WideI64.
+// A backed [i32] view stores four native-order 32-bit words: seconds low,
+// seconds high, nanoseconds low, nanoseconds high. No allocation occurs.
+module std::time_wide;
+import core::mem;
+import core::wide_i64;
+import std::time_checked; // At least four logical words must be backed by storage. Negative seconds
+// are valid for system time; nanoseconds must be in [0, 1_000_000_000).
+// Invalid lengths return false. An overstated physical view can trap.
+pub fn can_decode(words:[i32], length: i32) -> bool {
+    if (length<4) {
+        return false;
+    }
+    return words[3] == 0 && words[2] >= 0 && words[2]<1000000000;
+}
+// Invalid timespec data returns fallback. A valid result may equal fallback.
+pub fn seconds_or(words:[i32], length: i32, fallback: core::wide_i64::WideI64) -> core::wide_i64::WideI64 {
+    if (!can_decode(words, length)) {
+        return fallback;
+    }
+    let high: u32 = words[1];
+    let low: u32 = words[0];
+    return core::wide_i64::from_words(high, low);
+}
+// Invalid timespec data returns fallback. A valid result may equal fallback.
+pub fn nanoseconds_or(words:[i32], length: i32, fallback: u32) -> u32 {
+    if (!can_decode(words, length)) {
+        return fallback;
+    }
+    let nanos: u32 = words[2];
+    return nanos;
+}
+// Read exactly one 16-byte native timespec into caller storage. False means
+// insufficient logical capacity or host failure. Invalid logical capacity
+// leaves storage unchanged; host failure can leave partial data. A claim of
+// four or more words on physically shorter storage traps before the host call.
+pub fn read_monotonic_into(words:[i32], length: i32) -> bool {
+    if (length<4) {
+        return false;
+    }
+    words[3] = 0;
+    let data: ptr = core::mem::i32_slice_data_ptr(words);
+    if (!std::time_checked::monotonic_timespec_into(data, 16)) {
+        return false;
+    }
+    return can_decode(words, 4);
+}
+pub fn read_system_into(words:[i32], length: i32) -> bool {
+    if (length<4) {
+        return false;
+    }
+    words[3] = 0;
+    let data: ptr = core::mem::i32_slice_data_ptr(words);
+    if (!std::time_checked::system_timespec_into(data, 16)) {
+        return false;
+    }
+    return can_decode(words, 4);
+}

@@ -1,0 +1,9 @@
+module app::main;
+import std::time_wide;
+fn main() -> i32 {
+    let data:[i32; 4] =[0, 0, 0, 0];
+    if (!std::time_wide::read_monotonic_into(data, 4)) {
+        return 0;
+    }
+    return 1;
+}

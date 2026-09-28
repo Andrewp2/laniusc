@@ -98,6 +98,7 @@ limited to native x86_64 output from this worktree.
 | `std::args_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` runs a Lanius program with nonempty and empty arguments. It checks argument count including the executable, exact byte lengths and bytes, absent/negative indices, sufficient and insufficient capacity, null storage, and capacity above `i32::MAX`. Caller storage avoids allocation. |
 | `std::env_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_env_execution.rs` checks exact value and key bytes, missing and invalid indices, capacity and null-storage failures, current-directory bytes and its NUL terminator, and injected `getcwd` failure. Caller storage avoids allocation. |
 | `std::time_checked` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_time_execution.rs` checks both 16-byte clock reads, nanosecond bounds, a measured 50 ms sleep, invalid buffers/lengths, negative sleep, injected clock failures, and an interrupted host sleep. Caller storage avoids allocation and i64 scalar results. |
+| `std::time_wide` all 5 public helpers | Executable x86_64 Linux host wrappers and two-word seconds decoding | The native suite calls every function, checks synthetic positive seconds above 32 bits and negative seconds, nanosecond boundaries, invalid views and unchanged short-capacity storage, real monotonic and system clock reads, a physical backing overclaim that traps before the host call, and injected failures for both clocks. No native scalar `i64` result or allocation is required. |
 | `std::io::{write_line,println,eprintln,flush_stdout,flush_stderr,print_i32}` | Executable x86_64 host wrappers | `tests/stdlib_host_execution.rs` checks stdout, stderr, empty lines, exact byte counts, invalid handles, synchronous flushes, and signed printing through the real stdlib root. These are separate from the portable core. |
 | `std::io_checked` all 5 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_checked_execution.rs` checks exact stdin, bounded read-to-EOF, stdout, and stderr bytes; empty, exact-fit, and overlong input; invalid storage; EOF after a read prefix; host errors and zero progress; retries after short transfers; and a multi-chunk binary stdin-to-stdout copy. Caller storage avoids allocation. |
 | `std::io_byte` all 3 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_byte_execution.rs` checks scalar reads of ASCII, NUL, and 255, a distinct EOF fallback, checked stdout and stderr bytes, invalid values without writes, and injected read and write errors. `sample_programs/hex_to_decimal.lani` combines it with portable byte and hex helpers. The implementation uses one synchronous host call per byte. |
@@ -936,6 +937,15 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   return false; storage contents after such an error are unspecified.
   `sleep_nonnegative_ms` rejects negative durations and returns false if the
   host sleep fails or is interrupted.
+- `std::time_wide` reads the same native timespec into a caller-backed
+  `[i32]` view of at least four words: seconds low, seconds high, nanoseconds
+  low, and nanoseconds high. Its decode helpers return two-word signed seconds
+  and bounded nanoseconds, accepting negative seconds but rejecting nanos
+  outside `[0, 1_000_000_000)`. Invalid logical lengths return false or the
+  caller fallback; an overclaimed physical view may trap. A valid decoded
+  value may equal fallback. Clock failures return false and callers must
+  ignore the resulting buffer; insufficient logical capacity leaves storage
+  unchanged. No allocation or native scalar `i64` arithmetic is used.
 - `std::io::write_line` writes text followed by a newline and returns the
   combined byte count. A negative result from either host write is returned
   immediately. A partial text write is reported by its count, and the newline
@@ -1467,6 +1477,9 @@ Run `cargo test --test stdlib_generic_interface` for exported generic
 Option/Result types and associated methods on both plain and generic structs.
 Run `cargo test --test stdlib_time_execution` for clock metadata, the four
 bound host calls, checked wrappers, and injected host failures.
+Run `cargo test --test stdlib_time_wide_execution` for two-word clock
+seconds, real clocks, invalid views, native bounds trapping, and injected
+clock failures.
 Run `cargo test --test stdlib_cast_store_execution` for direct indexed byte
 casts and the i32 and byte-slice store paths.
 The test compiles small Lanius programs through `--stdlib-root`, executes
