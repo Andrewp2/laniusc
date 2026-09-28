@@ -31,6 +31,18 @@ fn caller_backed_endian_reads_and_writes_execute_on_x86() {
             b"".as_slice(),
         ),
         (
+            "core_endian_wide_read_bounds",
+            "tests/fixtures/stdlib_foundation/core_endian_wide_read_bounds.lani",
+            101,
+            b"".as_slice(),
+        ),
+        (
+            "core_endian_wide_write_bounds",
+            "tests/fixtures/stdlib_foundation/core_endian_wide_write_bounds.lani",
+            101,
+            b"".as_slice(),
+        ),
+        (
             "packet_header_sum",
             "sample_programs/packet_header_sum.lani",
             0,
@@ -73,5 +85,5 @@ fn every_public_endian_function_has_a_runtime_case() {
         assert!(fixture.contains(&call), "{call} lacks a runtime case");
         covered += 1;
     }
-    assert_eq!(covered, 8);
+    assert_eq!(covered, 12);
 }

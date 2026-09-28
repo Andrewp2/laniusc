@@ -1,5 +1,6 @@
 module app::main;
 import core::endian;
+import core::wide_u64;
 
 fn main() -> i32 {
     let sentinel: u8 = 171;
@@ -56,5 +57,68 @@ fn main() -> i32 {
         core::endian::write_u16_le(empty, 0, 0, high16) ||
         core::endian::write_u32_be(empty, 0, 0, high32) ||
         empty[0] != sentinel) { return 9; }
+
+    let wb1: u8 = 1;
+    let wb35: u8 = 35;
+    let wb69: u8 = 69;
+    let wb103: u8 = 103;
+    let wb137: u8 = 137;
+    let wb205: u8 = 205;
+    let wb239: u8 = 239;
+    let wide_bytes: [u8; 10] = [
+        sentinel, wb1, wb35, wb69, wb103, wb137, sentinel, wb205, wb239, sentinel];
+    let fallback64: core::wide_u64::WideU64 = core::wide_u64::from_words(7, 9);
+    if (!core::wide_u64::eq(
+            core::endian::read_wide_u64_be_or(wide_bytes, 10, 1, fallback64),
+            core::wide_u64::from_words(19088743, 2309737967)) ||
+        !core::wide_u64::eq(
+            core::endian::read_wide_u64_le_or(wide_bytes, 10, 1, fallback64),
+            core::wide_u64::from_words(4023233417, 1732584193))) { return 10; }
+    if (!core::wide_u64::eq(
+            core::endian::read_wide_u64_be_or(wide_bytes, 7, 1, fallback64), fallback64) ||
+        !core::wide_u64::eq(
+            core::endian::read_wide_u64_le_or(wide_bytes, 10, -1, fallback64), fallback64) ||
+        !core::wide_u64::eq(
+            core::endian::read_wide_u64_be_or(wide_bytes, 10, 3, fallback64), fallback64) ||
+        !core::wide_u64::eq(
+            core::endian::read_wide_u64_le_or(wide_bytes, 10, 2147483647, fallback64),
+            fallback64)) { return 11; }
+    let wide_value: core::wide_u64::WideU64 =
+        core::wide_u64::from_words(2309737967, 19088743);
+    if (!core::endian::write_wide_u64_be(wide_bytes, 10, 1, wide_value) ||
+        wide_bytes[0] != 171 || wide_bytes[1] != 137 || wide_bytes[2] != 171 ||
+        wide_bytes[3] != 205 || wide_bytes[4] != 239 || wide_bytes[5] != 1 ||
+        wide_bytes[6] != 35 || wide_bytes[7] != 69 || wide_bytes[8] != 103 ||
+        wide_bytes[9] != 171 ||
+        !core::wide_u64::eq(
+            core::endian::read_wide_u64_be_or(wide_bytes, 10, 1, fallback64), wide_value)) {
+        return 12;
+    }
+    if (!core::endian::write_wide_u64_le(wide_bytes, 10, 1, wide_value) ||
+        wide_bytes[0] != 171 || wide_bytes[1] != 103 || wide_bytes[2] != 69 ||
+        wide_bytes[3] != 35 || wide_bytes[4] != 1 || wide_bytes[5] != 239 ||
+        wide_bytes[6] != 205 || wide_bytes[7] != 171 || wide_bytes[8] != 137 ||
+        wide_bytes[9] != 171 ||
+        !core::wide_u64::eq(
+            core::endian::read_wide_u64_le_or(wide_bytes, 10, 1, fallback64), wide_value)) {
+        return 13;
+    }
+    if (core::endian::write_wide_u64_be(wide_bytes, 7, 1, wide_value) ||
+        core::endian::write_wide_u64_le(wide_bytes, 10, -1, wide_value) ||
+        core::endian::write_wide_u64_be(wide_bytes, 10, 3, wide_value) ||
+        core::endian::write_wide_u64_le(wide_bytes, 10, 2147483647, wide_value) ||
+        wide_bytes[0] != 171 || wide_bytes[1] != 103 || wide_bytes[2] != 69 ||
+        wide_bytes[3] != 35 || wide_bytes[4] != 1 || wide_bytes[5] != 239 ||
+        wide_bytes[6] != 205 || wide_bytes[7] != 171 || wide_bytes[8] != 137 ||
+        wide_bytes[9] != 171) { return 14; }
+    if (!core::endian::write_wide_u64_be(wide_bytes, 10, 1, core::wide_u64::zero()) ||
+        !core::wide_u64::eq(
+            core::endian::read_wide_u64_be_or(wide_bytes, 10, 1, fallback64),
+            core::wide_u64::zero()) ||
+        !core::endian::write_wide_u64_le(wide_bytes, 10, 1, core::wide_u64::max_value()) ||
+        !core::wide_u64::eq(
+            core::endian::read_wide_u64_le_or(wide_bytes, 10, 1, fallback64),
+            core::wide_u64::max_value()) ||
+        wide_bytes[0] != 171 || wide_bytes[9] != 171) { return 15; }
     return 0;
 }

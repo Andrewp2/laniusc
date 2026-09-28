@@ -1,6 +1,7 @@
 // Allocation-free endian reads and writes over caller-backed byte views.
 module core::endian;
 import core::bits;
+import core::wide_u64;
 
 fn has_width(len: i32, offset: i32, width: i32) -> bool {
     return len >= width && offset >= 0 && offset <= len - width;
@@ -46,6 +47,30 @@ pub fn read_u32_le_or(bytes: [u8], len: i32, offset: i32, fallback: u32) -> u32 
     }
     return core::bits::from_le_bytes_u32(
         bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+}
+
+// Read a full-width value through two portable u32 words. Rejected logical
+// bounds return fallback without reading; physical backing overclaims trap.
+pub fn read_wide_u64_be_or(
+    bytes: [u8], len: i32, offset: i32, fallback: core::wide_u64::WideU64
+) -> core::wide_u64::WideU64 {
+    if (!has_width(len, offset, 8)) { return fallback; }
+    let high: u32 = core::bits::from_be_bytes_u32(
+        bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+    let low: u32 = core::bits::from_be_bytes_u32(
+        bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
+    return core::wide_u64::from_words(high, low);
+}
+
+pub fn read_wide_u64_le_or(
+    bytes: [u8], len: i32, offset: i32, fallback: core::wide_u64::WideU64
+) -> core::wide_u64::WideU64 {
+    if (!has_width(len, offset, 8)) { return fallback; }
+    let low: u32 = core::bits::from_le_bytes_u32(
+        bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+    let high: u32 = core::bits::from_le_bytes_u32(
+        bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
+    return core::wide_u64::from_words(high, low);
 }
 
 // Invalid logical lengths and offsets return false without writing. A true
@@ -97,5 +122,41 @@ pub fn write_u32_le(bytes: [u8], len: i32, offset: i32, value: u32) -> bool {
     bytes[offset + 1] = core::bits::byte_at_le_or_u32(value, 1, 0);
     bytes[offset + 2] = core::bits::byte_at_le_or_u32(value, 2, 0);
     bytes[offset + 3] = core::bits::byte_at_le_or_u32(value, 3, 0);
+    return true;
+}
+
+// Rejected logical bounds return false before any write. A true result means
+// all eight bytes were stored; physical backing overclaims can trap.
+pub fn write_wide_u64_be(
+    bytes: [u8], len: i32, offset: i32, value: core::wide_u64::WideU64
+) -> bool {
+    if (!has_width(len, offset, 8)) { return false; }
+    let high: u32 = core::wide_u64::high_word(value);
+    let low: u32 = core::wide_u64::low_word(value);
+    bytes[offset] = core::bits::byte_at_be_or_u32(high, 0, 0);
+    bytes[offset + 1] = core::bits::byte_at_be_or_u32(high, 1, 0);
+    bytes[offset + 2] = core::bits::byte_at_be_or_u32(high, 2, 0);
+    bytes[offset + 3] = core::bits::byte_at_be_or_u32(high, 3, 0);
+    bytes[offset + 4] = core::bits::byte_at_be_or_u32(low, 0, 0);
+    bytes[offset + 5] = core::bits::byte_at_be_or_u32(low, 1, 0);
+    bytes[offset + 6] = core::bits::byte_at_be_or_u32(low, 2, 0);
+    bytes[offset + 7] = core::bits::byte_at_be_or_u32(low, 3, 0);
+    return true;
+}
+
+pub fn write_wide_u64_le(
+    bytes: [u8], len: i32, offset: i32, value: core::wide_u64::WideU64
+) -> bool {
+    if (!has_width(len, offset, 8)) { return false; }
+    let high: u32 = core::wide_u64::high_word(value);
+    let low: u32 = core::wide_u64::low_word(value);
+    bytes[offset] = core::bits::byte_at_le_or_u32(low, 0, 0);
+    bytes[offset + 1] = core::bits::byte_at_le_or_u32(low, 1, 0);
+    bytes[offset + 2] = core::bits::byte_at_le_or_u32(low, 2, 0);
+    bytes[offset + 3] = core::bits::byte_at_le_or_u32(low, 3, 0);
+    bytes[offset + 4] = core::bits::byte_at_le_or_u32(high, 0, 0);
+    bytes[offset + 5] = core::bits::byte_at_le_or_u32(high, 1, 0);
+    bytes[offset + 6] = core::bits::byte_at_le_or_u32(high, 2, 0);
+    bytes[offset + 7] = core::bits::byte_at_le_or_u32(high, 3, 0);
     return true;
 }

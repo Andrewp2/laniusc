@@ -1,0 +1,12 @@
+module app::main;
+import core::endian;
+import core::wide_u64;
+
+fn main() -> i32 {
+    let zero: u8 = 0;
+    let short: [u8; 1] = [zero];
+    if (core::endian::write_wide_u64_le(short, 8, 0, core::wide_u64::max_value())) {
+        return 1;
+    }
+    return 0;
+}

@@ -1,0 +1,14 @@
+module app::main;
+import core::endian;
+import core::wide_u64;
+
+fn main() -> i32 {
+    let zero: u8 = 0;
+    let short: [u8; 1] = [zero];
+    let fallback: core::wide_u64::WideU64 = core::wide_u64::from_u32(7);
+    if (!core::wide_u64::eq(
+        core::endian::read_wide_u64_be_or(short, 8, 0, fallback), fallback)) {
+        return 1;
+    }
+    return 0;
+}
