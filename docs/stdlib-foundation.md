@@ -88,7 +88,7 @@ limited to native x86_64 output from this worktree.
 | `core::u8` all 37 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, overflow and zero-divisor behavior, wrapping multiplication, ASCII classes and case conversion, and checked results through `OptionU8`. Its multiplication delegates to the tested `core::byte` implementation. |
 | `core::u16` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture calls every function and reads every constant. It checks ordinary and high-bit values, wrapping and saturating overflow, checked arithmetic through `OptionU16`, reversed bounds, zero divisors, power-of-two overflow, and invalid or overflowing alignment. |
 | `core::u32` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, unsigned high-bit and maximum values, checked and wrapping arithmetic, alignment failures, and power-of-two overflow. Checked results use concrete `OptionU32`. |
-| `core::ordering` all 20 public functions and `Ordering` variants | Executable on x86_64 | `tests/stdlib_ordering.rs` and `tests/stdlib_ordering_wide.rs` execute every function and direct qualified and unqualified `Less`, `Equal`, and `Greater` values through the real stdlib root. They cover predicates, reverse, then, all six scalar integer widths, Boolean false-before-true order, Unicode scalar order, unsigned high-bit comparison, and full-width signed and unsigned ordering through the two-word `WideI64` and `WideU64` types. `compare_f32_or` checks finite values, signed zero, infinities, and caller-supplied fallbacks for NaN. The broken primitive `compare_i64` was removed until native i64 literal and comparison lowering works (dependency 11). |
+| `core::ordering` all 20 public functions and `Ordering` variants | Executable on x86_64 | `tests/stdlib_ordering.rs` and `tests/stdlib_ordering_wide.rs` execute every function and direct qualified and unqualified `Less`, `Equal`, and `Greater` values through the real stdlib root. They cover predicates, reverse, then, all six scalar integer widths, Boolean false-before-true order, Unicode scalar order, unsigned high-bit comparison, and full-width signed and unsigned ordering through the two-word `WideI64` and `WideU64` types. `tests/stdlib_char_high_bit_execution.rs` also compares the unsigned character high bit and maximum through ordering, comparison, range, and slice helpers. `compare_f32_or` checks finite values, signed zero, infinities, and caller-supplied fallbacks for NaN. The broken primitive `compare_i64` was removed until native i64 literal and comparison lowering works (dependency 11). |
 | Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Generic enum values fail GPU lowering and native 64-bit comparison/arithmetic are incomplete. Even a direct `core::i64::min(2, 3)` call cannot emit x86 code because importing `core::i64` pulls in generic Option/Result. The former by-value `Option::replace` ignored its input and was removed. Concrete 8-, 16-, and 32-bit Option/Result modules and concrete two-word 64-bit variants execute on x86_64. |
 | `core::cmp` all 60 public free functions for six integer widths, `bool`, `char`, `WideU64`, and `WideI64` | Executable on x86_64 | The imported runtime fixture calls every equality and ordering function with equal and unequal values, both directions, signed and two-word extrema, unsigned high-bit values, both Boolean values, and Unicode characters. The `i32`, `u32`, `bool`, and `char` functions execute local trait implementation bodies. Narrow integer functions use scalar operators because their trait keys collide with the corresponding 32-bit type (dependency 57); two-word functions use the executable wide modules because imported nominal trait arguments fail in native emission (dependency 58). Direct imported trait calls remain outside this claim. |
 | `core::cmp` trait methods and `core::hash::Hash<T>` trait methods | Contract-only as complete APIs in this audit | The public free comparison and hashing functions execute, but direct imported trait method calls do not. See dependencies 31, 57, and 58. |
@@ -1629,6 +1629,9 @@ Run `cargo test --test stdlib_narrow_execution` for all 24 explicit
 32-bit narrowing helpers, boundary values, and the input-driven byte report.
 Run `cargo test --test stdlib_char_array_literal_execution` for direct
 Unicode character arrays through imported slice helpers and type rejection.
+Run `cargo test --test stdlib_char_high_bit_execution` for unsigned high-bit
+character and `u32` comparisons with a literal on the left, plus imported
+ordering, comparison, range, and slice helpers.
 Run `cargo test --test stdlib_wide_u64_bits_execution` for every public
 two-word bit helper, including rotation boundaries and invalid-index fallbacks.
 Run `cargo test --test stdlib_hex_wide_u64_execution` for full-width
@@ -2593,6 +2596,17 @@ also fixes the imported struct-return relocation path described below.
     pointer-valued Option/Result operations execute. The GPU compiler must
     preserve pointer-width arithmetic and comparison before those APIs can be
     considered executable across the declared `usize` domain.
+
+61. **Resolved: literal-left unsigned comparisons.**
+    `tests/fixtures/stdlib_foundation/char_high_bit_comparisons.lani` compares
+    a Unicode character literal against character values containing the
+    unsigned high bit and all bits, and an integer literal against `u32`
+    values above the signed maximum. Before the fix, the first literal-left
+    `char` and `u32` comparisons exited 4 and 1 respectively in separate
+    minimal native reproducers. The GPU semantic LIR lowering now selects
+    the right operand's checked unsigned type for these literal-left cases.
+    The imported runtime fixture also executes character ordering, comparison,
+    range, and slice helpers across the same high-bit boundary.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

@@ -933,8 +933,21 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     if (op == SEMANTIC_LIR_OP_COMPARE && !match_expression &&
         !range_for && !array_for && payload.b < hir_count)
     {
-        core.type_id = semantic_type_for_hir(payload.b, hir_count);
-        semantic_type_ref_for_hir(payload.b, hir_count,
+        uint compared_type_node = payload.b;
+        // An unsuffixed literal on the left takes the checked type of its
+        // right operand for machine comparison. Otherwise char and high-bit
+        // u32 comparisons incorrectly select signed i32 condition codes.
+        if (payload.c < hir_count &&
+            compact_hir_core[payload.b].kind == HIR_LITERAL_EXPR)
+        {
+            uint literal_form = compact_hir_payload[payload.b].a;
+            uint right_type = semantic_type_for_hir(payload.c, hir_count);
+            if ((literal_form == HIR_EXPR_CHAR && right_type == 6u) ||
+                (literal_form == HIR_EXPR_INT && right_type == 4u))
+                compared_type_node = payload.c;
+        }
+        core.type_id = semantic_type_for_hir(compared_type_node, hir_count);
+        semantic_type_ref_for_hir(compared_type_node, hir_count,
             type_ref_tag, core.type_ref_payload);
     }
     core.flags = ((type_ref_tag & 3u) << SEMANTIC_LIR_TYPE_REF_TAG_SHIFT) |
