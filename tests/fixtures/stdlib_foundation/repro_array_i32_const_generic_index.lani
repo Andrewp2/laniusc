@@ -1,0 +1,8 @@
+module app::main;
+fn first<const N: usize>(values: [i32; N]) -> i32 {
+    return values[0];
+}
+fn main() -> i32 {
+    let values: [i32; 4] = [7, -2, 9, 4];
+    return first(values);
+}

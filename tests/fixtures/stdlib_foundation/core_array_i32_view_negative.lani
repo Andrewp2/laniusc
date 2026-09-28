@@ -1,0 +1,6 @@
+module app::main;
+import core::array_i32;
+fn main() -> i32 {
+    let one: [i32; 1] = [7];
+    return core::array_i32::get_unchecked(one, -1);
+}

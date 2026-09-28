@@ -38,6 +38,7 @@ limited to native x86_64 output from this worktree.
 | `core::binary_wide_u64` all 6 public two-word functions | Executable on x86_64 | Runtime fixtures call every function and check zero, the 32-bit word boundary, a sparse high-bit pattern, and the maximum; every digit of a full-width pattern; invalid-index fallbacks; bounded appends and overflow; optional prefixes, leading zeros, malformed input, and full-width parse overflow. An overstated physical input view traps. The module uses `WideU64`, not native `u64`. |
 | `core::binary_wide_i64` all 4 public signed two-word functions | Executable on x86_64 | Runtime fixtures call every function and check shortest sign-and-magnitude formatting at zero, ordinary negative values, the word boundary, and both signed extrema; every digit of a negative boundary, invalid-index fallbacks, optional signs and prefixes, leading zeros, negative zero, malformed input, and signed overflow in either direction. An overstated physical input view traps. The module uses `WideI64`, not native `i64`. |
 | `core::f32` both public constants and all 17 public functions | Executable on x86_64 for tested finite, infinite, and NaN inputs | Runtime fixtures check `ZERO` and imported `ONE`, classification, sign, comparison, valid and reversed clamp bounds, fallback behavior, and square root for zero, negative, small, ordinary, large, infinite, and NaN inputs. Direct and materialized NaN comparisons follow unordered semantics. |
+| `core::array_i32` both public borrowed-view functions | Executable on x86_64 | Fixed arrays of lengths 1, 4, and 7 pass through `[i32]` parameters and execute `first` and `get_unchecked`, including signed extrema. Native bounds checks exit 101 for an empty view, a negative index, or an index past the end. The former const-generic signatures could not emit native indexing; the remaining compiler limitation is recorded in dependency 12. |
 | `core::array_i32_4` all 14 public functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, saturating sum, and caller-backed copy, fill, and reverse. Invalid destination lengths return false without writing; reverse supports shared source/destination backing. Fixed-array-returning predecessors were removed because they misexecute; see dependency 7. |
 | `core::array_u8_4` all 17 public functions | Executable on x86_64 | Runtime fixtures check access, search, extrema, full-range sum, equality, endian conversion, invalid-index fallback, and caller-backed copy, fill, and reverse of four-byte arrays. Reversal works with shared source and destination backing. Short destination lengths return false without writing; an overstated backing view traps on native indexing. |
 | Legacy `stdlib/bool.lani` all 9 public functions and `stdlib/i32.lani` all 16 public functions | Executable on x86_64 when included as source | A source-level native fixture checks both boolean values, both selection branches, ordinary and boundary signed arithmetic, wrapping overflow, comparisons, clamp bounds, and power-of-two overflow. The test calls every public function in both files. `abs` requires input above `i32::MIN`; `clamp` requires ordered bounds. |
@@ -84,7 +85,7 @@ limited to native x86_64 output from this worktree.
 | `core::ordering` all 20 public functions and `Ordering` variants | Executable on x86_64 | `tests/stdlib_ordering.rs` and `tests/stdlib_ordering_wide.rs` execute every function and direct qualified and unqualified `Less`, `Equal`, and `Greater` values through the real stdlib root. They cover predicates, reverse, then, all six scalar integer widths, Boolean false-before-true order, Unicode scalar order, unsigned high-bit comparison, and full-width signed and unsigned ordering through the two-word `WideI64` and `WideU64` types. `compare_f32_or` checks finite values, signed zero, infinities, and caller-supplied fallbacks for NaN. The broken primitive `compare_i64` was removed until native i64 literal and comparison lowering works (dependency 11). |
 | Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Generic enum values fail GPU lowering and native 64-bit comparison/arithmetic are incomplete. Even a direct `core::i64::min(2, 3)` call cannot emit x86 code because importing `core::i64` pulls in generic Option/Result. The former by-value `Option::replace` ignored its input and was removed. Concrete 8-, 16-, and 32-bit Option/Result modules and concrete two-word 64-bit variants execute on x86_64. |
 | `core::cmp` all 60 public free functions for six integer widths, `bool`, `char`, `WideU64`, and `WideI64` | Executable on x86_64 | The imported runtime fixture calls every equality and ordering function with equal and unequal values, both directions, signed and two-word extrema, unsigned high-bit values, both Boolean values, and Unicode characters. The `i32`, `u32`, `bool`, and `char` functions execute local trait implementation bodies. Narrow integer functions use scalar operators because their trait keys collide with the corresponding 32-bit type (dependency 57); two-word functions use the executable wide modules because imported nominal trait arguments fail in native emission (dependency 58). Direct imported trait calls remain outside this claim. |
-| `core::cmp` trait methods, `core::hash::Hash<T>` trait methods, and `core::array_i32` | Contract-only as complete APIs in this audit | The public free comparison and hashing functions execute, but direct imported trait method calls do not. Generic fixed-array APIs depend on backend support. See dependencies 7, 31, 57, and 58. |
+| `core::cmp` trait methods and `core::hash::Hash<T>` trait methods | Contract-only as complete APIs in this audit | The public free comparison and hashing functions execute, but direct imported trait method calls do not. See dependencies 31, 57, and 58. |
 | `core::target` all 18 public functions and 16 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant. It checks the available allocator, filesystem, stdio, clock, secure RNG, process, and environment bindings against `core::runtime`; unbound network, threads, GPU, host services, panic hooks, and test harness remain false. This is a target snapshot, not a live host probe. |
 | `core::runtime` all 62 public functions and 40 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant, checking service IDs, ABI fields, available and unavailable services, unknown IDs, status classifiers, and fail-closed requirement rows. These helpers report bindings; they do not implement an unbound service operation. |
 | `core::panic` both trap functions, all 19 metadata functions, and 4 constants | Executable on x86_64 Linux for the trap functions and metadata | `tests/stdlib_panic_execution.rs` checks that `panic()` and `unreachable()` terminate with SIGILL, and a runtime fixture checks every metadata result. Panic hooks remain unbound; their availability flags stay false. |
@@ -1556,6 +1557,8 @@ Run `cargo test --test stdlib_wide_fingerprint_program` for the stdin program
 combining wide parsing, ordering, hashing, and checked output.
 Run `cargo test --test stdlib_mem_execution` for all public memory helper
 functions, including capability metadata, value helpers, and intrinsics.
+Run `cargo test --test stdlib_array_i32_view_execution` for both borrowed
+array helpers across fixed lengths and native bounds failures.
 Run `cargo test --test stdlib_allocator_metadata_execution` for allocator
 capability metadata and live pointer classification.
 Run `cargo test --test stdlib_generic_vec_flat_execution` for empty generic
@@ -1830,21 +1833,17 @@ also fixes the imported struct-return relocation path described below.
     working from current native test results. The former
     `core::ordering::compare_i64` also produced the wrong order
     for values above 32 bits and was removed from the executable surface.
-12. **Const-generic array indexing.**
-    `tests/fixtures/stdlib_foundation/repro_array_i32_generic.lani` calls
-    `core::array_i32::first` on a four-element array. Native emission stops
-    with `LNC0017` at `values[0]` in the const-generic helper, so the generic
-    array module remains contract-only; the concrete `core::array_i32_4`
-    scalar functions have separate executable tests. A source-level attempt
-    to form a bounded slice from the array pointer needs the length as a
-    value. `repro_array_i32_const_value.lani` shows that `N as i32` inside a
-    const-generic function fails GPU checking with `LNC0005` (unresolved
-    identifier). Fixed arrays also lack a callable `values.len()` method
-    (`LNC0027`). Neither route currently gives a safe source-level
-    replacement for generic array indexing. For comparison, a temporary
-    four-element-only slice length compiled and the reproducer exited 7,
-    confirming the pointer and slice intrinsics work for that concrete case;
-    that hard-coded length was not retained in the generic API.
+12. **Native const-generic array indexing remains unsupported.**
+    `repro_array_i32_const_generic_index.lani` directly indexes a
+    `[i32; N]` parameter in a const-generic function. Native emission still
+    reports `LNC0017` at `values[0]`. `N as i32` also fails GPU checking with
+    `LNC0005` in `repro_array_i32_const_value.lani`; fixed arrays lack a
+    callable `values.len()` method (`LNC0027`). The public `core::array_i32`
+    helpers now accept borrowed `[i32]` views, which fixed arrays of several
+    lengths pass successfully. `tests/stdlib_array_i32_view_execution.rs`
+    executes both helpers and confirms native bounds failure for empty and
+    invalid indices. Direct const-generic array indexing remains a compiler
+    dependency, but this public module no longer relies on it.
 13. **Resolved: raw host integer read overflow.** The native
     `std::fs::read_i32(handle, fallback)` parser now accumulates magnitude in
     64 bits and returns the fallback above `i32::MAX` or below `i32::MIN`.

@@ -1,0 +1,6 @@
+module app::main;
+import core::array_i32;
+fn main() -> i32 {
+    let empty: [i32; 0] = [];
+    return core::array_i32::first(empty);
+}

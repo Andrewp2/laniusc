@@ -1,11 +1,12 @@
-// Module-form helpers for fixed-size i32 arrays of any const length.
-
+// Array access through a borrowed [i32] view. Fixed arrays of any length can
+// be passed to these functions. Native indexing traps on an empty view or an
+// out-of-bounds index; use core::slice for caller-bounded fallbacks.
 module core::array_i32;
 
-pub fn first<const N: usize>(values: [i32; N]) -> i32 {
+pub fn first(values: [i32]) -> i32 {
     return values[0];
 }
 
-pub fn get_unchecked<const N: usize>(values: [i32; N], index: i32) -> i32 {
+pub fn get_unchecked(values: [i32], index: i32) -> i32 {
     return values[index];
 }
