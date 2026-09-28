@@ -6,6 +6,8 @@ import codegen.lowering_ir;
 static const uint HIR_STRUCT_ITEM = 27u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_REF_GENERIC_PARAM = 2u;
+static const uint TYPE_INSTANCE_NAMED = 1u;
 
 struct Params
 {
@@ -29,6 +31,17 @@ StructuredBuffer<uint> semantic_expr_ref_tag;
 StructuredBuffer<uint> semantic_expr_ref_payload;
 StructuredBuffer<uint> semantic_aggregate_decl_token;
 StructuredBuffer<uint> semantic_aggregate_word_count;
+StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> type_instance_arg_count;
+StructuredBuffer<uint> type_instance_arg_start;
+StructuredBuffer<uint> type_instance_arg_ref_tag;
+StructuredBuffer<uint> type_instance_arg_ref_payload;
+StructuredBuffer<uint> type_instance_arg_row_start;
+StructuredBuffer<uint> type_instance_arg_row_count;
+StructuredBuffer<uint> type_instance_arg_row_ref_tag;
+StructuredBuffer<uint> type_instance_arg_row_ref_payload;
+StructuredBuffer<uint> type_generic_param_slot;
 StructuredBuffer<uint> semantic_array_length;
 StructuredBuffer<uint> semantic_iterable_kind;
 StructuredBuffer<uint> semantic_value_id;
@@ -61,6 +74,10 @@ StructuredBuffer<uint> compact_call_arg_count;
 StructuredBuffer<HirCallArg> compact_call_args;
 StructuredBuffer<uint> compact_variant_count;
 StructuredBuffer<HirVariant> compact_variants;
+StructuredBuffer<uint> compact_variant_payload_start;
+StructuredBuffer<uint> compact_variant_payload_count;
+StructuredBuffer<uint> compact_variant_payload_row_count;
+StructuredBuffer<HirVariantPayload> compact_variant_payloads;
 StructuredBuffer<uint> compact_match_arm_count;
 StructuredBuffer<HirMatchArm> compact_match_arms;
 StructuredBuffer<uint> compact_match_payload_start;
@@ -275,6 +292,134 @@ uint aggregate_word_count_for_type(uint type_id, uint hir_count)
     return 0u;
 }
 
+bool concrete_type_argument(uint instance, uint slot, out uint tag, out uint payload)
+{
+    tag = 0u;
+    payload = LIR_INVALID;
+    if (instance >= gParams.n_tokens || slot >= type_instance_arg_count[instance])
+        return false;
+    uint row_start = type_instance_arg_row_start[instance];
+    uint row_count = type_instance_arg_row_count[0u];
+    if (row_start != LIR_INVALID && row_start < row_count &&
+        slot < row_count - row_start)
+    {
+        uint row = row_start + slot;
+        tag = type_instance_arg_row_ref_tag[row];
+        payload = type_instance_arg_row_ref_payload[row];
+        if (tag != 0u) return true;
+    }
+    if (slot >= 4u) return false;
+    uint legacy_start = type_instance_arg_start[instance];
+    if (legacy_start == LIR_INVALID || legacy_start >= gParams.n_tokens * 4u ||
+        slot >= gParams.n_tokens * 4u - legacy_start)
+        return false;
+    tag = type_instance_arg_ref_tag[legacy_start + slot];
+    payload = type_instance_arg_ref_payload[legacy_start + slot];
+    return tag != 0u;
+}
+
+uint concrete_type_ref_words(uint tag, uint payload, uint hir_count)
+{
+    if (tag == 1u)
+    {
+        if (payload == SEMANTIC_LIR_TY_STRING) return 2u;
+        if (payload < TY_STRUCT_BASE) return payload != 0u ? 1u : 0u;
+        uint words = aggregate_word_count_for_type(payload, hir_count);
+        return words != LIR_INVALID ? words : 0u;
+    }
+    if (tag != TYPE_REF_INSTANCE || payload >= gParams.n_tokens)
+        return 0u;
+    uint decl_token = type_instance_decl_token[payload];
+    if (decl_token >= gParams.n_tokens) return 0u;
+    uint declaration = semantic_aggregate_hir_by_name_token[decl_token];
+    if (declaration >= hir_count) return 0u;
+    uint words = semantic_struct_word_count_by_hir[declaration];
+    return words != LIR_INVALID ? words : 0u;
+}
+
+uint concrete_enum_instance_words(uint instance, uint hir_count)
+{
+    if (instance >= gParams.n_tokens ||
+        type_instance_kind[instance] != TYPE_INSTANCE_NAMED)
+        return 0u;
+    if (type_instance_arg_count[instance] == 0u) return 0u;
+    uint decl_token = type_instance_decl_token[instance];
+    if (decl_token >= gParams.n_tokens) return 0u;
+    uint owner = semantic_aggregate_hir_by_name_token[decl_token];
+    if (owner >= hir_count || compact_hir_core[owner].kind != 26u)
+        return 0u;
+    uint fixed_words = semantic_struct_word_count_by_hir[owner];
+    // Fixed enums already use their declaration layout. This helper only
+    // substitutes concrete arguments for unresolved generic declarations.
+    if (fixed_words != LIR_INVALID) return 0u;
+    uint variant_total = min(compact_variant_count[0u], gParams.n_hir_nodes);
+    uint payload_total = min(compact_variant_payload_row_count[0u],
+        gParams.n_hir_nodes);
+    uint maximum = 1u; // discriminant, including an empty variant
+    bool found = false;
+    for (uint variant_i = 0u; variant_i < variant_total; variant_i += 1u)
+    {
+        HirVariant variant = compact_variants[variant_i];
+        if (variant.owner != owner) continue;
+        found = true;
+        uint start = compact_variant_payload_start[variant_i];
+        uint count = compact_variant_payload_count[variant_i];
+        if (count != 0u && (start >= payload_total || count > payload_total - start))
+            return 0u;
+        uint words = 1u;
+        for (uint ordinal = 0u; ordinal < count; ordinal += 1u)
+        {
+            HirVariantPayload item = compact_variant_payloads[start + ordinal];
+            if (item.variant != variant_i || item.ordinal != ordinal ||
+                item.type_node >= hir_count)
+                return 0u;
+            uint tag = semantic_expr_ref_tag[item.type_node];
+            uint payload = semantic_expr_ref_payload[item.type_node];
+            if (tag == TYPE_REF_GENERIC_PARAM)
+            {
+                if (payload >= gParams.n_tokens) return 0u;
+                uint slot = type_generic_param_slot[payload];
+                if (!concrete_type_argument(instance, slot, tag, payload))
+                    return 0u;
+            }
+            uint payload_words = concrete_type_ref_words(tag, payload, hir_count);
+            if (payload_words == 0u || words >= LIR_INVALID - payload_words)
+                return 0u;
+            words += payload_words;
+        }
+        maximum = max(maximum, words);
+    }
+    return found ? maximum : 0u;
+}
+
+uint contextual_enum_instance(uint node, uint hir_count)
+{
+    if (node >= hir_count) return LIR_INVALID;
+    if (semantic_expr_ref_tag[node] == TYPE_REF_INSTANCE)
+        return semantic_expr_ref_payload[node];
+    if (semantic_call_kind[node] != 5u) return LIR_INVALID;
+    uint variant_i = semantic_call_target[node];
+    if (variant_i >= min(compact_variant_count[0u], gParams.n_hir_nodes))
+        return LIR_INVALID;
+    uint owner = compact_variants[variant_i].owner;
+    if (owner >= hir_count) return LIR_INVALID;
+    uint root = compact_expr_root[node];
+    if (root >= hir_count) root = node;
+    uint parent = compact_hir_core[root].parent;
+    if (parent >= hir_count) return LIR_INVALID;
+    HirCore parent_core = compact_hir_core[parent];
+    HirPayload parent_payload = compact_hir_payload[parent];
+    if ((parent_core.kind != HIR_STMT && parent_core.kind != HIR_LET_STMT) ||
+        parent_payload.a != HIR_STMT_LET || parent_payload.c != root ||
+        semantic_expr_ref_tag[parent] != TYPE_REF_INSTANCE)
+        return LIR_INVALID;
+    uint instance = semantic_expr_ref_payload[parent];
+    uint owner_token = compact_hir_payload[owner].b;
+    return instance < gParams.n_tokens && owner_token < gParams.n_tokens &&
+        type_instance_decl_token[instance] == owner_token
+        ? instance : LIR_INVALID;
+}
+
 uint aggregate_word_count_for_hir(uint node, uint hir_count)
 {
     if (node == LIR_INVALID || node >= hir_count) return 0u;
@@ -286,6 +431,12 @@ uint aggregate_word_count_for_hir(uint node, uint hir_count)
     if (projected_words != 0u) return projected_words;
     uint ref_tag = semantic_expr_ref_tag[node];
     uint ref_payload = semantic_expr_ref_payload[node];
+    if (ref_tag == TYPE_REF_INSTANCE || semantic_call_kind[node] == 5u)
+    {
+        uint enum_words = concrete_enum_instance_words(
+            contextual_enum_instance(node, hir_count), hir_count);
+        if (enum_words != 0u) return enum_words;
+    }
     // A borrowed slice has a pointer and length even when its element type
     // was instantiated from an imported generic function at this call site.
     if (ref_tag == TYPE_REF_INSTANCE &&
@@ -1015,14 +1166,18 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     }
     if (op == SEMANTIC_LIR_OP_AGGREGATE_NEW && semantic_call_kind[node] == 5u)
     {
-        core.value_word_count = hir.kind == HIR_CALL_EXPR
-            ? enum_constructor_word_count(node, payload, hir_count) : 1u;
+        uint concrete_words = concrete_enum_instance_words(
+            contextual_enum_instance(node, hir_count), hir_count);
+        core.value_word_count = concrete_words != 0u ? concrete_words
+            : hir.kind == HIR_CALL_EXPR
+                ? enum_constructor_word_count(node, payload, hir_count) : 1u;
         uint variant = semantic_call_target[node];
         if (variant < min(compact_variant_count[0u], gParams.n_hir_nodes))
         {
             uint owner = compact_variants[variant].owner;
             if (owner < hir_count &&
-                semantic_struct_word_count_by_hir[owner] == LIR_INVALID)
+                semantic_struct_word_count_by_hir[owner] == LIR_INVALID &&
+                concrete_words == 0u)
                 core.flags |= SEMANTIC_LIR_FLAG_UNSUPPORTED;
         }
     }

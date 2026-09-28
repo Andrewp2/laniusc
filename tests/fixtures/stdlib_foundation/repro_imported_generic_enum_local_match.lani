@@ -1,0 +1,12 @@
+module app::main;
+import core::maybe;
+
+fn main() -> i32 {
+    let value: core::maybe::Maybe<i32> = core::maybe::Some(7);
+    let extracted: i32 = match (value) {
+        core::maybe::Some(inner) -> inner,
+        core::maybe::None -> 1,
+    };
+    if (extracted != 7) { return 1; }
+    return 0;
+}

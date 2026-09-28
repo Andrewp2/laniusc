@@ -467,6 +467,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint word = operation_row - 1u;
         bool enum_discriminant =
             (args.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u && word == 0u;
+        bool enum_padding =
+            (args.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u && word != 0u;
         SemanticLirAggregateElement element;
         element.aggregate_instruction = INVALID;
         element.value_instruction = INVALID;
@@ -480,9 +482,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
         for (uint element_i = 0u; element_i < args.b; element_i += 1u)
         {
             uint element_row = args.a + element_i;
-            if (element_row >= element_total) break;
+            if (element_row < args.a || element_row >= element_total)
+            {
+                enum_padding = false;
+                break;
+            }
             SemanticLirAggregateElement candidate =
                 semantic_lir_aggregate_elements[element_row];
+            // Tagged-union padding is only valid after all payload words.
+            // A malformed element range or a gap before a later element must
+            // still fail closed instead of being silently zero-filled.
+            if (candidate.aggregate_instruction != semantic_row ||
+                candidate.word_offset == INVALID ||
+                candidate.word_count == 0u ||
+                candidate.word_offset > INVALID - candidate.word_count ||
+                candidate.word_offset + candidate.word_count > word)
+                enum_padding = false;
             if (word >= candidate.word_offset &&
                 word - candidate.word_offset < candidate.word_count)
             {
@@ -557,10 +572,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
             operands.b = 0u;
             operands.metadata = source.type_id | X86_LIR_METADATA_IMMEDIATE;
         }
+        else if (enum_padding && element.aggregate_instruction == INVALID)
+        {
+            operands.a = 0u;
+            operands.b = 0u;
+            operands.metadata = source.type_id | X86_LIR_METADATA_IMMEDIATE;
+        }
         target_lir_core[page_row] = core;
         target_lir_operands[page_row] = operands;
         target_semantic_origin[page_row] = semantic_row;
-        target_lir_flags[page_row] = enum_discriminant ? 0u :
+        target_lir_flags[page_row] = enum_discriminant ||
+            (enum_padding && element.aggregate_instruction == INVALID) ? 0u :
             element.aggregate_instruction == semantic_row &&
             element.value_instruction < gParams.semantic_capacity &&
             element.word_offset != INVALID && word >= element.word_offset &&

@@ -1,6 +1,7 @@
 mod common;
 
 use laniusc_compiler::compiler::{
+    compile_entry_to_x86_64_with_stdlib,
     compile_source_pack_to_x86_64_with_gpu_codegen,
     compile_source_to_x86_64_with_gpu_codegen,
 };
@@ -55,7 +56,7 @@ fn imported_declaration_only_generic_enum_executes_on_x86() {
 }
 
 #[test]
-fn generic_enum_construction_still_requires_concrete_layout() {
+fn concrete_generic_enum_values_execute_on_x86() {
     for (name, source) in [
         (
             "generic scalar constructor",
@@ -69,15 +70,50 @@ fn generic_enum_construction_still_requires_concrete_layout() {
             "generic wide match",
             include_str!("fixtures/stdlib_foundation/repro_generic_enum_local_wide.lani"),
         ),
+        (
+            "generic empty variant",
+            include_str!("fixtures/stdlib_foundation/repro_generic_enum_local_none.lani"),
+        ),
+        (
+            "generic two-argument payload",
+            include_str!("fixtures/stdlib_foundation/repro_generic_enum_local_multi_payload.lani"),
+        ),
     ] {
-        let error = common::run_gpu_codegen_with_timeout(name, move || {
+        let bytes = common::run_gpu_codegen_with_timeout(name, move || {
             pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(source))
         })
-        .expect_err("used generic enum must not emit an assumed payload layout");
-        assert_eq!(
-            error.to_public_diagnostic().code,
-            "LNC0017",
-            "{name}: {error:?}"
-        );
+        .expect("concrete generic enum should compile");
+        #[cfg(all(unix, target_arch = "x86_64"))]
+        {
+            let output = common::run_x86_64_elf_output(name, name, &bytes);
+            assert_eq!(output.status.code(), Some(0), "{name}: {output:?}");
+        }
+        #[cfg(not(all(unix, target_arch = "x86_64")))]
+        let _ = bytes;
     }
+}
+
+#[test]
+fn imported_generic_enum_constructor_still_needs_emit_type_projection() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_enum_local_match.lani");
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let error = common::run_gpu_codegen_with_timeout("imported generic enum value", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect_err("imported constructor should fail closed until emit type projection works");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn imported_option_generic_function_body_still_fails_closed() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_generic_option.lani");
+    let stdlib = root.join("stdlib");
+    let error = common::run_gpu_codegen_with_timeout("generic Option function body", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect_err("generic Option functions still require concrete specialization");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0017", "{error:?}");
 }

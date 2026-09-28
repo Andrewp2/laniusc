@@ -1,0 +1,19 @@
+pub struct Pair { first: i32, second: i32 }
+pub enum Choice<T, U> { Both(T, U), Neither }
+
+fn main() -> i32 {
+    let pair: Pair = Pair { first: 4, second: 9 };
+    let value: Choice<i32, Pair> = Both(3, pair);
+    let extracted: i32 = match (value) {
+        Both(other_left, other_right) -> other_left + other_right.second,
+        Neither -> 1,
+    };
+    if (extracted != 12) { return 1; }
+    let empty: Choice<i32, Pair> = Neither;
+    let missing: i32 = match (empty) {
+        Both(ignored_left, ignored_right) -> 1,
+        Neither -> 12,
+    };
+    if (missing != 12) { return 2; }
+    return 0;
+}

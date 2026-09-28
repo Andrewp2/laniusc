@@ -1,0 +1,11 @@
+pub enum Maybe<T> { Some(T), None }
+
+fn main() -> i32 {
+    let value: Maybe<i32> = None;
+    let extracted: i32 = match (value) {
+        Some(inner) -> inner,
+        None -> 7,
+    };
+    if (extracted != 7) { return 1; }
+    return 0;
+}

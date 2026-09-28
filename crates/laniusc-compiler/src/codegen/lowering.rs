@@ -597,6 +597,47 @@ fn register_semantic_inputs<'a>(
         "typecheck.semantic_aggregate_word_counts_by_hir",
         semantic.aggregate_word_count_by_hir
     );
+    buffer!("typecheck.type_instance_kind", semantic.type_instance_kind);
+    buffer!(
+        "typecheck.type_instance_decl_token",
+        semantic.type_instance_decl_token
+    );
+    buffer!(
+        "typecheck.type_instance_arg_count",
+        semantic.type_instance_arg_count
+    );
+    buffer!(
+        "typecheck.type_instance_arg_start",
+        semantic.type_instance_arg_start
+    );
+    buffer!(
+        "typecheck.type_instance_arg_ref_tag",
+        semantic.type_instance_arg_ref_tag
+    );
+    buffer!(
+        "typecheck.type_instance_arg_ref_payload",
+        semantic.type_instance_arg_ref_payload
+    );
+    buffer!(
+        "typecheck.type_instance_arg_row_start",
+        semantic.type_instance_arg_row_start
+    );
+    buffer!(
+        "typecheck.type_instance_arg_row_count",
+        semantic.type_instance_arg_row_count
+    );
+    buffer!(
+        "typecheck.type_instance_arg_row_ref_tag",
+        semantic.type_instance_arg_row_ref_tag
+    );
+    buffer!(
+        "typecheck.type_instance_arg_row_ref_payload",
+        semantic.type_instance_arg_row_ref_payload
+    );
+    buffer!(
+        "typecheck.type_generic_param_slot",
+        semantic.type_generic_param_slot
+    );
     buffer!(
         "typecheck.semantic_array_lengths_by_hir",
         semantic.array_length_by_hir
@@ -633,7 +674,7 @@ pub(crate) fn semantic_input_views<'a>(
     semantic: GpuSemanticArtifactView<'a>,
 ) -> Vec<TrackedBufferView<'a>> {
     let mut views = hir.tracked_views();
-    let semantic_views: [TrackedBufferView<'a>; 22] = [
+    let semantic_views: [TrackedBufferView<'a>; 33] = [
         semantic.value_decl_by_hir.into(),
         semantic.value_type_by_hir.into(),
         semantic.value_const_by_hir.into(),
@@ -649,6 +690,17 @@ pub(crate) fn semantic_input_views<'a>(
         semantic.expr_ref_payload_by_hir.into(),
         semantic.aggregate_decl_token_by_hir.into(),
         semantic.aggregate_word_count_by_hir.into(),
+        semantic.type_instance_kind.into(),
+        semantic.type_instance_decl_token.into(),
+        semantic.type_instance_arg_count.into(),
+        semantic.type_instance_arg_start.into(),
+        semantic.type_instance_arg_ref_tag.into(),
+        semantic.type_instance_arg_ref_payload.into(),
+        semantic.type_instance_arg_row_start.into(),
+        semantic.type_instance_arg_row_count.into(),
+        semantic.type_instance_arg_row_ref_tag.into(),
+        semantic.type_instance_arg_row_ref_payload.into(),
+        semantic.type_generic_param_slot.into(),
         semantic.array_length_by_hir.into(),
         semantic.member_field_ordinal_by_hir.into(),
         semantic.iterable_kind_by_hir.into(),
@@ -2756,6 +2808,13 @@ mod tests {
             method_cores: &method_cores,
             method_signatures: &method_signatures,
         };
+        let empty_type_instances = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_type_instances",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
+        let empty_instance_row_count =
+            storage_ro_from_u32s(&gpu.device, "test.empty_instance_row_count", &[0]);
         let semantic_inputs = GpuSemanticArtifactView {
             value_decl_by_hir: &visible,
             value_type_by_hir: &enclosing_fn,
@@ -2772,6 +2831,17 @@ mod tests {
             expr_ref_payload_by_hir: &semantic_ref_payloads,
             aggregate_decl_token_by_hir: &semantic_ref_payloads,
             aggregate_word_count_by_hir: &checked_layout_facts,
+            type_instance_kind: &empty_type_instances,
+            type_instance_decl_token: &empty_type_instances,
+            type_instance_arg_count: &empty_type_instances,
+            type_instance_arg_start: &empty_type_instances,
+            type_instance_arg_ref_tag: &empty_type_instances,
+            type_instance_arg_ref_payload: &empty_type_instances,
+            type_instance_arg_row_start: &empty_type_instances,
+            type_instance_arg_row_count: &empty_instance_row_count,
+            type_instance_arg_row_ref_tag: &empty_type_instances,
+            type_instance_arg_row_ref_payload: &empty_type_instances,
+            type_generic_param_slot: &empty_type_instances,
             array_length_by_hir: &semantic_array_lengths,
             member_field_ordinal_by_hir: &visible,
             iterable_kind_by_hir: &checked_layout_facts,
@@ -3065,6 +3135,13 @@ mod tests {
             method_cores: &method_cores,
             method_signatures: &method_signatures,
         };
+        let empty_type_instances = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_type_instances",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
+        let empty_instance_row_count =
+            storage_ro_from_u32s(&gpu.device, "test.empty_instance_row_count", &[0]);
         let semantic_inputs = GpuSemanticArtifactView {
             value_decl_by_hir: &checked_value_decls,
             value_type_by_hir: &checked_value_types,
@@ -3081,6 +3158,17 @@ mod tests {
             expr_ref_payload_by_hir: &semantic_ref_payloads,
             aggregate_decl_token_by_hir: &semantic_ref_payloads,
             aggregate_word_count_by_hir: &zero_by_hir,
+            type_instance_kind: &empty_type_instances,
+            type_instance_decl_token: &empty_type_instances,
+            type_instance_arg_count: &empty_type_instances,
+            type_instance_arg_start: &empty_type_instances,
+            type_instance_arg_ref_tag: &empty_type_instances,
+            type_instance_arg_ref_payload: &empty_type_instances,
+            type_instance_arg_row_start: &empty_type_instances,
+            type_instance_arg_row_count: &empty_instance_row_count,
+            type_instance_arg_row_ref_tag: &empty_type_instances,
+            type_instance_arg_row_ref_payload: &empty_type_instances,
+            type_generic_param_slot: &empty_type_instances,
             array_length_by_hir: &semantic_array_lengths,
             member_field_ordinal_by_hir: &invalid_tokens,
             iterable_kind_by_hir: &zero_by_hir,
@@ -3302,6 +3390,13 @@ mod tests {
             method_cores: &method_cores,
             method_signatures: &method_signatures,
         };
+        let empty_type_instances = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_type_instances",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
+        let empty_instance_row_count =
+            storage_ro_from_u32s(&gpu.device, "test.empty_instance_row_count", &[0]);
         let semantic_inputs = GpuSemanticArtifactView {
             value_decl_by_hir: &visible,
             value_type_by_hir: &enclosing,
@@ -3318,6 +3413,17 @@ mod tests {
             expr_ref_payload_by_hir: &semantic_ref_payloads,
             aggregate_decl_token_by_hir: &semantic_ref_payloads,
             aggregate_word_count_by_hir: &enclosing,
+            type_instance_kind: &empty_type_instances,
+            type_instance_decl_token: &empty_type_instances,
+            type_instance_arg_count: &empty_type_instances,
+            type_instance_arg_start: &empty_type_instances,
+            type_instance_arg_ref_tag: &empty_type_instances,
+            type_instance_arg_ref_payload: &empty_type_instances,
+            type_instance_arg_row_start: &empty_type_instances,
+            type_instance_arg_row_count: &empty_instance_row_count,
+            type_instance_arg_row_ref_tag: &empty_type_instances,
+            type_instance_arg_row_ref_payload: &empty_type_instances,
+            type_generic_param_slot: &empty_type_instances,
             array_length_by_hir: &semantic_array_lengths,
             member_field_ordinal_by_hir: &visible,
             iterable_kind_by_hir: &enclosing,
@@ -3560,6 +3666,13 @@ mod tests {
             method_cores: &method_cores,
             method_signatures: &method_signatures,
         };
+        let empty_type_instances = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_type_instances",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
+        let empty_instance_row_count =
+            storage_ro_from_u32s(&gpu.device, "test.empty_instance_row_count", &[0]);
         let semantic_inputs = GpuSemanticArtifactView {
             value_decl_by_hir: &visible,
             value_type_by_hir: &enclosing_fn,
@@ -3576,6 +3689,17 @@ mod tests {
             expr_ref_payload_by_hir: &semantic_ref_payloads,
             aggregate_decl_token_by_hir: &semantic_ref_payloads,
             aggregate_word_count_by_hir: &checked_layout_facts,
+            type_instance_kind: &empty_type_instances,
+            type_instance_decl_token: &empty_type_instances,
+            type_instance_arg_count: &empty_type_instances,
+            type_instance_arg_start: &empty_type_instances,
+            type_instance_arg_ref_tag: &empty_type_instances,
+            type_instance_arg_ref_payload: &empty_type_instances,
+            type_instance_arg_row_start: &empty_type_instances,
+            type_instance_arg_row_count: &empty_instance_row_count,
+            type_instance_arg_row_ref_tag: &empty_type_instances,
+            type_instance_arg_row_ref_payload: &empty_type_instances,
+            type_generic_param_slot: &empty_type_instances,
             array_length_by_hir: &semantic_array_lengths,
             member_field_ordinal_by_hir: &visible,
             iterable_kind_by_hir: &checked_layout_facts,

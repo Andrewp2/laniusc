@@ -1325,6 +1325,61 @@ fn build_lowering_compiler_graph(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
+    let type_instance_kind = graph.add_resource(input(
+        "typecheck.type_instance_kind",
+        ResourceDomain::Tokens,
+        LoweringCapacities::bytes::<u32>(capacities.tokens),
+    ))?;
+    let type_instance_decl_token = graph.add_resource(input(
+        "typecheck.type_instance_decl_token",
+        ResourceDomain::Tokens,
+        LoweringCapacities::bytes::<u32>(capacities.tokens),
+    ))?;
+    let type_instance_arg_count = graph.add_resource(input(
+        "typecheck.type_instance_arg_count",
+        ResourceDomain::Tokens,
+        LoweringCapacities::bytes::<u32>(capacities.tokens),
+    ))?;
+    let type_instance_arg_start = graph.add_resource(input(
+        "typecheck.type_instance_arg_start",
+        ResourceDomain::Tokens,
+        LoweringCapacities::bytes::<u32>(capacities.tokens),
+    ))?;
+    let type_instance_arg_ref_tag = graph.add_resource(input(
+        "typecheck.type_instance_arg_ref_tag",
+        ResourceDomain::Tokens,
+        LoweringCapacities::bytes::<u32>(capacities.tokens.saturating_mul(4)),
+    ))?;
+    let type_instance_arg_ref_payload = graph.add_resource(input(
+        "typecheck.type_instance_arg_ref_payload",
+        ResourceDomain::Tokens,
+        LoweringCapacities::bytes::<u32>(capacities.tokens.saturating_mul(4)),
+    ))?;
+    let type_instance_arg_row_start = graph.add_resource(input(
+        "typecheck.type_instance_arg_row_start",
+        ResourceDomain::Tokens,
+        LoweringCapacities::bytes::<u32>(capacities.tokens),
+    ))?;
+    let type_instance_arg_row_count = graph.add_resource(input(
+        "typecheck.type_instance_arg_row_count",
+        ResourceDomain::Tokens,
+        LoweringCapacities::bytes::<u32>(1),
+    ))?;
+    let type_instance_arg_row_ref_tag = graph.add_resource(input(
+        "typecheck.type_instance_arg_row_ref_tag",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let type_instance_arg_row_ref_payload = graph.add_resource(input(
+        "typecheck.type_instance_arg_row_ref_payload",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
+    let type_generic_param_slot = graph.add_resource(input(
+        "typecheck.type_generic_param_slot",
+        ResourceDomain::Tokens,
+        LoweringCapacities::bytes::<u32>(capacities.tokens),
+    ))?;
     let semantic_array_lengths = graph.add_resource(input(
         "typecheck.semantic_array_lengths_by_hir",
         ResourceDomain::HirNodes,
@@ -2616,6 +2671,26 @@ fn build_lowering_compiler_graph(
                 "semantic_aggregate_word_count",
                 semantic_aggregate_word_counts,
             ),
+            PassAccess::read("type_instance_kind", type_instance_kind),
+            PassAccess::read("type_instance_decl_token", type_instance_decl_token),
+            PassAccess::read("type_instance_arg_count", type_instance_arg_count),
+            PassAccess::read("type_instance_arg_start", type_instance_arg_start),
+            PassAccess::read("type_instance_arg_ref_tag", type_instance_arg_ref_tag),
+            PassAccess::read(
+                "type_instance_arg_ref_payload",
+                type_instance_arg_ref_payload,
+            ),
+            PassAccess::read("type_instance_arg_row_start", type_instance_arg_row_start),
+            PassAccess::read("type_instance_arg_row_count", type_instance_arg_row_count),
+            PassAccess::read(
+                "type_instance_arg_row_ref_tag",
+                type_instance_arg_row_ref_tag,
+            ),
+            PassAccess::read(
+                "type_instance_arg_row_ref_payload",
+                type_instance_arg_row_ref_payload,
+            ),
+            PassAccess::read("type_generic_param_slot", type_generic_param_slot),
             PassAccess::read("semantic_array_length", semantic_array_lengths),
             PassAccess::read("semantic_iterable_kind", semantic_iterable_kinds),
             PassAccess::read("semantic_value_id", semantic_value_ids),
@@ -2681,6 +2756,13 @@ fn build_lowering_compiler_graph(
             PassAccess::read("compact_call_args", hir_call_args),
             PassAccess::read("compact_variant_count", hir_variant_count),
             PassAccess::read("compact_variants", hir_variants),
+            PassAccess::read("compact_variant_payload_start", hir_variant_payload_start),
+            PassAccess::read("compact_variant_payload_count", hir_variant_payload_count),
+            PassAccess::read(
+                "compact_variant_payload_row_count",
+                hir_variant_payload_row_count,
+            ),
+            PassAccess::read("compact_variant_payloads", hir_variant_payloads),
             PassAccess::read("compact_match_arm_count", hir_match_arm_count),
             PassAccess::read("compact_match_arms", hir_match_arms),
             PassAccess::read("compact_match_payload_start", hir_match_payload_start),
@@ -10893,7 +10975,10 @@ mod tests {
             ),
             ("lir.x86.artifact.layout", "codegen/lir/x86/artifact_layout"),
             ("lir.x86.artifact.clear", "codegen/lir/x86/artifact_clear"),
-            ("lir.x86.specialized.emit", "codegen/lir/x86/specialized_emit"),
+            (
+                "lir.x86.specialized.emit",
+                "codegen/lir/x86/specialized_emit",
+            ),
             ("lir.x86.emit", "codegen/lir/x86/emit"),
             ("lir.x86.runtime.emit", "codegen/lir/x86/runtime_emit"),
             (
