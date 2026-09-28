@@ -1,0 +1,176 @@
+module app::main;
+import core::transcode;
+import core::utf16;
+
+fn main() -> i32 {
+    let b0: u8 = 0;
+    let b65: u8 = 65;
+    let bc2: u8 = 194;
+    let ba2: u8 = 162;
+    let be2: u8 = 226;
+    let b82: u8 = 130;
+    let bac: u8 = 172;
+    let bf0: u8 = 240;
+    let b9f: u8 = 159;
+    let b98: u8 = 152;
+    let b80: u8 = 128;
+    let source: [u8; 11] = [b65, bc2, ba2, be2, b82, bac,
+        bf0, b9f, b98, b80, b0];
+    let sentinel: u16 = 999;
+    let units: [u16; 6] = [sentinel, sentinel, sentinel,
+        sentinel, sentinel, sentinel];
+    let encoded: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16(source, 11, units, 6);
+    if (!core::transcode::succeeded(encoded) ||
+        core::transcode::status(encoded) != core::utf16::STATUS_OK ||
+        core::transcode::read_or(encoded, -1) != 11 ||
+        core::transcode::written_or(encoded, -1) != 6 ||
+        units[0] != 65 || units[1] != 162 || units[2] != 8364 ||
+        units[3] != 55357 || units[4] != 56832 || units[5] != 0) {
+        return 1;
+    }
+
+    let output: [u8; 11] = [b0, b0, b0, b0, b0, b0,
+        b0, b0, b0, b0, b0];
+    let decoded: core::transcode::TranscodeResult =
+        core::transcode::utf16_to_utf8(units, 6, output, 11);
+    if (!core::transcode::succeeded(decoded) ||
+        core::transcode::read_or(decoded, -1) != 6 ||
+        core::transcode::written_or(decoded, -1) != 11 ||
+        output[0] != b65 || output[1] != bc2 || output[2] != ba2 ||
+        output[3] != be2 || output[4] != b82 || output[5] != bac ||
+        output[6] != bf0 || output[7] != b9f || output[8] != b98 ||
+        output[9] != b80 || output[10] != b0) { return 2; }
+
+    let bf4: u8 = 244;
+    let b8f: u8 = 143;
+    let bbf: u8 = 191;
+    let max_source: [u8; 4] = [bf4, b8f, bbf, bbf];
+    let max_units: [u16; 2] = [sentinel, sentinel];
+    let max_output: [u8; 4] = [b0, b0, b0, b0];
+    let max_forward: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16(max_source, 4, max_units, 2);
+    let max_reverse: core::transcode::TranscodeResult =
+        core::transcode::utf16_to_utf8(max_units, 2, max_output, 4);
+    if (!core::transcode::succeeded(max_forward) ||
+        !core::transcode::succeeded(max_reverse) ||
+        max_units[0] != 56319 || max_units[1] != 57343 ||
+        max_output[0] != bf4 || max_output[1] != b8f ||
+        max_output[2] != bbf || max_output[3] != bbf) { return 7; }
+
+    let untouched_units: [u16; 6] = [sentinel, sentinel, sentinel,
+        sentinel, sentinel, sentinel];
+    let too_short: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16(source, 11, untouched_units, 5);
+    let bad_length: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16(source, -1, untouched_units, 6);
+    let bad_capacity: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16(source, 11, untouched_units, -1);
+    let bc0: u8 = 192;
+    let malformed: [u8; 2] = [bc0, b80];
+    let invalid: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16(malformed, 2, untouched_units, 6);
+    let late_malformed: [u8; 3] = [b65, bc0, b80];
+    let invalid_suffix: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16(late_malformed, 3, untouched_units, 6);
+    let truncated: [u8; 2] = [be2, b82];
+    let incomplete: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16(truncated, 2, untouched_units, 6);
+    let bed: u8 = 237;
+    let ba0: u8 = 160;
+    let surrogate: [u8; 3] = [bed, ba0, b80];
+    let non_scalar: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16(surrogate, 3, untouched_units, 6);
+    let b90: u8 = 144;
+    let out_of_range: [u8; 4] = [bf4, b90, b80, b80];
+    let too_high: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16(out_of_range, 4, untouched_units, 6);
+    if (core::transcode::succeeded(too_short) ||
+        core::transcode::status(too_short) != core::utf16::STATUS_SHORT ||
+        core::transcode::status(bad_length) != core::utf16::STATUS_BOUNDS ||
+        core::transcode::status(bad_capacity) != core::utf16::STATUS_BOUNDS ||
+        core::transcode::status(invalid) != core::utf16::STATUS_MALFORMED ||
+        core::transcode::status(invalid_suffix) !=
+            core::utf16::STATUS_MALFORMED ||
+        core::transcode::status(incomplete) != core::utf16::STATUS_MALFORMED ||
+        core::transcode::status(non_scalar) != core::utf16::STATUS_MALFORMED ||
+        core::transcode::status(too_high) != core::utf16::STATUS_MALFORMED ||
+        core::transcode::read_or(too_short, 77) != 77 ||
+        core::transcode::written_or(invalid, 77) != 77 ||
+        untouched_units[0] != sentinel || untouched_units[1] != sentinel ||
+        untouched_units[2] != sentinel || untouched_units[3] != sentinel ||
+        untouched_units[4] != sentinel || untouched_units[5] != sentinel) {
+        return 3;
+    }
+
+    let untouched_byte: u8 = 99;
+    let untouched_bytes: [u8; 11] = [untouched_byte, untouched_byte,
+        untouched_byte, untouched_byte, untouched_byte, untouched_byte,
+        untouched_byte, untouched_byte, untouched_byte, untouched_byte,
+        untouched_byte];
+    let short_reverse: core::transcode::TranscodeResult =
+        core::transcode::utf16_to_utf8(units, 6, untouched_bytes, 10);
+    let bad_reverse_length: core::transcode::TranscodeResult =
+        core::transcode::utf16_to_utf8(units, -1, untouched_bytes, 11);
+    let bad_reverse_capacity: core::transcode::TranscodeResult =
+        core::transcode::utf16_to_utf8(units, 6, untouched_bytes, -1);
+    let high: u16 = 55296;
+    let low: u16 = 56320;
+    let lone_high: [u16; 1] = [high];
+    let lone_low: [u16; 1] = [low];
+    let invalid_high: core::transcode::TranscodeResult =
+        core::transcode::utf16_to_utf8(lone_high, 1, untouched_bytes, 11);
+    let invalid_low: core::transcode::TranscodeResult =
+        core::transcode::utf16_to_utf8(lone_low, 1, untouched_bytes, 11);
+    let ordinary: u16 = 65;
+    let late_high: [u16; 2] = [ordinary, high];
+    let invalid_reverse_suffix: core::transcode::TranscodeResult =
+        core::transcode::utf16_to_utf8(late_high, 2, untouched_bytes, 11);
+    if (core::transcode::status(short_reverse) != core::utf16::STATUS_SHORT ||
+        core::transcode::status(bad_reverse_length) !=
+            core::utf16::STATUS_BOUNDS ||
+        core::transcode::status(bad_reverse_capacity) !=
+            core::utf16::STATUS_BOUNDS ||
+        core::transcode::status(invalid_high) !=
+            core::utf16::STATUS_MALFORMED ||
+        core::transcode::status(invalid_low) !=
+            core::utf16::STATUS_MALFORMED ||
+        core::transcode::status(invalid_reverse_suffix) !=
+            core::utf16::STATUS_MALFORMED ||
+        untouched_bytes[0] != untouched_byte ||
+        untouched_bytes[1] != untouched_byte ||
+        untouched_bytes[5] != untouched_byte ||
+        untouched_bytes[10] != untouched_byte) { return 4; }
+
+    let empty_bytes: [u8; 1] = [b65];
+    let empty_units: [u16; 1] = [sentinel];
+    let empty_forward: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16(empty_bytes, 0, empty_units, 0);
+    let empty_reverse: core::transcode::TranscodeResult =
+        core::transcode::utf16_to_utf8(empty_units, 0, empty_bytes, 0);
+    if (!core::transcode::succeeded(empty_forward) ||
+        !core::transcode::succeeded(empty_reverse) ||
+        core::transcode::written_or(empty_forward, -1) != 0 ||
+        core::transcode::written_or(empty_reverse, -1) != 0 ||
+        empty_bytes[0] != b65 || empty_units[0] != sentinel) { return 5; }
+
+    let ascii: [u8; 1] = [b0];
+    let ascii_units: [u16; 1] = [sentinel];
+    let ascii_back: [u8; 1] = [untouched_byte];
+    let code: i32 = 0;
+    while (code < 128) {
+        let byte: u8 = code;
+        ascii[0] = byte;
+        let forward: core::transcode::TranscodeResult =
+            core::transcode::utf8_to_utf16(ascii, 1, ascii_units, 1);
+        let reverse: core::transcode::TranscodeResult =
+            core::transcode::utf16_to_utf8(ascii_units, 1, ascii_back, 1);
+        if (!core::transcode::succeeded(forward) ||
+            !core::transcode::succeeded(reverse) ||
+            ascii_units[0] != code || ascii_back[0] != byte) {
+            return 6;
+        }
+        code += 1;
+    }
+    return 0;
+}

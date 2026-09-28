@@ -1,0 +1,138 @@
+// Strict, allocation-free UTF-8/UTF-16 transcoding between caller-backed
+// views. The source and destination must not overlap. Logical failures are
+// detected before writing; overstated physical backing may trap on indexing.
+module core::transcode;
+import core::utf8;
+import core::utf16;
+
+pub struct TranscodeResult {
+    status: i32,
+    read: i32,
+    written: i32,
+}
+
+pub fn succeeded(result: TranscodeResult) -> bool {
+    return result.status == core::utf16::STATUS_OK;
+}
+
+pub fn status(result: TranscodeResult) -> i32 {
+    return result.status;
+}
+
+pub fn read_or(result: TranscodeResult, fallback: i32) -> i32 {
+    if (succeeded(result)) { return result.read; }
+    return fallback;
+}
+
+pub fn written_or(result: TranscodeResult, fallback: i32) -> i32 {
+    if (succeeded(result)) { return result.written; }
+    return fallback;
+}
+
+fn failure(code: i32) -> TranscodeResult {
+    return TranscodeResult { status: code, read: 0, written: 0 };
+}
+
+// The caller validates the complete view before this helper runs.
+fn utf8_scalar_at(bytes: [u8], offset: i32, width: i32) -> u32 {
+    let first: u8 = bytes[offset];
+    let second: u8 = 0;
+    let third: u8 = 0;
+    let fourth: u8 = 0;
+    if (width > 1) { second = bytes[offset + 1]; }
+    if (width > 2) { third = bytes[offset + 2]; }
+    if (width > 3) { fourth = bytes[offset + 3]; }
+    let count: u32 = width;
+    return core::utf8::decode_or(first, second, third, fourth,
+        count, 4294967295);
+}
+
+// On a negative logical length or capacity return STATUS_BOUNDS. Malformed
+// UTF-8 returns STATUS_MALFORMED. Too little logical destination space returns
+// STATUS_SHORT. Every such failure leaves the destination unchanged. Success
+// reports source bytes read and UTF-16 units written.
+pub fn utf8_to_utf16(source: [u8], source_len: i32,
+                     destination: [u16], capacity: i32) -> TranscodeResult {
+    if (source_len < 0 || capacity < 0) {
+        return failure(core::utf16::STATUS_BOUNDS);
+    }
+    if (!core::utf8::bytes_are_valid(source, source_len)) {
+        return failure(core::utf16::STATUS_MALFORMED);
+    }
+    let offset: i32 = 0;
+    let needed: i32 = 0;
+    while (offset < source_len) {
+        let width_u32: u32 = core::utf8::sequence_len_or(source[offset], 0);
+        let width: i32 = width_u32;
+        let scalar: u32 = utf8_scalar_at(source, offset, width);
+        let units: i32 = core::utf16::encoded_len_or(scalar, -1);
+        if (units < 0) { return failure(core::utf16::STATUS_MALFORMED); }
+        if (units > capacity - needed) {
+            return failure(core::utf16::STATUS_SHORT);
+        }
+        needed += units;
+        offset += width;
+    }
+    offset = 0;
+    let written: i32 = 0;
+    while (offset < source_len) {
+        let width_u32: u32 = core::utf8::sequence_len_or(source[offset], 0);
+        let width: i32 = width_u32;
+        let scalar: u32 = utf8_scalar_at(source, offset, width);
+        let result: core::utf16::Utf16Write =
+            core::utf16::write_scalar(destination, capacity, written, scalar);
+        if (!core::utf16::write_succeeded(result)) {
+            return failure(core::utf16::write_status(result));
+        }
+        written = core::utf16::write_next_or(result, written);
+        offset += width;
+    }
+    return TranscodeResult {
+        status: core::utf16::STATUS_OK, read: source_len, written: written,
+    };
+}
+
+// The reverse conversion applies the same all-or-nothing logical checks.
+// Success reports UTF-16 units read and UTF-8 bytes written.
+pub fn utf16_to_utf8(source: [u16], source_len: i32,
+                     destination: [u8], capacity: i32) -> TranscodeResult {
+    if (source_len < 0 || capacity < 0) {
+        return failure(core::utf16::STATUS_BOUNDS);
+    }
+    if (!core::utf16::validate(source, source_len)) {
+        return failure(core::utf16::STATUS_MALFORMED);
+    }
+    let offset: i32 = 0;
+    let needed: i32 = 0;
+    while (offset < source_len) {
+        let decoded: core::utf16::Utf16Decode =
+            core::utf16::decode_next(source, source_len, offset);
+        let scalar: u32 = core::utf16::decode_scalar_or(decoded, 4294967295);
+        let width_u32: u32 = core::utf8::encoded_len_or(scalar, 0);
+        let width: i32 = width_u32;
+        if (width == 0) { return failure(core::utf16::STATUS_MALFORMED); }
+        if (width > capacity - needed) {
+            return failure(core::utf16::STATUS_SHORT);
+        }
+        needed += width;
+        offset = core::utf16::decode_next_or(decoded, source_len);
+    }
+    offset = 0;
+    let written: i32 = 0;
+    while (offset < source_len) {
+        let decoded: core::utf16::Utf16Decode =
+            core::utf16::decode_next(source, source_len, offset);
+        let scalar: u32 = core::utf16::decode_scalar_or(decoded, 0);
+        let width: u32 = core::utf8::encoded_len_or(scalar, 0);
+        let index: u32 = 0;
+        while (index < width) {
+            destination[written] = core::utf8::encoded_byte_or(scalar, index, 0);
+            written += 1;
+            index += 1;
+        }
+        offset = core::utf16::decode_next_or(decoded, source_len);
+    }
+    return TranscodeResult {
+        status: core::utf16::STATUS_OK, read: source_len, written: written,
+    };
+}

@@ -1,0 +1,46 @@
+// Read up to 64 UTF-8 bytes and print UTF-16 unit and Unicode scalar counts.
+// Reject malformed UTF-8 and oversized input without partial output.
+module app::main;
+import core::transcode;
+import core::utf16;
+import std::io;
+import std::io_byte;
+import std::io_decimal;
+
+fn main() -> i32 {
+    let zero: u8 = 0;
+    let bytes: [u8; 64] = [
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero
+    ];
+    let length: i32 = 0;
+    while (true) {
+        let code: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+        if (code == -1) { break; }
+        if (code == -2) { return 2; }
+        if (length >= 64) { return 3; }
+        let byte: u8 = code;
+        bytes[length] = byte;
+        length += 1;
+    }
+    let unit_zero: u16 = 0;
+    let units: [u16; 64] = [
+        unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero,
+        unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero,
+        unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero,
+        unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero, unit_zero
+    ];
+    let converted: core::transcode::TranscodeResult =
+        core::transcode::utf8_to_utf16(bytes, length, units, 64);
+    if (!core::transcode::succeeded(converted)) { return 3; }
+    let unit_count: i32 = core::transcode::written_or(converted, -1);
+    let scalar_count: i32 = core::utf16::scalar_count_or(units, unit_count, -1);
+    if (unit_count < 0 || scalar_count < 0) { return 3; }
+    if (std::io_decimal::write_i32(1, unit_count) < 0 ||
+        std::io::write_byte(1, 10) != 1 ||
+        std::io_decimal::write_i32(1, scalar_count) < 0 ||
+        std::io::write_byte(1, 10) != 1) { return 4; }
+    return 0;
+}
