@@ -16,15 +16,17 @@ fn compile_fixture(name: &str) -> Vec<u8> {
 fn every_public_wide_vector_function_has_a_runtime_call() {
     let source = include_str!("../stdlib/std/vec_wide_i64.lani");
     let fixture = include_str!("fixtures/stdlib_foundation/vec_wide_i64.lani");
+    let order_fixture = include_str!("fixtures/stdlib_foundation/vec_wide_i64_order.lani");
     let names: Vec<_> = source
         .lines()
         .filter_map(|line| line.strip_prefix("pub fn "))
         .map(|declaration| declaration.split('(').next().expect("function name"))
         .collect();
-    assert_eq!(names.len(), 19);
+    assert_eq!(names.len(), 25);
     for name in names {
         assert!(
-            fixture.contains(&format!("std::vec_wide_i64::{name}(")),
+            fixture.contains(&format!("std::vec_wide_i64::{name}("))
+                || order_fixture.contains(&format!("std::vec_wide_i64::{name}(")),
             "{name}"
         );
     }

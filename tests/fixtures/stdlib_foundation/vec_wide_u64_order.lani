@@ -1,0 +1,95 @@
+// Full-width unsigned order over owned paired-word storage.
+module app::main;
+import core::wide_u64;
+import core::wide_word_cells;
+import std::vec_wide_u64;
+
+fn main() -> i32 {
+    let direct: [i32; 6] = [-1, -1, 0, 0, 0, -2147483648];
+    if (core::wide_word_cells::MAX_LENGTH != 1073741823 ||
+        core::wide_word_cells::sort(direct, -1, false) != 0 ||
+        core::wide_word_cells::sort(direct, 1073741824, false) != 0 ||
+        core::wide_word_cells::reverse_in_place(direct, 1073741824) != 0 ||
+        core::wide_word_cells::lower_bound(direct, -1, 0, 0, false) != 0 ||
+        core::wide_word_cells::upper_bound(direct, 1073741824, 0, 0, false) != 0 ||
+        direct[0] != -1 || direct[1] != -1) { return 12; }
+    if (core::wide_word_cells::sort(direct, 3, false) != 3 ||
+        direct[0] != 0 || direct[1] != 0 ||
+        direct[2] != 0 || direct[3] != -2147483648 ||
+        direct[4] != -1 || direct[5] != -1) { return 1; }
+    if (core::wide_word_cells::lower_bound(direct, 3, -2147483648, 0, false) != 1 ||
+        core::wide_word_cells::upper_bound(direct, 3, -2147483648, 0, false) != 2) { return 2; }
+    if (core::wide_word_cells::reverse_in_place(direct, 3) != 1 ||
+        direct[0] != -1 || direct[1] != -1 ||
+        direct[4] != 0 || direct[5] != 0) { return 3; }
+
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let two: core::wide_u64::WideU64 = core::wide_u64::from_u32(2);
+    let boundary: core::wide_u64::WideU64 = core::wide_u64::from_words(1, 0);
+    let high_bit: u32 = 2147483648;
+    let maximum_word: u32 = 4294967295;
+    let high: core::wide_u64::WideU64 = core::wide_u64::from_words(high_bit, 0);
+    let maximum: core::wide_u64::WideU64 = core::wide_u64::from_words(maximum_word, maximum_word);
+    let empty: std::vec_wide_u64::VecWideU64 = std::vec_wide_u64::new();
+    if (std::vec_wide_u64::sort_in_place(empty) != 0 ||
+        std::vec_wide_u64::reverse_in_place(empty) != 0 ||
+        std::vec_wide_u64::lower_bound(empty, high) != 0 ||
+        std::vec_wide_u64::upper_bound(empty, high) != 0 ||
+        std::vec_wide_u64::binary_search_first_or(empty, high, -9) != -9 ||
+        std::vec_wide_u64::binary_search_last_or(empty, high, -7) != -7) { return 4; }
+    std::vec_wide_u64::destroy(empty);
+
+    let single: std::vec_wide_u64::VecWideU64 = std::vec_wide_u64::try_with_capacity(2);
+    single = std::vec_wide_u64::try_push(single, high);
+    if (std::vec_wide_u64::len(single) != 1 ||
+        std::vec_wide_u64::sort_in_place(single) != 1 ||
+        std::vec_wide_u64::reverse_in_place(single) != 0 ||
+        std::vec_wide_u64::lower_bound(single, high) != 0 ||
+        std::vec_wide_u64::upper_bound(single, high) != 1 ||
+        std::vec_wide_u64::binary_search_first_or(single, high, -1) != 0 ||
+        std::vec_wide_u64::binary_search_last_or(single, maximum, -1) != -1 ||
+        std::vec_wide_u64::capacity(single) != 2) { return 5; }
+    std::vec_wide_u64::destroy(single);
+
+    let owned: std::vec_wide_u64::VecWideU64 = std::vec_wide_u64::new();
+    owned = std::vec_wide_u64::try_push(owned, maximum);
+    owned = std::vec_wide_u64::try_push(owned, zero);
+    owned = std::vec_wide_u64::try_push(owned, boundary);
+    owned = std::vec_wide_u64::try_push(owned, maximum);
+    owned = std::vec_wide_u64::try_push(owned, high);
+    owned = std::vec_wide_u64::try_push(owned, two);
+    owned = std::vec_wide_u64::try_push(owned, boundary);
+    owned = std::vec_wide_u64::try_push(owned, high);
+    if (std::vec_wide_u64::len(owned) != 8 ||
+        std::vec_wide_u64::capacity(owned) != 8) { return 6; }
+    if (std::vec_wide_u64::sort_in_place(owned) != 8 ||
+        !core::wide_u64::eq(std::vec_wide_u64::get_or(owned, 0, maximum), zero) ||
+        !core::wide_u64::eq(std::vec_wide_u64::get_or(owned, 1, zero), two) ||
+        !core::wide_u64::eq(std::vec_wide_u64::get_or(owned, 2, zero), boundary) ||
+        !core::wide_u64::eq(std::vec_wide_u64::get_or(owned, 3, zero), boundary) ||
+        !core::wide_u64::eq(std::vec_wide_u64::get_or(owned, 4, zero), high) ||
+        !core::wide_u64::eq(std::vec_wide_u64::get_or(owned, 5, zero), high) ||
+        !core::wide_u64::eq(std::vec_wide_u64::get_or(owned, 6, zero), maximum) ||
+        !core::wide_u64::eq(std::vec_wide_u64::get_or(owned, 7, zero), maximum)) { return 7; }
+    if (std::vec_wide_u64::lower_bound(owned, zero) != 0 ||
+        std::vec_wide_u64::upper_bound(owned, zero) != 1 ||
+        std::vec_wide_u64::lower_bound(owned, boundary) != 2 ||
+        std::vec_wide_u64::upper_bound(owned, boundary) != 4 ||
+        std::vec_wide_u64::lower_bound(owned, high) != 4 ||
+        std::vec_wide_u64::upper_bound(owned, high) != 6 ||
+        std::vec_wide_u64::upper_bound(owned, maximum) != 8) { return 8; }
+    if (std::vec_wide_u64::binary_search_first_or(owned, high, -1) != 4 ||
+        std::vec_wide_u64::binary_search_last_or(owned, high, -1) != 5 ||
+        std::vec_wide_u64::binary_search_first_or(owned, maximum, -1) != 6 ||
+        std::vec_wide_u64::binary_search_last_or(owned, maximum, -1) != 7 ||
+        std::vec_wide_u64::binary_search_first_or(owned, core::wide_u64::from_u32(3), -12) != -12 ||
+        std::vec_wide_u64::binary_search_last_or(owned, core::wide_u64::from_words(1, 1), -13) != -13) { return 9; }
+    if (std::vec_wide_u64::reverse_in_place(owned) != 4 ||
+        !core::wide_u64::eq(std::vec_wide_u64::get_or(owned, 0, zero), maximum) ||
+        !core::wide_u64::eq(std::vec_wide_u64::get_or(owned, 7, maximum), zero)) { return 10; }
+    if (std::vec_wide_u64::sort_in_place(owned) != 8 ||
+        std::vec_wide_u64::binary_search_last_or(owned, boundary, -1) != 3 ||
+        std::vec_wide_u64::capacity(owned) != 8) { return 11; }
+    std::vec_wide_u64::destroy(owned);
+    return 0;
+}

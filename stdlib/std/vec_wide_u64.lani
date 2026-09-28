@@ -7,6 +7,7 @@ module std::vec_wide_u64;
 import alloc::allocator;
 import core::mem;
 import core::wide_u64;
+import core::wide_word_cells;
 pub struct VecWideU64 {
     storage: ptr,
     length: i32,
@@ -220,6 +221,62 @@ pub fn try_set(value: VecWideU64, index: i32, item: core::wide_u64::WideU64) -> 
     cells[offset + 1] = high as i32;
     return true;
 }
+// Sort initialized two-word values in unsigned ascending order. Return len
+// and retain the allocation and capacity.
+pub fn sort_in_place(value: VecWideU64) -> i32 {
+    if (value.length <= 1) { return value.length; }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length * 2);
+    return core::wide_word_cells::sort(cells, value.length, false);
+}
+
+// Reverse initialized values and return the number of pair swaps.
+pub fn reverse_in_place(value: VecWideU64) -> i32 {
+    if (value.length <= 1) { return 0; }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length * 2);
+    return core::wide_word_cells::reverse_in_place(cells, value.length);
+}
+
+// Search requires nondecreasing unsigned order. Bounds range from zero to
+// len; empty vectors return zero without accessing storage.
+pub fn lower_bound(value: VecWideU64, needle: core::wide_u64::WideU64) -> i32 {
+    if (value.length == 0) { return 0; }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length * 2);
+    let high_bits: i32 = core::wide_u64::high_word(needle);
+    let low_bits: i32 = core::wide_u64::low_word(needle);
+    return core::wide_word_cells::lower_bound(
+        cells, value.length, high_bits, low_bits, false);
+}
+
+pub fn upper_bound(value: VecWideU64, needle: core::wide_u64::WideU64) -> i32 {
+    if (value.length == 0) { return 0; }
+    let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length * 2);
+    let high_bits: i32 = core::wide_u64::high_word(needle);
+    let low_bits: i32 = core::wide_u64::low_word(needle);
+    return core::wide_word_cells::upper_bound(
+        cells, value.length, high_bits, low_bits, false);
+}
+
+// Return first or last matching index, or caller fallback when absent.
+pub fn binary_search_first_or(value: VecWideU64, needle: core::wide_u64::WideU64,
+                              fallback: i32) -> i32 {
+    let index: i32 = lower_bound(value, needle);
+    if (index < value.length &&
+        core::wide_u64::eq(get_or(value, index, core::wide_u64::zero()), needle)) {
+        return index;
+    }
+    return fallback;
+}
+
+pub fn binary_search_last_or(value: VecWideU64, needle: core::wide_u64::WideU64,
+                             fallback: i32) -> i32 {
+    let after: i32 = upper_bound(value, needle);
+    if (after > 0 &&
+        core::wide_u64::eq(get_or(value, after - 1, core::wide_u64::zero()), needle)) {
+        return after - 1;
+    }
+    return fallback;
+}
+
 // Empty pop is a no-op; read the last item first when needed.
 pub fn try_pop(value: VecWideU64) -> VecWideU64 {
     if (value.length == 0) {

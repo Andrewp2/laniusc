@@ -1,0 +1,9 @@
+// Two logical pairs cannot be sorted over only two physical words.
+module app::main;
+import core::wide_word_cells;
+
+fn main() -> i32 {
+    let cells: [i32; 2] = [0, 0];
+    core::wide_word_cells::sort(cells, 2, false);
+    return 0;
+}
