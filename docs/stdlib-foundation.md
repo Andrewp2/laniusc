@@ -40,6 +40,7 @@ limited to native x86_64 output from this worktree.
 | Legacy `stdlib/array_i32_4.lani` all 14 public functions | Executable on x86_64 when included as source | A source-level native fixture checks length, access, search, fallback indices, extrema, a representable sum, and caller-backed copy, fill, and reverse. Fixed-array-returning predecessors were removed; see dependency 7. |
 | `core::range` free functions for all five i32 and u32 range forms, and methods for `Range`, `RangeInclusive`, `RangeFrom`, and `RangeTo` specialized to i32 or u32 | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership, including values across the u32 high bit. The imported u32 method reproducer also checks that same-name i32 and u32 methods select the correct body. There is no `RangeFull` method claim. |
 | `core::wide_u64_range` all 19 public free functions and 14 receiver methods | Executable on x86_64 | The imported runtime fixture calls every function and method for half-open, inclusive, from, and to ranges. It checks endpoints and membership across the two-word boundary and unsigned high bit, equal and reversed bounds, touching and overlapping intervals, and zero and maximum values. `full_contains` covers the unbounded full domain as a scalar predicate. Range values store four or two flat `u32` words; imported nested wide aggregates and `RangeFull` forwarding remain compiler dependencies. |
+| `core::wide_i64_range` all 19 public free functions and 14 receiver methods | Executable on x86_64 | The imported runtime fixture calls every function and method for half-open, inclusive, from, and to ranges. It checks signed minimum and maximum, negative values in the same high word, the negative-to-zero boundary, equal and reversed bounds, touching and overlapping intervals, and full-domain membership. Range values store flat `u32` endpoint words and compare them in signed two's-complement order; no native `i64` behavior is claimed. |
 | `core::range_u8` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check half-open, inclusive, from, to, and full byte ranges, including reversed and equal bounds, touching intervals, and the byte maximum. The aggregate forms use `RangeU8`, `RangeInclusiveU8`, `RangeFromU8`, and `RangeToU8`. |
 | `core::range_i8` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-128`, `127`, touching intervals, and empty or reversed bounds. |
 | `core::range_u16` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check half-open, inclusive, from, to, and full ranges, including equal or reversed bounds, touching intervals, and the `65535` endpoint. |
@@ -686,6 +687,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   reversed ranges contain nothing, and touching half-open ranges do not
   overlap. `RangeFrom` includes its start and `RangeTo` excludes its end.
   `full_contains` accepts every `WideU64` without constructing `RangeFull`.
+- `core::wide_i64_range` applies those rules in signed two's-complement order.
+  Its full-domain predicate accepts the signed minimum and maximum. A
+  half-open range ending at the minimum is empty, while an inclusive range
+  may include both extrema.
 - `core::range_u8` accepts scalar byte bounds or concrete caller-owned range
   values. Half-open equal or reversed bounds are empty;
   inclusive equal bounds contain one byte and reversed bounds are empty.
@@ -1295,6 +1300,8 @@ Run `cargo test --test stdlib_wide_u64_bits_execution` for every public
 two-word bit helper, including rotation boundaries and invalid-index fallbacks.
 Run `cargo test --test stdlib_wide_u64_range_execution` for the full-width
 unsigned range forms, their receiver methods, and endpoint boundaries.
+Run `cargo test --test stdlib_wide_i64_range_execution` for the signed
+two-word range forms, methods, negative ordering, and both extrema.
 Run `cargo test --test stdlib_wide_i64_bits_execution` for the signed
 two-word bit view, including negative patterns and sign-bit rotations.
 Run `cargo test --test stdlib_signed_bit_report_program` for a real program
