@@ -1,0 +1,116 @@
+module app::main;
+import std::deque_char;
+
+fn main() -> i32 {
+    let high_code: u32 = 2147483648;
+    let max_code: u32 = 4294967295;
+    let high_bit: char = high_code;
+    let maximum: char = max_code;
+    let value: std::deque_char::DequeChar = std::deque_char::new();
+    if (std::deque_char::MAX_CAPACITY != 536870911 ||
+        !std::deque_char::is_empty(value) ||
+        std::deque_char::len(value) != 0 ||
+        std::deque_char::capacity(value) != 0 ||
+        std::deque_char::front_or(value, 77) != 77 ||
+        std::deque_char::back_or(value, 78) != 78 ||
+        std::deque_char::at_or(value, 0, 79) != 79 ||
+        std::deque_char::contains(value, 0) ||
+        std::deque_char::try_set(value, 0, 7) ||
+        std::deque_char::try_swap(value, 0, 0)) { return 1; }
+    value = std::deque_char::try_pop_front(value);
+    value = std::deque_char::try_pop_back(value);
+    if (std::deque_char::len(value) != 0) { return 2; }
+    value = std::deque_char::try_reserve(value, -1);
+    value = std::deque_char::try_reserve(value, 536870912);
+    if (std::deque_char::capacity(value) != 0) { return 3; }
+    std::deque_char::destroy(value);
+
+    let items: std::deque_char::DequeChar = std::deque_char::try_with_capacity(3);
+    if (std::deque_char::capacity(items) != 3 || !std::deque_char::is_empty(items)) { return 4; }
+    items = std::deque_char::try_push_back(items, 10);
+    items = std::deque_char::try_push_back(items, 20);
+    items = std::deque_char::try_push_back(items, 30);
+    if (std::deque_char::len(items) != 3 || std::deque_char::capacity(items) != 3 ||
+        std::deque_char::front_or(items, 99) != 10 ||
+        std::deque_char::back_or(items, 99) != 30) { return 5; }
+    items = std::deque_char::try_pop_front(items);
+    items = std::deque_char::try_push_back(items, 40);
+    if (std::deque_char::len(items) != 3 ||
+        std::deque_char::at_or(items, 0, 99) != 20 ||
+        std::deque_char::at_or(items, 1, 99) != 30 ||
+        std::deque_char::at_or(items, 2, 99) != 40) { return 6; }
+    items = std::deque_char::try_pop_front(items);
+    items = std::deque_char::try_push_front(items, 25);
+    if (std::deque_char::len(items) != 3 ||
+        std::deque_char::at_or(items, 0, 99) != 25 ||
+        std::deque_char::at_or(items, 1, 99) != 30 ||
+        std::deque_char::at_or(items, 2, 99) != 40) { return 7; }
+    items = std::deque_char::try_push_back(items, 50);
+    if (std::deque_char::len(items) != 4 || std::deque_char::capacity(items) != 6 ||
+        std::deque_char::front_or(items, 99) != 25 ||
+        std::deque_char::back_or(items, 99) != 50 ||
+        std::deque_char::at_or(items, 1, 99) != 30 ||
+        std::deque_char::at_or(items, 2, 99) != 40 ||
+        std::deque_char::at_or(items, -1, 77) != 77 ||
+        std::deque_char::at_or(items, 4, 78) != 78 ||
+        !std::deque_char::contains(items, 40) ||
+        std::deque_char::contains(items, 60)) { return 8; }
+    if (std::deque_char::try_set(items, -1, 2) ||
+        std::deque_char::try_set(items, 4, 2) ||
+        !std::deque_char::try_set(items, 1, high_bit) ||
+        std::deque_char::at_or(items, 1, 0) != high_bit ||
+        !std::deque_char::contains(items, high_bit) ||
+        std::deque_char::try_swap(items, 0, 4) ||
+        !std::deque_char::try_swap(items, 0, 3) ||
+        std::deque_char::front_or(items, 99) != 50 ||
+        std::deque_char::back_or(items, 99) != 25 ||
+        !std::deque_char::try_swap(items, 0, 3)) { return 9; }
+
+    let copy: std::deque_char::DequeChar = std::deque_char::try_clone(items);
+    if (std::deque_char::len(copy) != 4 || std::deque_char::capacity(copy) != 4 ||
+        std::deque_char::at_or(copy, 1, 0) != high_bit) { return 10; }
+    if (!std::deque_char::try_set(copy, 1, maximum) ||
+        std::deque_char::at_or(copy, 1, 0) != maximum ||
+        std::deque_char::at_or(items, 1, 0) != high_bit) { return 11; }
+    std::deque_char::destroy(copy);
+
+    items = std::deque_char::try_pop_back(items);
+    items = std::deque_char::try_pop_front(items);
+    if (std::deque_char::len(items) != 2 ||
+        std::deque_char::front_or(items, 0) != high_bit ||
+        std::deque_char::back_or(items, 0) != 40) { return 12; }
+    items = std::deque_char::try_shrink_to_fit(items);
+    if (std::deque_char::capacity(items) != 2 ||
+        std::deque_char::at_or(items, 0, 0) != high_bit ||
+        std::deque_char::at_or(items, 1, 0) != 40) { return 13; }
+    items = std::deque_char::try_shrink_to_fit(items);
+    if (std::deque_char::capacity(items) != 2) { return 14; }
+    items = std::deque_char::clear(items);
+    if (!std::deque_char::is_empty(items) || std::deque_char::capacity(items) != 2 ||
+        std::deque_char::contains(items, 40)) { return 15; }
+    let empty_copy: std::deque_char::DequeChar = std::deque_char::try_clone(items);
+    if (std::deque_char::len(empty_copy) != 0 ||
+        std::deque_char::capacity(empty_copy) != 0) { return 16; }
+    std::deque_char::destroy(empty_copy);
+    items = std::deque_char::try_push_front(items, maximum);
+    if (std::deque_char::front_or(items, 0) != maximum) { return 17; }
+    items = std::deque_char::try_pop_front(items);
+    items = std::deque_char::try_shrink_to_fit(items);
+    if (std::deque_char::capacity(items) != 0) { return 18; }
+    std::deque_char::destroy(items);
+
+    let wrapped: std::deque_char::DequeChar = std::deque_char::try_with_capacity(3);
+    wrapped = std::deque_char::try_push_back(wrapped, 1);
+    wrapped = std::deque_char::try_push_back(wrapped, 2);
+    wrapped = std::deque_char::try_push_back(wrapped, 3);
+    wrapped = std::deque_char::try_pop_front(wrapped);
+    wrapped = std::deque_char::try_push_back(wrapped, maximum);
+    wrapped = std::deque_char::try_reserve(wrapped, 5);
+    if (std::deque_char::capacity(wrapped) != 5 ||
+        std::deque_char::len(wrapped) != 3 ||
+        std::deque_char::at_or(wrapped, 0, 0) != 2 ||
+        std::deque_char::at_or(wrapped, 1, 0) != 3 ||
+        std::deque_char::at_or(wrapped, 2, 0) != maximum) { return 19; }
+    std::deque_char::destroy(wrapped);
+    return 0;
+}

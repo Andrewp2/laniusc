@@ -1,0 +1,46 @@
+// Print the last three valid UTF-8 scalars received on stdin.
+// A malformed sequence returns 2, host input error 3, allocation or
+// output failure 4. Empty input writes one newline.
+module app::main;
+import std::deque_char;
+import std::io_utf8;
+
+fn main() -> i32 {
+    let recent: std::deque_char::DequeChar = std::deque_char::try_with_capacity(3);
+    if (std::deque_char::capacity(recent) != 3) { return 4; }
+    while (true) {
+        let code: u32 = std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114);
+        if (code == 1114112) { break; }
+        if (code == 1114113) {
+            std::deque_char::destroy(recent);
+            return 2;
+        }
+        if (code == 1114114) {
+            std::deque_char::destroy(recent);
+            return 3;
+        }
+        if (std::deque_char::len(recent) == 3) {
+            recent = std::deque_char::try_pop_front(recent);
+        }
+        let scalar: char = code;
+        let before: i32 = std::deque_char::len(recent);
+        recent = std::deque_char::try_push_back(recent, scalar);
+        if (std::deque_char::len(recent) != before + 1) {
+            std::deque_char::destroy(recent);
+            return 4;
+        }
+    }
+    let index: i32 = 0;
+    while (index < std::deque_char::len(recent)) {
+        let scalar: char = std::deque_char::at_or(recent, index, '\0');
+        let code: u32 = scalar;
+        if (!std::io_utf8::write_stdout_scalar(code)) {
+            std::deque_char::destroy(recent);
+            return 4;
+        }
+        index += 1;
+    }
+    std::deque_char::destroy(recent);
+    if (!std::io_utf8::write_stdout_scalar(10)) { return 4; }
+    return 0;
+}
