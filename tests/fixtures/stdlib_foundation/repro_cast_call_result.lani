@@ -1,0 +1,10 @@
+module app::main;
+
+fn number() -> u32 {
+    return 7;
+}
+
+fn main() -> i32 {
+    let value: i32 = number() as i32;
+    return value;
+}

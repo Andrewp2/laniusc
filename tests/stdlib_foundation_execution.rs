@@ -1081,6 +1081,11 @@ fn executable_core_function_surface_has_runtime_cases() {
             include_str!("fixtures/stdlib_foundation/core_utf8.lani"),
         ),
         (
+            "utf8_view",
+            include_str!("../stdlib/core/utf8_view.lani"),
+            include_str!("fixtures/stdlib_foundation/core_utf8_byte_search.lani"),
+        ),
+        (
             "f32",
             include_str!("../stdlib/core/f32.lani"),
             include_str!("fixtures/stdlib_foundation/core_f32.lani"),

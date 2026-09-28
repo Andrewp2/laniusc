@@ -1,0 +1,9 @@
+module app::main;
+import core::utf8_view;
+
+fn main() -> i32 {
+    let a: u8 = 65;
+    let short: [u8; 1] = [a];
+    if (core::utf8_view::byte_view_equal(short, 2, short, 1)) { return 1; }
+    return 0;
+}

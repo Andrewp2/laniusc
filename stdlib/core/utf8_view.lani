@@ -1,0 +1,203 @@
+// Validated operations on caller-backed UTF-8 byte views.
+module core::utf8_view;
+import core::utf8;
+
+// Compare two complete, valid UTF-8 byte views. Malformed or negative-length
+// input is unequal, including when the other view is identical.
+pub fn byte_view_equal(left: [u8], left_len: i32, right: [u8], right_len: i32) -> bool {
+    if (!core::utf8::bytes_are_valid(left, left_len) || !core::utf8::bytes_are_valid(right, right_len)) {
+        return false;
+    }
+    if (left_len != right_len) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index < left_len) {
+        if (left[index] != right[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// A valid empty prefix or suffix matches every valid view. Both full views
+// are checked before the match, so malformed bytes cannot hide past it.
+pub fn byte_view_starts_with(values: [u8], len: i32, prefix: [u8], prefix_len: i32) -> bool {
+    if (!core::utf8::bytes_are_valid(values, len) || !core::utf8::bytes_are_valid(prefix, prefix_len) ||
+        prefix_len > len) {
+        return false;
+    }
+    let index: i32 = 0;
+    while (index < prefix_len) {
+        if (values[index] != prefix[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+pub fn byte_view_ends_with(values: [u8], len: i32, suffix: [u8], suffix_len: i32) -> bool {
+    if (!core::utf8::bytes_are_valid(values, len) || !core::utf8::bytes_are_valid(suffix, suffix_len) ||
+        suffix_len > len) {
+        return false;
+    }
+    let start: i32 = len - suffix_len;
+    let index: i32 = 0;
+    while (index < suffix_len) {
+        if (values[start + index] != suffix[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Canonical UTF-8 byte order is Unicode scalar order. Return -1, 0, or 1;
+// invalid complete views return fallback, which may itself be an ordering.
+pub fn byte_view_compare_or(
+    left: [u8], left_len: i32, right: [u8], right_len: i32, fallback: i32
+) -> i32 {
+    if (!core::utf8::bytes_are_valid(left, left_len) || !core::utf8::bytes_are_valid(right, right_len)) {
+        return fallback;
+    }
+    let common: i32 = left_len;
+    if (right_len < common) {
+        common = right_len;
+    }
+    let index: i32 = 0;
+    while (index < common) {
+        if (left[index] < right[index]) {
+            return -1;
+        }
+        if (left[index] > right[index]) {
+            return 1;
+        }
+        index += 1;
+    }
+    if (left_len < right_len) {
+        return -1;
+    }
+    if (left_len > right_len) {
+        return 1;
+    }
+    return 0;
+}
+
+// Return the first matching byte offset. A valid empty needle matches at 0.
+// Invalid input or no match returns fallback. UTF-8 validity prevents a
+// nonempty valid needle from starting inside a multibyte scalar.
+pub fn byte_view_index_of_bytes_or(
+    values: [u8], len: i32, needle: [u8], needle_len: i32, fallback: i32
+) -> i32 {
+    if (!core::utf8::bytes_are_valid(values, len) || !core::utf8::bytes_are_valid(needle, needle_len) ||
+        needle_len > len) {
+        return fallback;
+    }
+    if (needle_len == 0) {
+        return 0;
+    }
+    let start: i32 = 0;
+    while (start <= len - needle_len) {
+        let offset: i32 = 0;
+        while (offset < needle_len && values[start + offset] == needle[offset]) {
+            offset += 1;
+        }
+        if (offset == needle_len) {
+            return start;
+        }
+        start += 1;
+    }
+    return fallback;
+}
+
+// Return the last matching byte offset. A valid empty needle matches at len.
+pub fn byte_view_last_index_of_bytes_or(
+    values: [u8], len: i32, needle: [u8], needle_len: i32, fallback: i32
+) -> i32 {
+    if (!core::utf8::bytes_are_valid(values, len) || !core::utf8::bytes_are_valid(needle, needle_len) ||
+        needle_len > len) {
+        return fallback;
+    }
+    if (needle_len == 0) {
+        return len;
+    }
+    let start: i32 = len - needle_len;
+    while (start >= 0) {
+        let offset: i32 = 0;
+        while (offset < needle_len && values[start + offset] == needle[offset]) {
+            offset += 1;
+        }
+        if (offset == needle_len) {
+            return start;
+        }
+        start -= 1;
+    }
+    return fallback;
+}
+
+// Search a complete valid view for a Unicode scalar. Return a scalar index;
+// invalid UTF-8, an invalid needle, or no match returns fallback.
+pub fn byte_view_index_of_scalar_or(values: [u8], len: i32, needle: u32, fallback: i32) -> i32 {
+    let count: i32 = core::utf8::byte_scalar_count_or(values, len, -1);
+    if (count < 0 || !core::utf8::is_scalar(needle)) {
+        return fallback;
+    }
+    let needle_width_u32: u32 = core::utf8::encoded_len_or(needle, 0);
+    let needle_width: i32 = needle_width_u32 as i32;
+    let offset: i32 = 0;
+    let scalar_index: i32 = 0;
+    while (offset < len) {
+        let width_u32: u32 = core::utf8::sequence_len_or(values[offset], 0);
+        let width: i32 = width_u32 as i32;
+        if (width == needle_width) {
+            let byte_index: i32 = 0;
+            while (byte_index < width) {
+                let encoded_index: u32 = byte_index as u32;
+                if (values[offset + byte_index] != core::utf8::encoded_byte_or(needle, encoded_index, 0)) {
+                    break;
+                }
+                byte_index += 1;
+            }
+            if (byte_index == width) {
+                return scalar_index;
+            }
+        }
+        offset += width;
+        scalar_index += 1;
+    }
+    return fallback;
+}
+
+pub fn byte_view_last_index_of_scalar_or(values: [u8], len: i32, needle: u32, fallback: i32) -> i32 {
+    let count: i32 = core::utf8::byte_scalar_count_or(values, len, -1);
+    if (count < 0 || !core::utf8::is_scalar(needle)) {
+        return fallback;
+    }
+    let needle_width_u32: u32 = core::utf8::encoded_len_or(needle, 0);
+    let needle_width: i32 = needle_width_u32 as i32;
+    let found: i32 = fallback;
+    let offset: i32 = 0;
+    let scalar_index: i32 = 0;
+    while (offset < len) {
+        let width_u32: u32 = core::utf8::sequence_len_or(values[offset], 0);
+        let width: i32 = width_u32 as i32;
+        if (width == needle_width) {
+            let byte_index: i32 = 0;
+            while (byte_index < width) {
+                let encoded_index: u32 = byte_index as u32;
+                if (values[offset + byte_index] != core::utf8::encoded_byte_or(needle, encoded_index, 0)) {
+                    break;
+                }
+                byte_index += 1;
+            }
+            if (byte_index == width) {
+                found = scalar_index;
+            }
+        }
+        offset += width;
+        scalar_index += 1;
+    }
+    return found;
+}
