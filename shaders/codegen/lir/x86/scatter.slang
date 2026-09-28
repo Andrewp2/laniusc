@@ -799,8 +799,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         a = args.a;
         b = args.b;
         c = args.c;
-        if (index_copy_words == 0u && args.c < semantic_count &&
-            opt_ir_core[args.c].type_id == 3u)
+        // The checked lvalue element type selects packed i32 storage. A cast
+        // expression can retain its input type on the value row even when its
+        // result is u8; using that row would store at the wrong byte stride.
+        if (index_copy_words == 0u && source.type_id == 3u)
         {
             metadata = (metadata & 0xffffff00u) | 3u |
                 X86_LIR_METADATA_PACKED_I32_ARRAY;

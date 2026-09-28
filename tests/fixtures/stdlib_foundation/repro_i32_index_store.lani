@@ -1,0 +1,18 @@
+module app::main;
+
+fn write(values: [i32], index: i32, value: i32) -> bool {
+    values[index] = value;
+    return true;
+}
+
+fn main() -> i32 {
+    let values: [i32; 3] = [0, 0, 0];
+    if (!write(values, 1, 123) || values[0] != 0 ||
+        values[1] != 123 || values[2] != 0) { return 1; }
+    if (!write(values, 2, -7) || values[0] != 0 ||
+        values[1] != 123 || values[2] != -7) { return 2; }
+    let small: u8 = 7;
+    values[0] = small as i32;
+    if (values[0] != 7 || values[1] != 123 || values[2] != -7) { return 3; }
+    return 0;
+}

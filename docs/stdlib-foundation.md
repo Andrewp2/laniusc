@@ -1082,6 +1082,8 @@ Run `cargo test --test stdlib_bitset_execution` for the caller-backed bitset,
 including the word-boundary matrix and native bounds trap.
 Run `cargo test --test stdlib_base64_execution` for strict caller-backed
 Base64 encoding and decoding, all byte values, and native bounds trapping.
+Run `cargo test --test stdlib_cast_store_execution` for direct indexed byte
+casts and the i32 and byte-slice store paths.
 The test compiles small Lanius programs through `--stdlib-root`, executes
 the native ELFs, checks their exit status, checks the example's stdout, and
 checks the slice bounds trap. Each source is also suitable for direct CLI
@@ -1645,14 +1647,16 @@ also fixes the imported struct-return relocation path described below.
     works. `core::utf8_view` uses the named-local form when converting codec
     widths, so all byte-view operations execute without this compiler
     fix.
-52. **Cast directly into a byte-array slot misexecutes on x86.**
+52. **Resolved: cast directly into a byte-array slot misexecuted on x86.**
     `tests/fixtures/stdlib_foundation/repro_u8_cast_store.lani` casts an
     `i32` value to `u8` on the right side of two indexed assignments. GPU
-    `check` and native compilation succeed, but the ELF exits 1 because the
-    second byte is not stored. The otherwise identical
-    `repro_u8_cast_store_named_local.lani` casts into typed `u8` locals before
-    each assignment and exits 0. `core::base64` uses the tested named-local
-    form for decoded byte writes. The direct form still needs a compiler fix.
+    `check` and native compilation succeeded before the fix, but the ELF
+    exited 1 because the second byte was not stored. The x86 GPU lowering
+    selected packed i32 array storage from the RHS cast's input type. It now
+    selects that layout from the checked lvalue element type.
+    `tests/stdlib_cast_store_execution.rs` runs the direct and named-local
+    forms, a direct fixed-array cast store, an i32 store with a cast RHS, and
+    existing i32 and byte-slice fixtures. They all exit 0 on x86_64.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

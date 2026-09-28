@@ -18,5 +18,9 @@ fn main() -> i32 {
     let output: [u8; 2] = [zero, zero];
     if (write_two(output, 102, 111) != 2) { return 2; }
     if (output[0] != expected_first || output[1] != expected_second) { return 1; }
+    let next: i32 = 200;
+    let expected_next: u8 = 200;
+    output[0] = next as u8;
+    if (output[0] != expected_next || output[1] != expected_second) { return 3; }
     return 0;
 }
