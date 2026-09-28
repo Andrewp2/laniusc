@@ -1,0 +1,72 @@
+module app::main;
+import core::utf16;
+
+fn main() -> i32 {
+    let zero: u16 = 0;
+    let units: [u16; 2] = [zero, zero];
+    let code: u32 = 0;
+    while (code <= 65535) {
+        let unit: u16 = code;
+        let surrogate: bool = code >= 55296 && code <= 57343;
+        let high_surrogate: bool = code >= 55296 && code <= 56319;
+        let low_surrogate: bool = code >= 56320 && code <= 57343;
+        if (core::utf16::is_high_surrogate(unit) != high_surrogate ||
+            core::utf16::is_low_surrogate(unit) != low_surrogate ||
+            core::utf16::is_surrogate(unit) != surrogate ||
+            core::utf16::is_scalar(code) == surrogate) { return 1; }
+        units[0] = 777;
+        units[1] = 777;
+        let written: core::utf16::Utf16Write =
+            core::utf16::write_scalar(units, 2, 0, code);
+        if (surrogate) {
+            if (core::utf16::write_status(written) !=
+                    core::utf16::STATUS_INVALID_SCALAR ||
+                units[0] != 777 || units[1] != 777) { return 2; }
+        } else {
+            if (!core::utf16::write_succeeded(written) ||
+                core::utf16::write_next_or(written, -1) != 1 ||
+                units[0] != unit || units[1] != 777) { return 3; }
+            let decoded: core::utf16::Utf16Decode =
+                core::utf16::decode_next(units, 1, 0);
+            if (!core::utf16::decode_succeeded(decoded) ||
+                core::utf16::decode_scalar_or(decoded, 1114112) != code ||
+                core::utf16::decode_next_or(decoded, -1) != 1 ||
+                !core::utf16::validate(units, 1) ||
+                core::utf16::scalar_count_or(units, 1, -1) != 1) {
+                return 4;
+            }
+        }
+        code += 1;
+    }
+
+    // Test supplementary values across the full high-surrogate range, with
+    // low-surrogate values at the start, middle, and end of each 1024 block.
+    let high: u32 = 0;
+    while (high < 1024) {
+        let low_case: u32 = 0;
+        while (low_case < 3) {
+            let low: u32 = 0;
+            if (low_case == 1) { low = 511; }
+            if (low_case == 2) { low = 1023; }
+            let scalar: u32 = 65536 + high * 1024 + low;
+            let written: core::utf16::Utf16Write =
+                core::utf16::write_scalar(units, 2, 0, scalar);
+            let expected_high: u16 = 55296 + high;
+            let expected_low: u16 = 56320 + low;
+            let decoded: core::utf16::Utf16Decode =
+                core::utf16::decode_next(units, 2, 0);
+            if (!core::utf16::write_succeeded(written) ||
+                core::utf16::write_next_or(written, -1) != 2 ||
+                units[0] != expected_high || units[1] != expected_low ||
+                !core::utf16::decode_succeeded(decoded) ||
+                core::utf16::decode_scalar_or(decoded, 0) != scalar ||
+                core::utf16::decode_next_or(decoded, -1) != 2 ||
+                core::utf16::scalar_count_or(units, 2, -1) != 1) {
+                return 5;
+            }
+            low_case += 1;
+        }
+        high += 1;
+    }
+    return 0;
+}

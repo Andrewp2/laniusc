@@ -30,7 +30,7 @@ limited to native x86_64 output from this worktree.
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 16 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. |
 | `core::utf8` all 25 public codec and backed-view functions | Executable on x86_64 | Native fixtures check ASCII and multibyte encoding/decoding, checked scalar append, scalar counts and lookup, first and last scalar and sequence search, byte/scalar boundary mapping, equality, prefix and suffix matching, lexicographic comparison, empty and truncated views, out-of-byte-range integer codes, malformed sequences, surrogate exclusion, and Unicode maximum. Direct caller-backed `[u8]` helpers validate and count scalars, map scalar and byte boundaries, and read scalars by index across one- through four-byte sequences. They reject malformed input and negative lengths, and native indexing traps on a physical length overclaim. The older general view functions use caller-backed `[i32]` byte codes and do not access string storage. |
-| `core::utf16` all 17 public functions, 5 status constants, and 2 result types | Executable on x86_64 for caller-backed `[u16]` views | The imported runtime fixture calls every function and checks ASCII, NUL, supplementary scalars, Unicode maximum, high and low surrogate boundaries, strict pair decoding, complete-view validation, scalar counts and ordinals, invalid bounds, malformed and truncated pairs, invalid scalar rejection without writes, and short capacity without writes. Result structs distinguish success, bounds, invalid scalar, short input or output, and malformed input; a physical length overclaim traps with exit 101. The stdin UTF-16LE scalar-count program checks empty, ordinary, supplementary, maximal-length, odd-byte, malformed, oversized, and output-failure cases. GPU frontend compilation emits the tested x86 program; user-program GPU execution is not claimed. |
+| `core::utf16` all 17 public functions, 5 status constants, and 2 result types | Executable on x86_64 for caller-backed `[u16]` views | The imported runtime fixture calls every function and checks ASCII, NUL, supplementary scalars, Unicode maximum, high and low surrogate boundaries, strict pair decoding, complete-view validation, scalar counts and ordinals, invalid bounds, malformed and truncated pairs, invalid scalar rejection without writes, and short capacity without writes. A second native fixture executes every BMP code point and 3,072 supplementary values, checking surrogate rejection and exact encode/decode round trips across the full high-surrogate range. Result structs distinguish success, bounds, invalid scalar, short input or output, and malformed input; a physical length overclaim traps with exit 101. The stdin UTF-16LE scalar-count program checks empty, ordinary, supplementary, maximal-length, odd-byte, malformed, oversized, and output-failure cases. GPU frontend compilation emits the tested x86 program; user-program GPU execution is not claimed. |
 | `core::utf8_view` all 12 public byte-view functions | Executable on x86_64 for caller-backed `[u8]` views | Focused native fixtures check complete-view validation, equality, prefix and suffix matches, lexicographic ordering, first and last byte-sequence offsets, first and last Unicode scalar indices, and checked append, insertion, removal, and replacement of Unicode scalars in caller-owned bytes. They cover ASCII and two-, three-, and four-byte encodings, repeated matches, empty views and needles, malformed data, invalid scalars, negative lengths, missing matches, growth and shrinkage, exact-fit and insufficient capacity, and unchanged storage after rejected edits. Separate fixtures confirm physical length and capacity overclaims trap. The source scan requires a runtime call for every public function. |
 | `core::decimal` all 20 public functions | Executable on x86_64 | Runtime fixture checks decimal length and every ASCII byte of extrema across 8-, 16-, and 32-bit integers, ordinary values, sign placement, zero, out-of-range fallbacks, incremental and complete ASCII parsing for all six widths, and overflow against each width's limits. `std::io_decimal` and both bounded decimal file readers use the portable scalar helpers. |
 | `core::hex` all 14 public functions | Executable on x86_64 | Runtime fixture checks shortest lowercase and uppercase hexadecimal representations of `u8`, `u16`, and `u32`, zero and maximum values, invalid-index fallbacks, mixed-case digit accumulation, complete prefixed and unprefixed parsing, and overflow against each width's limit. The helpers allocate no storage and use no host calls. |
@@ -1916,8 +1916,8 @@ Run `cargo test --test stdlib_utf8_bytes_execution` for direct `[u8]` UTF-8
 validation, owned text append, the text-report sample, native bounds trapping,
 and injected allocation failure when Linux `strace` is available.
 Run `cargo test --test stdlib_utf16_execution` for strict UTF-16 scalar
-conversion, statuses, physical bounds trapping, and the stdin UTF-16LE count
-program.
+conversion across every BMP code point and the full high-surrogate range,
+statuses, physical bounds trapping, and the stdin UTF-16LE count program.
 Run `cargo test --test stdlib_random_execution` for the checked random scalar;
 the failure injection cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_random_wide_execution` for checked two-word
@@ -2298,7 +2298,11 @@ also fixes the imported struct-return relocation path described below.
     scatter passes filter for `METHOD_SIGNATURE_INHERENT_IMPL` in
     `shaders/type_checker/interface/members/00c_method_counts.slang` and
     `02_scatter_hir.slang`; public trait methods have no corresponding
-    exported member. Imported trait-method export and native dependency-call
+    exported member. The dependency method projector also requires an owning
+    exported type declaration for each associated method. Primitive receivers
+    such as `i32` have no public nominal type declaration to own one, so
+    merely relaxing the inherent-method filter would not supply the missing
+    callable identity. Imported trait-method export and native dependency-call
     resolution remain before the trait APIs themselves can be claimed
     executable.
 32. **Resolved: unordered f32 comparisons.**

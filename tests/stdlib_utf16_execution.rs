@@ -12,6 +12,11 @@ fn strict_utf16_helpers_execute_on_x86() {
             0,
         ),
         (
+            "core_utf16_matrix",
+            "tests/fixtures/stdlib_foundation/core_utf16_matrix.lani",
+            0,
+        ),
+        (
             "core_utf16_bounds",
             "tests/fixtures/stdlib_foundation/core_utf16_bounds.lani",
             101,
