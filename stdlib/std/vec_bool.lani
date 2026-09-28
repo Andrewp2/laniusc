@@ -235,6 +235,16 @@ pub fn try_pop(value: VecBool) -> VecBool {
     return VecBool { storage: value.storage, length: value.length - 1, reserved: value.reserved };
 }
 
+// Keep the first new_len elements and retain the allocation for reuse.
+// A negative length or one greater than the current length leaves the vector
+// unchanged. Truncated elements are no longer in the vector.
+pub fn truncate(value: VecBool, new_len: i32) -> VecBool {
+    if (new_len < 0 || new_len > value.length) {
+        return value;
+    }
+    return VecBool { storage: value.storage, length: new_len, reserved: value.reserved };
+}
+
 // Keeps the allocation for reuse; old elements are no longer in the vector.
 pub fn clear(value: VecBool) -> VecBool {
     return VecBool { storage: value.storage, length: 0, reserved: value.reserved };
