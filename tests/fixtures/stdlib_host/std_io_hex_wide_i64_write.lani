@@ -1,0 +1,37 @@
+module app::main;
+import core::wide_i64;
+import std::io;
+import std::io_hex_wide_i64;
+fn newline() -> bool {
+    return std::io::write_byte(1, 10) == 1;
+}
+fn main() -> i32 {
+    let zero: core::wide_i64::WideI64 = core::wide_i64::zero();
+    let negative_one: core::wide_i64::WideI64 = core::wide_i64::from_i32(-1);
+    let max: core::wide_i64::WideI64 = core::wide_i64::max_value();
+    let min: core::wide_i64::WideI64 = core::wide_i64::min_value();
+    let pattern: core::wide_i64::WideI64 = core::wide_i64::from_words(305419896, 2596069104);
+    let negative_pattern: core::wide_i64::WideI64 = core::wide_i64::wrapping_neg(pattern);
+    if (std::io_hex_wide_i64::write_lower(1, zero) != 1 || !newline()) {
+        return 1;
+    }
+    if (std::io_hex_wide_i64::write_lower(1, negative_one) != 2 || !newline()) {
+        return 2;
+    }
+    if (std::io_hex_wide_i64::write_lower(1, negative_pattern) != 17 || !newline()) {
+        return 3;
+    }
+    if (std::io_hex_wide_i64::write_upper(1, negative_pattern) != 17 || !newline()) {
+        return 4;
+    }
+    if (std::io_hex_wide_i64::write_upper(1, max) != 16 || !newline()) {
+        return 5;
+    }
+    if (std::io_hex_wide_i64::write_upper(1, min) != 17 || !newline()) {
+        return 6;
+    }
+    if (std::io_hex_wide_i64::write_lower(-1, zero) >= 0) {
+        return 7;
+    }
+    return 0;
+}

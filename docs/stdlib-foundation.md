@@ -105,6 +105,7 @@ limited to native x86_64 output from this worktree.
 | `std::io_decimal` all 16 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_host_execution.rs` checks signed and unsigned output extrema across 8-, 16-, 32-, and two-word 64-bit integers, exact byte counts, invalid handles, and injected sign and digit write failures for the underlying 32-bit writers. The two-word decimal-double programs also write full-width results through this module. `tests/stdlib_io_decimal_input_execution.rs` checks bounded stdin parsing across the six scalar and both two-word 64-bit types, EOF, whitespace and signs, malformed and overlong input, overflow, and injected read failures. |
 | `std::io_hex` all 9 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_hex_execution.rs` checks exact lowercase and uppercase writes across `u8`, `u16`, and `u32`, counts, invalid handles, injected write failures, bounded stdin parsing with optional prefix and whitespace, malformed and overflowing input, and injected read failures. |
 | `std::io_hex_wide_u64` all 3 public two-word helpers | Executable x86_64 Linux host wrappers | The native suite calls every function and checks shortest lowercase and uppercase output, byte counts, invalid handles, full-width stdin values, optional prefixes, surrounding whitespace, malformed and overflowing input, exact and exceeded byte limits, and zero-limit behavior. With Linux `strace`, it also checks first and later short writes, write errors, and injected read failures. |
+| `std::io_hex_wide_i64` all 3 public signed two-word helpers | Executable x86_64 Linux host wrappers | The native suite calls every function and checks shortest lowercase and uppercase signed output, byte counts, invalid handles, both signed extrema, ordinary negative stdin values, optional signs and prefixes, surrounding whitespace, malformed and overflowing input, exact and exceeded byte limits, and zero-limit behavior. With Linux `strace`, it checks first and later short writes, write errors, and injected read failures. |
 | `std::io_binary` all 6 public helpers | Executable x86_64 Linux host wrappers | `tests/stdlib_io_binary_execution.rs` checks shortest binary writes across `u8`, `u16`, and `u32`, exact byte counts, invalid handles, injected write failures, bounded stdin parsing with optional prefix and whitespace, malformed and overflowing input, and injected read failures. |
 | `std::io_binary_wide_u64` both public two-word helpers | Executable x86_64 Linux host wrappers | The native suite calls both functions and checks shortest zero and full-width binary writes, byte counts, invalid handles, full-width stdin values, optional prefixes, surrounding whitespace, malformed and overflowing input, exact and exceeded byte limits, and zero-limit behavior. With Linux `strace`, it checks first and later short writes, write errors, and injected read failures. |
 | `std::file_hex` all 9 public helpers | Executable x86_64 Linux host wrappers with literal paths | `tests/stdlib_file_hex_execution.rs` checks lowercase and uppercase writes, bounded hexadecimal file reads across `u8`, `u16`, and `u32`, whitespace and optional prefixes, malformed and overflowing input, missing and overlong files, and injected read/write/close errors. |
@@ -1051,6 +1052,13 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   malformed input, overflow, excess bytes, or host failure. Zero byte limit
   returns fallback without consuming stdin; other failures may consume a
   prefix. A valid input can equal the fallback.
+- `std::io_hex_wide_i64` writes shortest sign-and-magnitude hexadecimal
+  text for `WideI64` values and reads bounded stdin with the signed syntax
+  of `core::hex_wide_i64`. Surrounding SP, HT, LF, and CR are accepted.
+  Writes pass through negative host errors; a short write returns `-1` and
+  may leave a prefix. Missing digits, malformed or overflowing input, excess
+  bytes, and host failures return the caller fallback. A zero byte limit
+  consumes nothing, and a valid value may equal fallback.
 - `std::io_binary_wide_u64` writes the shortest binary form of a two-word
   `WideU64` in 1 through 64 bytes, and reads bounded stdin with the same
   syntax as `std::io_binary`. Writes pass through negative host errors; a
@@ -1449,6 +1457,8 @@ Run `cargo test --test stdlib_io_hex_execution` for hexadecimal stream input
 and output; its host-failure cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_hex_wide_u64_execution` for full-width
 hexadecimal stream input and output, limits, and injected host faults.
+Run `cargo test --test stdlib_io_hex_wide_i64_execution` for signed
+full-width hexadecimal streams, limits, and injected host faults.
 Run `cargo test --test stdlib_io_binary_execution` for binary stream input
 and output; its host-failure cases run when Linux `strace` is available.
 Run `cargo test --test stdlib_io_binary_wide_u64_execution` for full-width
