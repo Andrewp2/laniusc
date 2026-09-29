@@ -5,7 +5,7 @@ use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 #[test]
 fn concrete_option_result_methods_execute_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    for suffix in ["i32", "u32"] {
+    for suffix in ["i32", "u32", "u8"] {
         let fixture_path = root.join(format!(
             "tests/fixtures/stdlib_foundation/option_result_{suffix}.lani"
         ));
