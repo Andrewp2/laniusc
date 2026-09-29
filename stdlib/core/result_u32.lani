@@ -51,3 +51,32 @@ pub fn and(value: ResultU32, next: ResultU32) -> ResultU32 {
     if (value.success) { return next; }
     return value;
 }
+
+pub impl ResultU32 {
+    pub fn is_ok(&self) -> bool { return self.success; }
+    pub fn is_err(&self) -> bool { return !self.success; }
+    pub fn contains(&self, expected: u32) -> bool {
+        return self.success && self.value == expected;
+    }
+    pub fn contains_err(&self, expected: u32) -> bool {
+        return !self.success && self.error == expected;
+    }
+    pub fn unwrap_or(&self, fallback: u32) -> u32 {
+        if (self.success) { return self.value; }
+        return fallback;
+    }
+    pub fn unwrap_err_or(&self, fallback: u32) -> u32 {
+        if (!self.success) { return self.error; }
+        return fallback;
+    }
+    pub fn or(&self, fallback: ResultU32) -> ResultU32 {
+        if (self.success) {
+            return ResultU32 { success: true, value: self.value, error: 0 };
+        }
+        return fallback;
+    }
+    pub fn and(&self, next: ResultU32) -> ResultU32 {
+        if (self.success) { return next; }
+        return ResultU32 { success: false, value: 0, error: self.error };
+    }
+}

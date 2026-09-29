@@ -1,0 +1,9 @@
+module app::main;
+import core::result_u32;
+
+fn main() -> i32 {
+    let success: core::result_u32::ResultU32 = core::result_u32::ok(7);
+    let failure: core::result_u32::ResultU32 = core::result_u32::err(3);
+    if (!success.or(failure).contains(7)) { return 1; }
+    return 0;
+}
