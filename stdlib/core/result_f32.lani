@@ -53,3 +53,34 @@ pub fn and(value: ResultF32, next: ResultF32) -> ResultF32 {
     if (value.success) { return next; }
     return value;
 }
+
+pub impl ResultF32 {
+    pub fn is_ok(&self) -> bool { return self.success; }
+    pub fn is_err(&self) -> bool { return !self.success; }
+    // IEEE equality makes contains(_, NaN) false even for Ok(NaN).
+    pub fn contains(&self, expected: f32) -> bool {
+        return self.success && self.value == expected;
+    }
+    // IEEE equality makes contains_err(_, NaN) false even for Err(NaN).
+    pub fn contains_err(&self, expected: f32) -> bool {
+        return !self.success && self.error == expected;
+    }
+    pub fn unwrap_or(&self, fallback: f32) -> f32 {
+        if (self.success) { return self.value; }
+        return fallback;
+    }
+    pub fn unwrap_err_or(&self, fallback: f32) -> f32 {
+        if (!self.success) { return self.error; }
+        return fallback;
+    }
+    pub fn or(&self, fallback: ResultF32) -> ResultF32 {
+        if (self.success) {
+            return ResultF32 { success: true, value: self.value, error: 0.0 };
+        }
+        return fallback;
+    }
+    pub fn and(&self, next: ResultF32) -> ResultF32 {
+        if (self.success) { return next; }
+        return ResultF32 { success: false, value: 0.0, error: self.error };
+    }
+}

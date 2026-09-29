@@ -51,3 +51,32 @@ pub fn and(value: ResultChar, next: ResultChar) -> ResultChar {
     if (value.success) { return next; }
     return value;
 }
+
+pub impl ResultChar {
+    pub fn is_ok(&self) -> bool { return self.success; }
+    pub fn is_err(&self) -> bool { return !self.success; }
+    pub fn contains(&self, expected: char) -> bool {
+        return self.success && self.value == expected;
+    }
+    pub fn contains_err(&self, expected: char) -> bool {
+        return !self.success && self.error == expected;
+    }
+    pub fn unwrap_or(&self, fallback: char) -> char {
+        if (self.success) { return self.value; }
+        return fallback;
+    }
+    pub fn unwrap_err_or(&self, fallback: char) -> char {
+        if (!self.success) { return self.error; }
+        return fallback;
+    }
+    pub fn or(&self, fallback: ResultChar) -> ResultChar {
+        if (self.success) {
+            return ResultChar { success: true, value: self.value, error: '\0' };
+        }
+        return fallback;
+    }
+    pub fn and(&self, next: ResultChar) -> ResultChar {
+        if (self.success) { return next; }
+        return ResultChar { success: false, value: '\0', error: self.error };
+    }
+}

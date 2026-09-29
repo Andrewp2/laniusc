@@ -69,3 +69,34 @@ pub fn err(value: core::result_bool::ResultBool) -> OptionBool {
     }
     return none();
 }
+
+pub impl OptionBool {
+    pub fn is_some(&self) -> bool { return self.present; }
+    pub fn is_none(&self) -> bool { return !self.present; }
+    pub fn contains(&self, expected: bool) -> bool {
+        return self.present && self.value == expected;
+    }
+    pub fn unwrap_or(&self, fallback: bool) -> bool {
+        if (self.present) { return self.value; }
+        return fallback;
+    }
+    pub fn or(&self, fallback: OptionBool) -> OptionBool {
+        if (self.present) { return OptionBool { present: true, value: self.value }; }
+        return fallback;
+    }
+    pub fn and(&self, next: OptionBool) -> OptionBool {
+        if (self.present) { return next; }
+        return none();
+    }
+    pub fn xor(&self, right: OptionBool) -> OptionBool {
+        if (self.present) {
+            if (right.present) { return none(); }
+            return OptionBool { present: true, value: self.value };
+        }
+        return right;
+    }
+    pub fn ok_or(&self, error: bool) -> core::result_bool::ResultBool {
+        if (self.present) { return core::result_bool::ok(self.value); }
+        return core::result_bool::err(error);
+    }
+}

@@ -79,5 +79,43 @@ fn main() -> i32 {
         !core::result_f32::is_err(nan_error) ||
         core::result_f32::contains_err(nan_error, nan) ||
         core::result_f32::unwrap_err_or(nan_error, 0.0) == core::result_f32::unwrap_err_or(nan_error, 0.0)) { return 14; }
+    if (!present.is_some() || present.is_none() ||
+        !zero_value.is_some() || absent.is_some() || !absent.is_none() ||
+        !present.contains(1.5) || !zero_value.contains(0.0) ||
+        present.contains(2.5) || absent.contains(0.0) ||
+        present.unwrap_or(9.0) != 1.5 ||
+        zero_value.unwrap_or(9.0) != 0.0 ||
+        absent.unwrap_or(9.0) != 9.0) { return 15; }
+    let option_or: core::option_f32::OptionF32 = absent.or(zero_value);
+    let option_and: core::option_f32::OptionF32 = present.and(zero_value);
+    let option_xor: core::option_f32::OptionF32 = present.xor(absent);
+    if (!option_or.contains(0.0) || !option_and.contains(0.0) ||
+        !option_xor.contains(1.5) || !present.or(absent).contains(1.5) ||
+        !absent.and(present).is_none() ||
+        !present.xor(zero_value).is_none() ||
+        !absent.xor(absent).is_none()) { return 16; }
+    let method_ok: core::result_f32::ResultF32 = zero_value.ok_or(3.5);
+    let method_err: core::result_f32::ResultF32 = absent.ok_or(0.0);
+    if (!method_ok.contains(0.0) || !method_err.contains_err(0.0)) { return 17; }
+    if (!success.is_ok() || success.is_err() ||
+        failure.is_ok() || !failure.is_err() ||
+        !success.contains(-2.5) || !zero_success.contains(0.0) ||
+        failure.contains(0.0) || !failure.contains_err(3.5) ||
+        !zero_failure.contains_err(0.0) || success.contains_err(0.0)) { return 18; }
+    if (success.unwrap_or(9.0) != -2.5 || failure.unwrap_or(9.0) != 9.0 ||
+        success.unwrap_err_or(9.0) != 9.0 ||
+        failure.unwrap_err_or(9.0) != 3.5) { return 19; }
+    let result_or: core::result_f32::ResultF32 = failure.or(zero_success);
+    let result_and: core::result_f32::ResultF32 = success.and(zero_failure);
+    if (!result_or.contains(0.0) || !result_and.contains_err(0.0) ||
+        !success.or(failure).contains(-2.5) ||
+        !zero_failure.and(success).contains_err(0.0) ||
+        !zero_success.and(failure).contains_err(3.5)) { return 20; }
+    if (!nan_option.is_some() || nan_option.contains(nan) ||
+        nan_option.unwrap_or(0.0) == nan_option.unwrap_or(0.0) ||
+        !nan_ok.is_ok() || nan_ok.contains(nan) ||
+        nan_ok.unwrap_or(0.0) == nan_ok.unwrap_or(0.0) ||
+        !nan_error.is_err() || nan_error.contains_err(nan) ||
+        nan_error.unwrap_err_or(0.0) == nan_error.unwrap_err_or(0.0)) { return 21; }
     return 0;
 }

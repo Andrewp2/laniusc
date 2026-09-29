@@ -82,5 +82,39 @@ fn main() -> i32 {
         !core::option_char::is_none(core::option_char::err(good)) ||
         !core::option_char::contains(core::option_char::err(bad), omega) ||
         !core::option_char::contains(core::option_char::err(zero_bad), nul)) { return 13; }
+    if (!present.is_some() || present.is_none() ||
+        !zero_present.is_some() || absent.is_some() || !absent.is_none() ||
+        !present.contains(e) || present.contains(enye) ||
+        !zero_present.contains(nul) || absent.contains(nul) ||
+        present.unwrap_or(omega) != e ||
+        zero_present.unwrap_or(omega) != nul ||
+        absent.unwrap_or(omega) != omega) { return 14; }
+    let option_or: core::option_char::OptionChar = absent.or(also_present);
+    let option_and: core::option_char::OptionChar = present.and(zero_present);
+    let option_xor: core::option_char::OptionChar = present.xor(absent);
+    if (!option_or.contains(enye) || !option_and.contains(nul) ||
+        !option_xor.contains(e) || !present.or(absent).contains(e) ||
+        !absent.and(present).is_none() ||
+        !present.xor(also_present).is_none() ||
+        !absent.xor(absent).is_none()) { return 15; }
+    let method_ok: core::result_char::ResultChar = zero_present.ok_or(omega);
+    let method_err: core::result_char::ResultChar = absent.ok_or(nul);
+    if (!method_ok.contains(nul) || !method_err.contains_err(nul)) { return 16; }
+    if (!good.is_ok() || good.is_err() ||
+        bad.is_ok() || !bad.is_err() ||
+        !good.contains(smile) || !zero_good.contains(nul) ||
+        bad.contains(nul) || !bad.contains_err(omega) ||
+        !zero_bad.contains_err(nul) || good.contains_err(nul)) { return 17; }
+    if (good.unwrap_or(e) != smile || bad.unwrap_or(e) != e ||
+        zero_good.unwrap_or(e) != nul ||
+        good.unwrap_err_or(e) != e ||
+        bad.unwrap_err_or(e) != omega ||
+        zero_bad.unwrap_err_or(e) != nul) { return 18; }
+    let result_or: core::result_char::ResultChar = bad.or(zero_good);
+    let result_and: core::result_char::ResultChar = good.and(zero_bad);
+    if (!result_or.contains(nul) || !result_and.contains_err(nul) ||
+        !good.or(bad).contains(smile) ||
+        !zero_bad.and(good).contains_err(nul) ||
+        !zero_good.and(bad).contains_err(omega)) { return 19; }
     return 0;
 }

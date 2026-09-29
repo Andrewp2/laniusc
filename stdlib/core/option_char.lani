@@ -69,3 +69,34 @@ pub fn err(value: core::result_char::ResultChar) -> OptionChar {
     }
     return none();
 }
+
+pub impl OptionChar {
+    pub fn is_some(&self) -> bool { return self.present; }
+    pub fn is_none(&self) -> bool { return !self.present; }
+    pub fn contains(&self, expected: char) -> bool {
+        return self.present && self.value == expected;
+    }
+    pub fn unwrap_or(&self, fallback: char) -> char {
+        if (self.present) { return self.value; }
+        return fallback;
+    }
+    pub fn or(&self, fallback: OptionChar) -> OptionChar {
+        if (self.present) { return OptionChar { present: true, value: self.value }; }
+        return fallback;
+    }
+    pub fn and(&self, next: OptionChar) -> OptionChar {
+        if (self.present) { return next; }
+        return none();
+    }
+    pub fn xor(&self, right: OptionChar) -> OptionChar {
+        if (self.present) {
+            if (right.present) { return none(); }
+            return OptionChar { present: true, value: self.value };
+        }
+        return right;
+    }
+    pub fn ok_or(&self, error: char) -> core::result_char::ResultChar {
+        if (self.present) { return core::result_char::ok(self.value); }
+        return core::result_char::err(error);
+    }
+}

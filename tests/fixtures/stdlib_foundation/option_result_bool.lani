@@ -69,5 +69,37 @@ fn main() -> i32 {
         !core::option_bool::is_none(core::option_bool::err(false_ok)) ||
         !core::option_bool::contains(core::option_bool::err(true_error), true) ||
         !core::option_bool::contains(core::option_bool::err(false_error), false)) { return 13; }
+    if (!yes.is_some() || yes.is_none() || !no_value.is_some() ||
+        absent.is_some() || !absent.is_none() ||
+        !yes.contains(true) || !no_value.contains(false) ||
+        no_value.contains(true) || absent.contains(false) ||
+        !yes.unwrap_or(false) || no_value.unwrap_or(true) ||
+        !absent.unwrap_or(true)) { return 14; }
+    let option_or: core::option_bool::OptionBool = absent.or(no_value);
+    let option_and: core::option_bool::OptionBool = yes.and(no_value);
+    let option_xor: core::option_bool::OptionBool = no_value.xor(absent);
+    if (!option_or.contains(false) || !option_and.contains(false) ||
+        !option_xor.contains(false) || !yes.or(absent).contains(true) ||
+        !absent.and(yes).is_none() || !yes.xor(no_value).is_none() ||
+        !absent.xor(absent).is_none()) { return 15; }
+    let method_ok: core::result_bool::ResultBool = no_value.ok_or(true);
+    let method_err: core::result_bool::ResultBool = absent.ok_or(false);
+    if (!method_ok.contains(false) || !method_err.contains_err(false)) { return 16; }
+    if (!true_ok.is_ok() || true_ok.is_err() ||
+        false_error.is_ok() || !false_error.is_err() ||
+        !true_ok.contains(true) || !false_ok.contains(false) ||
+        true_error.contains(false) || !true_error.contains_err(true) ||
+        !false_error.contains_err(false) || true_ok.contains_err(false)) { return 17; }
+    if (!true_ok.unwrap_or(false) || false_ok.unwrap_or(true) ||
+        !false_error.unwrap_or(true) ||
+        !true_ok.unwrap_err_or(true) ||
+        !true_error.unwrap_err_or(false) ||
+        false_error.unwrap_err_or(true)) { return 18; }
+    let result_or: core::result_bool::ResultBool = true_error.or(false_ok);
+    let result_and: core::result_bool::ResultBool = true_ok.and(false_ok);
+    if (!result_or.contains(false) || !result_and.contains(false) ||
+        !true_ok.or(false_error).contains(true) ||
+        !false_error.and(true_ok).contains_err(false) ||
+        !false_ok.and(true_error).contains_err(true)) { return 19; }
     return 0;
 }

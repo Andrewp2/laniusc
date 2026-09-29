@@ -70,3 +70,35 @@ pub fn err(value: core::result_f32::ResultF32) -> OptionF32 {
     }
     return none();
 }
+
+pub impl OptionF32 {
+    pub fn is_some(&self) -> bool { return self.present; }
+    pub fn is_none(&self) -> bool { return !self.present; }
+    // IEEE equality makes contains(_, NaN) false even for Some(NaN).
+    pub fn contains(&self, expected: f32) -> bool {
+        return self.present && self.value == expected;
+    }
+    pub fn unwrap_or(&self, fallback: f32) -> f32 {
+        if (self.present) { return self.value; }
+        return fallback;
+    }
+    pub fn or(&self, fallback: OptionF32) -> OptionF32 {
+        if (self.present) { return OptionF32 { present: true, value: self.value }; }
+        return fallback;
+    }
+    pub fn and(&self, next: OptionF32) -> OptionF32 {
+        if (self.present) { return next; }
+        return none();
+    }
+    pub fn xor(&self, right: OptionF32) -> OptionF32 {
+        if (self.present) {
+            if (right.present) { return none(); }
+            return OptionF32 { present: true, value: self.value };
+        }
+        return right;
+    }
+    pub fn ok_or(&self, error: f32) -> core::result_f32::ResultF32 {
+        if (self.present) { return core::result_f32::ok(self.value); }
+        return core::result_f32::err(error);
+    }
+}
