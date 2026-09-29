@@ -35,6 +35,7 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint IMPORTED_UNIT_VARIANT = 9u;
+static const uint IMPORTED_GENERIC_UNIT_VARIANT = 11u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint HIR_CALL_EXPR = 19u;
@@ -138,8 +139,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     HirMatchArm arm = compact_match_arms[row];
     if (!valid_hir(arm.pattern)) return;
     uint path = path_for_pattern(arm.pattern);
-    if (!valid_path(path) ||
-        resolved_dependency_value_metadata[path * 3u] != IMPORTED_UNIT_VARIANT)
+    if (!valid_path(path))
+        return;
+    uint kind = resolved_dependency_value_metadata[path * 3u];
+    if (kind != IMPORTED_UNIT_VARIANT && kind != IMPORTED_GENERIC_UNIT_VARIANT)
         return;
     uint pattern_token = compact_hir_core[arm.pattern].token_start;
     if (!valid_token(pattern_token) || path_owner_token[path] != pattern_token)

@@ -47,6 +47,7 @@ static const uint HIR_ITEM_KIND_STRUCT = 6u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint IMPORTED_PAYLOAD_VARIANT = 10u;
+static const uint IMPORTED_GENERIC_UNIT_VARIANT = 11u;
 static const uint MEMBER_FIELD = 4u;
 static const uint MEMBER_GENERIC_TYPE = 2u;
 static const uint MEMBER_GENERIC_CONST = 3u;
@@ -113,11 +114,12 @@ bool same_variant_name(uint declaration_base, uint member_base)
 
 bool variant_metadata(uint declaration_base, uint signature_root,
                       out uint enum_root, out uint ordinal,
-                      out uint payload_count)
+                      out uint payload_count, out bool generic_parent)
 {
     enum_root = 0xffffffffu;
     ordinal = 0xffffffffu;
     payload_count = 0xffffffffu;
+    generic_parent = false;
     if (dependency_type_word(signature_root * TYPE_WORDS) != INTERFACE_TYPE_FUNCTION)
         return false;
     uint signature_base = signature_root * TYPE_WORDS;
@@ -157,9 +159,8 @@ bool variant_metadata(uint declaration_base, uint signature_root,
         {
             uint member_base = (start + offset) * MEMBER_WORDS;
             uint kind = dependency_member_word(member_base + 1u);
-            // A bare value cannot infer a generic enum's type arguments here.
             if (kind == MEMBER_GENERIC_TYPE || kind == MEMBER_GENERIC_CONST)
-                return false;
+                generic_parent = true;
         }
     }
     for (uint offset = 0u; offset < count; offset += 1u)
@@ -208,12 +209,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             uint enum_root;
             uint ordinal;
             uint payload_count;
+            bool generic_parent;
             if (variant_metadata(declaration_base, root, enum_root, ordinal,
-                                 payload_count))
+                                 payload_count, generic_parent))
             {
                 resolved_dependency_value_metadata[value_base] =
-                    payload_count == 0u ? HIR_ITEM_KIND_ENUM_VARIANT
-                                        : IMPORTED_PAYLOAD_VARIANT;
+                    payload_count != 0u ? IMPORTED_PAYLOAD_VARIANT
+                    : generic_parent ? IMPORTED_GENERIC_UNIT_VARIANT
+                                     : HIR_ITEM_KIND_ENUM_VARIANT;
                 resolved_dependency_value_metadata[value_base + 1u] = enum_root;
                 resolved_dependency_value_metadata[value_base + 2u] = ordinal;
                 uint enum_base = enum_root * TYPE_WORDS;

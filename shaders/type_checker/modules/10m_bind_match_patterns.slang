@@ -27,6 +27,7 @@ StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
+StructuredBuffer<uint> resolved_dependency_value_metadata;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> decl_hir_node;
@@ -37,6 +38,8 @@ StructuredBuffer<uint> language_name_id;
 RWStructuredBuffer<uint> module_value_path_status;
 RWStructuredBuffer<uint> visible_decl;
 RWStructuredBuffer<uint> visible_type;
+RWStructuredBuffer<uint> decl_type_ref_tag;
+RWStructuredBuffer<uint> decl_type_ref_payload;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -49,6 +52,8 @@ static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_ENUM_BASE = 6144u;
+static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
+static const uint IMPORTED_GENERIC_UNIT_VARIANT = 11u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -127,6 +132,21 @@ void bind_resolved_pattern(uint pattern, uint actual_count)
     uint owner_token = path_owner_token[path_i];
     if (!valid_token(owner_token) || owner_token != pattern_token)
         return;
+
+    uint dependency_value_base = path_i * 3u;
+    if (resolved_dependency_value_metadata[dependency_value_base] ==
+        IMPORTED_GENERIC_UNIT_VARIANT)
+    {
+        // A pattern obtains the missing type arguments from its scrutinee.
+        // Keep bare generic unit values unresolved in the value consumer.
+        bind_decl(owner_token, owner_token);
+        decl_type_ref_tag[owner_token] = TYPE_REF_EXTERNAL_CANONICAL;
+        decl_type_ref_payload[owner_token] =
+            resolved_dependency_value_metadata[dependency_value_base + 1u];
+        if (actual_count != 0u)
+            record_min_token_error(status, owner_token, ERR_ASSIGN_MISMATCH, 0u);
+        return;
+    }
 
     uint variant_token;
     uint enum_token;

@@ -1,0 +1,10 @@
+module app::main;
+import core::maybe;
+
+fn main() -> i32 {
+    let value = 3;
+    return match (value) {
+        core::maybe::None -> 1,
+        _ -> 0,
+    };
+}

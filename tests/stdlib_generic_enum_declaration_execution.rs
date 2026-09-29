@@ -293,6 +293,129 @@ fn imported_generic_enum_match_still_needs_pattern_projection() {
 }
 
 #[test]
+fn imported_generic_unit_pattern_checks_discriminant_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_enum_none_pattern.lani");
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let bytes = common::run_gpu_codegen_with_timeout("imported generic None pattern", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect("an imported generic unit pattern should use the scrutinee's type arguments");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported generic None pattern",
+            "repro_imported_generic_enum_none_pattern",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_generic_unit_constructor_preserves_enum_abi_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_enum_none_call.lani");
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let bytes =
+        common::run_gpu_codegen_with_timeout("imported generic None constructor", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+        })
+        .expect("annotated imported generic unit constructor should compile");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported generic None constructor",
+            "repro_imported_generic_enum_none_call",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_generic_unit_constructor_requires_concrete_result_type() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root
+        .join("tests/fixtures/stdlib_foundation/repro_imported_generic_enum_none_unannotated.lani");
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let error =
+        common::run_gpu_codegen_with_timeout("unannotated imported generic None", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+        })
+        .expect_err("a generic unit constructor needs a concrete result type for its ABI");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn imported_generic_payload_constructor_requires_concrete_result_type() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root
+        .join("tests/fixtures/stdlib_foundation/repro_imported_generic_enum_some_unannotated.lani");
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let error =
+        common::run_gpu_codegen_with_timeout("unannotated imported generic Some", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+        })
+        .expect_err("a generic payload constructor needs a concrete result type for its ABI");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn imported_generic_unit_constructor_direct_argument_is_rejected() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join(
+        "tests/fixtures/stdlib_foundation/repro_imported_generic_enum_none_direct_argument.lani",
+    );
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let error =
+        common::run_gpu_codegen_with_timeout("direct imported generic None argument", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+        })
+        .expect_err("a nested generic unit constructor needs argument-context projection");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn imported_generic_unit_variant_is_not_a_bare_value() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_enum_bare_none.lani");
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let result = common::run_gpu_codegen_with_timeout("bare imported generic None", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    });
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => panic!("bare imported None must not be emitted without contextual width"),
+    };
+    assert_eq!(error.to_public_diagnostic().code, "LNC0005", "{error:?}");
+}
+
+#[test]
+fn imported_generic_unit_pattern_rejects_scalar_scrutinee() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join(
+        "tests/fixtures/stdlib_foundation/repro_imported_generic_enum_none_wrong_scrutinee.lani",
+    );
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let result = common::run_gpu_codegen_with_timeout("generic None against scalar", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    });
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => panic!("an imported generic enum pattern must reject a scalar"),
+    };
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
 fn imported_generic_enum_rejects_wrong_payload_type() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root

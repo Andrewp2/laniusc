@@ -1,0 +1,17 @@
+module app::main;
+import core::maybe;
+
+fn consume(value: core::maybe::Maybe<i32>, marker: i32) -> i32 {
+    return match (value) {
+        core::maybe::None -> marker,
+        _ -> 1,
+    };
+}
+
+fn main() -> i32 {
+    let missing: core::maybe::Maybe<i32> = core::maybe::None();
+    if (consume(missing, 71) != 71) { return 1; }
+    let present: core::maybe::Maybe<i32> = core::maybe::Some(7);
+    if (consume(present, 83) != 1) { return 2; }
+    return 0;
+}

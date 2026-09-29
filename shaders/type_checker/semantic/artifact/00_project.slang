@@ -86,6 +86,7 @@ static const uint LANGUAGE_SYMBOL_STRING_DATA_PTR = 70u;
 static const uint LANGUAGE_SYMBOL_WILDCARD = 19u;
 static const uint HIR_ITEM_KIND_CONST = 3u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
+static const uint IMPORTED_GENERIC_UNIT_VARIANT = 11u;
 static const uint CONST_PRESENT = 0x80000000u;
 static const uint IMPORTED_UNIT_VARIANT_PRESENT = 0x40000000u;
 
@@ -183,7 +184,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 const_present = CONST_PRESENT;
             }
             else if (resolved_dependency_value_metadata[value_base] ==
-                     HIR_ITEM_KIND_ENUM_VARIANT)
+                         HIR_ITEM_KIND_ENUM_VARIANT ||
+                     resolved_dependency_value_metadata[value_base] ==
+                         IMPORTED_GENERIC_UNIT_VARIANT)
             {
                 const_value = resolved_dependency_value_metadata[value_base + 2u];
                 // This lane carries the unit variant ordinal. It is a tagged

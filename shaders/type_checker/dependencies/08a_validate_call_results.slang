@@ -510,6 +510,22 @@ bool bare_generic_variant_result_matches(
     return words != 0u;
 }
 
+bool imported_generic_enum_variant(uint callee)
+{
+    uint variant = dependency_find_declaration(
+        call_dependency_library_id[callee],
+        call_dependency_unit_id[callee],
+        call_dependency_local_index[callee]);
+    if (variant >= dependency_declaration_count() ||
+        dependency_declaration_word(variant * DECL_WORDS + 6u) !=
+            HIR_ITEM_KIND_ENUM_VARIANT)
+        return false;
+    uint parent = dependency_declaration_word(variant * DECL_WORDS + 10u);
+    return parent < dependency_declaration_count() &&
+           dependency_declaration_word(parent * DECL_WORDS + 6u) == HIR_ITEM_KIND_ENUM &&
+           declaration_generic_arity[parent] != 0u;
+}
+
 void substitute_direct_generic_call(uint call_node)
 {
     uint callee_node = compact_hir_payload[call_node].a;
@@ -570,6 +586,14 @@ void validate_dependency_result(
     uint expected_external_token)
 {
     if (!valid_token(callee_token)) return;
+    // A direct generic enum constructor needs a concrete instance to size its
+    // tagged payload. The bare exported enum return cannot infer that width.
+    if (imported_generic_enum_variant(callee_token) &&
+        (expected_tag != TYPE_REF_INSTANCE || !valid_token(expected_payload)))
+    {
+        mismatch(callee_token);
+        return;
+    }
     uint actual_tag = decl_type_ref_tag[callee_token];
     uint actual_payload = decl_type_ref_payload[callee_token];
     if (actual_tag == TYPE_REF_INSTANCE && valid_token(actual_payload))

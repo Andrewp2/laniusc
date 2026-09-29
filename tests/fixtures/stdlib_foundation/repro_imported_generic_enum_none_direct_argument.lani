@@ -1,0 +1,14 @@
+module app::main;
+import core::maybe;
+
+fn consume(value: core::maybe::Maybe<i32>, marker: i32) -> i32 {
+    return match (value) {
+        core::maybe::None -> marker,
+        _ -> 1,
+    };
+}
+
+fn main() -> i32 {
+    if (consume(core::maybe::None(), 71) != 71) { return 1; }
+    return 0;
+}
