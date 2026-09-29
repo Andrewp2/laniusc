@@ -2505,6 +2505,12 @@ also fixes the imported struct-return relocation path described below.
     generic function also returns an incorrect value there; the concrete
     `core::slice::get_or_i32` returns 7. A matching `[u32; 3]` generic probe
     returned every element correctly, while `[i16; 3]` also failed at index 1.
+    Disassembling the emitted `get_or<T>` shows a QWORD load using
+    `base - index * 8`, while its `[i32; 3]` caller initializes successive
+    elements four bytes apart. Index zero returns the first word, but index
+    one skips the second. The generic callee needs the instantiated element
+    storage stride; changing the caller's packed array layout would change
+    the existing x86 array ABI.
     `core::slice_generic<T>` was removed from the main library because an
     accepted signed instantiation silently returned wrong data. Concrete
     signed slices and `core::slice_bool` remain executable. This needs a
