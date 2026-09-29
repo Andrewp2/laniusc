@@ -482,18 +482,80 @@ fn imported_generic_payload_constructor_requires_concrete_result_type() {
 }
 
 #[test]
-fn imported_generic_unit_constructor_direct_argument_is_rejected() {
+fn imported_generic_unit_constructor_direct_argument_executes_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join(
         "tests/fixtures/stdlib_foundation/repro_imported_generic_enum_none_direct_argument.lani",
     );
     let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
-    let error =
+    let bytes =
         common::run_gpu_codegen_with_timeout("direct imported generic None argument", move || {
             pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
         })
-        .expect_err("a nested generic unit constructor needs argument-context projection");
+        .expect("a concrete parameter supplies the imported unit constructor's type argument");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "direct imported generic None argument",
+            "repro_imported_generic_enum_none_direct_argument",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_generic_unit_constructor_direct_argument_rejects_unrelated_enum() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join(
+        "tests/fixtures/stdlib_foundation/repro_imported_generic_enum_none_direct_argument_wrong_nominal.lani",
+    );
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let error = common::run_gpu_codegen_with_timeout("unrelated direct imported None", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect_err("a constructor from another enum must not satisfy this parameter");
     assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn imported_generic_payload_constructor_direct_argument_rejects_wrong_type() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join(
+        "tests/fixtures/stdlib_foundation/repro_imported_generic_enum_some_direct_argument_wrong_payload.lani",
+    );
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let error = common::run_gpu_codegen_with_timeout("wrong direct imported Some", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect_err("a concrete parameter must reject a different constructor payload type");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn imported_two_parameter_variants_execute_as_direct_arguments_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join(
+        "tests/fixtures/stdlib_foundation/repro_imported_generic_choice_direct_argument.lani",
+    );
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_choice_root");
+    let bytes = common::run_gpu_codegen_with_timeout("two parameter direct variants", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect("concrete parameters should type and size direct imported variants");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "two parameter direct variants",
+            "repro_imported_generic_choice_direct_argument",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
 }
 
 #[test]

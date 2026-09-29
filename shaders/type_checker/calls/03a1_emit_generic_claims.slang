@@ -28,6 +28,7 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> call_arg_row_count_out;
+StructuredBuffer<uint> call_arg_row_count;
 StructuredBuffer<uint> call_arg_row_node;
 StructuredBuffer<uint> call_arg_row_call_node;
 StructuredBuffer<uint> call_arg_param_row;
@@ -36,6 +37,9 @@ StructuredBuffer<uint> call_generic_claim_scan_input;
 StructuredBuffer<uint> call_generic_claim_prefix;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> call_dependency_library_id;
+StructuredBuffer<uint> call_dependency_unit_id;
+StructuredBuffer<uint> call_dependency_local_index;
 RWStructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
 StructuredBuffer<uint> call_return_generic_slot;
@@ -70,6 +74,7 @@ RWStructuredBuffer<uint> call_generic_claim_type;
 RWStructuredBuffer<uint> call_generic_claim_ref_tag;
 RWStructuredBuffer<uint> call_generic_claim_ref_payload;
 RWStructuredBuffer<uint> call_generic_claim_arg_row;
+RWStructuredBuffer<uint> call_result_instance;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -139,6 +144,11 @@ static const uint INTERFACE_TYPE_ARRAY = 4u;
 static const uint INTERFACE_TYPE_SLICE = 5u;
 static const uint INTERFACE_TYPE_WORDS = 9u;
 static const uint TYPE_INSTANCE_ARG_REF_STRIDE = 4u;
+static const uint DECL_WORDS = 14u;
+static const uint HIR_ITEM_KIND_ENUM = 7u;
+static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
+static const uint INTERFACE_TYPE_SCALAR = 1u;
+static const uint INTERFACE_TYPE_FUNCTION = 7u;
 
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint ERR_CALL_MISMATCH = 10u;
@@ -631,6 +641,72 @@ bool same_named_instance_decl(uint expected_instance, uint actual_instance)
     return external_type_identity_equal(expected_instance, actual_instance);
 }
 
+bool imported_variant_matches_instance(
+    uint callee, uint instance, uint arg_count, uint slot, out bool slot_used)
+{
+    slot_used = false;
+    if (!valid_token(callee) || !valid_token(instance) ||
+        !external_type_identity_valid(instance) ||
+        arg_count > PARAM_CACHE_STRIDE ||
+        type_instance_arg_count[instance] > PARAM_CACHE_STRIDE ||
+        slot >= type_instance_arg_count[instance])
+        return false;
+    uint variant = dependency_find_declaration(
+        call_dependency_library_id[callee],
+        call_dependency_unit_id[callee],
+        call_dependency_local_index[callee]);
+    if (variant >= dependency_declaration_count() ||
+        dependency_declaration_word(variant * DECL_WORDS + 6u) !=
+            HIR_ITEM_KIND_ENUM_VARIANT)
+        return false;
+    uint signature = dependency_declaration_word(variant * DECL_WORDS + 7u);
+    if (signature >= dependency_type_count() ||
+        dependency_type_word(signature * INTERFACE_TYPE_WORDS) != INTERFACE_TYPE_FUNCTION)
+        return false;
+    uint edge_start = dependency_type_word(signature * INTERFACE_TYPE_WORDS + 3u);
+    uint edge_count = dependency_type_word(signature * INTERFACE_TYPE_WORDS + 4u);
+    if (edge_count != arg_count + 1u ||
+        edge_start > dependency_count(5u) ||
+        edge_count > dependency_count(5u) - edge_start)
+        return false;
+    uint parent = dependency_declaration_word(variant * DECL_WORDS + 10u);
+    if (parent >= dependency_declaration_count() ||
+        dependency_declaration_word(parent * DECL_WORDS + 6u) != HIR_ITEM_KIND_ENUM ||
+        dependency_declaration_library_id(parent) != external_type_library_id[instance] ||
+        dependency_declaration_unit_id(parent) != external_type_unit_id[instance] ||
+        dependency_declaration_local_index(parent) != external_type_local_index[instance])
+        return false;
+    uint parent_signature = dependency_declaration_word(parent * DECL_WORDS + 7u);
+    uint return_edge = dependency_type_edge_word(edge_start + arg_count);
+    if (parent_signature >= dependency_type_count() ||
+        return_edge >= dependency_type_count() ||
+        dependency_type_word(return_edge * INTERFACE_TYPE_WORDS) !=
+            INTERFACE_TYPE_DECLARATION ||
+        dependency_type_word(return_edge * INTERFACE_TYPE_WORDS + 1u) !=
+            external_type_library_id[instance] ||
+        dependency_type_word(return_edge * INTERFACE_TYPE_WORDS + 2u) !=
+            external_type_local_index[instance] ||
+        dependency_type_word(return_edge * INTERFACE_TYPE_WORDS + 8u) !=
+            external_type_unit_id[instance])
+        return false;
+    for (uint ordinal = 0u; ordinal < arg_count; ordinal += 1u)
+    {
+        // Only direct scalar and generic payloads have a checked scalar
+        // relation here. Nested aggregate payloads need recursive matching.
+        uint edge = dependency_type_edge_word(edge_start + ordinal);
+        if (edge >= dependency_type_count())
+            return false;
+        uint kind = dependency_type_word(edge * INTERFACE_TYPE_WORDS);
+        if (kind == INTERFACE_TYPE_SCALAR)
+            continue;
+        if (kind != INTERFACE_TYPE_GENERIC_PARAMETER)
+            return false;
+        if (dependency_type_word(edge * INTERFACE_TYPE_WORDS + 1u) == slot)
+            slot_used = true;
+    }
+    return true;
+}
+
 uint array_or_slice_element_type_for_arg_node(uint arg_node)
 {
     uint tag;
@@ -714,7 +790,33 @@ uint actual_call_return_instance_arg_type(
 
     uint return_instance = call_return_type_token[actual_fn];
     if (!same_named_instance_decl(expected_instance, return_instance))
+    {
+        // Imported enum variants export a bare nominal return. For a direct
+        // argument, its enclosing concrete parameter supplies the missing
+        // instance. Check the variant's parent identity and every direct
+        // payload relation before publishing that instance for codegen.
+        uint arg_count = call_arg_row_count[actual_call_node];
+        bool slot_used;
+        if (imported_variant_matches_instance(
+                actual_callee, expected_instance, arg_count,
+                instance_arg_ordinal, slot_used))
+        {
+            uint expected_tag;
+            uint expected_payload;
+            uint inferred = call_generic_slot_type[
+                actual_callee * PARAM_CACHE_STRIDE + instance_arg_ordinal];
+            if (instance_arg_ref(expected_instance, instance_arg_ordinal,
+                                 expected_tag, expected_payload) &&
+                expected_tag == TYPE_REF_SCALAR && expected_payload != TY_UNKNOWN &&
+                (slot_used ? inferred == expected_payload :
+                    inferred == INVALID || inferred == expected_payload))
+            {
+                call_result_instance[actual_call_node] = expected_instance;
+                return expected_payload;
+            }
+        }
         return TY_UNKNOWN;
+    }
 
     uint arg_tag;
     uint arg_payload;

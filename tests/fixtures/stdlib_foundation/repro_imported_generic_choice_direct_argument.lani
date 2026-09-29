@@ -1,0 +1,23 @@
+module app::main;
+import core::choice;
+
+fn both_value(number: i32, flag: bool) -> i32 {
+    if (flag) { return number; }
+    return 0;
+}
+
+fn consume(value: core::choice::Choice<i32, bool>) -> i32 {
+    return match (value) {
+        core::choice::One(inner) -> inner,
+        core::choice::Both(number, flag) -> both_value(number, flag),
+        core::choice::Empty -> 40,
+    };
+}
+
+fn main() -> i32 {
+    if (consume(core::choice::One(7)) != 7) { return 1; }
+    if (consume(core::choice::Empty()) != 40) { return 2; }
+    if (consume(core::choice::Both(9, true)) != 9) { return 3; }
+    if (consume(core::choice::Both(-3, false)) != 0) { return 4; }
+    return 0;
+}

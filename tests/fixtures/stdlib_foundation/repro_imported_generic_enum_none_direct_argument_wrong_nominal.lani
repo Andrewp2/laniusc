@@ -1,0 +1,12 @@
+module app::main;
+import core::maybe;
+
+enum Other { Empty }
+
+fn consume(value: Other) -> i32 {
+    return 1;
+}
+
+fn main() -> i32 {
+    return consume(core::maybe::None());
+}

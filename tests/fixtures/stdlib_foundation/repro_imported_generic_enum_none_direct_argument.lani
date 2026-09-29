@@ -8,7 +8,25 @@ fn consume(value: core::maybe::Maybe<i32>, marker: i32) -> i32 {
     };
 }
 
+fn consume_bool(value: core::maybe::Maybe<bool>, marker: i32) -> i32 {
+    return match (value) {
+        core::maybe::None -> marker,
+        _ -> 1,
+    };
+}
+
+fn consume_value(value: core::maybe::Maybe<i32>) -> i32 {
+    return match (value) {
+        core::maybe::Some(inner) -> inner,
+        core::maybe::None -> 0,
+    };
+}
+
 fn main() -> i32 {
     if (consume(core::maybe::None(), 71) != 71) { return 1; }
+    if (consume_bool(core::maybe::None(), 83) != 83) { return 2; }
+    if (consume(core::maybe::None(), 97) != 97) { return 3; }
+    if (consume_value(core::maybe::Some(7)) != 7) { return 4; }
+    if (consume_value(core::maybe::Some(-2)) != -2) { return 5; }
     return 0;
 }
