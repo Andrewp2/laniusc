@@ -1,0 +1,7 @@
+module app::main;
+import core::choice;
+
+fn main() -> i32 {
+    let value: core::choice::Choice<i32, bool> = core::choice::Both(3, 9);
+    return 0;
+}

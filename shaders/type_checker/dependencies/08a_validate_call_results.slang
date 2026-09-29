@@ -37,8 +37,16 @@ StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> external_type_library_id;
 StructuredBuffer<uint> external_type_unit_id;
 StructuredBuffer<uint> external_type_local_index;
+StructuredBuffer<uint> declaration_generic_arity;
 StructuredBuffer<uint> type_instance_kind;
+StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_instance_arg_count;
+StructuredBuffer<uint> type_instance_arg_row_start;
+StructuredBuffer<uint> type_instance_arg_row_count_out;
+StructuredBuffer<uint> type_instance_arg_row_ref_tag;
+StructuredBuffer<uint> type_instance_arg_row_ref_payload;
+StructuredBuffer<uint> type_instance_arg_ref_tag;
+StructuredBuffer<uint> type_instance_arg_ref_payload;
 StructuredBuffer<uint> type_instance_len_kind;
 StructuredBuffer<uint> type_instance_len_payload;
 StructuredBuffer<uint> canonical_type_roots;
@@ -57,6 +65,7 @@ StructuredBuffer<uint> call_generic_claim_lookup_head;
 StructuredBuffer<uint> call_generic_claim_lookup_next;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
+RWStructuredBuffer<uint> call_return_aggregate_word_count;
 RWStructuredBuffer<uint> call_result_instance;
 RWStructuredBuffer<uint> decl_type_ref_tag;
 RWStructuredBuffer<uint> decl_type_ref_payload;
@@ -73,6 +82,11 @@ RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_WORDS = 9u;
+static const uint DECL_WORDS = 14u;
+static const uint MEMBER_WORDS = 11u;
+static const uint MEMBER_ENUM_VARIANT = 5u;
+static const uint HIR_ITEM_KIND_ENUM = 7u;
+static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
@@ -80,12 +94,15 @@ static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_ASSIGN_EXPR = 15u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint INTERFACE_TYPE_SCALAR = 1u;
 static const uint INTERFACE_TYPE_GENERIC_PARAMETER = 2u;
 static const uint INTERFACE_TYPE_DECLARATION = 3u;
+static const uint INTERFACE_TYPE_FUNCTION = 7u;
 static const uint INTERFACE_TYPE_ARRAY = 4u;
 static const uint INTERFACE_TYPE_SLICE = 5u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint TYPE_INSTANCE_ARRAY = 2u;
@@ -312,6 +329,187 @@ uint concrete_claim_row(uint callee, uint slot, uint count)
     return result;
 }
 
+bool instance_arg_ref(uint instance, uint slot, out uint tag, out uint payload)
+{
+    tag = TYPE_REF_INVALID;
+    payload = INVALID;
+    if (!valid_token(instance) || slot >= type_instance_arg_count[instance])
+        return false;
+    uint start = type_instance_arg_row_start[instance];
+    uint row = start == INVALID ? INVALID : start + slot;
+    if (row != INVALID && row < type_instance_arg_row_count_out[0u])
+    {
+        tag = type_instance_arg_row_ref_tag[row];
+        payload = type_instance_arg_row_ref_payload[row];
+        if (tag != TYPE_REF_INVALID)
+            return true;
+    }
+    if (slot >= 4u)
+        return false;
+    uint fixed = instance * 4u + slot;
+    tag = type_instance_arg_ref_tag[fixed];
+    payload = type_instance_arg_ref_payload[fixed];
+    return tag != TYPE_REF_INVALID;
+}
+
+bool claim_matches_instance_arg(uint callee, uint slot, uint instance)
+{
+    uint expected_tag;
+    uint expected_payload;
+    if (!instance_arg_ref(instance, slot, expected_tag, expected_payload))
+        return false;
+    uint count = min(call_generic_claim_count_out[0u], generic_claim_capacity());
+    uint claim = concrete_claim_row(callee, slot, count);
+    if (claim == INVALID)
+        return false;
+    uint claim_tag = call_generic_claim_ref_tag[claim];
+    uint claim_payload = call_generic_claim_ref_payload[claim];
+    if (expected_tag == TYPE_REF_SCALAR)
+        return (claim_tag == TYPE_REF_SCALAR && claim_payload == expected_payload) ||
+               (claim_tag == TYPE_REF_INVALID &&
+                call_generic_claim_type[claim] == expected_payload);
+    if (expected_tag != TYPE_REF_INSTANCE || claim_tag != TYPE_REF_INSTANCE ||
+        !valid_token(expected_payload) || !valid_token(claim_payload))
+        return false;
+    if (expected_payload == claim_payload)
+        return true;
+    if (type_instance_kind[expected_payload] != 1u ||
+        type_instance_kind[claim_payload] != 1u ||
+        type_instance_arg_count[expected_payload] != 0u ||
+        type_instance_arg_count[claim_payload] != 0u)
+        return false;
+    uint expected_decl = type_instance_decl_token[expected_payload];
+    uint claimed_decl = type_instance_decl_token[claim_payload];
+    if (valid_token(expected_decl) || valid_token(claimed_decl))
+        return valid_token(expected_decl) && expected_decl == claimed_decl;
+    return stable_nominal_equal(expected_payload, claim_payload);
+}
+
+uint direct_payload_words(uint type_root, uint instance)
+{
+    uint base = type_root * TYPE_WORDS;
+    uint kind = dependency_type_word(base);
+    if (kind == INTERFACE_TYPE_SCALAR)
+    {
+        uint scalar = dependency_type_word(base + 1u);
+        return scalar == 0u ? 0u : scalar == 7u ? 2u : scalar < 128u ? 1u : 0u;
+    }
+    if (kind != INTERFACE_TYPE_GENERIC_PARAMETER)
+        return 0u;
+    uint slot = dependency_type_word(base + 1u);
+    uint tag;
+    uint payload;
+    if (!instance_arg_ref(instance, slot, tag, payload) ||
+        tag != TYPE_REF_SCALAR)
+        return 0u;
+    return payload == 7u ? 2u : payload != 0u && payload < 128u ? 1u : 0u;
+}
+
+uint concrete_enum_words(uint parent, uint return_root, uint instance)
+{
+    uint parent_base = parent * DECL_WORDS;
+    uint start = dependency_declaration_word(parent_base + 8u);
+    uint count = dependency_declaration_word(parent_base + 9u);
+    if (start > dependency_member_count() ||
+        count > dependency_member_count() - start)
+        return 0u;
+    uint maximum = 0u;
+    for (uint member_ordinal = 0u; member_ordinal < count; member_ordinal += 1u)
+    {
+        uint member_base = (start + member_ordinal) * MEMBER_WORDS;
+        if (dependency_member_word(member_base + 1u) != MEMBER_ENUM_VARIANT)
+            continue;
+        uint signature = dependency_member_word(member_base + 7u);
+        if (signature >= dependency_count(4u))
+            return 0u;
+        uint signature_root = canonical_type_roots[signature];
+        uint signature_base = signature_root * TYPE_WORDS;
+        if (dependency_type_word(signature_base) != INTERFACE_TYPE_FUNCTION)
+            return 0u;
+        uint edge_start = dependency_type_word(signature_base + 3u);
+        uint edge_count = dependency_type_word(signature_base + 4u);
+        if (edge_count == 0u || edge_start > dependency_count(5u) ||
+            edge_count > dependency_count(5u) - edge_start)
+            return 0u;
+        uint return_edge = dependency_type_edge_word(edge_start + edge_count - 1u);
+        if (return_edge >= dependency_count(4u) ||
+            canonical_type_roots[return_edge] != return_root)
+            return 0u;
+        uint words = 1u;
+        for (uint ordinal = 0u; ordinal + 1u < edge_count; ordinal += 1u)
+        {
+            uint payload = dependency_type_edge_word(edge_start + ordinal);
+            if (payload >= dependency_count(4u))
+                return 0u;
+            uint payload_words = direct_payload_words(canonical_type_roots[payload], instance);
+            if (payload_words == 0u || words > 0xffffffffu - payload_words)
+                return 0u;
+            words += payload_words;
+        }
+        maximum = max(maximum, words);
+    }
+    return maximum;
+}
+
+bool bare_generic_variant_result_matches(
+    uint callee, uint return_root, uint expected_instance, out uint words)
+{
+    words = 0u;
+    uint variant = dependency_find_declaration(
+        call_dependency_library_id[callee],
+        call_dependency_unit_id[callee],
+        call_dependency_local_index[callee]);
+    if (variant >= dependency_declaration_count() ||
+        dependency_declaration_word(variant * DECL_WORDS + 6u) !=
+            HIR_ITEM_KIND_ENUM_VARIANT)
+        return false;
+    uint parent = dependency_declaration_word(variant * DECL_WORDS + 10u);
+    if (parent >= dependency_declaration_count() ||
+        dependency_declaration_word(parent * DECL_WORDS + 6u) != HIR_ITEM_KIND_ENUM ||
+        declaration_generic_arity[parent] != type_instance_arg_count[expected_instance])
+        return false;
+    uint parent_signature = dependency_declaration_word(parent * DECL_WORDS + 7u);
+    uint type_count = dependency_count(4u);
+    if (parent_signature >= type_count ||
+        canonical_type_roots[parent_signature] != return_root)
+        return false;
+    uint signature = dependency_declaration_word(variant * DECL_WORDS + 7u);
+    if (signature >= type_count)
+        return false;
+    uint signature_root = canonical_type_roots[signature];
+    uint signature_base = signature_root * TYPE_WORDS;
+    if (dependency_type_word(signature_base) != INTERFACE_TYPE_FUNCTION)
+        return false;
+    uint edge_start = dependency_type_word(signature_base + 3u);
+    uint edge_count = dependency_type_word(signature_base + 4u);
+    if (edge_count == 0u || edge_count > 5u ||
+        edge_start > dependency_count(5u) ||
+        edge_count > dependency_count(5u) - edge_start)
+        return false;
+    uint return_edge = dependency_type_edge_word(edge_start + edge_count - 1u);
+    if (return_edge >= type_count || canonical_type_roots[return_edge] != return_root)
+        return false;
+    for (uint ordinal = 0u; ordinal + 1u < edge_count; ordinal += 1u)
+    {
+        uint child = dependency_type_edge_word(edge_start + ordinal);
+        if (child >= type_count)
+            return false;
+        uint root = canonical_type_roots[child];
+        uint base = root * TYPE_WORDS;
+        uint kind = dependency_type_word(base);
+        if (kind == INTERFACE_TYPE_SCALAR)
+            continue;
+        if (kind != INTERFACE_TYPE_GENERIC_PARAMETER)
+            return false;
+        uint slot = dependency_type_word(base + 1u);
+        if (slot >= type_instance_arg_count[expected_instance] ||
+            !claim_matches_instance_arg(callee, slot, expected_instance))
+            return false;
+    }
+    words = concrete_enum_words(parent, return_root, expected_instance);
+    return words != 0u;
+}
+
 void substitute_direct_generic_call(uint call_node)
 {
     uint callee_node = compact_hir_payload[call_node].a;
@@ -433,10 +631,22 @@ void validate_dependency_result(
         return;
     uint actual_kind = dependency_type_word(actual_base);
     bool matches = false;
+    bool contextual_bare_variant = false;
+    uint contextual_enum_words = 0u;
     if (actual_kind == INTERFACE_TYPE_DECLARATION)
     {
-        matches = dependency_nominal_matches_token(actual_root, expected_payload) &&
-            type_instance_arg_count[expected_payload] == actual_count;
+        bool same_nominal = dependency_nominal_matches_token(
+            actual_root, expected_payload);
+        uint expected_count = type_instance_arg_count[expected_payload];
+        // Variant signatures export the owning enum's bare nominal return.
+        // Its type arguments come from the local result context. Accept this
+        // only for a real imported variant whose direct generic payloads
+        // agree with that context; other compound payloads fail closed.
+        contextual_bare_variant = same_nominal && actual_count == 0u &&
+            expected_count != 0u && bare_generic_variant_result_matches(
+                callee_token, actual_root, expected_payload, contextual_enum_words);
+        matches = same_nominal &&
+            (expected_count == actual_count || contextual_bare_variant);
     }
     else if (actual_kind == INTERFACE_TYPE_ARRAY || actual_kind == INTERFACE_TYPE_SLICE)
     {
@@ -460,6 +670,11 @@ void validate_dependency_result(
     // artifacts; child arguments are still checked through the dependency
     // comparison relation below.
     call_result_instance[call_node] = expected_payload;
+    if (contextual_bare_variant)
+    {
+        call_return_aggregate_word_count[callee_token] = contextual_enum_words;
+        return;
+    }
     if (actual_count != 0u)
     {
         uint actual_subtree_count = canonical_subtree_count(actual_root);

@@ -1168,7 +1168,10 @@ SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_
     {
         uint concrete_words = concrete_enum_instance_words(
             contextual_enum_instance(node, hir_count), hir_count);
+        uint projected_words = semantic_aggregate_word_count[node];
         core.value_word_count = concrete_words != 0u ? concrete_words
+            : projected_words != 0u && projected_words != LIR_INVALID
+                ? projected_words
             : hir.kind == HIR_CALL_EXPR
                 ? enum_constructor_word_count(node, payload, hir_count) : 1u;
         uint variant = semantic_call_target[node];

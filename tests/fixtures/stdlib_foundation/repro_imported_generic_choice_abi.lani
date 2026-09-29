@@ -1,0 +1,14 @@
+module app::main;
+import core::choice;
+
+fn marker_after(value: core::choice::Choice<i32, bool>, marker: i32) -> i32 {
+    return marker;
+}
+
+fn main() -> i32 {
+    let one: core::choice::Choice<i32, bool> = core::choice::One(7);
+    let both: core::choice::Choice<i32, bool> = core::choice::Both(3, true);
+    if (marker_after(one, 17) != 17) { return 1; }
+    if (marker_after(both, 29) != 29) { return 2; }
+    return 0;
+}

@@ -1,0 +1,7 @@
+module core::choice;
+
+pub enum Choice<T, E> {
+    One(T),
+    Both(T, E),
+    Empty,
+}

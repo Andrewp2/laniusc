@@ -151,13 +151,16 @@ bool variant_metadata(uint declaration_base, uint signature_root,
     if (start > dependency_member_count() ||
         count > dependency_member_count() - start)
         return false;
-    for (uint offset = 0u; offset < count; offset += 1u)
+    if (payload_count == 0u)
     {
-        uint member_base = (start + offset) * MEMBER_WORDS;
-        uint kind = dependency_member_word(member_base + 1u);
-        // A bare value cannot infer a generic enum's type arguments here.
-        if (kind == MEMBER_GENERIC_TYPE || kind == MEMBER_GENERIC_CONST)
-            return false;
+        for (uint offset = 0u; offset < count; offset += 1u)
+        {
+            uint member_base = (start + offset) * MEMBER_WORDS;
+            uint kind = dependency_member_word(member_base + 1u);
+            // A bare value cannot infer a generic enum's type arguments here.
+            if (kind == MEMBER_GENERIC_TYPE || kind == MEMBER_GENERIC_CONST)
+                return false;
+        }
     }
     for (uint offset = 0u; offset < count; offset += 1u)
     {

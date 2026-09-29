@@ -93,7 +93,7 @@ limited to native x86_64 output from this worktree.
 | `core::u16` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture calls every function and reads every constant. It checks ordinary and high-bit values, wrapping and saturating overflow, checked arithmetic through `OptionU16`, reversed bounds, zero divisors, power-of-two overflow, and invalid or overflowing alignment. |
 | `core::u32` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, unsigned high-bit and maximum values, checked and wrapping arithmetic, alignment failures, and power-of-two overflow. Checked results use concrete `OptionU32`. |
 | `core::ordering` all 20 public functions and `Ordering` variants | Executable on x86_64 | `tests/stdlib_ordering.rs` and `tests/stdlib_ordering_wide.rs` execute every function and direct qualified and unqualified `Less`, `Equal`, and `Greater` values through the real stdlib root. They cover predicates, reverse, then, all six scalar integer widths, Boolean false-before-true order, Unicode scalar order, unsigned high-bit comparison, and full-width signed and unsigned ordering through the two-word `WideI64` and `WideU64` types. `tests/stdlib_char_high_bit_execution.rs` also compares the unsigned character high bit and maximum through ordering, comparison, range, and slice helpers. `compare_f32_or` checks finite values, signed zero, infinities, and caller-supplied fallbacks for NaN. The broken primitive `compare_i64` was removed until native i64 literal and comparison lowering works (dependency 11). |
-| Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Local concrete generic enum values execute, but imported generic constructors and unspecialized generic function bodies remain blocked. Native 64-bit comparison/arithmetic are also incomplete. Even a direct `core::i64::min(2, 3)` call cannot emit x86 code because importing `core::i64` pulls in generic Option/Result. The former by-value `Option::replace` ignored its input and was removed. Concrete 8-, 16-, and 32-bit Option/Result modules and concrete two-word 64-bit variants execute on x86_64. |
+| Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Local concrete generic enum values execute. A direct imported generic variant with a contextual result can now construct and pass a scalar-payload value on x86, but imported match patterns and unspecialized generic function bodies remain blocked. Native 64-bit comparison/arithmetic are also incomplete. Even a direct `core::i64::min(2, 3)` call cannot emit x86 code because importing `core::i64` pulls in generic Option/Result. The former by-value `Option::replace` ignored its input and was removed. Concrete 8-, 16-, and 32-bit Option/Result modules and concrete two-word 64-bit variants execute on x86_64. |
 | `core::cmp` all 60 public free functions for six integer widths, `bool`, `char`, `WideU64`, and `WideI64` | Executable on x86_64 | The imported runtime fixture calls every equality and ordering function with equal and unequal values, both directions, signed and two-word extrema, unsigned high-bit values, both Boolean values, and Unicode characters. The `i32`, `u32`, `bool`, and `char` functions execute local trait implementation bodies. Narrow integer functions use scalar operators because their trait keys collide with the corresponding 32-bit type (dependency 57); two-word functions use the executable wide modules because imported nominal trait arguments fail in native emission (dependency 58). Direct imported trait calls remain outside this claim. |
 | `core::cmp` trait methods and `core::hash::Hash<T>` trait methods | Contract-only as complete APIs in this audit | The public free comparison and hashing functions execute, but direct imported trait method calls do not. See dependencies 31, 57, and 58. |
 | `core::target` all 18 public functions and 16 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant. It checks the available allocator, filesystem, stdio, clock, secure RNG, process, and environment bindings against `core::runtime`; unbound network, threads, GPU, host services, panic hooks, and test harness remain false. This is a target snapshot, not a live host probe. |
@@ -2002,10 +2002,22 @@ also fixes the imported struct-return relocation path described below.
    `core::option` still stops with `LNC0017` on its generic `is_some<T>` match
    body. Generic function bodies need per-instantiation specialization before
    Option/Result can work. A direct imported constructor of the smaller
-   `core::maybe::Maybe<i32>` passes `check` but native emission reports
-   `LNC0006`; imported constructor result typing needs a separate projection.
-   `tests/stdlib_generic_enum_declaration_execution.rs` preserves both
-   fail-closed cases.
+   `core::maybe::Maybe<i32>` now compiles and passes its value through a local
+   function on x86. The dependency result checker uses the annotated concrete
+   instance for a variant's bare nominal return and requires direct generic
+   payload claims to agree with it; `Some(true)` under `Maybe<i32>` is rejected.
+   For direct scalar payloads, the checker computes the maximum width across
+   all variants and supplies it to native lowering. The `Choice<i32,bool>`
+   fixture constructs one- and two-payload variants, passes both across a
+   call with a following marker argument, and checks the marker on x86;
+   a wrong second payload is rejected.
+   This does not establish the value's discriminant and payload because an
+   imported `Some(inner)` match pattern still reports `LNC0005` in a separate
+   compilation unit. Contextual construction of an imported generic unit
+   variant such as `None` is also unimplemented. Generic instance payloads
+   with their own type arguments and compound variant payload declarations
+   continue to fail closed. The focused tests preserve these executable and
+   fail-closed boundaries.
    `repro_generic_payload_struct_wide.lani` also compiles a two-word `Pair`
    through `Maybe<T>` as a generic struct, but the native ELF exits 1 instead
    of 0. A struct representation is therefore not a safe source-level

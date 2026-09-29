@@ -5053,6 +5053,8 @@ fn build_graph(
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "canonical_type_subtree_start" => dependency_canonical_type_subtree_start: Read,
+            "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
+            "call_return_aggregate_word_count" => _call_return_aggregate_word_count: Write,
             "call_result_instance" => _call_result_instance: Write,
         ],
     )?;
@@ -5411,6 +5413,8 @@ fn build_graph(
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "canonical_type_subtree_start" => dependency_canonical_type_subtree_start: Read,
+            "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
+            "call_return_aggregate_word_count" => _call_return_aggregate_word_count: Write,
             "call_result_instance" => call_result_instance: Write,
         ],
     )?;
@@ -5423,6 +5427,8 @@ fn build_graph(
         reflected_bindings![
             "canonical_type_roots" => dependency_canonical_type_roots: Read,
             "canonical_type_subtree_start" => dependency_canonical_type_subtree_start: Read,
+            "declaration_generic_arity" => dependency_declaration_generic_arity: Read,
+            "call_return_aggregate_word_count" => _call_return_aggregate_word_count: Write,
             "call_result_instance" => call_result_instance: Write,
         ],
     )?;

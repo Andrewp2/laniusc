@@ -1,0 +1,11 @@
+module app::main;
+import core::maybe;
+
+fn consume(value: core::maybe::Maybe<i32>, marker: i32) -> i32 {
+    return marker;
+}
+
+fn main() -> i32 {
+    let value: core::maybe::Maybe<i32> = core::maybe::Some(7);
+    return consume(value, 7) - 7;
+}

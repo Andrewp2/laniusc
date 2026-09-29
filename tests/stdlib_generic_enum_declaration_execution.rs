@@ -94,7 +94,54 @@ fn concrete_generic_enum_values_execute_on_x86() {
 }
 
 #[test]
-fn imported_generic_enum_constructor_still_needs_emit_type_projection() {
+fn imported_generic_enum_constructor_emits_and_passes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root
+        .join("tests/fixtures/stdlib_foundation/repro_imported_generic_enum_construct_only.lani");
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let bytes =
+        common::run_gpu_codegen_with_timeout("imported generic enum constructor", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+        })
+        .expect("imported generic enum constructor should compile");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported generic enum constructor",
+            "repro_imported_generic_enum_construct_only",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_generic_enum_uses_maximum_variant_abi_width_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_choice_abi.lani");
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_choice_root");
+    let bytes = common::run_gpu_codegen_with_timeout("imported generic enum ABI", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect("imported generic enum ABI should compile");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported generic enum ABI",
+            "repro_imported_generic_choice_abi",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_generic_enum_match_still_needs_pattern_projection() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry =
         root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_enum_local_match.lani");
@@ -102,7 +149,33 @@ fn imported_generic_enum_constructor_still_needs_emit_type_projection() {
     let error = common::run_gpu_codegen_with_timeout("imported generic enum value", move || {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
     })
-    .expect_err("imported constructor should fail closed until emit type projection works");
+    .expect_err("imported enum match patterns still need dependency projection");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0005", "{error:?}");
+}
+
+#[test]
+fn imported_generic_enum_rejects_wrong_payload_type() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root
+        .join("tests/fixtures/stdlib_foundation/repro_imported_generic_enum_wrong_payload.lani");
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let error = common::run_gpu_codegen_with_timeout("wrong imported enum payload", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect_err("Maybe<i32>::Some(true) must be rejected");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn imported_generic_enum_rejects_wrong_second_payload_type() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root
+        .join("tests/fixtures/stdlib_foundation/repro_imported_generic_choice_wrong_second.lani");
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_choice_root");
+    let error = common::run_gpu_codegen_with_timeout("wrong second enum payload", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect_err("Choice<i32,bool>::Both(3,9) must be rejected");
     assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
 }
 

@@ -261,12 +261,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else
         return;
 
-    // Persisted canonical return types are compared with local instances by
+    // Persisted canonical call results are compared with local instances by
     // the dependency call-result relation after generic claims are resolved.
     // This pass remains authoritative for every other representation pair.
-    if (stmt.a == HIR_STMT_RETURN &&
-        actual_tag == TYPE_REF_EXTERNAL_CANONICAL &&
-        resolved_dependency_call(stmt.b))
+    uint expression_node = stmt.a == HIR_STMT_RETURN ? stmt.b : stmt.c;
+    if (actual_tag == TYPE_REF_EXTERNAL_CANONICAL &&
+        resolved_dependency_call(expression_node))
         return;
 
     validate_refs(
