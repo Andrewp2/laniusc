@@ -1,0 +1,10 @@
+module app::main;
+import core::ordering;
+
+fn main() -> i32 {
+    let value = 3;
+    return match (value) {
+        core::ordering::Greater -> 1,
+        _ -> 0,
+    };
+}

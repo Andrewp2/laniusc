@@ -1095,6 +1095,15 @@ impl GpuTypeChecker {
                 .type_instances
                 .infer_imported_decl_refs
                 .record(encoder)?;
+            // Imported unit patterns need the scrutinee's stable nominal
+            // identity. An unannotated local receives that identity only
+            // after imported-value inference.
+            if matches_required {
+                module_path
+                    .bind_groups
+                    .validate_imported_unit_patterns
+                    .record(encoder)?;
+            }
             if methods_required {
                 bind_groups.methods.resolve.record(encoder)?;
             }

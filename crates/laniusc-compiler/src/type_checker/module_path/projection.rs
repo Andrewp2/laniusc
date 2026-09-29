@@ -30,6 +30,7 @@ pub(in crate::type_checker) struct ProjectionBindGroups {
     pub(in crate::type_checker) validate_value_enum_call_payloads: ComputeOperation,
     pub(in crate::type_checker) finalize_value_enum_calls: ComputeOperation,
     pub(in crate::type_checker) bind_match_patterns: ComputeOperation,
+    pub(in crate::type_checker) validate_imported_unit_patterns: ComputeOperation,
     pub(in crate::type_checker) type_match_payloads: ComputeOperation,
     pub(in crate::type_checker) type_match_exprs: ComputeOperation,
 }
@@ -634,6 +635,14 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         MATCH_PATTERNS_BIND,
         &match_hir_dispatch_args,
     )?;
+    let validate_imported_unit_patterns = ComputeOperation::indirect_spec(
+        device,
+        graph,
+        resources,
+        passes,
+        MATCH_IMPORTED_UNIT_PATTERNS_VALIDATE,
+        &match_hir_dispatch_args,
+    )?;
     let type_match_payloads = ComputeOperation::indirect_spec(
         device,
         graph,
@@ -674,6 +683,7 @@ pub(in crate::type_checker) fn create_projection_bind_groups(
         validate_value_enum_call_payloads,
         finalize_value_enum_calls,
         bind_match_patterns,
+        validate_imported_unit_patterns,
         type_match_payloads,
         type_match_exprs,
     })

@@ -1,0 +1,56 @@
+module app::main;
+import core::ordering;
+
+fn score(value: core::ordering::Ordering) -> i32 {
+    return match (value) {
+        core::ordering::Greater -> 3,
+        core::ordering::Equal -> 2,
+        core::ordering::Less -> 1,
+    };
+}
+
+fn score_unqualified(value: Ordering) -> i32 {
+    return match (value) {
+        Greater -> 3,
+        Equal -> 2,
+        Less -> 1,
+    };
+}
+
+fn main() -> i32 {
+    let greater: core::ordering::Ordering = core::ordering::Greater;
+    let greater_code: i32 = match (greater) {
+        core::ordering::Less -> 1,
+        core::ordering::Equal -> 2,
+        core::ordering::Greater -> 3,
+    };
+    if (greater_code != 3) { return 1; }
+
+    let less: core::ordering::Ordering = core::ordering::Less;
+    let less_code: i32 = match (less) {
+        core::ordering::Greater -> 3,
+        core::ordering::Equal -> 2,
+        core::ordering::Less -> 1,
+    };
+    if (less_code != 1) { return 2; }
+
+    let equal: core::ordering::Ordering = core::ordering::Equal;
+    let equal_code: i32 = match (equal) {
+        core::ordering::Greater -> 3,
+        core::ordering::Less -> 1,
+        core::ordering::Equal -> 2,
+    };
+    if (equal_code != 2) { return 3; }
+
+    let inferred = core::ordering::Less;
+    let inferred_code: i32 = match (inferred) {
+        core::ordering::Greater -> 3,
+        core::ordering::Less -> 1,
+        core::ordering::Equal -> 2,
+    };
+    if (inferred_code != 1) { return 4; }
+    if (score(core::ordering::Greater) != 3) { return 5; }
+    if (score(core::ordering::Less) != 1) { return 6; }
+    if (score_unqualified(core::ordering::Equal) != 2) { return 7; }
+    return 0;
+}

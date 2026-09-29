@@ -1,0 +1,12 @@
+module app::main;
+import core::ordering;
+
+enum Other { Zero, One }
+
+fn main() -> i32 {
+    let value: Other = Zero;
+    return match (value) {
+        Greater -> 1,
+        _ -> 0,
+    };
+}

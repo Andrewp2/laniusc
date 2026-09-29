@@ -118,6 +118,122 @@ fn imported_generic_enum_constructor_emits_and_passes_on_x86() {
 }
 
 #[test]
+fn imported_unit_enum_match_checks_discriminants_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_imported_unit_match.lani");
+    let stdlib = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("imported unit match", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect("imported unit match should compile");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported unit match",
+            "repro_imported_unit_match",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_unit_enum_pattern_rejects_unrelated_scrutinee() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_unit_match_wrong_enum.lani");
+    let stdlib = root.join("stdlib");
+    let error = common::run_gpu_codegen_with_timeout("unrelated imported pattern", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect_err("a pattern from a different enum must be rejected");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn unqualified_imported_unit_pattern_rejects_unrelated_scrutinee() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join(
+        "tests/fixtures/stdlib_foundation/repro_imported_unit_match_unqualified_wrong_enum.lani",
+    );
+    let stdlib = root.join("stdlib");
+    let result = common::run_gpu_codegen_with_timeout("unqualified unrelated pattern", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    });
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => panic!("an unqualified imported pattern from another enum must be rejected"),
+    };
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn imported_unit_enum_pattern_rejects_scalar_scrutinee() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/repro_imported_unit_match_scalar.lani");
+    let stdlib = root.join("stdlib");
+    let result = common::run_gpu_codegen_with_timeout("scalar imported pattern", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    });
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => panic!("an enum pattern against a scalar must be rejected"),
+    };
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn imported_unit_enum_pattern_rejects_inferred_scalar_scrutinee() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root
+        .join("tests/fixtures/stdlib_foundation/repro_imported_unit_match_inferred_scalar.lani");
+    let stdlib = root.join("stdlib");
+    let result =
+        common::run_gpu_codegen_with_timeout("inferred scalar imported pattern", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+        });
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => panic!("an enum pattern against an inferred scalar must be rejected"),
+    };
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn imported_unit_enum_pattern_rejects_payload_binding() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_unit_match_payload.lani");
+    let stdlib = root.join("stdlib");
+    let result = common::run_gpu_codegen_with_timeout("unit variant payload binding", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    });
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => panic!("a unit variant cannot bind a payload"),
+    };
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn imported_unit_enum_match_direct_call_needs_result_identity() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_unit_match_direct_call.lani");
+    let stdlib = root.join("stdlib");
+    let result = common::run_gpu_codegen_with_timeout("direct call enum match", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    });
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => panic!("a direct call match needs its result enum identity checked"),
+    };
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
 fn imported_generic_enum_uses_maximum_variant_abi_width_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry =

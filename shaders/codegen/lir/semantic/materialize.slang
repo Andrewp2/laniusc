@@ -155,6 +155,12 @@ uint match_arm_for_result_node(uint node, uint hir_count)
 uint variant_ordinal_for_pattern(uint pattern, uint hir_count)
 {
     if (pattern >= hir_count) return LIR_INVALID;
+    // Imported unit variants carry their checked ordinal on the HIR path.
+    // Their declaration token is not present in the local compact variant
+    // family, so looking it up there would turn a real pattern into a
+    // wildcard-shaped self binding.
+    if (semantic_value_const_present_by_hir[pattern] == 0x40000000u)
+        return semantic_value_const_by_hir[pattern];
     uint declaration_token = semantic_value_id[pattern];
     uint count = min(compact_variant_count[0u], gParams.n_hir_nodes);
     uint lo = 0u;
@@ -182,6 +188,8 @@ bool scalar_match_pattern(uint pattern, uint hir_count)
 bool wildcard_match_pattern(uint pattern, uint hir_count)
 {
     if (pattern >= hir_count) return false;
+    if (semantic_value_const_present_by_hir[pattern] == 0x40000000u)
+        return false;
     HirCore core = compact_hir_core[pattern];
     // The checker gives `_` a self-binding declaration identity. Do not
     // constrain this to one expression wrapper kind: compact HIR is allowed

@@ -1,0 +1,9 @@
+module app::main;
+import core::ordering;
+
+fn main() -> i32 {
+    return match (core::ordering::compare_i32(1, 2)) {
+        core::ordering::Less -> 0,
+        _ -> 1,
+    };
+}

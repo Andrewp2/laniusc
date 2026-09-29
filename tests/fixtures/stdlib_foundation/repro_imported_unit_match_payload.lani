@@ -1,0 +1,10 @@
+module app::main;
+import core::ordering;
+
+fn main() -> i32 {
+    let value: core::ordering::Ordering = core::ordering::Greater;
+    return match (value) {
+        core::ordering::Greater(inner) -> inner,
+        _ -> 0,
+    };
+}

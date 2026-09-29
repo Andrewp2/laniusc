@@ -137,6 +137,7 @@ pub(in crate::type_checker) fn create_with_passes(
         validate_value_enum_call_payloads,
         finalize_value_enum_calls,
         bind_match_patterns,
+        validate_imported_unit_patterns,
         type_match_payloads,
         type_match_exprs,
     } = create_projection_bind_groups(passes, device, graph, &inputs, &module_resources)?;
@@ -936,6 +937,7 @@ pub(in crate::type_checker) fn create_with_passes(
             validate_value_enum_call_payloads,
             finalize_value_enum_calls,
             bind_match_patterns,
+            validate_imported_unit_patterns,
             type_match_payloads,
             type_match_exprs,
         },

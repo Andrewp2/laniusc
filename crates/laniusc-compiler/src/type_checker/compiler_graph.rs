@@ -4990,6 +4990,7 @@ fn build_graph(
     VALUE_ENUM_CALLS_FINALIZE.register_kernel(&mut graph, kernels)?;
     MATCH_EXPRS_TYPE.register_kernel(&mut graph, kernels)?;
     VALUE_CONSTS_CONSUME.register_kernel(&mut graph, kernels)?;
+    MATCH_IMPORTED_UNIT_PATTERNS_VALIDATE.register_kernel(&mut graph, kernels)?;
     VALUE_ENUM_UNITS_CONSUME.register_kernel(&mut graph, kernels)?;
     METHODS_RESOLVE.register_kernel(&mut graph, kernels)?;
     CALLS_ARGUMENT_MATCH_FINAL_INITIALIZE.register_kernel(&mut graph, kernels)?;
@@ -5742,6 +5743,7 @@ mod tests {
         for operation in [
             MATCH_PATTERNS_BIND,
             MATCH_PAYLOADS_TYPE,
+            MATCH_IMPORTED_UNIT_PATTERNS_VALIDATE,
             VALUE_ENUM_CALLS_CONSUME,
             VALUE_ENUM_CALL_PAYLOADS_VALIDATE,
             VALUE_ENUM_CALLS_FINALIZE,
