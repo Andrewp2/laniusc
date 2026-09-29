@@ -87,6 +87,7 @@ static const uint LANGUAGE_SYMBOL_WILDCARD = 19u;
 static const uint HIR_ITEM_KIND_CONST = 3u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint IMPORTED_GENERIC_UNIT_VARIANT = 11u;
+static const uint IMPORTED_PAYLOAD_VARIANT = 10u;
 static const uint CONST_PRESENT = 0x80000000u;
 static const uint IMPORTED_UNIT_VARIANT_PRESENT = 0x40000000u;
 
@@ -186,11 +187,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
             else if (resolved_dependency_value_metadata[value_base] ==
                          HIR_ITEM_KIND_ENUM_VARIANT ||
                      resolved_dependency_value_metadata[value_base] ==
-                         IMPORTED_GENERIC_UNIT_VARIANT)
+                         IMPORTED_GENERIC_UNIT_VARIANT ||
+                     (resolved_dependency_value_metadata[value_base] ==
+                          IMPORTED_PAYLOAD_VARIANT &&
+                      valid_token(core.token_start) &&
+                      visible_decl[core.token_start] == core.token_start))
             {
                 const_value = resolved_dependency_value_metadata[value_base + 2u];
-                // This lane carries the unit variant ordinal. It is a tagged
-                // aggregate constructor, not a scalar imported constant.
+                // This lane carries an imported pattern's checked ordinal.
+                // A payload constructor call uses its call artifact instead.
                 const_present = IMPORTED_UNIT_VARIANT_PRESENT;
             }
         }

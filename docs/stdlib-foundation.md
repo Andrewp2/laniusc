@@ -93,7 +93,7 @@ limited to native x86_64 output from this worktree.
 | `core::u16` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture calls every function and reads every constant. It checks ordinary and high-bit values, wrapping and saturating overflow, checked arithmetic through `OptionU16`, reversed bounds, zero divisors, power-of-two overflow, and invalid or overflowing alignment. |
 | `core::u32` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, unsigned high-bit and maximum values, checked and wrapping arithmetic, alignment failures, and power-of-two overflow. Checked results use concrete `OptionU32`. |
 | `core::ordering` all 20 public functions and `Ordering` variants | Executable on x86_64 | `tests/stdlib_ordering.rs` and `tests/stdlib_ordering_wide.rs` execute every function and direct qualified and unqualified `Less`, `Equal`, and `Greater` values through the real stdlib root. The imported unit-pattern fixture now executes matches for all three variants through annotated and inferred locals, a typed parameter, and a direct imported function result; negative fixtures reject unrelated enums, scalar scrutinees, unrelated call results, and payload bindings on unit variants. They cover predicates, reverse, then, all six scalar integer widths, Boolean false-before-true order, Unicode scalar order, unsigned high-bit comparison, and full-width signed and unsigned ordering through the two-word `WideI64` and `WideU64` types. `tests/stdlib_char_high_bit_execution.rs` also compares the unsigned character high bit and maximum through ordering, comparison, range, and slice helpers. `compare_f32_or` checks finite values, signed zero, infinities, and caller-supplied fallbacks for NaN. The broken primitive `compare_i64` was removed until native i64 literal and comparison lowering works (dependency 11). |
-| Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Local concrete generic enum values execute. Direct imported generic `Some` and `None()` constructors with annotated concrete results execute and preserve the scalar-payload ABI on x86. An imported generic unit variant also works as a match pattern against an annotated concrete instance. Imported payload patterns, direct argument `None()` construction, and unspecialized generic function bodies remain blocked. Native 64-bit comparison/arithmetic are also incomplete. Even a direct `core::i64::min(2, 3)` call cannot emit x86 code because importing `core::i64` pulls in generic Option/Result. The former by-value `Option::replace` ignored its input and was removed. Concrete 8-, 16-, and 32-bit Option/Result modules and concrete two-word 64-bit variants execute on x86_64. |
+| Generic `core::option`, `core::result`, and `core::i64` as complete imported modules | Contract-only for native execution | Local concrete generic enum values execute. Direct imported generic `Some` and `None()` constructors with annotated concrete results execute and preserve the scalar-payload ABI on x86. Imported generic unit and direct scalar-payload patterns work against annotated concrete instances, including a two-payload variant with two type parameters. Compound generic payload patterns, direct argument `None()` construction, and unspecialized generic function bodies remain blocked. Native 64-bit comparison/arithmetic are also incomplete. Even a direct `core::i64::min(2, 3)` call cannot emit x86 code because importing `core::i64` pulls in generic Option/Result. The former by-value `Option::replace` ignored its input and was removed. Concrete 8-, 16-, and 32-bit Option/Result modules and concrete two-word 64-bit variants execute on x86_64. |
 | `core::cmp` all 60 public free functions for six integer widths, `bool`, `char`, `WideU64`, and `WideI64` | Executable on x86_64 | The imported runtime fixture calls every equality and ordering function with equal and unequal values, both directions, signed and two-word extrema, unsigned high-bit values, both Boolean values, and Unicode characters. The `i32`, `u32`, `bool`, and `char` functions execute local trait implementation bodies. Narrow integer functions use scalar operators because their trait keys collide with the corresponding 32-bit type (dependency 57); two-word functions use the executable wide modules because imported nominal trait arguments fail in native emission (dependency 58). Direct imported trait calls remain outside this claim. |
 | `core::cmp` trait methods and `core::hash::Hash<T>` trait methods | Contract-only as complete APIs in this audit | The public free comparison and hashing functions execute, but direct imported trait method calls do not. See dependencies 31, 57, and 58. |
 | `core::target` all 18 public functions and 16 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant. It checks the available allocator, filesystem, stdio, clock, secure RNG, process, and environment bindings against `core::runtime`; unbound network, threads, GPU, host services, panic hooks, and test harness remain false. This is a target snapshot, not a live host probe. |
@@ -2035,11 +2035,19 @@ also fixes the imported struct-return relocation path described below.
    report `LNC0006` instead of emitting an unresolved enum width. A nested
    `None()` passed directly as a typed function argument also reports
    `LNC0006`; the result context is not yet projected into that call.
-   An imported `Some(inner)` match pattern still reports `LNC0005` in a
-   separate compilation unit. Generic instance payloads
-   with their own type arguments and compound variant payload declarations
-   continue to fail closed. The focused tests preserve these executable and
-   fail-closed boundaries.
+   Imported scalar payload patterns now execute across modules.
+   `repro_imported_generic_enum_local_match.lani` extracts `Some(inner)`;
+   `repro_imported_generic_choice_match.lani` checks the first and second
+   generic slots in one- and two-payload variants; and
+   `repro_imported_concrete_payload_match.lani` extracts both fields from a
+   concrete imported enum returned by a helper. The dependency projector
+   preserves direct scalar and generic-slot payload signatures after its
+   temporary page is released. Wrong payload arity, a scalar scrutinee, and
+   a different imported enum report `LNC0006`. Compound generic payload
+   shapes remain unverified; the imported `Some(Pair)` constructor reports
+   `LNC0006` until its aggregate layout is checked. Generic instance payloads
+   with their own type arguments continue to fail closed. The focused
+   tests preserve these executable and fail-closed boundaries.
    `repro_generic_payload_struct_wide.lani` also compiles a two-word `Pair`
    through `Maybe<T>` as a generic struct, but the native ELF exits 1 instead
    of 0. A struct representation is therefore not a safe source-level
@@ -2764,6 +2772,14 @@ also fixes the imported struct-return relocation path described below.
     the final subcase. This remains an existing fixed-enum return dependency;
     the concrete generic-enum tests do not establish nested enum return
     correctness.
+
+64. **Nested match as a match-arm result.**
+    `repro_imported_generic_payload_nested_match.lani` uses a second `match`
+    directly as the result of an imported `Some(inner)` arm. GPU `check`
+    reports `LNC0016` at the inner `match`, so this expression form is not
+    accepted syntax. Native emission currently reports the less useful
+    `LNC0057` instead. This is a syntax and diagnostic dependency, separate
+    from the executable flat imported payload patterns above.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

@@ -28,6 +28,7 @@ StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> resolved_dependency_value_metadata;
+StructuredBuffer<uint> resolved_dependency_variant_payload_records;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_name_token;
 StructuredBuffer<uint> decl_hir_node;
@@ -54,6 +55,7 @@ static const uint TY_UNKNOWN = 0u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint IMPORTED_GENERIC_UNIT_VARIANT = 11u;
+static const uint IMPORTED_PAYLOAD_VARIANT = 10u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -134,16 +136,19 @@ void bind_resolved_pattern(uint pattern, uint actual_count)
         return;
 
     uint dependency_value_base = path_i * 3u;
-    if (resolved_dependency_value_metadata[dependency_value_base] ==
-        IMPORTED_GENERIC_UNIT_VARIANT)
+    uint imported_kind = resolved_dependency_value_metadata[dependency_value_base];
+    if (imported_kind == IMPORTED_GENERIC_UNIT_VARIANT ||
+        imported_kind == IMPORTED_PAYLOAD_VARIANT)
     {
-        // A pattern obtains the missing type arguments from its scrutinee.
-        // Keep bare generic unit values unresolved in the value consumer.
+        // A pattern obtains missing type arguments from its scrutinee.
+        // Bare generic values remain unresolved in the value consumer.
         bind_decl(owner_token, owner_token);
         decl_type_ref_tag[owner_token] = TYPE_REF_EXTERNAL_CANONICAL;
         decl_type_ref_payload[owner_token] =
             resolved_dependency_value_metadata[dependency_value_base + 1u];
-        if (actual_count != 0u)
+        uint expected_count = imported_kind == IMPORTED_PAYLOAD_VARIANT
+            ? resolved_dependency_variant_payload_records[path_i * 9u] : 0u;
+        if (actual_count != expected_count)
             record_min_token_error(status, owner_token, ERR_ASSIGN_MISMATCH, 0u);
         return;
     }

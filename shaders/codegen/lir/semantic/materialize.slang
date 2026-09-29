@@ -155,7 +155,7 @@ uint match_arm_for_result_node(uint node, uint hir_count)
 uint variant_ordinal_for_pattern(uint pattern, uint hir_count)
 {
     if (pattern >= hir_count) return LIR_INVALID;
-    // Imported unit variants carry their checked ordinal on the HIR path.
+    // Imported variant patterns carry their checked ordinal on the HIR path.
     // Their declaration token is not present in the local compact variant
     // family, so looking it up there would turn a real pattern into a
     // wildcard-shaped self binding.

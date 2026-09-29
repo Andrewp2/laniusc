@@ -1,4 +1,5 @@
 import hir_records;
+import status;
 
 // Substitute enum match payload types from compact HIR family rows.
 
@@ -23,6 +24,8 @@ StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
+StructuredBuffer<uint> resolved_dependency_value_metadata;
+StructuredBuffer<uint> resolved_dependency_variant_payload_records;
 RWStructuredBuffer<uint> visible_decl;
 RWStructuredBuffer<uint> module_value_path_status;
 StructuredBuffer<uint> decl_id_by_name_token;
@@ -47,7 +50,9 @@ StructuredBuffer<uint> type_instance_arg_row_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_name_id;
+StructuredBuffer<uint> call_result_instance;
 RWStructuredBuffer<uint> visible_type;
+RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
@@ -56,6 +61,9 @@ static const uint LEGACY_ARG_STRIDE = 4u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_CALL_EXPR = 19u;
+static const uint IMPORTED_PAYLOAD_VARIANT = 10u;
+static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
@@ -207,6 +215,53 @@ bool scrutinee_context_for_match(uint match_node, uint enum_token, out uint inst
     return scrutinee_ty == TY_ENUM_BASE + enum_token;
 }
 
+uint imported_scrutinee_instance(uint match_node)
+{
+    if (!valid_hir(match_node)) return INVALID;
+    uint scrutinee = compact_hir_payload[match_node].a;
+    if (!valid_hir(scrutinee)) return INVALID;
+    if (compact_hir_core[scrutinee].kind == HIR_CALL_EXPR)
+    {
+        uint instance = call_result_instance[scrutinee];
+        return valid_token(instance) ? instance : INVALID;
+    }
+    uint token = compact_hir_core[scrutinee].kind == HIR_MEMBER_EXPR
+        ? compact_hir_payload[scrutinee].c
+        : compact_hir_core[scrutinee].token_start;
+    if (!valid_token(token)) return INVALID;
+    uint declaration = visible_decl[token];
+    if (!valid_token(declaration) ||
+        decl_type_ref_tag[declaration] != TYPE_REF_INSTANCE)
+        return INVALID;
+    uint instance = decl_type_ref_payload[declaration];
+    return valid_token(instance) ? instance : INVALID;
+}
+
+bool imported_payload_ref(HirMatchPayload payload_row, HirMatchArm arm,
+                          uint path, out uint tag, out uint ref_payload)
+{
+    tag = TYPE_REF_INVALID;
+    ref_payload = INVALID;
+    if (payload_row.parent_pattern != arm.pattern) return false;
+    uint record_base = path * 9u;
+    uint count = resolved_dependency_variant_payload_records[record_base];
+    if (payload_row.ordinal >= count || count > 4u) return false;
+    uint payload_base = record_base + 1u + payload_row.ordinal * 2u;
+    uint projected_tag = resolved_dependency_variant_payload_records[payload_base];
+    uint projected_payload = resolved_dependency_variant_payload_records[payload_base + 1u];
+    if (projected_tag == TYPE_REF_SCALAR)
+    {
+        tag = projected_tag;
+        ref_payload = projected_payload;
+        return projected_payload != INVALID;
+    }
+    if (projected_tag != TYPE_REF_GENERIC_PARAM) return false;
+    uint instance = imported_scrutinee_instance(arm.owner);
+    return valid_token(instance) &&
+        instance_arg_ref(instance, projected_payload, tag, ref_payload) &&
+        tag == TYPE_REF_SCALAR && ref_payload != INVALID;
+}
+
 bool enum_variant_for_arm(
     HirMatchArm arm,
     out uint enum_token,
@@ -264,6 +319,10 @@ bool payload_ref(HirMatchPayload payload_row, out uint tag, out uint ref_payload
     HirMatchArm arm = compact_match_arms[payload_row.arm];
     if (!valid_hir(payload_row.parent_pattern))
         return false;
+    uint path = path_for_pattern(payload_row.parent_pattern);
+    if (valid_path(path) &&
+        resolved_dependency_value_metadata[path * 3u] == IMPORTED_PAYLOAD_VARIANT)
+        return imported_payload_ref(payload_row, arm, path, tag, ref_payload);
     uint variant_token;
     uint enum_token;
     uint variant;
@@ -320,7 +379,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint tag;
     uint ref_payload;
     if (!payload_ref(payload, tag, ref_payload))
+    {
+        uint path = path_for_pattern(payload.parent_pattern);
+        if (valid_path(path) &&
+            resolved_dependency_value_metadata[path * 3u] == IMPORTED_PAYLOAD_VARIANT)
+            record_min_token_error(status, binder_token, ERR_ASSIGN_MISMATCH, 0u);
         return;
+    }
     decl_type_ref_tag[binder_token] = tag;
     decl_type_ref_payload[binder_token] = ref_payload;
     uint ty = type_ref_to_type_code(tag, ref_payload);

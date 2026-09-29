@@ -3489,6 +3489,12 @@ fn build_graph(
         ResourceClass::Workspace,
         u64::from(module_record_capacity.max(1)) * 3 * 4,
     )?;
+    let resolved_dependency_variant_payload_records = graph.add_storage(
+        "resolved_dependency_variant_payload_records",
+        ResourceDomain::Declarations,
+        ResourceClass::Workspace,
+        u64::from(module_record_capacity.max(1)) * 9 * 4,
+    )?;
     let dependency_declaration_field_count = graph.add_storage(
         "dependency_declaration_field_count",
         ResourceDomain::Declarations,
@@ -4108,6 +4114,7 @@ fn build_graph(
             "external_type_unit_id" => _external_type_unit_id: Write,
             "external_type_local_index" => _external_type_local_index: Write,
             "resolved_dependency_value_metadata" => resolved_dependency_value_metadata: Write,
+            "resolved_dependency_variant_payload_records" => resolved_dependency_variant_payload_records: Write,
         ],
     )?;
     graph.add_indirect_dispatch(DEPENDENCY_TYPES_PROJECT.name, "path_dispatch_args")?;

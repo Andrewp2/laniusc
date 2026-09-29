@@ -1,4 +1,4 @@
-// Validate imported unit enum patterns after inferred local type references
+// Validate imported enum patterns after inferred local type references
 // have been published. Dependency pages are no longer available here, so the
 // projector's stable nominal identity and checked ordinal are authoritative.
 
@@ -19,6 +19,7 @@ StructuredBuffer<uint> path_count_out;
 StructuredBuffer<uint> path_id_by_owner_hir;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> resolved_dependency_value_metadata;
+StructuredBuffer<uint> resolved_dependency_variant_payload_records;
 StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
@@ -36,6 +37,7 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint IMPORTED_UNIT_VARIANT = 9u;
 static const uint IMPORTED_GENERIC_UNIT_VARIANT = 11u;
+static const uint IMPORTED_PAYLOAD_VARIANT = 10u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint HIR_CALL_EXPR = 19u;
@@ -142,12 +144,16 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (!valid_path(path))
         return;
     uint kind = resolved_dependency_value_metadata[path * 3u];
-    if (kind != IMPORTED_UNIT_VARIANT && kind != IMPORTED_GENERIC_UNIT_VARIANT)
+    if (kind != IMPORTED_UNIT_VARIANT &&
+        kind != IMPORTED_GENERIC_UNIT_VARIANT &&
+        kind != IMPORTED_PAYLOAD_VARIANT)
         return;
     uint pattern_token = compact_hir_core[arm.pattern].token_start;
     if (!valid_token(pattern_token) || path_owner_token[path] != pattern_token)
         return;
-    if (compact_match_payload_count[row] != 0u ||
+    uint expected_count = kind == IMPORTED_PAYLOAD_VARIANT
+        ? resolved_dependency_variant_payload_records[path * 9u] : 0u;
+    if (compact_match_payload_count[row] != expected_count ||
         !matches_scrutinee(arm.owner, pattern_token))
         record_min_token_error(status, pattern_token, ERR_ASSIGN_MISMATCH, 0u);
 }

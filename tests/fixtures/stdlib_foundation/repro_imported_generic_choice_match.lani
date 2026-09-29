@@ -1,0 +1,21 @@
+module app::main;
+import core::choice;
+
+fn main() -> i32 {
+    let one: core::choice::Choice<i32, bool> = core::choice::One(5);
+    let first: i32 = match (one) {
+        core::choice::One(number) -> number,
+        core::choice::Both(left, flag) -> 99,
+        core::choice::Empty -> 98,
+    };
+    if (first != 5) { return 1; }
+
+    let both: core::choice::Choice<i32, bool> = core::choice::Both(7, true);
+    let second: bool = match (both) {
+        core::choice::One(unused_one) -> false,
+        core::choice::Both(both_number, both_flag) -> both_flag,
+        core::choice::Empty -> false,
+    };
+    if (!second) { return 2; }
+    return 0;
+}

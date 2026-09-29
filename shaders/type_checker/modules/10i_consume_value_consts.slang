@@ -54,6 +54,7 @@ static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
 static const uint HIR_ITEM_KIND_CONST = 3u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint IMPORTED_GENERIC_UNIT_VARIANT = 11u;
+static const uint IMPORTED_PAYLOAD_VARIANT = 10u;
 
 static const uint TY_UNKNOWN = 0u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
@@ -110,8 +111,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     uint dependency_value_base = path_i * 3u;
-    if (resolved_dependency_value_metadata[dependency_value_base] ==
-            IMPORTED_GENERIC_UNIT_VARIANT &&
+    uint imported_kind = resolved_dependency_value_metadata[dependency_value_base];
+    if ((imported_kind == IMPORTED_GENERIC_UNIT_VARIANT ||
+         imported_kind == IMPORTED_PAYLOAD_VARIANT) &&
         visible_decl[owner_token] == owner_token)
         return; // The pattern binder checked this use; bare values still fail.
     if (resolved_dependency_value_metadata[dependency_value_base] == HIR_ITEM_KIND_CONST)

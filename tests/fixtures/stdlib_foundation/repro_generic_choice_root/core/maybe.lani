@@ -1,0 +1,6 @@
+module core::maybe;
+
+pub enum Maybe<T> {
+    Some(T),
+    None,
+}

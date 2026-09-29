@@ -1,0 +1,13 @@
+module app::main;
+import helpers::maybe;
+
+fn main() -> i32 {
+    let value: helpers::maybe::Maybe = helpers::maybe::choose_pair(3, 4);
+    let result: i32 = match (value) {
+        helpers::maybe::Some(inner) -> inner,
+        helpers::maybe::Pair(left, right) -> left + right,
+        helpers::maybe::None -> 0,
+    };
+    if (result != 7) { return 1; }
+    return 0;
+}

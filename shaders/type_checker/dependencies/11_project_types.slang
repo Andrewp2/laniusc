@@ -33,6 +33,7 @@ RWStructuredBuffer<uint> external_type_library_id;
 RWStructuredBuffer<uint> external_type_unit_id;
 RWStructuredBuffer<uint> external_type_local_index;
 RWStructuredBuffer<uint> resolved_dependency_value_metadata;
+RWStructuredBuffer<uint> resolved_dependency_variant_payload_records;
 
 static const uint DECL_WORDS = 14u;
 static const uint TYPE_WORDS = 9u;
@@ -42,6 +43,7 @@ static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint INTERFACE_TYPE_SCALAR = 1u;
 static const uint INTERFACE_TYPE_DECLARATION = 3u;
 static const uint INTERFACE_TYPE_FUNCTION = 7u;
+static const uint INTERFACE_TYPE_GENERIC_PARAMETER = 2u;
 static const uint HIR_ITEM_KIND_CONST = 3u;
 static const uint HIR_ITEM_KIND_STRUCT = 6u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
@@ -219,6 +221,24 @@ void main(uint3 dtid: SV_DispatchThreadID)
                                      : HIR_ITEM_KIND_ENUM_VARIANT;
                 resolved_dependency_value_metadata[value_base + 1u] = enum_root;
                 resolved_dependency_value_metadata[value_base + 2u] = ordinal;
+                // The dependency page is reused before match binding runs.
+                // Retain only direct scalar and generic-slot payload types;
+                // other payload shapes remain unresolved at that boundary.
+                uint record_base = path_i * 9u;
+                resolved_dependency_variant_payload_records[record_base] = payload_count;
+                uint edge_start = dependency_type_word(root * TYPE_WORDS + 3u);
+                for (uint payload_i = 0u; payload_i < payload_count; payload_i += 1u)
+                {
+                    uint payload_root = canonical_type_roots[
+                        dependency_type_edge_word(edge_start + payload_i)];
+                    uint payload_base = payload_root * TYPE_WORDS;
+                    uint payload_kind = dependency_type_word(payload_base);
+                    uint tag = payload_kind == INTERFACE_TYPE_SCALAR ? 1u
+                        : payload_kind == INTERFACE_TYPE_GENERIC_PARAMETER ? 2u : 0u;
+                    resolved_dependency_variant_payload_records[record_base + 1u + payload_i * 2u] = tag;
+                    resolved_dependency_variant_payload_records[record_base + 2u + payload_i * 2u] =
+                        tag != 0u ? dependency_type_word(payload_base + 1u) : 0xffffffffu;
+                }
                 uint enum_base = enum_root * TYPE_WORDS;
                 external_type_library_id[owner_token] =
                     dependency_type_word(enum_base + 1u);

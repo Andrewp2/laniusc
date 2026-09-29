@@ -1,0 +1,19 @@
+module app::main;
+import core::maybe;
+
+struct Pair { first: i32, second: i32 }
+
+fn inspect(value: core::maybe::Maybe<Pair>) -> i32 {
+    let result: i32 = match (value) {
+        core::maybe::Some(inner) -> inner.second,
+        core::maybe::None -> 0,
+    };
+    return result;
+}
+
+fn main() -> i32 {
+    let pair: Pair = Pair { first: 3, second: 7 };
+    let value: core::maybe::Maybe<Pair> = core::maybe::Some(pair);
+    if (inspect(value) != 7) { return 1; }
+    return 0;
+}

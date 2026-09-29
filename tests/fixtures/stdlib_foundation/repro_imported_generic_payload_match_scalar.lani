@@ -1,0 +1,11 @@
+module app::main;
+import core::maybe;
+
+fn main() -> i32 {
+    let value: i32 = 7;
+    let result: i32 = match (value) {
+        core::maybe::Some(inner) -> inner,
+        _ -> 0,
+    };
+    return result;
+}

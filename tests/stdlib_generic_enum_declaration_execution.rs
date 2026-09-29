@@ -280,16 +280,130 @@ fn imported_generic_enum_uses_maximum_variant_abi_width_on_x86() {
 }
 
 #[test]
-fn imported_generic_enum_match_still_needs_pattern_projection() {
+fn imported_generic_payload_match_executes_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry =
         root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_enum_local_match.lani");
     let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
-    let error = common::run_gpu_codegen_with_timeout("imported generic enum value", move || {
+    let bytes = common::run_gpu_codegen_with_timeout("imported generic Some pattern", move || {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
     })
-    .expect_err("imported enum match patterns still need dependency projection");
-    assert_eq!(error.to_public_diagnostic().code, "LNC0005", "{error:?}");
+    .expect("imported generic payload pattern should compile");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported generic Some pattern",
+            "repro_imported_generic_enum_local_match",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_generic_two_payload_match_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_generic_choice_match.lani");
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_choice_root");
+    let bytes =
+        common::run_gpu_codegen_with_timeout("imported generic Choice patterns", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+        })
+        .expect("imported generic payload slots should compile");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported generic Choice patterns",
+            "repro_imported_generic_choice_match",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_concrete_two_payload_match_executes_on_x86() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_concrete_payload_match.lani");
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_enum_root");
+    let bytes =
+        common::run_gpu_codegen_with_timeout("imported concrete payload patterns", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+        })
+        .expect("imported concrete payload patterns should compile");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "imported concrete payload patterns",
+            "repro_imported_concrete_payload_match",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_generic_payload_pattern_rejects_wrong_arity() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join(
+        "tests/fixtures/stdlib_foundation/repro_imported_generic_payload_match_wrong_arity.lani",
+    );
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let error = common::run_gpu_codegen_with_timeout("imported payload pattern arity", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect_err("a payload pattern must bind exactly the variant payloads");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn imported_generic_payload_pattern_rejects_scalar_scrutinee() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root
+        .join("tests/fixtures/stdlib_foundation/repro_imported_generic_payload_match_scalar.lani");
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let error =
+        common::run_gpu_codegen_with_timeout("imported payload against scalar", move || {
+            pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+        })
+        .expect_err("an imported payload pattern must reject a scalar scrutinee");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn imported_generic_payload_pattern_rejects_another_enum() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join(
+        "tests/fixtures/stdlib_foundation/repro_imported_generic_payload_match_wrong_enum.lani",
+    );
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_choice_root");
+    let error = common::run_gpu_codegen_with_timeout("unrelated imported payload", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect_err("a payload pattern from another enum must be rejected");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
+}
+
+#[test]
+fn imported_generic_aggregate_payload_constructor_is_rejected() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join(
+        "tests/fixtures/stdlib_foundation/repro_imported_generic_payload_match_aggregate.lani",
+    );
+    let stdlib = root.join("tests/fixtures/stdlib_foundation/repro_generic_enum_only_root");
+    let error = common::run_gpu_codegen_with_timeout("aggregate generic enum payload", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect_err("aggregate generic enum payloads need a checked imported layout");
+    assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
 }
 
 #[test]
