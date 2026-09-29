@@ -85,6 +85,7 @@ static const uint TYPE_WORDS = 9u;
 static const uint DECL_WORDS = 14u;
 static const uint MEMBER_WORDS = 11u;
 static const uint MEMBER_ENUM_VARIANT = 5u;
+static const uint MEMBER_ASSOCIATED_METHOD = 6u;
 static const uint HIR_ITEM_KIND_ENUM = 7u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint STMT_RECORD_KIND_RETURN = 2u;
@@ -143,6 +144,33 @@ bool valid_token(uint token)
     return token != INVALID && token < gParams.visible_capacity;
 }
 
+bool dependency_callable_in_active_page(uint token)
+{
+    if (!valid_token(token) || call_dependency_library_id[token] == INVALID)
+        return false;
+    if (dependency_find_declaration(
+               call_dependency_library_id[token],
+               call_dependency_unit_id[token],
+               call_dependency_local_index[token]) != INVALID)
+        return true;
+    uint member_count = dependency_member_count();
+    for (uint member = 0u; member < member_count; member += 1u)
+    {
+        uint base = member * MEMBER_WORDS;
+        if (dependency_member_word(base + 1u) != MEMBER_ASSOCIATED_METHOD ||
+            dependency_member_word(base + 9u) != call_dependency_local_index[token])
+            continue;
+        uint owner = dependency_member_word(base);
+        if (owner < dependency_declaration_count() &&
+            dependency_declaration_library_id(owner) ==
+                call_dependency_library_id[token] &&
+            dependency_declaration_unit_id(owner) ==
+                call_dependency_unit_id[token])
+            return true;
+    }
+    return false;
+}
+
 uint dependency_call_token(uint call)
 {
     if (!valid_node(call) || compact_hir_core[call].kind != HIR_CALL_EXPR)
@@ -155,15 +183,12 @@ uint dependency_call_token(uint call)
     uint token = callee_core.kind == HIR_MEMBER_EXPR
         ? callee_payload.c
         : callee_payload.d;
-    if (!valid_token(token)) token = callee_core.token_start;
-    return valid_token(token) &&
-                   call_dependency_library_id[token] != INVALID &&
-                   dependency_find_declaration(
-                       call_dependency_library_id[token],
-                       call_dependency_unit_id[token],
-                       call_dependency_local_index[token]) != INVALID
-               ? token
-               : INVALID;
+    if (dependency_callable_in_active_page(token))
+        return token;
+    token = callee_core.token_start;
+    if (dependency_callable_in_active_page(token))
+        return token;
+    return INVALID;
 }
 
 void declaration_ref(uint token, out uint tag, out uint payload)

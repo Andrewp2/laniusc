@@ -14,14 +14,19 @@ impl MethodBindGroups {
         self.bind_self_receivers.record(encoder)
     }
 
-    pub(in crate::type_checker) fn record_call_resolution(
+    pub(in crate::type_checker) fn record_call_resolution<F>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
-    ) -> Result<()> {
+        mut project_imported_results: F,
+    ) -> Result<()>
+    where
+        F: FnMut(&mut wgpu::CommandEncoder) -> Result<()>,
+    {
         self.mark_call_keys
             .record_as(encoder, METHODS_MARK_CALL_KEYS_LOOKUP.name)?;
         for _ in 0..METHOD_CALL_RESULT_RECEIVER_PASSES {
             self.mark_call_return_keys.record(encoder)?;
+            project_imported_results(encoder)?;
             self.resolve_table.record(encoder)?;
         }
         Ok(())

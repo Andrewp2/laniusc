@@ -75,7 +75,7 @@ limited to native x86_64 output from this worktree.
 | `core::mem` capability metadata, all 10 public functions | Executable on x86_64 Linux | The native metadata fixture calls every function and checks runtime-free value helpers and the unavailable raw-memory host API against `core::runtime`. The unavailable host API is distinct from the four executable compiler-provided intrinsics above. `tests/stdlib_mem_execution.rs` requires a runtime call for all 19 source-defined public functions across its fixtures. |
 | `core::hash` twelve public free functions and two FNV-1a constants | Executable on x86_64 | The runtime fixture checks stable 32-bit bit-pattern hashes for six integer widths, both Boolean values, and ASCII and Unicode characters. The i32, u32, bool, and char functions call local `Hash<T>` implementations; narrow integers widen explicitly. `hash_wide_u64` and `hash_wide_i64` apply FNV-1a to eight little-endian bytes of the two-word representation and check zero, high-bit, maximum, and signed boundary values against exact outputs. The byte extraction masks before narrowing because direct unsigned casts misexecute (dependency 33). The fixture also checks both constants, a one-byte step, known byte-sequence hashes, empty input, binary bytes, and a negative-length fallback. A separate native fixture confirms that overstating the physical byte view traps. The stdin fingerprint sample combines hashing with byte input and hexadecimal output. Direct imported `Hash<T>` calls remain outside the claim. |
 | `core::crc32` all 3 public functions and 3 constants | Executable on x86_64 for caller-backed `[u8]` views | The native fixtures check CRC-32/ISO-HDLC on `123456789`, empty input, a one-byte prefix, binary bytes, and every byte value through the streaming interface. Negative logical lengths return the fallback without reading storage; an overstated physical view traps. A source scan requires a runtime call for every public function. |
-| `core::option_i32` all 12 public functions and 8 receiver methods; `core::result_i32` all 10 public functions and 8 receiver methods | Executable on x86_64 | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, both branches of `or`, `and`, and `xor`, and conversions between the two concrete types. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function and receiver method to have a runtime call. The option/result sample uses receiver methods and prints `38`. Local aggregate forwarding is covered by the executable return suite; see dependency 39. |
+| `core::option_i32` all 12 public functions and 8 receiver methods; `core::result_i32` all 10 public functions and 8 receiver methods | Executable on x86_64 | `tests/fixtures/stdlib_foundation/option_result_i32.lani` executes constructors, both presence/error states, payload and error predicates, fallbacks, both branches of `or`, `and`, and `xor`, and conversions between the two concrete types. Zero values and negative/extreme payloads distinguish an absent value or error from its stored number. A source scan requires every public function and receiver method to have a runtime call. The option/result sample chains imported receiver methods and prints `38`. Local aggregate forwarding is covered by the executable return suite; see dependency 39. |
 | `core::option_u32` all 12 public functions and 8 receiver methods; `core::result_u32` all 10 public functions and 8 receiver methods | Executable on x86_64 | The matching runtime fixture covers every function and method with both variants, zero, ordinary values, the high bit, and `u32::MAX`. It executes borrowed predicates, fallbacks, aggregate-returning combinators, and Option-to-Result conversion. Both the success payload and error code are `u32`; inactive fields are zero. Source scans require every public function and method to have a runtime call. See dependency 39 for local return coverage. |
 | `core::option_ptr` all 12 public functions and `core::result_ptr` all 10 public functions | Executable on x86_64 Linux | The imported fixture calls every function with two distinct live pointers, null as a present or successful payload, absence, negative and zero i32 errors, fallbacks, logical combinators, and conversions in both directions. The input-driven first-byte program passes a pointer result across a helper call, extracts its error through `OptionI32`, and reads real stdin including EOF and binary bytes. A source scan requires a runtime call for each public function. The modules do not allocate or own their pointers; the caller must keep pointed-to storage alive. User-program GPU device behavior is not claimed. |
 | `core::option_u8` all 12 public functions and `core::result_u8` all 10 public functions | Executable on x86_64 | The byte fixture executes every function with `None`, `Some`, `Ok`, and `Err`, including zero, 128, and 255 payloads. A source scan requires every public function to have a runtime call. See dependency 39 for local return coverage. |
@@ -614,9 +614,8 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   active variant or return a caller fallback. Their borrowed receiver methods
   preserve the original value and the full unsigned high bit through
   aggregate returns. Neither module allocates. The same focused receiver
-  test covers both the signed and unsigned 32-bit pairs. Bind an imported
-  aggregate-returning method result to a local before calling another method;
-  direct chaining remains dependency 66.
+  test covers both the signed and unsigned 32-bit pairs. Chained imported
+  receiver calls execute on x86; see resolved dependency 66.
 - `core::option_ptr` distinguishes `None` from `Some(null)`;
   `core::result_ptr` distinguishes `Ok(null)` from `Err(0)`. A Result error
   is an `i32`. Their `or`, `and`, and `xor` branches preserve their respective
@@ -2832,16 +2831,28 @@ also fixes the imported struct-return relocation path described below.
     semantic resolution, not the x86 call ABI; user-program GPU device
     execution is still unverified.
 
-66. **Imported aggregate-returning method chains.**
+66. **Resolved: imported aggregate-returning method chains.**
     `repro_imported_method_chain.lani` calls
-    `success.or(failure).contains(7)` through the real `core::result_u32`
-    import. GPU `check` succeeds, but native source-pack compilation reports
-    `LNC0027` at `contains`. Assigning the result of `or` to an explicitly
-    typed local before calling `contains` compiles and executes, including
-    `u32::MAX` payloads in `option_result_u32.lani`. The call-result method
-    key pass and dependency method projection need to preserve the imported
-    aggregate result as the next receiver before chained calls can be claimed
-    executable. No stdlib method in the supported surface relies on chaining.
+    `success.or(failure).contains(7)` and a longer `or` chain through the
+    real `core::result_u32` import. GPU `check` previously succeeded while
+    native source-pack compilation reported `LNC0027` at `contains`.
+    The GPU dependency projector now records the imported method result's
+    stable type identity, and the method-resolution loop projects imported
+    methods after each call-result key pass. The fixture executes those
+    chains and `OptionU32::ok_or(...).contains(...)` across two modules on
+    x86_64. The option/result sample also executes an i32 chain and prints
+    `38`. Method-chain resolution uses the compiler's existing eight-pass
+    limit; deeper chains are not claimed. This changes GPU semantic
+    resolution, not the x86 ABI or IR.
+
+67. **Resolved: imported associated-method result validation.**
+    Imported methods are stored as dependency members. The direct-call result
+    validator previously searched only top-level declarations, so it skipped
+    a typed assignment from `Other<i32>` to `Bucket<i32>`. It now recognizes
+    the method's member identity on the active dependency page and rejects
+    the mismatch with `LNC0006`. The negative fixture in
+    `tests/stdlib_generic_vec_flat_execution.rs` and the executable imported
+    method fixtures cover the rejection and valid calls.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

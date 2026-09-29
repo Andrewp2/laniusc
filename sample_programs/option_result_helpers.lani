@@ -22,8 +22,7 @@ fn main() {
     if (failed.is_err()) {
         total += failed.unwrap_or(6);
     }
-    let chosen: core::option_i32::OptionI32 = none.or(core::option_i32::some(11));
-    total += chosen.unwrap_or(0);
+    total += none.or(core::option_i32::some(11)).unwrap_or(0);
 
     print(total);
     return 0;

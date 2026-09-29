@@ -28,10 +28,12 @@ StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
+StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
+StructuredBuffer<uint> external_type_library_id;
 struct TokenIn
 {
     uint kind;
@@ -63,6 +65,8 @@ RWStructuredBuffer<uint> method_call_site_module_id;
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
 static const uint TYPE_REF_SCALAR = 1u;
+static const uint TYPE_REF_INSTANCE = 3u;
+static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint TY_UNKNOWN = 0u;
@@ -142,17 +146,46 @@ bool receiver_call_return_type_ref(uint receiver_i, out uint tag, out uint paylo
     if (receiver_i >= active_token_count())
         return false;
 
-    uint fn_i = call_fn_index[receiver_i];
-    if (fn_i == INVALID || fn_i >= active_token_count())
-        return false;
-
     // Preserve the structured return reference for named aggregates. Their
     // legacy numeric type code is useful to scalar consumers, but treating it
     // as a scalar here loses the generic receiver identity required by method
     // lookup on a call result.
     uint return_token = call_return_type_token[receiver_i];
-    if (!valid_token(return_token))
-        return_token = call_return_type_token[fn_i];
+    if (valid_token(return_token))
+    {
+        tag = decl_type_ref_tag[return_token];
+        payload = decl_type_ref_payload[return_token];
+        if (tag != TYPE_REF_INVALID && payload != INVALID)
+        {
+            // Imported method return records carry a canonical type root.
+            // The method token also stores its stable external declaration
+            // identity. Represent that result as a receiver token so the
+            // next lookup does not confuse a type-root number with a token.
+            if (tag == TYPE_REF_EXTERNAL_CANONICAL &&
+                call_dependency_library_id[return_token] != INVALID &&
+                external_type_library_id[return_token] != INVALID)
+            {
+                tag = TYPE_REF_INSTANCE;
+                payload = return_token;
+            }
+            return true;
+        }
+    }
+
+    uint fn_i = call_fn_index[receiver_i];
+    if (fn_i == INVALID || fn_i >= active_token_count())
+    {
+        uint imported_ret_ty = call_return_type[receiver_i];
+        if (imported_ret_ty != TY_UNKNOWN && imported_ret_ty != TY_VOID)
+        {
+            tag = TYPE_REF_SCALAR;
+            payload = imported_ret_ty;
+            return true;
+        }
+        return false;
+    }
+
+    return_token = call_return_type_token[fn_i];
     if (valid_token(return_token))
     {
         tag = decl_type_ref_tag[return_token];

@@ -989,7 +989,33 @@ impl GpuTypeChecker {
                 )?;
             if methods_required {
                 bind_groups.methods.keys.record(encoder)?;
-                bind_groups.methods.record_call_resolution(encoder)?;
+                bind_groups
+                    .methods
+                    .record_call_resolution(encoder, |encoder| {
+                        if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
+                            record_each_dependency_page(device, queue, encoder, pages, |encoder| {
+                                record_dependency_type_index(
+                                    &self.passes,
+                                    encoder,
+                                    module_path,
+                                    DEPENDENCY_TYPE_INDEX_METHOD_PROJECTION,
+                                )?;
+                                record_dependency_methods(
+                                    &self.passes,
+                                    encoder,
+                                    module_path,
+                                    &bind_groups.hir_active_dispatch_args,
+                                )
+                            })
+                        } else {
+                            record_dependency_methods(
+                                &self.passes,
+                                encoder,
+                                module_path,
+                                &bind_groups.hir_active_dispatch_args,
+                            )
+                        }
+                    })?;
             }
             bind_groups.calls.project_result_instances.record(encoder)?;
             bind_groups

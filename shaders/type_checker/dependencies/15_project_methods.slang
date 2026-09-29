@@ -480,6 +480,15 @@ void publish_method_result(
             ? TYPE_REF_INSTANCE : TYPE_REF_EXTERNAL_CANONICAL;
         decl_type_ref_payload[method_token] = same_receiver
             ? receiver_payload : return_root;
+        if (!same_receiver && return_kind == TYPE_KIND_DECLARATION)
+        {
+            external_type_library_id[method_token] =
+                dependency_type_word(return_base + 1u);
+            external_type_local_index[method_token] =
+                dependency_type_word(return_base + 2u);
+            external_type_unit_id[method_token] =
+                dependency_type_word(return_base + 8u);
+        }
     }
 }
 
