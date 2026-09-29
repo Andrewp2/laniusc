@@ -218,17 +218,40 @@ fn imported_unit_enum_pattern_rejects_payload_binding() {
 }
 
 #[test]
-fn imported_unit_enum_match_direct_call_needs_result_identity() {
+fn imported_unit_enum_match_direct_call_executes_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry =
         root.join("tests/fixtures/stdlib_foundation/repro_imported_unit_match_direct_call.lani");
     let stdlib = root.join("stdlib");
-    let result = common::run_gpu_codegen_with_timeout("direct call enum match", move || {
+    let bytes = common::run_gpu_codegen_with_timeout("direct call enum match", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
+    })
+    .expect("direct imported Ordering return should match");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "direct call enum match",
+            "repro_imported_unit_match_direct_call",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn imported_unit_enum_pattern_rejects_unrelated_call_result() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/repro_imported_unit_match_wrong_call.lani");
+    let stdlib = root.join("stdlib");
+    let result = common::run_gpu_codegen_with_timeout("unrelated call enum match", move || {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib))
     });
     let error = match result {
         Err(error) => error,
-        Ok(_) => panic!("a direct call match needs its result enum identity checked"),
+        Ok(_) => panic!("an imported pattern must reject a call returning another enum"),
     };
     assert_eq!(error.to_public_diagnostic().code, "LNC0006", "{error:?}");
 }

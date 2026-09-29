@@ -1,0 +1,15 @@
+module app::main;
+import core::ordering;
+
+enum Other { Zero }
+
+fn other() -> Other {
+    return Zero;
+}
+
+fn main() -> i32 {
+    return match (other()) {
+        core::ordering::Less -> 1,
+        _ -> 0,
+    };
+}

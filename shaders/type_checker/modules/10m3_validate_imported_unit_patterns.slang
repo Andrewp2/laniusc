@@ -24,6 +24,7 @@ StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> decl_imported_type_token;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<uint> call_return_type_token;
 StructuredBuffer<uint> external_type_library_id;
 StructuredBuffer<uint> external_type_unit_id;
 StructuredBuffer<uint> external_type_local_index;
@@ -36,6 +37,7 @@ static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint IMPORTED_UNIT_VARIANT = 9u;
 static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
+static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
@@ -85,8 +87,20 @@ bool matches_scrutinee(uint match_node, uint pattern_token)
     uint scrutinee = compact_hir_payload[match_node].a;
     if (!valid_hir(scrutinee)) return false;
     uint kind = compact_hir_core[scrutinee].kind;
-    // Calls and literals need their own result identity projection. Until
-    // then, accepting them here could compare unrelated ordinal values.
+    if (kind == HIR_CALL_EXPR)
+    {
+        uint callee = compact_hir_payload[scrutinee].a;
+        if (!valid_hir(callee)) return false;
+        HirCore callee_core = compact_hir_core[callee];
+        HirPayload callee_payload = compact_hir_payload[callee];
+        uint callee_token = callee_core.kind == HIR_MEMBER_EXPR
+            ? callee_payload.c : callee_payload.d;
+        if (!valid_token(callee_token)) callee_token = callee_core.token_start;
+        return valid_token(callee_token) &&
+            same_external_enum(pattern_token, call_return_type_token[callee_token]);
+    }
+    // Literals and other compound expressions have no nominal identity at
+    // this boundary. They must not compare unrelated ordinal values.
     if (kind != HIR_NAME_EXPR && kind != HIR_PATH_EXPR && kind != HIR_MEMBER_EXPR)
         return false;
     uint token = kind == HIR_MEMBER_EXPR
