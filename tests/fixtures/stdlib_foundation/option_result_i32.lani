@@ -57,5 +57,38 @@ fn main() -> i32 {
     if (!core::option_i32::is_none(core::option_i32::err(success)) ||
         !core::option_i32::contains(core::option_i32::err(failure), -5) ||
         !core::option_i32::contains(core::option_i32::err(core::result_i32::err(0)), 0)) { return 15; }
+    if (!present.is_some() || present.is_none() ||
+        absent.is_some() || !absent.is_none() ||
+        !present.contains(-7) || present.contains(0) || absent.contains(0) ||
+        present.unwrap_or(99) != -7 || absent.unwrap_or(99) != 99) { return 16; }
+    let option_or_present: core::option_i32::OptionI32 = present.or(absent);
+    let option_or_fallback: core::option_i32::OptionI32 = absent.or(present);
+    let option_and_next: core::option_i32::OptionI32 = present.and(core::option_i32::some(3));
+    let option_and_absent: core::option_i32::OptionI32 = absent.and(present);
+    if (!option_or_present.contains(-7) || !option_or_fallback.contains(-7) ||
+        !option_and_next.contains(3) || !option_and_absent.is_none()) { return 17; }
+    let option_xor_left: core::option_i32::OptionI32 = present.xor(absent);
+    let option_xor_right: core::option_i32::OptionI32 = absent.xor(present);
+    let option_xor_both: core::option_i32::OptionI32 = present.xor(present);
+    if (!option_xor_left.contains(-7) || !option_xor_right.contains(-7) ||
+        !option_xor_both.is_none()) { return 18; }
+    let method_ok: core::result_i32::ResultI32 = present.ok_or(99);
+    let method_err: core::result_i32::ResultI32 = absent.ok_or(-9);
+    if (!core::result_i32::contains(method_ok, -7) ||
+        !core::result_i32::contains_err(method_err, -9)) { return 19; }
+    if (!success.is_ok() || success.is_err() ||
+        failure.is_ok() || !failure.is_err() ||
+        !success.contains(42) || success.contains(0) || failure.contains(0) ||
+        !failure.contains_err(-5) || failure.contains_err(0) ||
+        success.contains_err(0)) { return 20; }
+    if (success.unwrap_or(99) != 42 || failure.unwrap_or(99) != 99 ||
+        success.unwrap_err_or(99) != 99 || failure.unwrap_err_or(99) != -5) { return 21; }
+    let result_or_success: core::result_i32::ResultI32 = success.or(failure);
+    let result_or_fallback: core::result_i32::ResultI32 = failure.or(success);
+    let result_and_next: core::result_i32::ResultI32 = success.and(failure);
+    let result_and_failure: core::result_i32::ResultI32 = failure.and(success);
+    if (!result_or_success.contains(42) || !result_or_fallback.contains(42) ||
+        !result_and_next.contains_err(-5) ||
+        !result_and_failure.contains_err(-5)) { return 22; }
     return 0;
 }

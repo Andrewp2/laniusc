@@ -10,20 +10,20 @@ fn main() {
     let failed: core::result_i32::ResultI32 = core::result_i32::err(4);
 
     let total: i32 = 0;
-    if (core::option_i32::is_some(some)) {
-        total += core::option_i32::unwrap_or(some, 0);
+    if (some.is_some()) {
+        total += some.unwrap_or(0);
     }
-    if (core::option_i32::is_none(none)) {
-        total += core::option_i32::unwrap_or(none, 5);
+    if (none.is_none()) {
+        total += none.unwrap_or(5);
     }
-    if (core::result_i32::is_ok(successful)) {
-        total += core::result_i32::unwrap_or(successful, 0);
+    if (successful.is_ok()) {
+        total += successful.unwrap_or(0);
     }
-    if (core::result_i32::is_err(failed)) {
-        total += core::result_i32::unwrap_or(failed, 6);
+    if (failed.is_err()) {
+        total += failed.unwrap_or(6);
     }
-    let chosen: core::option_i32::OptionI32 = core::option_i32::or(none, core::option_i32::some(11));
-    total += core::option_i32::unwrap_or(chosen, 0);
+    let chosen: core::option_i32::OptionI32 = none.or(core::option_i32::some(11));
+    total += chosen.unwrap_or(0);
 
     print(total);
     return 0;
