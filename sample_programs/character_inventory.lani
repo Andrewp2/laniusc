@@ -22,7 +22,7 @@ fn main() -> i32 {
     let index: i32 = 0;
     while (index<6) {
         let letter: char = core::slice_char::get_or(letters, 6, index, a);
-        if (core::range::contains_i32(matches, index) && core::range_char::contains_inclusive(lowercase, letter) && core::char::is_ascii_alphabetic(letter)) {
+        if (matches.contains(index) && lowercase.contains(letter) && core::char::is_ascii_alphabetic(letter)) {
             count = core::number_i32::saturating_add(count, 1);
         }
         index += 1;
