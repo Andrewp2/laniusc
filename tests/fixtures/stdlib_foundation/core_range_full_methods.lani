@@ -1,0 +1,13 @@
+module app::main;
+import core::range;
+
+fn main() -> i32 {
+    let full: core::range::RangeFull = core::range::range_full();
+    if (!full.contains_i32(-2147483648)) { return 1; }
+    if (!full.contains_i32(0)) { return 2; }
+    if (!full.contains_i32(2147483647)) { return 3; }
+    if (!full.contains_u32(0)) { return 4; }
+    if (!full.contains_u32(2147483648)) { return 5; }
+    if (!full.contains_u32(4294967295)) { return 6; }
+    return 0;
+}

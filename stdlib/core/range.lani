@@ -256,3 +256,11 @@ pub impl RangeTo<u32> {
         return value<self.end;
     }
 }
+pub impl RangeFull {
+    pub fn contains_i32(&self, value: i32) -> bool {
+        return true;
+    }
+    pub fn contains_u32(&self, value: u32) -> bool {
+        return true;
+    }
+}
