@@ -54,7 +54,7 @@ limited to native x86_64 output from this worktree.
 | `core::range_i8` all 27 public scalar and concrete aggregate functions and 14 receiver methods | Executable on x86_64 | Runtime fixtures call every function and method across signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-128`, `127`, touching intervals, and empty or reversed bounds. |
 | `core::range_u16` all 27 public scalar and concrete aggregate functions and 14 receiver methods | Executable on x86_64 | Runtime fixtures call every function and method across half-open, inclusive, from, to, and full ranges, including equal or reversed bounds, touching intervals, and the `65535` endpoint. |
 | `core::range_i16` all 27 public scalar and concrete aggregate functions and 14 receiver methods | Executable on x86_64 | Runtime fixtures call every function and method across signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-32768`, `32767`, touching intervals, and empty or reversed bounds. |
-| `core::range_char` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | A runtime fixture calls every public function and checks half-open, inclusive, from, to, and full character ranges. It uses ASCII and two-, three-, and four-byte Unicode literals to check scalar ordering, equal and reversed bounds, touching intervals, endpoint inclusion, and aggregate forwarding. |
+| `core::range_char` all 27 public scalar and concrete aggregate functions and 14 receiver methods | Executable on x86_64 | A runtime fixture calls every function and method across half-open, inclusive, from, to, and full character ranges. It uses ASCII and two-, three-, and four-byte Unicode literals to check scalar ordering, equal and reversed bounds, touching intervals, endpoint inclusion, and aggregate forwarding. |
 | `core::range_f32` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | A runtime fixture calls every public function and checks finite values, signed zero, both infinities, and NaN. NaN bounds make bounded ranges empty; ordered ranges reject NaN values, while the full-range predicate accepts every `f32`. It checks endpoint inclusion, equal and reversed bounds, touching intervals, and aggregate forwarding. |
 | `core::slice` all 37 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, first and last contiguous subsequence matches, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Sorting also runs all 243 five-element arrays over `{-1, 0, 1}` against independently counted expected groups. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
 | `core::slice_u8` all 36 public byte-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures exercise access, swaps, fill, rotation, overlap-safe and nonoverlapping copies, compaction, insertion, sequence comparison and search, unsigned ordering, heapsort, binary search, partitioning, and saturating sum. They cover empty and invalid logical lengths, rejected mutation, zero, and 255. Sorting also runs every five-element sequence over `{0,1,2}` against independently counted groups. A source scan requires a runtime call for every public function. Byte views over string or raw pointer storage remain outside this claim. |
@@ -966,8 +966,10 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   excludes its end, and `full_contains` is true for every `u8` value.
 - `core::range_char` applies the same endpoint and overlap rules to Unicode
   scalar values. It provides concrete half-open, inclusive, from, and to
-  aggregates and scalar predicates. The full-range predicate accepts every
-  valid `char`; it does not construct or iterate character values.
+  aggregates, scalar predicates, and receiver methods. The full-range
+  predicate accepts every valid `char`; it does not construct or iterate
+  character values. Run `cargo test --test stdlib_range_char_methods_execution`
+  for the imported receiver methods on x86.
 - `core::range_f32` uses IEEE ordering. A NaN bound makes a bounded interval
   empty and unable to overlap. One-sided and bounded intervals never contain
   NaN, while `full_contains` includes NaN because it is unbounded. Signed
@@ -2802,6 +2804,19 @@ also fixes the imported struct-return relocation path described below.
     accepted syntax. Native emission currently reports the less useful
     `LNC0057` instead. This is a syntax and diagnostic dependency, separate
     from the executable flat imported payload patterns above.
+
+65. **Imported `f32` receiver methods returning `f32` crash on x86.**
+    `repro_imported_f32_method.lani` imports the tiny adjacent
+    `repro_imported_f32_method_root/core/probe.lani` module. Native compilation
+    succeeds, but its ELF exits 139 when it calls `value.start()`. Removing
+    only that method call leaves a program using the same imported `make` and
+    `free_start` functions that exits zero. An equivalent local receiver
+    method also exits zero. A trial of `core::range_f32` showed that its
+    imported Boolean-returning receiver methods execute, while `start` and
+    `end` returning `f32` crash with either borrowed or by-value `self`.
+    The proposed floating range receiver methods were therefore withheld;
+    the 27 executable free functions remain the supported API until imported
+    floating method returns work in native call lowering.
 
 These are GPU compiler and target runtime dependencies, not stdlib
 implementations in Rust or Python. Their executable claims require those

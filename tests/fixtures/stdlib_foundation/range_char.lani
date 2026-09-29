@@ -79,5 +79,19 @@ fn main() -> i32 {
     if (core::range_char::end_to(to) != e ||
         !core::range_char::contains_to(to, z) ||
         core::range_char::contains_to(to, e)) { return 8; }
+    if (half.start() != e || half.end() != omega ||
+        half.is_empty() || !reversed.is_empty()) { return 9; }
+    if (!half.contains(e) || !half.contains(enye) ||
+        half.contains(omega) || !half.overlaps(overlapping) ||
+        half.overlaps(touching) || half.overlaps(reversed)) { return 10; }
+    if (closed.start() != e || closed.end() != omega ||
+        closed.is_empty() || !closed_reversed.is_empty()) { return 11; }
+    if (!closed.contains(e) || !closed.contains(omega) ||
+        closed.contains(smile) || !closed.overlaps(closed_touch) ||
+        closed.overlaps(closed_reversed)) { return 12; }
+    if (from.start() != omega || from.contains(enye) ||
+        !from.contains(smile)) { return 13; }
+    if (to.end() != e || !to.contains(z) ||
+        to.contains(e)) { return 14; }
     return 0;
 }

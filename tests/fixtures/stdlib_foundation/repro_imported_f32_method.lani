@@ -1,0 +1,9 @@
+module app::main;
+import core::probe;
+
+fn main() -> i32 {
+    let value: core::probe::Range = core::probe::make(-1.0, 2.0);
+    if (core::probe::free_start(value) != -1.0) { return 1; }
+    if (value.start() != -1.0) { return 2; }
+    return 0;
+}

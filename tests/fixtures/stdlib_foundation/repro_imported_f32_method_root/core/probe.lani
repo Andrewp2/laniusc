@@ -1,0 +1,17 @@
+module core::probe;
+
+pub struct Range { start: f32, end: f32, }
+
+pub fn make(start: f32, end: f32) -> Range {
+    return Range { start: start, end: end };
+}
+
+pub fn free_start(value: Range) -> f32 {
+    return value.start;
+}
+
+pub impl Range {
+    pub fn start(&self) -> f32 {
+        return self.start;
+    }
+}

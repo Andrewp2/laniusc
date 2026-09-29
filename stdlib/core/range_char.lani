@@ -92,3 +92,45 @@ pub fn end_to(value: RangeToChar) -> char { return value.end; }
 pub fn contains_to(value: RangeToChar, item: char) -> bool {
     return to_contains(value.end, item);
 }
+
+pub impl RangeChar {
+    pub fn start(&self) -> char { return self.start; }
+    pub fn end(&self) -> char { return self.end; }
+    pub fn is_empty(&self) -> bool {
+        return half_open_is_empty(self.start, self.end);
+    }
+    pub fn contains(&self, item: char) -> bool {
+        return half_open_contains(self.start, self.end, item);
+    }
+    pub fn overlaps(&self, other: RangeChar) -> bool {
+        return half_open_overlaps(self.start, self.end, other.start, other.end);
+    }
+}
+
+pub impl RangeInclusiveChar {
+    pub fn start(&self) -> char { return self.start; }
+    pub fn end(&self) -> char { return self.end; }
+    pub fn is_empty(&self) -> bool {
+        return inclusive_is_empty(self.start, self.end);
+    }
+    pub fn contains(&self, item: char) -> bool {
+        return inclusive_contains(self.start, self.end, item);
+    }
+    pub fn overlaps(&self, other: RangeInclusiveChar) -> bool {
+        return inclusive_overlaps(self.start, self.end, other.start, other.end);
+    }
+}
+
+pub impl RangeFromChar {
+    pub fn start(&self) -> char { return self.start; }
+    pub fn contains(&self, item: char) -> bool {
+        return from_contains(self.start, item);
+    }
+}
+
+pub impl RangeToChar {
+    pub fn end(&self) -> char { return self.end; }
+    pub fn contains(&self, item: char) -> bool {
+        return to_contains(self.end, item);
+    }
+}
