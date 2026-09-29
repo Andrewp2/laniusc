@@ -51,3 +51,32 @@ pub fn and(value: ResultI16, next: ResultI16) -> ResultI16 {
     if (value.success) { return next; }
     return value;
 }
+
+pub impl ResultI16 {
+    pub fn is_ok(&self) -> bool { return self.success; }
+    pub fn is_err(&self) -> bool { return !self.success; }
+    pub fn contains(&self, expected: i16) -> bool {
+        return self.success && self.value == expected;
+    }
+    pub fn contains_err(&self, expected: i16) -> bool {
+        return !self.success && self.error == expected;
+    }
+    pub fn unwrap_or(&self, fallback: i16) -> i16 {
+        if (self.success) { return self.value; }
+        return fallback;
+    }
+    pub fn unwrap_err_or(&self, fallback: i16) -> i16 {
+        if (!self.success) { return self.error; }
+        return fallback;
+    }
+    pub fn or(&self, fallback: ResultI16) -> ResultI16 {
+        if (self.success) {
+            return ResultI16 { success: true, value: self.value, error: 0 };
+        }
+        return fallback;
+    }
+    pub fn and(&self, next: ResultI16) -> ResultI16 {
+        if (self.success) { return next; }
+        return ResultI16 { success: false, value: 0, error: self.error };
+    }
+}

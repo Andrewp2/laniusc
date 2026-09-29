@@ -69,3 +69,34 @@ pub fn err(value: core::result_i8::ResultI8) -> OptionI8 {
     }
     return none();
 }
+
+pub impl OptionI8 {
+    pub fn is_some(&self) -> bool { return self.present; }
+    pub fn is_none(&self) -> bool { return !self.present; }
+    pub fn contains(&self, expected: i8) -> bool {
+        return self.present && self.value == expected;
+    }
+    pub fn unwrap_or(&self, fallback: i8) -> i8 {
+        if (self.present) { return self.value; }
+        return fallback;
+    }
+    pub fn or(&self, fallback: OptionI8) -> OptionI8 {
+        if (self.present) { return OptionI8 { present: true, value: self.value }; }
+        return fallback;
+    }
+    pub fn and(&self, next: OptionI8) -> OptionI8 {
+        if (self.present) { return next; }
+        return none();
+    }
+    pub fn xor(&self, right: OptionI8) -> OptionI8 {
+        if (self.present) {
+            if (right.present) { return none(); }
+            return OptionI8 { present: true, value: self.value };
+        }
+        return right;
+    }
+    pub fn ok_or(&self, error: i8) -> core::result_i8::ResultI8 {
+        if (self.present) { return core::result_i8::ok(self.value); }
+        return core::result_i8::err(error);
+    }
+}

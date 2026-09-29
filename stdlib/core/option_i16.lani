@@ -69,3 +69,34 @@ pub fn err(value: core::result_i16::ResultI16) -> OptionI16 {
     }
     return none();
 }
+
+pub impl OptionI16 {
+    pub fn is_some(&self) -> bool { return self.present; }
+    pub fn is_none(&self) -> bool { return !self.present; }
+    pub fn contains(&self, expected: i16) -> bool {
+        return self.present && self.value == expected;
+    }
+    pub fn unwrap_or(&self, fallback: i16) -> i16 {
+        if (self.present) { return self.value; }
+        return fallback;
+    }
+    pub fn or(&self, fallback: OptionI16) -> OptionI16 {
+        if (self.present) { return OptionI16 { present: true, value: self.value }; }
+        return fallback;
+    }
+    pub fn and(&self, next: OptionI16) -> OptionI16 {
+        if (self.present) { return next; }
+        return none();
+    }
+    pub fn xor(&self, right: OptionI16) -> OptionI16 {
+        if (self.present) {
+            if (right.present) { return none(); }
+            return OptionI16 { present: true, value: self.value };
+        }
+        return right;
+    }
+    pub fn ok_or(&self, error: i16) -> core::result_i16::ResultI16 {
+        if (self.present) { return core::result_i16::ok(self.value); }
+        return core::result_i16::err(error);
+    }
+}

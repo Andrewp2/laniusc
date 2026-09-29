@@ -5,7 +5,7 @@ use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 #[test]
 fn concrete_option_result_methods_execute_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    for suffix in ["i32", "u32", "u8"] {
+    for suffix in ["i8", "u8", "i16", "u16", "i32", "u32"] {
         let fixture_path = root.join(format!(
             "tests/fixtures/stdlib_foundation/option_result_{suffix}.lani"
         ));
@@ -104,6 +104,29 @@ fn imported_aggregate_method_chains_execute_on_x86() {
         let output = common::run_x86_64_elf_output(
             "imported method chains",
             "imported_method_chains",
+            &bytes,
+        );
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+    }
+    #[cfg(not(all(unix, target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn narrow_option_result_methods_select_their_imported_types() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry =
+        root.join("tests/fixtures/stdlib_foundation/option_result_narrow_method_matrix.lani");
+    let stdlib_root = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("narrow method matrix", move || {
+        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
+    })
+    .expect("compile narrow method matrix");
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    {
+        let output = common::run_x86_64_elf_output(
+            "narrow method matrix",
+            "option_result_narrow_method_matrix",
             &bytes,
         );
         assert_eq!(output.status.code(), Some(0), "{output:?}");

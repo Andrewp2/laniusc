@@ -1,0 +1,30 @@
+module app::main;
+import core::option_i8;
+import core::option_u8;
+import core::option_i16;
+import core::option_u16;
+
+fn main() -> i32 {
+    let signed_byte: core::option_i8::OptionI8 = core::option_i8::some(-128);
+    let unsigned_byte: core::option_u8::OptionU8 = core::option_u8::some(255);
+    let signed_half: core::option_i16::OptionI16 = core::option_i16::some(-32768);
+    let unsigned_half: core::option_u16::OptionU16 = core::option_u16::some(65535);
+
+    if (signed_byte.unwrap_or(1) != -128 ||
+        unsigned_byte.unwrap_or(1) != 255 ||
+        signed_half.unwrap_or(1) != -32768 ||
+        unsigned_half.unwrap_or(1) != 65535) { return 1; }
+    if (!core::option_i8::none().or(signed_byte).contains(-128) ||
+        !core::option_u8::none().or(unsigned_byte).contains(255) ||
+        !core::option_i16::none().or(signed_half).contains(-32768) ||
+        !core::option_u16::none().or(unsigned_half).contains(65535)) { return 2; }
+    if (!signed_byte.ok_or(7).contains(-128) ||
+        !unsigned_byte.ok_or(7).contains(255) ||
+        !signed_half.ok_or(7).contains(-32768) ||
+        !unsigned_half.ok_or(7).contains(65535)) { return 3; }
+    if (!core::option_i8::none().ok_or(-1).contains_err(-1) ||
+        !core::option_u8::none().ok_or(128).contains_err(128) ||
+        !core::option_i16::none().ok_or(-2).contains_err(-2) ||
+        !core::option_u16::none().ok_or(32768).contains_err(32768)) { return 4; }
+    return 0;
+}

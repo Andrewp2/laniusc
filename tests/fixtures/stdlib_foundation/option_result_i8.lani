@@ -60,5 +60,50 @@ fn main() -> i32 {
     if (!core::option_i8::contains(core::option_i8::some(-128), -128) ||
         !core::result_i8::contains(core::result_i8::ok(127), 127) ||
         !core::result_i8::contains_err(core::result_i8::err(127), 127)) { return 16; }
+    if (!present.is_some() || present.is_none() ||
+        absent.is_some() || !absent.is_none() ||
+        !present.contains(127) || present.contains(0) ||
+        absent.contains(0) || present.unwrap_or(7) != 127 ||
+        absent.unwrap_or(7) != 7) { return 17; }
+    let zero: core::option_i8::OptionI8 = core::option_i8::some(0);
+    if (!zero.contains(0) || zero.unwrap_or(9) != 0) { return 18; }
+    let option_or_left: core::option_i8::OptionI8 = present.or(absent);
+    let option_or_right: core::option_i8::OptionI8 = absent.or(present);
+    let option_or_none: core::option_i8::OptionI8 = absent.or(absent);
+    if (!option_or_left.contains(127) || !option_or_right.contains(127) ||
+        !option_or_none.is_none()) { return 19; }
+    let option_and_right: core::option_i8::OptionI8 = present.and(zero);
+    let option_and_none: core::option_i8::OptionI8 = absent.and(present);
+    if (!option_and_right.contains(0) || !option_and_none.is_none() ||
+        !present.and(absent).is_none()) { return 20; }
+    let option_xor_left: core::option_i8::OptionI8 = present.xor(absent);
+    let option_xor_right: core::option_i8::OptionI8 = absent.xor(present);
+    let option_xor_both: core::option_i8::OptionI8 = present.xor(present);
+    let option_xor_none: core::option_i8::OptionI8 = absent.xor(absent);
+    if (!option_xor_left.contains(127) || !option_xor_right.contains(127) ||
+        !option_xor_both.is_none() || !option_xor_none.is_none()) { return 21; }
+    let method_ok: core::result_i8::ResultI8 = present.ok_or(0);
+    let method_err: core::result_i8::ResultI8 = absent.ok_or(127);
+    if (!method_ok.contains(127) || !method_err.contains_err(127)) { return 22; }
+
+    if (!success.is_ok() || success.is_err() ||
+        failure.is_ok() || !failure.is_err() ||
+        !success.contains(42) || success.contains(0) ||
+        failure.contains(0) || !failure.contains_err(-128) ||
+        failure.contains_err(0) || success.contains_err(0)) { return 23; }
+    if (success.unwrap_or(99) != 42 || failure.unwrap_or(99) != 99 ||
+        success.unwrap_err_or(99) != 99 ||
+        failure.unwrap_err_or(99) != -128) { return 24; }
+    let result_or_left: core::result_i8::ResultI8 = success.or(failure);
+    let result_or_right: core::result_i8::ResultI8 = failure.or(success);
+    let result_and_right: core::result_i8::ResultI8 = success.and(failure);
+    let result_and_left: core::result_i8::ResultI8 = failure.and(success);
+    if (!result_or_left.contains(42) || !result_or_right.contains(42) ||
+        !result_and_right.contains_err(-128) ||
+        !result_and_left.contains_err(-128)) { return 25; }
+    let zero_error: core::result_i8::ResultI8 = core::result_i8::err(0);
+    if (!zero_error.contains_err(0) ||
+        !success.or(zero_error).contains(42) ||
+        !zero_error.and(success).contains_err(0)) { return 26; }
     return 0;
 }
