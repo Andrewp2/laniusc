@@ -96,3 +96,45 @@ pub fn end_to(value: RangeToF32) -> f32 { return value.end; }
 pub fn contains_to(value: RangeToF32, item: f32) -> bool {
     return to_contains(value.end, item);
 }
+
+pub impl RangeF32 {
+    pub fn start(&self) -> f32 { return self.start; }
+    pub fn end(&self) -> f32 { return self.end; }
+    pub fn is_empty(&self) -> bool {
+        return half_open_is_empty(self.start, self.end);
+    }
+    pub fn contains(&self, item: f32) -> bool {
+        return half_open_contains(self.start, self.end, item);
+    }
+    pub fn overlaps(&self, other: RangeF32) -> bool {
+        return half_open_overlaps(self.start, self.end, other.start, other.end);
+    }
+}
+
+pub impl RangeInclusiveF32 {
+    pub fn start(&self) -> f32 { return self.start; }
+    pub fn end(&self) -> f32 { return self.end; }
+    pub fn is_empty(&self) -> bool {
+        return inclusive_is_empty(self.start, self.end);
+    }
+    pub fn contains(&self, item: f32) -> bool {
+        return inclusive_contains(self.start, self.end, item);
+    }
+    pub fn overlaps(&self, other: RangeInclusiveF32) -> bool {
+        return inclusive_overlaps(self.start, self.end, other.start, other.end);
+    }
+}
+
+pub impl RangeFromF32 {
+    pub fn start(&self) -> f32 { return self.start; }
+    pub fn contains(&self, item: f32) -> bool {
+        return from_contains(self.start, item);
+    }
+}
+
+pub impl RangeToF32 {
+    pub fn end(&self) -> f32 { return self.end; }
+    pub fn contains(&self, item: f32) -> bool {
+        return to_contains(self.end, item);
+    }
+}

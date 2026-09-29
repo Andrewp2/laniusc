@@ -52,6 +52,7 @@ StructuredBuffer<uint> type_instance_arg_row_count_out;
 StructuredBuffer<uint> type_instance_arg_row_ref_tag;
 StructuredBuffer<uint> type_instance_arg_row_ref_payload;
 StructuredBuffer<uint> type_generic_param_slot_by_token;
+StructuredBuffer<uint> call_dependency_library_id;
 
 RWStructuredBuffer<uint> call_fn_index;
 RWStructuredBuffer<uint> call_return_type;
@@ -778,7 +779,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // and associated calls; it must not erase an already resolved free or
     // module-qualified function if another path projection also mentioned the
     // same token.
-    if (call_fn_index[i] != INVALID)
+    if (call_fn_index[i] != INVALID || call_dependency_library_id[i] != INVALID)
         return;
 
     call_fn_index[i] = INVALID;

@@ -103,5 +103,22 @@ fn main() -> i32 {
         core::range_f32::contains_to(to, nan)) { return 11; }
     if (!core::f32::is_nan(core::range_f32::start(invalid)) ||
         !core::f32::is_nan(core::range_f32::end_inclusive(closed_invalid))) { return 12; }
+    if (half.start() != -1.0 || half.end() != 2.0 ||
+        half.is_empty() || !invalid.is_empty() ||
+        !core::f32::is_nan(invalid.start())) { return 13; }
+    if (!half.contains(-1.0) || !half.contains(1.5) ||
+        half.contains(2.0) || half.contains(nan) ||
+        !half.overlaps(overlap) || half.overlaps(touch) ||
+        half.overlaps(invalid)) { return 14; }
+    if (closed.start() != -1.0 || closed.end() != 2.0 ||
+        closed.is_empty() || !closed_invalid.is_empty() ||
+        !core::f32::is_nan(closed_invalid.end())) { return 15; }
+    if (!closed.contains(-1.0) || !closed.contains(2.0) ||
+        closed.contains(nan) || !closed.overlaps(closed_touch) ||
+        closed.overlaps(closed_invalid)) { return 16; }
+    if (from.start() != -1.0 || !from.contains(0.0) ||
+        from.contains(nan)) { return 17; }
+    if (to.end() != 2.0 || !to.contains(1.0) ||
+        to.contains(2.0) || to.contains(nan)) { return 18; }
     return 0;
 }
