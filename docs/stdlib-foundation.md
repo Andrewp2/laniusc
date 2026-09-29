@@ -50,10 +50,10 @@ limited to native x86_64 output from this worktree.
 | `core::range` free functions for all five i32 and u32 range forms, and methods for `Range`, `RangeInclusive`, `RangeFrom`, `RangeTo`, and `RangeFull` | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership, including values across the u32 high bit. The imported u32 method reproducer also checks that same-name i32 and u32 methods select the correct body. `RangeFull::contains_i32` and `contains_u32` execute through an imported empty receiver at both domain extremes and zero. |
 | `core::wide_u64_range` all 19 public free functions and 14 receiver methods | Executable on x86_64 | The imported runtime fixture calls every function and method for half-open, inclusive, from, and to ranges. It checks endpoints and membership across the two-word boundary and unsigned high bit, equal and reversed bounds, touching and overlapping intervals, and zero and maximum values. `full_contains` covers the unbounded full domain as a scalar predicate. Range values store four or two flat `u32` words; imported nested wide aggregates and `RangeFull` forwarding remain compiler dependencies. |
 | `core::wide_i64_range` all 19 public free functions and 14 receiver methods | Executable on x86_64 | The imported runtime fixture calls every function and method for half-open, inclusive, from, and to ranges. It checks signed minimum and maximum, negative values in the same high word, the negative-to-zero boundary, equal and reversed bounds, touching and overlapping intervals, and full-domain membership. Range values store flat `u32` endpoint words and compare them in signed two's-complement order; no native `i64` behavior is claimed. |
-| `core::range_u8` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check half-open, inclusive, from, to, and full byte ranges, including reversed and equal bounds, touching intervals, and the byte maximum. The aggregate forms use `RangeU8`, `RangeInclusiveU8`, `RangeFromU8`, and `RangeToU8`. |
-| `core::range_i8` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-128`, `127`, touching intervals, and empty or reversed bounds. |
-| `core::range_u16` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check half-open, inclusive, from, to, and full ranges, including equal or reversed bounds, touching intervals, and the `65535` endpoint. |
-| `core::range_i16` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | Runtime fixtures call every public function and check signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-32768`, `32767`, touching intervals, and empty or reversed bounds. |
+| `core::range_u8` all 27 public scalar and concrete aggregate functions and 14 receiver methods | Executable on x86_64 | Runtime fixtures call every function and method across half-open, inclusive, from, to, and full byte ranges, including reversed and equal bounds, touching intervals, and the byte maximum. The aggregate forms use `RangeU8`, `RangeInclusiveU8`, `RangeFromU8`, and `RangeToU8`. |
+| `core::range_i8` all 27 public scalar and concrete aggregate functions and 14 receiver methods | Executable on x86_64 | Runtime fixtures call every function and method across signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-128`, `127`, touching intervals, and empty or reversed bounds. |
+| `core::range_u16` all 27 public scalar and concrete aggregate functions and 14 receiver methods | Executable on x86_64 | Runtime fixtures call every function and method across half-open, inclusive, from, to, and full ranges, including equal or reversed bounds, touching intervals, and the `65535` endpoint. |
+| `core::range_i16` all 27 public scalar and concrete aggregate functions and 14 receiver methods | Executable on x86_64 | Runtime fixtures call every function and method across signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-32768`, `32767`, touching intervals, and empty or reversed bounds. |
 | `core::range_char` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | A runtime fixture calls every public function and checks half-open, inclusive, from, to, and full character ranges. It uses ASCII and two-, three-, and four-byte Unicode literals to check scalar ordering, equal and reversed bounds, touching intervals, endpoint inclusion, and aggregate forwarding. |
 | `core::range_f32` all 27 public scalar and concrete aggregate functions | Executable on x86_64 | A runtime fixture calls every public function and checks finite values, signed zero, both infinities, and NaN. NaN bounds make bounded ranges empty; ordered ranges reject NaN values, while the full-range predicate accepts every `f32`. It checks endpoint inclusion, equal and reversed bounds, touching intervals, and aggregate forwarding. |
 | `core::slice` all 37 public i32 view functions | Executable on x86_64 for valid backed views | Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, first and last contiguous subsequence matches, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Sorting also runs all 243 five-element arrays over `{-1, 0, 1}` against independently counted expected groups. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
@@ -981,9 +981,11 @@ Lanius logic. No declaration is promoted solely because it type-checks.
 - `core::range_u16` and `core::range_i16` apply these rules across
   `0..=65535` and `-32768..=32767`. The unsigned inclusive range can contain
   `65535`; the signed inclusive range can contain both signed extrema. Each
-  small-width module provides concrete half-open, inclusive, from, and to
-  aggregates, with constructors, endpoint readers, and predicates. The
-  `full_contains` scalar helper covers the full range without an aggregate.
+  small-width integer module provides concrete half-open, inclusive, from, and to
+  aggregates, with constructors, endpoint readers, predicates, and receiver
+  methods. The `full_contains` scalar helper covers the full range without an
+  aggregate. Run `cargo test --test stdlib_narrow_range_methods_execution`
+  for their imported x86 receiver-method cases.
 - Slice callers supply `len` because source code cannot read slice metadata
   yet. `len <= 0` is empty for the safe fallback and accumulation helpers.
   `first_i32` traps on an empty view. `get_or_i32` returns the fallback for an
@@ -2452,16 +2454,25 @@ also fixes the imported struct-return relocation path described below.
     concrete `core::slice_bool`, `core::slice_u8`, `core::slice_i8`,
     `core::slice_i16`, `core::slice_u16`, and `core::slice_u32` modules remain the complete
     executable slice APIs in this audit.
-37. **Third same-name concrete method specialization.**
-    `laniusc check tests/fixtures/stdlib_foundation/repro_third_concrete_method.lani`
-    reports `LNC0016` at the third `get` method, claiming that the function
-    name is unexpected. The first two `Small<i32>` and `Small<u32>` methods
-    parse, and renaming the `Small<i8>` method makes the file compile and run.
-    Three same-name methods on unrelated concrete structs also parse, and
-    removing `pub` does not change the generic failure.
-    This prevents adding the same method names for all small-width generic
-    `Range<T>` specializations in `core::range`. The executable modules use
-    concrete range types and distinctly named free functions instead.
+37. **Same-name generic methods collide across signed widths.**
+    The smaller `repro_method_signed_width_collision.lani` declares only
+    `Small<i8>::get` and `Small<i32>::get`; `laniusc check` rejects the second
+    with `LNC0016` and a misleading “expected function name” label. With
+    `LANIUS_DEBUG_STAGE_ERRORS=1`, the underlying GPU type checker reports
+    `BadHir detail=1`, its duplicate method-key status. The older
+    `repro_third_concrete_method.lani` declares `Small<i32>`, `Small<u32>`,
+    then `Small<i8>`; it rejects the third method because `i8` collides with
+    `i32`, not because it is third. Putting `i8` first moves the rejection to
+    the later `i32` method, while renaming one method passes.
+    `LANGUAGE_DECL_TAGS` currently assigns the same scalar type code `3` to
+    all signed integer widths and `4` to all unsigned widths. The method
+    receiver argument hash and exact comparison use those collapsed scalar
+    payloads, so distinct width specializations share a lookup key. Raw GPU
+    lexing and standalone parsing accept the repro; the type-check method-key
+    pass rejects it. The concrete `range_i8`, `range_i16`, `range_u8`, and
+    `range_u16` modules now expose and execute same-name receiver methods on
+    their distinct concrete range types. Generic `Range<T>` width-specific
+    method overloads still need width-preserving method keys.
 38. **RangeFull layout after unrelated exports.**
     `repro_range_full_growth.lani` imports the adjacent
     `repro_range_full_growth_root` copy of `core::range` with seven extra

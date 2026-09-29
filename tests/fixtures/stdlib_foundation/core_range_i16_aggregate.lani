@@ -42,5 +42,19 @@ fn main() -> i32 {
     if (core::range_i16::end_to(to) != end ||
         !core::range_i16::contains_to(to, middle) ||
         core::range_i16::contains_to(to, end)) { return 10; }
+    if (half.start() != start || half.end() != end ||
+        half.is_empty() || !reversed.is_empty()) { return 11; }
+    if (!half.contains(start) || !half.contains(middle) ||
+        half.contains(end) || !half.overlaps(overlap) ||
+        half.overlaps(touch) || half.overlaps(reversed)) { return 12; }
+    if (closed.start() != start || closed.end() != end ||
+        closed.is_empty() || !closed_reversed.is_empty()) { return 13; }
+    if (!closed.contains(start) || !closed.contains(end) ||
+        closed.contains(maximum) || !closed.overlaps(closed_touch) ||
+        closed.overlaps(closed_reversed)) { return 14; }
+    if (from.start() != middle || from.contains(start) ||
+        !from.contains(maximum)) { return 15; }
+    if (to.end() != end || !to.contains(middle) ||
+        to.contains(end)) { return 16; }
     return 0;
 }

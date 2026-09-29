@@ -1,0 +1,16 @@
+module app::main;
+
+pub struct Small<T> { value: T, }
+
+pub impl Small<i8> {
+    pub fn get(self) -> i8 { return self.value; }
+}
+pub impl Small<i32> {
+    pub fn get(self) -> i32 { return self.value; }
+}
+
+fn main() -> i32 {
+    let value: Small<i32> = Small { value: 7 };
+    if (value.get() != 7) { return 1; }
+    return 0;
+}

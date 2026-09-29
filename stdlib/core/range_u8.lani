@@ -94,3 +94,45 @@ pub fn end_to(value: RangeToU8) -> u8 { return value.end; }
 pub fn contains_to(value: RangeToU8, item: u8) -> bool {
     return to_contains(value.end, item);
 }
+
+pub impl RangeU8 {
+    pub fn start(&self) -> u8 { return self.start; }
+    pub fn end(&self) -> u8 { return self.end; }
+    pub fn is_empty(&self) -> bool {
+        return half_open_is_empty(self.start, self.end);
+    }
+    pub fn contains(&self, item: u8) -> bool {
+        return half_open_contains(self.start, self.end, item);
+    }
+    pub fn overlaps(&self, other: RangeU8) -> bool {
+        return half_open_overlaps(self.start, self.end, other.start, other.end);
+    }
+}
+
+pub impl RangeInclusiveU8 {
+    pub fn start(&self) -> u8 { return self.start; }
+    pub fn end(&self) -> u8 { return self.end; }
+    pub fn is_empty(&self) -> bool {
+        return inclusive_is_empty(self.start, self.end);
+    }
+    pub fn contains(&self, item: u8) -> bool {
+        return inclusive_contains(self.start, self.end, item);
+    }
+    pub fn overlaps(&self, other: RangeInclusiveU8) -> bool {
+        return inclusive_overlaps(self.start, self.end, other.start, other.end);
+    }
+}
+
+pub impl RangeFromU8 {
+    pub fn start(&self) -> u8 { return self.start; }
+    pub fn contains(&self, item: u8) -> bool {
+        return from_contains(self.start, item);
+    }
+}
+
+pub impl RangeToU8 {
+    pub fn end(&self) -> u8 { return self.end; }
+    pub fn contains(&self, item: u8) -> bool {
+        return to_contains(self.end, item);
+    }
+}
