@@ -1,0 +1,2 @@
+module app::main;
+fn main() -> i32 { return -2147483649; }

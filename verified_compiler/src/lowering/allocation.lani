@@ -124,6 +124,99 @@ pub fn row_declaration_id(row: AllocationRow) -> i32 {
 
 pub fn row_core_id(row: AllocationRow) -> i32 { return row.core_id; }
 
+struct IndexEntry {
+    declaration_row: i32,
+    core_row: i32,
+}
+
+// Built once from the immutable allocation table. Declaration and Core IDs
+// have separate slots: aliases have no Core ID, and row order is not ID order.
+pub struct Index {
+    table: Table,
+    entries: [IndexEntry],
+    enumerations: [i32],
+    enumeration_count: i32,
+    count: i32,
+    valid: bool,
+}
+
+pub fn index(table: Table, count: i32) -> Index {
+    let result: Index = Index {
+        table: table, entries: slice_from_raw_parts(0, 0),
+        enumerations: verified::host::i32_slice_from_raw_parts(0, 0),
+        enumeration_count: 0,
+        count: 0, valid: false,
+    };
+    let entry_bytes: i32 = 2 * FIELD_BYTES;
+    if (!table_has_exact_rows(table) || count <= -1
+        || count > verified::host::I32_MAX / entry_bytes) { return result; }
+    if (count > 0) {
+        let memory: ptr = verified::host::alloc(count * entry_bytes,
+            ALIGNMENT);
+        if (memory == 0) { return result; }
+        result.entries = slice_from_raw_parts(
+            memory + count * entry_bytes - FIELD_BYTES, count);
+    }
+    if (table.count > 0) {
+        let memory: ptr = verified::host::alloc_i32(table.count);
+        if (memory == 0) { return result; }
+        result.enumerations = verified::host::i32_slice_from_raw_parts(
+            memory, table.count);
+    }
+    result.count = count;
+    let entries: [IndexEntry] = result.entries;
+    let enumerations: [i32] = result.enumerations;
+    let id: i32 = 0;
+    while (id < count) {
+        entries[id] = IndexEntry { declaration_row: -1, core_row: -1 };
+        id += 1;
+    }
+    let row: i32 = 0;
+    while (row < table.count) {
+        let allocation: AllocationRow = table_row(table, row);
+        let declaration: i32 = allocation.declaration_id;
+        let core: i32 = allocation.core_id;
+        if (declaration < -1 || declaration >= count
+            || core < -1 || core >= count) { return result; }
+        if (declaration >= 0) {
+            if (entries[declaration].declaration_row >= 0) { return result; }
+            entries[declaration].declaration_row = row;
+        }
+        if (core >= 0) {
+            if (entries[core].core_row >= 0) { return result; }
+            entries[core].core_row = row;
+        }
+        if (row_has_kind(allocation, lowering::declarations::Enumeration)) {
+            enumerations[result.enumeration_count] = row;
+            result.enumeration_count += 1;
+        }
+        row += 1;
+    }
+    result.valid = true;
+    return result;
+}
+
+pub fn declaration_row(index: Index, id: i32) -> i32 {
+    if (!index.valid || id <= -1 || id >= index.count) { return -1; }
+    let entries: [IndexEntry] = index.entries;
+    return entries[id].declaration_row;
+}
+
+pub fn core_row(index: Index, id: i32) -> i32 {
+    if (!index.valid || id <= -1 || id >= index.count) { return -1; }
+    let entries: [IndexEntry] = index.entries;
+    return entries[id].core_row;
+}
+
+// Preserve source-row order and every enum candidate, including ambiguous
+// names. The list comes from actual rows, not the header's claimed count.
+pub fn enumeration_row(index: Index, position: i32) -> i32 {
+    if (!index.valid || position <= -1
+        || position >= index.enumeration_count) { return -1; }
+    let rows: [i32] = index.enumerations;
+    return rows[position];
+}
+
 pub fn clear_aliases(table: Table) {
     let header: [AllocationHeader] = table_header_view(table);
     header[0].aliases = 0;

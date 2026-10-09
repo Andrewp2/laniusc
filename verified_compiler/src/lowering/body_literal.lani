@@ -1,0 +1,69 @@
+module lowering::body_literal;
+
+import ir::body_events;
+import ir::type_ref;
+import backend::syntax;
+import lowering::body_context;
+import lowering::body_event_write;
+import lowering::constant_expression;
+import lowering::string_literal;
+import verified::host;
+import verified::surface_expr;
+
+type BodyContext = lowering::body_context::BodyContext;
+type Region = ir::body_events::Region;
+
+// Literal lowering owns the parsed value once. Ordinary negative integers
+// retain unary negation; the signed minimum is a single i32 literal.
+pub fn negative(context: BodyContext, token: i32,
+    output: Region, position: i32) -> i32 {
+    let literal: lowering::constant_expression::Result =
+        lowering::body_context::integer_literal(context.source,
+            context.source_length, context.tokens, context.token_count, token);
+    if (lowering::constant_expression::is_min_magnitude(literal)) {
+        return lowering::body_event_write::expression_value(output,
+            position, ir::body_events::IntegerValue(-2147483647 - 1));
+    }
+    if (!lowering::constant_expression::succeeded(literal)) {
+        return lowering::body_context::invalid();
+    }
+    let next: i32 = lowering::body_event_write::expression_unary(output,
+        position, backend::syntax::UnaryNegate);
+    let finish: i32 = lowering::body_event_write::expression_value(output, next,
+        ir::body_events::IntegerValue(lowering::constant_expression::value(literal)));
+    if (finish < 0 || !ir::body_events::record_result_type(output, next,
+            ir::type_ref::I32)) { return lowering::body_context::invalid(); }
+    return finish;
+}
+
+pub fn emit(context: BodyContext, node: verified::surface_expr::ExpressionNode,
+    output: Region, position: i32) -> i32 {
+    let operator: verified::surface_expr::ExpressionOperator = node.operator;
+    if (operator == verified::surface_expr::LiteralInteger) {
+        let value: i32 = lowering::body_context::decimal(context.source,
+            context.source_length, context.tokens, context.token_count, node.token);
+        if (value < 0) { return lowering::body_context::invalid(); }
+        return lowering::body_event_write::expression_value(output,
+            position, ir::body_events::IntegerValue(value));
+    }
+    if (operator == verified::surface_expr::LiteralTrue
+        || operator == verified::surface_expr::LiteralFalse) {
+        let value: bool = operator == verified::surface_expr::LiteralTrue;
+        return lowering::body_event_write::expression_value(output,
+            position, ir::body_events::BooleanValue(value));
+    }
+    if (operator == verified::surface_expr::LiteralString) {
+        let memory: ptr = lowering::string_literal::decode(context.source,
+            context.source_length, context.tokens, context.token_count, node.token);
+        if (memory == 0) { return lowering::body_context::invalid(); }
+        let header: [i32] = slice_from_raw_parts(memory, 1);
+        let length: i32 = header[0];
+        let value: ir::body_events::StringValue = ir::body_events::StringValue {
+            data: slice_from_raw_parts(memory + verified::host::I32_BYTES, length),
+            length: length,
+        };
+        return ir::body_events::append(output, position,
+            ir::body_events::ExpressionString(value));
+    }
+    return lowering::body_context::unsupported();
+}

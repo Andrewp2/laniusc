@@ -1,0 +1,8 @@
+module app::main;
+
+fn main() -> i32 {
+    let value: usize = 1;
+    let count: usize = 64;
+    let invalid: usize = value << count;
+    return 0;
+}

@@ -1,0 +1,31 @@
+module app::main;
+
+fn accepted(value: i32) -> bool {
+    return value >= 7 && value != 9;
+}
+
+fn choose(value: i32) -> i32 {
+    if (value > 0) { return 1; }
+    else { return 2; }
+}
+
+fn and_then(left: bool, divisor: i32) -> bool {
+    return left && 1 / divisor > 0;
+}
+
+fn or_else(left: bool, divisor: i32) -> bool {
+    return left || 1 / divisor > 0;
+}
+
+fn main() -> i32 {
+    // The zero-divisor calls must skip the right side, not merely combine
+    // two eagerly evaluated booleans. The other calls must evaluate it.
+    if (and_then(false, 0)) { return 2; }
+    if (!or_else(true, 0)) { return 3; }
+    if (!and_then(true, 1)) { return 4; }
+    if (and_then(true, -1)) { return 5; }
+    if (!or_else(false, 1)) { return 6; }
+    if (or_else(false, -1)) { return 7; }
+    if (accepted(7)) { return choose(1); }
+    return 0;
+}

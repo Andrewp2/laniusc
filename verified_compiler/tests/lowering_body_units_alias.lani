@@ -16,6 +16,7 @@ import lowering::unit_context;
 import lowering::signatures;
 import lowering::types;
 import lowering::value_catalog;
+import lowering::value_collection;
 import verified::host;
 import verified::parser;
 import verified::surface_expr;
@@ -312,6 +313,8 @@ fn main() -> i32 {
     let expression_arena_memory: ptr = verified::host::alloc(
         verified::surface_expr::allocation_bytes(EXPRESSION_NODE_CAPACITY),
         verified::surface_expr::ALIGNMENT);
+    let kind_code_memory: ptr = verified::host::alloc_i32(EXPRESSION_NODE_CAPACITY);
+    let kind_depth_memory: ptr = verified::host::alloc_i32(EXPRESSION_NODE_CAPACITY);
     let type_output_memory: ptr = verified::host::alloc(
         lowering::types::result_allocation_bytes(64),
         lowering::types::RESULT_ALIGNMENT);
@@ -332,6 +335,7 @@ fn main() -> i32 {
         || resolution_scratch_memory == 0 || value_scratch_memory == 0
         || alias_work_memory == 0
         || expression_arena_memory == 0 || type_output_memory == 0
+        || kind_code_memory == 0 || kind_depth_memory == 0
         || event_memory == 0 || body_catalog_memory == 0) { return 1; }
     let descriptor_table: lowering::declarations::Catalog =
         lowering::declarations::catalog_from_raw_parts(descriptors_memory, 2);
@@ -339,10 +343,10 @@ fn main() -> i32 {
         lowering::unit_context::from_raw_parts(contexts_memory, 2);
     let contexts: [lowering::unit_context::UnitContext] =
         context_table.data;
-    let transport_table: lowering::unit_descriptor::Table =
+    let unit_table: lowering::unit_descriptor::Table =
         lowering::unit_descriptor::from_raw_parts(transports_memory, 2);
     let transports: [lowering::unit_descriptor::UnitDescriptor] =
-        transport_table.data;
+        unit_table.data;
     let global_declarations: lowering::declarations::Table =
         lowering::declarations::from_raw_parts(global_declarations_memory, 6);
     let allocation_table: lowering::allocation::Table =
@@ -374,6 +378,10 @@ fn main() -> i32 {
     let expression_arena: verified::surface_expr::ExpressionArena =
         verified::surface_expr::from_raw_parts(expression_arena_memory,
             EXPRESSION_NODE_CAPACITY);
+    let kind_codes: [i32] = verified::host::i32_slice_from_raw_parts(
+        kind_code_memory, EXPRESSION_NODE_CAPACITY);
+    let kind_depths: [i32] = verified::host::i32_slice_from_raw_parts(
+        kind_depth_memory, EXPRESSION_NODE_CAPACITY);
     let type_output: lowering::types::Results =
         lowering::types::results_from_raw_parts(type_output_memory, 64);
     let events: ir::body_events::Region =
@@ -528,11 +536,20 @@ fn main() -> i32 {
         || !lowering::signature_index::complete(writer)) { return 29; }
     let signature_index: lowering::signature_index::Table =
         lowering::signature_index::finish(writer);
+    let value_names: lowering::value_collection::NameIndex =
+        lowering::value_collection::build_name_index(
+            lowering::value_collection::ValueCatalogInput {
+                contexts: context_table,
+                sources: lowering::value_collection::region(source_catalog, 41),
+                tokens: native_tokens,
+                allocations: allocation_table,
+                signature_index: signature_index,
+            });
     let inputs: lowering::body_units::BodyUnitInputs =
         lowering::body_units::BodyUnitInputs {
             unit_count: 2,
             contexts: context_table,
-            transport_descriptors: transport_table,
+            unit_descriptors: unit_table,
             unit_declarations: descriptor_table,
             global_declarations: global_declarations,
             sources: lowering::body_units::region(source_catalog, 41),
@@ -540,6 +557,7 @@ fn main() -> i32 {
             trees: tree_catalog,
             resolutions: resolution_catalog,
             values: value_catalog,
+            value_names: value_names,
             signature_index: signature_index,
             allocations: allocation_table,
             aliases: alias_catalog,
@@ -550,6 +568,8 @@ fn main() -> i32 {
             resolutions: resolution_scratch,
             values: value_scratch,
             expressions: expression_arena,
+            expression_kind_codes: kind_codes,
+            expression_kind_depths: kind_depths,
             type_output: type_output,
             events: events,
             catalog: body_catalog,
@@ -605,7 +625,8 @@ fn main() -> i32 {
                 lowering::value_catalog::ImportedBinding,
                 lowering::value_catalog::Callable(3))) != 2
         || !lowering::value_catalog::valid_slice(value_catalog, 0, 2,
-            6, allocation_table)) { return 44; }
+            6, lowering::allocation::index(allocation_table,
+                signature_index.count))) { return 44; }
     if (lowering::value_catalog::write_binding(value_catalog, 0,
             first_binding) != 1
         || lowering::value_catalog::write_binding(value_catalog, 1,
@@ -637,7 +658,8 @@ fn main() -> i32 {
                 lowering::value_catalog::LocalBinding,
                 lowering::value_catalog::Callable(2))) != 2
         || lowering::value_catalog::valid_slice(value_catalog, 0, 2,
-            6, allocation_table)) { return 46; }
+            6, lowering::allocation::index(allocation_table,
+                signature_index.count))) { return 46; }
     if (lowering::value_catalog::write_binding(value_catalog, 1,
             second_binding) != 2) { return 47; }
     contexts[1].value_row_offset = 1;

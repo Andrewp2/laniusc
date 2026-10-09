@@ -236,6 +236,28 @@ pub fn empty() -> Tree {
     };
 }
 
+// Callers first check the parent shape and its available event range. Walk
+// children using already-computed endpoints; reject wrong categories, cycles,
+// and endpoints outside the region. Construction and validation share this
+// traversal so they cannot disagree about child boundaries.
+fn children_end(events: [ir::body_events::Event], ends: [i32],
+    count: i32, index: i32, parent: Shape) -> i32 {
+    let cursor: i32 = index + 1;
+    let child: i32 = 0;
+    while (child < parent.arity) {
+        if (cursor >= count
+            || shape(events[cursor]).kind
+                != expected(parent.rule, child, parent.arity)) {
+            return -1;
+        }
+        let next: i32 = ends[cursor];
+        if (next <= cursor || next > count) { return -1; }
+        cursor = next;
+        child += 1;
+    }
+    return cursor;
+}
+
 // Reverse preorder works without recursion or a temporary stack: every
 // child's end is known before its parent is visited. Each edge is read once.
 pub fn build(source: ir::body_events::Region, count: i32) -> Tree {
@@ -249,19 +271,8 @@ pub fn build(source: ir::body_events::Region, count: i32) -> Tree {
         let parent: Shape = shape(events[index]);
         if (parent.arity <= -1 || parent.arity > count - index - 1
             || parent.kind == InvalidNode) { return empty(); }
-        let cursor: i32 = index + 1;
-        let child: i32 = 0;
-        while (child < parent.arity) {
-            if (cursor >= count
-                || shape(events[cursor]).kind
-                    != expected(parent.rule, child, parent.arity)) {
-                return empty();
-            }
-            let next: i32 = ends[cursor];
-            if (next <= cursor || next > count) { return empty(); }
-            cursor = next;
-            child += 1;
-        }
+        let cursor: i32 = children_end(events, ends, count, index, parent);
+        if (cursor < 0) { return empty(); }
         ends[index] = cursor;
         index -= 1;
     }
@@ -328,10 +339,10 @@ fn fixed_result_type(event: ir::body_events::Event) -> ir::type_ref::TypeRef {
     };
 }
 
-// A source-lowered tree must retain one resolved result type per expression.
+// A source-lowered tree retains a resolved type for expressions and places.
 // Fixed-result constructors must agree with their tags. This is still not a
 // substitute for the independent Lean typing judgment over the Core program.
-pub fn expression_result_annotations_valid(tree: Tree) -> bool {
+pub fn result_annotations_valid(tree: Tree) -> bool {
     if (!tree.has_result_types || tree.count <= 0) { return false; }
     let events: [ir::body_events::Event] = tree.events;
     let index: i32 = 0;
@@ -344,6 +355,10 @@ pub fn expression_result_annotations_valid(tree: Tree) -> bool {
                     && !ir::type_ref::same(actual, fixed))) {
                 return false;
             }
+        }
+        if (kind(tree, index) == PlaceNode
+            && !ir::type_ref::valid(result_type(tree, index))) {
+            return false;
         }
         index += 1;
     }
@@ -359,20 +374,8 @@ pub fn valid(tree: Tree) -> bool {
         let parent: Shape = shape(events[index]);
         if (parent.arity <= -1 || parent.arity > tree.count - index - 1
             || parent.kind == InvalidNode) { return false; }
-        let cursor: i32 = index + 1;
-        let child: i32 = 0;
-        while (child != parent.arity) {
-            if (cursor >= tree.count
-                || shape(events[cursor]).kind
-                    != expected(parent.rule, child, parent.arity)) {
-                return false;
-            }
-            let next: i32 = ends[cursor];
-            if (next <= cursor || next > tree.count) { return false; }
-            cursor = next;
-            child += 1;
-        }
-        if (ends[index] != cursor) { return false; }
+        let cursor: i32 = children_end(events, ends, tree.count, index, parent);
+        if (cursor < 0 || ends[index] != cursor) { return false; }
         index -= 1;
     }
     return ends[0] == tree.count;
@@ -410,6 +413,29 @@ pub fn next_sibling(tree: Tree, parent: i32, current: i32) -> i32 {
     let next: i32 = ends[current];
     if (next <= current || next >= ends[parent]) { return -1; }
     return next;
+}
+
+// On a valid tree, each recursive call visits a strict statement subtree.
+// Loops may execute zero times, so only a later return can close their path.
+// This is a Lanius IR check shared by both output paths, not emitted evidence.
+pub fn definitely_returns(tree: Tree, index: i32) -> bool {
+    if (kind(tree, index) != StatementNode) { return false; }
+    let events: [ir::body_events::Event] = tree.events;
+    return match (events[index]) {
+        ir::body_events::StatementReturnVoid -> true,
+        ir::body_events::StatementReturnValue -> true,
+        ir::body_events::StatementSequence ->
+            definitely_returns(tree, child(tree, index, 0))
+                || definitely_returns(tree, child(tree, index, 1)),
+        ir::body_events::StatementLet(initialized_local) ->
+            definitely_returns(tree, child(tree, index, 1)),
+        ir::body_events::StatementLetUninitialized(uninitialized_local) ->
+            definitely_returns(tree, child(tree, index, 0)),
+        ir::body_events::StatementIf ->
+            definitely_returns(tree, child(tree, index, 1))
+                && definitely_returns(tree, child(tree, index, 2)),
+        _ -> false,
+    };
 }
 
 pub fn child(tree: Tree, parent: i32, ordinal: i32) -> i32 {

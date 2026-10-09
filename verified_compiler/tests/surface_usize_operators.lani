@@ -1,0 +1,26 @@
+module app::main;
+
+fn identity(value: usize) -> usize { return value; }
+
+fn main() -> i32 {
+    let zero: usize = 0;
+    let one: usize = 1;
+    let two: usize = 2;
+    let three: usize = 3;
+    let thirty_two: usize = 32;
+    let sixty_three: usize = 63;
+    let high: usize = one << sixty_three;
+    let maximum: usize = zero - one;
+    // Keep the left operand alive across a call, and check the upper 32 bits.
+    if (identity(high) + identity(high) != zero) { return 1; }
+    if (maximum + one != zero || zero - one != maximum) { return 2; }
+    if (high * two != zero || maximum * three != maximum - two) { return 3; }
+    if (high / two != one << (sixty_three - one)) { return 4; }
+    if (maximum / high != one || maximum % high != high - one) { return 5; }
+    if (maximum >> sixty_three != one || (one << thirty_two) >> thirty_two != one) { return 6; }
+    if (high < one || high <= one || one > high || one >= high) { return 7; }
+    if (!(high > one) || !(high >= high) || !(one < high) || !(one <= one)) { return 8; }
+    if ((maximum & high) != high || (high | one) != high + one) { return 9; }
+    if ((maximum ^ high) != high - one || high == one || high != high) { return 10; }
+    return 37;
+}

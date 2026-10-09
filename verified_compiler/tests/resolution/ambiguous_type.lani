@@ -1,0 +1,7 @@
+module app::main;
+
+import resolution::left;
+import resolution::right;
+
+fn read(value: Pair) -> i32 { return value.value; }
+fn main() -> i32 { return 0; }

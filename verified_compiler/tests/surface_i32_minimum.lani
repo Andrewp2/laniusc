@@ -1,0 +1,14 @@
+module app::main;
+
+const MINIMUM: i32 = -2147483648;
+
+fn minimum() -> i32 { return -2147483648; }
+
+fn main() -> i32 {
+    let value: i32 = -2_147_483_648;
+    if (value != MINIMUM) { return 1; }
+    if (minimum() != value) { return 2; }
+    if (-(-2147483648) != value) { return 3; }
+    if (-0002147483648 != value) { return 4; }
+    return 37;
+}

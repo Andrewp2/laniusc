@@ -1,0 +1,7 @@
+module app::main;
+
+type First = Second;
+type Second = First;
+
+fn read(value: First) -> i32 { return 0; }
+fn main() -> i32 { return 0; }

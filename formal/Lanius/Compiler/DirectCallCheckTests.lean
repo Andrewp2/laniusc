@@ -59,9 +59,18 @@ def floatingReturnContext : Context :=
     functions := [{ scheme with returnType := .scalar .f32 }]
     functionInstances := [{ calleeInstance with returnType := .scalar .f32 }] }
 
+-- Call agreement depends on the declared signature, not a scalar whitelist.
 example :
     (@check floatingReturnContext path surfaceArguments coreArguments
-      [.scalar (.signed .i32)] (argumentLowering floatingReturnContext)).isSome = false := by
+      [.scalar (.signed .i32)] (argumentLowering floatingReturnContext)).isSome = true := by
+  decide
+
+def wrongReturnContext : Context :=
+  { context with functionInstances := [{ calleeInstance with returnType := .scalar .f32 }] }
+
+example :
+    (@check wrongReturnContext path surfaceArguments coreArguments
+      [.scalar (.signed .i32)] (argumentLowering wrongReturnContext)).isSome = false := by
   decide
 
 def genericContext : Context :=

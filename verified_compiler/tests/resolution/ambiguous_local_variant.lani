@@ -1,0 +1,9 @@
+module app::main;
+
+enum First { Value(i32), }
+enum Second { Value(i32), }
+
+fn main() -> i32 {
+    let selected: First = Value(7);
+    return 0;
+}

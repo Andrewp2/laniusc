@@ -35,16 +35,6 @@ structure SourceBacking (state : State) (cell : CellId) (values : List Int) : Pr
 def SourceByteBacking (state : State) (cell : CellId) (source : List Byte) : Prop :=
   SourceBacking state cell (sourceI32Values source)
 
-theorem FreshCellFrame.cellEntryFound
-    {before after : State} (frame : FreshCellFrame before after)
-    {cell : CellId} {entry : Cell}
-    (found : before.cellEntry? cell = some entry) :
-    after.cellEntry? cell = some entry := by
-  rcases frame with ⟨extra, cells, _, _⟩
-  unfold State.cellEntry? at found ⊢
-  rw [cells, List.find?_append]
-  simp only [found, Option.some_or]
-
 theorem SourceBacking.afterFrame
     {before after : State} {cell : CellId} {values : List Int}
     (source : SourceBacking before cell values)

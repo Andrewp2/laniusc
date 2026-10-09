@@ -1,0 +1,6 @@
+module app::main;
+
+import resolution::aliases;
+
+fn read(value: resolution::aliases::Hidden) -> i32 { return value.left; }
+fn main() -> i32 { return 0; }

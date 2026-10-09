@@ -283,20 +283,6 @@ uint aggregate_word_count_for_hir(uint node, uint hir_count)
         return array_length;
     uint projected_words = semantic_aggregate_word_count[node];
     if (projected_words != 0u) return projected_words;
-    uint ref_tag = semantic_expr_ref_tag[node];
-    uint ref_payload = semantic_expr_ref_payload[node];
-    if (ref_tag == 1u)
-    {
-        uint words = aggregate_word_count_for_type(ref_payload, hir_count);
-        if (words != 0u) return words;
-    }
-    uint name_token = semantic_aggregate_decl_token[node];
-    if (name_token < gParams.n_tokens)
-    {
-        uint struct_hir = semantic_aggregate_hir_by_name_token[name_token];
-        if (struct_hir < hir_count)
-            return semantic_struct_word_count_by_hir[struct_hir];
-    }
     // Instantiated aggregate calls carry their concrete ABI width on the
     // resolved function record. Numeric scalar type codes intentionally do
     // not encode generic arguments, so this is the canonical source for a
@@ -310,6 +296,22 @@ uint aggregate_word_count_for_hir(uint node, uint hir_count)
         function != LIR_INVALID && function < hir_count)
     {
         uint words = semantic_lir_functions[function].result_word_count;
+        if (words != 0u) return words;
+    }
+    // Checked declaration identity and call ABI take precedence over legacy
+    // scalar codes, whose struct/enum base+token encodings can collide.
+    uint name_token = semantic_aggregate_decl_token[node];
+    if (name_token < gParams.n_tokens)
+    {
+        uint declaration = semantic_aggregate_hir_by_name_token[name_token];
+        if (declaration < hir_count)
+            return semantic_struct_word_count_by_hir[declaration];
+    }
+    uint ref_tag = semantic_expr_ref_tag[node];
+    uint ref_payload = semantic_expr_ref_payload[node];
+    if (ref_tag == 1u)
+    {
+        uint words = aggregate_word_count_for_type(ref_payload, hir_count);
         if (words != 0u) return words;
     }
     return aggregate_word_count_for_type(

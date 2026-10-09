@@ -154,6 +154,7 @@ theorem signExtendDividend_step (width : X86.Register.Width) (before after : Sta
     (result : after = execute (signExtendDividendInstruction width)
       (signExtendDividendBytes width).length before) : Step before after := by
   exact Step.decoded _ loaded _ _ (signExtendDividend_decodes width) result
+    (by cases width <;> rfl)
 
 theorem division_step (width : X86.Register.Width) (signed : Bool) (before after : State)
     (divisor : Register)

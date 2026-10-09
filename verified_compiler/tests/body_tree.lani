@@ -36,11 +36,22 @@ fn main() -> i32 {
         || ir::body_tree::first_child(arithmetic, 1) != 2
         || ir::body_tree::next_sibling(arithmetic, 1, 2) != 3
         || ir::body_tree::next_sibling(arithmetic, 1, 3) != -1
-        || ir::body_tree::child(arithmetic, 1, 2) != -1) { return 2; }
+        || ir::body_tree::child(arithmetic, 1, 2) != -1
+        || !ir::body_tree::definitely_returns(arithmetic, 0)) { return 2; }
     let ends: [i32] = arithmetic.ends;
     ends[1] = 5;
     if (ir::body_tree::valid(arithmetic)) { return 10; }
     ends[1] = 6;
+    // A child must strictly advance and stay inside the event region. Test
+    // both failures independently of the root endpoint check.
+    ends[2] = 2;
+    if (ir::body_tree::valid(arithmetic)) { return 13; }
+    ends[2] = 7;
+    if (ir::body_tree::valid(arithmetic)) { return 14; }
+    ends[2] = -1;
+    if (ir::body_tree::valid(arithmetic)) { return 15; }
+    ends[2] = 3;
+    if (!ir::body_tree::valid(arithmetic)) { return 16; }
 
     // Assignment owns a place and an expression; the place owns an index.
     events[0] = ir::body_events::StatementSequence;
@@ -61,7 +72,8 @@ fn main() -> i32 {
         || ir::body_tree::child(assignment, 2, 1) != 6
         || ir::body_tree::child(assignment, 3, 0) != 4
         || ir::body_tree::child(assignment, 3, 1) != 5
-        || ir::body_tree::subtree_end(assignment, 3) != 6) {
+        || ir::body_tree::subtree_end(assignment, 3) != 6
+        || ir::body_tree::definitely_returns(assignment, 0)) {
         return 3;
     }
 
@@ -114,7 +126,8 @@ fn main() -> i32 {
         || ir::body_tree::child(branching, 2, 0) != 3
         || ir::body_tree::child(branching, 2, 1) != 4
         || ir::body_tree::child(branching, 2, 2) != 6
-        || ir::body_tree::subtree_end(branching, 0) != 8) {
+        || ir::body_tree::subtree_end(branching, 0) != 8
+        || !ir::body_tree::definitely_returns(branching, 0)) {
         return 9;
     }
 

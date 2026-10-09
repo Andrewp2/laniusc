@@ -1,0 +1,9 @@
+module app::main;
+
+fn inspect(value: resolution::left::Pair) -> i32 {
+    return value.value;
+}
+
+fn main() -> i32 {
+    return 0;
+}

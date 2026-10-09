@@ -1,0 +1,50 @@
+module app::main;
+
+enum Candidate {
+    Missing,
+    Unique(Target),
+    Ambiguous,
+}
+
+// NOMINAL_IDENTITY_PADDING
+
+struct Collision { first: i32, second: i32, third: i32 }
+struct Payload { first: i32, second: i32, third: i32 }
+enum Target { Invalid, Callable(i32), Variant(Payload) }
+
+// NOMINAL_IDENTITY_ALIAS
+
+fn add(candidate: Candidate, target: Target) -> Candidate {
+    return match (candidate) {
+        Missing -> Unique(target),
+        _ -> Ambiguous,
+    };
+}
+
+fn copy_record(value: Collision) -> Collision { return value; }
+
+fn target_value(target: Target) -> i32 {
+    return match (target) {
+        Variant(payload) -> payload.first + payload.second + payload.third,
+        _ -> 2,
+    };
+}
+
+fn value(candidate: Candidate) -> i32 {
+    return match (candidate) {
+        Unique(target) -> target_value(target),
+        _ -> 3,
+    };
+}
+
+fn main() -> i32 {
+    // Both types must keep their own layout even when their legacy codes match.
+    let record: Collision = Collision { first: 2, second: 3, third: 5 };
+    let copied: Collision = copy_record(record);
+    if (copied.first != 2 || copied.second != 3 || copied.third != 5) { return 4; }
+    let payload: Payload = Payload { first: 13, second: 17, third: 7 };
+    let target: Target = Variant(payload);
+    let candidate: Candidate = Missing;
+    let selected: Candidate = add(candidate, target);
+    return value(selected);
+}

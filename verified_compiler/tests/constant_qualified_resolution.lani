@@ -1,0 +1,8 @@
+module app::main;
+
+import sample::left;
+import sample::right;
+
+fn main() -> i32 {
+    return sample::left::BASE - sample::right::BASE;
+}

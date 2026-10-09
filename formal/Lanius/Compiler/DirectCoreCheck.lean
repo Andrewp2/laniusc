@@ -104,6 +104,15 @@ def checkTyped (artifact : ArtifactPack) (sources : List Extraction.SourceFile)
           semantic
         }
 
+/-- Turn a kernel-checked success decision into the existing agreement witness.
+    This is for optional bootstrap audits, not normal emitted program data. -/
+theorem checkTyped_success
+    (accepted : (checkTyped artifact sources program entrypoint resolver).isOk = true) :
+    ∃ checked, checkTyped artifact sources program entrypoint resolver = .ok checked := by
+  cases result : checkTyped artifact sources program entrypoint resolver with
+  | error failure => simp [Except.isOk, Except.toBool, result] at accepted
+  | ok checked => exact ⟨checked, rfl⟩
+
 private theorem lowering_program_eq
     {input : FrontendBoundary.CoreInput}
     {program : Core.Program}
@@ -136,6 +145,39 @@ theorem typed_emitted_executable_wellFormed {artifact : ArtifactPack}
     checked.semantic.lowering checked.semantic.selection
   simpa [checked_typed_program checked,
     checked.semantic.selectedEntrypoint] using selected
+
+/-- The selected emitted function is the source-lowered body, not merely some
+    well-typed function with the same entrypoint ID. -/
+theorem typed_emitted_entrypoint {artifact : ArtifactPack}
+    {sources : List Extraction.SourceFile} {program : Core.Program}
+    {entrypoint : FunctionId} {resolver : ExternalBehaviorResolver}
+    (checked : CheckedTyped artifact sources program entrypoint resolver) :
+    program.function? entrypoint = some checked.semantic.selection.body.core := by
+  simpa only [checked_typed_program checked, checked.semantic.selectedEntrypoint] using
+    ExecutableBoundary.selected_function checked.semantic.lowering checked.semantic.selection
+
+/-- Every source function has its actual emitted body and source-lowering
+    evidence. Exactness comes from the checker, not an assumed successful run. -/
+theorem typed_emitted_body {artifact : ArtifactPack}
+    {sources : List Extraction.SourceFile} {program : Core.Program}
+    {entrypoint : FunctionId} {resolver : ExternalBehaviorResolver}
+    (checked : CheckedTyped artifact sources program entrypoint resolver)
+    (source : checked.semantic.lowering.pack.item? address = some (.function declaration)) :
+    ∃ body ∈ checked.semantic.lowering.functionBodies,
+      body.address = address ∧ body.declaration = declaration ∧
+      body.core ∈ program.functions ∧ body.core.body = some body.lowering.core ∧
+      body.core.external = none := by
+  obtain ⟨body, member, sameAddress⟩ :=
+    checked.semantic.lowering.functionBodiesExact.1 address declaration source
+  have sameDeclaration : body.declaration = declaration := by
+    have found := body.sourceFound
+    rw [sameAddress, source] at found
+    exact Surface.Item.function.inj (Option.some.inj found).symm
+  have emitted := body.row.member
+  rw [body.coreMap] at emitted
+  change body.core ∈ checked.semantic.lowering.program.functions at emitted
+  rw [congrArg Core.Program.functions (checked_typed_program checked)] at emitted
+  exact ⟨body, member, sameAddress, sameDeclaration, emitted, body.coreShape⟩
 
 theorem checked_typed_source_and_program {artifact : ArtifactPack}
     {sources : List Extraction.SourceFile} {program : Core.Program}

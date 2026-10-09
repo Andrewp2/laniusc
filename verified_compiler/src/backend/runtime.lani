@@ -1,0 +1,79 @@
+module backend::runtime;
+
+import runtime::service;
+import runtime::arguments;
+import runtime::heap;
+import runtime::io;
+import x86::encode;
+import x86::control;
+import x86::register;
+
+// Emit the native implementation of a semantic host service.
+pub fn emit(output: [i32], capacity: i32, cursor: i32,
+    service: runtime::service::RuntimeService) -> i32 {
+    if (service == runtime::service::Allocate) { return runtime::heap::allocate(output, capacity, cursor); }
+    if (service == runtime::service::OpenRead) { return runtime::io::open_read(output, capacity, cursor); }
+    if (service == runtime::service::Close) { return runtime::io::close(output, capacity, cursor); }
+    if (service == runtime::service::ArgumentCount) {
+        return runtime::arguments::emit(output, capacity, cursor,
+            runtime::arguments::Count);
+    }
+    if (service == runtime::service::ArgumentLength) {
+        return runtime::arguments::emit(output, capacity, cursor,
+            runtime::arguments::Length);
+    }
+    if (service == runtime::service::ArgumentRead) {
+        return runtime::arguments::emit(output, capacity, cursor,
+            runtime::arguments::Read);
+    }
+    let next: i32 = cursor;
+    if (service == runtime::service::Read) {
+        next = x86::encode::immediate(output, capacity, next,
+            x86::register::WIDTH_32, x86::register::R10,
+            runtime::io::FIRST_FILE_HANDLE, 0);
+        next = x86::encode::binary(output, capacity, next,
+            x86::register::WIDTH_32, x86::encode::Compare,
+            x86::register::RDI, x86::register::R10);
+        let valid: i32 = next + 2;
+        next = x86::control::branch(output, capacity, next, x86::control::GreaterEqual, 0);
+        next = x86::encode::immediate(output, capacity, next,
+            x86::register::WIDTH_32, x86::register::RAX, -1, 0);
+        next = x86::control::return_near(output, capacity, next);
+        if (x86::control::patch_relative(output, next, valid, next) <= -1) { return -1; }
+        return runtime::io::transfer(output, capacity, next, false);
+    }
+    if (service == runtime::service::WriteStdout) {
+        next = x86::encode::move_register(output, capacity, next,
+            x86::register::WIDTH_64, x86::register::RDX, x86::register::RSI);
+        next = x86::encode::move_register(output, capacity, next,
+            x86::register::WIDTH_64, x86::register::RSI, x86::register::RDI);
+        next = x86::encode::immediate(output, capacity, next,
+            x86::register::WIDTH_32, x86::register::RDI,
+            runtime::io::STDOUT_HANDLE, 0);
+        return runtime::io::transfer(output, capacity, next, true);
+    }
+    if (service == runtime::service::WriteByte) {
+        next = x86::encode::binary(output, capacity, next,
+            x86::register::WIDTH_32, x86::encode::Test,
+            x86::register::RDI, x86::register::RDI);
+        let valid: i32 = next + 2;
+        next = x86::control::branch(output, capacity, next, x86::control::Greater, 0);
+        next = x86::encode::immediate(output, capacity, next,
+            x86::register::WIDTH_32, x86::register::RAX, -1, 0);
+        next = x86::control::return_near(output, capacity, next);
+        if (x86::control::patch_relative(output, next, valid, next) <= -1) { return -1; }
+        // The single byte lives in a private stack word until transfer returns.
+        next = x86::control::push(output, capacity, next, x86::register::RSI);
+        next = x86::encode::move_register(output, capacity, next,
+            x86::register::WIDTH_64, x86::register::RSI, x86::register::RSP);
+        next = x86::encode::immediate(output, capacity, next,
+            x86::register::WIDTH_32, x86::register::RDX, 1, 0);
+        let call: i32 = next + 1;
+        next = x86::control::call(output, capacity, next, 0);
+        next = x86::control::pop(output, capacity, next, x86::register::R11);
+        next = x86::control::return_near(output, capacity, next);
+        if (x86::control::patch_relative(output, next, call, next) <= -1) { return -1; }
+        return runtime::io::transfer(output, capacity, next, true);
+    }
+    return -1;
+}

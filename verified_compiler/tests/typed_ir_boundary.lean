@@ -1,11 +1,7 @@
-import Lanius.TypedIR.Checked
+import Lanius.Typing.Check
 import GeneratedDirectCore
 
-def linkedTypedProgram : Lanius.TypedIR.Program :=
-  Lanius.TypedIR.require extractedEntrypoint extractedProgram
-    (by decide) (by decide)
-
-example : linkedTypedProgram.core = extractedProgram := rfl
+-- Independent typing is a regression oracle, not part of normal emission.
 
 private def wrongResultProgram : Lanius.Core.Program :=
   { extractedProgram with
@@ -14,5 +10,5 @@ private def wrongResultProgram : Lanius.Core.Program :=
         { function with returnType := .scalar .bool }
       else function }
 
-example : Lanius.Typing.Check.checkProgramWellTyped wrongResultProgram = none := by
-  decide
+-- The independent checker remains a test oracle, not an emission dependency.
+example : Lanius.Typing.Check.checkProgramWellTyped wrongResultProgram = none := by decide

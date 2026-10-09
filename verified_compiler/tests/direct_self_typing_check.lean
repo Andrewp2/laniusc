@@ -1,7 +1,11 @@
 import Lanius.Typing.Check
 import SelfCore
 
+-- Independent regression audit only; normal emission carries no typing proof.
+#print axioms extractedProgram
+
 def main (_args : List String) : IO UInt32 := do
+  IO.println s!"self module: {extractedProgram.functions.length} functions, {extractedProgram.constants.length} constants"
   let start ← IO.monoMsNow
   match Lanius.Typing.Check.checkProgramWellTyped extractedProgram with
   | none =>

@@ -1,0 +1,17 @@
+module app::main;
+
+fn widen(value: i32) -> usize { return value; }
+fn add_bytes(value: ptr, count: i32) -> ptr { return value + count; }
+fn subtract_bytes(value: ptr, count: usize) -> ptr { return value - count; }
+
+fn main() -> i32 {
+    let start: ptr = 0;
+    // Widening -1 must produce 2^64-1, so subtracting it wraps to +1.
+    if (subtract_bytes(start, widen(-1)) != add_bytes(start, 1)) { return 1; }
+    let seven: usize = 7;
+    if (widen(7) != seven) { return 2; }
+    let advanced: ptr = add_bytes(start, 8);
+    if (advanced == start) { return 3; }
+    if (subtract_bytes(advanced, 8) != start) { return 4; }
+    return 37;
+}

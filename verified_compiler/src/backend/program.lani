@@ -14,7 +14,7 @@ import ir::function_catalog;
 import ir::program;
 import ir::type_catalog;
 import x86::control;
-import runtime::service;
+import backend::runtime;
 import runtime::string;
 import verified::host;
 
@@ -74,27 +74,46 @@ fn typed_input(source: Source) -> ir::program::Program {
 }
 fn native_stride(bodies: ir::body_catalog::Catalog,
     functions: ir::function_catalog::Table) -> i32 {
-    // One event can create at most one local binding, call fixup, or break
-    // patch. Parameters and function positions occupy their own regions.
-    let remaining: i32 = backend::compile::MAX_WORDS
-        - backend::syntax::PROGRAM_HEADER_WORDS;
-    if (functions.count <= 0 || functions.count > remaining
+    // Locals and break patches are reused between functions; only call
+    // fixups and function positions accumulate across the program. The
+    // serialized program's word count is not a bound on native IR size.
+    let limit: i32 = backend::compile::MAX_WORDS;
+    if (functions.count <= 0 || functions.count > limit
         || functions.parameter_count <= -1) { return -1; }
-    remaining -= functions.count;
-    if (functions.parameter_count > remaining) { return -1; }
-    remaining -= functions.parameter_count;
+    let stride: i32 = backend::syntax::PROGRAM_HEADER_WORDS;
+    if (functions.count > stride) { stride = functions.count; }
+    let fixups: i32 = 0;
     let count: i32 = ir::body_catalog::length(bodies);
     let index: i32 = 0;
     while (index < count) {
         let body: ir::body_catalog::FunctionBody =
             ir::body_catalog::at(bodies, index);
-        if (body.tree.count <= 0 || body.tree.count > remaining) {
+        let parameters: i32 = body.signature.parameters;
+        if (body.tree.count <= 0 || body.tree.count > limit
+            || parameters < 0 || parameters > limit - body.tree.count) {
             return -1;
         }
-        remaining -= body.tree.count;
+        let locals: i32 = body.tree.count + parameters;
+        if (locals > stride) { stride = locals; }
+        let events: [ir::body_events::Event] = body.tree.events;
+        let event: i32 = 0;
+        while (event < body.tree.count) {
+            // These are the two emission sites calling backend::call::relative.
+            let patches: bool = match (events[event]) {
+                ir::body_events::ExpressionCall(call) -> true,
+                ir::body_events::ExpressionStringDataPointer -> true,
+                _ -> false,
+            };
+            if (patches) {
+                if (fixups == limit) { return -1; }
+                fixups += 1;
+            }
+            event += 1;
+        }
         index += 1;
     }
-    return backend::compile::MAX_WORDS - remaining;
+    if (fixups > stride) { stride = fixups; }
+    return stride;
 }
 
 pub fn compile(source: Source, workspace: backend::frame::Workspace,
@@ -259,7 +278,7 @@ pub fn compile(source: Source, workspace: backend::frame::Workspace,
         backend::frame::set_function_code_start(work, index, next);
         let header: backend::syntax::FunctionHeader = function.header;
         if (header.kind == backend::syntax::RuntimeFunction) {
-            next = runtime::service::emit(output, capacity, next,
+            next = backend::runtime::emit(output, capacity, next,
                 function.service);
         } else {
             let emitted: i32 = -1;

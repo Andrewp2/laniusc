@@ -4,6 +4,7 @@ import backend::syntax;
 import ir::function_catalog;
 import ir::type_ref;
 import runtime::service;
+import backend::runtime_record;
 import verified::host;
 
 // Standalone input decodes serialized Core functions. Native compilation
@@ -84,7 +85,7 @@ pub fn measure(input: [i32], length: i32, start: i32,
             return invalid();
         }
         if (header.kind == backend::syntax::RuntimeFunction
-            && !runtime::service::valid(input, first, words)) {
+            && !backend::runtime_record::valid(input, first, words)) {
             return invalid();
         }
         required.parameters += header.parameters;
@@ -241,7 +242,7 @@ pub fn build(input: [i32], length: i32, start: i32,
             service: runtime::service::NoService,
         };
         if (header.kind == backend::syntax::RuntimeFunction) {
-            functions[index].service = runtime::service::service_from_code(
+            functions[index].service = backend::runtime_record::service_from_code(
                 input[first + words - 1]);
         }
         let parameter: i32 = 0;
@@ -284,7 +285,7 @@ pub fn build_native(source: ir::function_catalog::Table,
         let body_words: i32 = 0;
         if (function.kind == ir::function_catalog::RuntimeFunction) {
             kind = backend::syntax::RuntimeFunction;
-            body_words = runtime::service::RUNTIME_SERVICE_BODY_WORDS;
+            body_words = backend::runtime_record::RUNTIME_SERVICE_BODY_WORDS;
         }
         let header: backend::syntax::FunctionHeader =
             backend::syntax::FunctionHeader {

@@ -1,0 +1,6 @@
+module app::main;
+
+fn main() -> i32 {
+    -true;
+    return 37;
+}

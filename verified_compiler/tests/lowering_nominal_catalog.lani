@@ -1,0 +1,94 @@
+module app::main;
+
+import lowering::allocation;
+import lowering::declarations;
+import lowering::resolution_catalog;
+import verified::host;
+
+fn kind(code: i32) -> lowering::declarations::DeclarationKind {
+    if (code == 0) { return lowering::declarations::Invalid; }
+    if (code == 1) { return lowering::declarations::Structure; }
+    if (code == 2) { return lowering::declarations::Enumeration; }
+    if (code == 3) { return lowering::declarations::Alias; }
+    if (code == 4) { return lowering::declarations::Constant; }
+    if (code == 5) { return lowering::declarations::Function; }
+    if (code == 6) { return lowering::declarations::External; }
+    if (code == 7) { return lowering::declarations::Module; }
+    return lowering::declarations::Import;
+}
+
+fn main() -> i32 {
+    let capacity: i32 = 27;
+    let memory: ptr = verified::host::alloc(
+        lowering::allocation::HEADER_BYTES
+            + capacity * lowering::allocation::ROW_BYTES,
+        lowering::allocation::ALIGNMENT);
+    if (memory == 0) { return 1; }
+    let table: lowering::allocation::Table =
+        lowering::allocation::from_raw_parts(memory, capacity);
+    // Category counts are deliberately stale. Only actual rows determine
+    // candidates; repeated names must survive for the resolver to reject them.
+    let header: lowering::allocation::AllocationHeader =
+        lowering::allocation::AllocationHeader {
+            units: 3, rows: 0, structures: 0, enumerations: 0,
+            aliases: 0, constants: 0, functions: 0, externals: 0,
+            declarations: 0,
+        };
+    let rotation: i32 = 0;
+    while (rotation < 9) {
+        let row: i32 = 0;
+        while (row < capacity) {
+            let code: i32 = (row + rotation) % 9;
+            lowering::allocation::table_write_row(table, row,
+                lowering::allocation::AllocationRow {
+                    source: lowering::declarations::DeclarationRow {
+                        unit: row % 3, kind: kind(code),
+                        is_public: row % 2 == 0, item: row,
+                        declaration: row, name: 0, target: 100 + row,
+                        ordinal: row,
+                    },
+                    declaration_id: row,
+                    core_id: row * 2,
+                });
+            row += 1;
+        }
+        header.rows = 0;
+        while (header.rows <= capacity) {
+            lowering::allocation::table_write_header(table, header);
+            let catalog: lowering::resolution_catalog::NominalCatalog =
+                lowering::resolution_catalog::nominal_catalog(table);
+            if (!catalog.valid) { return 2; }
+            let entries: [lowering::allocation::AllocationRow] = catalog.data;
+            let found: i32 = 0;
+            row = 0;
+            while (row < header.rows) {
+                let code: i32 = (row + rotation) % 9;
+                if (code >= 1 && code <= 3) {
+                    if (found >= catalog.count) { return 3; }
+                    let entry: lowering::allocation::AllocationRow = entries[found];
+                    if (entry.declaration_id != row || entry.core_id != row * 2
+                        || entry.source.kind != kind(code)
+                        || entry.source.unit != row % 3 || entry.source.name != 0
+                        || entry.source.target != 100 + row
+                        || entry.source.is_public != (row % 2 == 0)) { return 4; }
+                    found += 1;
+                }
+                row += 1;
+            }
+            if (catalog.count != found) { return 5; }
+            header.rows += 1;
+        }
+        rotation += 1;
+    }
+    // Reject inconsistent capacity and arithmetic overflow before reading rows.
+    lowering::allocation::table_write_header(table, header);
+    if (lowering::resolution_catalog::nominal_catalog(table).valid) { return 6; }
+    header.rows = -1;
+    lowering::allocation::table_write_header(table, header);
+    if (lowering::resolution_catalog::nominal_catalog(table).valid) { return 7; }
+    header.rows = verified::host::I32_MAX;
+    lowering::allocation::table_write_header(table, header);
+    table.count = verified::host::I32_MAX;
+    if (lowering::resolution_catalog::nominal_catalog(table).valid) { return 8; }
+    return 0;
+}

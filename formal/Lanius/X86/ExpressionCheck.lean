@@ -1,6 +1,7 @@
 import Lanius.X86.ScalarComposite
 import Lanius.X86.Machine.ControlEncoding
 import Lanius.Semantics.Rules
+import Lanius.Semantics.Bitwise
 
 namespace Lanius.X86.ExpressionCheck
 
@@ -616,21 +617,6 @@ def bitwiseNat (operation : BinaryOp) (left right : Nat) : Nat :=
   | .bitXor => Nat.xor left right
   | _ => 0
 
-theorem wrapSigned_bmod (value : Int) :
-    wrapSigned Target.x86_64 .i32 value = value.bmod (2 ^ 32) := by
-  unfold wrapSigned signedModulus signedSignBit
-  have bits : SignedIntTy.bits Target.x86_64 .i32 = 32 := by decide
-  rw [bits, Int.bmod_eq_emod]
-  dsimp
-  change (if value % (4294967296 : Int) ≥ 2147483648 then
-      value % (4294967296 : Int) - 4294967296 else value % (4294967296 : Int)) =
-    value % (4294967296 : Int) -
-      ↑(if value % (4294967296 : Int) ≥ 2147483648 then
-        (4294967296 : Nat) else 0)
-  by_cases h : value % (4294967296 : Int) ≥ 2147483648
-  · simp [h]
-  · simp [h]
-
 theorem eval_bitwise
     (operation : BinaryOp) (leftValue rightValue : Int)
     (leftBits rightBits : BitVec 32)
@@ -799,7 +785,7 @@ private theorem logical32Flags_equal (before : BitVec 64) (result : BitVec 32)
 private theorem setEqual_step (before after : Machine.State)
     (loaded : CodeAt before.memory before.rip [15, 148, 192])
     (result : after = before.setCondition 4 0 3) : Step before after := by
-  exact Step.decoded [15, 148, 192] loaded (.setCondition 4 0) 3 setEqual_decodes result
+  exact Step.decoded [15, 148, 192] loaded (.setCondition 4 0) 3 setEqual_decodes result rfl
 
 private theorem unary_machine
     {source : Core.Expr} {expression : Shape source} (operation : UnaryOp)

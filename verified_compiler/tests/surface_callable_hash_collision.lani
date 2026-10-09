@@ -1,0 +1,7 @@
+module app::main;
+
+// Equal length, first byte, and last byte produce the same coarse name bucket.
+// Full spelling equality must distinguish these callable declarations.
+fn abca() -> i32 { return 17; }
+fn adca() -> i32 { return 20; }
+fn main() -> i32 { return abca() + adca(); }

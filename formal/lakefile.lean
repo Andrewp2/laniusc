@@ -19,3 +19,28 @@ lean_exe checkCertificate where
 
 lean_exe checkELFExecution where
   root := `Lanius.Compiler.CheckELFExecution
+
+-- Native notation is shared infrastructure. The extracted program still goes
+-- through ordinary elaboration, kernel checking, compilation, and serialization.
+private partial def extractionPluginArgs (lib : Dynlib) :
+    StateM (Std.HashSet String × Array String) Unit := do
+  if (← get).1.contains lib.name then return
+  modify fun (seen, args) => (seen.insert lib.name, args)
+  for dependency in lib.deps ++ lib.runtimeOnlyDeps do
+    extractionPluginArgs dependency
+  let flag := if lib.plugin then "--plugin=" else "--load-dynlib="
+  modify fun (seen, args) => (seen, args.push (flag ++ lib.path.toString))
+
+/-- Check or run freshly extracted Lean using the native shared notation. -/
+script checkExtraction (args) do
+  let args := if args.head? == some "--" then args.tail else args
+  let some surfaceModule ← findModule? `Lanius.TypedIR.Surface.Link
+    | throw (IO.userError "extraction notation is missing")
+  let library ← runBuild surfaceModule.dynlib.fetch
+  let plugins := ((extractionPluginArgs library).run ({}, #[])).2.2
+  let child ← IO.Process.spawn {
+    cmd := (← getLean).toString
+    args := plugins ++ args.toArray
+    env := ← getAugmentedEnv
+  }
+  child.wait

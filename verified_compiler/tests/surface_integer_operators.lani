@@ -1,0 +1,41 @@
+module app::main;
+
+fn quotient(left: i32, right: i32) -> i32 {
+    return left / right;
+}
+
+fn remainder(left: i32, right: i32) -> i32 {
+    return left % right;
+}
+
+fn mix(value: i32) -> i32 {
+    return (((value & 15) | 16) ^ (value >> 2)) << 1;
+}
+
+fn shift(value: i32, amount: i32) -> i32 {
+    return value >> amount;
+}
+
+fn main() -> i32 {
+    if (quotient(-19, 3) != -6) { return 1; }
+    if (remainder(-19, 3) != -1) { return 2; }
+    if (quotient(19, -3) != -6) { return 3; }
+    if (remainder(19, -3) != 1) { return 4; }
+    if (mix(45) != 44) { return 5; }
+    if (shift(-8, 2) != -2) { return 6; }
+    let maximum: i32 = 2147483647;
+    let minimum: i32 = -maximum - 1;
+    // Arithmetic wraps at i32 width, while division truncates toward zero.
+    if (maximum + 1 != minimum) { return 7; }
+    if (minimum - 1 != maximum) { return 8; }
+    if (maximum * 2 != -2) { return 9; }
+    if (-minimum != minimum) { return 10; }
+    if (quotient(minimum, 1) != minimum) { return 11; }
+    if (quotient(minimum, 3) != -715827882) { return 12; }
+    if (remainder(minimum, 3) != -2) { return 13; }
+    if (shift(minimum, 31) != -1) { return 14; }
+    if (shift(maximum, 31) != 0) { return 15; }
+    if (shift(minimum, 0) != minimum) { return 16; }
+    if (1 << 31 != minimum) { return 17; }
+    return 37;
+}

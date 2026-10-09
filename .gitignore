@@ -1,5 +1,11 @@
 /target
 **/target/
+# Cargo/shader outputs when the repository root is used as the target directory.
+/debug/
+/release/
+/laniusc-shader-artifacts/
+/.rustc_info.json
+/.future-incompat-report.json
 /fuzz-cases
 .VSCodeCounter/
 /traces/

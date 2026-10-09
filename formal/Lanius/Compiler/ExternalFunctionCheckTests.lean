@@ -89,4 +89,23 @@ example :
     (Typing.Check.checkFunctionWellTyped program bodyCore).isSome = false := by
   rfl
 
+-- Signature equality cannot establish which external operation was requested.
+example : Core.HostService.close.parameterTypes = Core.HostService.argLen.parameterTypes ∧
+    Core.HostService.close.returnType = Core.HostService.argLen.returnType := by decide
+
+example : RuntimeImports.Matches { name := "close", abi := some "lanius_std" }
+    (some (.host .close)) := by decide
+
+example : ¬ RuntimeImports.Matches { name := "close", abi := some "lanius_std" }
+    (some (.host .argLen)) := by decide
+
+example : ¬ RuntimeImports.Matches { name := "close", abi := some "lanius_alloc" }
+    (some (.host .close)) := by decide
+
+example : ¬ RuntimeImports.Matches { name := "close", abi := some "unknown" }
+    (some (.host .close)) := by decide
+
+example : ¬ RuntimeImports.Matches { name := "unknown", abi := some "lanius_std" }
+    none := by decide
+
 end Lanius.Compiler.ExternalFunctionCheckTests

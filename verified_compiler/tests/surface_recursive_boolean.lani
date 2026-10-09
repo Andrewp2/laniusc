@@ -1,0 +1,8 @@
+module app::main;
+
+fn main() -> i32 {
+    let flag: bool = !false && ((true == true) || false);
+    flag = !flag;
+    if (!flag) { return 37; }
+    return 1;
+}

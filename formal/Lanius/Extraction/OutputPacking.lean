@@ -1,4 +1,4 @@
-import Lanius.Semantics
+import Lanius.Semantics.Native.Codec
 
 namespace Lanius.Extraction.OutputPacking
 
@@ -10,25 +10,6 @@ connect signed i32 storage to exact bytes, including high-bit bytes and the
 zero-padded final word. They do not assume that the source packing loop has
 already established this representation. -/
 
-theorem i32Bytes_decode_four (a b c d : UInt8) :
-    i32Bytes (decodeI32 [a, b, c, d]) = [a, b, c, d] := by
-  have ha := UInt8.toNat_lt a
-  have hb := UInt8.toNat_lt b
-  have hc := UInt8.toNat_lt c
-  have hd := UInt8.toNat_lt d
-  let bits := a.toNat + b.toNat * 256 + c.toNat * 65536 + d.toNat * 16777216
-  have bounds : bits < 4294967296 := by dsimp [bits]; omega
-  have decoded :
-      (decodeI32 [a, b, c, d] % 4294967296).toNat = bits := by
-    simp only [decodeI32]
-    change ((if bits ≥ 2147483648 then (bits : Int) - 4294967296
-      else (bits : Int)) % 4294967296).toNat = bits
-    split <;> omega
-  have h0 : bits % 256 = a.toNat := by dsimp [bits]; omega
-  have h1 : bits / 256 % 256 = b.toNat := by dsimp [bits]; omega
-  have h2 : bits / 65536 % 256 = c.toNat := by dsimp [bits]; omega
-  have h3 : bits / 16777216 % 256 = d.toNat := by dsimp [bits]; omega
-  simp [i32Bytes, List.range_succ, decoded, h0, h1, h2, h3]
 
 /-- The mathematical contents of the packed output workspace. The final word
 is zero padded, but the host write uses the unpadded byte count. -/

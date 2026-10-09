@@ -11,10 +11,14 @@ ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<uint> compact_type_alias_target;
 StructuredBuffer<uint> compact_expr_scalar_type;
 StructuredBuffer<uint> type_instance_decl_token;
 StructuredBuffer<uint> type_instance_aggregate_word_count;
 StructuredBuffer<uint> visible_decl;
+StructuredBuffer<uint> hir_visible_decl_flag;
+StructuredBuffer<uint> hir_visible_decl_prefix;
+StructuredBuffer<uint> hir_visible_decl_node;
 StructuredBuffer<uint> decl_type_ref_tag;
 StructuredBuffer<uint> decl_type_ref_payload;
 StructuredBuffer<uint> type_expr_ref_tag;
@@ -46,6 +50,7 @@ static const uint TYPE_REF_INSTANCE = 3u;
 static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_ENUM_BASE = 6144u;
 static const uint HIR_TYPE = 5u;
+static const uint HIR_PARAM = 4u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
@@ -115,9 +120,46 @@ uint resolved_path_decl_token(uint node)
     return valid_token(token) ? token : INVALID;
 }
 
-uint scalar_nominal_decl_token(uint payload)
+uint declared_aggregate_token(uint token)
+{
+    // Reuse the source-ordered declaration index; do not rescan the HIR for
+    // each variable use or infer its nominal kind from a numeric type range.
+    uint declaration_token = name_decl_token(token);
+    if (!valid_token(declaration_token) ||
+        hir_visible_decl_flag[declaration_token] == 0u) return INVALID;
+    uint row = hir_visible_decl_prefix[declaration_token];
+    if (row >= gParams.n_tokens) return INVALID;
+    uint node = hir_visible_decl_node[row];
+    if (!valid_hir(node)) return INVALID;
+    uint kind = compact_hir_core[node].kind;
+    HirPayload declaration = compact_hir_payload[node];
+    bool parameter = kind == HIR_PARAM && declaration.c == declaration_token;
+    bool local = (kind == HIR_LET_STMT || kind == HIR_STMT) &&
+        declaration.a == HIR_STMT_LET && declaration.b == declaration_token;
+    if ((!parameter && !local) || !valid_hir(declaration.d)) return INVALID;
+    return resolved_path_decl_token(declaration.d);
+}
+
+uint scalar_nominal_decl_token(uint payload, uint resolved_token)
 {
     uint hir_count = active_hir_count();
+    // The struct and enum base+token encodings overlap. When name resolution
+    // identifies the actual nominal declaration, never replace it with a
+    // different declaration that happens to have the same legacy type code.
+    // Follow aliases through their checked declaration edges, not by decoding
+    // the same ambiguous number again. The bound also rejects a broken cycle.
+    for (uint depth = 0u; valid_token(resolved_token) && depth < hir_count; depth += 1u)
+    {
+        uint declaration = type_decl_hir_node_by_token[resolved_token];
+        if (declaration >= hir_count) break;
+        uint kind = compact_hir_core[declaration].kind;
+        if ((kind == HIR_STRUCT_ITEM && payload == TY_STRUCT_BASE + resolved_token) ||
+            (kind == HIR_ENUM_ITEM && payload == TY_ENUM_BASE + resolved_token))
+            return resolved_token;
+        uint target = compact_type_alias_target[declaration];
+        if (!valid_hir(target)) break;
+        resolved_token = resolved_path_decl_token(target);
+    }
     if (payload >= TY_STRUCT_BASE)
     {
         uint token = payload - TY_STRUCT_BASE;
@@ -188,6 +230,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         else if (core.kind == HIR_NAME_EXPR)
         {
             name_token_ref(hir_payload.d, tag, payload);
+            explicit_aggregate_decl = declared_aggregate_token(hir_payload.d);
         }
         // Array literals are contextually typed and validated by the
         // array-literal projection pass. A punctuation-token type row is not
@@ -211,6 +254,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         else if (core.kind == HIR_PATH_EXPR)
         {
             name_token_ref(core.token_start, tag, payload);
+            explicit_aggregate_decl = declared_aggregate_token(core.token_start);
         }
         else if (core.kind == HIR_TYPE)
         {
@@ -252,6 +296,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             // instance. Projecting it here gives lowering one uniform dense
             // layout fact without retaining either token table.
             name_token_ref(hir_payload.b, tag, payload);
+            explicit_aggregate_decl = resolved_path_decl_token(hir_payload.d);
         }
     }
     semantic_expr_ref_tag_by_hir[node] = tag;
@@ -264,7 +309,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint canonical_aggregate_decl =
         tag == TYPE_REF_INSTANCE && valid_token(payload)
             ? type_instance_decl_token[payload]
-        : tag == TYPE_REF_SCALAR ? scalar_nominal_decl_token(payload) : INVALID;
+        : tag == TYPE_REF_SCALAR
+            ? scalar_nominal_decl_token(payload, explicit_aggregate_decl) : INVALID;
     // A primitive scalar's source token names its spelling, not an aggregate
     // declaration. Leaving that token here makes enum-payload layout try to
     // resolve `i32` (and other scalars) as a local struct or enum.

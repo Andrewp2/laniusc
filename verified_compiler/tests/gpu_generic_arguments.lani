@@ -1,0 +1,12 @@
+struct Holder<T> { value: i32 }
+
+impl<T> Holder<T> {
+    pub fn new() -> Holder<T> { return Holder { value: 37 }; }
+}
+
+fn main() -> i32 {
+    let scalar: Holder<i32> = Holder<i32>::new();
+    let boolean: Holder<bool> = Holder<bool>::new();
+    if (scalar.value != 37) { return 1; }
+    return boolean.value;
+}

@@ -14,6 +14,8 @@ verified_compiler/src/backend/local.lani
 verified_compiler/src/backend/operation.lani
 verified_compiler/src/backend/parameter.lani
 verified_compiler/src/backend/program.lani
+verified_compiler/src/backend/runtime.lani
+verified_compiler/src/backend/runtime_record.lani
 verified_compiler/src/backend/syntax.lani
 verified_compiler/src/backend/value.lani
 verified_compiler/src/compiler.lani
@@ -34,6 +36,7 @@ verified_compiler/src/lowering/bodies.lani
 verified_compiler/src/lowering/body_context.lani
 verified_compiler/src/lowering/body_event_write.lani
 verified_compiler/src/lowering/body_expression.lani
+verified_compiler/src/lowering/body_literal.lani
 verified_compiler/src/lowering/body_lookup.lani
 verified_compiler/src/lowering/body_statement.lani
 verified_compiler/src/lowering/body_units.lani
@@ -46,7 +49,7 @@ verified_compiler/src/lowering/ir_catalogs.lani
 verified_compiler/src/lowering/ir_names.lani
 verified_compiler/src/lowering/locals.lani
 verified_compiler/src/lowering/modules.lani
-verified_compiler/src/lowering/program_transport.lani
+verified_compiler/src/lowering/program.lani
 verified_compiler/src/lowering/resolution_catalog.lani
 verified_compiler/src/lowering/signature_index.lani
 verified_compiler/src/lowering/signature_producer.lani
@@ -54,7 +57,7 @@ verified_compiler/src/lowering/signature_validation.lani
 verified_compiler/src/lowering/signatures.lani
 verified_compiler/src/lowering/string_literal.lani
 verified_compiler/src/lowering/token_names.lani
-verified_compiler/src/lowering/transport.lani
+verified_compiler/src/lowering/functions.lani
 verified_compiler/src/lowering/types.lani
 verified_compiler/src/lowering/unit_context.lani
 verified_compiler/src/lowering/unit_descriptor.lani
@@ -82,7 +85,8 @@ verified_compiler/src/verified/extraction.lani
 verified_compiler/src/verified/grammar.lani
 verified_compiler/src/verified/host.lani
 verified_compiler/src/verified/lexer.lani
-verified_compiler/src/verified/lean_body.lani
+verified_compiler/src/verified/lean_operations.lani
+verified_compiler/src/verified/lean_body_shape.lani
 verified_compiler/src/verified/lean_frontend.lani
 verified_compiler/src/verified/lean_named_types.lani
 verified_compiler/src/verified/lean_output.lani
@@ -96,7 +100,6 @@ verified_compiler/src/verified/parser.lani
 verified_compiler/src/verified/production.lani
 verified_compiler/src/verified/raw_lexer.lani
 verified_compiler/src/verified/semantic_tokens.lani
-verified_compiler/src/verified/surface_atoms.lani
 verified_compiler/src/verified/surface_declaration.lani
 verified_compiler/src/verified/surface_expr.lani
 verified_compiler/src/verified/surface_path.lani

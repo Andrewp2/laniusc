@@ -1,0 +1,4 @@
+module app::main;
+const LEFT: i32 = RIGHT;
+const RIGHT: i32 = LEFT;
+fn main() -> i32 { return LEFT; }

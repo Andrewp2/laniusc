@@ -11,6 +11,16 @@ def FreshCellFrame (before after : State) : Prop :=
     before.nextCell ≤ after.nextCell ∧
     ∀ cell ∈ extra, before.nextCell ≤ cell.id ∧ cell.id < after.nextCell
 
+theorem FreshCellFrame.cellEntryFound
+    {before after : State} (frame : FreshCellFrame before after)
+    {cell : CellId} {entry : Cell}
+    (found : before.cellEntry? cell = some entry) :
+    after.cellEntry? cell = some entry := by
+  rcases frame with ⟨extra, cells, _, _⟩
+  unfold State.cellEntry? at found ⊢
+  rw [cells, List.find?_append]
+  simp only [found, Option.some_or]
+
 theorem FreshCellFrame.trans {before middle after : State}
     (first : FreshCellFrame before middle)
     (second : FreshCellFrame middle after) : FreshCellFrame before after := by
@@ -42,6 +52,14 @@ theorem FreshCellFrame.restoreLocals {before completed : State}
   change completed.cells = before.cells ++ extra
   exact cells
 
+theorem FreshCellFrame.bindLocals (state : State) (bindings : List (VarId × Value)) :
+    FreshCellFrame state (state.bindLocals bindings) := by
+  induction bindings generalizing state with
+  | nil => exact ⟨[], by simp [State.bindLocals], Nat.le_refl _, by simp⟩
+  | cons binding rest induction =>
+      exact (FreshCellFrame.bindLocal state binding.1 binding.2).trans
+        (induction (state.bindLocal binding.1 binding.2))
+
 theorem FreshCellFrame.after_cellsWellFormed
     {before after : State} (formed : before.CellsWellFormed)
     (frame : FreshCellFrame before after) : after.CellsWellFormed := by
@@ -52,16 +70,14 @@ theorem FreshCellFrame.after_cellsWellFormed
   · exact Nat.lt_of_lt_of_le (formed cell old) frontier
   · exact (fresh cell new).2
 
-theorem FreshCellFrame.localFound
-    {before after : State} (frame : FreshCellFrame before after)
-    (locals : after.locals = before.locals) (id : VarId) (value : Value)
+theorem FreshCellFrame.localFoundAt
+    {before after : State} {id : VarId} (frame : FreshCellFrame before after)
+    (sameCell : after.cellId? id = before.cellId? id) (value : Value)
     (localFound : before.local? id = some value) :
     after.local? id = some value := by
   rcases frame with ⟨extra, cells, _, _⟩
   unfold State.local? at localFound ⊢
-  have cellIdEq : after.cellId? id = before.cellId? id := by
-    simp [State.cellId?, locals]
-  rw [cellIdEq]
+  rw [sameCell]
   cases cell : before.cellId? id with
   | none => simp [cell] at localFound ⊢
   | some cellId =>
@@ -71,5 +87,12 @@ theorem FreshCellFrame.localFound
       cases entry : before.cells.find? (fun cell : Cell => cell.id == cellId) with
       | none => simp [entry] at localFound
       | some entry => simpa only [entry, Option.some_or] using localFound
+
+theorem FreshCellFrame.localFound
+    {before after : State} (frame : FreshCellFrame before after)
+    (locals : after.locals = before.locals) (id : VarId) (value : Value)
+    (localFound : before.local? id = some value) :
+    after.local? id = some value :=
+  frame.localFoundAt (by simp only [State.cellId?, locals]) value localFound
 
 end Lanius.Semantics

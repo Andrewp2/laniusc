@@ -1,0 +1,7 @@
+module app::main;
+
+enum Choice { None, Some(i32) }
+fn main() -> i32 {
+    let selected: Choice = Some(true);
+    return 0;
+}

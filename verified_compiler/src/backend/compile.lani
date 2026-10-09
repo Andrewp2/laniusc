@@ -374,8 +374,23 @@ fn raw_slice(compiler: CompilerContext, active: i32, depth: i32,
     return result;
 }
 
+fn snapshot_value(compiler: CompilerContext, kind: ir::type_ref::TypeRef)
+    -> ir::type_ref::TypeRef {
+    let words: i32 = backend::layout_index::words(compiler.layout, kind);
+    if (words <= 0) { return ir::type_ref::Invalid; }
+    let slot: i32 = backend::frame::allocate(compiler.work, words);
+    if (slot <= -1) { return ir::type_ref::Invalid; }
+    backend::value::put(compiler.layout, compiler.output,
+        compiler.output_capacity, compiler.work, slot, kind);
+    backend::value::address(compiler.output, compiler.output_capacity,
+        compiler.work, slot, x86::register::RAX);
+    return kind;
+}
+
+// Only an immediate field projection may borrow an aggregate address. All
+// other consumers need a snapshot before evaluating any subsequent operand.
 fn emit_expression(compiler: CompilerContext, active: i32,
-    depth: i32) -> ir::type_ref::TypeRef {
+    depth: i32, owned: bool) -> ir::type_ref::TypeRef {
     let source: backend::body_reader::Source = compiler.source;
     let work: backend::frame::Workspace = compiler.work;
     let state: [backend::frame::State] = backend::frame::state_view(work);
@@ -407,12 +422,12 @@ fn emit_expression(compiler: CompilerContext, active: i32,
         let value: i32 = literal.low;
         if (ir::type_ref::same(kind, ir::type_ref::String)) {
             if (!backend::body_reader::is_wire(source)) {
-                let data: ptr = backend::body_reader::string_data(node);
-                if (data == 0 || value <= -1) {
+                let string: ir::body_events::StringValue =
+                    backend::body_reader::string_value(node);
+                if (value <= -1 || string.length != value) {
                     return ir::type_ref::Invalid;
                 }
-                let bytes: [i32] = slice_from_raw_parts(data, value);
-                return string_value(bytes, value, 0, value,
+                return string_value(string.data, string.length, 0, value,
                     work, output, capacity);
             }
             let wire: backend::body_reader::WireInput =
@@ -455,14 +470,8 @@ fn emit_expression(compiler: CompilerContext, active: i32,
                 slot - backend::layout_index::words(layout, kind));
         }
         backend::value::get(output, capacity, work, slot, kind);
-        if (backend::layout::aggregate(kind)) {
-            // A Core local read snapshots an aggregate value before later
-            // operands may assign that local or call another function.
-            let snapshot: i32 = backend::frame::allocate(work,
-                backend::layout_index::words(layout, kind));
-            backend::value::put(layout, output, capacity, work, snapshot,
-                kind);
-            backend::value::address(output, capacity, work, snapshot, x86::register::RAX);
+        if (owned && backend::layout::aggregate(kind)) {
+            return snapshot_value(compiler, kind);
         }
         return kind;
     }
@@ -560,6 +569,15 @@ fn emit_expression(compiler: CompilerContext, active: i32,
                     state[0].code, x86::register::WIDTH_64,
                     x86::register::RAX, x86::register::RCX);
                 return ir::type_ref::Pointer;
+            }
+            if (ir::type_ref::same(left, ir::type_ref::Usize)
+                && ir::type_ref::same(right, left)) {
+                state[0].code = backend::operation::usize_from_slot(output,
+                    capacity, state[0].code, saved, operation);
+                if (backend::syntax::binary_is_comparison(operation)) {
+                    return ir::type_ref::Bool;
+                }
+                return ir::type_ref::Usize;
             }
             if (!ir::type_ref::same(right, left)
                 || (operation != backend::syntax::BinaryEqual
@@ -689,15 +707,7 @@ fn emit_expression(compiler: CompilerContext, active: i32,
             return ir::type_ref::Invalid;
         }
         if (backend::layout::aggregate(element)) {
-            let words: i32 = backend::layout_index::words(layout, element);
-            let snapshot: i32 = backend::frame::allocate(work, words);
-            if (words <= 0 || snapshot <= -1) {
-                return ir::type_ref::Invalid;
-            }
-            backend::value::put(layout, output, capacity, work, snapshot,
-                element);
-            backend::value::address(output, capacity, work, snapshot,
-                x86::register::RAX);
+            if (owned) { return snapshot_value(compiler, element); }
         } else {
             state[0].code = x86::encode::load(output, capacity,
                 state[0].code, x86::register::WIDTH_32,
@@ -786,7 +796,7 @@ fn emit_expression(compiler: CompilerContext, active: i32,
             backend::body_reader::field_expression(source, work, node);
         let field: i32 = reference.index;
         let kind: ir::type_ref::TypeRef =
-            expression(compiler, active, depth + 1);
+            expression_value(compiler, active, depth + 1, false);
         let result_kind: ir::type_ref::TypeRef =
             backend::layout_index::field_kind(layout, kind, field);
         let offset: i32 = backend::layout_index::field_offset(layout, kind,
@@ -796,6 +806,7 @@ fn emit_expression(compiler: CompilerContext, active: i32,
         }
         if (backend::layout::aggregate(result_kind)) {
             state[0].code = x86::encode::address(output, capacity, state[0].code, x86::register::RAX, x86::register::RAX, offset);
+            if (owned) { return snapshot_value(compiler, result_kind); }
         } else {
             state[0].code = x86::encode::load(output, capacity, state[0].code, backend::layout::width(result_kind), x86::register::RAX, x86::register::RAX, offset);
         }
@@ -874,17 +885,23 @@ fn emit_expression(compiler: CompilerContext, active: i32,
     return ir::type_ref::Invalid;
 }
 
-fn expression(compiler: CompilerContext, active: i32, depth: i32)
+fn expression_value(compiler: CompilerContext, active: i32, depth: i32,
+    owned: bool)
     -> ir::type_ref::TypeRef {
     let work: backend::frame::Workspace = compiler.work;
     let state: [backend::frame::State] = backend::frame::state_view(work);
     let top: i32 = state[0].top;
     let kind: ir::type_ref::TypeRef =
-        emit_expression(compiler, active, depth);
+        emit_expression(compiler, active, depth, owned);
     if (!backend::layout::aggregate(kind)) {
         state[0].top = top;
     }
     return kind;
+}
+
+fn expression(compiler: CompilerContext, active: i32, depth: i32)
+    -> ir::type_ref::TypeRef {
+    return expression_value(compiler, active, depth, true);
 }
 
 // The descriptor in RAX is an owned value snapshot. Index effects may mutate
@@ -1045,10 +1062,15 @@ fn statement(compiler: CompilerContext, active: i32, depth: i32,
         return result;
     }
     if (tag == backend::syntax::StatementReturn) {
-        if (backend::body_reader::return_presence(source, work, node)
-                != backend::syntax::Present) { return false; }
-        if (!ir::type_ref::same(expression(compiler, active, 0),
-                state[0].result)) { return false; }
+        let presence: backend::syntax::Presence =
+            backend::body_reader::return_presence(source, work, node);
+        if (presence == backend::syntax::Absent) {
+            if (!ir::type_ref::same(state[0].result, ir::type_ref::Void)) { return false; }
+        } else {
+            if (presence != backend::syntax::Present
+                || !ir::type_ref::same(expression(compiler, active, 0),
+                    state[0].result)) { return false; }
+        }
         if (backend::layout::aggregate(state[0].result)) {
             backend::value::load_word(output, capacity, work, state[0].sret, x86::register::R11);
             backend::value::copy(output, capacity, work,
@@ -1155,8 +1177,8 @@ fn function_source(function_input: WordRegion,
             parameters, output, capacity, cursor);
         if (fast >= 0) { return fast; }
     }
-    if (backend::layout_index::words(layout, header.result_type)
-            <= 0) { return -1; }
+    if (!ir::type_ref::same(header.result_type, ir::type_ref::Void)
+        && backend::layout_index::words(layout, header.result_type) <= 0) { return -1; }
     let count: i32 = header.parameters;
     state[0].input = 0;
     state[0].code = cursor;
@@ -1224,8 +1246,12 @@ fn function_source(function_input: WordRegion,
     };
     if (!statement(compiler, count, 0, -1)) { return -1; }
     if (state[0].failed || state[0].input != length || state[0].code <= -1) { return -1; }
-    // Reaching the end of a non-unit Core function is missingReturn.
-    state[0].code = x86::control::trap(output, capacity, state[0].code);
+    // Unit functions may fall through; other result types require a return.
+    if (ir::type_ref::same(state[0].result, ir::type_ref::Void)) {
+        state[0].code = backend::frame::return_value(output, capacity, state[0].code);
+    } else {
+        state[0].code = x86::control::trap(output, capacity, state[0].code);
+    }
     if (state[0].code <= -1) { return -1; }
     x86::buffer::store_word(output, frame_field, backend::frame::bytes(state[0].slots));
     return state[0].code;

@@ -8,9 +8,8 @@ import verified::token;
 import verified::host;
 import verified::grammar;
 import verified::lean_frontend;
-import lowering::program_transport;
+import lowering::program;
 import driver::arguments;
-import lowering::transport;
 import verified::lean_program;
 
 const PATH_BYTE_CAPACITY: i32 = 1024;
@@ -19,10 +18,10 @@ const PACKED_PATH_WORD_CAPACITY: i32 =
 const LEAN_CHECKED_OPTION_LENGTH: i32 = 14;
 const MODE_SCRATCH_WORDS: i32 = 4;
 const OUTPUT_BYTE_CAPACITY: i32 = 83886080;
-// The parser needs 64 MiB of scratch; ordinary Lean output reuses it after
+// The parser needs 120 MiB of scratch; ordinary Lean output reuses it after
 // parsing, while checked Lean output uses a separate buffer.
 const WORK_WORD_CAPACITY: i32 =
-    OUTPUT_BYTE_CAPACITY / verified::host::I32_BYTES;
+    verified::extraction::PARSER_WORK_WORD_CAPACITY;
 
 enum ExtractorMode {
     LeanCoreMode,
@@ -98,7 +97,7 @@ fn main() -> i32 {
     };
     let unit_count: i32 = argument_count - first_argument;
     if (unit_count <= 0
-        || unit_count > lowering::program_transport::BUNDLE_UNIT_LIMIT) {
+        || unit_count > lowering::program::BUNDLE_UNIT_LIMIT) {
         return exit_code(InvalidArguments);
     }
     let packed_path:[i32];
@@ -171,10 +170,10 @@ fn main() -> i32 {
             allocation, OUTPUT_BYTE_CAPACITY);
     }
     let node_counts_memory: ptr = verified::host::alloc_i32(
-        lowering::program_transport::BUNDLE_UNIT_LIMIT);
+        lowering::program::BUNDLE_UNIT_LIMIT);
     if (node_counts_memory == 0) { return exit_code(AllocationFailed); }
     let node_counts: [i32] = verified::host::i32_slice_from_raw_parts(
-        node_counts_memory, lowering::program_transport::BUNDLE_UNIT_LIMIT);
+        node_counts_memory, lowering::program::BUNDLE_UNIT_LIMIT);
     let packed_io:[i32];
     {
         let allocation: ptr = verified::host::alloc_i32(
@@ -184,14 +183,14 @@ fn main() -> i32 {
             allocation, verified::byte_io::PACKED_IO_WORDS);
     }
     let bundle_word_count: i32 =
-        lowering::program_transport::bundle_words(unit_count);
+        lowering::program::bundle_words(unit_count);
     if (bundle_word_count <= 0) { return exit_code(AllocationFailed); }
     let bundle_memory: ptr = verified::host::alloc(
         bundle_word_count * verified::host::I32_BYTES,
-        lowering::program_transport::BUNDLE_ALIGNMENT);
+        lowering::program::BUNDLE_ALIGNMENT);
     if (bundle_memory == 0) { return exit_code(AllocationFailed); }
-    let bundle: lowering::program_transport::Bundle =
-        lowering::program_transport::from_raw_parts(bundle_memory, unit_count);
+    let bundle: lowering::program::Bundle =
+        lowering::program::from_raw_parts(bundle_memory, unit_count);
     let packed_path_pointer: ptr = verified::host::i32_slice_data_ptr(packed_path);
     let packed_io_pointer: ptr = verified::host::i32_slice_data_ptr(packed_io);
     if (verified::grammar::load(grammar, verified::grammar::WORDS)
@@ -238,7 +237,7 @@ fn main() -> i32 {
             };
         let unit: i32 = argument - first_argument;
         let native_tokens: verified::token::TokenTable =
-            lowering::program_transport::native_token_storage(bundle, unit);
+            lowering::program::native_token_storage(bundle, unit);
         let parser_storage: verified::parser::WorkspaceStorage =
             verified::parser::storage(
                 verified::host::i32_slice_data_ptr(workspace),
@@ -288,15 +287,15 @@ fn main() -> i32 {
                 return exit_code(SemanticFailed);
             }
         }
-        let source_region: lowering::program_transport::WordRegion =
-            lowering::program_transport::region(source, source_length);
-        let native_unit: lowering::program_transport::NativeUnit =
-            lowering::program_transport::NativeUnit {
+        let source_region: lowering::program::WordRegion =
+            lowering::program::region(source, source_length);
+        let native_unit: lowering::program::NativeUnit =
+            lowering::program::NativeUnit {
                 source: source_region,
                 token_count: tokens,
                 tree: tree,
             };
-        if (!lowering::program_transport::append_native_unit(
+        if (!lowering::program::append_native_unit(
             bundle, unit, native_unit)) {
             return exit_code(BundleFailed);
         }
@@ -324,11 +323,10 @@ fn main() -> i32 {
             node_counts, output, OUTPUT_BYTE_CAPACITY, output_length);
         if (output_length < 0) { return exit_code(LeanCoreOutputFailed); }
     }
-    let lowered: lowering::program_transport::LoweredProgram =
-        lowering::program_transport::lower_units(
-            bundle, 0, lowering::transport::NativeOnly);
-    if (!lowering::program_transport::succeeded(lowered.status)) {
-        let error: i32 = lowering::program_transport::error_code(
+    let lowered: lowering::program::LoweredProgram =
+        lowering::program::lower_units(bundle);
+    if (!lowering::program::succeeded(lowered.status)) {
+        let error: i32 = lowering::program::error_code(
             lowered.status);
         if (error > 0) {
             verified::byte_io::write_stderr_natural(error);

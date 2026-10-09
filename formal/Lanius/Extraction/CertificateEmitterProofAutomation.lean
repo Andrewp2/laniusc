@@ -15,14 +15,8 @@ theorem ThresholdPure.binary
     (operationEvaluates : evalBinaryValue program.target operation
       leftValue rightValue = .ok result) :
     ThresholdPure (max leftFuel rightFuel + 1) program before
-      (.binary operation left right) result after := by
-  refine ⟨?_, leftRun.frame.trans rightRun.frame⟩
-  intro fuel enough
-  have leftEval := leftRun.run (fuel - 1) (by omega)
-  have rightEval := rightRun.run (fuel - 1) (by omega)
-  simpa [show fuel - 1 + 1 = fuel by omega] using
-    (evalExpr_binary_done (fuel := fuel - 1) program before operation left right
-      leftValue rightValue result middle after leftEval rightEval operationIsEager
-      operationEvaluates)
+      (.binary operation left right) result after :=
+  ⟨StableExpr.binary leftRun.run rightRun.run operationIsEager operationEvaluates,
+    leftRun.frame.trans rightRun.frame⟩
 
 end Lanius.Semantics

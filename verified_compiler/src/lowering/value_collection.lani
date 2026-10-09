@@ -38,17 +38,21 @@ struct NameEntry {
     next: i32,
 }
 
-struct NameIndex {
+pub struct NameIndex {
+    names: lowering::token_names::Catalog,
     entries: [NameEntry],
     buckets: [i32],
     capacity: i32,
+    count: i32,
 }
 
-fn name_index(capacity: i32) -> NameIndex {
+fn name_index(capacity: i32, names: lowering::token_names::Catalog) -> NameIndex {
     let empty: NameIndex = NameIndex {
+        names: names,
         entries: slice_from_raw_parts(0, 0),
         buckets: verified::host::i32_slice_from_raw_parts(0, 0),
         capacity: -1,
+        count: 0,
     };
     if (capacity <= 0 || capacity > verified::host::I32_MAX
         / NAME_ENTRY_BYTES) { return empty; }
@@ -68,7 +72,15 @@ fn name_index(capacity: i32) -> NameIndex {
         bucket += 1;
     }
     return NameIndex {
-        entries: entries, buckets: buckets, capacity: capacity,
+        names: names, entries: entries, buckets: buckets, capacity: capacity,
+        count: 0,
+    };
+}
+
+fn is_callable(target: ValueTarget) -> bool {
+    return match (target) {
+        lowering::value_catalog::Callable(id) -> true,
+        _ -> false,
     };
 }
 
@@ -82,6 +94,19 @@ fn insert_name(index: NameIndex, names: lowering::token_names::Catalog,
     }
     let entries: [NameEntry] = index.entries;
     let buckets: [i32] = index.buckets;
+    // Declarations must be unique even when no body refers to the name.
+    // Variants from different enums may share a spelling; callable overloads
+    // are not supported. Imports remain separate from this unit-local check.
+    if (is_callable(target)) {
+        let prior: i32 = buckets[bucket];
+        while (prior >= 0) {
+            let entry: NameEntry = entries[prior];
+            if (is_callable(entry.target) && entry.owner == owner
+                && lowering::token_names::same(names, owner, token,
+                    entry.owner, entry.token)) { return -1; }
+            prior = entry.next;
+        }
+    }
     entries[slot] = NameEntry {
         owner: owner, token: token, target: target,
         next: buckets[bucket],
@@ -113,7 +138,6 @@ fn append_value_candidate(output: lowering::value_catalog::ValueTable,
 }
 
 pub struct ValueCatalogInput {
-    unit: i32,
     contexts: lowering::unit_context::Table,
     sources: WordRegion,
     tokens: verified::token::TokenTable,
@@ -121,38 +145,30 @@ pub struct ValueCatalogInput {
     signature_index: lowering::signature_index::Table,
 }
 
-// Construct the caller-local value map required by owned body lowering.
-// Local and imported candidates are retained separately.  A scope is emitted
-// only when its spelling resolves to one callable or enum variant; ambiguous
-// spellings are omitted instead of guessed.
-pub fn build_value_catalog(input: ValueCatalogInput,
-    output: lowering::value_catalog::ValueTable) -> i32 {
-    let unit: i32 = input.unit;
+// Build the global callable/variant index once. All caller-local maps share
+// these immutable candidates and the same source/token ownership metadata.
+pub fn build_name_index(input: ValueCatalogInput) -> NameIndex {
     let context_table: lowering::unit_context::Table = input.contexts;
-    let contexts: [lowering::unit_context::UnitContext] =
-        context_table.data;
     let source_catalog: [i32] = input.sources.data;
     let token_catalog: verified::token::TokenTable = input.tokens;
     let allocated: lowering::allocation::Table = input.allocations;
     let signatures: lowering::signature_index::Table = input.signature_index;
-    if (unit <= -1 || unit >= context_table.count
-        || output.count <= -1 || signatures.count <= 0
-        || !lowering::allocation::table_has_exact_rows(allocated)) {
-        return -1;
-    }
-    let allocation_rows: i32 = lowering::allocation::table_header(
-        allocated).rows;
-    let context: i32 = unit;
-    let token_count: i32 = contexts[context].token_count;
     let token_names: lowering::token_names::Catalog =
         lowering::token_names::catalog(context_table, source_catalog,
             token_catalog);
+    let invalid: NameIndex = name_index(-1, token_names);
+    if (context_table.count <= 0 || signatures.count <= 0
+        || !lowering::allocation::table_has_exact_rows(allocated)) {
+        return invalid;
+    }
+    let allocation_rows: i32 = lowering::allocation::table_header(
+        allocated).rows;
     if (signatures.variant_count <= -1
         || allocation_rows > verified::host::I32_MAX
-            - signatures.variant_count) { return -1; }
+            - signatures.variant_count) { return invalid; }
     let index: NameIndex = name_index(allocation_rows
-        + signatures.variant_count);
-    if (index.capacity <= -1) { return -1; }
+        + signatures.variant_count, token_names);
+    if (index.capacity <= -1) { return invalid; }
     let used: i32 = 0;
     let row: i32 = 0;
     while (row < allocation_rows) {
@@ -167,7 +183,7 @@ pub fn build_value_catalog(input: ValueCatalogInput,
                 lowering::allocation::row_name(allocation),
                 lowering::value_catalog::Callable(
                     lowering::allocation::row_core_id(allocation)));
-            if (used <= -1) { return -1; }
+            if (used <= -1) { return invalid; }
         }
         if (lowering::allocation::row_has_kind(allocation,
                 lowering::declarations::Enumeration)) {
@@ -175,7 +191,7 @@ pub fn build_value_catalog(input: ValueCatalogInput,
                 allocation);
             if (!lowering::signature_index::has_shape(signatures,
                 type_id, lowering::signatures::EnumerationShape)) {
-                return -1;
+                return invalid;
             }
             let record: lowering::signatures::SignatureRecord =
                 lowering::signature_index::record_at(signatures, type_id);
@@ -185,7 +201,7 @@ pub fn build_value_catalog(input: ValueCatalogInput,
                     lowering::signature_index::variant_at(signatures,
                         type_id, variant);
                 if (native.name <= -1 || native.field_count <= -1) {
-                    return -1;
+                    return invalid;
                 }
                 let variant_target:
                     lowering::value_catalog::VariantTarget =
@@ -198,12 +214,64 @@ pub fn build_value_catalog(input: ValueCatalogInput,
                     lowering::value_catalog::Variant(variant_target);
                 used = insert_name(index, token_names, used, owner,
                     native.name, target);
-                if (used <= -1) { return -1; }
+                if (used <= -1) { return invalid; }
                 variant += 1;
             }
         }
         row += 1;
     }
+    index.count = used;
+    return index;
+}
+
+pub struct NameMatch {
+    found: bool,
+    next: i32,
+    target: ValueTarget,
+}
+
+// Walk only one spelling bucket, retaining all equal names across modules.
+// A match is a candidate, not a visibility decision or a unique resolution.
+pub fn next_match(index: NameIndex, unit: i32, token: i32,
+    position: i32) -> NameMatch {
+    let entries: [NameEntry] = index.entries;
+    let remaining: i32 = index.count;
+    while (position >= 0 && position < index.count && remaining > 0) {
+        let entry: NameEntry = entries[position];
+        if (lowering::token_names::same(index.names, unit, token,
+                entry.owner, entry.token)) {
+            return NameMatch {
+                found: true, next: entry.next, target: entry.target,
+            };
+        }
+        position = entry.next;
+        remaining -= 1;
+    }
+    return NameMatch {
+        found: false, next: -1, target: lowering::value_catalog::InvalidTarget,
+    };
+}
+
+pub fn first_match(index: NameIndex, unit: i32, token: i32) -> NameMatch {
+    let position: i32 = -1;
+    if (index.capacity >= 0) {
+        let bucket: i32 = lowering::token_names::spelling_bucket(index.names,
+            unit, token, NAME_BUCKETS);
+        if (bucket >= 0) { position = index.buckets[bucket]; }
+    }
+    return next_match(index, unit, token, position);
+}
+
+// Construct one caller-local map without rescanning the global declarations.
+// Local and imported candidates stay separate; ambiguous spellings are omitted.
+pub fn build_value_catalog(index: NameIndex, unit: i32,
+    output: lowering::value_catalog::ValueTable) -> i32 {
+    let token_names: lowering::token_names::Catalog = index.names;
+    let context_table: lowering::unit_context::Table = token_names.contexts;
+    if (index.capacity <= -1 || unit <= -1 || unit >= context_table.count
+        || output.count <= -1) { return -1; }
+    let contexts: [lowering::unit_context::UnitContext] = context_table.data;
+    let token_count: i32 = contexts[unit].token_count;
     let token: i32 = 0;
     let written: i32 = 0;
     let entries: [NameEntry] = index.entries;

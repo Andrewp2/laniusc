@@ -91,6 +91,10 @@ def compilerExtractorSources : List SourceFile := [
     (include_str "../../../verified_compiler/src/backend/parameter.lani"),
   sourceFile "verified_compiler/src/backend/program.lani"
     (include_str "../../../verified_compiler/src/backend/program.lani"),
+  sourceFile "verified_compiler/src/backend/runtime.lani"
+    (include_str "../../../verified_compiler/src/backend/runtime.lani"),
+  sourceFile "verified_compiler/src/backend/runtime_record.lani"
+    (include_str "../../../verified_compiler/src/backend/runtime_record.lani"),
   sourceFile "verified_compiler/src/backend/syntax.lani"
     (include_str "../../../verified_compiler/src/backend/syntax.lani"),
   sourceFile "verified_compiler/src/backend/value.lani"
@@ -131,6 +135,8 @@ def compilerExtractorSources : List SourceFile := [
     (include_str "../../../verified_compiler/src/lowering/body_event_write.lani"),
   sourceFile "verified_compiler/src/lowering/body_expression.lani"
     (include_str "../../../verified_compiler/src/lowering/body_expression.lani"),
+  sourceFile "verified_compiler/src/lowering/body_literal.lani"
+    (include_str "../../../verified_compiler/src/lowering/body_literal.lani"),
   sourceFile "verified_compiler/src/lowering/body_lookup.lani"
     (include_str "../../../verified_compiler/src/lowering/body_lookup.lani"),
   sourceFile "verified_compiler/src/lowering/body_statement.lani"
@@ -155,8 +161,8 @@ def compilerExtractorSources : List SourceFile := [
     (include_str "../../../verified_compiler/src/lowering/locals.lani"),
   sourceFile "verified_compiler/src/lowering/modules.lani"
     (include_str "../../../verified_compiler/src/lowering/modules.lani"),
-  sourceFile "verified_compiler/src/lowering/program_transport.lani"
-    (include_str "../../../verified_compiler/src/lowering/program_transport.lani"),
+  sourceFile "verified_compiler/src/lowering/program.lani"
+    (include_str "../../../verified_compiler/src/lowering/program.lani"),
   sourceFile "verified_compiler/src/lowering/resolution_catalog.lani"
     (include_str "../../../verified_compiler/src/lowering/resolution_catalog.lani"),
   sourceFile "verified_compiler/src/lowering/signature_index.lani"
@@ -171,8 +177,8 @@ def compilerExtractorSources : List SourceFile := [
     (include_str "../../../verified_compiler/src/lowering/string_literal.lani"),
   sourceFile "verified_compiler/src/lowering/token_names.lani"
     (include_str "../../../verified_compiler/src/lowering/token_names.lani"),
-  sourceFile "verified_compiler/src/lowering/transport.lani"
-    (include_str "../../../verified_compiler/src/lowering/transport.lani"),
+  sourceFile "verified_compiler/src/lowering/functions.lani"
+    (include_str "../../../verified_compiler/src/lowering/functions.lani"),
   sourceFile "verified_compiler/src/lowering/types.lani"
     (include_str "../../../verified_compiler/src/lowering/types.lani"),
   sourceFile "verified_compiler/src/lowering/unit_context.lani"
@@ -227,8 +233,10 @@ def compilerExtractorSources : List SourceFile := [
     (include_str "../../../verified_compiler/src/verified/host.lani"),
   sourceFile "verified_compiler/src/verified/lexer.lani"
     (include_str "../../../verified_compiler/src/verified/lexer.lani"),
-  sourceFile "verified_compiler/src/verified/lean_body.lani"
-    (include_str "../../../verified_compiler/src/verified/lean_body.lani"),
+  sourceFile "verified_compiler/src/verified/lean_operations.lani"
+    (include_str "../../../verified_compiler/src/verified/lean_operations.lani"),
+  sourceFile "verified_compiler/src/verified/lean_body_shape.lani"
+    (include_str "../../../verified_compiler/src/verified/lean_body_shape.lani"),
   sourceFile "verified_compiler/src/verified/lean_frontend.lani"
     (include_str "../../../verified_compiler/src/verified/lean_frontend.lani"),
   sourceFile "verified_compiler/src/verified/lean_named_types.lani"
@@ -255,8 +263,6 @@ def compilerExtractorSources : List SourceFile := [
     (include_str "../../../verified_compiler/src/verified/raw_lexer.lani"),
   sourceFile "verified_compiler/src/verified/semantic_tokens.lani"
     (include_str "../../../verified_compiler/src/verified/semantic_tokens.lani"),
-  sourceFile "verified_compiler/src/verified/surface_atoms.lani"
-    (include_str "../../../verified_compiler/src/verified/surface_atoms.lani"),
   sourceFile "verified_compiler/src/verified/surface_declaration.lani"
     (include_str "../../../verified_compiler/src/verified/surface_declaration.lani"),
   sourceFile "verified_compiler/src/verified/surface_expr.lani"
@@ -294,7 +300,8 @@ private def withoutPaths (excluded : List String) (files : List SourceFile) : Li
 def compilerSources : List SourceFile :=
   withoutPaths [
     "verified_compiler/src/extractor.lani",
-    "verified_compiler/src/verified/lean_body.lani",
+    "verified_compiler/src/verified/lean_operations.lani",
+    "verified_compiler/src/verified/lean_body_shape.lani",
     "verified_compiler/src/verified/lean_frontend.lani",
     "verified_compiler/src/verified/lean_named_types.lani",
     "verified_compiler/src/verified/lean_output.lani",
@@ -321,13 +328,27 @@ def extractorSources : List SourceFile :=
     "verified_compiler/src/backend/operation.lani",
     "verified_compiler/src/backend/parameter.lani",
     "verified_compiler/src/backend/program.lani",
+    "verified_compiler/src/backend/runtime.lani",
+    "verified_compiler/src/backend/runtime_record.lani",
     "verified_compiler/src/backend/value.lani",
     "verified_compiler/src/compiler.lani",
+    "verified_compiler/src/runtime/arguments.lani",
+    "verified_compiler/src/runtime/heap.lani",
+    "verified_compiler/src/runtime/io.lani",
     "verified_compiler/src/runtime/string.lani",
     "verified_compiler/src/verified/certificate_functions.lani",
     "verified_compiler/src/verified/certificate_functions_native.lani",
     "verified_compiler/src/verified/certificate_output.lani",
-    "verified_compiler/src/verified/certificate_output_native.lani"
+    "verified_compiler/src/verified/certificate_output_native.lani",
+    "verified_compiler/src/verified/compact_artifact_output.lani",
+    "verified_compiler/src/verified/output.lani",
+    "verified_compiler/src/verified/core_body.lani",
+    "verified_compiler/src/verified/core_transport.lani",
+    "verified_compiler/src/verified/parse_tree.lani",
+    "verified_compiler/src/x86/buffer.lani",
+    "verified_compiler/src/x86/control.lani",
+    "verified_compiler/src/x86/encode.lani",
+    "verified_compiler/src/x86/register.lani"
   ] compilerExtractorSources
 
 /-! `sources` is the extractor-facing compatibility alias.  The union remains

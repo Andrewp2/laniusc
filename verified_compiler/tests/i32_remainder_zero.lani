@@ -1,0 +1,5 @@
+module app::main;
+
+fn remainder(left: i32, right: i32) -> i32 { return left % right; }
+
+fn main() -> i32 { return remainder(1, 0); }

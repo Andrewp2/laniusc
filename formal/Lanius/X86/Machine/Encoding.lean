@@ -209,8 +209,9 @@ theorem storeByte_decodes (source base : Register) (displacement : Int) (tail : 
 private theorem byte_decoded_step (before after : State) (bytes : List UInt8)
     (instruction : Instruction) (size : Nat) (loaded : CodeAt before.memory before.rip bytes)
     (decoded : decode bytes = some (instruction, size))
-    (result : after = execute instruction size before) : Step before after :=
-  Step.decoded bytes loaded instruction size decoded result
+    (result : after = execute instruction size before)
+    (nonDivision : instruction.isDivision = false) : Step before after :=
+  Step.decoded bytes loaded instruction size decoded result nonDivision
 
 theorem loadByte_step (before after : State) (destination base : Register) (displacement : Int)
     (loaded : CodeAt before.memory before.rip (loadByteBytes destination base displacement))
@@ -220,7 +221,7 @@ theorem loadByte_step (before after : State) (destination base : Register) (disp
       some (.loadByte destination base (BitVec.ofInt 32 displacement),
         (loadByteBytes destination base displacement).length) := by
     simpa using loadByte_decodes destination base displacement []
-  exact byte_decoded_step before after _ _ _ loaded decoded result
+  exact byte_decoded_step before after _ _ _ loaded decoded result rfl
 
 theorem storeByte_step (before after : State) (source base : Register) (displacement : Int)
     (loaded : CodeAt before.memory before.rip (storeByteBytes source base displacement))
@@ -230,6 +231,6 @@ theorem storeByte_step (before after : State) (source base : Register) (displace
       some (.storeByte source base (BitVec.ofInt 32 displacement),
         (storeByteBytes source base displacement).length) := by
     simpa using storeByte_decodes source base displacement []
-  exact byte_decoded_step before after _ _ _ loaded decoded result
+  exact byte_decoded_step before after _ _ _ loaded decoded result rfl
 
 end Lanius.X86.Machine

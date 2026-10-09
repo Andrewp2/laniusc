@@ -1,0 +1,90 @@
+module backend::runtime_record;
+
+import backend::syntax;
+import ir::type_ref;
+import runtime::service;
+
+// Wire runtime records and their code mapping stay at the backend boundary.
+pub fn service_code(service: runtime::service::RuntimeService) -> i32 {
+    return match (service) {
+        runtime::service::NoService -> 0,
+        runtime::service::Allocate -> 1,
+        runtime::service::OpenRead -> 2,
+        runtime::service::Close -> 3,
+        runtime::service::Read -> 4,
+        runtime::service::WriteStdout -> 5,
+        runtime::service::WriteByte -> 6,
+        runtime::service::ArgumentCount -> 7,
+        runtime::service::ArgumentLength -> 8,
+        runtime::service::ArgumentRead -> 9,
+    };
+}
+
+pub fn service_from_code(encoded: i32) -> runtime::service::RuntimeService {
+    if (encoded_service_is(encoded, runtime::service::Allocate)) { return runtime::service::Allocate; }
+    if (encoded_service_is(encoded, runtime::service::OpenRead)) { return runtime::service::OpenRead; }
+    if (encoded_service_is(encoded, runtime::service::Close)) { return runtime::service::Close; }
+    if (encoded_service_is(encoded, runtime::service::Read)) { return runtime::service::Read; }
+    if (encoded_service_is(encoded, runtime::service::WriteStdout)) { return runtime::service::WriteStdout; }
+    if (encoded_service_is(encoded, runtime::service::WriteByte)) { return runtime::service::WriteByte; }
+    if (encoded_service_is(encoded, runtime::service::ArgumentCount)) {
+        return runtime::service::ArgumentCount;
+    }
+    if (encoded_service_is(encoded, runtime::service::ArgumentLength)) {
+        return runtime::service::ArgumentLength;
+    }
+    if (encoded_service_is(encoded, runtime::service::ArgumentRead)) { return runtime::service::ArgumentRead; }
+    return runtime::service::NoService;
+}
+
+pub fn encoded_service_is(encoded: i32, expected: runtime::service::RuntimeService) -> bool {
+    return encoded == service_code(expected);
+}
+
+const MAX_SERVICE_PARAMETERS: i32 = 3;
+pub const RUNTIME_SERVICE_BODY_WORDS: i32 = 1;
+
+fn parameter_slot(first: i32, index: i32) -> i32 {
+    return first + backend::syntax::FUNCTION_HEADER_WORDS
+        + index * backend::syntax::PARAMETER_ROW_WORDS;
+}
+
+pub fn valid(input: [i32], first: i32, count: i32) -> bool {
+    if (count <= backend::syntax::FUNCTION_HEADER_WORDS) { return false; }
+    let header: backend::syntax::FunctionHeader =
+        backend::syntax::read_function_header(input, first);
+    if (header.kind != backend::syntax::RuntimeFunction
+        || header.pointer_bits != backend::syntax::POINTER_BITS
+        || header.body_words != RUNTIME_SERVICE_BODY_WORDS) { return false; }
+    let parameters: i32 = header.parameters;
+    if (parameters <= -1 || parameters > MAX_SERVICE_PARAMETERS
+        || count != backend::syntax::FUNCTION_HEADER_WORDS
+            + parameters * backend::syntax::PARAMETER_ROW_WORDS
+            + RUNTIME_SERVICE_BODY_WORDS) { return false; }
+    let service: runtime::service::RuntimeService = service_from_code(
+        input[first + backend::syntax::FUNCTION_HEADER_WORDS
+            + parameters * backend::syntax::PARAMETER_ROW_WORDS]);
+    if (!runtime::service::accepts_signature(service,
+            header.result_type, parameters)) { return false; }
+    let index: i32 = 0;
+    while (index != parameters) {
+        let slot: i32 = parameter_slot(first, index);
+        let id: i32 = input[slot + backend::syntax::PARAMETER_ID_FIELD];
+        let type_tag: ir::type_ref::TypeRef = ir::type_ref::from_code(
+            input[slot + backend::syntax::PARAMETER_TYPE_FIELD]);
+        if (id <= -1
+            || !runtime::service::accepts_parameter(service, index, type_tag)) {
+            return false;
+        }
+        let previous: i32 = 0;
+        while (previous != index) {
+            let earlier: i32 = parameter_slot(first, previous);
+            if (id == input[earlier + backend::syntax::PARAMETER_ID_FIELD]) {
+                return false;
+            }
+            previous += 1;
+        }
+        index += 1;
+    }
+    return true;
+}

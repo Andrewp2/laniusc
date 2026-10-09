@@ -392,6 +392,24 @@ example :
       (.unary .negate (.value (.signed .i32 (Int.ofNat 7))))).isSome = true := by
   rfl
 
+-- Signed minimum is a literal, not negation of an out-of-range positive i32.
+example : (["2147483648", "2_147_483_648", "0002147483648"].all fun text =>
+    (checkExpr context (.unary .negative (.literal (.integer text)))
+      (.value (.signed .i32 (-2147483648)))).isSome) = true := by decide
+
+example : (["2147483647", "2147483649"].all fun text =>
+    (checkExpr context (.unary .negative (.literal (.integer text)))
+      (.value (.signed .i32 (-2147483648)))).isNone) = true := by decide
+
+example : (checkExpr context (.unary .negative (.literal (.integer "2147483648")))
+    (.value (.signed .i32 (-2147483647)))).isNone = true := by decide
+
+example : (checkExpectedExpr context (.unary .negative (.literal (.integer "2147483648")))
+    (.scalar (.signed .i32)) (.value (.signed .i32 (-2147483648)))).isSome = true := by decide
+
+example : (checkExpectedExpr context (.unary .negative (.literal (.integer "2147483648")))
+    (.scalar (.unsigned .usize)) (.value (.signed .i32 (-2147483648)))).isNone = true := by decide
+
 example :
     (checkExpr context
       (.unary .logicalNot (.literal (.boolean true)))
@@ -656,5 +674,28 @@ example :
           (.sequence (.expression (.local 0)) .skip))
         .skip)).isSome = false := by
   rfl
+
+-- Contextual literals retain their expected type and exact source value.
+example : (checkExpectedExpr context (.literal (.integer "8"))
+    (.scalar (.unsigned .usize)) (.value (.unsigned .usize 8))).isSome = true := by decide
+example : (checkExpectedExpr context (.literal (.integer "8"))
+    (.scalar (.unsigned .usize)) (.value (.unsigned .usize 9))).isSome = false := by decide
+example : (checkExpectedExpr context (.literal (.integer "8"))
+    (.scalar (.signed .i32)) (.value (.unsigned .usize 8))).isSome = false := by decide
+example : (checkExpr context (.literal (.integer "0"))
+    (.value (.pointer 0))).isSome = false := by decide
+
+def pointerContext : SurfaceElaboration.Context :=
+  context.bindLocal "memory" 0 (.scalar .rawPtr)
+def pointerPath : Surface.Expr := .path { segments := [.mk "memory" []] }
+
+example : (checkExpr pointerContext (.binary .equal pointerPath (.literal (.integer "0")))
+    (.binary .equal (.local 0) (.value (.pointer 0)))).isSome = true := by decide
+example : (checkExpr pointerContext (.binary .equal (.literal (.integer "0")) pointerPath)
+    (.binary .equal (.value (.pointer 0)) (.local 0))).isSome = true := by decide
+example : (checkExpr pointerContext (.binary .equal pointerPath (.literal (.integer "1")))
+    (.binary .equal (.local 0) (.value (.pointer 0)))).isSome = false := by decide
+example : (checkExpr pointerContext (.binary .equal pointerPath (.literal (.integer "0")))
+    (.binary .notEqual (.local 0) (.value (.pointer 0)))).isSome = false := by decide
 
 end Lanius.Compiler.BodyCheckTests

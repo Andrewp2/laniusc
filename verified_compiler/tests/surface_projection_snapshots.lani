@@ -1,0 +1,74 @@
+module app::main;
+
+pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+
+struct Pair {
+    left: i32,
+    right: i32,
+}
+
+struct Nested {
+    pair: Pair,
+    padding: i32,
+}
+
+struct Holder {
+    nested: Nested,
+    items: [i32],
+}
+
+fn take(pair: Pair, ignored: i32) -> i32 {
+    return pair.left + pair.right + ignored;
+}
+
+fn mutate(holders: [Holder]) -> i32 {
+    holders[0].nested.pair = Pair { left: 90, right: 91 };
+    return 0;
+}
+
+fn replace(holders: [Holder], items: [i32]) -> i32 {
+    holders[0].items = items;
+    return 0;
+}
+
+fn returned(holder: Holder) -> Holder {
+    return holder;
+}
+
+fn main() -> i32 {
+    let memory: ptr = alloc(40, 8);
+    let old_memory: ptr = alloc(4, 4);
+    let new_memory: ptr = alloc(4, 4);
+    if (memory == 0 || old_memory == 0 || new_memory == 0) { return 1; }
+    let holders: [Holder] = slice_from_raw_parts(memory + 32, 1);
+    let old_items: [i32] = slice_from_raw_parts(old_memory, 1);
+    let new_items: [i32] = slice_from_raw_parts(new_memory, 1);
+    old_items[0] = 21;
+    new_items[0] = 99;
+    let original: Holder = Holder {
+        nested: Nested { pair: Pair { left: 3, right: 4 }, padding: 123 },
+        items: old_items,
+    };
+    holders[0] = original;
+
+    // A projected aggregate is captured before the next argument mutates it.
+    if (take(holders[0].nested.pair, mutate(holders)) != 7) { return 2; }
+    if (holders[0].nested.pair.left != 90) { return 3; }
+
+    // A scalar projection is captured before evaluating the right operand.
+    holders[0] = original;
+    if (holders[0].nested.pair.left + mutate(holders) != 3) { return 4; }
+
+    // Index effects happen before loading the selected aggregate element.
+    holders[0] = original;
+    if (holders[mutate(holders)].nested.pair.left != 90) { return 5; }
+
+    // A projected slice descriptor is captured before its index replaces it.
+    if (holders[0].items[replace(holders, new_items)] != 21) { return 6; }
+    if (holders[0].items[0] != 99) { return 7; }
+
+    // Local and returned records also support nested immediate projections.
+    if (original.nested.pair.left != 3) { return 8; }
+    if (returned(original).nested.pair.right != 4) { return 9; }
+    return 37;
+}

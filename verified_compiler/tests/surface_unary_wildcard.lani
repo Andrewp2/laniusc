@@ -1,0 +1,17 @@
+module app::main;
+
+struct Payload { value: i32 }
+enum Choice { None, Some(Payload) }
+
+fn selected(choice: Choice, enabled: bool) -> i32 {
+    if (!enabled) { return -5; }
+    return match (choice) {
+        Some(record) => +record.value,
+        _ => -5,
+    };
+}
+
+fn main() -> i32 {
+    return selected(Some(Payload { value: 7 }), true)
+        + selected(None, true) - selected(None, false);
+}

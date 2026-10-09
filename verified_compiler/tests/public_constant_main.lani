@@ -1,0 +1,14 @@
+module app::main;
+
+import app::constants;
+
+const theorem: i32 = 3;
+const enabled: bool = true;
+const unreferenced: i32 = 99;
+
+fn main() -> i32 {
+    if (enabled) {
+        return theorem + app::constants::theorem + app::constants::value();
+    }
+    return 0;
+}

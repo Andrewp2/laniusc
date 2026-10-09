@@ -175,6 +175,42 @@ fn body_type_references_valid(types: ir::type_catalog::Table,
 
 // Check the cross-catalog invariant at the consumer boundary. Defined
 // functions own bodies; runtime functions do not.
+fn field_names_valid(types: ir::type_catalog::Table,
+    names: ir::symbol_catalog::Catalog) -> bool {
+    if (names.field_count != types.field_count) { return false; }
+    let declarations: [ir::type_catalog::TypeDecl] = types.types;
+    let fields: [ir::symbol_catalog::Ref] = names.fields;
+    let index: i32 = 0;
+    while (index < types.type_count) {
+        let declaration: ir::type_catalog::TypeDecl = declarations[index];
+        if (declaration.kind == ir::type_catalog::Structure) {
+            let field: i32 = 0;
+            while (field < declaration.field_count) {
+                if (!ir::symbol_catalog::spelling(names,
+                        fields[declaration.field_start + field]).valid) {
+                    return false;
+                }
+                field += 1;
+            }
+        }
+        index += 1;
+    }
+    return true;
+}
+
+fn constant_names_valid(constants: ir::constant_catalog::Table,
+    names: ir::symbol_catalog::Catalog) -> bool {
+    if (constants.count <= -1 || names.constant_count != constants.count) { return false; }
+    let values: [ir::constant_catalog::Constant] = constants.constants;
+    let references: [ir::symbol_catalog::ConstantName] = names.constants;
+    let index: i32 = 0;
+    while (index != constants.count) {
+        if (references[index].id != values[index].id) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
 pub fn valid(program: Program) -> bool {
     let types: ir::type_catalog::Table = program.types;
     let constants: ir::constant_catalog::Table = program.constants;
@@ -188,6 +224,8 @@ pub fn valid(program: Program) -> bool {
             && (names.type_count != types.type_count
                 || names.variant_count != types.variant_count
                 || names.function_count != functions.count
+                || !field_names_valid(types, names)
+                || !constant_names_valid(constants, names)
                 || !ir::symbol_catalog::valid(names)))
         || program.entrypoint < 0
         || functions.count <= 0 || functions.parameter_count <= -1
@@ -235,8 +273,10 @@ pub fn valid(program: Program) -> bool {
             let body: ir::body_catalog::FunctionBody =
                 ir::body_catalog::at(bodies, body_index);
             if (!ir::body_tree::valid(body.tree)
+                || (!ir::type_ref::same(function.result_type, ir::type_ref::Void)
+                    && !ir::body_tree::definitely_returns(body.tree, 0))
                 || (names.unit_count > 0
-                    && !ir::body_tree::expression_result_annotations_valid(
+                    && !ir::body_tree::result_annotations_valid(
                         body.tree))
                 || !body_type_references_valid(types, constants,
                     functions, body.tree)

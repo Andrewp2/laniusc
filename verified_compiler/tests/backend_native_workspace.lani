@@ -1,0 +1,123 @@
+module app::main;
+
+import backend::compile;
+import backend::frame;
+import backend::image;
+import backend::program;
+import ir::body_catalog;
+import ir::body_events;
+import ir::function_catalog;
+import ir::program;
+import ir::type_ref;
+import runtime::service;
+import verified::byte_io;
+import verified::host;
+
+// Reuse one lowering arena, as the real compiler does. Function zero is a
+// literal helper; other functions have no-ops and ordinary/string-helper calls.
+fn make_program(function_count: i32, skips: i32, calls: i32) -> ir::program::Program {
+    let result: ir::program::Program = ir::program::empty();
+    let event_count: i32 = 2 * skips + 7 * calls + 2;
+    let event_memory: ptr = verified::host::alloc(
+        ir::body_events::allocation_bytes(event_count), ir::body_events::ALIGNMENT);
+    let body_memory: ptr = verified::host::alloc(
+        ir::body_catalog::allocation_bytes(function_count), ir::body_catalog::ALIGNMENT);
+    let function_memory: ptr = verified::host::alloc(
+        ir::function_catalog::allocation_bytes(function_count, 0),
+        ir::function_catalog::ALIGNMENT);
+    let string_memory: ptr = verified::host::alloc_i32(1);
+    if (event_memory == 0 || body_memory == 0 || function_memory == 0
+        || string_memory == 0) { return result; }
+    let bytes: [i32] = verified::host::i32_slice_from_raw_parts(string_memory, 1);
+    bytes[0] = 97;
+    let arena: ir::body_events::Region =
+        ir::body_events::from_raw_parts(event_memory, event_count);
+    let events: [ir::body_events::Event] = arena.events;
+    let bodies: ir::body_catalog::Catalog =
+        ir::body_catalog::from_raw_parts(body_memory, function_count);
+    let functions: ir::function_catalog::Table =
+        ir::function_catalog::from_raw_parts(function_memory, function_count, 0);
+    let rows: [ir::function_catalog::Function] = functions.functions;
+    let index: i32 = 0;
+    while (index < function_count) {
+        let position: i32 = 0;
+        if (index > 0) {
+            let skip: i32 = 0;
+            while (skip < skips) {
+                events[position] = ir::body_events::StatementSequence;
+                events[position + 1] = ir::body_events::StatementSkip;
+                position += 2;
+                skip += 1;
+            }
+            let call: i32 = 0;
+            let callee: ir::body_events::CallHeader =
+                ir::body_events::CallHeader { function_id: 0, argument_count: 0 };
+            let string: ir::body_events::StringValue =
+                ir::body_events::StringValue { data: bytes, length: 1 };
+            while (call < calls) {
+                events[position] = ir::body_events::StatementSequence;
+                events[position + 1] = ir::body_events::StatementExpression;
+                events[position + 2] = ir::body_events::ExpressionCall(callee);
+                events[position + 3] = ir::body_events::StatementSequence;
+                events[position + 4] = ir::body_events::StatementExpression;
+                events[position + 5] = ir::body_events::ExpressionStringDataPointer;
+                events[position + 6] = ir::body_events::ExpressionString(string);
+                position += 7;
+                call += 1;
+            }
+        }
+        events[position] = ir::body_events::StatementReturnValue;
+        events[position + 1] = ir::body_events::ExpressionInteger(7);
+        rows[index] = ir::function_catalog::Function {
+            kind: ir::function_catalog::DefinedFunction, id: index,
+            result_type: ir::type_ref::I32, parameters: 0, parameter_start: 0,
+            service: runtime::service::NoService,
+        };
+        let signature: ir::body_catalog::FunctionSignature =
+            ir::body_catalog::FunctionSignature {
+                id: index, result_type: ir::type_ref::I32, parameters: 0,
+            };
+        if (ir::body_catalog::append(bodies, signature, arena, position + 2)
+            != index) { return result; }
+        index += 1;
+    }
+    result.entrypoint = function_count - 1;
+    result.functions = functions;
+    result.bodies = bodies;
+    return result;
+}
+
+fn emit_program(source: ir::program::Program, rows: i32, output: [i32]) -> i32 {
+    let words: i32 = backend::frame::HEADER
+        + rows * backend::frame::WORK_WORDS_PER_STRIDE;
+    let memory: ptr = verified::host::alloc(
+        (words + 1) * verified::host::I32_BYTES, backend::frame::WORK_ALIGNMENT);
+    if (memory == 0) { return -1; }
+    let guard: [i32] = verified::host::i32_slice_from_raw_parts(memory, words + 1);
+    guard[words] = 12345678;
+    let work: backend::frame::Workspace = backend::frame::from_raw_parts(memory, words);
+    let destination: backend::compile::WordRegion = backend::compile::region(output, 131072);
+    // Insufficient workspace must fail before writing its trailing records.
+    if (backend::image::compile(backend::program::typed(source),
+        backend::frame::from_raw_parts(memory, backend::frame::HEADER),
+        destination) >= 0) { return -1; }
+    let end: i32 = backend::image::compile(backend::program::typed(source), work, destination);
+    if (guard[words] != 12345678) { return -1; }
+    return end;
+}
+
+fn main() -> i32 {
+    let memory: ptr = verified::host::alloc_i32(131072);
+    let packed: ptr = verified::host::alloc_i32(verified::byte_io::PACKED_IO_WORDS);
+    if (memory == 0 || packed == 0) { return 1; }
+    let output: [i32] = verified::host::i32_slice_from_raw_parts(memory, 131072);
+    // 65,792 events exceed the old program-wide word cap, but 300 workspace
+    // rows suffice because local and break tables are reused per function.
+    if (emit_program(make_program(256, 128, 0), 300, output) <= 0) { return 2; }
+    // 496 call fixups exceed both the function count and the largest body.
+    // Include implicit string-helper calls as well as direct source calls.
+    let end: i32 = emit_program(make_program(32, 0, 8), 512, output);
+    if (end <= 0) { return 3; }
+    if (verified::byte_io::write_stdout(output, end, packed) != end) { return 4; }
+    return 0;
+}

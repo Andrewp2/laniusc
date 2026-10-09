@@ -11,7 +11,9 @@ pub const WORK_CAPACITY: i32 = backend::frame::HEADER
     + backend::compile::MAX_WORDS
         * backend::frame::WORK_WORDS_PER_STRIDE;
 pub const WORK_ALIGNMENT: i32 = backend::frame::WORK_ALIGNMENT;
-pub const OUTPUT_CAPACITY: i32 = 2097152;
+// Code bytes currently use i32 cells: a 4 MiB image needs 16 MiB of scratch.
+// The extractor's complete source closure exceeds the former 2 MiB image cap.
+pub const OUTPUT_CAPACITY: i32 = 4194304;
 pub const FUNCTION_INPUT_CAPACITY: i32 = backend::compile::MAX_WORDS;
 
 // The compiler hands x86 emission the exact typed program produced by

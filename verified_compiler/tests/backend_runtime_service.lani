@@ -3,8 +3,66 @@ module app::main;
 import backend::syntax;
 import ir::type_ref;
 import runtime::service;
+import backend::runtime_record;
+
+// Exercise the wire boundary against independently stated semantic signatures.
+fn service_record(service: runtime::service::RuntimeService,
+    result: ir::type_ref::TypeRef, arity: i32,
+    first_type: ir::type_ref::TypeRef, second_type: ir::type_ref::TypeRef,
+    third_type: ir::type_ref::TypeRef) -> bool {
+    let words: [i32; 13] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let types: [ir::type_ref::TypeRef; 3] = [first_type, second_type, third_type];
+    let header: backend::syntax::FunctionHeader = backend::syntax::FunctionHeader {
+        kind: backend::syntax::RuntimeFunction,
+        pointer_bits: backend::syntax::POINTER_BITS,
+        id: 7, result_type: result, parameters: arity,
+        body_words: backend::runtime_record::RUNTIME_SERVICE_BODY_WORDS,
+    };
+    backend::syntax::write_function_header(words, 0, header);
+    let index: i32 = 0;
+    while (index != arity) {
+        let slot: i32 = backend::syntax::FUNCTION_HEADER_WORDS
+            + index * backend::syntax::PARAMETER_ROW_WORDS;
+        words[slot + backend::syntax::PARAMETER_ID_FIELD] = index + 1;
+        words[slot + backend::syntax::PARAMETER_TYPE_FIELD] = ir::type_ref::code(types[index]);
+        index += 1;
+    }
+    let body: i32 = backend::syntax::FUNCTION_HEADER_WORDS
+        + arity * backend::syntax::PARAMETER_ROW_WORDS;
+    let count: i32 = body + backend::runtime_record::RUNTIME_SERVICE_BODY_WORDS;
+    words[body] = backend::runtime_record::service_code(service);
+    if (backend::runtime_record::service_from_code(words[body]) != service
+        || !backend::runtime_record::valid(words, 0, count)) { return false; }
+    if (backend::runtime_record::valid(words, 0, count - 1)) { return false; }
+    index = 0;
+    while (index != arity) {
+        let slot: i32 = backend::syntax::FUNCTION_HEADER_WORDS
+            + index * backend::syntax::PARAMETER_ROW_WORDS;
+        words[slot + backend::syntax::PARAMETER_TYPE_FIELD] = ir::type_ref::code(ir::type_ref::Bool);
+        if (backend::runtime_record::valid(words, 0, count)) { return false; }
+        words[slot + backend::syntax::PARAMETER_TYPE_FIELD] = ir::type_ref::code(types[index]);
+        words[slot + backend::syntax::PARAMETER_ID_FIELD] = -1;
+        if (backend::runtime_record::valid(words, 0, count)) { return false; }
+        words[slot + backend::syntax::PARAMETER_ID_FIELD] = index + 1;
+        let previous: i32 = 0;
+        while (previous != index) {
+            words[slot + backend::syntax::PARAMETER_ID_FIELD] = previous + 1;
+            if (backend::runtime_record::valid(words, 0, count)) { return false; }
+            previous += 1;
+        }
+        words[slot + backend::syntax::PARAMETER_ID_FIELD] = index + 1;
+        index += 1;
+    }
+    header.result_type = ir::type_ref::Bool;
+    backend::syntax::write_function_header(words, 0, header);
+    return !backend::runtime_record::valid(words, 0, count);
+}
 
 fn main() -> i32 {
+    if (backend::runtime_record::service_from_code(-1) != runtime::service::NoService
+        || backend::runtime_record::service_from_code(10) != runtime::service::NoService) {
+        return 14;
+    }
     let words: [i32; 11] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     let header: backend::syntax::FunctionHeader =
         backend::syntax::FunctionHeader {
@@ -13,30 +71,48 @@ fn main() -> i32 {
             id: 7,
             result_type: ir::type_ref::Pointer,
             parameters: 2,
-            body_words: runtime::service::RUNTIME_SERVICE_BODY_WORDS,
+            body_words: backend::runtime_record::RUNTIME_SERVICE_BODY_WORDS,
         };
     backend::syntax::write_function_header(words, 0, header);
     let first: i32 = backend::syntax::FUNCTION_HEADER_WORDS;
     let second: i32 = first + backend::syntax::PARAMETER_ROW_WORDS;
     let body: i32 = second + backend::syntax::PARAMETER_ROW_WORDS;
-    let count: i32 = body + runtime::service::RUNTIME_SERVICE_BODY_WORDS;
+    let count: i32 = body + backend::runtime_record::RUNTIME_SERVICE_BODY_WORDS;
     words[first + backend::syntax::PARAMETER_ID_FIELD] = 11;
     words[first + backend::syntax::PARAMETER_TYPE_FIELD] =
         ir::type_ref::code(ir::type_ref::Usize);
     words[second + backend::syntax::PARAMETER_ID_FIELD] = 12;
     words[second + backend::syntax::PARAMETER_TYPE_FIELD] =
         ir::type_ref::code(ir::type_ref::Usize);
-    words[body] = runtime::service::service_code(runtime::service::Allocate);
-    if (!runtime::service::valid(words, 0, count)) { return 1; }
+    words[body] = backend::runtime_record::service_code(runtime::service::Allocate);
+    if (!backend::runtime_record::valid(words, 0, count)) { return 1; }
     words[second + backend::syntax::PARAMETER_TYPE_FIELD] =
         ir::type_ref::code(ir::type_ref::I32);
-    if (runtime::service::valid(words, 0, count)) { return 2; }
+    if (backend::runtime_record::valid(words, 0, count)) { return 2; }
     words[second + backend::syntax::PARAMETER_TYPE_FIELD] =
         ir::type_ref::code(ir::type_ref::Usize);
     words[second + backend::syntax::PARAMETER_ID_FIELD] = 11;
-    if (runtime::service::valid(words, 0, count)) { return 3; }
+    if (backend::runtime_record::valid(words, 0, count)) { return 3; }
     words[second + backend::syntax::PARAMETER_ID_FIELD] = 12;
-    words[body] = runtime::service::service_code(runtime::service::NoService);
-    if (runtime::service::valid(words, 0, count)) { return 4; }
+    words[body] = backend::runtime_record::service_code(runtime::service::NoService);
+    if (backend::runtime_record::valid(words, 0, count)) { return 4; }
+    if (!service_record(runtime::service::Allocate, ir::type_ref::Pointer, 2,
+        ir::type_ref::Usize, ir::type_ref::Usize, ir::type_ref::Invalid)) { return 5; }
+    if (!service_record(runtime::service::OpenRead, ir::type_ref::I32, 2,
+        ir::type_ref::Pointer, ir::type_ref::Usize, ir::type_ref::Invalid)) { return 6; }
+    if (!service_record(runtime::service::Close, ir::type_ref::I32, 1,
+        ir::type_ref::I32, ir::type_ref::Invalid, ir::type_ref::Invalid)) { return 7; }
+    if (!service_record(runtime::service::Read, ir::type_ref::I32, 3,
+        ir::type_ref::I32, ir::type_ref::Pointer, ir::type_ref::Usize)) { return 8; }
+    if (!service_record(runtime::service::WriteStdout, ir::type_ref::I32, 2,
+        ir::type_ref::Pointer, ir::type_ref::Usize, ir::type_ref::Invalid)) { return 9; }
+    if (!service_record(runtime::service::WriteByte, ir::type_ref::I32, 2,
+        ir::type_ref::I32, ir::type_ref::I32, ir::type_ref::Invalid)) { return 10; }
+    if (!service_record(runtime::service::ArgumentCount, ir::type_ref::I32, 0,
+        ir::type_ref::Invalid, ir::type_ref::Invalid, ir::type_ref::Invalid)) { return 11; }
+    if (!service_record(runtime::service::ArgumentLength, ir::type_ref::I32, 1,
+        ir::type_ref::I32, ir::type_ref::Invalid, ir::type_ref::Invalid)) { return 12; }
+    if (!service_record(runtime::service::ArgumentRead, ir::type_ref::I32, 3,
+        ir::type_ref::I32, ir::type_ref::Pointer, ir::type_ref::Usize)) { return 13; }
     return 0;
 }

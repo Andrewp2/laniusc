@@ -1,0 +1,6 @@
+module call::right;
+
+pub enum Choice { Value(i32), Empty }
+
+pub fn abca() -> i32 { return 2; }
+pub fn adca() -> i32 { return 8; }

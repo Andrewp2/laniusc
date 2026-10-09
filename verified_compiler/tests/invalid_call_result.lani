@@ -1,0 +1,4 @@
+module app::main;
+
+fn flag() -> bool { return true; }
+fn main() -> i32 { return flag(); }

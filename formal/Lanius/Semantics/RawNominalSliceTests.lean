@@ -1,4 +1,4 @@
-import Lanius.Semantics
+import Lanius.Semantics.RawSlice
 
 namespace Lanius.Semantics.RawNominalSliceTests
 
@@ -28,6 +28,11 @@ private def valuedState : State :=
 
 private def boundState : State :=
   valuedState.bindLocal 0 (.rawSlice (.structure 3) 32 2)
+
+example : rawSliceElementAddress? pairProgram (.structure 3) 32 1 = .ok 8 :=
+  rawSliceElementAddress_of_layout rfl rfl (by decide) (by decide) rfl
+
+example : rawSliceElementAddress? pairProgram (.structure 3) 0 0 = .error .rawMemoryBounds := rfl
 
 example : NativeLayout.valueWords? pairProgram (.structure 3) = some 2 := by
   decide

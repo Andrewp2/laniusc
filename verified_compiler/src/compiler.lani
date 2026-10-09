@@ -1,7 +1,7 @@
 module app::main;
 
-import lowering::program_transport;
-import lowering::transport;
+import lowering::program;
+import verified::core_transport;
 import verified::byte_io;
 import verified::certificate_output_native;
 import verified::certificate_functions_native;
@@ -21,11 +21,7 @@ import driver::arguments;
 const PATH_BYTE_CAPACITY: i32 = 1024;
 const PACKED_PATH_WORD_CAPACITY: i32 =
     PATH_BYTE_CAPACITY / verified::host::I32_BYTES;
-const TRANSPORT_WORD_CAPACITY: i32 =
-    lowering::program_transport::BUNDLE_TRANSPORT_CAP;
-// Binary mode keeps the shared allocation path nonempty, but native lowering
-// never reads or writes this placeholder word.
-const UNUSED_TRANSPORT_WORD_CAPACITY: i32 = 1;
+const TRANSPORT_WORD_CAPACITY: i32 = 262144;
 const COMPACT_OUTPUT_CAPACITY: i32 =
     verified::extraction::PARSER_WORK_WORD_CAPACITY;
 const CERTIFICATE_OPTION_LENGTH: i32 = 13;
@@ -181,13 +177,13 @@ fn main() -> i32 {
         record_allocation, record_capacity);
     let offsets: [i32] = verified::host::i32_slice_from_raw_parts(
         offset_allocation, offset_capacity);
-    let transport_capacity: i32 = UNUSED_TRANSPORT_WORD_CAPACITY;
+    let transport_capacity: i32 = 0;
+    let transport_allocation: ptr = 0;
     if (emits_certificate(mode)) {
         transport_capacity = TRANSPORT_WORD_CAPACITY;
+        transport_allocation = verified::host::alloc_i32(transport_capacity);
+        if (transport_allocation == 0) { return exit_code(AllocationFailed); }
     }
-    let transport_allocation: ptr = verified::host::alloc_i32(
-        transport_capacity);
-    if (transport_allocation == 0) { return exit_code(AllocationFailed); }
     let transport: [i32] = verified::host::i32_slice_from_raw_parts(
         transport_allocation, transport_capacity);
     let backend_work:[i32];
@@ -228,17 +224,17 @@ fn main() -> i32 {
             allocation, COMPACT_OUTPUT_CAPACITY);
     }
     let unit_count: i32 = argument_count - path_index;
-    if (unit_count <= 0 || unit_count > lowering::program_transport::BUNDLE_UNIT_LIMIT) {
+    if (unit_count <= 0 || unit_count > lowering::program::BUNDLE_UNIT_LIMIT) {
         return exit_code(InvalidArguments);
     }
-    let bundle_word_count: i32 = lowering::program_transport::bundle_words(unit_count);
+    let bundle_word_count: i32 = lowering::program::bundle_words(unit_count);
     if (bundle_word_count <= 0) { return exit_code(AllocationFailed); }
     let bundle_memory: ptr = verified::host::alloc(
         bundle_word_count * verified::host::I32_BYTES,
-        lowering::program_transport::BUNDLE_ALIGNMENT);
+        lowering::program::BUNDLE_ALIGNMENT);
     if (bundle_memory == 0) { return exit_code(AllocationFailed); }
-    let bundle: lowering::program_transport::Bundle =
-        lowering::program_transport::from_raw_parts(bundle_memory,
+    let bundle: lowering::program::Bundle =
+        lowering::program::from_raw_parts(bundle_memory,
             unit_count);
     {
         if (verified::grammar::load(grammar, verified::grammar::WORDS)
@@ -289,10 +285,10 @@ fn main() -> i32 {
                     verified::host::i32_slice_data_ptr(
                         extraction_workspace),
                     verified::extraction::PARSER_WORK_WORD_CAPACITY);
-            let source_region: lowering::program_transport::WordRegion =
-                lowering::program_transport::region(source, source_length);
+            let source_region: lowering::program::WordRegion =
+                lowering::program::region(source, source_length);
             let native_tokens: verified::token::TokenTable =
-                lowering::program_transport::native_token_storage(
+                lowering::program::native_token_storage(
                     bundle, unit);
             let native_workspace:
                 verified::extraction::NativeRecognitionWorkspace =
@@ -325,13 +321,13 @@ fn main() -> i32 {
                     verified::extraction::PARSE_RECORD_WORD_CAPACITY);
             if (tree.node_count <= 0) { return exit_code(ExtractionFailed); }
             let node_count: i32 = tree.node_count;
-            let native_unit: lowering::program_transport::NativeUnit =
-                lowering::program_transport::NativeUnit {
+            let native_unit: lowering::program::NativeUnit =
+                lowering::program::NativeUnit {
                     source: source_region,
                     token_count: token_count,
                     tree: tree,
                 };
-            if (!lowering::program_transport::append_native_unit(
+            if (!lowering::program::append_native_unit(
                 bundle, unit, native_unit)) {
                 return exit_code(BundleFailed);
             }
@@ -421,17 +417,9 @@ fn main() -> i32 {
                 compact_copy += 1;
             }
         }
-        let output_mode: lowering::transport::OutputMode =
-            lowering::transport::NativeOnly;
-        if (emits_certificate(mode)) {
-            output_mode = lowering::transport::NativeAndCore;
-        }
-        let lowered: lowering::program_transport::LoweredProgram =
-            lowering::program_transport::lower_units(
-            bundle,
-            verified::host::i32_slice_data_ptr(transport), output_mode);
-        let transport_words: i32 = lowered.transport_words;
-        if (!lowering::program_transport::succeeded(lowered.status)) {
+        let lowered: lowering::program::LoweredProgram =
+            lowering::program::lower_units(bundle);
+        if (!lowering::program::succeeded(lowered.status)) {
             return exit_code(CoreLoweringFailure);
         }
         // Native codegen consumes one typed program. Core words remain
@@ -442,6 +430,9 @@ fn main() -> i32 {
             lowered.program);
         if (emitted <= 0) { return exit_code(BackendFailed); }
         if (emits_certificate(mode)) {
+            let transport_words: i32 = verified::core_transport::serialize(
+                lowered.program, transport, transport_capacity);
+            if (transport_words <= 0) { return exit_code(CoreLoweringFailure); }
             let certificate_length: i32 =
                 verified::certificate_output_native::HEADER_BYTES
                     + compact_position;

@@ -1,0 +1,15 @@
+module app::main;
+
+fn advance(base: ptr, offset: i32) -> ptr { return base + offset; }
+fn retreat(base: ptr, offset: i32) -> ptr { return base - offset; }
+
+fn main() -> i32 {
+    let empty: ptr = 0;
+    let cursor: ptr = advance(empty, 8);
+    if (empty != 0 || 0 != empty) { return 1; }
+    if (cursor == 0 || 0 == cursor) { return 2; }
+    if (cursor == empty || empty == cursor) { return 3; }
+    if (retreat(cursor, 8) != empty) { return 4; }
+    if (advance(cursor, -8) != empty) { return 5; }
+    return 37;
+}

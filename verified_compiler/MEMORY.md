@@ -13,15 +13,39 @@ before using its existing positive struct-field offsets. Packed `[i32]` slices
 retain their separate forward, four-byte stride. Core now represents nominal
 raw slices as heap aliases and supports indexed reads, scalar-field writes,
 and value iteration through the same native layout. Direct Lean emission accepts
-nominal elements composed of i32, bool, usize, pointer, and nested nominal
-values; it rejects descriptor-bearing fields until their lifetime and byte
-representation are modeled. This is an executable semantics boundary, not yet
-a proof that emitted x86 preserves it.
+nominal elements composed of i32, bool, usize, pointer, nested nominal values,
+and supported slice descriptors. This is an executable semantics boundary,
+not yet a proof that emitted x86 preserves it.
+
+## Current raw-i32 boundary — September 28
+
+Core now retains raw-pointer i32 slices as `Value.rawSlice`: the same
+pointer/length form used when reading a slice descriptor from native records.
+Construction protects the exact live, aligned allocation as borrowed but does
+not read/decode its bytes, allocate a backing cell, or register another view.
+Actual accesses still check bounds and read/write the heap. Allocation metadata
+and payload consistency remain part of heap well-formedness; construction is
+not a scan that validates arbitrary malformed model heaps.
+
+`i32SliceDataPtr` accepts both raw descriptors and cell-backed slices. Genuine
+language arrays still register views when exposed as pointers, and their
+existing synchronization remains. The mixed-array/raw regression covers writes
+in both directions. The new `surface_raw_slice_alias.lani` regression also
+covers a descriptor loaded from a native record: before the fix x86 returned
+37 but Lean trapped; both now return 37.
+
+`Semantics.RawSlice.mapRawI32Slice_of_block` derives construction from live
+block metadata. The connected byte-writer test uses it before the actual call
+contract, without assuming constructor success. The 28-case direct Lean/x86
+gate passes. This is not a general alias-coherence or x86-preservation theorem.
+See [VERIFICATION.md](VERIFICATION.md) for current proof coverage. The older
+proof descriptions and measurements below are historical records, not a claim
+that every named module remains on the current proof path.
 
 ## Historical raw-view alias mismatch — September 16
 
-The current Core semantics and native backend disagree on repeated views of
-the same allocation. `mapRawI32Slice` always copies the block into a fresh
+At that checkpoint Core semantics and the native backend disagreed on repeated
+views of the same allocation. `mapRawI32Slice` copied the block into a fresh
 backing cell; the native constructor retains the original pointer. Ordinary
 Core assignment updates only the selected cell. This is an observable mismatch,
 not merely a missing proof of correspondence.
@@ -33,18 +57,18 @@ and returns `data[0]`. Core returns 999 and retains the original buffer;
 debugging the emitted native executable at its return observes 29 and
 `[29, 10, 20, 30, 888]`.
 
-The source-authenticated Core/native suite currently **fails nine cases**:
+The source-authenticated Core/native suite then **failed nine cases**:
 three in-bounds indices in each new function. Its other 54 results and 41
 bounds traps agree (13.08 seconds). These regressions must remain failures
 until the semantics and backend agree; the test does not accept disagreement.
 Logs are `raw-alias-all-cases.log` and `raw-alias-observation.log` under
 `target/verified-compiler`.
 
-The i32 raw-slice path now reuses a registered view for an identical raw
-address and length. The historical result above records the mismatch that led
-to that change; it is not a current passing test or a full aliasing proof.
+An intermediate fix reused a registered view for an identical raw address
+and length. The September 28 representation above supersedes that mechanism;
+the historical result is not a current test or a full aliasing proof.
 
-## Implemented boundary
+## Historical proof boundary
 
 `X86.Storage.Locations.pointer` explicitly maps represented Core pointers to
 native addresses. The map is partial and has no numeric-identity fallback.

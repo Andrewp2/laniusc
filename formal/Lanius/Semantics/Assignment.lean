@@ -171,7 +171,7 @@ theorem evalExpr_assign_set_local
     evalExpr fuel.succ.succ program state
       (.assign .set (.local id) (.value replacement)) =
       .done .unit after := by
-  have place := evalPlace_local_of_local? fuel program state id cell current
+  have place := evalPlace_local_of_local? fuel program state .address id cell current
     cellFound localFound
   have right := evalExpr_value fuel program state replacement
   have assignedCell := assignLocal_assignCell id cell replacement cellFound assigned

@@ -1,0 +1,79 @@
+module app::main;
+
+enum Inner { Empty, Number(i32) }
+enum Outer { Nothing, Wrapped(Inner) }
+
+fn inner_value(value: Inner) -> i32 {
+    return match (value) {
+        Number(payload) => payload,
+        Empty => 3,
+    };
+}
+
+fn unwrap(value: Outer) -> i32 {
+    return match (value) {
+        Wrapped(inner) => inner_value(inner),
+        Nothing => 5,
+    };
+}
+
+fn roundtrip(value: i32) -> i32 {
+    return unwrap(Wrapped(Number(value)));
+}
+
+fn nested_value(value: Outer) -> i32 {
+    return match (value) {
+        Wrapped(inner) => match (inner) {
+            Number(payload) => payload,
+            Empty => 3,
+        },
+        Nothing => 5,
+    };
+}
+
+fn match_payload(value: i32) -> i32 {
+    return unwrap(Wrapped(match (Number(value)) {
+        Number(payload) => Number(payload),
+        Empty => Empty,
+    }));
+}
+
+fn match_source(value: i32) -> i32 {
+    return match (match (Number(value)) {
+        Number(payload) => Wrapped(Number(payload)),
+        Empty => Nothing,
+    }) {
+        Wrapped(inner) => match (inner) {
+            Number(payload) => payload,
+            Empty => 3,
+        },
+        Nothing => 5,
+    };
+}
+
+fn shadowed(value: Outer) -> i32 {
+    return match (value) {
+        Wrapped(value) => match (value) {
+            Number(value) => value,
+            Empty => 3,
+        },
+        Nothing => 5,
+    };
+}
+
+fn main() -> i32 {
+    if (unwrap(Wrapped(Empty)) != 3) { return 1; }
+    if (unwrap(Nothing) != 5) { return 2; }
+    if (roundtrip(-19) != -19) { return 4; }
+    if (roundtrip(-2147483648) != -2147483648) { return 6; }
+    if (roundtrip(2147483647) != 2147483647) { return 8; }
+    if (nested_value(Wrapped(Number(-19))) != -19) { return 9; }
+    if (nested_value(Wrapped(Empty)) != 3) { return 10; }
+    if (nested_value(Nothing) != 5) { return 11; }
+    if (match_payload(-19) != -19) { return 12; }
+    if (match_source(2147483647) != 2147483647) { return 13; }
+    if (shadowed(Wrapped(Number(-19))) != -19) { return 14; }
+    if (shadowed(Wrapped(Empty)) != 3) { return 15; }
+    if (shadowed(Nothing) != 5) { return 16; }
+    return roundtrip(7);
+}

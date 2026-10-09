@@ -1,0 +1,80 @@
+module app::main;
+
+import lowering::constant_expression;
+
+fn invalid(result: lowering::constant_expression::Result) -> bool {
+    return match (result) { Invalid -> true, _ -> false, };
+}
+
+fn main() -> i32 {
+    // Round-trip a spread of values, including leading zeros and both limits.
+    let digits: [i32; 10] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let samples: [i32; 8] = [0, 1, 7, 9, 10, 214748364,
+        2147483646, 2147483647];
+    let sample: i32 = 0;
+    while (sample < 264) {
+        let expected: i32 = 0;
+        if (sample < 8) { expected = samples[sample]; }
+        else { expected = (sample - 8) * 8388607; }
+        let remaining: i32 = expected;
+        let position: i32 = 9;
+        while (position >= 0) {
+            digits[position] = 48 + remaining % 10;
+            remaining /= 10;
+            position -= 1;
+        }
+        let result: lowering::constant_expression::Result =
+            lowering::constant_expression::decimal(digits, 10, 0, 10);
+        if (!lowering::constant_expression::succeeded(result)
+            || lowering::constant_expression::value(result) != expected) {
+            return 1;
+        }
+        sample += 1;
+    }
+    // This decoder permits separators; lexical separator placement is checked
+    // separately. Preserve separators surrounding the extra unary-minus magnitude.
+    let limit: [i32; 12] = [95, 50, 49, 52, 55, 52, 56, 51, 54, 52, 56, 95];
+    if (!lowering::constant_expression::is_min_magnitude(
+        lowering::constant_expression::decimal(limit, 12, 0, 12))) {
+        return 2;
+    }
+    limit[10] = 55;
+    if (lowering::constant_expression::value(
+        lowering::constant_expression::decimal(limit, 12, 0, 12))
+        != 2147483647) { return 3; }
+    limit[10] = 57;
+    if (!invalid(lowering::constant_expression::decimal(limit, 12, 0, 12))) {
+        return 4;
+    }
+    let extra: [i32; 13] = [50, 49, 52, 55, 52, 56, 51, 54, 52, 56, 95, 48, 95];
+    if (!invalid(lowering::constant_expression::decimal(extra, 13, 0, 13))) {
+        return 5;
+    }
+    let single: [i32; 1] = [0];
+    let byte: i32 = -1;
+    while (byte < 129) {
+        single[0] = byte;
+        let result: lowering::constant_expression::Result =
+            lowering::constant_expression::decimal(single, 1, 0, 1);
+        if (byte >= 48 && byte <= 57) {
+            if (!lowering::constant_expression::succeeded(result)
+                || lowering::constant_expression::value(result) != byte - 48) {
+                return 6;
+            }
+        } else {
+            if (!invalid(result)) { return 7; }
+        }
+        byte += 1;
+    }
+    single[0] = 55;
+    if (!invalid(lowering::constant_expression::decimal(single, 1, -1, 1))) {
+        return 8;
+    }
+    if (!invalid(lowering::constant_expression::decimal(single, 1, 0, 0))) {
+        return 9;
+    }
+    if (!invalid(lowering::constant_expression::decimal(single, 1, 0, 2))) {
+        return 10;
+    }
+    return 0;
+}

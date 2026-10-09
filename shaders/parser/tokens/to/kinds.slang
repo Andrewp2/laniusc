@@ -1044,6 +1044,12 @@ bool path_type_arg_open_has_value_path_tail(uint open_parser_i, uint count)
         angle_match_depth[close_i] != open_depth)
         return false;
 
+    // Raw angle matching can pair comparisons in different statements.
+    // A generic argument list cannot cross that boundary; reuse the existing
+    // statement owner instead of treating a later `> (` as a call suffix.
+    if (statement_event_token_at(open_i) != statement_event_token_at(close_i))
+        return false;
+
     uint next = raw_kind_at(close_i + 2u, count);
     uint next2 = raw_kind_at(close_i + 3u, count);
     return next == TK_LPAREN || (next == TK_COLON && next2 == TK_COLON);

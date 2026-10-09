@@ -1,0 +1,14 @@
+module app::main;
+
+enum Choice { Number(i32), Flag(bool) }
+
+fn integer(value: i32) -> i32 { return value; }
+
+fn choose(choice: Choice) -> i32 {
+    return match (choice) {
+        Number(value) => integer(value),
+        Flag(value) => integer(value),
+    };
+}
+
+fn main() -> i32 { return choose(Flag(true)); }

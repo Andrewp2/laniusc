@@ -1,0 +1,10 @@
+module app::main;
+
+enum Choice { None, Pair(i32, i32) }
+
+fn main() -> i32 {
+    return match (Pair(3 + 4, 5)) {
+        Pair(left, right) => left * right + 2,
+        None => 0,
+    };
+}

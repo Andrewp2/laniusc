@@ -86,29 +86,37 @@ theorem CallerFrame.bindLocals (frame : CallerFrame caller current)
       simp only [State.bindLocals, List.foldl_cons]
       exact induction (frame.bindLocal binding.1 binding.2)
 
+theorem FreshCellFrame.assignCellFresh
+    (frame : FreshCellFrame caller current) (formed : caller.CellsWellFormed)
+    (cell : CellId) (value : Value)
+    (fresh : caller.nextCell ≤ cell)
+    (assigned : current.assignCell cell value = some after) :
+    FreshCellFrame caller after := by
+  rcases frame with ⟨extra, cells, frontier, bounded⟩
+  unfold State.assignCell at assigned
+  split at assigned
+  · simp only [Option.some.injEq] at assigned
+    subst after
+    refine ⟨replaceCell extra cell value, ?_, frontier, ?_⟩
+    · change replaceCell current.cells cell value =
+        caller.cells ++ replaceCell extra cell value
+      rw [cells]
+      exact replaceCell_append_of_fresh caller.cells extra caller.nextCell cell value
+        formed fresh
+    · exact replaceCell_preserves_bounds extra cell value caller.nextCell
+        current.nextCell bounded
+  · contradiction
+
 theorem CallerFrame.assignCellFresh
     (frame : CallerFrame caller current) (cell : CellId) (value : Value)
     (fresh : caller.nextCell ≤ cell)
     (assigned : current.assignCell cell value = some after) :
     CallerFrame caller after := by
-  rcases frame.cells with ⟨extra, cells, frontier, bounded⟩
+  have cells := frame.cells.assignCellFresh frame.callerFormed cell value fresh assigned
   unfold State.assignCell at assigned
   split at assigned
-  · simp only [Option.some.injEq] at assigned
-    subst after
-    refine
-      { callerFormed := frame.callerFormed
-        cells := ⟨replaceCell extra cell value, ?_, frontier, ?_⟩
-        heap := frame.heap
-        world := frame.world
-        views := frame.views }
-    · change replaceCell current.cells cell value =
-        caller.cells ++ replaceCell extra cell value
-      rw [cells]
-      exact replaceCell_append_of_fresh caller.cells extra caller.nextCell cell value
-        frame.callerFormed fresh
-    · exact replaceCell_preserves_bounds extra cell value caller.nextCell
-        current.nextCell bounded
+  · cases assigned
+    exact ⟨frame.callerFormed, cells, frame.heap, frame.world, frame.views⟩
   · contradiction
 
 theorem CallerFrame.assignLocalFresh

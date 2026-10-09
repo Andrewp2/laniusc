@@ -18,38 +18,33 @@ fn field_type(output: [i32], capacity: i32, position: i32,
         types, names, field.type_tag);
 }
 
-fn constructor_name(output: [i32], capacity: i32, position: i32,
-    names: ir::symbol_catalog::Catalog, slot: i32,
-    ordinal: i32) -> i32 {
-    if (names.unit_count == 0) {
-        let next: i32 = verified::lean_output::text(output, capacity,
-            position, "variant", 7);
-        return verified::lean_output::natural(output, capacity, next,
-            ordinal);
-    }
-    if (slot < 0 || slot >= names.variant_count) { return -1; }
-    let references: [ir::symbol_catalog::Ref] = names.variants;
-    return verified::lean_syntax::source_identifier(output, capacity,
-        position, names, references[slot]);
-}
-
 fn payload_fields(output: [i32], capacity: i32, position: i32,
     types: ir::type_catalog::Table, names: ir::symbol_catalog::Catalog,
-    first: i32, count: i32) -> i32 {
+    first: i32, count: i32, named: bool) -> i32 {
     let next: i32 = position;
     let fields: [ir::type_catalog::Field] = types.fields;
     let field: i32 = 0;
     while (field < count) {
-        if (count == 1) {
-            next = verified::lean_output::text(output, capacity, next,
-                " (value : ", 10);
+        if (named && names.unit_count > 0) {
+            let slot: i32 = first + field;
+            if (slot < 0 || slot >= names.field_count) { return -1; }
+            let references: [ir::symbol_catalog::Ref] = names.fields;
+            next = verified::lean_output::text(output, capacity, next, " (", 2);
+            next = verified::lean_syntax::escaped_identifier(output, capacity,
+                next, names, references[slot]);
+            next = verified::lean_output::text(output, capacity, next, " : ", 3);
         } else {
-            next = verified::lean_output::text(output, capacity, next,
-                " (field", 7);
-            next = verified::lean_output::natural(output, capacity,
-                next, field);
-            next = verified::lean_output::text(output, capacity,
-                next, " : ", 3);
+            if (count == 1) {
+                next = verified::lean_output::text(output, capacity, next,
+                    " (value : ", 10);
+            } else {
+                next = verified::lean_output::text(output, capacity, next,
+                    " (field", 7);
+                next = verified::lean_output::natural(output, capacity,
+                    next, field);
+                next = verified::lean_output::text(output, capacity,
+                    next, " : ", 3);
+            }
         }
         next = field_type(output, capacity, next, types, names,
             fields[first + field]);
@@ -64,7 +59,7 @@ fn declaration(output: [i32], capacity: i32, position: i32,
     types: ir::type_catalog::Table, names: ir::symbol_catalog::Catalog,
     row: ir::type_catalog::TypeDecl) -> i32 {
     let next: i32 = verified::lean_output::text(output, capacity, position,
-        "private inductive ", 18);
+        "inductive ", 10);
     next = verified::lean_syntax::type_identifier(output, capacity,
         next, names, row.id);
     next = verified::lean_output::text(output, capacity, next,
@@ -73,7 +68,7 @@ fn declaration(output: [i32], capacity: i32, position: i32,
         next = verified::lean_output::text(output, capacity, next,
             "  | mk", 6);
         next = payload_fields(output, capacity, next, types, names,
-            row.field_start, row.field_count);
+            row.field_start, row.field_count, true);
         return verified::lean_output::byte(output, capacity, next, 10);
     }
     if (row.kind != ir::type_catalog::Enumeration) { return -1; }
@@ -84,10 +79,10 @@ fn declaration(output: [i32], capacity: i32, position: i32,
         let variant: ir::type_catalog::Variant = variants[slot];
         next = verified::lean_output::text(output, capacity, next,
             "  | ", 4);
-        next = constructor_name(output, capacity, next, names,
+        next = verified::lean_syntax::native_constructor_identifier(output, capacity, next, names,
             slot, ordinal);
         next = payload_fields(output, capacity, next, types, names,
-            variant.field_start, variant.field_count);
+            variant.field_start, variant.field_count, false);
         next = verified::lean_output::byte(output, capacity, next, 10);
         if (next < 0) { return -1; }
         ordinal += 1;
@@ -137,72 +132,24 @@ fn declaration_ready(types: ir::type_catalog::Table, emitted: [i32],
     return true;
 }
 
-fn code_instance(output: [i32], capacity: i32, position: i32,
+fn nominal_identity(output: [i32], capacity: i32, position: i32,
     names: ir::symbol_catalog::Catalog,
     row: ir::type_catalog::TypeDecl) -> i32 {
     let next: i32 = verified::lean_output::text(output, capacity, position,
-        "\nprivate instance : Lanius.TypedIR.Named.Code ", 46);
-    next = verified::lean_syntax::type_identifier(output, capacity,
-        next, names, row.id);
-    next = verified::lean_output::text(output, capacity, next,
-        " where ty := ", 13);
+        "\nattribute [lanius_type ", 24);
     if (row.kind == ir::type_catalog::Structure) {
         next = verified::lean_output::text(output, capacity, next,
-            "(.structure ", 12);
+            "record ", 7);
     } else {
         if (row.kind != ir::type_catalog::Enumeration) { return -1; }
         next = verified::lean_output::text(output, capacity, next,
-            "(.enumeration ", 14);
+            "enum ", 5);
     }
     next = verified::lean_output::natural(output, capacity, next,
         row.id);
-    return verified::lean_output::text(output, capacity, next, ")\n", 2);
-}
-
-fn variant_value(output: [i32], capacity: i32, position: i32,
-    types: ir::type_catalog::Table, names: ir::symbol_catalog::Catalog,
-    row: ir::type_catalog::TypeDecl, ordinal: i32) -> i32 {
-    let slot: i32 = row.variant_start + ordinal;
-    let variants: [ir::type_catalog::Variant] = types.variants;
-    let fields: [ir::type_catalog::Field] = types.fields;
-    let variant: ir::type_catalog::Variant = variants[slot];
-    let next: i32 = verified::lean_output::text(output, capacity,
-        position, "\nprivate def ", 13);
-    next = verified::lean_syntax::variant_identifier(output,
-        capacity, next, names, slot);
-    next = verified::lean_output::text(output, capacity, next,
-        " : Lanius.TypedIR.Named.Variant ", 32);
-    next = verified::lean_syntax::type_identifier(output, capacity,
-        next, names, row.id);
-    next = verified::lean_output::text(output, capacity, next, " [", 2);
-    let field: i32 = 0;
-    while (field < variant.field_count) {
-        if (field != 0) {
-            next = verified::lean_output::text(output, capacity,
-                next, ", ", 2);
-        }
-        next = field_type(output, capacity, next, types, names,
-            fields[variant.field_start + field]);
-        if (next < 0) { return -1; }
-        field += 1;
-    }
-    next = verified::lean_output::text(output, capacity, next,
-        "] :=\n  Lanius.TypedIR.Named.Variant.named ", 42);
-    next = verified::lean_output::natural(output, capacity, next, row.id);
-    next = verified::lean_output::byte(output, capacity, next, 32);
-    next = verified::lean_output::natural(output, capacity, next, ordinal);
-    next = verified::lean_output::byte(output, capacity, next, 32);
-    if (names.unit_count == 0) {
-        next = verified::lean_output::text(output, capacity, next,
-            "\"\"", 2);
-    } else {
-        if (slot < 0 || slot >= names.variant_count) { return -1; }
-        let references: [ir::symbol_catalog::Ref] = names.variants;
-        next = verified::lean_syntax::source_name(output, capacity, next,
-            names, references[slot]);
-    }
-    return verified::lean_output::text(output, capacity, next,
-        " (by rfl)\n", 10);
+    next = verified::lean_output::text(output, capacity, next, "] ", 2);
+    next = verified::lean_syntax::type_identifier(output, capacity, next, names, row.id);
+    return verified::lean_output::byte(output, capacity, next, 10);
 }
 
 pub fn emit(output: [i32], capacity: i32, position: i32,
@@ -214,8 +161,12 @@ pub fn emit(output: [i32], capacity: i32, position: i32,
     let emitted: [i32] = verified::host::i32_slice_from_raw_parts(
         memory, types.type_count);
     let rows: [ir::type_catalog::TypeDecl] = types.types;
+    // Source labels need constructors and induction/equality support, not
+    // automatically generated size functions and their specification proofs.
+    // Limit this choice to emitted types; later Lean declarations keep their
+    // normal options and can derive SizeOf explicitly when a proof needs it.
     let next: i32 = verified::lean_output::text(output, capacity,
-        position, "\n", 1);
+        position, "\nsection\nset_option genSizeOf false\n", 36);
     let index: i32 = 0;
     while (index < types.type_count) {
         emitted[index] = 0;
@@ -254,24 +205,11 @@ pub fn emit(output: [i32], capacity: i32, position: i32,
         next = verified::lean_output::text(output, capacity, next,
             "end\n", 4);
     }
+    next = verified::lean_output::text(output, capacity, next, "\nend\n", 5);
     index = 0;
     while (index < types.type_count) {
-        next = code_instance(output, capacity, next, names, rows[index]);
+        next = nominal_identity(output, capacity, next, names, rows[index]);
         if (next < 0) { return -1; }
-        index += 1;
-    }
-    index = 0;
-    while (index < types.type_count) {
-        let row: ir::type_catalog::TypeDecl = rows[index];
-        if (row.kind == ir::type_catalog::Enumeration) {
-            let ordinal: i32 = 0;
-            while (ordinal < row.variant_count) {
-                next = variant_value(output, capacity, next, types,
-                    names, row, ordinal);
-                if (next < 0) { return -1; }
-                ordinal += 1;
-            }
-        }
         index += 1;
     }
     return next;

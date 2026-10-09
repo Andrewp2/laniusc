@@ -1,0 +1,26 @@
+module app::main;
+
+import app::namespace;
+
+enum Type { example, instance }
+
+fn main() -> i32 {
+    let chosen: Type = instance;
+    return app::namespace::theorem() + theorem() + ref(theorem() + 4) + match (chosen) {
+        example => 0,
+        instance => 9,
+    };
+}
+
+// The references are named independently of definition order, and retain
+// the owning module even when another function has the same spelling.
+fn theorem() -> i32 { return 0; }
+fn ref(value: i32) -> i32 { return even(value); }
+fn even(value: i32) -> i32 {
+    if (value == 0) { return 0; }
+    return odd(value - 1);
+}
+fn odd(value: i32) -> i32 {
+    if (value == 0) { return 1; }
+    return even(value - 1);
+}

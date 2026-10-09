@@ -134,10 +134,11 @@ theorem wrapSigned_i32_nat_lt
 
 theorem evalPlace_local_of_local?
     (fuel : Nat) (program : Program) (state : State)
+    (access : PlaceAccess)
     (id : VarId) (cell : CellId) (value : Value)
     (cellFound : state.cellId? id = some cell)
     (localFound : state.local? id = some value) :
-    evalPlace fuel.succ program state (.local id) =
+    evalPlace fuel.succ program state access (.local id) =
       .done { root := cell, projections := [], value := some value } state := by
   simp only [evalPlace.eq_def, cellFound]
   unfold State.local? at localFound
@@ -150,7 +151,7 @@ theorem evalPlace_local_of_local?
       cases entryValue with
       | none => simp [State.cell?, valueFound] at localFound
       | some entryValue =>
-        simp_all [State.cell?]
+        cases access <;> simp_all [State.cell?]
 
 theorem evalExpr_assign_add_i32_local
     (fuel : Nat) (program : Program) (state : State)
@@ -163,7 +164,7 @@ theorem evalExpr_assign_add_i32_local
     evalExpr fuel.succ.succ program state
       (.assign .add (.local id) (.value (.signed .i32 increment))) =
       .done .unit after := by
-  have place := evalPlace_local_of_local? fuel program state id cell
+  have place := evalPlace_local_of_local? fuel program state .read id cell
     (.signed .i32 current) cellFound localFound
   have right := evalExpr_value fuel program state
     (.signed .i32 increment)

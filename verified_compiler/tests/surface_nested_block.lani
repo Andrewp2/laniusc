@@ -1,0 +1,15 @@
+module app::main;
+
+fn main() -> i32 {
+    let result: i32 = 0;
+    {
+        result = 1;
+        {
+            let value: i32 = 7;
+            result = value;
+        }
+    }
+    let value: bool = true;
+    if (value) { return result; }
+    return 0;
+}

@@ -285,12 +285,14 @@ pub fn literal(source: Source, work: backend::frame::Workspace,
     };
 }
 
-pub fn string_data(node: Expression) -> ptr {
+pub fn string_value(node: Expression) -> ir::body_events::StringValue {
     let nowhere: ptr = 0;
+    let absent: ir::body_events::StringValue = ir::body_events::StringValue {
+        data: slice_from_raw_parts(nowhere, 0), length: -1,
+    };
     return match (node.event) {
-        ir::body_events::ExpressionString(value) ->
-            verified::host::i32_slice_data_ptr(value.data),
-        _ -> nowhere,
+        ir::body_events::ExpressionString(value) -> value,
+        _ -> absent,
     };
 }
 

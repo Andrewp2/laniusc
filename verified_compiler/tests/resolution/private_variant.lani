@@ -1,0 +1,7 @@
+module app::main;
+import call::left;
+
+fn main() -> i32 {
+    let hidden = call::left::Secret(7);
+    return 0;
+}

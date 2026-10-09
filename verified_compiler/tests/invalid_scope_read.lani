@@ -1,0 +1,3 @@
+module app::main;
+
+fn main() -> i32 { return absent; }

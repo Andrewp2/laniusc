@@ -1,0 +1,7 @@
+module app::main;
+
+import choice::types;
+
+fn main() -> i32 {
+    return choice::types::code(4);
+}

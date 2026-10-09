@@ -13,8 +13,10 @@ const STRING_ALIGNMENT: i32 = 4;
 const GUARD_SEQUENCE_BYTES: i32 = 8;
 
 // Internal ABI: RDI points to an immutable [data, byte_length] descriptor;
-// RAX returns a fresh four-aligned copy, including for empty strings. Borrow
-// metadata remains a storage obligation; this helper does not implement free.
+// RAX returns a fresh four-aligned copy, including for empty strings. The
+// zero-filled allocation includes the final packed i32 word's padding; the
+// descriptor's byte length still excludes padding. Borrow metadata remains a
+// storage obligation; this helper does not implement free.
 pub fn pointer(output: [i32], capacity: i32, cursor: i32) -> i32 {
     let next: i32 = x86::control::push(output, capacity, cursor, x86::register::RBP);
     next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_64, x86::register::RBP, x86::register::RSP);

@@ -14,7 +14,7 @@ import verified::surface_type;
 import verified::surface_expr;
 import verified::surface_declaration;
 import verified::syntax_tree;
-import verified::surface_atoms;
+import verified::utf8;
 import verified::parser;
 import verified::token;
 import verified::ascii;
@@ -261,7 +261,7 @@ fn append_constant(context: SignatureContext, declaration: i32, id: i32,
             || token_finish - token_start <= 1
             || source[token_start] != verified::ascii::QUOTE
             || source[token_finish - 1] != verified::ascii::QUOTE
-            || !verified::surface_atoms::valid_utf8(source, source_length,
+            || !verified::utf8::valid_interval(source, source_length,
                 token_start + 1, token_finish - 1)) { return false; }
         let index: i32 = token_start + 1;
         while (index < token_finish - 1) {

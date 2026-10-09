@@ -17,6 +17,15 @@ if (($# < 2)); then
 fi
 cd "$root/formal"
 
+bash ../verified_compiler/tests/resolution_visibility_check.sh "$extractor" "$compiler"
+lake env lean -R .. --run ../verified_compiler/tests/direct_named_scope.lean
+lake env lean -R .. ../verified_compiler/tests/direct_named_intrinsics.lean
+lake env lean -R .. ../verified_compiler/tests/direct_named_application.lean
+lake env lean -R .. ../verified_compiler/tests/direct_named_declarations.lean
+lake env lean -R .. ../verified_compiler/tests/direct_named_constructor_syntax.lean
+bash ../verified_compiler/tests/direct_nested_scope_check.sh "$extractor" "$compiler"
+bash ../verified_compiler/tests/direct_public_runtime_check.sh "$extractor" "$compiler"
+
 source_path=../verified_compiler/tests/extract_return_code.lani
 module=.lake/build/GeneratedDirectCore.lean
 olean=.lake/build/GeneratedDirectCore.olean
@@ -64,12 +73,64 @@ if "$compiler" \
 fi
 echo "normal x86 compiler rejects the same invalid expression"
 
+# String literals stay readable and preserve their exact UTF-8 bytes,
+# including escapes and embedded NUL. A same-typed content change is rejected.
+string_source=../verified_compiler/tests/surface_string_values.lani
+"$extractor" --lean-checked "$string_source" > "$module"
+if rg -q 'Lanius.TypedIR.Surface.Stmt.mk|\{ core :=' "$module"; then
+  echo "string fixture fell back to raw Core syntax" >&2
+  exit 1
+fi
+lake env lean -R .lake/build -o "$olean" "$module"
+LEAN_PATH="$lean_path" lake env lean -R .. \
+  ../verified_compiler/tests/direct_named_string_values.lean
+LEAN_PATH="$lean_path" lake env lean -R .. --run \
+  ../verified_compiler/tests/direct_typed_core_check.lean "$string_source"
+LEAN_PATH="$lean_path" lake env lean -R .. --run \
+  ../verified_compiler/tests/direct_typed_core_check.lean --mutate-string "$string_source"
+echo "source-shaped Lean strings preserve bytes and reject changed content"
+
+# Numeric conversions, pointer arithmetic, and nominal raw slices use typed
+# intrinsic applications. Check their execution against the normal x86 path.
+for primitive_case in numeric_conversions memory; do
+  primitive_source=../verified_compiler/tests/surface_numeric_conversions.lani
+  expected_status=37
+  if [[ "$primitive_case" == memory ]]; then
+    primitive_source=../verified_compiler/tests/typed_slice_direct_return.lani
+    expected_status=30
+  fi
+  "$extractor" --lean-checked "$primitive_source" > "$module"
+  if rg -q 'Lanius.TypedIR.Surface.Stmt.mk|\{ core :=' "$module"; then
+    echo "$primitive_case fixture fell back to raw Core syntax" >&2
+    exit 1
+  fi
+  lake env lean -R .lake/build -o "$olean" "$module"
+  LEAN_PATH="$lean_path" lake env lean -R .. \
+    "../verified_compiler/tests/direct_named_${primitive_case}.lean"
+  primitive_binary=../target/verified-compiler/direct-${primitive_case}-x86.elf
+  "$compiler" "$primitive_source" > "$primitive_binary"
+  chmod +x "$primitive_binary"
+  primitive_status=0
+  timeout 5s "$primitive_binary" || primitive_status=$?
+  if [[ "$primitive_status" -ne "$expected_status" ]]; then
+    echo "$primitive_case x86 execution returned $primitive_status, expected $expected_status" >&2
+    exit 1
+  fi
+done
+for invalid_case in invalid_generic_slice_pointer invalid_generic_slice_length lean_reject_descriptor_raw_slice; do
+  if "$extractor" "../verified_compiler/tests/${invalid_case}.lani" > /dev/null 2>&1; then
+    echo "direct Lean emitter accepted unsupported slice input: $invalid_case" >&2
+    exit 1
+  fi
+done
+echo "typed numeric and memory intrinsics agree with x86; invalid slices rejected"
+
 # Two source units exercise import resolution and a cross-unit call.
 main_source=../verified_compiler/tests/qualified_call_main.lani
 auxiliary_source=../verified_compiler/tests/compiler_certificate_auxiliary.lani
 "$extractor" --lean-checked "$main_source" "$auxiliary_source" > "$module"
-if ! rg -q '^private def extractedFunction0_main : Lanius.TypedIR.Named.Function' "$module" \
-  || ! rg -q '^private def extractedFunction1_auxiliary : Lanius.TypedIR.Named.Function' "$module"; then
+if ! rg -Fq 'def Extracted.«app::main».Functions.«main» : Lanius.TypedIR.Surface.Function' "$module" \
+  || ! rg -Fq 'def Extracted.«app::auxiliary».Functions.«auxiliary» : Lanius.TypedIR.Surface.Function' "$module"; then
   echo "direct Lean output lost source function names" >&2
   exit 1
 fi
@@ -170,13 +231,13 @@ for match_case in nullary payload; do
     exit 1
   fi
   if ! rg -q '^  function \(id := .*bindings := \[' "$module" \
-    || ! rg -q '^    let «selected» : .* := extractedVariant' "$module" \
+    || ! rg -q '^    let «selected» : .* := \(\.«' "$module" \
     || ! rg -q '^    return match «selected» with' "$module" \
-    || ! rg -q '^      \| extractedVariant' "$module"; then
+    || ! rg -q '^      \| \.«' "$module"; then
     echo "direct Lean output lost the source-shaped enum-match body" >&2
     exit 1
   fi
-  if rg -q 'Lanius.TypedIR.Named.Stmt.mk|\{ core :=' "$module"; then
+  if rg -q 'Lanius.TypedIR.Surface.Stmt.mk|\{ core :=' "$module"; then
     echo "representative enum match fell back to raw Core syntax" >&2
     exit 1
   fi
@@ -187,6 +248,10 @@ for match_case in nullary payload; do
     ../verified_compiler/tests/direct_enum_match_check.lean "$match_source"
   LEAN_PATH="$lean_path" lake env lean -R .. \
     ../verified_compiler/tests/direct_core_semantics.lean
+  if [[ "$match_case" == payload ]]; then
+    LEAN_PATH="$lean_path" lake env lean -R .. \
+      ../verified_compiler/tests/direct_public_enum.lean
+  fi
   match_binary=../target/verified-compiler/direct-match-${match_case}-x86.elf
   "$compiler" "$match_source" > "$match_binary"
   chmod +x "$match_binary"
@@ -202,18 +267,29 @@ for match_case in nullary payload; do
   echo "${match_case} match execution agrees in checked Lean and x86"
 done
 
-# The proof-backed typed IR boundary accepts this directly emitted program,
+# The emitted program retains its entrypoint; independent checking is only
+# a test oracle, not a dependency of normal Lean output.
+compositional_module=.lake/build/GeneratedCompositional.lean
+compositional_olean=.lake/build/GeneratedCompositional.olean
+"$extractor" --lean-checked \
+  ../verified_compiler/tests/enum_match_payload_direct_lean.lani \
+  > "$compositional_module"
+lake env lean -R .lake/build -o "$compositional_olean" "$compositional_module"
+LEAN_PATH="$lean_path" lake env lean -R .. \
+  ../verified_compiler/tests/direct_compositional_link.lean
+
+# The independent typing oracle accepts this directly emitted program,
 # while the same body with a wrong function result type is rejected.
 LEAN_PATH="$lean_path" lake env lean -R .. \
   ../verified_compiler/tests/typed_ir_boundary.lean
 
 # A source-shaped enum match with nested arithmetic must retain the exact
-# Core semantics, link to a proof-carrying program, and agree with x86.
+# Core semantics and agree with x86.
 arithmetic_source=../verified_compiler/tests/surface_enum_arithmetic.lani
 "$extractor" --lean-checked "$arithmetic_source" > "$module"
 if ! rg -q '^    return match «selected» with' "$module" \
   || ! rg -q '«value» \+ 2' "$module" \
-  || ! rg -q '^def extractedTypedProgram : Option Lanius.TypedIR.Program :=' "$module"; then
+  || ! rg -q '^def extractedProgram : Lanius.Core.Program :=' "$module"; then
   echo "direct Lean output lost the source-shaped checked program" >&2
   exit 1
 fi
@@ -235,3 +311,273 @@ if [[ "$arithmetic_status" -ne 18 ]]; then
   exit 1
 fi
 echo "checked Lean enum arithmetic agrees with x86"
+
+# Multiple constructor payloads and match binders use the same source-shaped
+# path. The nested arithmetic payload must erase to the exact source Core IR.
+multi_source=../verified_compiler/tests/surface_enum_multi_payload.lani
+"$extractor" --lean-checked "$multi_source" > "$module"
+if ! rg -Fq '.«Pair» ((3 + 4)) (5)' "$module" \
+  || ! rg -Fq '| .«Pair» «left» «right» =>' "$module"; then
+  echo "direct Lean output lost multi-payload source syntax" >&2
+  exit 1
+fi
+if rg -q 'Lanius.TypedIR.Surface.Stmt.mk|\{ core :=' "$module"; then
+  echo "multi-payload match fell back to raw Core syntax" >&2
+  exit 1
+fi
+if ! rg -q '^def extractedProgram : Lanius.Core.Program :=' "$module"; then
+  echo "direct Lean output lost direct Core program" >&2
+  exit 1
+fi
+lake env lean -R .lake/build -o "$olean" "$module"
+LEAN_PATH="$lean_path" lake env lean -R .. \
+  ../verified_compiler/tests/direct_named_multi_payload.lean
+LEAN_PATH="$lean_path" lake env lean -R .. --run \
+  ../verified_compiler/tests/direct_typed_core_check.lean "$multi_source"
+multi_binary=../target/verified-compiler/direct-multi-payload-x86.elf
+"$compiler" "$multi_source" > "$multi_binary"
+chmod +x "$multi_binary"
+if timeout 5s "$multi_binary"; then
+  multi_status=0
+else
+  multi_status=$?
+fi
+if [[ "$multi_status" -ne 37 ]]; then
+  echo "x86 multi-payload match returned $multi_status instead of 37" >&2
+  exit 1
+fi
+echo "checked Lean multi-payload match agrees with x86"
+
+# Parameter names are Lean bindings backed by the exact resolved IR IDs.
+# Calls resolve through signatures declared before bodies, including forward
+# calls and a nested zero-argument call.
+parameter_source=../verified_compiler/tests/surface_parameter_arithmetic.lani
+"$extractor" --lean-checked "$parameter_source" > "$module"
+if ! rg -Fq 'arguments := [«value» := ' "$module" \
+  || ! rg -Fq 'return («value» + 1)' "$module" \
+  || ! rg -Fq 'return Extracted.«app::main».Functions.«increment» (Extracted.«app::main».Functions.«seed» ())' "$module"; then
+  echo "direct Lean output lost source-shaped parameters or calls" >&2
+  exit 1
+fi
+if rg -q 'Lanius.TypedIR.Surface.Stmt.mk|\{ core :=' "$module"; then
+  echo "parameter/call fixture fell back to raw Core syntax" >&2
+  exit 1
+fi
+if ! rg -q '^def extractedProgram : Lanius.Core.Program :=' "$module"; then
+  echo "direct Lean output lost direct Core program" >&2
+  exit 1
+fi
+lake env lean -R .lake/build -o "$olean" "$module"
+LEAN_PATH="$lean_path" lake env lean -R .. \
+  ../verified_compiler/tests/direct_named_parameter.lean
+LEAN_PATH="$lean_path" lake env lean -R .. --run \
+  ../verified_compiler/tests/direct_typed_core_check.lean "$parameter_source"
+parameter_binary=../target/verified-compiler/direct-parameter-x86.elf
+"$compiler" "$parameter_source" > "$parameter_binary"
+chmod +x "$parameter_binary"
+if timeout 5s "$parameter_binary"; then
+  parameter_status=0
+else
+  parameter_status=$?
+fi
+if [[ "$parameter_status" -ne 7 ]]; then
+  echo "x86 parameter call returned $parameter_status instead of 7" >&2
+  exit 1
+fi
+echo "checked Lean parameter function agrees with x86"
+
+# A reusable Boolean/comparison expression rule covers parameterized helpers.
+comparison_source=../verified_compiler/tests/surface_boolean_comparison.lani
+"$extractor" --lean-checked "$comparison_source" > "$module"
+if ! rg -Fq 'return ((«value» >= 7) && («value» != 9))' "$module" \
+  || ! rg -Fq 'if Extracted.«app::main».Functions.«accepted» (7) then' "$module" \
+  || ! rg -Fq 'if («value» > 0) then' "$module"; then
+  echo "direct Lean output lost source-shaped comparison or control flow" >&2
+  exit 1
+fi
+if rg -q 'Lanius.TypedIR.Surface.Stmt.mk|\{ core :=' "$module"; then
+  echo "comparison/control-flow fixture fell back to raw Core syntax" >&2
+  exit 1
+fi
+if ! rg -q '^def extractedProgram : Lanius.Core.Program :=' "$module"; then
+  echo "direct Lean output lost direct Core program" >&2
+  exit 1
+fi
+lake env lean -R .lake/build -o "$olean" "$module"
+LEAN_PATH="$lean_path" lake env lean -R .. \
+  ../verified_compiler/tests/direct_named_comparison.lean
+LEAN_PATH="$lean_path" lake env lean -R .. --run \
+  ../verified_compiler/tests/direct_typed_core_check.lean "$comparison_source"
+comparison_binary=../target/verified-compiler/direct-comparison-x86.elf
+"$compiler" "$comparison_source" > "$comparison_binary"
+chmod +x "$comparison_binary"
+if timeout 5s "$comparison_binary"; then
+  comparison_status=0
+else
+  comparison_status=$?
+fi
+if [[ "$comparison_status" -ne 1 ]]; then
+  echo "x86 Boolean comparison returned $comparison_status instead of 1" >&2
+  exit 1
+fi
+echo "checked Lean Boolean comparison agrees with x86"
+
+# Fields retain source names from their declaration unit. Nested projections
+# distinguish same-named fields on different owners; construction uses source
+# order different from declaration order. The checker rejects a same-typed
+# but wrong field even though that altered Core program remains well typed.
+field_source=../verified_compiler/tests/surface_struct_fields.lani
+field_types=../verified_compiler/tests/surface_struct_types.lani
+"$extractor" --lean-checked "$field_source" "$field_types" > "$module"
+if ! rg -Fq 'return ((«record»).«value»).«value»' "$module" \
+  || ! rg -q '^def extractedProgram : Lanius.Core.Program :=' "$module"; then
+  echo "direct Lean output lost source-shaped nested fields or the Core program" >&2
+  exit 1
+fi
+if rg -q 'Lanius.TypedIR.Surface.Stmt.mk|\{ core :=' "$module"; then
+  echo "record fixture fell back to raw Core syntax" >&2
+  exit 1
+fi
+lake env lean -R .. ../verified_compiler/tests/direct_named_record_syntax.lean
+lake env lean -R .lake/build -o "$olean" "$module"
+LEAN_PATH="$lean_path" lake env lean -R .. --run \
+  ../verified_compiler/tests/direct_named_fields.lean "$field_source" "$field_types"
+field_binary=../target/verified-compiler/direct-fields-x86.elf
+"$compiler" "$field_source" "$field_types" > "$field_binary"
+chmod +x "$field_binary"
+field_status=0
+timeout 5s "$field_binary" || field_status=$?
+if [[ "$field_status" -ne 7 ]]; then
+  echo "x86 nested fields returned $field_status instead of 7" >&2
+  exit 1
+fi
+echo "checked Lean cross-module nested fields agree with x86"
+
+# Both the selected payload and wildcard arm execute; unary operators retain
+# their Core identity instead of being folded away by source notation.
+unary_source=../verified_compiler/tests/surface_unary_wildcard.lani
+"$extractor" --lean-checked "$unary_source" > "$module"
+if rg -q 'Lanius.TypedIR.Surface.Stmt.mk|\{ core :=' "$module"; then
+  echo "unary/wildcard fixture fell back to raw Core syntax" >&2
+  exit 1
+fi
+lake env lean -R .lake/build -o "$olean" "$module"
+LEAN_PATH="$lean_path" lake env lean -R .. \
+  ../verified_compiler/tests/direct_named_unary_wildcard.lean
+LEAN_PATH="$lean_path" lake env lean -R .. --run \
+  ../verified_compiler/tests/direct_typed_core_check.lean "$unary_source"
+unary_binary=../target/verified-compiler/direct-unary-x86.elf
+"$compiler" "$unary_source" > "$unary_binary"
+chmod +x "$unary_binary"
+unary_status=0
+timeout 5s "$unary_binary" || unary_status=$?
+if [[ "$unary_status" -ne 7 ]]; then
+  echo "x86 unary/wildcard fixture returned $unary_status instead of 7" >&2
+  exit 1
+fi
+echo "checked Lean unary operators and wildcard arms agree with x86"
+
+# Mutation targets share the typed IR's field and local identities. Check
+# both zero/multiple loop iterations and a type-preserving operator mutation.
+mutation_source=../verified_compiler/tests/surface_mutation_loop.lani
+"$extractor" --lean-checked "$mutation_source" > "$module"
+if rg -q 'Lanius.TypedIR.Surface.Stmt.mk|\{ core :=' "$module"; then
+  echo "mutation/loop fixture fell back to raw Core syntax" >&2
+  exit 1
+fi
+lake env lean -R .lake/build -o "$olean" "$module"
+LEAN_PATH="$lean_path" lake env lean -R .. \
+  ../verified_compiler/tests/direct_named_mutation_loop.lean
+LEAN_PATH="$lean_path" lake env lean -R .. --run \
+  ../verified_compiler/tests/direct_typed_core_check.lean "$mutation_source"
+LEAN_PATH="$lean_path" lake env lean -R .. --run \
+  ../verified_compiler/tests/direct_typed_core_check.lean --mutate-assignment "$mutation_source"
+mutation_binary=../target/verified-compiler/direct-mutation-x86.elf
+"$compiler" "$mutation_source" > "$mutation_binary"
+chmod +x "$mutation_binary"
+mutation_status=0
+timeout 5s "$mutation_binary" || mutation_status=$?
+if [[ "$mutation_status" -ne 15 ]]; then
+  echo "x86 mutation/loop fixture returned $mutation_status instead of 15" >&2
+  exit 1
+fi
+echo "checked Lean mutation and loops agree with x86"
+
+# Declarations without initializers and void returns retain their exact Core
+# forms. A well-typed but invented zero initializer must fail source agreement.
+declaration_source=../verified_compiler/tests/surface_local_declarations.lani
+"$extractor" --lean-checked "$declaration_source" > "$module"
+if rg -q 'Lanius.TypedIR.Surface.Stmt.mk|\{ core :=' "$module"; then
+  echo "local declaration fixture fell back to raw Core syntax" >&2
+  exit 1
+fi
+lake env lean -R .lake/build -o "$olean" "$module"
+LEAN_PATH="$lean_path" lake env lean -R .. \
+  ../verified_compiler/tests/direct_named_local_declarations.lean
+LEAN_PATH="$lean_path" lake env lean -R .. --run \
+  ../verified_compiler/tests/direct_typed_core_check.lean "$declaration_source"
+LEAN_PATH="$lean_path" lake env lean -R .. --run \
+  ../verified_compiler/tests/direct_typed_core_check.lean --mutate-initializer "$declaration_source"
+declaration_binary=../target/verified-compiler/direct-declarations-x86.elf
+"$compiler" "$declaration_source" > "$declaration_binary"
+chmod +x "$declaration_binary"
+declaration_status=0
+timeout 5s "$declaration_binary" || declaration_status=$?
+if [[ "$declaration_status" -ne 16 ]]; then
+  echo "x86 local declarations returned $declaration_status instead of 16" >&2
+  exit 1
+fi
+echo "checked Lean local declarations and void returns agree with x86"
+
+# Division/remainder and bit operations retain Lanius signed semantics.
+integer_source=../verified_compiler/tests/surface_integer_operators.lani
+"$extractor" --lean-checked "$integer_source" > "$module"
+if rg -q 'Lanius.TypedIR.Surface.Stmt.mk|\{ core :=' "$module"; then
+  echo "integer operator fixture fell back to raw Core syntax" >&2
+  exit 1
+fi
+lake env lean -R .lake/build -o "$olean" "$module"
+LEAN_PATH="$lean_path" lake env lean -R .. \
+  ../verified_compiler/tests/direct_named_integer_operators.lean
+LEAN_PATH="$lean_path" lake env lean -R .. --run \
+  ../verified_compiler/tests/direct_typed_core_check.lean "$integer_source"
+LEAN_PATH="$lean_path" lake env lean -R .. --run \
+  ../verified_compiler/tests/direct_typed_core_check.lean --mutate-division "$integer_source"
+integer_binary=../target/verified-compiler/direct-integer-operators.elf
+"$compiler" "$integer_source" > "$integer_binary"
+chmod +x "$integer_binary"
+integer_status=0
+timeout 5s "$integer_binary" || integer_status=$?
+if [[ "$integer_status" -ne 37 ]]; then
+  echo "x86 integer fixture returned $integer_status instead of 37" >&2
+  exit 1
+fi
+echo "checked Lean integer operators agree with x86"
+
+# Constants and slice indexing retain their resolved references. The separate
+# source-to-Core checker does not yet model this fixture's allocation and
+# raw slice construction; these checks establish local representation
+# and matching Lean/native execution, not the open extractor correctness proof.
+slice_source=../verified_compiler/tests/surface_slice_constant_index.lani
+"$extractor" --lean-checked "$slice_source" > "$module"
+if ! rg -Fq 'return «values»[Extracted.«app::main».Constants.«SLOT»]' "$module" \
+  || ! rg -q '^def extractedProgram : Lanius.Core.Program :=' "$module"; then
+  echo "direct Lean output lost typed slice-index syntax" >&2
+  exit 1
+fi
+lake env lean -R .lake/build -o "$olean" "$module"
+LEAN_PATH="$lean_path" lake env lean -R .. \
+  ../verified_compiler/tests/direct_named_slice_index.lean
+slice_binary=../target/verified-compiler/direct-slice-index-x86.elf
+"$compiler" "$slice_source" > "$slice_binary"
+chmod +x "$slice_binary"
+if timeout 5s "$slice_binary"; then
+  slice_status=0
+else
+  slice_status=$?
+fi
+if [[ "$slice_status" -ne 37 ]]; then
+  echo "x86 slice-index fixture returned $slice_status instead of 37" >&2
+  exit 1
+fi
+echo "typed Lean slice mutation and x86 execution agree"

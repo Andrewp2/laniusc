@@ -1,0 +1,13 @@
+module app::main;
+
+fn increment(value: i32) -> i32 {
+    return value + 1;
+}
+
+fn seed() -> i32 {
+    return 6;
+}
+
+fn main() -> i32 {
+    return increment(seed());
+}

@@ -1,0 +1,22 @@
+module app::main;
+
+fn literal(node: i32) -> i32 {
+    if (node < 0) { return 1; }
+    if (node > (0)) { return 7; }
+    return 0;
+}
+
+fn identifier(node: i32, limit: i32) -> i32 {
+    if (node < limit) { return 1; }
+    if (node > (limit)) { return 7; }
+    return 0;
+}
+
+fn main() -> i32 {
+    if (literal(-1) != 1 || literal(0) != 0 || literal(1) != 7) {
+        return 2;
+    }
+    if (identifier(0, 1) != 1 || identifier(1, 1) != 0
+        || identifier(2, 1) != 7) { return 3; }
+    return 37;
+}

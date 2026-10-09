@@ -26,6 +26,13 @@ theorem execStmt_ifThenElse
 
 namespace StableStmt
 
+theorem returnValue (run : StableExpr threshold program state argument value after) :
+    StableStmt (threshold + 1) program state (.returnValue (some argument))
+      (.returned (some value)) after := by
+  intro fuel enough
+  simpa [show fuel - 1 + 1 = fuel by omega] using
+    execStmt_return (fuel - 1) program state argument value after (run (fuel - 1) (by omega))
+
 theorem sequence_next
     {firstFuel secondFuel : Nat} {program : Program}
     {state middle after : State} {first second : Stmt} {completion : Completion}
@@ -93,15 +100,7 @@ theorem StableStmt.returnValueSequence
     (run : StableExpr fuel program state argument result after) :
     StableStmt (fuel + 2) program state
       (.sequence (.returnValue (some argument)) .skip)
-      (.returned (some result)) after := by
-  intro enoughFuel bound
-  have returned := execStmt_return (fuel := enoughFuel - 2) program state argument result after
-    (run (enoughFuel - 2) (by omega))
-  have returned' : execStmt (enoughFuel - 1) program state
-      (.returnValue (some argument)) = .done (.returned (some result)) after := by
-    simpa [show enoughFuel - 2 + 1 = enoughFuel - 1 by omega] using returned
-  have sequence := execStmt_sequence_completed (fuel := enoughFuel - 1) program state
-    (.returnValue (some argument)) .skip (.returned (some result)) after returned' (by simp)
-  simpa [show enoughFuel - 1 + 1 = enoughFuel by omega] using sequence
+      (.returned (some result)) after :=
+  StableStmt.sequence_completed (StableStmt.returnValue run) (by simp)
 
 end Lanius.Semantics

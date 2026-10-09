@@ -1,0 +1,20 @@
+module app::runtime;
+
+pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+extern "lanius_std" fn open_read(path: ptr, length: usize) -> i32;
+extern "lanius_std" fn close(handle: i32) -> i32;
+extern "lanius_std" fn read(handle: i32, data: ptr, length: usize) -> i32;
+extern "lanius_std" fn write_stdout(data: ptr, length: usize) -> i32;
+extern "lanius_std" fn write_byte(handle: i32, value: i32) -> i32;
+extern "lanius_std" fn argc() -> i32;
+extern "lanius_std" fn arg_len(index: i32) -> i32;
+extern "lanius_std" fn arg_read(index: i32, data: ptr, length: usize) -> i32;
+
+fn main() -> i32 {
+    let size: usize = 8;
+    let alignment: usize = 8;
+    let memory: ptr = alloc(size, alignment);
+    if (memory == 0) { return 1; }
+    if (argc() <= 0) { return 2; }
+    return 7;
+}

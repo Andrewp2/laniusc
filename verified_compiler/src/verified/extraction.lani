@@ -11,7 +11,9 @@ import verified::token;
 // extractor, semantic collection, and aggregate lowering.
 pub const SOURCE_BYTE_CAPACITY: i32 = 65536;
 pub const TOKEN_KIND_CAPACITY: i32 = 65536;
-pub const PARSER_WORK_WORD_CAPACITY: i32 = 16777216;
+// 120 MiB retains at least the prior 96 MiB profile's state capacity throughout
+// the supported token range after adding ordered action queues.
+pub const PARSER_WORK_WORD_CAPACITY: i32 = 31457280;
 pub const PARSE_RECORD_WORD_CAPACITY: i32 = 1048576;
 pub const PARSE_NODE_CAPACITY: i32 = 131072;
 pub const DEFAULT_PARSE_DEPTH_LIMIT: i32 = 1024;

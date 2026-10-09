@@ -1,6 +1,6 @@
 import Lanius.Compiler.CoreBoundary
 import Lanius.Compiler.StructureCheck
-import Lanius.Compiler.ConstantCheck
+import Lanius.Compiler.ConstantGraphCheck
 import Lanius.Compiler.BodyCheck
 import Lanius.Compiler.SignatureCheck
 import Lanius.Compiler.FunctionContextCheck
@@ -33,7 +33,7 @@ def namedParametersSupported : List Surface.Parameter → Bool
 def supportedItem : Surface.Item → Bool
   | .module _ | .importPath _ => true
   | .function d => d.genericParameters.isEmpty && d.wherePredicates.isEmpty && namedParametersSupported d.parameters
-  | .externFunction d => d.abi.isNone && d.genericParameters.isEmpty && d.wherePredicates.isEmpty && namedParametersSupported d.parameters
+  | .externFunction d => d.genericParameters.isEmpty && d.wherePredicates.isEmpty && namedParametersSupported d.parameters
   | .constant _ _ _ _ => true
   | .typeAlias _ _ parameters predicates _ => parameters.isEmpty && predicates.isEmpty
   | .structure d => d.genericParameters.isEmpty && d.wherePredicates.isEmpty
@@ -63,7 +63,7 @@ theorem supportedPack_sound {pack : Declarations.SourcePack}
       exact ⟨itemAccepted.1.1, itemAccepted.1.2, namedParametersSupported_sound itemAccepted.2⟩
   | externFunction declaration =>
       simp [supportedItem] at itemAccepted
-      exact ⟨itemAccepted.1.1.1, itemAccepted.1.1.2, itemAccepted.1.2, namedParametersSupported_sound itemAccepted.2⟩
+      exact ⟨itemAccepted.1.1, itemAccepted.1.2, namedParametersSupported_sound itemAccepted.2⟩
   | constant _ _ _ _ => simp [SupportedItem]
   | typeAlias _ _ parameters predicates _ =>
       simp [supportedItem, SupportedItem] at itemAccepted
@@ -92,31 +92,6 @@ def structureLowering? (pack : Declarations.SourcePack) (catalog : Declarations.
                   sourceFound := sourceFound, source := hOcc, core := core, coreMap := hcore,
                   context := context, contextMatches := ⟨names, rfl, rfl, rfl, rfl, rfl, rfl⟩, noLocals := rfl }
               match StructureCheck.check candidate with
-              | .ok lowering => some lowering | .error _ => none
-          | _ => none
-      | _ => none
-  | _ => none
-
-def constantLowering? (pack : Declarations.SourcePack) (catalog : Declarations.Catalog) (program : Core.Program)
-    (environment : Names.Environment) (baseContext : SurfaceElaboration.Context) (rows : List (DeclarationLowering pack catalog program))
-    (entry : { row : DeclarationLowering pack catalog program // row ∈ rows })
-    (names : baseContext.names = environment) (target : program.target = baseContext.target) :
-    Option (ConstantLowering pack catalog program environment baseContext rows) :=
-  let row := entry.1
-  match hOcc : row.occurrence with
-  | .item address =>
-      match sourceFound : pack.item? address with
-      | some (.constant name isPublic surfaceType value) =>
-          match hcore : row.core with
-          | .constant core =>
-              let context := baseContext.forModule row.header.moduleId
-              let candidate : ConstantCheck.ConstantCandidate pack catalog program environment baseContext rows :=
-                { row := row, rowMember := entry.2, address := address, name := name, isPublic := isPublic,
-                  surfaceType := surfaceType, value := value, sourceFound := sourceFound, source := hOcc,
-                  core := core, coreMap := hcore, context := context,
-                  contextMatches := ⟨names, rfl, rfl, rfl, rfl, rfl, rfl⟩,
-                  target := by change program.target = baseContext.target; exact target, noLocals := rfl }
-              match ConstantCheck.check candidate with
               | .ok lowering => some lowering | .error _ => none
           | _ => none
       | _ => none
@@ -183,12 +158,6 @@ def structureLowerings (pack : Declarations.SourcePack) (catalog : Declarations.
     (rows : List (DeclarationLowering pack catalog program)) (names : baseContext.names = environment) :
     List (StructureLowering pack catalog program environment baseContext rows) :=
   rows.attach.filterMap (fun entry => structureLowering? pack catalog program environment baseContext rows entry names)
-
-def constantLowerings (pack : Declarations.SourcePack) (catalog : Declarations.Catalog)
-    (program : Core.Program) (environment : Names.Environment) (baseContext : SurfaceElaboration.Context)
-    (rows : List (DeclarationLowering pack catalog program)) (names : baseContext.names = environment)
-    (target : program.target = baseContext.target) : List (ConstantLowering pack catalog program environment baseContext rows) :=
-  rows.attach.filterMap (fun entry => constantLowering? pack catalog program environment baseContext rows entry names target)
 
 def bodyLowerings (pack : Declarations.SourcePack) (catalog : Declarations.Catalog)
     (program : Core.Program) (environment : Names.Environment) (baseContext : SurfaceElaboration.Context)
@@ -304,7 +273,9 @@ def checkInput
         if hEligible : supportedPack pack = true then
           let rows := checked.declarations.rows
           let structures := structureLowerings pack catalog program environment baseContext rows hNames
-          let constants := constantLowerings pack catalog program environment baseContext rows hNames hTarget.symm
+          let constantEvidence := ConstantGraphCheck.check
+            pack catalog program environment baseContext rows hNames hTarget.symm
+          let constants := constantEvidence.lowerings
           let bodies := bodyLowerings pack catalog program environment baseContext rows hNames hTarget.symm
           let externals := externalLowerings pack catalog program environment baseContext resolver rows hNames
           let structureCovered := coveredBy (packAddressesWhere isStructure pack) structures
@@ -381,6 +352,7 @@ def checkInput
                     externalsExact := externalExact
                     constants := constants
                     constantsExact := constantExact
+                    constantsInitialized := constantEvidence.initialized
                     enumerationsLowered := by
                       simpa only [canonical, EnumShapeCheck.RowShape] using checked.enumShapes.down
                     structuresUnique := checked.declarations.structuresIdsUnique

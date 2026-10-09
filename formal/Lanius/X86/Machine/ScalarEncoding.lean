@@ -435,34 +435,34 @@ theorem pop_decodes (destination : Register) : decode (popBytes destination) = s
 theorem return_decodes : decode returnBytes = some (.returnNear, returnBytes.length) := by
   simp [returnBytes, decode, decodeOpcode, X86.Register.Rex.decode?]
 
-private theorem decoded_step (before after : State) (bytes : List UInt8) (instruction : Instruction) (size : Nat) (loaded : CodeAt before.memory before.rip bytes) (decoded : decode bytes = some (instruction, size)) (result : after = execute instruction size before) : Step before after := Step.decoded bytes loaded instruction size decoded result
+private theorem decoded_step (before after : State) (bytes : List UInt8) (instruction : Instruction) (size : Nat) (loaded : CodeAt before.memory before.rip bytes) (decoded : decode bytes = some (instruction, size)) (result : after = execute instruction size before) (nonDivision : instruction.isDivision = false) : Step before after := Step.decoded bytes loaded instruction size decoded result nonDivision
 
-theorem move_step (before after : State) (width : X86.Register.Width) (destination source : Register) (loaded : CodeAt before.memory before.rip (moveBytes width destination source)) (result : after = execute (moveInstruction width destination source) (moveBytes width destination source).length before) : Step before after := by exact decoded_step before after _ _ _ loaded (move_decodes width destination source) result
+theorem move_step (before after : State) (width : X86.Register.Width) (destination source : Register) (loaded : CodeAt before.memory before.rip (moveBytes width destination source)) (result : after = execute (moveInstruction width destination source) (moveBytes width destination source).length before) : Step before after := by exact decoded_step before after _ _ _ loaded (move_decodes width destination source) result (by cases width <;> rfl)
 
-theorem immediate_step (before after : State) (width : X86.Register.Width) (destination : Register) (low high : BitVec 32) (loaded : CodeAt before.memory before.rip (immediateBytes width destination low high)) (result : after = execute (immediateInstruction width destination low high) (immediateBytes width destination low high).length before) : Step before after := by exact decoded_step before after _ _ _ loaded (immediate_decodes width destination low high) result
+theorem immediate_step (before after : State) (width : X86.Register.Width) (destination : Register) (low high : BitVec 32) (loaded : CodeAt before.memory before.rip (immediateBytes width destination low high)) (result : after = execute (immediateInstruction width destination low high) (immediateBytes width destination low high).length before) : Step before after := by exact decoded_step before after _ _ _ loaded (immediate_decodes width destination low high) result (by cases width <;> rfl)
 
-theorem signExtend_step (before after : State) (destination source : Register) (loaded : CodeAt before.memory before.rip (signExtendBytes destination source)) (result : after = execute (.signExtend32 destination source) (signExtendBytes destination source).length before) : Step before after := by exact decoded_step before after _ _ _ loaded (signExtend_decodes destination source) result
+theorem signExtend_step (before after : State) (destination source : Register) (loaded : CodeAt before.memory before.rip (signExtendBytes destination source)) (result : after = execute (.signExtend32 destination source) (signExtendBytes destination source).length before) : Step before after := by exact decoded_step before after _ _ _ loaded (signExtend_decodes destination source) result rfl
 
-theorem zeroExtendByte_step (before after : State) (destination source : Register) (loaded : CodeAt before.memory before.rip (zeroExtendByteBytes destination source)) (result : after = execute (.zeroExtendByte destination source) (zeroExtendByteBytes destination source).length before) : Step before after := by exact decoded_step before after _ _ _ loaded (zeroExtendByte_decodes destination source) result
+theorem zeroExtendByte_step (before after : State) (destination source : Register) (loaded : CodeAt before.memory before.rip (zeroExtendByteBytes destination source)) (result : after = execute (.zeroExtendByte destination source) (zeroExtendByteBytes destination source).length before) : Step before after := by exact decoded_step before after _ _ _ loaded (zeroExtendByte_decodes destination source) result rfl
 
 theorem setCondition_step (before after : State) (code : Fin 16) (destination : Register)
     (loaded : CodeAt before.memory before.rip (setConditionBytes code destination))
     (result : after = execute (.setCondition code destination)
       (setConditionBytes code destination).length before) :
     Step before after := by
-  exact decoded_step before after _ _ _ loaded (setCondition_decodes code destination) result
+  exact decoded_step before after _ _ _ loaded (setCondition_decodes code destination) result rfl
 
 theorem compare_step (before after : State) (left right : Register)
     (loaded : CodeAt before.memory before.rip (compareBytes left right))
     (result : after = execute (.compare32 left right)
       (compareBytes left right).length before) :
     Step before after := by
-  exact decoded_step before after _ _ _ loaded (compare_decodes left right) result
+  exact decoded_step before after _ _ _ loaded (compare_decodes left right) result rfl
 
-theorem push_step (before after : State) (source : Register) (loaded : CodeAt before.memory before.rip (pushBytes source)) (result : after = execute (.push64 source) (pushBytes source).length before) : Step before after := by exact decoded_step before after _ _ _ loaded (push_decodes source) result
+theorem push_step (before after : State) (source : Register) (loaded : CodeAt before.memory before.rip (pushBytes source)) (result : after = execute (.push64 source) (pushBytes source).length before) : Step before after := by exact decoded_step before after _ _ _ loaded (push_decodes source) result rfl
 
-theorem pop_step (before after : State) (destination : Register) (loaded : CodeAt before.memory before.rip (popBytes destination)) (result : after = execute (.pop64 destination) (popBytes destination).length before) : Step before after := by exact decoded_step before after _ _ _ loaded (pop_decodes destination) result
+theorem pop_step (before after : State) (destination : Register) (loaded : CodeAt before.memory before.rip (popBytes destination)) (result : after = execute (.pop64 destination) (popBytes destination).length before) : Step before after := by exact decoded_step before after _ _ _ loaded (pop_decodes destination) result rfl
 
-theorem return_step (before after : State) (loaded : CodeAt before.memory before.rip returnBytes) (result : after = execute .returnNear returnBytes.length before) : Step before after := by exact decoded_step before after _ _ _ loaded return_decodes result
+theorem return_step (before after : State) (loaded : CodeAt before.memory before.rip returnBytes) (result : after = execute .returnNear returnBytes.length before) : Step before after := by exact decoded_step before after _ _ _ loaded return_decodes result rfl
 
 end Lanius.X86.Machine
