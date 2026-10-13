@@ -1,4 +1,0 @@
-
-running 1 test
-test semantic_interface_exports_public_generic_traits has been running for over 60 seconds
-GPU semantic-interface export timed out after 60000 ms after acquiring the GPU test lock; aborting this test binary to stop the timed-out worker; waited 0 ms for the GPU test lock before starting the timeout; cold pipeline initialization can dominate the first GPU codegen test, so enable LANIUS_GPU_COMPILE_HOST_TIMING=1 before classifying this as a backend hang

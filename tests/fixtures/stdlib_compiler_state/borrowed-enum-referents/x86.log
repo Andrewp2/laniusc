@@ -1,8 +1,0 @@
-
-running 3 tests
-test x86_executes_first_matching_arm_before_wildcard_default ... ok
-test x86_executes_match_expression_local_initializer ... ok
-test x86_executes_return_match_on_integer_and_boolean_patterns ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 1.77s
-

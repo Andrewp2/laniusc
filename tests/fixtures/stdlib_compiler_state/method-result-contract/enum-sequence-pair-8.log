@@ -1,7 +1,0 @@
-
-running 2 tests
-test imported_generic_bodies_enforce_their_concrete_trait_contracts ... ok
-test slice_enum_payloads_borrow_arrays_and_preserve_following_fields ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 338 filtered out; finished in 2.64s
-

@@ -1,6 +1,0 @@
-error[LNC0006]: type mismatch
- --> tests/fixtures/stdlib_foundation/repro_generic_literal_argument_inference_body.lani:6:52
-  |
-6 | fn default_value<T>(value: T) -> T { return choose(1, value, false); }
-  |                                                    ^ value type does not match this context
-     = note: change the expression or the annotation so both sides have the same type

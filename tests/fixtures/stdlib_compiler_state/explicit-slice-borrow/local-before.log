@@ -1,7 +1,0 @@
-GPU source-pack type-check rejection: token=53 code=AssignMismatch detail=0
-stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_169353.lani: error[LNC0006]: type mismatch
- --> /tmp/laniusc_stdlib_perf_input_169353.lani:2:80
-  |
-2 | fn main() -> i32 { let data: [i32; 2] = [19,23]; let view: [i32] = keep<[i32]>(data); view[0] = 20; data[1] = 22; if (view[0] + view[1] != 42 || data[0] != 20) { return 1; } return 0; }
-  |                                                                                ^^^^ value type does not match this context
-     = note: change the expression or the annotation so both sides have the same type

@@ -1,4 +1,0 @@
-20 measured seeds 20–39; 1,000,000 bytes each.
-All source hashes match their frozen workload manifests.
-All timed samples have zero compiled-unit cache hits and zero new buffers, bind groups, or pipelines.
-Shader digest: 49ceefb7cccfcae5.

@@ -1,7 +1,0 @@
-
-running 2 tests
-test semantic_interface_preserves_all_thirty_two_trait_parameters ... ok
-test semantic_interface_preserves_trait_method_shapes_and_parent_scopes ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 100 filtered out; finished in 1.46s
-

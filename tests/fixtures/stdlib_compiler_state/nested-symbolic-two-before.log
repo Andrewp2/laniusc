@@ -1,9 +1,0 @@
-[typecheck.call_inference] round=0 changed=21
-[typecheck.call_inference] round=1 changed=1
-[typecheck.call_inference] round=2 changed=0
-error[LNC0047]: type-check execution failed
- --> tests/fixtures/stdlib_foundation/repro_generic_symbolic_result_two.lani:2:100
-  |
-2 | fn wrap<T, const N: usize>() -> Length<[T; N]> { let item: Boxed<Length<[T; N]> > = Boxed { value: keep(keep(length())) }; return item.value; }
-  |                                                                                                    ^^^^ generic type instantiation reached a compiler boundary
-     = note: a nested type application could not be instantiated from its checked environment

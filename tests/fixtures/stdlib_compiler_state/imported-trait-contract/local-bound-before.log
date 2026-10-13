@@ -1,7 +1,0 @@
-GPU source-pack type-check rejection: token=7 code=InvalidTraitImplementation detail=2
-stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_36625.lani: error[LNC0021]: invalid trait implementation
- --> <source pack file 0>:2:5
-  |
-2 | pub impl core::contracts::Rel<core::contracts::Cell<[i32;3]>> for bool {}
-  |     ^^^^ trait impl header does not resolve to a trait
-     = note: name a trait in the impl header before providing trait methods

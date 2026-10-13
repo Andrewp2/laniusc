@@ -1,8 +1,0 @@
-031d95bd65f4cc59e7e8a342ed74448de54417e9575ce45e5c6f873dc925a2c7  examples/stdlib_gpu_perf.rs
-dddece66c6fb8c97a51c243dd85cdeebd8786f5e5b3e489931b45a8850b628a1  target/stdlib-perf/generic-enum-tag-perf/boolean_window_control.lani
-b7e1a1c7f28ab34f581803635509f276ba5eac28648d9319b44a80a0889fdd54  target/stdlib-perf/generic-enum-tag-perf/previous-stdlib/core/option.lani
-667141ae22411136c0732812456d644ad505023b53df74911123f4880b2c64cb  stdlib/core/option.lani
-9a3416001d5c690173106832405cdd6b227cce7c65391a6776e1e7ef31d4d135  target/stdlib-perf/generic-enum-tag-perf/previous-perf
-4c231428436db3775606fb96984aea0f505e3a4beb2085852b15d82c393836a4  target/stdlib-perf/generic-enum-tag-perf/fixed-perf
-118d072c51a194b6df6d28f427d1c5fce5df9f46c60796e0aae10fc079ac54c2  target/stdlib-perf/results/generic-enum-tag-before-laniusc
-7975528d3c43b33ec0235e2ce56599a4ff93c8dc1efe53b03f9f95ae71b63bcb  target/release/laniusc

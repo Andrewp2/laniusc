@@ -1,6 +1,0 @@
-// Checked payload references shared by record field access and native layout.
-// These rows belong to the compilation job, never to a dependency page.
-public StructuredBuffer<uint> imported_field_ref_start;
-public StructuredBuffer<uint> imported_field_ref_count;
-public StructuredBuffer<uint> imported_field_ref_tag;
-public StructuredBuffer<uint> imported_field_ref_payload;

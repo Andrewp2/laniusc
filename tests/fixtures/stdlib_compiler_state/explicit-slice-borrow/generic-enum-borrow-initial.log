@@ -1,2 +1,0 @@
-sample=0 ms=112.529
-entry=tests/fixtures/stdlib_compiler_state/explicit-slice-borrow/generic-enum-borrow.lani rebuild_entry=true warmups=1 iters=1 output_bytes=8473 min_ms=112.529 median_ms=112.529 avg_ms=112.529 max_ms=112.529 output_verified=true

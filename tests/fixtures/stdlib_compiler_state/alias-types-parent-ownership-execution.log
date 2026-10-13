@@ -1,8 +1,0 @@
-
-running 3 tests
-test generic_aliases_preserve_mixed_compositions_and_empty_values ... ok
-test generic_result_only_constants_execute_method_environments ... ok
-test lexical_method_environment_supports_ordinary_owners_and_constant_results ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 294 filtered out; finished in 4.89s
-

@@ -1,8 +1,0 @@
-
-running 3 tests
-test parser_semantic_commas_follow_innermost_array_inside_match_arm ... ok
-test parser_semantic_commas_follow_innermost_struct_literal_inside_call ... ok
-test parser_semantic_semicolons_keep_statement_owner_across_struct_literals ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 242 filtered out; finished in 0.98s
-

@@ -1,8 +1,0 @@
-
-running 3 tests
-test type_checker::compiler_graph::tests::dependency_ping_pong_bindings_protect_their_actual_resources ... ok
-test type_checker::compiler_graph::tests::expression_types_use_one_local_traversal_without_jump_scratch ... ok
-test type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 611 filtered out; finished in 0.11s
-

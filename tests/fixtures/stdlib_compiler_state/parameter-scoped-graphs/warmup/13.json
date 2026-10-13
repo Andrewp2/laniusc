@@ -1,7 +1,0 @@
-{
-  "index": 13,
-  "shader": "type_checker/calls/03j_validate_array_literals.spv",
-  "exit_code": 0,
-  "elapsed_seconds": 1.9669888529970194,
-  "sha256": "2e1c774812f1a97c92bff3c3d65f6f4084039b2bd7b5688016ac527b27ce6ad9"
-}

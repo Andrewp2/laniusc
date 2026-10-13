@@ -1,9 +1,0 @@
-
-running 4 tests
-test parser_compact_hir_array_elements_use_dense_values_and_owner_spans ... ok
-test parser_array_literal_context_identifies_direct_let_initializer ... ok
-test parser_compact_nested_array_literals_keep_each_owner_range_contiguous ... ok
-test parser_compact_struct_array_element_value_is_literal ... ok
-
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 236 filtered out; finished in 1.07s
-

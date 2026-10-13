@@ -1,8 +1,0 @@
-
-running 3 tests
-test explicit_callable_arguments_execute_compound_and_symbolic_bindings ... ok
-test explicit_constant_arguments_execute_imported_bindings ... ok
-test native_compilation_preserves_generic_and_plain_programs_in_one_workspace ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 297 filtered out; finished in 41.10s
-

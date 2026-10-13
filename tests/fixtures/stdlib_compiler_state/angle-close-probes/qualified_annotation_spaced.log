@@ -1,2 +1,0 @@
-sample=0 ms=186.703
-entry=tests/fixtures/stdlib_compiler_state/angle-close-probes/qualified_annotation_spaced.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4135 min_ms=186.703 median_ms=186.703 avg_ms=186.703 max_ms=186.703 output_verified=true

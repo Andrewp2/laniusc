@@ -1,7 +1,0 @@
-
-running 2 tests
-test generic_reference_receivers_substitute_complete_method_return_types ... ok
-test reference_receivers_preserve_identity_through_method_calls ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 115 filtered out; finished in 1.58s
-

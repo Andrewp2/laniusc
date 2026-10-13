@@ -1,9 +1,0 @@
-[typecheck.call_inference] round=0 changed=3
-[typecheck.call_inference] round=1 changed=0
-GPU source-pack type-check rejection: token=38 code=GenericInstantiationBoundary detail=3
-stdlib_gpu_perf: tests/fixtures/stdlib_foundation/repro_generic_zero_literal_argument.lani: error[LNC0047]: type-check execution failed
- --> tests/fixtures/stdlib_foundation/repro_generic_zero_literal_argument.lani:3:39
-  |
-3 | fn main() -> i32 { let value: Empty = fail(Empty {}); return 0; }
-  |                                       ^^^^ generic type instantiation reached a compiler boundary
-     = note: a nested type application could not be instantiated from its checked environment

@@ -1,2 +1,0 @@
-sample=0 ms=1104.219
-entry=tests/fixtures/stdlib_compiler_state/angle-close-probes/symbolic-identity-borrowed-slice.lani rebuild_entry=true warmups=1 iters=1 output_bytes=94538 min_ms=1104.219 median_ms=1104.219 avg_ms=1104.219 max_ms=1104.219 output_verified=true

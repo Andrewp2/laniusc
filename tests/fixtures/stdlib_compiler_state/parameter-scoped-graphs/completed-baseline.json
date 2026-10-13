@@ -1,7 +1,0 @@
-{
-  "binary": "target/parameter-scoped-graph-baseline/stdlib_gpu_perf",
-  "sha256": "50ab390c2d16d661feb96afe1896b8ab0c841b5abcfbab7e5a1c2adc0fc57c4b",
-  "shaders": "target/parameter-scoped-graph-baseline/shaders",
-  "shader_hashes": "current-shader-hashes.json",
-  "note": "Identical Rust production code to completed contract snapshot. This checkpoint changes production shaders and adds test-only Rust code."
-}

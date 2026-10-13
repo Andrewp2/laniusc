@@ -1,4 +1,0 @@
-
-running 3 tests
-test gpu::typed_constant_tests::physical_gpu_typed_owned_constant_matching ... ok
-test gpu::typed_constant_tests::physical_gpu_typed_owned_constant_overlap ... 

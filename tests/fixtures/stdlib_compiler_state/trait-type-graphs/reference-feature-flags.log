@@ -1,7 +1,0 @@
-
-running 2 tests
-test gpu_lexer_publishes_conservative_parser_family_flags ... ok
-test gpu_parser_type_arg_feature_ignores_comparisons_and_tracks_generics ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 34.52s
-

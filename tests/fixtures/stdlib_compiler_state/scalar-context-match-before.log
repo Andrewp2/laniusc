@@ -1,6 +1,0 @@
-error[LNC0006]: type mismatch
- --> tests/fixtures/stdlib_foundation/repro_unsigned_match_literal_context.lani:5:77
-  |
-5 |     let value: u32 = match (wrapped) { Present(number) -> number, Absent -> 0 };
-  |                                                                             ^ value type does not match this context
-     = note: change the expression or the annotation so both sides have the same type

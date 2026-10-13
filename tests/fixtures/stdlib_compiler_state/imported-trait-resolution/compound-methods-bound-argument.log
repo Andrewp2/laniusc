@@ -1,2 +1,0 @@
-sample=0 ms=122.994
-entry=tests/fixtures/stdlib_compiler_state/imported-trait-resolution/compound-methods-bound-argument.lani rebuild_entry=true warmups=1 iters=1 output_bytes=13977 min_ms=122.994 median_ms=122.994 avg_ms=122.994 max_ms=122.994 output_verified=true

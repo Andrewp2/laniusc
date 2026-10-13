@@ -1,6 +1,0 @@
-GPU parser rejection: error_pos=0 code=4 detail=1 steps=339 emit_len=0 semantic_kinds=Some([0, 99, 154, 133, 155])
-stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_191496.lani: error[LNC0016]: syntax error
- --> /tmp/laniusc_stdlib_perf_input_191496.lani:1:76
-  |
-1 | trait Rel<T>{} impl Rel<[i32;2]> for bool{} fn keep<T>(v:T)->T where T:Rel<[i32;2]>{return v;} fn main()->i32{if(keep(false)){return 1;} return 0;}
-  |                                                                            ^ expected identifier or `&`, found `[`

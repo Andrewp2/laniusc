@@ -1,5 +1,0 @@
-[laniusc][pipeline][shader_pipeline_probe] shader_module.start
-[laniusc][pipeline][shader_pipeline_probe] shader_module.done
-[laniusc][pipeline][shader_pipeline_probe] pipeline_layout.start
-[laniusc][pipeline][shader_pipeline_probe] pipeline_layout.done
-[laniusc][pipeline][shader_pipeline_probe] compute_pipeline.start

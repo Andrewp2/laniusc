@@ -1,9 +1,0 @@
-
-running 4 tests
-test generic_value_arguments_are_captured_before_later_argument_effects ... ok
-test ordinary_inline_packed_array_arguments_preserve_values ... ok
-test ordinary_value_arguments_are_captured_before_later_argument_effects ... ok
-test specialized_body_packed_array_arguments_preserve_values ... ok
-
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 92 filtered out; finished in 26.89s
-

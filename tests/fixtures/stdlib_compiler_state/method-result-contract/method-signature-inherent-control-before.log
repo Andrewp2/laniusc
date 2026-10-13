@@ -1,7 +1,0 @@
-GPU source-pack type-check rejection: token=130 code=InvalidMemberAccess detail=0
-stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_231702.lani: error[LNC0042]: invalid member access
- --> /tmp/laniusc_stdlib_perf_input_231702.lani:5:95
-  |
-5 | fn main()->i32 {let n=0; let c:Cell<[i32;2]> = Cell{value:[19,23]}; let v=n.echo(c); return v.value[0]+v.value[1]-42;}
-  |                                                                                               ^^^^^ this value does not have the requested field
-     = note: field access is only valid for structs that declare a field with this name

@@ -1,2 +1,0 @@
-sample=0 ms=102.498
-entry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/symbolic-forwarding.lani rebuild_entry=true warmups=1 iters=1 output_bytes=6284 min_ms=102.498 median_ms=102.498 avg_ms=102.498 max_ms=102.498 output_verified=true

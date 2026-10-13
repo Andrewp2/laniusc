@@ -1,7 +1,0 @@
-GPU source-pack type-check rejection: token=39 code=AssignMismatch detail=515
-stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_34002.lani: error[LNC0006]: type mismatch
- --> <source pack file 0>:2:93
-  |
-2 | fn main() -> i32 { let value: core::aliases::Swap<bool, i32> = core::aliases::Pair { first: 42, second: false }; if (value.second) { return 1; } return value.first - 42; }
-  |                                                                                             ^^ value type is i32 but this context expects bool
-     = note: expected bool, found i32; change the expression or the annotation so they agree

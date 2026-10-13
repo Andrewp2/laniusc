@@ -1,6 +1,0 @@
-error[LNC0006]: type mismatch
- --> tests/fixtures/stdlib_foundation/repro_unused_const_array_return.lani:3:12
-  |
-3 |     return values;
-  |            ^^^^^^ value type does not match this context
-     = note: change the expression or the annotation so both sides have the same type

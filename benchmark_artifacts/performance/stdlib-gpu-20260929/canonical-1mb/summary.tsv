@@ -1,8 +1,0 @@
-compiler	configuration	samples	median_wall_ms	speedup_vs_current_lanius
-lanius-baseline	daemon_warm_workspace	40	34.317358	1.012465
-lanius-current	daemon_warm_workspace	40	33.894844	1.000000
-c	o0	20	1228.972769	36.258399
-cpp	o0	20	1407.014861	41.511177
-rust	o0	20	1126.161140	33.225146
-tcc	default	20	18.080495	0.533429
-zig	o0	20	477.491322	14.087433

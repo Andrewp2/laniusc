@@ -1,7 +1,0 @@
-{
-  "index": 8,
-  "shader": "type_checker/calls/03e_materialize_return_types.spv",
-  "exit_code": 0,
-  "elapsed_seconds": 4.771255764000671,
-  "sha256": "a474cb66ea2368f71d9028a85acfba8721724f8f49009bd9ca3e8a02ed793edc"
-}

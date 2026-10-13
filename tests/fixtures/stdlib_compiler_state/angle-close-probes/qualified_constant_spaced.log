@@ -1,2 +1,0 @@
-sample=0 ms=172.365
-entry=tests/fixtures/stdlib_compiler_state/angle-close-probes/qualified_constant_spaced.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4308 min_ms=172.365 median_ms=172.365 avg_ms=172.365 max_ms=172.365 output_verified=true

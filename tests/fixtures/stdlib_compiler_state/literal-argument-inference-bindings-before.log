@@ -1,8 +1,0 @@
-GPU type-check detail: Gpu(compiler pass type_check.calls.contextual_result_requests maps storage binding call_arg_row_count_out more than once)
-error[LNC0047]: type-check execution failed
- --> tests/fixtures/stdlib_foundation/repro_generic_literal_argument_inference.lani:1:1
-  |
-1 | fn choose<T>(left: T, right: T, first: bool) -> T {
-  | ^ type checker failed before it could report a language error
-     = note: source file count: 1
-     = note: try reducing the source pack; if this happens on a small package, report a compiler bug

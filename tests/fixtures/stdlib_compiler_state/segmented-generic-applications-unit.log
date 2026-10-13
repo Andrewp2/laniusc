@@ -1,7 +1,0 @@
-
-running 2 tests
-test parser::passes::hir::canonical::tests::compact_hir_record_layout_is_stable ... ok
-test type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 624 filtered out; finished in 0.06s
-

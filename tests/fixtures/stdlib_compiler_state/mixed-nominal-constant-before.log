@@ -1,6 +1,0 @@
-error[LNC0007]: unknown type
- --> tests/fixtures/stdlib_foundation/repro_mixed_nominal_constant_arguments.lani:4:19
-  |
-4 |     let original: Buffer<i32, 3> = Buffer<i32, 3> { values: [12, 20, 10] };
-  |                   ^^^^^^ type not found
-     = note: declare the type before using it or import its defining module

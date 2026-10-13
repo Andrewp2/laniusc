@@ -1,7 +1,0 @@
-
-running 2 tests
-test qualified_enum_variants_reject_ambiguous_and_unrelated_names ... ok
-test qualified_enum_variants_retain_their_parent_declarations ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 278 filtered out; finished in 8.25s
-

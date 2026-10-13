@@ -1,7 +1,0 @@
-GPU source-pack type-check rejection: token=31 code=UnresolvedIdent detail=5
-error[LNC0005]: unresolved identifier
- --> <source pack file 0>:1:88
-  |
-1 | import core::explicit; fn main() -> i32 { let values: [i32; 2] = [40, 2]; let result = core::explicit::Box<bool>::make(values); return result[0] + result[1]; }
-  |                                                                                        ^^^^ not found in this scope
-     = note: declare the value before using it or import its defining module

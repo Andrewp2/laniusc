@@ -1,7 +1,0 @@
-
-running 2 tests
-test imported_reference_fields_preserve_pointer_layout_and_aliases ... ok
-test imported_reference_signatures_preserve_aliases_and_infer_referents ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 112 filtered out; finished in 35.82s
-

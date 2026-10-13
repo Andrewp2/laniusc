@@ -1,4 +1,0 @@
-/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/benchmark_artifacts/performance/stdlib-gpu-20261009-slice-stride/canonical-1mb.json
-canonical-1mb.json: executed and validated 20 artifacts
-daemon_warm_workspace: wall median 49.474 ms, compile median 46.696 ms
-shader-artifact-digest: 3575f9b83b5465e4

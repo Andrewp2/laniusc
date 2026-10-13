@@ -1,9 +1,0 @@
-
-running 4 tests
-test parser_explicit_callable_angles_preserve_comparison_and_shift_roles ... ok
-test parser_explicit_callable_arguments_belong_to_each_path_segment ... ok
-test parser_explicit_record_constructor_argument_order_scales_to_thirty_two ... ok
-test parser_explicit_record_constructor_paths_preserve_type_arguments ... ok
-
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 246 filtered out; finished in 1.44s
-

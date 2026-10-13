@@ -1,3 +1,0 @@
-
-running 1 test
-test compiler::gpu_compiler::x86_codegen::tests::scalar_body_specialization_executes_both_variants_and_clears_between_jobs ... 

@@ -1,7 +1,0 @@
-
-running 2 tests
-test parser_nested_condition_header_matching_crosses_token_blocks ... ok
-test parser_nested_condition_headers_keep_structural_brace_owners ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 241 filtered out; finished in 1.05s
-

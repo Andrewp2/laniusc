@@ -1,7 +1,0 @@
-{
-  "index": 9,
-  "shader": "type_checker/calls/03f_infer_return_bindings.spv",
-  "exit_code": 0,
-  "elapsed_seconds": 0.8150212509972334,
-  "sha256": "a7b584c8cb8a303f2ddddc4527bd13e5e7f7e0f877896b560ebf2186ec00e6ba"
-}

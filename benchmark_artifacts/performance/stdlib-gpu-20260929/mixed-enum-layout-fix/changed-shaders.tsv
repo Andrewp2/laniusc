@@ -1,2 +1,0 @@
-shader	previous_bytes	fixed_bytes	previous_sha256	fixed_sha256
-codegen/lir/semantic/scatter.spv	312936	321824	baf69f5a33e09187a8f5a68ce4f5e8ebecc51e9f6cdb0b94cd8c63c1f01f01c1	65a189df5e87697187373385790967517851f3e2489fac518db1378727aa8f3d

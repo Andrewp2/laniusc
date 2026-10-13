@@ -1,2 +1,0 @@
-sample=0 ms=188.469
-entry=tests/fixtures/stdlib_compiler_state/method-result-contract/method-signature-annotated.lani rebuild_entry=true warmups=1 iters=1 output_bytes=2661 min_ms=188.469 median_ms=188.469 avg_ms=188.469 max_ms=188.469 output_verified=true

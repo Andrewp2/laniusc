@@ -1,2 +1,0 @@
-sample=0 ms=189.224
-entry=tests/fixtures/stdlib_compiler_state/method-result-contract/receiver-annotated.lani rebuild_entry=true warmups=1 iters=1 output_bytes=2661 min_ms=189.224 median_ms=189.224 avg_ms=189.224 max_ms=189.224 output_verified=true

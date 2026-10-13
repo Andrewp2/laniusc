@@ -1,7 +1,0 @@
-{
-  "index": 48,
-  "shader": "type_checker/type/instances/05_array_return_refs.spv",
-  "exit_code": 0,
-  "elapsed_seconds": 1.3161850130018138,
-  "sha256": "e33602d09770ec6507cff0c03723c7673c7b73ba61f356cc97f23d28f0be6436"
-}

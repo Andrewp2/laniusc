@@ -1,6 +1,0 @@
-stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_155482.lani: error[LNC0006]: type mismatch
- --> <source pack file 0>:1:108
-  |
-1 | import core::closes; fn keep<T>(v: core::closes::Id<T>) -> core::closes::Id<core::closes::Id<T> > { return v; } fn main() -> i32 { return keep(42) - 42; }
-  |                                                                                                            ^ value type does not match this context
-     = note: change the expression or the annotation so both sides have the same type

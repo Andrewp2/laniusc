@@ -1,7 +1,0 @@
-
-running 2 tests
-test codegen::lowering_ir::tests::semantic_lowering_entrypoints_match_graph_access_contracts ... ok
-test type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 637 filtered out; finished in 0.07s
-

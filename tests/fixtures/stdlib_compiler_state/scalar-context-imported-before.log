@@ -1,6 +1,0 @@
-error[LNC0006]: type mismatch
- --> <source pack file 0>:3:46
-  |
-3 |     let wrapped: core::option::Option<u32> = core::option::Some(4294967295);
-  |                                              ^^^^ value type does not match this context
-     = note: change the expression or the annotation so both sides have the same type

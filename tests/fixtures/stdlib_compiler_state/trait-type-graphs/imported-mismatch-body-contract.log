@@ -1,7 +1,0 @@
-GPU source-pack type-check rejection: token=45 code=TraitBoundUnsatisfied detail=9
-stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_205980.lani: error[LNC0008]: unsatisfied trait bound
- --> <source pack file 0>:5:13
-  |
-5 | pub fn keep<T,U,const N:usize>(v:T, values:[U;N])->T where T:Rel<Cell<[U;N]>> {return v;}
-  |             ^ no matching impl satisfies this call
-     = note: the trait solver found no concrete impl for the call's inferred type arguments

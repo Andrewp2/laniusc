@@ -1,7 +1,0 @@
-GPU source-pack type-check rejection: token=95 code=AssignMismatch detail=3506438152
-stdlib_gpu_perf: tests/fixtures/stdlib_compiler_state/generic_borrow_direct.lani: error[LNC0006]: type mismatch
- --> tests/fixtures/stdlib_compiler_state/generic_borrow_direct.lani:1:206
-  |
-1 | struct Cell<T>{value:T} impl<T> Cell<T>{fn borrow(&self)->&Cell<T>{return self;}} fn keep<T>(value:&Cell<T>)->&Cell<T>{return value;} fn main()->i32 {let v:Cell<i32> =Cell{value:11};let r:&Cell<i32> =keep(v.borrow());v.value=42;return r.value-42;}
-  |                                                                                                                                                                                                              ^ value type is ptr but this context expects generic parameter 13688832
-     = note: expected generic parameter 13688832, found ptr; change the expression or the annotation so they agree

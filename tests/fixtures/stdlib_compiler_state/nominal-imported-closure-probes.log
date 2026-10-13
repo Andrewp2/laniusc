@@ -1,8 +1,0 @@
-nominal-imported-forward exit=0
-sample=0 ms=213.276
-entry=tests/fixtures/stdlib_compiler_state/nominal-imported-forward.lani rebuild_entry=false warmups=1 iters=1 output_bytes=39287 min_ms=213.276 median_ms=213.276 avg_ms=213.276 max_ms=213.276 output_verified=true
-
-nominal-unannotated-body-closure exit=0
-sample=0 ms=536.621
-entry=tests/fixtures/stdlib_compiler_state/nominal-unannotated-body-closure.lani rebuild_entry=false warmups=1 iters=1 output_bytes=72147 min_ms=536.621 median_ms=536.621 avg_ms=536.621 max_ms=536.621 output_verified=true
-

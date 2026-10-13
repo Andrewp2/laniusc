@@ -1,7 +1,0 @@
-{
-  "alias_median_ms": 30.5,
-  "direct_median_ms": 28.902,
-  "generic_32_expected_stdout_sha256": "8c310f2ef145f0339cff8fcadb4c8291ba04cd6161401d7c06cfcf4dcdfcd47b",
-  "comparison": "concrete imported alias qualifier versus equivalent direct enum qualifier; sequential unpaired observations",
-  "output_contracts_verified": 23
-}

@@ -1,7 +1,0 @@
-{
-  "index": 38,
-  "shader": "type_checker/semantic/artifact/01b_array_index_refs.spv",
-  "exit_code": 0,
-  "elapsed_seconds": 2.2683523679988866,
-  "sha256": "0643493bc6e61a709a6a68e3002b73192547b9db15f28129000c2c4d72a9fa8e"
-}

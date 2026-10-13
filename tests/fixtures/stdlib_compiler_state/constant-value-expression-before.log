@@ -1,7 +1,0 @@
-GPU source-pack type-check rejection: token=23 code=UnresolvedIdent detail=0
-error[LNC0005]: unresolved identifier
- --> tests/fixtures/stdlib_foundation/repro_generic_constant_value_expression.lani:2:12
-  |
-2 |     return N;
-  |            ^ not found in this scope
-     = note: declare the value before using it or import its defining module

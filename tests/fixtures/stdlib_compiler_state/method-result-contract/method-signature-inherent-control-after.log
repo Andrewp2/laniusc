@@ -1,2 +1,0 @@
-sample=0 ms=191.493
-entry=tests/fixtures/stdlib_compiler_state/method-result-contract/method-signature-inherent-control.lani rebuild_entry=true warmups=1 iters=1 output_bytes=2661 min_ms=191.493 median_ms=191.493 avg_ms=191.493 max_ms=191.493 output_verified=true

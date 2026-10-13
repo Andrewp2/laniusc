@@ -1,2 +1,0 @@
-sample=0 ms=66.133
-entry=tests/fixtures/stdlib_compiler_state/angle-close-probes/generic_return_local.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4207 min_ms=66.133 median_ms=66.133 avg_ms=66.133 max_ms=66.133 output_verified=true

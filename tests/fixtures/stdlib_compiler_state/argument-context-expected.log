@@ -1,9 +1,0 @@
-
-running 4 tests
-test enum_constructor_expected_empty_payloads_execute ... ok
-test enum_constructor_expected_unsigned_payloads_execute ... ok
-test expected_argument_contexts_execute_nested_empty_and_unsigned_arrays ... ok
-test expected_argument_contexts_reject_conflicting_known_values ... ok
-
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 145 filtered out; finished in 4.63s
-

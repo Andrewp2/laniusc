@@ -1,2 +1,0 @@
-sample=0 ms=67.641
-entry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/thirty-two.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4211 min_ms=67.641 median_ms=67.641 avg_ms=67.641 max_ms=67.641 output_verified=true

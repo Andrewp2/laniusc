@@ -1,8 +1,0 @@
-
-running 3 tests
-test call_contract_nested_method_arguments_preserve_values_and_copies ... ok
-test call_contract_nested_method_arguments_reject_receiver_conflicts ... ok
-test call_contract_constant_parameter_identity_is_declaration_scoped ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 126 filtered out; finished in 3.23s
-

@@ -1,2 +1,0 @@
-sample=0 ms=185.336
-entry=tests/fixtures/stdlib_compiler_state/method-result-contract/ordinary-function.lani rebuild_entry=true warmups=1 iters=1 output_bytes=2661 min_ms=185.336 median_ms=185.336 avg_ms=185.336 max_ms=185.336 output_verified=true

@@ -1,7 +1,0 @@
-
-running 2 tests
-test generic_trait_operands_and_results_execute_imported_compound_copies ... ok
-test zero_sized_compositions_preserve_neighbors_and_array_bounds ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 381 filtered out; finished in 6.87s
-

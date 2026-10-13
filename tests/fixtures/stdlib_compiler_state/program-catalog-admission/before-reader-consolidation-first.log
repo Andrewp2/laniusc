@@ -1,3 +1,0 @@
-
-running 1 test
-test compiler::gpu_compiler::program_evidence::dispatch::tests::gpu_catalog_distinguishes_nested_lengths_and_deduplicates_retained_units ... 

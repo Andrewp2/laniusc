@@ -1,5 +1,0 @@
-20 measured seeds 20–39; 1,000,000 bytes each.
-All source hashes match their frozen workload manifests.
-Every timed sample has zero compiled-unit cache hits and zero new buffers, bind groups, and compute pipelines.
-Compiler/shader digest: 3143f245e4678848.
-Independent schema validation passed; all 20 ELFs passed exact stdout, empty stderr, and exit-zero validation.

@@ -1,8 +1,0 @@
-
-running 3 tests
-test compiler::gpu_compiler::typecheck::tests::dependency_page_native_layouts_retain_composed_values ... ok
-test compiler::gpu_compiler::typecheck::tests::qualified_variant_import_ambiguity_is_independent_of_source_pack_membership ... ok
-test compiler::gpu_compiler::typecheck::tests::qualified_variant_parent_binding_survives_dependency_page_replay ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 631 filtered out; finished in 8.74s
-

@@ -1,6 +1,0 @@
-stdlib_gpu_perf: tests/fixtures/stdlib_foundation/repro_option_field_constructor_assignment.lani: error[LNC0006]: type mismatch
- --> <source pack file 0>:5:20
-  |
-5 |     holder.value = core::option::Some(42);
-  |                    ^^^^ value type does not match this context
-     = note: change the expression or the annotation so both sides have the same type

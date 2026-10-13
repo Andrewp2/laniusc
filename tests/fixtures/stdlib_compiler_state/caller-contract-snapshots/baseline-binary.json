@@ -1,9 +1,0 @@
-{
-  "binary": "target/caller-contract-snapshot-baseline/stdlib_gpu_perf",
-  "sha256": "67ddfa51ac27271a05158f68c142c8659a8b7372f2a1c0601c5020a19aeefb92",
-  "source_checkpoint": "borrowed-enum-referents/before-imported-edge-frozen-sources.json",
-  "limitations": "This example precedes the final imported structural-edge scheduling fix and capacity diagnostic change. Shader sources are identical to completed borrowed checkpoint; do not call it an exact immediate pre-snapshot baseline. No timing or correctness run performed at preservation.",
-  "shader_artifacts": "target/caller-contract-snapshot-baseline/shaders",
-  "shader_file_hashes": "baseline-shader-hashes.json",
-  "runtime_requirement": "Binary loads shaders through the build/release/shaders symlink. For baseline runs, with no concurrent builds/tests, switch that link to this preserved directory and restore current-shaders in finally. Never run baseline against newly modified shader bindings."
-}

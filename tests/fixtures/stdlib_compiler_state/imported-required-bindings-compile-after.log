@@ -1,7 +1,0 @@
-error[LNC0006]: type mismatch
- --> <source pack file 0>:3:27
-  |
-3 | fn main() -> i32 { return core::requirements::unused_constant(); }
-  |                           ^^^^ a declared constant parameter could not be inferred
-     = note: provide an argument or a result type that determines every declared constant parameter
-compile_exit=1

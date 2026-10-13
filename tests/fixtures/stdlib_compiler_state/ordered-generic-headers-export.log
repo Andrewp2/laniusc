@@ -1,3 +1,0 @@
-
-running 8 tests
-test exported_generic_headers_preserve_interleaved_order_and_lexical_scopes ... GPU semantic-interface export timed out after 60000 ms after acquiring the GPU test lock; aborting this test binary to stop the timed-out worker; waited 0 ms for the GPU test lock before starting the timeout; cold pipeline initialization can dominate the first GPU codegen test, so enable LANIUS_GPU_COMPILE_HOST_TIMING=1 before classifying this as a backend hang

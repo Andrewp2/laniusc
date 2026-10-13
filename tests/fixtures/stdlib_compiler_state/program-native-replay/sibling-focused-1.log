@@ -1,8 +1,0 @@
-
-running 3 tests
-test generic_impl_sibling_replay_preserves_local_helpers_across_workspace_reuse ... ok
-test generic_impl_sibling_replay_preserves_method_and_impl_constants ... ok
-test generic_impl_sibling_replay_preserves_ordinary_imported_helpers ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 357 filtered out; finished in 4.05s
-

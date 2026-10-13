@@ -1,7 +1,0 @@
-GPU parser rejection: error_pos=0 code=4 detail=0 steps=588 emit_len=0 semantic_kinds=Some([0, 94, 1, 133, 155])
-stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_202111.lani: error[LNC0021]: invalid trait implementation
- --> /tmp/laniusc_stdlib_perf_input_202111.lani:4:39
-  |
-4 | impl Rel<Cell<Pair>, [bool;0], [str], &Cell<i32>, [[i32;2];2], str> for bool {}
-  |                                       ^ trait impl header uses an unsupported trait argument shape
-     = note: use scalar, generic, or concrete non-nested trait arguments here; nested generic arguments are rejected rather than matching only the outer type name

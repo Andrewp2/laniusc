@@ -1,8 +1,0 @@
-[gpu_compile_host_timer] pipeline_cache.create.path: 0.004ms
-[gpu_compile_host_timer] pipeline_cache.create.prune: 0.029ms
-[gpu_compile_host_timer] pipeline_cache.create.read: 283.360ms
-[gpu_compile_host_timer] pipeline_cache.create.input_file_bytes: 240985265 bytes
-[gpu_compile_host_timer] pipeline_cache.create.decode: 60.590ms
-[gpu_compile_host_timer] pipeline_cache.create.input_cache_bytes: 240985225 bytes
-[gpu_compile_host_timer] pipeline_cache.create.wgpu_create: 175.697ms
-[gpu_compile_host_timer] pipeline_cache.create.total: 562.366ms

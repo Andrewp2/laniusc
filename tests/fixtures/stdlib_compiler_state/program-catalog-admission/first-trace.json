@@ -1,7 +1,0 @@
-{
-  "exit_code": 124,
-  "timeout_seconds": 90,
-  "last_stage": "type_checker/program_evidence/entries/02_admit_catalog_rows compute_pipeline.start",
-  "gpu_dispatch_reached": false,
-  "log": "first-trace.log"
-}

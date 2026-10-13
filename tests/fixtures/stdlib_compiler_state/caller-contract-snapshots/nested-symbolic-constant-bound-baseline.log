@@ -1,6 +1,0 @@
-stdlib_gpu_perf: /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/caller-contract-snapshots/nested-symbolic-constant-bound.lani: error[LNC0007]: unknown type
- --> /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/caller-contract-snapshots/nested-symbolic-constant-bound.lani:5:28
-  |
-5 |     where T:Rel<Cell<[U;N],N>> { return v; }
-  |                            ^ type not found
-     = note: declare the type before using it or import its defining module

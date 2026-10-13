@@ -1,6 +1,0 @@
-
-running 1 test
-test generic_trait_methods_execute_inherited_environments_at_different_layouts ... ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 382 filtered out; finished in 3.68s
-

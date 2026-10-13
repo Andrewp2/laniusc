@@ -1,6 +1,0 @@
-error[LNC0006]: type mismatch
- --> tests/fixtures/stdlib_foundation/repro_generic_nested_result_field.lani:5:33
-  |
-5 |     let item: Bundle = Bundle { nested: length(), empty: length() };
-  |                                 ^^^^^^ value type does not match this context
-     = note: change the expression or the annotation so both sides have the same type

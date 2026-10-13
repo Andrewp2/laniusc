@@ -1,2 +1,0 @@
-sample=0 ms=192.119
-stdlib_gpu_perf: emitted program failed its output contract: Output { status: ExitStatus(unix_wait_status(11)), stdout: "", stderr: "timeout: the monitored command dumped core\n" }

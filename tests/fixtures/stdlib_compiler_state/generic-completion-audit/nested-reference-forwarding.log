@@ -1,6 +1,0 @@
-stdlib_gpu_perf: /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/generic-completion-audit/nested-reference-forwarding.lani: error[LNC0021]: invalid trait implementation
- --> /home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/generic-completion-audit/nested-reference-forwarding.lani:5:1
-  |
-5 | enum Flag { Missing, Value(bool) }
-  | ^^^^ inherent impl target path is malformed
-     = note: name the target with a source-addressable type path

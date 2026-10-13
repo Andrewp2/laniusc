@@ -1,2 +1,0 @@
-sample=0 ms=128.390
-entry=tests/fixtures/stdlib_foundation/repro_option_field_constructor_assignment.lani rebuild_entry=false warmups=1 iters=1 output_bytes=25807 min_ms=128.390 median_ms=128.390 avg_ms=128.390 max_ms=128.390 output_verified=true

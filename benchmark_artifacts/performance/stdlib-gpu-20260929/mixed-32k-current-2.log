@@ -1,1 +1,0 @@
-phase=x86 emit=x86_64-elf source=mixed lines=1193 bytes=32900 output_bytes=47904 warmups=3 iters=10 best_ms=13.815 avg_ms=15.140

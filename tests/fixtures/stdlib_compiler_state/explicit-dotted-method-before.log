@@ -1,5 +1,0 @@
-stdlib_gpu_perf: tests/fixtures/stdlib_foundation/repro_explicit_dotted_method_binding.lani: error[LNC0016]: syntax error
- --> tests/fixtures/stdlib_foundation/repro_explicit_dotted_method_binding.lani:7:41
-  |
-7 |     let values: [i32; 2] = receiver.keep<[i32; 2]>([40, 2]);
-  |                                         ^ expected one of `*`, `=`, `/`, `<`, `>`, `<=`, `>=`, `==`, `&&`, `||`, `{`, `&`, `|`, `(`, `[`, `.`, `!=`, `%`, `^`, `<<`, `>>`, `+=`, `-=`, `*=`, `/=`, `%=`, `^=`, `<<=`, `>>=`, `&=`, `|=`, `+`, `-`, `)`, `]`, `,`, `}`, or `;`, found `<`

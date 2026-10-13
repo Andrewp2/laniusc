@@ -1,7 +1,0 @@
-
-running 2 tests
-test explicit_generic_arguments_preserve_unrelated_member_comparisons ... ok
-test imported_bare_nominal_annotations_preserve_composed_values ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 276 filtered out; finished in 2.83s
-

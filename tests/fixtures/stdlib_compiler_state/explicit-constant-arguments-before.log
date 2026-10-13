@@ -1,5 +1,0 @@
-error[LNC0016]: syntax error
- --> tests/fixtures/stdlib_foundation/repro_explicit_function_constant_argument.lani:2:31
-  |
-2 | fn main() -> i32 { if (length<3>() != 3) { return 1; } return 0; }
-  |                               ^ expected one of identifier, `[`, or `&`, found `3`

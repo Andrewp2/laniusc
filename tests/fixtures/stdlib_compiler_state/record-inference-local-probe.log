@@ -1,1 +1,0 @@
-First local probe was terminated by subprocess timeout after 30 seconds before producing output. The subsequent 90-second traced command completed successfully; see record-inference-first-trace.log. No result is claimed for the other two commands in the interrupted probe script.

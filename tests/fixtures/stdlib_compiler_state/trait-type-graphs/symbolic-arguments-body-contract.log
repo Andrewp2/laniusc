@@ -1,2 +1,0 @@
-sample=0 ms=74.761
-entry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/symbolic-arguments.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4409 min_ms=74.761 median_ms=74.761 avg_ms=74.761 max_ms=74.761 output_verified=true

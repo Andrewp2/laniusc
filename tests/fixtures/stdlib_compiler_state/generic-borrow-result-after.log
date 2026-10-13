@@ -1,8 +1,0 @@
-=== generic_borrow_direct.lani exit 0 ===
-sample=0 ms=168.076
-entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_compiler_state/generic_borrow_direct.lani rebuild_entry=false warmups=1 iters=1 output_bytes=6566 min_ms=168.076 median_ms=168.076 avg_ms=168.076 max_ms=168.076 output_verified=true
-
-=== generic_recursive_reference_context.lani exit 0 ===
-sample=0 ms=206.521
-entry=/home/andrew-peterson/.codex/worktrees/stdlib-foundation/laniusc/tests/fixtures/stdlib_foundation/generic_recursive_reference_context.lani rebuild_entry=false warmups=1 iters=1 output_bytes=32275 min_ms=206.521 median_ms=206.521 avg_ms=206.521 max_ms=206.521 output_verified=true
-

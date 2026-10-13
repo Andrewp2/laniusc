@@ -1,2 +1,0 @@
-sample=0 ms=68.113
-stdlib_gpu_perf: emitted program failed its output contract: Output { status: ExitStatus(unix_wait_status(256)), stdout: "", stderr: "" }

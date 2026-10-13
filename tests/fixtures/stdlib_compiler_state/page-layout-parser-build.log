@@ -1,3 +1,0 @@
-error: no test target named `parser_hir_records` in `laniusc-compiler` package
-help: available test in `laniusc` package:
-    parser_hir_records

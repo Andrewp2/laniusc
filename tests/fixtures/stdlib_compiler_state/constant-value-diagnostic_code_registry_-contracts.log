@@ -1,8 +1,0 @@
-
-running 3 tests
-test compiler::diagnostics::tests::diagnostic_code_registry_is_unique_sorted_and_lookupable ... ok
-test compiler::diagnostics::tests::diagnostic_code_registry_json_is_tool_readable ... ok
-test compiler::diagnostics::tests::diagnostic_code_registry_preserves_public_metadata ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 622 filtered out; finished in 0.00s
-

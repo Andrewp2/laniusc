@@ -1,7 +1,0 @@
-module app::main;
-import core::maybe;
-
-fn main() -> i32 {
-    let present = core::maybe::Some(7);
-    return 0;
-}

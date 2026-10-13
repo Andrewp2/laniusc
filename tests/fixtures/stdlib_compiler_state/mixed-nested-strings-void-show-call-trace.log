@@ -1,8 +1,0 @@
-Breakpoint 1 at 0x40051c
-println data=0x40ada3 len=4 return=0x402178
-keep
-println data=0x40ada8 len=1 return=0x4021e3
-a
-println data=0x40adac len=1 return=0x402251
-c
-[Inferior 1 (process 37618) exited normally]

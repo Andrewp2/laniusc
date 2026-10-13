@@ -1,8 +1,0 @@
-
-running 3 tests
-test direct_record_literal_arguments_preserve_contextual_generic_compositions ... ok
-test generic_applications_compose_six_sixteen_and_thirty_two_parameters ... ok
-test generic_array_argument_capture_preserves_following_slice_arguments ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 97 filtered out; finished in 3.22s
-

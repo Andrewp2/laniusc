@@ -1,7 +1,0 @@
-
-running 2 tests
-test generic_aggregate_value_parameters_preserve_caller_storage ... ok
-test ordinary_aggregate_value_parameters_preserve_caller_storage ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 84 filtered out; finished in 22.38s
-

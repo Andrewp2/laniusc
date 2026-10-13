@@ -1,8 +1,0 @@
-stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_358394.lani: error[LNC0017]: x86 callee function lost its checked aggregate result layout
- --> /tmp/laniusc_stdlib_perf_input_358394.lani:6:33
-  |
-6 |     let returned: Maybe<bool> = preserve(value);
-  |                                 ^^^^^^^^ not supported by the native x86 backend yet
-     = help: use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering
-     = note: the native x86 backend rejected this program before emitting an artifact
-     = note: first unsupported target LIR opcode: 9

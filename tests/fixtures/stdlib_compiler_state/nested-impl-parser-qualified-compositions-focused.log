@@ -1,8 +1,0 @@
-
-running 3 tests
-test parser_semantic_tokens_keep_structural_impl_receiver_arrays_as_types ... ok
-test parser_structural_impl_receiver_context_crosses_token_blocks ... ok
-test parser_structural_impl_receiver_qualified_compositions_keep_child_type_roles ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 245 filtered out; finished in 8.35s
-

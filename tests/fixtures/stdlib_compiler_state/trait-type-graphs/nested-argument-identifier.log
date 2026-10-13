@@ -1,2 +1,0 @@
-sample=0 ms=71.181
-entry=tests/fixtures/stdlib_compiler_state/trait-type-graphs/nested-argument.lani rebuild_entry=true warmups=1 iters=1 output_bytes=4211 min_ms=71.181 median_ms=71.181 avg_ms=71.181 max_ms=71.181 output_verified=true

@@ -1,9 +1,0 @@
-
-running 4 tests
-test codegen::lowering_ir::tests::semantic_lowering_entrypoints_match_graph_access_contracts ... ok
-test compiler::gpu_compiler::typecheck::tests::dependency_page_native_layouts_retain_composed_values ... ok
-test compiler::gpu_compiler::x86_codegen::tests::dependency_pages_preserve_record_fields_and_generic_body_replay ... ok
-test type_checker::compiler_graph::tests::typecheck_graph_tracks_operation_workspace_lifetimes ... ok
-
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 631 filtered out; finished in 8.27s
-

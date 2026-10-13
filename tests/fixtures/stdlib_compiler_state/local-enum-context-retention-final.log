@@ -1,7 +1,0 @@
-
-running 2 tests
-test bare_nominal_compositions_preserve_copies_and_aliases ... ok
-test local_enum_constructor_contexts_reject_conflicting_payloads ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 260 filtered out; finished in 1.87s
-

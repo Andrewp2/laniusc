@@ -1,7 +1,0 @@
-GPU source-pack type-check rejection: token=93 code=AssignMismatch detail=0
-stdlib_gpu_perf: tests/fixtures/stdlib_foundation/generic_assignment_contexts.lani: error[LNC0006]: type mismatch
- --> <source pack file 0>:7:61
-  |
-7 | fn present<T>(value: T) -> core::option::Option<T> { return core::option::Some(value); }
-  |                                                             ^^^^ value type does not match this context
-     = note: change the expression or the annotation so both sides have the same type

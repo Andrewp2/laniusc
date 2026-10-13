@@ -1,4 +1,0 @@
-{
-  "prelude": "initial source path decode failed; recaptured using filesystem decoding while canonical runner was still building the CLI, before timed samples",
-  "canonical_log_at_capture": "lanius_perf: building the release compiler\n"
-}

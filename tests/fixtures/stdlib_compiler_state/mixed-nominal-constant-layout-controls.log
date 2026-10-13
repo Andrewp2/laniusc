@@ -1,9 +1,0 @@
-
-running 4 tests
-test enum_layouts_include_unconstructed_compound_variants ... ok
-test imported_generic_record_fields_execute_in_the_importing_module ... ok
-test imported_generic_reference_methods_preserve_all_receiver_arguments ... ok
-test local_generic_records_preserve_concrete_field_layouts ... ok
-
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 231 filtered out; finished in 7.62s
-

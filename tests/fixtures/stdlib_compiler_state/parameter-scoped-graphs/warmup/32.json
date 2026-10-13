@@ -1,7 +1,0 @@
-{
-  "index": 32,
-  "shader": "type_checker/predicates/01f1_emit_method_param_validation_rows.spv",
-  "exit_code": 0,
-  "elapsed_seconds": 1.015083553000295,
-  "sha256": "6c1365317a9156a037fb39137d57510500aa309d85d7e92e8f80930f31bf9b0a"
-}

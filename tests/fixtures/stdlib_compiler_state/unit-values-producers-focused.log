@@ -1,3 +1,0 @@
-
-running 2 tests
-test explicit_generic_arguments_preserve_unrelated_member_comparisons ... comparison before a later shift timed out after 35000 ms after acquiring the GPU test lock; aborting this test binary to stop the timed-out worker; waited 0 ms for the GPU test lock before starting the timeout; cold pipeline initialization can dominate the first GPU codegen test, so enable LANIUS_GPU_COMPILE_HOST_TIMING=1 before classifying this as a backend hang

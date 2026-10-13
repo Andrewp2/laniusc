@@ -1,7 +1,0 @@
-
-running 1 test
-test gpu::typed_constant_tests::physical_gpu_typed_constant_identity_and_claim_provenance_requests ... [laniusc][pipeline][tests/typed_constant_identity_requests] shader_module.start
-[laniusc][pipeline][tests/typed_constant_identity_requests] shader_module.done
-[laniusc][pipeline][tests/typed_constant_identity_requests] pipeline_layout.start
-[laniusc][pipeline][tests/typed_constant_identity_requests] pipeline_layout.done
-[laniusc][pipeline][tests/typed_constant_identity_requests] compute_pipeline.start

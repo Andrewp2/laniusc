@@ -1,7 +1,0 @@
-{
-  "index": 4,
-  "shader": "type_checker/calls/03a_collect_row_args.spv",
-  "exit_code": 0,
-  "elapsed_seconds": 2.1168376290006563,
-  "sha256": "9dd1ca1a2da38d26bb57cfa28a863230239cd636d1b6433bcf1f76f51ec651ca"
-}

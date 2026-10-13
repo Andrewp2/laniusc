@@ -1,7 +1,0 @@
-{
-  "index": 19,
-  "shader": "type_checker/conditions/compact_aggregate_requests.spv",
-  "exit_code": 0,
-  "elapsed_seconds": 1.1155084839992924,
-  "sha256": "f352b756ee756f62b17ec253a164a5d40c1e07623c4194efb32f77c56438e212"
-}

@@ -1,7 +1,0 @@
-compile_exit=1
-error[LNC0006]: type mismatch
- --> <source pack file 0>:4:84
-  |
-4 |     let value: core::option::Option<Cell<bool>> = core::option::Some(Cell { value: true });
-  |                                                                                    ^^^^ value type is bool but this context expects generic parameter 0
-     = note: expected generic parameter 0, found bool; change the expression or the annotation so they agree

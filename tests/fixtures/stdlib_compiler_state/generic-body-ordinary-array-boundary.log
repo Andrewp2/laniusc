@@ -1,7 +1,0 @@
-error[LNC0017]: unsupported x86 dynamic array index
- --> tests/fixtures/stdlib_foundation/repro_ordinary_inline_i32_array_call.lani:8:16
-  |
-8 |     if (copied[0] != 11) { return 1; }
-  |                ^ not supported by the native x86 backend yet
-     = help: use `laniusc check` for diagnostics-only validation; native output requires support for this construct in x86 lowering
-     = note: the native x86 backend rejected this program before emitting an artifact

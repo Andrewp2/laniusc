@@ -1,2 +1,0 @@
-sample=0 ms=579.682
-entry=tests/fixtures/stdlib_compiler_state/method-result-contract/compositions.lani rebuild_entry=true warmups=1 iters=1 output_bytes=96864 min_ms=579.682 median_ms=579.682 avg_ms=579.682 max_ms=579.682 output_verified=true

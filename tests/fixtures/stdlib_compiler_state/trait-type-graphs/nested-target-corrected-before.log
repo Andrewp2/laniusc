@@ -1,7 +1,0 @@
-GPU source-pack type-check rejection: token=14 code=InvalidTraitImplementation detail=14
-stdlib_gpu_perf: /tmp/laniusc_stdlib_perf_input_192353.lani: error[LNC0021]: invalid trait implementation
- --> /tmp/laniusc_stdlib_perf_input_192353.lani:1:38
-  |
-1 | struct Cell<T>{value:T} trait Mark{} impl Mark for Cell<i32>{} fn keep<T>(v:T)->T where T:Mark{return v;} fn main()->i32{let c:Cell<i32> = Cell{value:42}; return keep(c).value-42;}
-  |                                      ^^^^ trait impl target type is not supported here
-     = note: this compiler currently supports trait impls for scalar and non-generic nominal targets here; generic instance targets are rejected

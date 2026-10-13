@@ -1,8 +1,0 @@
-
-running 3 tests
-test x86_executes_helper_branch_early_return_and_fallthrough_return ... ok
-test x86_executes_std_io_print_i32_stdout ... ok
-test x86_executes_void_helper_fallthrough_return ... ok
-
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 3.10s
-

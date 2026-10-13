@@ -1,9 +1,0 @@
-[typecheck.call_inference] round=0 changed=21
-[typecheck.call_inference] round=1 changed=1
-[typecheck.call_inference] round=2 changed=0
-error[LNC0006]: type mismatch
- --> tests/fixtures/stdlib_foundation/repro_generic_symbolic_result_direct.lani:2:100
-  |
-2 | fn wrap<T, const N: usize>() -> Length<[T; N]> { let item: Boxed<Length<[T; N]> > = Boxed { value: length() }; return item.value; }
-  |                                                                                                    ^^^^^^ value type is unknown type but this context expects generic parameter 0
-     = note: expected generic parameter 0, found unknown type; change the expression or the annotation so they agree

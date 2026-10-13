@@ -1,7 +1,0 @@
-
-running 2 tests
-test parser_explicit_record_constructor_argument_order_scales_to_thirty_two ... ok
-test parser_explicit_record_constructor_paths_preserve_type_arguments ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 243 filtered out; finished in 0.98s
-

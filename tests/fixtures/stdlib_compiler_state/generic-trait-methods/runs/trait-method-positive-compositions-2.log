@@ -1,9 +1,0 @@
-
-running 4 tests
-test generic_trait_methods_execute_imported_impl_bounds_from_caller ... ok
-test generic_trait_methods_execute_inherited_environments_at_different_layouts ... ok
-test generic_trait_operands_and_results_execute_imported_compound_copies ... ok
-test inherent_method_bounds_keep_own_enclosing_and_shadowed_parameters_distinct ... ok
-
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 379 filtered out; finished in 10.94s
-

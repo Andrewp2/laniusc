@@ -1,6 +1,0 @@
-error[LNC0006]: type mismatch
- --> <source pack file 0>:3:44
-  |
-3 |     let data: core::aliases::Constant<2> = [19, 23];
-  |                                            ^ value type does not match this context
-     = note: change the expression or the annotation so both sides have the same type

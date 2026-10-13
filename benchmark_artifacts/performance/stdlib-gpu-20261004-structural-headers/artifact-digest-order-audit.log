@@ -1,3 +1,0 @@
-All-fresh source order digest=fb26a3ca5416983e
-Initial incremental digest=a2dc19b9266420ba; cached artifacts first, compiled suffix=('parser/tokens/bracket/01_kinds', 'parser/tokens/delimiter_match/01_depth_blocks', 'parser/tokens/delimiters/04_owner_apply')
-Both digests reconstructed from the identical current bytes of all 742 artifacts; no SPV/reflection file modified after initial build.
